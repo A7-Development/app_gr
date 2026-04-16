@@ -74,14 +74,15 @@ src/components/<dominio>/   <- Componentes amarrados a um dominio especifico
 
 | Categoria | Classes permitidas | Uso |
 |---|---|---|
-| Neutros | `gray-*` (todas as escalas + `dark:`) | textos, bordas, backgrounds, superficies |
+| Neutros | `gray-*` (todas as escalas + `dark:`, inclui `gray-925`) | textos, bordas, backgrounds, superficies |
+| Acento / foco | `blue-*` | focus rings, estados de foco, items de navegacao ativos, selecao, indicadores de selecionado, `focusInput`/`focusRing` do Tremor. NAO use como cor semantica de "sucesso" ou "informacao" — para badges, use `Badge variant` do Tremor. |
 | Destrutivo / erro | `red-*` (em qualquer escala + `dark:`) | ErrorState, Dialog destructive, Button destructive, validacao de form, toasts de erro |
-| Dados (chart) | cores de `chartColors` em `@/lib/chartUtils`: `blue`, `emerald`, `violet`, `amber`, `cyan`, `pink`, `lime`, `fuchsia` | apenas dentro de charts e visualizacoes de dados |
+| Dados (chart) | cores de `chartColors` em `@/lib/chartUtils`: `emerald`, `violet`, `amber`, `cyan`, `pink`, `lime`, `fuchsia` (+ `blue` e `gray` ja incluidos acima) | **apenas dentro de `src/components/charts/`** ou quando a cor vier dinamicamente de `getColorClassName()` |
 
 **Proibido:**
 - Valores arbitrarios de cor: `text-[#123abc]`, `bg-[rgb(...)]`, `border-[hsl(...)]`.
-- Cores Tailwind fora das 3 categorias acima: `indigo-*`, `orange-*`, `teal-*`, `purple-*`, `sky-*`, `yellow-*`, `rose-*`, `stone-*`, `slate-*`, `zinc-*`, `neutral-*`.
-- Usar as cores de `chartColors` como cor semantica geral (ex.: `bg-emerald-500` em badge de "ativo" — use `Badge variant="success"` do Tremor).
+- Cores Tailwind fora das 4 categorias acima: `indigo-*`, `orange-*`, `teal-*`, `purple-*`, `sky-*`, `yellow-*`, `rose-*`, `stone-*`, `slate-*`, `zinc-*`, `neutral-*`.
+- Usar cores de dados (`emerald`, `violet`, etc) como cor semantica geral fora de charts (ex.: `bg-emerald-500` em badge de "ativo" — use `Badge variant="success"` do Tremor).
 - Gradientes manuais (`bg-gradient-to-*` com cores arbitrarias).
 
 **Dark mode:** sempre suportar. Usar as mesmas classes que o Tremor usa (`dark:bg-gray-950`, `dark:text-gray-50`, `dark:border-gray-800`). O `<html>` ja tem `dark:bg-gray-950` em `layout.tsx`.

@@ -1,9 +1,11 @@
 import type { Metadata } from "next"
 import { GeistSans } from "geist/font/sans"
+import { ThemeProvider } from "next-themes"
+import { Toaster } from "sonner"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "App GR",
+  title: "A7 Credit",
   description: "Sistema de controladoria financeira",
 }
 
@@ -16,8 +18,19 @@ export default function RootLayout({
     <html
       lang="pt-BR"
       className={`${GeistSans.className} antialiased dark:bg-gray-950`}
+      suppressHydrationWarning
     >
-      <body>{children}</body>
+      <body>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          {children}
+          <Toaster position="bottom-right" richColors closeButton />
+        </ThemeProvider>
+      </body>
     </html>
   )
 }

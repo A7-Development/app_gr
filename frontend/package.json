@@ -29,6 +29,7 @@
     "@radix-ui/react-toggle": "^1.1.10",
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@radix-ui/react-visually-hidden": "^1.2.4",
     "@react-aria/datepicker": "^3.17.0",
     "@react-pdf/renderer": "^4.5.1",
     "@react-stately/datepicker": "^3.17.0",

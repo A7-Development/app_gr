@@ -46,9 +46,10 @@ Regex por:
 - `text-\[hsl` / `bg-\[hsl` / `border-\[hsl`
 
 Classes Tailwind permitidas:
-- `gray-*` livremente (neutros).
+- `gray-*` livremente (neutros, inclui `gray-925`).
+- `blue-*` permitido como cor de acento/foco (focus rings, items de navegacao ativos, selecao).
 - `red-*` permitido **apenas** em componentes com semantica de erro/destrutivo (ErrorState, validacoes de form, dialogs destrutivos, toasts de erro).
-- `blue|emerald|violet|amber|cyan|pink|lime|fuchsia-*` permitido **apenas** dentro de `src/components/charts/` ou quando a cor vem dinamicamente de `chartColors` via `getColorClassName()`.
+- `emerald|violet|amber|cyan|pink|lime|fuchsia-*` permitido **apenas** dentro de `src/components/charts/` ou quando a cor vem dinamicamente de `chartColors` via `getColorClassName()`.
 
 Proibidas em todo lugar: `indigo-*`, `orange-*`, `teal-*`, `purple-*`, `sky-*`, `yellow-*`, `rose-*`, `stone-*`, `slate-*`, `zinc-*`, `neutral-*`.
 
