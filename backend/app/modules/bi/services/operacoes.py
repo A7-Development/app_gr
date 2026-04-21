@@ -785,11 +785,6 @@ async def get_volume(
         if volume_anterior is not None
         else None
     )
-    n_operacoes_delta_pct = (
-        _safe_pct_change(float(n_operacoes_total), float(n_ops_anterior))
-        if n_ops_anterior is not None
-        else None
-    )
     ticket_anterior = (
         (volume_anterior / n_ops_anterior)
         if (volume_anterior is not None and n_ops_anterior is not None and n_ops_anterior > 0)
@@ -947,28 +942,32 @@ async def get_volume(
     else:
         spark_lider_pts = []
 
+    # Nome completo do produto lider ("Faturizacao" vs "FAT") — lookup em
+    # `wh_dim_produto`. Se o produto nao existir no dim (edge case: ETL
+    # fora de sync), expoe `None` e UI cai para a sigla.
+    produto_lider_nome: str | None = None
+    if produto_lider_sigla != "—":
+        prod_nomes = await _produto_sigla_to_nome_map(db, tenant_id)
+        produto_lider_nome = prod_nomes.get(produto_lider_sigla)
+
     resumo_deltas = VolumeResumoDeltas(
         volume_total=volume_total,
-        volume_mom_pct=volume_mom_pct,
-        volume_yoy_pct=volume_yoy_pct,
+        volume_delta_pct=volume_delta_pct,
         volume_sparkline_12m=[
             Point(periodo=r.periodo, valor=_as_float(r.valor)) for r in spark_vol
         ],
         ticket_medio=ticket_medio,
-        ticket_mom_pct=ticket_mom_pct,
+        ticket_delta_pct=ticket_delta_pct,
         ticket_sparkline_12m=spark_ticket_pts,
         ticket_medio_titulo=ticket_medio_titulo,
-        ticket_medio_titulo_mom_pct=ticket_medio_titulo_mom_pct,
+        ticket_medio_titulo_delta_pct=ticket_medio_titulo_delta_pct,
         ticket_medio_titulo_sparkline_12m=spark_ticket_titulo_pts,
-        n_operacoes=n_operacoes_total,
-        n_operacoes_mom_pct=n_operacoes_mom_pct,
-        n_operacoes_sparkline_12m=[
-            Point(periodo=r.periodo, valor=float(r.valor)) for r in spark_ops
-        ],
         produto_lider_sigla=produto_lider_sigla,
+        produto_lider_nome=produto_lider_nome,
         produto_lider_pct=produto_lider_pct,
         produto_lider_delta_pp=produto_lider_delta_pp,
         produto_lider_sparkline_12m=spark_lider_pts,
+        comparacao_label_pt=comparacao_label_pt,
     )
 
     # ─────────────────────────────────────────────────────────────

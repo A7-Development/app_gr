@@ -5,6 +5,7 @@ import { RiArrowDownSLine, RiArrowUpSLine, RiSubtractLine } from "@remixicon/rea
 
 import { DonutChart } from "@/components/charts/DonutChart"
 import { SparkAreaChart } from "@/components/charts/SparkChart"
+import { InfoTooltip } from "@/components/app/InfoTooltip"
 import { cx } from "@/lib/utils"
 import type {
   CategoryValueDelta,
@@ -22,8 +23,6 @@ const moedaCompacta = new Intl.NumberFormat("pt-BR", {
   notation: "compact",
   maximumFractionDigits: 1,
 })
-
-const numero = new Intl.NumberFormat("pt-BR")
 
 const pct1 = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`
 const pp1 = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)} pp`
@@ -80,14 +79,16 @@ function colorFromDelta(
 
 function KpiTextItem({
   label,
+  tooltip,
   value,
-  deltas,
+  deltaNode,
   spark,
   deltaValue,
 }: {
   label: string
+  tooltip: string
   value: React.ReactNode
-  deltas: React.ReactNode
+  deltaNode: React.ReactNode
   spark: Point[]
   deltaValue: number | null
 }) {
@@ -103,16 +104,17 @@ function KpiTextItem({
   const sparkColor = colorFromDelta(deltaValue)
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2">
       <div className="flex flex-col gap-0.5">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        <span className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
           {label}
+          <InfoTooltip content={tooltip} className="size-3.5" />
         </span>
         <div className="flex items-baseline gap-2">
           <span className="text-base font-semibold tabular-nums text-gray-900 dark:text-gray-50">
             {value}
           </span>
-          {deltas}
+          {deltaNode}
         </div>
       </div>
       {sparkData.length > 1 && (
@@ -121,7 +123,7 @@ function KpiTextItem({
           index="periodo"
           categories={["valor"]}
           colors={[sparkColor]}
-          className="h-8 w-20 shrink-0"
+          className="h-8 w-16 shrink-0"
         />
       )}
     </div>
@@ -131,25 +133,22 @@ function KpiTextItem({
 //
 // Item com mini donut (KPI "Volume / UA")
 //
-// Substitui o sparkline por um DonutChart compacto clicavel. Hover exibe
-// tooltip com nome + valor da UA. Click numa fatia aplica filtro global
-// daquela UA.
-//
 
 type UaDonutDatum = { name: string; uaId: string; amount: number }
 
 function KpiUaDonut({
   label,
+  tooltip,
   data,
   valueTotal,
   onUaClick,
 }: {
   label: string
+  tooltip: string
   data: UaDonutDatum[]
   valueTotal: number
   onUaClick?: (uaId: string) => void
 }) {
-  // Encontra UA lider (maior) para display textual
   const lider = React.useMemo(() => {
     if (data.length === 0) return null
     const top = [...data].sort((a, b) => b.amount - a.amount)[0]
@@ -158,10 +157,11 @@ function KpiUaDonut({
   }, [data, valueTotal])
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2">
       <div className="flex flex-col gap-0.5">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        <span className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
           {label}
+          <InfoTooltip content={tooltip} className="size-3.5" />
         </span>
         {lider ? (
           <div className="flex items-baseline gap-2">
@@ -186,14 +186,13 @@ function KpiUaDonut({
           value="amount"
           colors={["slate", "sky", "teal", "emerald", "amber", "rose"]}
           valueFormatter={(v) => moedaCompacta.format(v)}
-          className="size-14 shrink-0"
+          className="size-12 shrink-0"
           showTooltip
           onValueChange={(e) => {
             if (!e) {
               onUaClick?.("")
               return
             }
-            // `categoryClicked` vem com o name; precisamos do uaId para filtrar.
             const clicked = data.find((d) => d.name === e.categoryClicked)
             if (clicked && onUaClick) onUaClick(clicked.uaId)
           }}
@@ -230,14 +229,14 @@ export function VolumeKpisInline({
     return (
       <div
         className={cx(
-          "flex flex-wrap items-center gap-x-8 gap-y-3 border-b border-gray-200 pb-3 dark:border-gray-800",
+          "flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-gray-200 pb-3 dark:border-gray-800",
           className,
         )}
       >
-        {[0, 1, 2, 3, 4, 5].map((i) => (
+        {[0, 1, 2, 3, 4].map((i) => (
           <div
             key={i}
-            className="h-10 w-36 animate-pulse rounded bg-gray-100 dark:bg-gray-900"
+            className="h-10 w-32 animate-pulse rounded bg-gray-100 dark:bg-gray-900"
           />
         ))}
       </div>
@@ -250,86 +249,58 @@ export function VolumeKpisInline({
     amount: u.valor,
   }))
 
+  const cmp = resumo.comparacao_label_pt
+
+  // Nome amigavel do produto lider com fallback para sigla caso o ETL
+  // ainda nao tenha populado `wh_dim_produto`.
+  const produtoLiderLabel =
+    resumo.produto_lider_nome ?? resumo.produto_lider_sigla
+
   return (
     <div
       className={cx(
-        "flex flex-wrap items-center gap-x-8 gap-y-3 border-b border-gray-200 pb-3 dark:border-gray-800",
+        "flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-gray-200 pb-3 dark:border-gray-800",
         className,
       )}
     >
       <KpiTextItem
         label="Volume"
+        tooltip={`Volume bruto das operações efetivadas no período. Delta ${cmp}.`}
         value={moedaCompacta.format(resumo.volume_total)}
-        deltas={
-          <>
-            <DeltaBadge value={resumo.volume_mom_pct} />
-            <span className="text-[10px] text-gray-400">MoM</span>
-            {resumo.volume_yoy_pct !== null && (
-              <>
-                <DeltaBadge value={resumo.volume_yoy_pct} />
-                <span className="text-[10px] text-gray-400">YoY</span>
-              </>
-            )}
-          </>
-        }
+        deltaNode={<DeltaBadge value={resumo.volume_delta_pct} />}
         spark={resumo.volume_sparkline_12m}
-        deltaValue={resumo.volume_mom_pct}
+        deltaValue={resumo.volume_delta_pct}
       />
 
       <KpiTextItem
         label="Ticket médio / Op."
+        tooltip={`Volume bruto dividido pelo nº de operações. Delta ${cmp}.`}
         value={moedaCompacta.format(resumo.ticket_medio)}
-        deltas={
-          <>
-            <DeltaBadge value={resumo.ticket_mom_pct} />
-            <span className="text-[10px] text-gray-400">MoM</span>
-          </>
-        }
+        deltaNode={<DeltaBadge value={resumo.ticket_delta_pct} />}
         spark={resumo.ticket_sparkline_12m}
-        deltaValue={resumo.ticket_mom_pct}
+        deltaValue={resumo.ticket_delta_pct}
       />
 
       <KpiTextItem
         label="Ticket médio / Tít."
+        tooltip={`Volume bruto dividido pela soma da quantidade de títulos. Delta ${cmp}.`}
         value={moedaCompacta.format(resumo.ticket_medio_titulo)}
-        deltas={
-          <>
-            <DeltaBadge value={resumo.ticket_medio_titulo_mom_pct} />
-            <span className="text-[10px] text-gray-400">MoM</span>
-          </>
-        }
+        deltaNode={<DeltaBadge value={resumo.ticket_medio_titulo_delta_pct} />}
         spark={resumo.ticket_medio_titulo_sparkline_12m}
-        deltaValue={resumo.ticket_medio_titulo_mom_pct}
-      />
-
-      <KpiTextItem
-        label="Nº operações"
-        value={numero.format(resumo.n_operacoes)}
-        deltas={
-          <>
-            <DeltaBadge value={resumo.n_operacoes_mom_pct} />
-            <span className="text-[10px] text-gray-400">MoM</span>
-          </>
-        }
-        spark={resumo.n_operacoes_sparkline_12m}
-        deltaValue={resumo.n_operacoes_mom_pct}
+        deltaValue={resumo.ticket_medio_titulo_delta_pct}
       />
 
       <KpiTextItem
         label="Produto líder"
+        tooltip={`Produto com maior participação no volume. Delta em pontos percentuais ${cmp}.`}
         value={
           <span className="flex items-baseline gap-1.5">
-            <span className="text-sm font-semibold">
-              {resumo.produto_lider_sigla}
-            </span>
+            <span className="text-sm font-semibold">{produtoLiderLabel}</span>
             <span>{resumo.produto_lider_pct.toFixed(1)}%</span>
           </span>
         }
-        deltas={
-          <>
-            <DeltaBadge value={resumo.produto_lider_delta_pp} format={pp1} />
-            <span className="text-[10px] text-gray-400">vs anterior</span>
-          </>
+        deltaNode={
+          <DeltaBadge value={resumo.produto_lider_delta_pp} format={pp1} />
         }
         spark={resumo.produto_lider_sparkline_12m}
         deltaValue={resumo.produto_lider_delta_pp}
@@ -337,6 +308,7 @@ export function VolumeKpisInline({
 
       <KpiUaDonut
         label="Volume / UA"
+        tooltip="Distribuição do volume por Unidade Administrativa no período. Clique numa fatia para aplicar como filtro global."
         data={uaDonutData}
         valueTotal={volumeTotal ?? resumo.volume_total}
         onUaClick={onUaClick}

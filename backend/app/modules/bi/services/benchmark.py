@@ -46,8 +46,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.bi.schemas.benchmark import (
+    AdminLinha,
+    BenchmarkAdmins,
+    BenchmarkCondom,
     BenchmarkEvolucao,
     BenchmarkResumo,
+    CondomPonto,
     FundoRow,
     FundosLista,
     PDDDistribuicao,
@@ -115,6 +119,77 @@ async def _latest_competencia(db: AsyncSession) -> date | None:
     if row is None or row.c is None:
         return None
     return row.c
+
+
+# Default do range quando o usuario nao informa — ultimos 12 meses a partir da
+# ultima competencia disponivel. Mantem o mesmo default do preset frontend `12m`.
+_DEFAULT_RANGE_MESES = 12
+
+
+def _norm_first_of_month(d: date) -> date:
+    """Garante que a data cai no primeiro dia do mes (competencia = month floor)."""
+    return date(d.year, d.month, 1)
+
+
+def _sub_months(d: date, months: int) -> date:
+    total = d.year * 12 + (d.month - 1) - months
+    y, m = divmod(total, 12)
+    return date(y, m + 1, 1)
+
+
+async def _resolve_range(
+    db: AsyncSession,
+    periodo_inicio: date | None,
+    periodo_fim: date | None,
+) -> tuple[date, date] | None:
+    """Resolve o range (inicio, fim) em competencias mensais.
+
+    - `periodo_fim` ausente → ultima competencia disponivel.
+    - `periodo_inicio` ausente → 12 meses antes de `periodo_fim`.
+    - Inicio sempre <= fim. Ambos sao normalizados para o primeiro dia do mes.
+
+    Retorna None quando o banco nao tem dado (sem competencia).
+    """
+    fim = periodo_fim or await _latest_competencia(db)
+    if fim is None:
+        return None
+    fim = _norm_first_of_month(fim)
+    inicio = (
+        _norm_first_of_month(periodo_inicio)
+        if periodo_inicio
+        else _sub_months(fim, _DEFAULT_RANGE_MESES - 1)
+    )
+    if inicio > fim:
+        inicio = fim
+    return inicio, fim
+
+
+def _build_benchmark_filter_sql(
+    tipo_fundo: list[str] | None,
+    incluir_exclusivos: bool,
+    table_alias: str = "i",
+) -> tuple[str, dict[str, Any]]:
+    """Monta o fragmento `AND ...` de filtros comuns do benchmark.
+
+    - `tipo_fundo`: valores de `tab_i.tp_fundo_classe` — ex.: ['Fundo'], ['Classe'].
+    - `incluir_exclusivos=False` (default) filtra `fundo_exclusivo != 'S'`.
+
+    Retorna (sql_fragment, params). O fragment comeca com ` AND` quando ha
+    clausulas; string vazia quando nao ha filtro adicional.
+    """
+    fragments: list[str] = []
+    params: dict[str, Any] = {}
+    a = table_alias
+    if tipo_fundo:
+        fragments.append(f"AND {a}.tp_fundo_classe = ANY(:bm_tipo_fundo)")
+        params["bm_tipo_fundo"] = list(tipo_fundo)
+    if not incluir_exclusivos:
+        # Exclui fundo_exclusivo = 'S'. Inclui 'N' e NULL (defensivo — CVM as
+        # vezes publica nulo para fundos antigos).
+        fragments.append(
+            f"AND ({a}.fundo_exclusivo IS NULL OR {a}.fundo_exclusivo <> 'S')"
+        )
+    return (" " + " ".join(fragments) if fragments else ""), params
 
 
 async def _build_provenance(
@@ -396,48 +471,56 @@ async def get_pdd(
 
 
 async def get_evolucao(
-    db: AsyncSession, meses: int = 24
+    db: AsyncSession,
+    periodo_inicio: date | None = None,
+    periodo_fim: date | None = None,
+    tipo_fundo: list[str] | None = None,
+    incluir_exclusivos: bool = False,
 ) -> tuple[BenchmarkEvolucao, Provenance]:
-    """L3 Evolucao -- series temporais do mercado nos ultimos N meses.
+    """L3 Evolucao -- series temporais do mercado dentro do range mensal.
 
     - num_fundos = DISTINCT CNPJ_FUNDO_CLASSE em tab_i por competencia
     - pl_total = SUM(tab_iv_a_vl_pl)
     - pl_mediano = PERCENTILE_CONT(0.5) do PL
+
+    Filtros aplicados em `tab_i` (tipo_fundo + fundo_exclusivo). `pl` vem de
+    `tab_iv` via LEFT JOIN e herda o filtro naturalmente pela chave composta.
     """
+    rng = await _resolve_range(db, periodo_inicio, periodo_fim)
+    if rng is None:
+        return (
+            BenchmarkEvolucao(pl_mediano=[], pl_total=[], num_fundos=[]),
+            await _build_provenance(db, None),
+        )
+    inicio, fim = rng
+
+    filter_sql, filter_params = _build_benchmark_filter_sql(
+        tipo_fundo, incluir_exclusivos, table_alias="i"
+    )
+
     # `periodo` retorna como DATE (primeiro dia da competencia) porque o
     # schema `Point.periodo` e typed `date`. O Pydantic serializa pra
     # 'YYYY-MM-DD' no JSON, e o frontend formata pra 'YYYY-MM' na UI.
     rows = (
         await db.execute(
             text(
-                """
-                WITH ultimas AS (
-                    SELECT DISTINCT competencia
-                    FROM cvm_remote.tab_i
-                    ORDER BY competencia DESC
-                    LIMIT :meses
-                ),
-                pl AS (
-                    SELECT competencia, cnpj_fundo_classe, tab_iv_a_vl_pl
-                    FROM cvm_remote.tab_iv
-                    WHERE competencia IN (SELECT competencia FROM ultimas)
-                )
+                f"""
                 SELECT
                     i.competencia                                         AS periodo,
                     COUNT(DISTINCT i.cnpj_fundo_classe)                   AS num_fundos,
-                    COALESCE(SUM(p.tab_iv_a_vl_pl), 0)                    AS pl_total,
-                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY p.tab_iv_a_vl_pl)
-                        FILTER (WHERE p.tab_iv_a_vl_pl IS NOT NULL)       AS pl_mediano
+                    COALESCE(SUM(iv.tab_iv_a_vl_pl), 0)                   AS pl_total,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY iv.tab_iv_a_vl_pl)
+                        FILTER (WHERE iv.tab_iv_a_vl_pl IS NOT NULL)      AS pl_mediano
                 FROM cvm_remote.tab_i i
-                JOIN ultimas u ON i.competencia = u.competencia
-                LEFT JOIN pl p
-                    ON p.competencia       = i.competencia
-                   AND p.cnpj_fundo_classe = i.cnpj_fundo_classe
+                LEFT JOIN cvm_remote.tab_iv iv
+                    ON iv.competencia       = i.competencia
+                   AND iv.cnpj_fundo_classe = i.cnpj_fundo_classe
+                WHERE i.competencia BETWEEN :inicio AND :fim{filter_sql}
                 GROUP BY i.competencia
                 ORDER BY i.competencia
                 """
             ),
-            {"meses": meses},
+            {"inicio": inicio, "fim": fim, **filter_params},
         )
     ).all()
 
@@ -451,6 +534,202 @@ async def get_evolucao(
         num_fundos=num_fundos,
     )
     return data, await _build_provenance(db, None)
+
+
+# ---------------------------------------------------------------------------
+# Mercado — Top administradoras
+# ---------------------------------------------------------------------------
+
+_TOP_ADMINS_LIMIT = 10
+
+
+async def get_admins(
+    db: AsyncSession,
+    periodo_fim: date | None,
+    tipo_fundo: list[str] | None = None,
+    incluir_exclusivos: bool = False,
+) -> tuple[BenchmarkAdmins, Provenance]:
+    """Top 10 administradoras na competencia-fim do range.
+
+    Ranking snapshot: para garantir consistencia visual, o ranking e sempre
+    calculado na `periodo_fim` (ou ultima disponivel). Mudar o range so
+    desloca a competencia de referencia — mantem a pergunta 'quem e top hoje'.
+
+    Retorna 2 rankings: por quantidade de fundos e por PL sob administracao.
+    Ambos incluem as duas metricas nas linhas (para tooltip rico).
+    """
+    comp = (
+        _norm_first_of_month(periodo_fim)
+        if periodo_fim
+        else await _latest_competencia(db)
+    )
+    if comp is None:
+        return (
+            BenchmarkAdmins(
+                competencia="",
+                top_por_quantidade=[],
+                top_por_pl=[],
+                total_admins=0,
+            ),
+            await _build_provenance(db, None),
+        )
+
+    filter_sql, filter_params = _build_benchmark_filter_sql(
+        tipo_fundo, incluir_exclusivos, table_alias="i"
+    )
+
+    # Agrega por cnpj_admin para evitar colisao entre admins homonimos.
+    # `admin` pode variar em caixa/pontuacao entre meses — usamos MAX na
+    # competencia para display (so 1 linha por admin naquela competencia).
+    rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT
+                    i.cnpj_admin,
+                    MAX(i.admin)                                 AS admin,
+                    COUNT(DISTINCT i.cnpj_fundo_classe)          AS qtd,
+                    COALESCE(SUM(iv.tab_iv_a_vl_pl), 0)          AS pl
+                FROM cvm_remote.tab_i i
+                LEFT JOIN cvm_remote.tab_iv iv
+                    ON iv.competencia       = i.competencia
+                   AND iv.cnpj_fundo_classe = i.cnpj_fundo_classe
+                WHERE i.competencia = :comp
+                    AND i.admin IS NOT NULL{filter_sql}
+                GROUP BY i.cnpj_admin
+                """
+            ),
+            {"comp": comp, **filter_params},
+        )
+    ).all()
+
+    linhas = [
+        AdminLinha(
+            cnpj_admin=r.cnpj_admin,
+            admin=str(r.admin),
+            quantidade_fundos=int(r.qtd or 0),
+            pl_total=_as_float(r.pl),
+        )
+        for r in rows
+    ]
+
+    top_qtd = sorted(linhas, key=lambda x: x.quantidade_fundos, reverse=True)[
+        :_TOP_ADMINS_LIMIT
+    ]
+    top_pl = sorted(linhas, key=lambda x: x.pl_total, reverse=True)[:_TOP_ADMINS_LIMIT]
+
+    data = BenchmarkAdmins(
+        competencia=comp.strftime("%Y-%m"),
+        top_por_quantidade=top_qtd,
+        top_por_pl=top_pl,
+        total_admins=len(linhas),
+    )
+    return data, await _build_provenance(db, comp)
+
+
+# ---------------------------------------------------------------------------
+# Mercado — Condominio (Aberto vs Fechado)
+# ---------------------------------------------------------------------------
+
+
+async def get_condom(
+    db: AsyncSession,
+    periodo_inicio: date | None = None,
+    periodo_fim: date | None = None,
+    tipo_fundo: list[str] | None = None,
+    incluir_exclusivos: bool = False,
+) -> tuple[BenchmarkCondom, Provenance]:
+    """Distribuicao Aberto vs Fechado — snapshot na fim + serie mensal.
+
+    Filtra `condom IN ('ABERTO','FECHADO')` — fundos em liquidacao publicados
+    como 'NA'/'0' sao ignorados (nao contam como aberto nem fechado).
+    """
+    rng = await _resolve_range(db, periodo_inicio, periodo_fim)
+    if rng is None:
+        return (
+            BenchmarkCondom(
+                competencia="",
+                aberto_qtd=0,
+                fechado_qtd=0,
+                aberto_pct=0.0,
+                fechado_pct=0.0,
+                evolucao=[],
+            ),
+            await _build_provenance(db, None),
+        )
+    inicio, fim = rng
+
+    filter_sql, filter_params = _build_benchmark_filter_sql(
+        tipo_fundo, incluir_exclusivos, table_alias="i"
+    )
+
+    rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT
+                    i.competencia                                              AS periodo,
+                    COUNT(DISTINCT i.cnpj_fundo_classe) FILTER (
+                        WHERE UPPER(i.condom) = 'ABERTO'
+                    )                                                          AS aberto_qtd,
+                    COUNT(DISTINCT i.cnpj_fundo_classe) FILTER (
+                        WHERE UPPER(i.condom) = 'FECHADO'
+                    )                                                          AS fechado_qtd
+                FROM cvm_remote.tab_i i
+                WHERE i.competencia BETWEEN :inicio AND :fim{filter_sql}
+                GROUP BY i.competencia
+                ORDER BY i.competencia
+                """
+            ),
+            {"inicio": inicio, "fim": fim, **filter_params},
+        )
+    ).all()
+
+    evolucao: list[CondomPonto] = []
+    for r in rows:
+        a = int(r.aberto_qtd or 0)
+        f = int(r.fechado_qtd or 0)
+        total = a + f
+        a_pct = (a / total * 100) if total > 0 else 0.0
+        f_pct = (f / total * 100) if total > 0 else 0.0
+        evolucao.append(
+            CondomPonto(
+                periodo=r.periodo,
+                aberto_qtd=a,
+                fechado_qtd=f,
+                aberto_pct=a_pct,
+                fechado_pct=f_pct,
+            )
+        )
+
+    # Snapshot na competencia-fim. Se nao tiver linha para a fim exata (rng
+    # de 1 mes vazio), cai na ultima da serie.
+    snapshot = next(
+        (p for p in reversed(evolucao) if p.periodo == fim),
+        evolucao[-1] if evolucao else None,
+    )
+    if snapshot is None:
+        return (
+            BenchmarkCondom(
+                competencia=fim.strftime("%Y-%m"),
+                aberto_qtd=0,
+                fechado_qtd=0,
+                aberto_pct=0.0,
+                fechado_pct=0.0,
+                evolucao=[],
+            ),
+            await _build_provenance(db, fim),
+        )
+
+    data = BenchmarkCondom(
+        competencia=snapshot.periodo.strftime("%Y-%m"),
+        aberto_qtd=snapshot.aberto_qtd,
+        fechado_qtd=snapshot.fechado_qtd,
+        aberto_pct=snapshot.aberto_pct,
+        fechado_pct=snapshot.fechado_pct,
+        evolucao=evolucao,
+    )
+    return data, await _build_provenance(db, snapshot.periodo)
 
 
 async def get_fundos(

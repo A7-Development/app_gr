@@ -21,7 +21,6 @@ import { DonutChart } from "@/components/charts/DonutChart"
 import { biOperacoes, type BIFilters, type BIResponse } from "@/lib/api-client"
 import { useBiFilters } from "@/lib/hooks/useBiFilters"
 import { BiFiltersBar } from "@/components/bi/BiFiltersBar"
-import { BiTakeaway } from "@/components/bi/BiTakeaway"
 import { ProvenanceFooter } from "@/components/bi/ProvenanceFooter"
 // L3 Volume — reformulacao com layout storytelling (KPIs inline + chart
 // principal + painel lateral de indicadores).
@@ -130,11 +129,6 @@ export default function OperacoesPage() {
             Copiar link
           </Button>
         }
-      />
-
-      <BiTakeaway
-        text={resumoQuery.data?.data.takeaway_pt ?? null}
-        loading={resumoQuery.isLoading}
       />
 
       {/* L3 tabs — CLAUDE.md 11.6: L3 sempre TabNavigation, nunca sub-sub-item de sidebar. */}

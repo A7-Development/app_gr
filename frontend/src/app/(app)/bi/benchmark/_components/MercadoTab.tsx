@@ -5,42 +5,56 @@ import { useQuery } from "@tanstack/react-query"
 import { AreaChart } from "@/components/charts/AreaChart"
 import { BarChart } from "@/components/charts/BarChart"
 import { BarList } from "@/components/charts/BarList"
-import { KpiHero, KpiSecondary } from "@/components/bi/KpiGrid"
+import { DonutChart } from "@/components/charts/DonutChart"
 import { biBenchmark } from "@/lib/api-client"
 
-import { labelCompetencia, moedaCompacta, numero, percent1 } from "./formatters"
+import { labelCompetencia, moedaCompacta, numero } from "./formatters"
+import { BenchmarkFiltersBar } from "./BenchmarkFiltersBar"
 import { ChartCard } from "./ChartCard"
+import { useBenchmarkFilters } from "../_hooks/useBenchmarkFilters"
 
 //
-// MercadoTab — visao macro do setor FIDC com dados reais CVM (postgres_fdw).
-// Consome /bi/benchmark/resumo + /pdd + /evolucao. Storytelling top-down:
-// KPIs do mercado -> distribuicao -> evolucao. Loading = placeholders vazios.
+// MercadoTab — visao macro do setor FIDC com dados CVM publicos.
+//
+// Charts:
+//  1. PL total do mercado (area) + Fundos reportando (bar) — evolucao
+//  2. PL mediano do mercado (area) — evolucao
+//  3. Top 10 Administradoras por quantidade (barlist) e por PL (barlist)
+//  4. Aberto vs Fechado — snapshot (donut) + evolucao mensal (stacked %)
+//
+// Filtros: BenchmarkFiltersBar (PeriodoPresets + MonthRangePicker +
+// tipo_fundo FilterPill + incluir_exclusivos Switch).
 //
 
-const MESES_EVOLUCAO = 24
+/** Converte 'YYYY-MM' em label extenso 'abril/2026' (para headline do donut). */
+function fmtYmLong(ym: string): string {
+  const [y, m] = ym.split("-").map(Number)
+  return new Date(y, m - 1, 1).toLocaleString("pt-BR", {
+    month: "long",
+    year: "numeric",
+  })
+}
 
 export function MercadoTab() {
-  const resumo = useQuery({
-    queryKey: ["bi", "benchmark", "resumo"],
-    queryFn: () => biBenchmark.resumo(),
-    staleTime: 60_000,
-  })
-  const pdd = useQuery({
-    queryKey: ["bi", "benchmark", "pdd"],
-    queryFn: () => biBenchmark.pdd(),
-    staleTime: 60_000,
-  })
+  const { filters } = useBenchmarkFilters()
+
   const evolucao = useQuery({
-    queryKey: ["bi", "benchmark", "evolucao", MESES_EVOLUCAO],
-    queryFn: () => biBenchmark.evolucao({ meses: MESES_EVOLUCAO }),
+    queryKey: ["bi", "benchmark", "evolucao", filters],
+    queryFn: () => biBenchmark.evolucao(filters),
     staleTime: 60_000,
   })
 
-  const totalFundosKpi = resumo.data?.data.total_fundos
-  const plTotalKpi = resumo.data?.data.pl_total
-  const pddMediana = resumo.data?.data.pdd_mediana
-  const inadMediana = resumo.data?.data.inadimplencia_mediana
-  const cobMediana = resumo.data?.data.cobertura_mediana
+  const admins = useQuery({
+    queryKey: ["bi", "benchmark", "admins", filters],
+    queryFn: () => biBenchmark.admins(filters),
+    staleTime: 60_000,
+  })
+
+  const condom = useQuery({
+    queryKey: ["bi", "benchmark", "condom", filters],
+    queryFn: () => biBenchmark.condom(filters),
+    staleTime: 60_000,
+  })
 
   const plChart = (evolucao.data?.data.pl_total ?? []).map((p) => ({
     periodo: labelCompetencia(p.periodo),
@@ -54,68 +68,44 @@ export function MercadoTab() {
     periodo: labelCompetencia(p.periodo),
     "PL mediano": p.valor,
   }))
-  const plMedianoAtual = evolucao.data?.data.pl_mediano.at(-1)?.valor ?? 0
 
-  const hist = (pdd.data?.data.histograma ?? []).map((c) => ({
-    bucket: c.categoria,
-    "Qtd. fundos": c.valor,
+  // Top 10 admins por quantidade e por PL — formato BarList.
+  const adminsData = admins.data?.data
+  const topQtdBars = (adminsData?.top_por_quantidade ?? []).map((a) => ({
+    key: a.cnpj_admin ?? a.admin,
+    name: a.admin,
+    value: a.quantidade_fundos,
   }))
-  const top = (pdd.data?.data.top_fundos ?? []).map((c) => ({
-    name: c.categoria,
-    value: c.valor,
+  const topPlBars = (adminsData?.top_por_pl ?? []).map((a) => ({
+    key: a.cnpj_admin ?? a.admin,
+    name: a.admin,
+    value: a.pl_total,
+  }))
+
+  // Aberto vs Fechado — snapshot (donut) e serie mensal (stacked 100%).
+  const condomData = condom.data?.data
+  const donutData = condomData
+    ? [
+        { categoria: "Aberto", qtd: condomData.aberto_qtd },
+        { categoria: "Fechado", qtd: condomData.fechado_qtd },
+      ]
+    : []
+  const condomTotal = condomData
+    ? condomData.aberto_qtd + condomData.fechado_qtd
+    : 0
+  const condomSerie = (condomData?.evolucao ?? []).map((p) => ({
+    periodo: labelCompetencia(p.periodo),
+    Aberto: p.aberto_qtd,
+    Fechado: p.fechado_qtd,
   }))
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4">
-        <KpiHero
-          kpis={[
-            {
-              label: totalFundosKpi?.label ?? "Fundos reportando",
-              valor: totalFundosKpi?.valor ?? 0,
-              unidade: totalFundosKpi?.unidade ?? "un",
-              detalhe: totalFundosKpi?.detalhe ?? null,
-            },
-            {
-              label: plTotalKpi?.label ?? "PL total do mercado",
-              valor: plTotalKpi?.valor ?? 0,
-              unidade: plTotalKpi?.unidade ?? "BRL",
-              detalhe: plTotalKpi?.detalhe ?? null,
-            },
-            {
-              label: "PL mediano",
-              valor: plMedianoAtual,
-              unidade: "BRL",
-              detalhe: "defensivo contra outliers",
-            },
-          ]}
-        />
-        <KpiSecondary
-          kpis={[
-            {
-              label: inadMediana?.label ?? "Inadimplencia mediana",
-              valor: inadMediana?.valor ?? 0,
-              unidade: inadMediana?.unidade ?? "%",
-              detalhe: inadMediana?.detalhe ?? null,
-            },
-            {
-              label: cobMediana?.label ?? "Cobertura PDD mediana",
-              valor: cobMediana?.valor ?? 0,
-              unidade: cobMediana?.unidade ?? "%",
-              detalhe: cobMediana?.detalhe ?? null,
-            },
-            {
-              label: pddMediana?.label ?? "PDD mediana",
-              valor: pddMediana?.valor ?? 0,
-              unidade: pddMediana?.unidade ?? "%",
-              detalhe: pddMediana?.detalhe ?? null,
-            },
-          ]}
-        />
-      </div>
+      <BenchmarkFiltersBar fimMercado={adminsData?.competencia} />
 
+      {/* Linha 1 — PL total (wide) + Fundos reportando */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <ChartCard title="PL total do mercado (24m)" className="lg:col-span-2">
+        <ChartCard title="PL total do mercado" className="lg:col-span-2">
           <AreaChart
             data={plChart}
             index="periodo"
@@ -137,23 +127,8 @@ export function MercadoTab() {
         </ChartCard>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ChartCard title="Distribuicao de %PDD no mercado">
-          <BarChart
-            data={hist}
-            index="bucket"
-            categories={["Qtd. fundos"]}
-            valueFormatter={(v) => numero.format(v)}
-            className="h-72"
-            showLegend={false}
-          />
-        </ChartCard>
-        <ChartCard title="Top 10 fundos por %PDD">
-          <BarList data={top} valueFormatter={(v) => percent1(v)} />
-        </ChartCard>
-      </div>
-
-      <ChartCard title="PL mediano do mercado (24m)">
+      {/* Linha 2 — PL mediano */}
+      <ChartCard title="PL mediano do mercado">
         <AreaChart
           data={plMedianoChart}
           index="periodo"
@@ -163,6 +138,101 @@ export function MercadoTab() {
           showLegend={false}
         />
       </ChartCard>
+
+      {/* Linha 3 — Top 10 admins (qtd + PL) */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <ChartCard
+          title="Top 10 administradoras por quantidade de fundos"
+          info={
+            adminsData?.competencia
+              ? `Snapshot em ${fmtYmLong(adminsData.competencia)}. ${
+                  adminsData.total_admins
+                } administradoras distintas no mercado.`
+              : undefined
+          }
+        >
+          <BarList
+            data={topQtdBars}
+            valueFormatter={(v) => numero.format(v)}
+            className="h-72 overflow-y-auto"
+          />
+        </ChartCard>
+        <ChartCard
+          title="Top 10 administradoras por PL sob administracao"
+          info={
+            adminsData?.competencia
+              ? `Snapshot em ${fmtYmLong(adminsData.competencia)}.`
+              : undefined
+          }
+        >
+          <BarList
+            data={topPlBars}
+            valueFormatter={(v) => moedaCompacta.format(v)}
+            className="h-72 overflow-y-auto"
+          />
+        </ChartCard>
+      </div>
+
+      {/* Linha 4 — Aberto vs Fechado: snapshot + evolucao */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <ChartCard
+          title="Aberto vs Fechado — snapshot"
+          info={
+            condomData?.competencia
+              ? `Distribuicao em ${fmtYmLong(
+                  condomData.competencia,
+                )}. Fundos com condominio fora de (ABERTO, FECHADO) sao ignorados.`
+              : undefined
+          }
+        >
+          <div className="flex flex-col items-center gap-2 py-4">
+            <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              {condomData?.competencia
+                ? fmtYmLong(condomData.competencia)
+                : "—"}
+            </span>
+            <DonutChart
+              data={donutData}
+              category="categoria"
+              value="qtd"
+              valueFormatter={(v) => numero.format(v)}
+              showLabel
+              label={numero.format(condomTotal)}
+              colors={["emerald", "slate"]}
+              className="h-52"
+            />
+            <div className="flex gap-4 text-xs text-gray-600 dark:text-gray-400">
+              <span>
+                <span className="font-semibold text-gray-900 dark:text-gray-50">
+                  {condomData ? `${condomData.aberto_pct.toFixed(1)}%` : "—"}
+                </span>{" "}
+                Aberto
+              </span>
+              <span>
+                <span className="font-semibold text-gray-900 dark:text-gray-50">
+                  {condomData ? `${condomData.fechado_pct.toFixed(1)}%` : "—"}
+                </span>{" "}
+                Fechado
+              </span>
+            </div>
+          </div>
+        </ChartCard>
+        <ChartCard
+          title="Aberto vs Fechado — evolucao (%)"
+          className="lg:col-span-2"
+          info="Proporcao mensal entre fundos abertos e fechados no universo publicado pela CVM."
+        >
+          <BarChart
+            data={condomSerie}
+            index="periodo"
+            categories={["Aberto", "Fechado"]}
+            type="percent"
+            colors={["emerald", "slate"]}
+            valueFormatter={(v) => numero.format(v)}
+            className="h-72"
+          />
+        </ChartCard>
+      </div>
     </div>
   )
 }

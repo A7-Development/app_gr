@@ -10,6 +10,8 @@ permanece a mesma (require_module BI.READ) - esconde o modulo pra quem nao tem
 licenca/permissao, mas os numeros sao de mercado.
 """
 
+from datetime import date
+
 from pydantic import BaseModel
 
 from app.modules.bi.schemas.common import KPI, CategoryValue, Point
@@ -61,3 +63,57 @@ class FundosLista(BaseModel):
     competencia: str  # 'YYYY-MM'
     fundos: list[FundoRow]
     total: int  # total de fundos na competencia (pode ser > len(fundos) se paginado)
+
+
+# ---------------------------------------------------------------------------
+# Mercado — Top administradoras + distribuicao condominio (Aberto/Fechado)
+# ---------------------------------------------------------------------------
+
+
+class AdminLinha(BaseModel):
+    """Linha de ranking de administradora (top N)."""
+
+    cnpj_admin: str | None
+    admin: str
+    quantidade_fundos: int
+    pl_total: float
+
+
+class BenchmarkAdmins(BaseModel):
+    """Top 10 administradoras por quantidade de fundos e por PL sob administracao.
+
+    `competencia` e a ultima do range selecionado — ranking sempre snapshot.
+    """
+
+    competencia: str  # 'YYYY-MM'
+    top_por_quantidade: list[AdminLinha]
+    top_por_pl: list[AdminLinha]
+    total_admins: int  # total distinto de administradoras na competencia
+
+
+class CondomPonto(BaseModel):
+    """Ponto mensal da serie Aberto vs Fechado."""
+
+    periodo: date
+    aberto_qtd: int
+    fechado_qtd: int
+    aberto_pct: float  # 0..100, relativo a (aberto+fechado) daquela competencia
+    fechado_pct: float
+
+
+class BenchmarkCondom(BaseModel):
+    """Distribuicao Aberto/Fechado — snapshot + serie mensal no range.
+
+    `aberto_qtd`/`fechado_qtd` e `aberto_pct`/`fechado_pct` sao sempre da
+    `competencia` (ultima do range). `evolucao` e mensal dentro do range.
+
+    Fundos com `condom` fora de `('ABERTO','FECHADO')` sao ignorados (CVM
+    ocasionalmente publica `'NA'` / `'0'` para fundos em liquidacao).
+    """
+
+    competencia: str  # 'YYYY-MM' — snapshot
+    aberto_qtd: int
+    fechado_qtd: int
+    aberto_pct: float
+    fechado_pct: float
+    evolucao: list[CondomPonto]

@@ -21,6 +21,8 @@ from app.core.database import get_db
 from app.core.enums import Module, Permission
 from app.core.module_guard import require_module
 from app.modules.bi.schemas.benchmark import (
+    BenchmarkAdmins,
+    BenchmarkCondom,
     BenchmarkEvolucao,
     BenchmarkResumo,
     FundosLista,
@@ -59,6 +61,68 @@ def _parse_competencia(
     return date(int(year), int(month), 1)
 
 
+def _parse_periodo_yyyymm(
+    value: str | None, field_name: str
+) -> date | None:
+    if value is None:
+        return None
+    year, month = value.split("-")
+    return date(int(year), int(month), 1)
+
+
+class BenchmarkRangeFilter:
+    """Dependency que encapsula filtros de range + tipo_fundo + exclusivos.
+
+    Ausencia de `periodo_inicio`/`periodo_fim` deixa o service decidir o
+    fallback (ultimos 12m da ultima competencia disponivel).
+    """
+
+    def __init__(
+        self,
+        periodo_inicio: Annotated[
+            str | None,
+            Query(
+                alias="periodo_inicio",
+                description="Inicio do range (YYYY-MM). Primeiro dia do mes.",
+                pattern=r"^\d{4}-\d{2}$",
+            ),
+        ] = None,
+        periodo_fim: Annotated[
+            str | None,
+            Query(
+                alias="periodo_fim",
+                description="Fim do range (YYYY-MM). Primeiro dia do mes.",
+                pattern=r"^\d{4}-\d{2}$",
+            ),
+        ] = None,
+        tipo_fundo: Annotated[
+            list[str] | None,
+            Query(
+                alias="tipo_fundo",
+                description=(
+                    "Filtro opcional por `tab_i.tp_fundo_classe` — ex.: "
+                    "'Fundo', 'Classe'. Repita o parametro para incluir "
+                    "mais de um valor."
+                ),
+            ),
+        ] = None,
+        incluir_exclusivos: Annotated[
+            bool,
+            Query(
+                alias="incluir_exclusivos",
+                description=(
+                    "Quando false (default), exclui fundos exclusivos "
+                    "(`fundo_exclusivo='S'`) do universo agregado."
+                ),
+            ),
+        ] = False,
+    ) -> None:
+        self.periodo_inicio = _parse_periodo_yyyymm(periodo_inicio, "periodo_inicio")
+        self.periodo_fim = _parse_periodo_yyyymm(periodo_fim, "periodo_fim")
+        self.tipo_fundo = tipo_fundo or None
+        self.incluir_exclusivos = incluir_exclusivos
+
+
 @router.get("/resumo", response_model=BIResponse[BenchmarkResumo])
 async def resumo(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -84,14 +148,64 @@ async def pdd(
 @router.get("/evolucao", response_model=BIResponse[BenchmarkEvolucao])
 async def evolucao(
     db: Annotated[AsyncSession, Depends(get_db)],
-    meses: Annotated[
-        int,
-        Query(ge=3, le=120, description="Quantidade de competencias mais recentes"),
-    ] = 24,
+    flt: Annotated[BenchmarkRangeFilter, Depends(BenchmarkRangeFilter)],
     _: None = _Guard,
 ) -> BIResponse[BenchmarkEvolucao]:
-    """L3 Evolucao - series temporais agregadas do mercado."""
-    data, prov = await svc.get_evolucao(db, meses=meses)
+    """L3 Evolucao - series temporais agregadas do mercado.
+
+    Aceita `periodo_inicio`/`periodo_fim` (YYYY-MM). Default: ultimos 12m da
+    ultima competencia disponivel. Filtros `tipo_fundo` e `incluir_exclusivos`
+    sao aplicados na agregacao.
+    """
+    data, prov = await svc.get_evolucao(
+        db,
+        periodo_inicio=flt.periodo_inicio,
+        periodo_fim=flt.periodo_fim,
+        tipo_fundo=flt.tipo_fundo,
+        incluir_exclusivos=flt.incluir_exclusivos,
+    )
+    return BIResponse(data=data, provenance=prov)
+
+
+@router.get("/admins", response_model=BIResponse[BenchmarkAdmins])
+async def admins(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    flt: Annotated[BenchmarkRangeFilter, Depends(BenchmarkRangeFilter)],
+    _: None = _Guard,
+) -> BIResponse[BenchmarkAdmins]:
+    """Top 10 administradoras por quantidade de fundos e por PL sob administracao.
+
+    Ranking e sempre snapshot na competencia-fim do range (ou ultima
+    disponivel). `periodo_inicio` e ignorado — mantem o range apenas por
+    consistencia de UI.
+    """
+    data, prov = await svc.get_admins(
+        db,
+        periodo_fim=flt.periodo_fim,
+        tipo_fundo=flt.tipo_fundo,
+        incluir_exclusivos=flt.incluir_exclusivos,
+    )
+    return BIResponse(data=data, provenance=prov)
+
+
+@router.get("/condom", response_model=BIResponse[BenchmarkCondom])
+async def condom(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    flt: Annotated[BenchmarkRangeFilter, Depends(BenchmarkRangeFilter)],
+    _: None = _Guard,
+) -> BIResponse[BenchmarkCondom]:
+    """Distribuicao Aberto/Fechado do mercado — snapshot + serie mensal.
+
+    Fundos com `condom` fora de ('ABERTO','FECHADO') sao ignorados. O
+    snapshot e tirado da `periodo_fim` (ultima competencia do range).
+    """
+    data, prov = await svc.get_condom(
+        db,
+        periodo_inicio=flt.periodo_inicio,
+        periodo_fim=flt.periodo_fim,
+        tipo_fundo=flt.tipo_fundo,
+        incluir_exclusivos=flt.incluir_exclusivos,
+    )
     return BIResponse(data=data, provenance=prov)
 
 

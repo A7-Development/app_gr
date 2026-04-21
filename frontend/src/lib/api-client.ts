@@ -231,30 +231,29 @@ export type TopCedenteItem = {
 export type VolumeResumoDeltas = {
   // Volume
   volume_total: number
-  volume_mom_pct: number | null
-  volume_yoy_pct: number | null
+  /** Delta vs periodo imediatamente anterior (mesmo tamanho do filtro). */
+  volume_delta_pct: number | null
   volume_sparkline_12m: Point[]
 
   // Ticket por operacao (volume / n_operacoes)
   ticket_medio: number
-  ticket_mom_pct: number | null
+  ticket_delta_pct: number | null
   ticket_sparkline_12m: Point[]
 
   // Ticket por titulo (volume / soma_quantidade_titulos)
   ticket_medio_titulo: number
-  ticket_medio_titulo_mom_pct: number | null
+  ticket_medio_titulo_delta_pct: number | null
   ticket_medio_titulo_sparkline_12m: Point[]
 
-  // Operacoes
-  n_operacoes: number
-  n_operacoes_mom_pct: number | null
-  n_operacoes_sparkline_12m: Point[]
-
-  // Produto lider
+  // Produto lider — sigla e ID estavel; `nome` e o label amigavel.
   produto_lider_sigla: string
+  produto_lider_nome: string | null
   produto_lider_pct: number
   produto_lider_delta_pp: number | null
   produto_lider_sparkline_12m: Point[]
+
+  /** Label PT-BR com o range comparado (ex.: "vs mai/24 a abr/25"). */
+  comparacao_label_pt: string
 }
 
 export type SeriesEVolume = {
@@ -380,6 +379,40 @@ export type BenchmarkEvolucao = {
   num_fundos: Point[]
 }
 
+export type AdminLinha = {
+  cnpj_admin: string | null
+  admin: string
+  quantidade_fundos: number
+  pl_total: number
+}
+
+export type BenchmarkAdmins = {
+  /** 'YYYY-MM' — snapshot na competencia-fim do range. */
+  competencia: string
+  top_por_quantidade: AdminLinha[]
+  top_por_pl: AdminLinha[]
+  total_admins: number
+}
+
+export type CondomPonto = {
+  /** 'YYYY-MM-DD' (primeiro dia do mes). */
+  periodo: string
+  aberto_qtd: number
+  fechado_qtd: number
+  aberto_pct: number
+  fechado_pct: number
+}
+
+export type BenchmarkCondom = {
+  /** 'YYYY-MM' — snapshot na competencia-fim do range. */
+  competencia: string
+  aberto_qtd: number
+  fechado_qtd: number
+  aberto_pct: number
+  fechado_pct: number
+  evolucao: CondomPonto[]
+}
+
 export type FundoRow = {
   cnpj_fundo: string
   denominacao_social: string | null
@@ -401,10 +434,25 @@ export type FundosLista = {
 export type BenchmarkFilters = {
   /** 'YYYY-MM' — quando omitido, backend usa ultima competencia disponivel. */
   competencia?: string
-  /** Quantidade de competencias mais recentes (L3 Evolucao). */
+  /** Quantidade de competencias mais recentes (L3 Evolucao — legado). */
   meses?: number
   /** Busca por nome ou CNPJ (ILIKE parcial) — usado na L3 Fundos. */
   busca?: string
+}
+
+/**
+ * Filtros para endpoints com range mensal (evolucao, admins, condom).
+ * Ausencia de `periodoInicio`/`periodoFim` = backend decide (ultimos 12m).
+ */
+export type BenchmarkRangeFilters = {
+  /** 'YYYY-MM' — inicio do range. */
+  periodoInicio?: string
+  /** 'YYYY-MM' — fim do range. */
+  periodoFim?: string
+  /** Valores de `tab_i.tp_fundo_classe` — ex.: ['Fundo'], ['Classe']. */
+  tipoFundo?: string[]
+  /** Default false — quando true, inclui `fundo_exclusivo='S'`. */
+  incluirExclusivos?: boolean
 }
 
 function benchmarkQS(f: BenchmarkFilters): string {
@@ -412,6 +460,18 @@ function benchmarkQS(f: BenchmarkFilters): string {
   if (f.competencia) p.set("competencia", f.competencia)
   if (f.meses !== undefined) p.set("meses", String(f.meses))
   if (f.busca && f.busca.trim()) p.set("busca", f.busca.trim())
+  const s = p.toString()
+  return s ? `?${s}` : ""
+}
+
+function benchmarkRangeQS(f: BenchmarkRangeFilters): string {
+  const p = new URLSearchParams()
+  if (f.periodoInicio) p.set("periodo_inicio", f.periodoInicio)
+  if (f.periodoFim) p.set("periodo_fim", f.periodoFim)
+  if (f.tipoFundo && f.tipoFundo.length > 0) {
+    for (const t of f.tipoFundo) p.append("tipo_fundo", t)
+  }
+  if (f.incluirExclusivos) p.set("incluir_exclusivos", "true")
   const s = p.toString()
   return s ? `?${s}` : ""
 }
@@ -507,9 +567,17 @@ export const biBenchmark = {
     apiClient.get<BIResponse<PDDDistribuicao>>(
       `/bi/benchmark/pdd${benchmarkQS(f)}`,
     ),
-  evolucao: (f: BenchmarkFilters = {}) =>
+  evolucao: (f: BenchmarkRangeFilters = {}) =>
     apiClient.get<BIResponse<BenchmarkEvolucao>>(
-      `/bi/benchmark/evolucao${benchmarkQS(f)}`,
+      `/bi/benchmark/evolucao${benchmarkRangeQS(f)}`,
+    ),
+  admins: (f: BenchmarkRangeFilters = {}) =>
+    apiClient.get<BIResponse<BenchmarkAdmins>>(
+      `/bi/benchmark/admins${benchmarkRangeQS(f)}`,
+    ),
+  condom: (f: BenchmarkRangeFilters = {}) =>
+    apiClient.get<BIResponse<BenchmarkCondom>>(
+      `/bi/benchmark/condom${benchmarkRangeQS(f)}`,
     ),
   fundos: (f: BenchmarkFilters = {}) =>
     apiClient.get<BIResponse<FundosLista>>(

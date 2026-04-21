@@ -263,12 +263,11 @@ export function VolumeEvolucaoChart({
     return max > 0 ? max * 1.12 : undefined
   }, [rows, categories, fmt])
 
-  // Resumo inline (valor total + delta) — conta historia no header do card.
+  // Volume total exibido inline no header (delta vive no KPI inline acima).
   const headerValor =
     data?.resumo?.volume_total !== undefined
       ? moedaCompacta.format(data.resumo.volume_total)
       : null
-  const headerDelta = data?.resumo?.volume_mom_pct ?? null
 
   return (
     <div
@@ -277,47 +276,19 @@ export function VolumeEvolucaoChart({
         className,
       )}
     >
-      {/* Header */}
-      <div className="flex flex-col gap-3">
-        {/* Linha 1: titulo + resumo + menu opcoes */}
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex flex-col gap-0.5">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
-              Evolução do volume
-            </h3>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400">
-              Volume operado ao longo do período filtrado
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {headerValor && (
-              <div className="flex items-baseline gap-2">
-                <span className="text-lg font-semibold tabular-nums text-gray-900 dark:text-gray-50">
-                  {headerValor}
-                </span>
-                {headerDelta !== null && (
-                  <span
-                    className={cx(
-                      "text-xs font-medium tabular-nums",
-                      headerDelta > 0
-                        ? "text-emerald-600 dark:text-emerald-500"
-                        : headerDelta < 0
-                          ? "text-rose-600 dark:text-rose-500"
-                          : "text-gray-500",
-                    )}
-                  >
-                    {headerDelta > 0 ? "+" : ""}
-                    {headerDelta.toFixed(1)}%
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
+      {/* Header — titulo+subtitulo, controles e resumo numa unica linha
+          (compacta vertical pra ceder espaco ao chart). */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-col gap-0.5">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
+            Evolução do volume
+          </h3>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">
+            Volume operado ao longo do período filtrado
+          </p>
         </div>
 
-        {/* Linha 2: controles frequentes inline */}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <ControlSegmented
             label="Ver por"
             value={by}
@@ -339,6 +310,11 @@ export function VolumeEvolucaoChart({
               { value: "percent", label: "% empilhado" },
             ]}
           />
+          {headerValor && (
+            <span className="pl-1 text-lg font-semibold tabular-nums text-gray-900 dark:text-gray-50">
+              {headerValor}
+            </span>
+          )}
         </div>
       </div>
 
