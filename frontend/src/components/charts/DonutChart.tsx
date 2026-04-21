@@ -73,7 +73,7 @@ const ChartTooltip = ({
       <div
         className={cx(
           // base
-          "rounded-md border text-sm shadow-md",
+          "rounded border text-sm shadow-md",
           // border color
           "border-gray-200 dark:border-gray-800",
           // background color

@@ -1,0 +1,1 @@
+"""Definicoes de jobs agendados."""

@@ -38,7 +38,7 @@ export function Logo({ variant = "icon", className }: LogoProps) {
       className={cx(
         "relative flex shrink-0 items-center justify-center overflow-hidden",
         isIcon
-          ? "size-9 rounded-md bg-white ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-800"
+          ? "size-9 rounded bg-white ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-800"
           : "h-14 w-auto",
         className,
       )}

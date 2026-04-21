@@ -19,6 +19,7 @@ import { Divider } from "@/components/tremor/Divider"
 import { Input } from "@/components/tremor/Input"
 import { Label } from "@/components/tremor/Label"
 import { Logo } from "@/components/app/Logo"
+import { ApiError, login } from "@/lib/api-client"
 
 //
 // Schema de validacao
@@ -54,15 +55,16 @@ export default function LoginPage() {
   async function onSubmit(values: LoginFormValues) {
     setSubmitting(true)
     try {
-      // TODO: integrar com backend real (POST /api/v1/auth/login).
-      // Por ora apenas simula a operacao.
-      console.log("[login] submit", values)
-      await new Promise((resolve) => setTimeout(resolve, 600))
+      await login(values.email, values.password)
       toast.success("Login efetuado com sucesso")
       router.push("/")
     } catch (error) {
       console.error("[login] error", error)
-      toast.error("Nao foi possivel fazer login. Tente novamente.")
+      if (error instanceof ApiError && error.status === 401) {
+        toast.error("Email ou senha invalidos")
+      } else {
+        toast.error("Nao foi possivel fazer login. Tente novamente.")
+      }
     } finally {
       setSubmitting(false)
     }
@@ -70,7 +72,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:p-8">
+      <div className="rounded border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:p-8">
         <div className="flex flex-col items-center gap-4 text-center">
           <Logo variant="full" />
           <div className="flex flex-col gap-1">

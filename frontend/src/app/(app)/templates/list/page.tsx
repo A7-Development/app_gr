@@ -114,7 +114,7 @@ export default function ListTemplatePage() {
 
       <ContratosFilters />
 
-      <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
+      <div className="rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
         <TableRoot>
           <Table>
             <TableHead>

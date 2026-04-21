@@ -1,0 +1,25 @@
+[Unit]
+Description=GR API (FastAPI + Uvicorn)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=app_gr
+Group=app_gr
+WorkingDirectory=/opt/app_gr/backend
+EnvironmentFile=/opt/app_gr/backend/.env
+ExecStart=/opt/app_gr/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 2
+Restart=on-failure
+RestartSec=3
+StandardOutput=append:/var/log/gr-api/stdout.log
+StandardError=append:/var/log/gr-api/stderr.log
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/log/gr-api /opt/app_gr/backend
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

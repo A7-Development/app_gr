@@ -21,7 +21,7 @@ export function ErrorState({
     <div
       role="alert"
       className={cx(
-        "flex flex-col items-center justify-center gap-3 rounded-lg border border-red-200 bg-red-50 px-6 py-12 text-center",
+        "flex flex-col items-center justify-center gap-3 rounded border border-red-200 bg-red-50 px-6 py-12 text-center",
         "dark:border-red-900/40 dark:bg-red-950/30",
         className,
       )}

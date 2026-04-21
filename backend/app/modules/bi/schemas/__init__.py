@@ -1,0 +1,1 @@
+"""BI module — Pydantic schemas."""

@@ -24,7 +24,7 @@ export function EmptyState({
     <div
       role="status"
       className={cx(
-        "flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-white px-6 py-12 text-center",
+        "flex flex-col items-center justify-center gap-3 rounded border border-dashed border-gray-200 bg-white px-6 py-12 text-center",
         "dark:border-gray-800 dark:bg-gray-950",
         className,
       )}

@@ -32,7 +32,7 @@ const variantStyles: Record<TabsListVariant, string> = {
   ),
   solid: cx(
     // base
-    "inline-flex items-center justify-center rounded-md p-1",
+    "inline-flex items-center justify-center rounded p-1",
     // background color
     "bg-gray-100 dark:bg-gray-900",
   ),
@@ -67,7 +67,7 @@ function getVariantStyles(tabVariant: TabsListVariant) {
         "hover:text-gray-700 dark:hover:text-gray-400",
         // border hover
         "hover:border-gray-300 dark:hover:border-gray-400",
-        // selected
+        // selected (A7 dual palette: blue = atencao)
         "data-[state=active]:border-blue-500 data-[state=active]:text-blue-500",
         "dark:data-[state=active]:border-blue-500 dark:data-[state=active]:text-blue-500",
         // disabled

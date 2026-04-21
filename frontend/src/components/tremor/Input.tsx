@@ -6,7 +6,7 @@ import { cx, focusInput, focusRing, hasErrorInput } from "@/lib/utils"
 
 const inputStyles = tv({
   base: [
-    "relative block w-full appearance-none rounded-md border px-2.5 py-2 shadow-xs outline-hidden transition sm:text-sm",
+    "relative block w-full appearance-none rounded border px-2.5 py-2 shadow-xs outline-hidden transition sm:text-sm",
     "border-gray-300 dark:border-gray-800",
     "text-gray-900 dark:text-gray-50",
     "placeholder-gray-400 dark:placeholder-gray-500",

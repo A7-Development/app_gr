@@ -68,7 +68,7 @@ function StepOrigem() {
         </Select>
       </div>
 
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-6 py-10 text-center dark:border-gray-700 dark:bg-gray-900">
+      <div className="flex flex-col items-center justify-center gap-3 rounded border border-dashed border-gray-300 bg-gray-50 px-6 py-10 text-center dark:border-gray-700 dark:bg-gray-900">
         <div className="flex size-10 items-center justify-center rounded-full bg-white text-gray-700 dark:bg-gray-950 dark:text-gray-300">
           <RiUploadCloud2Line className="size-5" aria-hidden />
         </div>

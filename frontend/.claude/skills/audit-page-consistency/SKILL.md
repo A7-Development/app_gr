@@ -95,6 +95,24 @@ Herdar tokens Tremor ao inves de valores magicos.
 
 `: any` ou `<any>` fora de `src/components/tremor/` e `src/components/charts/`. Primitivos verbatim podem ter `any` com eslint-disable, mas codigo de dominio nao.
 
+### 11. Navegacao — hierarquia de 3 niveis (erro)
+
+Ver CLAUDE.md secao 11.6. Sistema tem exatamente 3 niveis de navegacao: L1 (modulo/sidebar grupo), L2 (secao/sidebar sub-item), L3 (abertura/TabNavigation na pagina).
+
+Violacoes a detectar:
+
+- **Sidebar com aninhamento de 3+ niveis.** Procurar em `src/components/app/AppSidebar.tsx` (ou equivalente) por `SidebarMenuSub` aninhado dentro de outro `SidebarMenuSub`. Se houver, e violacao.
+- **Tabs criadas fora de `TabNavigation` do Tremor.** Em qualquer `src/app/(app)/**/page.tsx`, `<Tabs>` ou `<TabsList>` de `@radix-ui/react-tabs` direto e proibido — deve ser `TabNavigation` do Tremor em todos os casos de navegacao de L3.
+- **Ausencia de `L3` via URL.** Pagina que mostra tabs mas tem estado somente em React state (sem search param) — viola a regra "URL como fonte unica da verdade". Procurar `useState<string>` combinado com tabs ou switch case de conteudo — suspeito de nao-deep-link.
+- **Sidebar sem suporte a active state via `pathname`.** `SidebarSubLink` com `isActive={false}` hard-coded — deveria ser `isActive={pathname === item.href}` ou similar.
+
+### 12. Module guard no backend (erro grave)
+
+Verificar `src/app/(app)/<modulo>/` — toda rota de modulo no frontend pressupoe que o backend tenha `require_module(Module.X, Permission.READ)` no endpoint correspondente. Auditoria so e relevante no frontend para:
+
+- Confirmar que `/auth/me` e consultado para filtrar sidebar (componente `AppSidebar` deveria ler `enabled_modules` e `user_permissions`).
+- Confirmar que paginas nao assumem permissao — erro de 403/402 do backend tem que exibir estado amigavel (nao crash).
+
 ## Saida esperada
 
 Relatorio estruturado em markdown:

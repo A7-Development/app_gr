@@ -9,6 +9,7 @@ import {
   CartesianGrid,
   Dot,
   Label,
+  LabelList,
   Line,
   Legend as RechartsLegend,
   LineChart as RechartsLineChart,
@@ -393,7 +394,7 @@ const ChartTooltip = ({
       <div
         className={cx(
           // base
-          "rounded-md border text-sm shadow-md",
+          "rounded border text-sm shadow-md",
           // border color
           "border-gray-200 dark:border-gray-800",
           // background color
@@ -498,6 +499,13 @@ interface LineChartProps extends React.HTMLAttributes<HTMLDivElement> {
   legendPosition?: "left" | "center" | "right"
   tooltipCallback?: (tooltipCallbackContent: TooltipProps) => void
   customTooltip?: React.ComponentType<TooltipProps>
+  /**
+   * Se true, renderiza `<LabelList>` em cima de cada ponto da linha com o
+   * valor formatado. Usa `labelFormatter` se fornecido; senao cai em
+   * `valueFormatter`.
+   */
+  showLabels?: boolean
+  labelFormatter?: (value: number) => string
 }
 
 const LineChart = React.forwardRef<HTMLDivElement, LineChartProps>(
@@ -530,6 +538,8 @@ const LineChart = React.forwardRef<HTMLDivElement, LineChartProps>(
       legendPosition = "right",
       tooltipCallback,
       customTooltip,
+      showLabels = false,
+      labelFormatter,
       ...other
     } = props
     const CustomTooltip = customTooltip
@@ -869,7 +879,19 @@ const LineChart = React.forwardRef<HTMLDivElement, LineChartProps>(
                 strokeLinecap="round"
                 isAnimationActive={false}
                 connectNulls={connectNulls}
-              />
+              >
+                {showLabels && (
+                  <LabelList
+                    dataKey={category}
+                    position="top"
+                    offset={10}
+                    formatter={(value: number) =>
+                      (labelFormatter ?? valueFormatter)(value)
+                    }
+                    className="fill-gray-500 text-[10px] tabular-nums dark:fill-gray-500"
+                  />
+                )}
+              </Line>
             ))}
             {/* hidden lines to increase clickable target area */}
             {onValueChange

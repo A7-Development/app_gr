@@ -57,8 +57,14 @@ desktop.ini
 # ---------- Vercel / deploy ----------
 .vercel
 
-# ---------- Certificados ----------
+# ---------- Certificados / Secrets ----------
 *.pem
+senha.txt
+senha*.txt
+*.key
+*.p12
+*.pfx
 
 # ---------- Claude Code ----------
 .claude/settings.local.json
+.mcp.json

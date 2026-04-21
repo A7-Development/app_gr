@@ -70,7 +70,7 @@ export default function TemplatesIndexPage() {
           const Icon = template.icon
           return (
             <Card key={template.href} className="flex flex-col gap-4">
-              <div className="flex size-10 items-center justify-center rounded-md bg-gray-100 text-gray-700 dark:bg-gray-900 dark:text-gray-300">
+              <div className="flex size-10 items-center justify-center rounded bg-gray-100 text-gray-700 dark:bg-gray-900 dark:text-gray-300">
                 <Icon className="size-5" aria-hidden />
               </div>
               <div className="flex flex-col gap-1">

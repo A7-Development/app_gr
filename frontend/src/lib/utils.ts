@@ -7,7 +7,8 @@ export function cx(...args: ClassValue[]) {
   return twMerge(clsx(...args))
 }
 
-// Tremor focusInput [v0.0.1]
+// Tremor focusInput [v0.0.1] — A7 Credit: focus/atencao usa blue (paleta dual)
+// Ver CLAUDE.md §4: blue = atencao/selecao (chama olhos); slate = dados (chart).
 
 export const focusInput = [
   // base

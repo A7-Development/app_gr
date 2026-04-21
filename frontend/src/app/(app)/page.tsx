@@ -3,7 +3,7 @@ import { RiCheckboxCircleFill } from "@remixicon/react"
 export default function Home() {
   return (
     <div className="flex min-h-[calc(100svh-4rem)] flex-col items-center justify-center gap-6 p-8">
-      <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-6 py-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <div className="flex items-center gap-3 rounded border border-gray-200 bg-white px-6 py-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <RiCheckboxCircleFill
           className="size-6 text-emerald-500"
           aria-hidden="true"

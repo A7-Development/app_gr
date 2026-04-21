@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { GeistSans } from "geist/font/sans"
 import { ThemeProvider } from "next-themes"
 import { Toaster } from "sonner"
+import { QueryProvider } from "@/lib/QueryProvider"
 import "./globals.css"
 
 export const metadata: Metadata = {
@@ -27,7 +28,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <QueryProvider>{children}</QueryProvider>
           <Toaster position="bottom-right" richColors closeButton />
         </ThemeProvider>
       </body>

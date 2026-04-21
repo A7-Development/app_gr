@@ -9,6 +9,7 @@ import {
   Bar,
   CartesianGrid,
   Label,
+  LabelList,
   BarChart as RechartsBarChart,
   Legend as RechartsLegend,
   ResponsiveContainer,
@@ -452,7 +453,7 @@ const ChartTooltip = ({
       <div
         className={cx(
           // base
-          "rounded-md border text-sm shadow-md",
+          "rounded border text-sm shadow-md",
           // border color
           "border-gray-200 dark:border-gray-800",
           // background color
@@ -545,6 +546,18 @@ interface BarChartProps extends React.HTMLAttributes<HTMLDivElement> {
   allowDecimals?: boolean
   onValueChange?: (value: BarChartEventProps) => void
   enableLegendSlider?: boolean
+  /**
+   * Exibe o valor de cada barra como rotulo sobre ela (data label).
+   * Default: false.
+   */
+  showLabels?: boolean
+  /**
+   * Formatter dedicado para o data label. Se omitido, usa `valueFormatter`.
+   * Util quando o label exibido sobre a barra tem formato diferente do
+   * tooltip / eixo Y (ex.: label em milhoes compactos, tooltip em valor
+   * absoluto com centavos).
+   */
+  labelFormatter?: (value: number) => string
   tickGap?: number
   barCategoryGap?: string | number
   xAxisLabel?: string
@@ -579,6 +592,8 @@ const BarChart = React.forwardRef<HTMLDivElement, BarChartProps>(
       className,
       onValueChange,
       enableLegendSlider = false,
+      showLabels = false,
+      labelFormatter,
       barCategoryGap,
       tickGap = 5,
       xAxisLabel,
@@ -871,7 +886,19 @@ const BarChart = React.forwardRef<HTMLDivElement, BarChartProps>(
                   renderShape(props, activeBar, activeLegend, layout)
                 }
                 onClick={onBarClick}
-              />
+              >
+                {showLabels && (
+                  <LabelList
+                    dataKey={category}
+                    position={layout === "vertical" ? "right" : "top"}
+                    formatter={(value: number) =>
+                      (labelFormatter ?? valueFormatter)(value)
+                    }
+                    offset={6}
+                    className="fill-gray-700 text-xs font-medium tabular-nums dark:fill-gray-300"
+                  />
+                )}
+              </Bar>
             ))}
           </RechartsBarChart>
         </ResponsiveContainer>

@@ -9,7 +9,7 @@ import { cx, focusRing } from "@/lib/utils"
 const buttonVariants = tv({
   base: [
     // base
-    "relative inline-flex items-center justify-center whitespace-nowrap rounded-md border px-3 py-2 text-center text-sm font-medium shadow-xs transition-all duration-100 ease-in-out",
+    "relative inline-flex items-center justify-center whitespace-nowrap rounded border px-3 py-2 text-center text-sm font-medium shadow-xs transition-all duration-100 ease-in-out",
     // disabled
     "disabled:pointer-events-none disabled:shadow-none",
     // focus
@@ -22,7 +22,7 @@ const buttonVariants = tv({
         "border-transparent",
         // text color
         "text-white dark:text-white",
-        // background color
+        // background color (A7 Credit dual palette: blue = atencao/CTA)
         "bg-blue-500 dark:bg-blue-500",
         // hover color
         "hover:bg-blue-600 dark:hover:bg-blue-600",

@@ -47,7 +47,7 @@ const Block = ({
           avoidCollisions
           className={cx(
             // base
-            "w-auto rounded-md px-2 py-1 text-sm shadow-md",
+            "w-auto rounded px-2 py-1 text-sm shadow-md",
             // text color
             "text-white dark:text-gray-900",
             // background color

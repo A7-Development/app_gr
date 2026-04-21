@@ -48,7 +48,7 @@ const DialogContent = React.forwardRef<
         <DialogPrimitives.Content
           ref={forwardedRef}
           className={cx(
-            "fixed left-1/2 top-1/2 z-50 w-[95vw] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-md border p-6 shadow-lg",
+            "fixed left-1/2 top-1/2 z-50 w-[95vw] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded border p-6 shadow-lg",
             "border-gray-200 dark:border-gray-900",
             "bg-white dark:bg-[#090E1A]",
             "data-[state=open]:animate-dialog-content-show",

@@ -166,7 +166,7 @@ export default function DashboardTemplatePage() {
       />
 
       {/* Filtros globais */}
-      <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-950 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-3 rounded border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-950 sm:flex-row sm:items-center">
         <div className="w-full sm:w-72">
           <DateRangePicker
             value={periodo}

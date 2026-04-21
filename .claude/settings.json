@@ -33,6 +33,11 @@
       "Bash(git ls-remote:*)",
       "Bash(git remote:*)",
       "Bash(git config --get *)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git fetch:*)",
       "Bash(mkdir:*)",
       "Bash(ls:*)",
       "Bash(pwd)",
@@ -57,7 +62,6 @@
       "mcp__Claude_Preview__preview_fill"
     ],
     "deny": [
-      "Bash(git push:*)",
       "Bash(git reset --hard:*)",
       "Bash(git clean -f:*)",
       "Bash(git checkout --:*)",
