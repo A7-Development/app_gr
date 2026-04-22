@@ -73,6 +73,7 @@ from app.modules.bi.schemas.fundo import (
     CarteiraPonto,
     CedenteLinha,
     CotistasPonto,
+    CotistasTipoPonto,
     DesempenhoGap,
     DesempenhoPonto,
     FichaFundo,
@@ -84,6 +85,7 @@ from app.modules.bi.schemas.fundo import (
     PLPonto,
     PLSubclassesPonto,
     PrazoMedioPonto,
+    RecompraPonto,
     RentAcumuladaPonto,
     RentPonto,
     SCRLinha,
@@ -772,11 +774,14 @@ async def get_fundos(
     JOIN tab_i + tab_iv + tab_v por (competencia, cnpj_fundo_classe).
     Calcula as derivacoes % inad inline.
 
-    `busca`: quando preenchido, filtra por ILIKE em `denom_social` OU
-    `cnpj_fundo_classe` (permite buscar por nome ou CNPJ). Em ambos os
-    casos aplicamos o mesmo LIMIT para manter o payload previsivel.
-    `total` continua refletindo o universo da competencia (sem o filtro)
-    para dar ao usuario a sensacao de "X de Y fundos no mercado".
+    `busca`: quando preenchido, e quebrado em tokens por whitespace e
+    cada token precisa dar match via ILIKE em `denom_social` OU
+    `cnpj_fundo_classe` (AND entre tokens, OR entre colunas). Isso
+    permite busca por fragmento ("exo"), por palavras fora de ordem
+    ("fidc exodus" acha "EXODUS FUNDO...FIDC") e tambem por CNPJ
+    parcial. O LIMIT e o mesmo; `total` continua refletindo o universo
+    da competencia (sem o filtro) para dar ao usuario a sensacao de
+    "X de Y fundos no mercado".
     """
     comp = competencia or await _latest_competencia(db)
     if comp is None:
@@ -797,15 +802,25 @@ async def get_fundos(
         )
     ).one()
 
-    # Trim + so trata como filtro se nao for string vazia.
+    # Trim + quebra em tokens; cada token vira um predicado ILIKE que
+    # casa com denom_social OU cnpj_fundo_classe. Tokens sao combinados
+    # via AND para que "fidc exodus" ache "EXODUS FIDC MULTISSETORIAL"
+    # mesmo fora de ordem.
     busca_trim = busca.strip() if busca else ""
     busca_filter = ""
     params: dict[str, Any] = {"comp": comp, "lim": FUNDOS_LIMIT}
     if busca_trim:
-        busca_filter = (
-            " AND (i.denom_social ILIKE :pat OR i.cnpj_fundo_classe ILIKE :pat)"
-        )
-        params["pat"] = f"%{busca_trim}%"
+        tokens = [t for t in busca_trim.split() if t]
+        if tokens:
+            clauses: list[str] = []
+            for idx, tok in enumerate(tokens):
+                key = f"pat{idx}"
+                clauses.append(
+                    f"(i.denom_social ILIKE :{key}"
+                    f" OR i.cnpj_fundo_classe ILIKE :{key})"
+                )
+                params[key] = f"%{tok}%"
+            busca_filter = " AND " + " AND ".join(clauses)
 
     rows = (
         await db.execute(
@@ -1428,13 +1443,30 @@ def _yyyymm(d: date) -> str:
     return d.strftime("%Y-%m")
 
 
+async def get_cvm_range(db: AsyncSession) -> tuple[date | None, date | None]:
+    """Min/max competencia globais no CVM (para o preset 'ALL' da UI)."""
+    row = (
+        await db.execute(
+            text("SELECT MIN(competencia) AS min_c, MAX(competencia) AS max_c FROM cvm_remote.competencias")
+        )
+    ).one()
+    return row.min_c, row.max_c
+
+
 async def get_fundo(
-    db: AsyncSession, cnpj: str, meses: int = 24
+    db: AsyncSession,
+    cnpj: str,
+    periodo_inicio: date | None = None,
+    periodo_fim: date | None = None,
 ) -> tuple[FichaFundo, Provenance]:
-    """Ficha completa do fundo: snapshot + series ~N meses.
+    """Ficha completa do fundo: snapshot + series dentro do periodo.
 
     `cnpj` digits-only (14). Converte para o formato mascarado da CVM
-    antes do SQL. `meses` controla o tamanho das series (3..120).
+    antes do SQL.
+
+    `periodo_inicio` / `periodo_fim` recortam as series. Se algum for None,
+    cai para o min/max disponivel do fundo em `cvm_remote.tab_i` -- o BETWEEN
+    naturalmente lida com datas fora do intervalo da CVM.
 
     Raises ValueError quando o fundo nao existe na base (rota converte em 404).
     """
@@ -1462,8 +1494,8 @@ async def get_fundo(
     if comp_atual is None or comp_primeira is None:
         raise ValueError(f"Fundo {cnpj} sem dados no CVM")
 
-    inicio = _sub_months(comp_atual, max(meses, 1) - 1)
-    fim = comp_atual
+    inicio = periodo_inicio if periodo_inicio is not None else comp_primeira
+    fim = periodo_fim if periodo_fim is not None else comp_atual
     params_range = {"cnpj": cnpj_fmt, "inicio": inicio, "fim": fim}
 
     # -----------------------------------------------------------------
@@ -1506,13 +1538,15 @@ async def get_fundo(
     )
 
     # -----------------------------------------------------------------
-    # 3) pl_serie -- tab_iv_a_vl_pl
+    # 3) pl_serie -- tab_iv_a_vl_pl (PL) + tab_iv_b_vl_pl_medio (PL medio 3m)
     # -----------------------------------------------------------------
     pl_rows = (
         await db.execute(
             text(
                 """
-                SELECT competencia, tab_iv_a_vl_pl AS pl
+                SELECT competencia,
+                       tab_iv_a_vl_pl       AS pl,
+                       tab_iv_b_vl_pl_medio AS pl_medio
                 FROM cvm_remote.tab_iv
                 WHERE cnpj_fundo_classe = :cnpj
                   AND competencia BETWEEN :inicio AND :fim
@@ -1522,7 +1556,14 @@ async def get_fundo(
             params_range,
         )
     ).all()
-    pl_serie = [PLPonto(competencia=r.competencia, pl=_as_float(r.pl)) for r in pl_rows]
+    pl_serie = [
+        PLPonto(
+            competencia=r.competencia,
+            pl=_as_float(r.pl),
+            pl_medio=_as_float(r.pl_medio) if r.pl_medio is not None else None,
+        )
+        for r in pl_rows
+    ]
     # Indice rapido pra cruzar na atraso_serie (pct_pl_total).
     pl_por_comp: dict[date, float] = {p.competencia: p.pl for p in pl_serie}
 
@@ -1844,6 +1885,42 @@ async def get_fundo(
     ]
 
     # -----------------------------------------------------------------
+    # 10b) cotistas_tipo_serie -- tab_x_1_1 (cotistas por TIPO de investidor)
+    # 16 tipos × {Senior, Subordinada}. NAO quebra por serie.
+    # -----------------------------------------------------------------
+    _COTST_TIPOS = (
+        "pf", "pj_nao_financ", "pj_financ", "banco", "invnr", "rpps",
+        "eapc", "efpc", "fii", "cota_fidc", "outro_fi", "clube",
+        "segur", "corretora_distrib", "capitaliz", "outro",
+    )
+    cotst_tipo_cols = ", ".join(
+        f"tab_x_nr_cotst_senior_{t} AS s_{t}, tab_x_nr_cotst_subord_{t} AS b_{t}"
+        for t in _COTST_TIPOS
+    )
+    cotst_tipo_rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT competencia, {cotst_tipo_cols}
+                FROM cvm_remote.tab_x_1_1
+                WHERE cnpj_fundo_classe = :cnpj
+                  AND competencia BETWEEN :inicio AND :fim
+                ORDER BY competencia
+                """
+            ),
+            params_range,
+        )
+    ).all()
+    cotistas_tipo_serie = [
+        CotistasTipoPonto(
+            competencia=r.competencia,
+            senior={t: int(getattr(r, f"s_{t}") or 0) for t in _COTST_TIPOS},
+            subord={t: int(getattr(r, f"b_{t}") or 0) for t in _COTST_TIPOS},
+        )
+        for r in cotst_tipo_rows
+    ]
+
+    # -----------------------------------------------------------------
     # 11) pl_subclasses_serie -- pivota tab_x_2 no Python (qt * vl)
     # -----------------------------------------------------------------
     plsub_rows = (
@@ -2032,6 +2109,42 @@ async def get_fundo(
     ]
 
     # -----------------------------------------------------------------
+    # 16b) recompra_serie -- Recompras de DC (Tabela VII.d)
+    # Volume mensal (vl + qt + valor contabil) + %PL (cruza com tab_iv.a).
+    # -----------------------------------------------------------------
+    recompra_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT competencia,
+                       tab_vii_d_1_qt_recompra       AS qt,
+                       tab_vii_d_2_vl_recompra       AS vl,
+                       tab_vii_d_3_vl_contab_recompra AS vl_contab
+                FROM cvm_remote.tab_vii
+                WHERE cnpj_fundo_classe = :cnpj
+                  AND competencia BETWEEN :inicio AND :fim
+                ORDER BY competencia
+                """
+            ),
+            params_range,
+        )
+    ).all()
+    recompra_serie: list[RecompraPonto] = []
+    for r in recompra_rows:
+        vl_rec = _as_float(r.vl)
+        pl_ref = pl_por_comp.get(r.competencia)
+        pct_pl = (vl_rec / pl_ref * 100) if pl_ref and pl_ref > 0 else None
+        recompra_serie.append(
+            RecompraPonto(
+                competencia=r.competencia,
+                qt_recompra=_as_float(r.qt),
+                vl_recompra=vl_rec,
+                vl_contab_recompra=_as_float(r.vl_contab),
+                pct_pl=pct_pl,
+            )
+        )
+
+    # -----------------------------------------------------------------
     # 17) scr_distribuicao -- tab_x (valores, nao %), competencia atual
     # -----------------------------------------------------------------
     scr_row = (
@@ -2116,12 +2229,14 @@ async def get_fundo(
         setores=setores,
         subclasses=subclasses,
         cotistas_serie=cotistas_serie,
+        cotistas_tipo_serie=cotistas_tipo_serie,
         pl_subclasses_serie=pl_subclasses_serie,
         rent_serie=rent_serie,
         rent_acumulada=rent_acumulada,
         desempenho_vs_meta=desempenho_vs_meta,
         liquidez_serie=liquidez_serie,
         fluxo_cotas=fluxo_cotas,
+        recompra_serie=recompra_serie,
         scr_distribuicao=scr_distribuicao,
         garantias=garantias,
         limitacoes=list(_LIMITACOES_FICHA),

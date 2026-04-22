@@ -51,6 +51,12 @@ export type CompactSeriesTableProps = {
    * Desligue (false) quando a tabela ja estiver dentro de um Card/ChartCard.
    */
   bordered?: boolean
+  /**
+   * "fill" (default) — tabela ocupa 100% do container, colunas expandem.
+   * "adaptive" — tabela cresce conforme numero de colunas (w-auto) respeitando
+   * largura fixa das colunas; excedendo o container, usa barra de rolagem.
+   */
+  widthMode?: "fill" | "adaptive"
 }
 
 const MESES_ABBR = [
@@ -85,7 +91,7 @@ function formatPeriod(iso: string, fmt: PeriodFormat): string {
 }
 
 function formatValue(v: number | null | undefined, fmt: RowFormat): string {
-  if (v === null || v === undefined || Number.isNaN(v)) return "—"
+  if (v === null || v === undefined || Number.isNaN(v) || v === 0) return "—"
   switch (fmt) {
     case "brl": {
       const abs = Math.abs(v)
@@ -216,6 +222,7 @@ export function CompactSeriesTable({
   footnote,
   className,
   bordered = true,
+  widthMode = "fill",
 }: CompactSeriesTableProps) {
   const d = DENSITY[density]
 
@@ -229,7 +236,9 @@ export function CompactSeriesTable({
       )}
     >
       <TableRoot className="max-h-[640px]">
-        <Table className="border-b-0">
+        <Table
+          className={cx("border-b-0", widthMode === "adaptive" && "w-auto")}
+        >
           <TableHead className="sticky top-0 z-10">
             <TableRow
               className={cx(
@@ -299,19 +308,27 @@ export function CompactSeriesTable({
                   >
                     {row.label}
                   </TableCell>
-                  {periods.map((p) => (
-                    <TableCell
-                      key={p}
-                      className={cx(
-                        "w-16 text-right tabular-nums",
-                        d.cell,
-                        d.font,
-                        emp.label,
-                      )}
-                    >
-                      {isHeaderRow ? "" : formatValue(row.values[p], fmt)}
-                    </TableCell>
-                  ))}
+                  {periods.map((p) => {
+                    const raw = row.values[p]
+                    const isNegative =
+                      typeof raw === "number" &&
+                      !Number.isNaN(raw) &&
+                      raw < 0
+                    return (
+                      <TableCell
+                        key={p}
+                        className={cx(
+                          "w-16 text-right tabular-nums",
+                          d.cell,
+                          d.font,
+                          emp.label,
+                          isNegative && "text-red-600 dark:text-red-500",
+                        )}
+                      >
+                        {isHeaderRow ? "" : formatValue(raw, fmt)}
+                      </TableCell>
+                    )
+                  })}
                 </TableRow>
               )
             })}

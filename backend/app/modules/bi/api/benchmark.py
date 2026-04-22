@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.enums import Module, Permission
 from app.core.module_guard import require_module
+from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.modules.bi.schemas.benchmark import (
     BenchmarkAdmins,
     BenchmarkCondom,
@@ -30,8 +31,10 @@ from app.modules.bi.schemas.benchmark import (
 )
 from app.modules.bi.schemas.benchmark_comparativo import ComparativoResponse
 from app.modules.bi.schemas.common import BIResponse
+from app.modules.bi.schemas.favoritos import FavoritosLista
 from app.modules.bi.schemas.fundo import FichaFundo
 from app.modules.bi.services import benchmark as svc
+from app.modules.bi.services import favoritos as fav_svc
 
 router = APIRouter(prefix="/benchmark", tags=["bi:benchmark"])
 
@@ -250,13 +253,21 @@ async def comparativo(
 async def fundo(
     db: Annotated[AsyncSession, Depends(get_db)],
     cnpj: str,
-    meses: Annotated[
-        int,
-        Query(ge=3, le=120, description="Meses das series (default 24)"),
-    ] = 24,
+    periodo_inicio: Annotated[
+        date | None,
+        Query(description="Data de inicio do recorte (YYYY-MM-DD). Default: min CVM do fundo."),
+    ] = None,
+    periodo_fim: Annotated[
+        date | None,
+        Query(description="Data de fim do recorte (YYYY-MM-DD). Default: max CVM do fundo."),
+    ] = None,
     _: None = _Guard,
 ) -> BIResponse[FichaFundo]:
-    """Ficha do fundo -- snapshot + series ~24m. Dados publicos CVM FIDC."""
+    """Ficha do fundo -- snapshot + series recortadas pelo periodo.
+
+    Quando `periodo_inicio`/`periodo_fim` sao omitidos, usa o intervalo
+    completo disponivel do fundo em `cvm_remote.tab_i`.
+    """
     digits = re.sub(r"\D", "", cnpj)
     if not _CNPJ_DIGITS_RE.match(digits):
         raise HTTPException(
@@ -264,10 +275,29 @@ async def fundo(
             detail=f"CNPJ invalido (14 digitos obrigatorios): {cnpj!r}",
         )
     try:
-        data, prov = await svc.get_fundo(db, digits, meses=meses)
+        data, prov = await svc.get_fundo(
+            db, digits, periodo_inicio=periodo_inicio, periodo_fim=periodo_fim
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     return BIResponse(data=data, provenance=prov)
+
+
+@router.get("/cvm-range")
+async def cvm_range(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = _Guard,
+) -> dict[str, str | None]:
+    """Retorna o intervalo global de competencias disponivel no CVM.
+
+    Usado pelo filtro de periodo (preset `ALL`). Le de `cvm_remote.competencias`
+    — taxonomicamente essa e a tabela-indice do ETL externo de CVM FIDC.
+    """
+    data_minima, data_maxima = await svc.get_cvm_range(db)
+    return {
+        "data_minima": data_minima.isoformat() if data_minima else None,
+        "data_maxima": data_maxima.isoformat() if data_maxima else None,
+    }
 
 
 @router.get("/fundos", response_model=BIResponse[FundosLista])
@@ -289,3 +319,58 @@ async def fundos(
     """L3 Fundos - top N fundos por PL na competencia (sem paginacao no MVP)."""
     data, prov = await svc.get_fundos(db, competencia, busca=busca)
     return BIResponse(data=data, provenance=prov)
+
+
+# ---------------------------------------------------------------------------
+# Favoritos do usuario (estado local ao gr_db, escopo tenant + user)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/favoritos", response_model=FavoritosLista)
+async def listar_favoritos(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = _Guard,
+) -> FavoritosLista:
+    """Lista fundos favoritados pelo usuario logado (ordenados por mais recentes)."""
+    return await fav_svc.listar_favoritos(
+        db, user_id=principal.user_id, tenant_id=principal.tenant_id
+    )
+
+
+@router.put("/favoritos/{cnpj}", status_code=status.HTTP_204_NO_CONTENT)
+async def adicionar_favorito(
+    cnpj: str,
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = _Guard,
+) -> None:
+    """Marca o fundo como favorito (idempotente). CNPJ digits-only (14 digitos)."""
+    digits = re.sub(r"\D", "", cnpj)
+    if not _CNPJ_DIGITS_RE.match(digits):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"CNPJ invalido (14 digitos obrigatorios): {cnpj!r}",
+        )
+    await fav_svc.adicionar_favorito(
+        db, user_id=principal.user_id, tenant_id=principal.tenant_id, cnpj=digits
+    )
+
+
+@router.delete("/favoritos/{cnpj}", status_code=status.HTTP_204_NO_CONTENT)
+async def remover_favorito(
+    cnpj: str,
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = _Guard,
+) -> None:
+    """Remove o fundo dos favoritos (idempotente)."""
+    digits = re.sub(r"\D", "", cnpj)
+    if not _CNPJ_DIGITS_RE.match(digits):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"CNPJ invalido (14 digitos obrigatorios): {cnpj!r}",
+        )
+    await fav_svc.remover_favorito(
+        db, user_id=principal.user_id, tenant_id=principal.tenant_id, cnpj=digits
+    )

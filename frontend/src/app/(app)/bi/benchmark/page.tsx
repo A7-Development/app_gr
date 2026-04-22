@@ -31,8 +31,8 @@ import {
 import { ProvenanceFooter } from "@/components/bi/ProvenanceFooter"
 
 import { ComparativoTab } from "./_components/ComparativoTab"
+import { FichaFiltersBar } from "./_components/FichaFiltersBar"
 import { FichaFundoTab } from "./_components/FichaFundoTab"
-import { FundoCombobox } from "./_components/FundoCombobox"
 import { ListaFundosTab } from "./_components/ListaFundosTab"
 import { MercadoTab } from "./_components/MercadoTab"
 import { SelecaoStickyBar } from "./_components/SelecaoStickyBar"
@@ -75,11 +75,7 @@ export default function BenchmarkPage() {
 
   return (
     <div className="flex flex-col gap-6 px-12 py-6 pb-28">
-      <PageHeader
-        title="BI · Benchmark"
-        info={PAGE_INFO}
-        actions={activeTab === "ficha" ? <FundoCombobox /> : null}
-      />
+      <PageHeader title="BI · Benchmark" info={PAGE_INFO} />
 
       <TabNavigation>
         {TABS.map((t) => (
@@ -92,6 +88,8 @@ export default function BenchmarkPage() {
           </TabNavigationLink>
         ))}
       </TabNavigation>
+
+      {activeTab === "ficha" && <FichaFiltersBar />}
 
       <TabContent tab={activeTab} />
 

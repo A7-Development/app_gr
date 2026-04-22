@@ -583,7 +583,11 @@ export type FundoIdentificacao = {
   competencia_primeira: string
 }
 
-export type FundoPLPonto = { competencia: string; pl: number }
+export type FundoPLPonto = {
+  competencia: string
+  pl: number
+  pl_medio: number | null
+}
 
 // Ativo (Tabela I) do Informe Mensal FIDC CVM.
 // Hierarquia: (I) Ativo = (I.1) Disp + (I.2) Carteira + (I.3) Deriv + (I.4) Outros.
@@ -651,6 +655,12 @@ export type FundoCotistasPonto = {
   por_serie: Record<string, number>
 }
 
+export type FundoCotistasTipoPonto = {
+  competencia: string
+  senior: Record<string, number>
+  subord: Record<string, number>
+}
+
 export type FundoPLSubclassesPonto = {
   competencia: string
   por_subclasse: Record<string, number>
@@ -701,6 +711,14 @@ export type FundoFluxoCotasPonto = {
   qt_cota: number
 }
 
+export type FundoRecompraPonto = {
+  competencia: string
+  qt_recompra: number
+  vl_recompra: number
+  vl_contab_recompra: number
+  pct_pl: number | null
+}
+
 export type FundoSCRLinha = { rating: string; valor: number; pct: number }
 
 export type FundoGarantias = { vl_garantia: number; pct_garantia: number }
@@ -715,15 +733,32 @@ export type FichaFundo = {
   setores: FundoSetorLinha[]
   subclasses: FundoSubclasseLinha[]
   cotistas_serie: FundoCotistasPonto[]
+  cotistas_tipo_serie: FundoCotistasTipoPonto[]
   pl_subclasses_serie: FundoPLSubclassesPonto[]
   rent_serie: FundoRentPonto[]
   rent_acumulada: FundoRentAcumuladaPonto[]
   desempenho_vs_meta: FundoDesempenhoPonto[]
   liquidez_serie: FundoLiquidezPonto[]
   fluxo_cotas: FundoFluxoCotasPonto[]
+  recompra_serie: FundoRecompraPonto[]
   scr_distribuicao: FundoSCRLinha[]
   garantias: FundoGarantias | null
   limitacoes: string[]
+}
+
+// Favoritos de fundo (por user, escopo tenant).
+// Backend retorna `FavoritosLista` direto (sem envelope BIResponse) — preferencia
+// pessoal nao tem proveniencia de dado canonico.
+
+export type FavoritoItem = {
+  cnpj: string
+  denom_social: string | null
+  created_at: string
+}
+
+export type FavoritosLista = {
+  favoritos: FavoritoItem[]
+  total: number
 }
 
 export const biBenchmark = {
@@ -755,12 +790,29 @@ export const biBenchmark = {
     apiClient.get<BIResponse<ComparativoResponse>>(
       `/bi/benchmark/comparativo${comparativoQS(a)}`,
     ),
-  fundo: (cnpj: string, meses = 24) => {
+  fundo: (
+    cnpj: string,
+    params: { periodoInicio?: string; periodoFim?: string } = {},
+  ) => {
     const digits = cnpj.replace(/\D/g, "")
+    const qs = new URLSearchParams()
+    if (params.periodoInicio) qs.set("periodo_inicio", params.periodoInicio)
+    if (params.periodoFim) qs.set("periodo_fim", params.periodoFim)
+    const suffix = qs.toString() ? `?${qs.toString()}` : ""
     return apiClient.get<BIResponse<FichaFundo>>(
-      `/bi/benchmark/fundo/${digits}?meses=${meses}`,
+      `/bi/benchmark/fundo/${digits}${suffix}`,
     )
   },
+  cvmRange: () =>
+    apiClient.get<{ data_minima: string | null; data_maxima: string | null }>(
+      "/bi/benchmark/cvm-range",
+    ),
+  favoritos: () =>
+    apiClient.get<FavoritosLista>("/bi/benchmark/favoritos"),
+  adicionarFavorito: (cnpj: string) =>
+    apiClient.put<void>(`/bi/benchmark/favoritos/${cnpj.replace(/\D/g, "")}`),
+  removerFavorito: (cnpj: string) =>
+    apiClient.delete<void>(`/bi/benchmark/favoritos/${cnpj.replace(/\D/g, "")}`),
 }
 
 //

@@ -17,12 +17,14 @@ Cada secao do schema mapeia uma abertura da ficha na UI:
 - setores             -> composicao setorial (tab_ii)
 - subclasses          -> series/subclasses ativas (sr/sub)
 - cotistas_serie      -> evolucao de cotistas por subclasse
+- cotistas_tipo_serie -> cotistas por tipo de investidor (Senior/Sub)
 - pl_subclasses_serie -> evolucao de PL por subclasse (qt * vl)
 - rent_serie          -> rentabilidade mensal por subclasse
 - rent_acumulada      -> acumulada (derivada do rent_serie)
 - desempenho_vs_meta  -> esperado vs real por subclasse
 - liquidez_serie      -> caixa + recebiveis escalonados
 - fluxo_cotas         -> captacao/resgate/amortizacao
+- recompra_serie      -> recompras de DC (VII.d) + %PL
 - scr_distribuicao    -> rating SCR (AA..H)
 - garantias           -> valor e % de garantia em DC
 - limitacoes          -> lista PT-BR do que NAO e reproduzivel por CVM
@@ -52,6 +54,7 @@ class Identificacao(BaseModel):
 class PLPonto(BaseModel):
     competencia: date
     pl: float
+    pl_medio: float | None = None  # tab_iv_b_vl_pl_medio (media 3m)
 
 
 class CarteiraPonto(BaseModel):
@@ -196,6 +199,30 @@ class FluxoCotasPonto(BaseModel):
     qt_cota: float
 
 
+class CotistasTipoPonto(BaseModel):
+    """Cotistas por TIPO de investidor (tab_x_1_1).
+
+    Quebra oficial CVM: Senior vs Subordinada (NAO por serie). Dentro de
+    cada uma, 16 tipos de investidor: pf, pj_nao_financ, pj_financ, banco,
+    invnr, rpps, eapc, efpc, fii, cota_fidc, outro_fi, clube, segur,
+    corretora_distrib, capitaliz, outro.
+    """
+
+    competencia: date
+    senior: dict[str, int]
+    subord: dict[str, int]
+
+
+class RecompraPonto(BaseModel):
+    """Recompras de DC no mes (Tabela VII.d do Informe Mensal FIDC)."""
+
+    competencia: date
+    qt_recompra: float        # tab_vii_d_1_qt_recompra
+    vl_recompra: float        # tab_vii_d_2_vl_recompra
+    vl_contab_recompra: float # tab_vii_d_3_vl_contab_recompra
+    pct_pl: float | None      # vl_recompra / tab_iv_a_vl_pl * 100
+
+
 class SCRLinha(BaseModel):
     rating: str
     valor: float
@@ -217,12 +244,14 @@ class FichaFundo(BaseModel):
     setores: list[SetorLinha]
     subclasses: list[SubclasseLinha]
     cotistas_serie: list[CotistasPonto]
+    cotistas_tipo_serie: list[CotistasTipoPonto]
     pl_subclasses_serie: list[PLSubclassesPonto]
     rent_serie: list[RentPonto]
     rent_acumulada: list[RentAcumuladaPonto]
     desempenho_vs_meta: list[DesempenhoPonto]
     liquidez_serie: list[LiquidezPonto]
     fluxo_cotas: list[FluxoCotasPonto]
+    recompra_serie: list[RecompraPonto]
     scr_distribuicao: list[SCRLinha]
     garantias: Garantias | None
     limitacoes: list[str]

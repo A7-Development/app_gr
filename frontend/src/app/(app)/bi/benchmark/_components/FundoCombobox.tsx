@@ -67,7 +67,7 @@ export function FundoCombobox() {
         <button
           type="button"
           className={cx(
-            "flex w-[360px] select-none items-center justify-between gap-2 truncate rounded border px-3 py-2 shadow-xs outline-hidden transition sm:text-sm",
+            "inline-flex w-[320px] select-none items-center justify-between gap-x-2 truncate rounded border px-2 py-1.5 text-xs font-medium shadow-xs transition",
             "border-gray-300 dark:border-gray-800",
             "bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-50",
             "hover:bg-gray-50 dark:hover:bg-gray-950/50",

@@ -6,6 +6,7 @@ can auto-detect them during migration generation.
 
 # Core base
 from app.core.database import Base
+from app.modules.bi.models.user_fund_favorite import UserFundFavorite  # noqa: F401
 from app.modules.integracoes.models.tenant_source_config import TenantSourceConfig  # noqa: F401
 
 # Shared kernel

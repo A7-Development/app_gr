@@ -15,6 +15,13 @@ export const moedaCompacta = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 2,
 })
 
+// Exibe valores financeiros em milhares de reais, sem casas decimais
+// (ex.: 260_607_123 -> "260.607"). Padrao usado na Ficha do Fundo para
+// manter consistencia com as tabelas `brlK`.
+const milharesFmt = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 })
+export const milharesBRL = (v: number | null | undefined): string =>
+  v == null ? "—" : milharesFmt.format(v / 1000)
+
 export const numero = new Intl.NumberFormat("pt-BR")
 export const decimal1 = new Intl.NumberFormat("pt-BR", {
   minimumFractionDigits: 1,
