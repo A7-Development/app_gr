@@ -10,7 +10,11 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
         defaultOptions: {
           queries: {
             staleTime: 60_000, // 1 min
-            refetchOnWindowFocus: false,
+            // Revalida ao remontar (navegacao entre paginas) e ao focar janela
+            // — garante que tela sempre acompanha o sync mais recente sem
+            // martelar o backend (ainda respeita staleTime).
+            refetchOnMount: "always",
+            refetchOnWindowFocus: true,
             retry: 1,
           },
         },

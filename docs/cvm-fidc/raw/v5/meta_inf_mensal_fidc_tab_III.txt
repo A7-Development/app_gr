@@ -1,0 +1,113 @@
+-----------------------
+Campo: CNPJ_FUNDO_CLASSE
+-----------------------
+   Descrição : CNPJ do fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 20
+
+-----------------------
+Campo: DENOM_SOCIAL
+-----------------------
+   Descrição : Denominação Social
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 100
+
+-----------------------
+Campo: DT_COMPTC
+-----------------------
+   Descrição : Data de competência do documento
+   Domínio   : AAAA-MM-DD
+   Tipo Dados: date
+   Tamanho   : 10
+
+-----------------------
+Campo: TAB_III_A_VL_PAGAR
+-----------------------
+   Descrição : (III.a) Valores a pagar
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 18
+   Scale     : 2
+
+-----------------------
+Campo: TAB_III_A1_VL_CPRAZO
+-----------------------
+   Descrição : (III.a.1) Curto Prazo
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_III_A2_VL_LPRAZO
+-----------------------
+   Descrição : (III.a.2) Longo Prazo
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_III_B_VL_POSICAO_DERIV
+-----------------------
+   Descrição : (III.b) Posições Mantidas em Mercado de Derivativos
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 20
+   Scale     : 2
+
+-----------------------
+Campo: TAB_III_B1_VL_TERMO
+-----------------------
+   Descrição : (III.b.1) Mercado a termo (Posições vendidas)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_III_B2_VL_OPCAO
+-----------------------
+   Descrição : (III.b.2) Mercado de Opções (Posições Lançadas)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_III_B3_VL_FUTURO
+-----------------------
+   Descrição : (III.b.3) Mercado Futuro (Ajustes Negativos)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_III_B4_VL_SWAP_PAGAR
+-----------------------
+   Descrição : (III.b.4) Diferencial de Swap a Pagar
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_III_VL_PASSIVO
+-----------------------
+   Descrição : (Tabela III) Passivo
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 21
+   Scale     : 2
+
+-----------------------
+Campo: TP_FUNDO_CLASSE
+-----------------------
+   Descrição : Tipo de fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 25
+

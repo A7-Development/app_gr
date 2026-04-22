@@ -1,4 +1,9 @@
-"""TenantSourceConfig: per-tenant configuration for a given source (credentials, filters)."""
+"""TenantSourceConfig: per-tenant configuration for a given source (credentials, filters).
+
+Owned by `integracoes` module — only integracoes reads or writes this table. Other modules
+that need to know whether a source is enabled for a tenant must call
+`integracoes.public.is_source_enabled()` (contract), not query this table directly.
+"""
 
 from datetime import datetime
 from uuid import UUID, uuid4
@@ -20,8 +25,9 @@ class TenantSourceConfig(Base):
     Example (Bitfin ERP): contains connection string, filter (cnpj), field mappings.
     Example (QiTech admin): contains api_key, subscription_id.
 
-    Secrets should ideally be stored encrypted OR referenced via secret manager;
-    for MVP, JSONB with app-level encryption is acceptable.
+    Secrets are stored plaintext in MVP; `source_config` service applies a no-op
+    encrypt/decrypt wrapper that can be swapped for real encryption later without
+    call-site changes.
     """
 
     __tablename__ = "tenant_source_config"

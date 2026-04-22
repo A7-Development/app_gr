@@ -1,0 +1,203 @@
+-----------------------
+Campo: CNPJ_FUNDO_CLASSE
+-----------------------
+   Descrição : CNPJ do fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 20
+
+-----------------------
+Campo: DENOM_SOCIAL
+-----------------------
+   Descrição : Denominação Social
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 100
+
+-----------------------
+Campo: DT_COMPTC
+-----------------------
+   Descrição : Data de competência do documento
+   Domínio   : AAAA-MM-DD
+   Tipo Dados: date
+   Tamanho   : 10
+
+-----------------------
+Campo: TAB_X_DEBITO_TRIBUT
+-----------------------
+   Descrição : (X.9.1) Valor total dos direitos creditórios cedidos por cedentes que possuem débitos tributários inscritos em dívida Ativa da União
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_DEVEDOR_A
+-----------------------
+   Descrição : (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - A
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_DEVEDOR_AA
+-----------------------
+   Descrição : (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - AA
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_DEVEDOR_B
+-----------------------
+   Descrição : (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - B
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_DEVEDOR_C
+-----------------------
+   Descrição : (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - C
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_DEVEDOR_D
+-----------------------
+   Descrição : (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - D
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_DEVEDOR_E
+-----------------------
+   Descrição : (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - E
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_DEVEDOR_F
+-----------------------
+   Descrição : (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - F
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_DEVEDOR_G
+-----------------------
+   Descrição : (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - G
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_DEVEDOR_H
+-----------------------
+   Descrição : (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - H
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_OPER_A
+-----------------------
+   Descrição : (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - A
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_OPER_AA
+-----------------------
+   Descrição : (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - AA
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_OPER_B
+-----------------------
+   Descrição : (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - B
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_OPER_C
+-----------------------
+   Descrição : (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - C
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_OPER_D
+-----------------------
+   Descrição : (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - D
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_OPER_E
+-----------------------
+   Descrição : (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - E
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_OPER_F
+-----------------------
+   Descrição : (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - F
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_OPER_G
+-----------------------
+   Descrição : (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - G
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_SCR_RISCO_OPER_H
+-----------------------
+   Descrição : (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - H
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 2
+
+-----------------------
+Campo: TP_FUNDO_CLASSE
+-----------------------
+   Descrição : Tipo de fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 25
+

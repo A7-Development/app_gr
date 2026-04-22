@@ -1,0 +1,680 @@
+-----------------------
+Campo: CNPJ_FUNDO_CLASSE
+-----------------------
+   Descrição : CNPJ do fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 20
+
+-----------------------
+Campo: DENOM_SOCIAL
+-----------------------
+   Descrição : Denominação Social
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 100
+
+-----------------------
+Campo: DT_COMPTC
+-----------------------
+   Descrição : Data de competência do documento
+   Domínio   : AAAA-MM-DD
+   Tipo Dados: date
+   Tamanho   : 10
+
+-----------------------
+Campo: TAB_IX_A1_1_1_COMPRA_MIN
+-----------------------
+   Descrição : (IX.a.1.1.1) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Compra | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_A1_1_2_COMPRA_MEDIA
+-----------------------
+   Descrição : (IX.a.1.1.2) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Compra | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_A1_1_3_COMPRA_MAX
+-----------------------
+   Descrição : (IX.a.1.1.3) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Compra | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_A1_2_1_VENDA_MIN
+-----------------------
+   Descrição : (IX.a.1.2.1) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Venda | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_A1_2_2_VENDA_MEDIA
+-----------------------
+   Descrição : (IX.a.1.2.2) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Venda | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_A1_2_3_VENDA_MAX
+-----------------------
+   Descrição : (IX.a.1.2.3) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Venda | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_A2_1_1_COMPRA_MIN
+-----------------------
+   Descrição : (IX.a.2.1.1) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Compra | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_A2_1_2_COMPRA_MEDIA
+-----------------------
+   Descrição : (IX.a.2.1.2) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Compra | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_A2_1_3_COMPRA_MAX
+-----------------------
+   Descrição : (IX.a.2.1.3) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Compra | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_A2_2_1_VENDA_MIN
+-----------------------
+   Descrição : (IX.a.2.2.1) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Venda | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_A2_2_2_VENDA_MEDIA
+-----------------------
+   Descrição : (IX.a.2.2.2) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Venda | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_A2_2_3_VENDA_MAX
+-----------------------
+   Descrição : (IX.a.2.2.3) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Venda | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_B1_1_1_COMPRA_MIN
+-----------------------
+   Descrição : (IX.b.1.1.1) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Compra | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_B1_1_2_COMPRA_MEDIA
+-----------------------
+   Descrição : (IX.b.1.1.2) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Compra | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_B1_1_3_COMPRA_MAX
+-----------------------
+   Descrição : (IX.b.1.1.3) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Compra | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_B1_2_1_VENDA_MIN
+-----------------------
+   Descrição : (IX.b.1.2.1) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Venda | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_B1_2_2_VENDA_MEDIA
+-----------------------
+   Descrição : (IX.b.1.2.2) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Venda | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_B1_2_3_VENDA_MAX
+-----------------------
+   Descrição : (IX.b.1.2.3) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Venda | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_B2_1_1_COMPRA_MIN
+-----------------------
+   Descrição : (IX.b.2.1.1) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Compra | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_B2_1_2_COMPRA_MEDIA
+-----------------------
+   Descrição : (IX.b.2.1.2) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Compra | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_B2_1_3_COMPRA_MAX
+-----------------------
+   Descrição : (IX.b.2.1.3) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Compra | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_B2_2_1_VENDA_MIN
+-----------------------
+   Descrição : (IX.b.2.2.1) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Venda | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_B2_2_2_VENDA_MEDIA
+-----------------------
+   Descrição : (IX.b.2.2.2) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Venda | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_B2_2_3_VENDA_MAX
+-----------------------
+   Descrição : (IX.b.2.2.3) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Venda | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_C1_1_1_COMPRA_MIN
+-----------------------
+   Descrição : (IX.c.1.1.1) Valores Mobiliários | Taxa desconto (da aquisição) | Compra | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_C1_1_2_COMPRA_MEDIA
+-----------------------
+   Descrição : (IX.c.1.1.2) Valores Mobiliários | Taxa desconto (da aquisição) | Compra | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_C1_1_3_COMPRA_MAX
+-----------------------
+   Descrição : (IX.c.1.1.3) Valores Mobiliários | Taxa desconto (da aquisição) | Compra | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_C1_2_1_VENDA_MIN
+-----------------------
+   Descrição : (IX.c.1.2.1) Valores Mobiliários | Taxa desconto (da aquisição) | Venda | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_C1_2_2_VENDA_MEDIA
+-----------------------
+   Descrição : (IX.c.1.2.2) Valores Mobiliários | Taxa desconto (da aquisição) | Venda | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_C1_2_3_VENDA_MAX
+-----------------------
+   Descrição : (IX.c.1.2.3) Valores Mobiliários | Taxa desconto (da aquisição) | Venda | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_C2_1_1_COMPRA_MIN
+-----------------------
+   Descrição : (IX.c.2.1.1) Valores Mobiliários | Taxa de Juros | Compra | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_C2_1_2_COMPRA_MEDIA
+-----------------------
+   Descrição : (IX.c.2.1.2) Valores Mobiliários | Taxa de Juros | Compra | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_C2_1_3_COMPRA_MAX
+-----------------------
+   Descrição : (IX.c.2.1.3) Valores Mobiliários | Taxa de Juros | Compra | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_C2_2_1_VENDA_MIN
+-----------------------
+   Descrição : (IX.c.2.2.1) Valores Mobiliários | Taxa de Juros | Venda | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_C2_2_2_VENDA_MEDIA
+-----------------------
+   Descrição : (IX.c.2.2.2) Valores Mobiliários | Taxa de Juros | Venda | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_C2_2_3_VENDA_MAX
+-----------------------
+   Descrição : (IX.c.2.2.3) Valores Mobiliários | Taxa de Juros | Venda | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_D1_1_1_COMPRA_MIN
+-----------------------
+   Descrição : (IX.d.1.1.1) Títulos Públicos Federais | Taxa desconto (da aquisição) | Compra | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_D1_1_2_COMPRA_MEDIA
+-----------------------
+   Descrição : (IX.d.1.1.2) Títulos Públicos Federais | Taxa desconto (da aquisição) | Compra | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_D1_1_3_COMPRA_MAX
+-----------------------
+   Descrição : (IX.d.1.1.3) Títulos Públicos Federais | Taxa desconto (da aquisição) | Compra | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_D1_2_1_VENDA_MIN
+-----------------------
+   Descrição : (IX.d.1.2.1) Títulos Públicos Federais | Taxa desconto (da aquisição) | Venda | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_D1_2_2_VENDA_MEDIA
+-----------------------
+   Descrição : (IX.d.1.2.2) Títulos Públicos Federais | Taxa desconto (da aquisição) | Venda | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_D1_2_3_VENDA_MAX
+-----------------------
+   Descrição : (IX.d.1.2.3) Títulos Públicos Federais | Taxa desconto (da aquisição) | Venda | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_D2_1_1_COMPRA_MIN
+-----------------------
+   Descrição : (IX.d.2.1.1) Títulos Públicos Federais | Taxa de Juros | Compra | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_D2_1_2_COMPRA_MEDIA
+-----------------------
+   Descrição : (IX.d.2.1.2) Títulos Públicos Federais | Taxa de Juros | Compra | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_D2_1_3_COMPRA_MAX
+-----------------------
+   Descrição : (IX.d.2.1.3) Títulos Públicos Federais | Taxa de Juros | Compra | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_D2_2_1_VENDA_MIN
+-----------------------
+   Descrição : (IX.d.2.2.1) Títulos Públicos Federais | Taxa de Juros | Venda | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_D2_2_2_VENDA_MEDIA
+-----------------------
+   Descrição : (IX.d.2.2.2) Títulos Públicos Federais | Taxa de Juros | Venda | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_D2_2_3_VENDA_MAX
+-----------------------
+   Descrição : (IX.d.2.2.3) Títulos Públicos Federais | Taxa de Juros | Venda | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_E1_1_1_COMPRA_MIN
+-----------------------
+   Descrição : (IX.e.1.1.1) Certificados de Depósitos Bancários | Taxa desconto (da aquisição) | Compra | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_E1_1_2_COMPRA_MEDIA
+-----------------------
+   Descrição : (IX.e.1.1.2) Certificados de Depósitos Bancários | Taxa desconto (da aquisição) | Compra | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_E1_1_3_COMPRA_MAX
+-----------------------
+   Descrição : (IX.e.1.1.3) Certificados de Depósitos Bancários | Taxa desconto (da aquisição) | Compra | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_E1_2_1_VENDA_MIN
+-----------------------
+   Descrição : (IX.e.1.2.1) Certificados de Depósitos Bancários | Taxa desconto (da aquisição) | Venda | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_E1_2_2_VENDA_MEDIA
+-----------------------
+   Descrição : (IX.e.1.2.2) Certificados de Depósitos Bancários | Taxa desconto (da aquisição) | Venda | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_E1_2_3_VENDA_MAX
+-----------------------
+   Descrição : (IX.e.1.2.3) Certificados de Depósitos Bancários | Taxa desconto (da aquisição) | Venda | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_E2_1_1_COMPRA_MIN
+-----------------------
+   Descrição : (IX.e.2.1.1) Certificados de Depósitos Bancários | Taxa de Juros | Compra | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_E2_1_2_COMPRA_MEDIA
+-----------------------
+   Descrição : (IX.e.2.1.2) Certificados de Depósitos Bancários | Taxa de Juros | Compra | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_E2_1_3_COMPRA_MAX
+-----------------------
+   Descrição : (IX.e.2.1.3) Certificados de Depósitos Bancários | Taxa de Juros | Compra | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_E2_2_1_VENDA_MIN
+-----------------------
+   Descrição : (IX.e.2.2.1) Certificados de Depósitos Bancários | Taxa de Juros | Venda | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_E2_2_2_VENDA_MEDIA
+-----------------------
+   Descrição : (IX.e.2.2.2) Certificados de Depósitos Bancários | Taxa de Juros | Venda | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_E2_2_3_VENDA_MAX
+-----------------------
+   Descrição : (IX.e.2.2.3) Certificados de Depósitos Bancários | Taxa de Juros | Venda | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_F1_1_1_COMPRA_MIN
+-----------------------
+   Descrição : (IX.f.1.1.1) Outros Ativos Financeiros de Renda Fixa | Taxa desconto (da aquisição) | Compra | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_F1_1_2_COMPRA_MEDIA
+-----------------------
+   Descrição : (IX.f.1.1.2) Outros Ativos Financeiros de Renda Fixa | Taxa desconto (da aquisição) | Compra | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_F1_1_3_COMPRA_MAX
+-----------------------
+   Descrição : (IX.f.1.1.3) Outros Ativos Financeiros de Renda Fixa | Taxa desconto (da aquisição) | Compra | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_F1_2_1_VENDA_MIN
+-----------------------
+   Descrição : (IX.f.1.2.1) Outros Ativos Financeiros de Renda Fixa | Taxa desconto (da aquisição) | Venda | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_F1_2_2_VENDA_MEDIA
+-----------------------
+   Descrição : (IX.f.1.2.2) Outros Ativos Financeiros de Renda Fixa | Taxa desconto (da aquisição) | Venda | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_F1_2_3_VENDA_MAX
+-----------------------
+   Descrição : (IX.f.1.2.3) Outros Ativos Financeiros de Renda Fixa | Taxa desconto (da aquisição) | Venda | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_F2_1_1_COMPRA_MIN
+-----------------------
+   Descrição : (IX.f.2.1.1) Outros Ativos Financeiros de Renda Fixa | Taxa de Juros | Compra | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_F2_1_2_COMPRA_MEDIA
+-----------------------
+   Descrição : (IX.f.2.1.2) Outros Ativos Financeiros de Renda Fixa | Taxa de Juros | Compra | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_F2_1_3_COMPRA_MAX
+-----------------------
+   Descrição : (IX.f.2.1.3) Outros Ativos Financeiros de Renda Fixa | Taxa de Juros | Compra | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_F2_2_1_VENDA_MIN
+-----------------------
+   Descrição : (IX.f.2.2.1) Outros Ativos Financeiros de Renda Fixa | Taxa de Juros | Venda | Mínina
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_F2_2_2_VENDA_MEDIA
+-----------------------
+   Descrição : (IX.f.2.2.2) Outros Ativos Financeiros de Renda Fixa | Taxa de Juros | Venda | Média (Ponderada)
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TAB_IX_F2_2_3_VENDA_MAX
+-----------------------
+   Descrição : (IX.f.2.2.3) Outros Ativos Financeiros de Renda Fixa | Taxa de Juros | Venda | Máxima
+   Domínio   : Numérico
+   Tipo Dados: float
+   Precisão  : 53
+   Scale     : 
+
+-----------------------
+Campo: TP_FUNDO_CLASSE
+-----------------------
+   Descrição : Tipo de fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 25
+

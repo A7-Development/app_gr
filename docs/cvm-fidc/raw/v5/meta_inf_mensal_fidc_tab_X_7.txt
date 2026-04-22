@@ -1,0 +1,50 @@
+-----------------------
+Campo: CNPJ_FUNDO_CLASSE
+-----------------------
+   Descrição : CNPJ do fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 20
+
+-----------------------
+Campo: DENOM_SOCIAL
+-----------------------
+   Descrição : Denominação Social
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 100
+
+-----------------------
+Campo: DT_COMPTC
+-----------------------
+   Descrição : Data de competência do documento
+   Domínio   : AAAA-MM-DD
+   Tipo Dados: date
+   Tamanho   : 10
+
+-----------------------
+Campo: TP_FUNDO_CLASSE
+-----------------------
+   Descrição : Tipo de fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 25
+
+-----------------------
+Campo: TAB_X_PR_GARANTIA_DIRCRED
+-----------------------
+   Descrição : 
+   Domínio   : 
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_VL_GARANTIA_DIRCRED
+-----------------------
+   Descrição : 
+   Domínio   : 
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+

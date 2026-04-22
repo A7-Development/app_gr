@@ -56,12 +56,13 @@ function useActiveTab(): TabKey {
 const PAGE_INFO =
   "Benchmark do setor FIDC a partir dos Informes Mensais publicados pela CVM. Dado publico, trust_level=high, atualizacao mensal."
 
-// Proveniencia mockada enquanto backend nao expoe endpoint /fundo e /comparativo.
-// Estrutura espelha Provenance de api-client.ts.
+// Proveniencia mockada para as tabs que ainda nao consomem endpoint proprio
+// (mercado/lista/comparativo). A tab "ficha" renderiza seu proprio rodape a
+// partir do endpoint /bi/benchmark/fundo/{cnpj}.
 const PROVENANCE_MOCK = {
   source_type: "public:cvm_fidc",
   source_ids: ["cvm_remote.tab_i", "cvm_remote.tab_ii", "cvm_remote.tab_iii"],
-  last_ingested_at: "2026-04-15T02:15:00Z",
+  last_sync_at: "2026-04-15T02:15:00Z",
   last_source_updated_at: "2026-04-10T00:00:00Z",
   trust_level: "high" as const,
   ingested_by_version: "cvm_fidc_adapter_v1.0.0",
@@ -94,7 +95,9 @@ export default function BenchmarkPage() {
 
       <TabContent tab={activeTab} />
 
-      <ProvenanceFooter provenance={PROVENANCE_MOCK} />
+      {activeTab !== "ficha" && (
+        <ProvenanceFooter provenance={PROVENANCE_MOCK} />
+      )}
 
       <SelecaoStickyBar />
     </div>

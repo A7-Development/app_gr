@@ -1,0 +1,2633 @@
+fonte: cvm
+dataset: inf_mensal_fidc
+versao_dicionario: v5
+data_geracao: 2026-04-22
+schema_fdw: cvm_remote
+url_fonte: "https://dados.cvm.gov.br/dados/FIDC/DOC/INF_MENSAL/META/meta_inf_mensal_fidc_txt.zip"
+observacao: "Gerado por scripts/parse_cvm_metadata.py a partir dos .txt brutos em docs/cvm-fidc/raw/<versao>/. Nao editar este arquivo manualmente -- ajustes editoriais vao em docs/cvm-fidc/dicionario.md."
+tabelas:
+  tab_i:
+    descricao: "Cabecalho do fundo + posicao da carteira em R$ (direitos creditorios, titulos publicos, disponibilidades, cotas de outros fundos). ~112 colunas. Granularidade: 1 linha por cnpj_fundo_classe x competencia."
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_I.txt
+    quantidade_campos: 109
+    campos:
+      - nome: admin
+        descricao: Nome do Administrador
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: classe
+        descricao: Classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 255
+      - nome: cnpj_admin
+        descricao: CNPJ do Administrador
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: cnpj_fundo_classe
+        descricao: CNPJ do fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: condom
+        descricao: Forma de condomínio
+        dominio: Aberto/Fechado
+        tipo: varchar
+        tamanho: 255
+      - nome: cotst_interesse
+        descricao: Indica se todos os cotistas são vinculados por interesse único e indissociável
+        dominio: S/N
+        tipo: varchar
+        tamanho: 1
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: fundo_exclusivo
+        descricao: Indica se é fundo exclusivo
+        dominio: S/N
+        tipo: varchar
+        tamanho: 1
+      - nome: prazo_conversao_cota
+        descricao: Prazo mínimo entre a data do pedido de resgate e a correspondente conversão em quantidade de cotas
+        dominio: Numérico
+        tipo: int
+        precisao: 10
+        scale: 0
+      - nome: prazo_pagto_resgate
+        descricao: Prazo para o pagamento do resgate após a conversão em quantidade de cotas
+        dominio: Numérico
+        tipo: int
+        precisao: 10
+        scale: 0
+      - nome: tab_i_vl_ativo
+        descricao: (Tabela I) Ativo
+        dominio: Numérico
+        tipo: numeric
+        precisao: 38
+        scale: 2
+      - nome: tab_i1_vl_disp
+        descricao: (I.1) Disponibilidades
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2_cota_fidc
+        descricao: (I.2) (-) Provisões sobre Cotas de Fundos de Investimento em Direitos Creditórios
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2_debenture_cri
+        descricao: (I.2) (-) Provisões sobre Debêntures, CRI, Notas Promissórias e Letras Financeiras
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2_vl_carteira
+        descricao: (I.2) Carteira
+        dominio: Numérico
+        tipo: numeric
+        precisao: 37
+        scale: 2
+      - nome: tab_i2_vl_outro_ativo
+        descricao: (I.2) (-) Provisões sobre outros ativos
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a_vl_dircred_risco
+        descricao: (I.2.a) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios
+        dominio: Numérico
+        tipo: numeric
+        precisao: 22
+        scale: 2
+      - nome: tab_i2a1_vl_cred_venc_ad
+        descricao: (I.2.a.1) Créditos Existentes a Vencer e Adimplentes
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a10_vl_cred_diverso
+        descricao: (I.2.a.10) Outros créditos, de natureza diversa, não enquadráveis no disposto no inciso I do art. 2º da ICVM 356
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a11_vl_reducao_recup
+        descricao: (I.2.a.11) Provisão para Redução no Valor de Recuperação (-)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a12_cpf_cnpj_cedente_1
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 1 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2a12_cpf_cnpj_cedente_2
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 2 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2a12_cpf_cnpj_cedente_3
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 3 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2a12_cpf_cnpj_cedente_4
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 4 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2a12_cpf_cnpj_cedente_5
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 5 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2a12_cpf_cnpj_cedente_6
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 6 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2a12_cpf_cnpj_cedente_7
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 7 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2a12_cpf_cnpj_cedente_8
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 8 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2a12_cpf_cnpj_cedente_9
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 9 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2a12_pr_cedente_1
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 1 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a12_pr_cedente_2
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 2 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a12_pr_cedente_3
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 3 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a12_pr_cedente_4
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 4 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a12_pr_cedente_5
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 5 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a12_pr_cedente_6
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 6 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a12_pr_cedente_7
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 7 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a12_pr_cedente_8
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 8 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a12_pr_cedente_9
+        descricao: "(I.2.a.12) Direitos Creditórios: Cedente 9 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a2_vl_cred_venc_inad
+        descricao: (I.2.a.2) Créditos Existentes a Vencer com Parcelas Inadimplentes
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a21_vl_total_parcela_inad
+        descricao: (I.2.a.2.1) Valor Total das Parcelas Inadimplentes
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a3_vl_cred_inad
+        descricao: (I.2.a.3) Créditos Existentes Inadimplentes
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a4_vl_cred_dircred_perfm
+        descricao: (I.2.a.4) Créditos Referentes a Direitos Creditórios a Performar
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a5_vl_cred_vencido_pendente
+        descricao: (I.2.a.5) Créditos que estejam vencidos e pendentes de pagamento quando da sua cessão para o fundo
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a6_vl_cred_emp_recup
+        descricao: (I.2.a.6) Créditos Originados de Empresas em Processo de Recuperação Judicial ou Extrajudicial
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a7_vl_cred_receita_publica
+        descricao: (I.2.a.7) Créditos decorrentes de receitas públicas originárias ou derivadas da União, Estados, Distrito Federal e Municípios, suas Autarquias e Fundações
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a8_vl_cred_acao_judic
+        descricao: (I.2.a.8) Créditos que resultem de ações judiciais em curso, constituam seu objeto de litígio ou tenham sido judicialmente penhorados ou dados em garantia
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2a9_vl_cred_fator_risco
+        descricao: (I.2.a.9) Créditos cuja constituição ou validade jurídica da cessão para o fundo seja considerada um fator preponderante de risco
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b_vl_dircred_sem_risco
+        descricao: (I.2.b) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b1_vl_cred_venc_ad
+        descricao: (I.2.b.1) Créditos Existentes a Vencer e Adimplentes (ICVM 576)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b10_vl_cred_diverso
+        descricao: (I.2.b.10) Outros créditos, de natureza diversa, não enquadráveis no disposto no inciso I do art. 2º da ICVM 356
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b11_vl_reducao_recup
+        descricao: (I.2.b.11) Provisão para Redução no Valor de Recuperação (-)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b12_cpf_cnpj_cedente_1
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 1 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2b12_cpf_cnpj_cedente_2
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 2 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2b12_cpf_cnpj_cedente_3
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 3 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2b12_cpf_cnpj_cedente_4
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 4 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2b12_cpf_cnpj_cedente_5
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 5 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2b12_cpf_cnpj_cedente_6
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 6 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2b12_cpf_cnpj_cedente_7
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 7 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2b12_cpf_cnpj_cedente_8
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 8 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2b12_cpf_cnpj_cedente_9
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 9 - CPF ou CNPJ"
+        dominio: Numérico
+        tipo: varchar
+        tamanho: 255
+      - nome: tab_i2b12_pr_cedente_1
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 1 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b12_pr_cedente_2
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 2 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b12_pr_cedente_3
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 3 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b12_pr_cedente_4
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 4 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b12_pr_cedente_5
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 5 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b12_pr_cedente_6
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 6 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b12_pr_cedente_7
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 7 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b12_pr_cedente_8
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 8 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b12_pr_cedente_9
+        descricao: "(I.2.b.12) Direitos Creditórios: Cedente 9 - Valor do Percentual de Participação"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b2_vl_cred_venc_inad
+        descricao: (I.2.b.2) Créditos Existentes a Vencer com Parcelas Inadimplentes
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b21_vl_total_parcela_inad
+        descricao: (I.2.b.2.1) Valor Total das Parcelas Inadimplentes
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b3_vl_cred_inad
+        descricao: (I.2.b.3) Créditos Existentes Inadimplentes
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b4_vl_cred_dircred_perfm
+        descricao: (I.2.b.4) Créditos Referentes a Direitos Creditórios a Performar
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b5_vl_cred_vencido_pendente
+        descricao: (I.2.b.5) Créditos que estejam vencidos e pendentes de pagamento quando da sua cessão para o fundo
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b6_vl_cred_emp_recup
+        descricao: (I.2.b.6) Créditos Originados de Empresas em Processo de Recuperação Judicial ou Extrajudicial
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b7_vl_cred_receita_publica
+        descricao: (I.2.b.7) Créditos decorrentes de receitas públicas originárias ou derivadas da União, Estados, Distrito Federal e Municípios, suas Autarquias e Fundações
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b8_vl_cred_acao_judic
+        descricao: (I.2.b.8) Créditos que resultem de ações judiciais em curso, constituam seu objeto de litígio ou tenham sido judicialmente penhorados ou dados em garantia
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2b9_vl_cred_fator_risco
+        descricao: (I.2.b.9) Créditos cuja constituição ou validade jurídica da cessão para o fundo seja considerada um fator preponderante de risco
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2c_vl_vlmob
+        descricao: (I.2.c) Valores Mobiliários
+        dominio: Numérico
+        tipo: numeric
+        precisao: 22
+        scale: 2
+      - nome: tab_i2c1_vl_debenture
+        descricao: (I.2.c.1) Debêntures
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2c2_vl_cri
+        descricao: (I.2.c.2) CRI
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2c3_vl_np_comerc
+        descricao: (I.2.c.3) Notas Promissórias Comerciais
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2c4_vl_letra_financ
+        descricao: (I.2.c.4) Letras Financeiras
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2c5_vl_cota_fif
+        descricao: (I.2.c.5) Classes de Cotas dos FIF - Anexo I da RCVM 175
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2c5_vl_cota_fundo_icvm555
+        descricao: (I.2.c.5) Cotas de Fundos da ICVM 555
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2c6_vl_outro
+        descricao: (I.2.c.6) Outros
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2d_vl_titpub_fed
+        descricao: (I.2.d) Títulos Públicos Federais
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2e_vl_cdb
+        descricao: (I.2.e) Certificados de Depósitos Bancários
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2f_vl_oper_comprom
+        descricao: (I.2.f) Aplicações em Operações Compromissadas
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2g_vl_outro_rf
+        descricao: (I.2.g) Outros Ativos Financeiros de Renda Fixa
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2h_vl_cota_fidc
+        descricao: (I.2.h) Cotas de Fundos de Investimento em Direitos Creditórios
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2i_vl_cota_fidc_np
+        descricao: (I.2.i) Cotas de Fundos de Investimento em Direitos Creditórios Não Padronizados
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i2j_vl_contrato_futuro
+        descricao: (I.2.j) Warrants, Contrato de Compra e Venda de Produtos, Mercadorias e/ou Serviços para Entrega ou Prestação Futura
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i3_vl_posicao_deriv
+        descricao: (I.3) Posições Mantidas em Mercados de Derivativos
+        dominio: Numérico
+        tipo: numeric
+        precisao: 20
+        scale: 2
+      - nome: tab_i3a_vl_mercado_termo
+        descricao: (I.3.a) Mercado a Termo - Posições Compradas
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i3b_vl_mercado_opcao
+        descricao: (I.3.b) Mercado de Opções - Posições Titulares
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i3c_vl_mercado_futuro
+        descricao: (I.3.c) Mercado Futuro - Ajustes Positivos
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i3d_vl_difer_swap
+        descricao: (I.3.d) Diferencial de Swap a Receber
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i3e_vl_cobertura
+        descricao: (I.3.e) Coberturas Prestadas
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i3f_vl_deposito_margem
+        descricao: (I.3.f) Depósitos de Margem
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i4_vl_outro_ativo
+        descricao: (I.4) Outros Ativos
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i4a_vl_cprazo
+        descricao: (I.4.a) Curto Prazo (realização em até 12 meses da data do informe)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_i4b_vl_lprazo
+        descricao: (I.4.b) Longo Prazo (realização após 12 meses da data do informe)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tp_fundo_classe
+        descricao: Tipo de fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 25
+      - nome: tp_prazo_conversao_cota
+        descricao: Tipo do prazo para conversão em quantidade de cotas
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 13
+      - nome: tp_prazo_pagto_resgate
+        descricao: Tipo do prazo para o pagamento do resgate
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 13
+      - nome: classe_unica
+        descricao: "Domínio   :"
+        tipo: varchar
+        tamanho: 1
+      - nome: cnpj_classe
+        descricao: "Domínio   :"
+        tipo: varchar
+        tamanho: 50
+  tab_ii:
+    descricao: Composicao setorial dos direitos creditorios (industrial, comercial, servicos, agronegocio, financeiro, credito, factoring, setor publico, judicial, imobiliario, marca/IP). Valores em R$.
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_II.txt
+    quantidade_campos: 37
+    campos:
+      - nome: cnpj_fundo_classe
+        descricao: CNPJ do fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: tab_ii_a_vl_indust
+        descricao: (II.a) Industrial
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_b_vl_imobil
+        descricao: (II.b) Mercado Imobiliário (não financeiro - ver itens f6 e f7)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_c_vl_comerc
+        descricao: (II.c) Comercial
+        dominio: Numérico
+        tipo: numeric
+        precisao: 19
+        scale: 2
+      - nome: tab_ii_c1_vl_comerc
+        descricao: (II.c.1) Comercial
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_c2_vl_varejo
+        descricao: (II.c.2) Comercial - Varejo
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_c3_vl_arrend
+        descricao: (II.c.3) Arrendamento Mercantil
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_d_vl_serv
+        descricao: (II.d) Serviços
+        dominio: Numérico
+        tipo: numeric
+        precisao: 20
+        scale: 2
+      - nome: tab_ii_d1_vl_serv
+        descricao: (II.d.1) Serviços
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_d2_vl_serv_publico
+        descricao: (II.d.2) Serviços Públicos (eletricidade, telefonia, transporte, saneamento, etc)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_d3_vl_serv_educ
+        descricao: (II.d.3) Serviços Educacionais
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_d4_vl_entret
+        descricao: (II.d.4) Entretenimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_e_vl_agroneg
+        descricao: (II.e) Agronegócio
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_f_vl_financ
+        descricao: (II.f) Financeiro
+        dominio: Numérico
+        tipo: numeric
+        precisao: 24
+        scale: 2
+      - nome: tab_ii_f1_vl_cred_pessoa
+        descricao: (II.f.1) Crédito Pessoal
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_f2_vl_cred_pessoa_consig
+        descricao: (II.f.2) Crédito Pessoal Consignado
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_f3_vl_cred_corp
+        descricao: (II.f.3) Direitos Crédito Corporativo
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_f4_vl_midmarket
+        descricao: (II.f.4) Middle Market
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_f5_vl_veiculo
+        descricao: (II.f.5) Veículos
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_f6_vl_imobil_empresa
+        descricao: (II.f.6) Carteira Imobiliária - Empresarial
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_f7_vl_imobil_resid
+        descricao: (II.f.7) Carteira Imobiliária - Residencial
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_f8_vl_outro
+        descricao: (II.f.8) Outros
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_g_vl_credito
+        descricao: (II.g) Cartão de Crédito
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_h_vl_factor
+        descricao: (II.h) Factoring
+        dominio: Numérico
+        tipo: numeric
+        precisao: 18
+        scale: 2
+      - nome: tab_ii_h1_vl_pessoa
+        descricao: (II.h.1) Factoring - Pessoal (Perfil do Sacado)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_h2_vl_corp
+        descricao: (II.h.2) Factoring - Corporativo (Perfil do Sacado)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_i_vl_setor_publico
+        descricao: (II.i) Setor Público (art. 1º, §1º, II, ICVM 444)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 20
+        scale: 2
+      - nome: tab_ii_i1_vl_precat
+        descricao: (II.i.1) Precatórios
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_i2_vl_tribut
+        descricao: (II.i.2) Créditos Tributários
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_i3_vl_royalties
+        descricao: (II.i.3) Royalties
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_i4_vl_outro
+        descricao: (II.i.4) Outros
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_j_vl_judicial
+        descricao: (II.j) Ações Judiciais (art. 1º, §1º, III, ICVM 444)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_k_vl_marca
+        descricao: "(II.k) Propriedade Intelectual e Marcas & Patentes"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_ii_vl_carteira
+        descricao: (Tabela II) Carteira por Segmento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 30
+        scale: 2
+      - nome: tp_fundo_classe
+        descricao: Tipo de fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 25
+  tab_iii:
+    descricao: Direitos creditorios adquiridos no mes -- prazo medio, taxa media, valor total.
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_III.txt
+    quantidade_campos: 13
+    campos:
+      - nome: cnpj_fundo_classe
+        descricao: CNPJ do fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: tab_iii_a_vl_pagar
+        descricao: (III.a) Valores a pagar
+        dominio: Numérico
+        tipo: numeric
+        precisao: 18
+        scale: 2
+      - nome: tab_iii_a1_vl_cprazo
+        descricao: (III.a.1) Curto Prazo
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_iii_a2_vl_lprazo
+        descricao: (III.a.2) Longo Prazo
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_iii_b_vl_posicao_deriv
+        descricao: (III.b) Posições Mantidas em Mercado de Derivativos
+        dominio: Numérico
+        tipo: numeric
+        precisao: 20
+        scale: 2
+      - nome: tab_iii_b1_vl_termo
+        descricao: (III.b.1) Mercado a termo (Posições vendidas)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_iii_b2_vl_opcao
+        descricao: (III.b.2) Mercado de Opções (Posições Lançadas)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_iii_b3_vl_futuro
+        descricao: (III.b.3) Mercado Futuro (Ajustes Negativos)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_iii_b4_vl_swap_pagar
+        descricao: (III.b.4) Diferencial de Swap a Pagar
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_iii_vl_passivo
+        descricao: (Tabela III) Passivo
+        dominio: Numérico
+        tipo: numeric
+        precisao: 21
+        scale: 2
+      - nome: tp_fundo_classe
+        descricao: Tipo de fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 25
+  tab_iv:
+    descricao: Patrimonio Liquido TOTAL do fundo/classe (sem quebra por subclasse) -- atual e medio dos ultimos tres meses.
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_IV.txt
+    quantidade_campos: 6
+    campos:
+      - nome: cnpj_fundo_classe
+        descricao: CNPJ do fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: tab_iv_a_vl_pl
+        descricao: (IV.a) Valor do Patrimônio Líquido
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_iv_b_vl_pl_medio
+        descricao: (IV.b) Valor do Patrimônio Líquido Médio (últimos três meses)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tp_fundo_classe
+        descricao: Tipo de fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 25
+  tab_ix:
+    descricao: Mercado secundario -- precos min/medio/max de compra e venda das cotas segmentados por intervalos de rentabilidade (40 colunas).
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_IX.txt
+    quantidade_campos: 76
+    campos:
+      - nome: cnpj_fundo_classe
+        descricao: CNPJ do fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: tab_ix_a1_1_1_compra_min
+        descricao: "(IX.a.1.1.1) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Compra | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_a1_1_2_compra_media
+        descricao: "(IX.a.1.1.2) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Compra | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_a1_1_3_compra_max
+        descricao: "(IX.a.1.1.3) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Compra | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_a1_2_1_venda_min
+        descricao: "(IX.a.1.2.1) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Venda | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_a1_2_2_venda_media
+        descricao: "(IX.a.1.2.2) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Venda | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_a1_2_3_venda_max
+        descricao: "(IX.a.1.2.3) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Venda | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_a2_1_1_compra_min
+        descricao: "(IX.a.2.1.1) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Compra | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_a2_1_2_compra_media
+        descricao: "(IX.a.2.1.2) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Compra | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_a2_1_3_compra_max
+        descricao: "(IX.a.2.1.3) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Compra | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_a2_2_1_venda_min
+        descricao: "(IX.a.2.2.1) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Venda | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_a2_2_2_venda_media
+        descricao: "(IX.a.2.2.2) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Venda | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_a2_2_3_venda_max
+        descricao: "(IX.a.2.2.3) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Venda | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_b1_1_1_compra_min
+        descricao: "(IX.b.1.1.1) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Compra | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_b1_1_2_compra_media
+        descricao: "(IX.b.1.1.2) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Compra | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_b1_1_3_compra_max
+        descricao: "(IX.b.1.1.3) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Compra | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_b1_2_1_venda_min
+        descricao: "(IX.b.1.2.1) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Venda | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_b1_2_2_venda_media
+        descricao: "(IX.b.1.2.2) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Venda | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_b1_2_3_venda_max
+        descricao: "(IX.b.1.2.3) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa desconto (da aquisição) | Venda | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_b2_1_1_compra_min
+        descricao: "(IX.b.2.1.1) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Compra | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_b2_1_2_compra_media
+        descricao: "(IX.b.2.1.2) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Compra | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_b2_1_3_compra_max
+        descricao: "(IX.b.2.1.3) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Compra | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_b2_2_1_venda_min
+        descricao: "(IX.b.2.2.1) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Venda | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_b2_2_2_venda_media
+        descricao: "(IX.b.2.2.2) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Venda | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_b2_2_3_venda_max
+        descricao: "(IX.b.2.2.3) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Taxa de Juros(dos direitos creditórios) | Venda | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_c1_1_1_compra_min
+        descricao: "(IX.c.1.1.1) Valores Mobiliários | Taxa desconto (da aquisição) | Compra | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_c1_1_2_compra_media
+        descricao: "(IX.c.1.1.2) Valores Mobiliários | Taxa desconto (da aquisição) | Compra | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_c1_1_3_compra_max
+        descricao: "(IX.c.1.1.3) Valores Mobiliários | Taxa desconto (da aquisição) | Compra | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_c1_2_1_venda_min
+        descricao: "(IX.c.1.2.1) Valores Mobiliários | Taxa desconto (da aquisição) | Venda | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_c1_2_2_venda_media
+        descricao: "(IX.c.1.2.2) Valores Mobiliários | Taxa desconto (da aquisição) | Venda | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_c1_2_3_venda_max
+        descricao: "(IX.c.1.2.3) Valores Mobiliários | Taxa desconto (da aquisição) | Venda | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_c2_1_1_compra_min
+        descricao: "(IX.c.2.1.1) Valores Mobiliários | Taxa de Juros | Compra | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_c2_1_2_compra_media
+        descricao: "(IX.c.2.1.2) Valores Mobiliários | Taxa de Juros | Compra | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_c2_1_3_compra_max
+        descricao: "(IX.c.2.1.3) Valores Mobiliários | Taxa de Juros | Compra | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_c2_2_1_venda_min
+        descricao: "(IX.c.2.2.1) Valores Mobiliários | Taxa de Juros | Venda | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_c2_2_2_venda_media
+        descricao: "(IX.c.2.2.2) Valores Mobiliários | Taxa de Juros | Venda | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_c2_2_3_venda_max
+        descricao: "(IX.c.2.2.3) Valores Mobiliários | Taxa de Juros | Venda | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_d1_1_1_compra_min
+        descricao: "(IX.d.1.1.1) Títulos Públicos Federais | Taxa desconto (da aquisição) | Compra | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_d1_1_2_compra_media
+        descricao: "(IX.d.1.1.2) Títulos Públicos Federais | Taxa desconto (da aquisição) | Compra | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_d1_1_3_compra_max
+        descricao: "(IX.d.1.1.3) Títulos Públicos Federais | Taxa desconto (da aquisição) | Compra | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_d1_2_1_venda_min
+        descricao: "(IX.d.1.2.1) Títulos Públicos Federais | Taxa desconto (da aquisição) | Venda | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_d1_2_2_venda_media
+        descricao: "(IX.d.1.2.2) Títulos Públicos Federais | Taxa desconto (da aquisição) | Venda | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_d1_2_3_venda_max
+        descricao: "(IX.d.1.2.3) Títulos Públicos Federais | Taxa desconto (da aquisição) | Venda | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_d2_1_1_compra_min
+        descricao: "(IX.d.2.1.1) Títulos Públicos Federais | Taxa de Juros | Compra | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_d2_1_2_compra_media
+        descricao: "(IX.d.2.1.2) Títulos Públicos Federais | Taxa de Juros | Compra | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_d2_1_3_compra_max
+        descricao: "(IX.d.2.1.3) Títulos Públicos Federais | Taxa de Juros | Compra | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_d2_2_1_venda_min
+        descricao: "(IX.d.2.2.1) Títulos Públicos Federais | Taxa de Juros | Venda | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_d2_2_2_venda_media
+        descricao: "(IX.d.2.2.2) Títulos Públicos Federais | Taxa de Juros | Venda | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_d2_2_3_venda_max
+        descricao: "(IX.d.2.2.3) Títulos Públicos Federais | Taxa de Juros | Venda | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_e1_1_1_compra_min
+        descricao: "(IX.e.1.1.1) Certificados de Depósitos Bancários | Taxa desconto (da aquisição) | Compra | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_e1_1_2_compra_media
+        descricao: "(IX.e.1.1.2) Certificados de Depósitos Bancários | Taxa desconto (da aquisição) | Compra | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_e1_1_3_compra_max
+        descricao: "(IX.e.1.1.3) Certificados de Depósitos Bancários | Taxa desconto (da aquisição) | Compra | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_e1_2_1_venda_min
+        descricao: "(IX.e.1.2.1) Certificados de Depósitos Bancários | Taxa desconto (da aquisição) | Venda | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_e1_2_2_venda_media
+        descricao: "(IX.e.1.2.2) Certificados de Depósitos Bancários | Taxa desconto (da aquisição) | Venda | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_e1_2_3_venda_max
+        descricao: "(IX.e.1.2.3) Certificados de Depósitos Bancários | Taxa desconto (da aquisição) | Venda | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_e2_1_1_compra_min
+        descricao: "(IX.e.2.1.1) Certificados de Depósitos Bancários | Taxa de Juros | Compra | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_e2_1_2_compra_media
+        descricao: "(IX.e.2.1.2) Certificados de Depósitos Bancários | Taxa de Juros | Compra | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_e2_1_3_compra_max
+        descricao: "(IX.e.2.1.3) Certificados de Depósitos Bancários | Taxa de Juros | Compra | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_e2_2_1_venda_min
+        descricao: "(IX.e.2.2.1) Certificados de Depósitos Bancários | Taxa de Juros | Venda | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_e2_2_2_venda_media
+        descricao: "(IX.e.2.2.2) Certificados de Depósitos Bancários | Taxa de Juros | Venda | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_e2_2_3_venda_max
+        descricao: "(IX.e.2.2.3) Certificados de Depósitos Bancários | Taxa de Juros | Venda | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_f1_1_1_compra_min
+        descricao: "(IX.f.1.1.1) Outros Ativos Financeiros de Renda Fixa | Taxa desconto (da aquisição) | Compra | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_f1_1_2_compra_media
+        descricao: "(IX.f.1.1.2) Outros Ativos Financeiros de Renda Fixa | Taxa desconto (da aquisição) | Compra | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_f1_1_3_compra_max
+        descricao: "(IX.f.1.1.3) Outros Ativos Financeiros de Renda Fixa | Taxa desconto (da aquisição) | Compra | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_f1_2_1_venda_min
+        descricao: "(IX.f.1.2.1) Outros Ativos Financeiros de Renda Fixa | Taxa desconto (da aquisição) | Venda | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_f1_2_2_venda_media
+        descricao: "(IX.f.1.2.2) Outros Ativos Financeiros de Renda Fixa | Taxa desconto (da aquisição) | Venda | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_f1_2_3_venda_max
+        descricao: "(IX.f.1.2.3) Outros Ativos Financeiros de Renda Fixa | Taxa desconto (da aquisição) | Venda | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_f2_1_1_compra_min
+        descricao: "(IX.f.2.1.1) Outros Ativos Financeiros de Renda Fixa | Taxa de Juros | Compra | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_f2_1_2_compra_media
+        descricao: "(IX.f.2.1.2) Outros Ativos Financeiros de Renda Fixa | Taxa de Juros | Compra | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_f2_1_3_compra_max
+        descricao: "(IX.f.2.1.3) Outros Ativos Financeiros de Renda Fixa | Taxa de Juros | Compra | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_f2_2_1_venda_min
+        descricao: "(IX.f.2.2.1) Outros Ativos Financeiros de Renda Fixa | Taxa de Juros | Venda | Mínina"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_f2_2_2_venda_media
+        descricao: "(IX.f.2.2.2) Outros Ativos Financeiros de Renda Fixa | Taxa de Juros | Venda | Média (Ponderada)"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tab_ix_f2_2_3_venda_max
+        descricao: "(IX.f.2.2.3) Outros Ativos Financeiros de Renda Fixa | Taxa de Juros | Venda | Máxima"
+        dominio: Numérico
+        tipo: float
+        precisao: 53
+      - nome: tp_fundo_classe
+        descricao: Tipo de fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 25
+  tab_v:
+    descricao: "Direitos creditorios a vencer + inadimplentes + antecipados, escalonados em 10 buckets de prazo (30/60/90/120/150/180/360/720/1080/>1080 dias)."
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_V.txt
+    quantidade_campos: 37
+    campos:
+      - nome: cnpj_fundo_classe
+        descricao: CNPJ do fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: tab_v_a_vl_dircred_prazo
+        descricao: (V.a) Por Prazo de Vencimento (R$)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 26
+        scale: 2
+      - nome: tab_v_a1_vl_prazo_venc_30
+        descricao: (V.a.1) Até 30 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_a10_vl_prazo_venc_maior_1080
+        descricao: (V.a.10) Acima de 1080 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_a2_vl_prazo_venc_60
+        descricao: (V.a.2) De 31 a 60 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_a3_vl_prazo_venc_90
+        descricao: (V.a.3)  De 61 a 90 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_a4_vl_prazo_venc_120
+        descricao: (V.a.4) De 91 a 120 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_a5_vl_prazo_venc_150
+        descricao: (V.a.5) De 121 a 150 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_a6_vl_prazo_venc_180
+        descricao: (V.a.6) De 151 a 180 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_a7_vl_prazo_venc_360
+        descricao: (V.a.7) De 181 a 360 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_a8_vl_prazo_venc_720
+        descricao: (V.a.8) De 361 a 720 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_a9_vl_prazo_venc_1080
+        descricao: (V.a.9) De 721 a 1080 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_b_vl_dircred_inad
+        descricao: (V.b) Inadimplentes (Valor das Parcelas Inadimplentes, em R$)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 26
+        scale: 2
+      - nome: tab_v_b1_vl_inad_30
+        descricao: (V.b.1) Vencidos e não Pagos entre 1 e 30 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_b10_vl_inad_maior_1080
+        descricao: (V.b.10) Vencidos e não Pagos acima de 1080 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_b2_vl_inad_60
+        descricao: (V.b.2) Vencidos e não Pagos entre 31 e 60 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_b3_vl_inad_90
+        descricao: (V.b.3) Vencidos e não Pagos entre 61 e 90 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_b4_vl_inad_120
+        descricao: (V.b.4) Vencidos e não Pagos entre 91 e 120 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_b5_vl_inad_150
+        descricao: (V.b.5) Vencidos e não Pagos entre 121 e 150 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_b6_vl_inad_180
+        descricao: (V.b.6) Vencidos e não Pagos entre 151 e 180 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_b7_vl_inad_360
+        descricao: (V.b.7) Vencidos e não Pagos entre 181 e 360 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_b8_vl_inad_720
+        descricao: (V.b.8) Vencidos e não Pagos entre 361 e 720 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_b9_vl_inad_1080
+        descricao: (V.b.9) Vencidos e não Pagos entre 721 e 1080 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_c_vl_dircred_antecipado
+        descricao: (V.c) Pagos Antecipadamente (R$)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 26
+        scale: 2
+      - nome: tab_v_c1_vl_antecipado_30
+        descricao: (V.c.1) Pagos Antecipadamente entre 1 e 30 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_c10_vl_antecipado_maior_1080
+        descricao: (V.c.10) Pagos Antecipadamente acima de 1080 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_c2_vl_antecipado_60
+        descricao: (V.c.2) Pagos Antecipadamente entre 31 e 60 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_c3_vl_antecipado_90
+        descricao: (V.c.3) Pagos Antecipadamente entre 61 e 90 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_c4_vl_antecipado_120
+        descricao: (V.c.4) Pagos Antecipadamente entre 91 e 120 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_c5_vl_antecipado_150
+        descricao: (V.c.5) Pagos Antecipadamente entre 121 e 150 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_c6_vl_antecipado_180
+        descricao: (V.c.6) Pagos Antecipadamente entre 151 e 180 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_c7_vl_antecipado_360
+        descricao: (V.c.7) Pagos Antecipadamente entre 181 e 360 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_c8_vl_antecipado_720
+        descricao: (V.c.8) Pagos Antecipadamente entre 361 e 720 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_v_c9_vl_antecipado_1080
+        descricao: (V.c.9) Pagos Antecipadamente entre 721 e 1080 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tp_fundo_classe
+        descricao: Tipo de fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 25
+  tab_vi:
+    descricao: Passivo/obrigacoes do fundo por prazo (mesma escala de tab_v).
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_VI.txt
+    quantidade_campos: 37
+    campos:
+      - nome: cnpj_fundo_classe
+        descricao: CNPJ do fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: tab_vi_a_vl_dircred_prazo
+        descricao: (VI.a) Por Prazo de Vencimento (R$)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 26
+        scale: 2
+      - nome: tab_vi_a1_vl_prazo_venc_30
+        descricao: (VI.a.1) Até 30 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_a10_vl_prazo_venc_maior_1080
+        descricao: (VI.a.10) Acima de 1080 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_a2_vl_prazo_venc_60
+        descricao: (VI.a.2) De 31 a 60 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_a3_vl_prazo_venc_90
+        descricao: (VI.a.3)  De 61 a 90 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_a4_vl_prazo_venc_120
+        descricao: (VI.a.4) De 91 a 120 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_a5_vl_prazo_venc_150
+        descricao: (VI.a.5) De 121 a 150 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_a6_vl_prazo_venc_180
+        descricao: (VI.a.6) De 151 a 180 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_a7_vl_prazo_venc_360
+        descricao: (VI.a.7) De 181 a 360 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_a8_vl_prazo_venc_720
+        descricao: (VI.a.8) De 361 a 720 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_a9_vl_prazo_venc_1080
+        descricao: (VI.a.9) De 721 a 1080 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_b_vl_dircred_inad
+        descricao: (VI.b) Inadimplentes (Valor das Parcelas Inadimplentes, em R$)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 26
+        scale: 2
+      - nome: tab_vi_b1_vl_inad_30
+        descricao: (VI.b.1) Vencidos e não Pagos entre 1 e 30 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_b10_vl_inad_maior_1080
+        descricao: (VI.b.10) Vencidos e não Pagos acima de 1080 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_b2_vl_inad_60
+        descricao: (VI.b.2) Vencidos e não Pagos entre 31 e 60 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_b3_vl_inad_90
+        descricao: (VI.b.3) Vencidos e não Pagos entre 61 e 90 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_b4_vl_inad_120
+        descricao: (VI.b.4) Vencidos e não Pagos entre 91 e 120 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_b5_vl_inad_150
+        descricao: (VI.b.5) Vencidos e não Pagos entre 121 e 150 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_b6_vl_inad_180
+        descricao: (VI.b.6) Vencidos e não Pagos entre 151 e 180 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_b7_vl_inad_360
+        descricao: (VI.b.7) Vencidos e não Pagos entre 181 e 360 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_b8_vl_inad_720
+        descricao: (VI.b.8) Vencidos e não Pagos entre 361 e 720 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_b9_vl_inad_1080
+        descricao: (VI.b.9) Vencidos e não Pagos entre 721 e 1080 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_c_vl_dircred_antecipado
+        descricao: (VI.c) Pagos Antecipadamente (R$)
+        dominio: Numérico
+        tipo: numeric
+        precisao: 26
+        scale: 2
+      - nome: tab_vi_c1_vl_antecipado_30
+        descricao: (VI.c.1) Pagos Antecipadamente entre 1 e 30 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_c10_vl_antecipado_maior_1080
+        descricao: (VI.c.10) Pagos Antecipadamente acima de 1080 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_c2_vl_antecipado_60
+        descricao: (VI.c.2) Pagos Antecipadamente entre 31 e 60 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_c3_vl_antecipado_90
+        descricao: (VI.c.3) Pagos Antecipadamente entre 61 e 90 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_c4_vl_antecipado_120
+        descricao: (VI.c.4) Pagos Antecipadamente entre 91 e 120 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_c5_vl_antecipado_150
+        descricao: (VI.c.5) Pagos Antecipadamente entre 121 e 150 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_c6_vl_antecipado_180
+        descricao: (VI.c.6) Pagos Antecipadamente entre 151 e 180 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_c7_vl_antecipado_360
+        descricao: (VI.c.7) Pagos Antecipadamente entre 181 e 360 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_c8_vl_antecipado_720
+        descricao: (VI.c.8) Pagos Antecipadamente entre 361 e 720 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vi_c9_vl_antecipado_1080
+        descricao: (VI.c.9) Pagos Antecipadamente entre 721 e 1080 dias do vencimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tp_fundo_classe
+        descricao: Tipo de fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 25
+  tab_vii:
+    descricao: Informacoes complementares -- pagamento de despesas, provisoes.
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_VII.txt
+    quantidade_campos: 29
+    campos:
+      - nome: cnpj_fundo_classe
+        descricao: CNPJ do fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: tab_vii_a1_1_qt_dircred_risco
+        descricao: "(VII.a.1.1) Aquisições | Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Quantidade"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_a1_2_vl_dircred_risco
+        descricao: "(VII.a.1.2) Aquisições | Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Valor"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_a2_1_qt_dircred_sem_risco
+        descricao: "(VII.a.2.1) Aquisições | Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Quantidade"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_a2_2_vl_dircred_sem_risco
+        descricao: "(VII.a.2.2) Aquisições | Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Valor"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_a3_1_qt_dircred_venc_ad
+        descricao: "(VII.a.3.1) Aquisições | Direitos Creditórios a Vencer e com parcela(s) Adimplentes | Quantidade"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_a3_2_vl_dircred_venc_ad
+        descricao: "(VII.a.3.2) Aquisições | Direitos Creditórios a Vencer e com parcela(s) Adimplentes | Valor"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_a4_1_qt_dircred_venc_inad
+        descricao: "(VII.a.4.1) Aquisições | Direitos Creditórios a Vencer com Parcelas Inadimplentes | Quantidade"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_a4_2_vl_dircred_venc_inad
+        descricao: "(VII.a.4.2) Aquisições | Direitos Creditórios a Vencer com Parcelas Inadimplentes | Valor"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_a5_1_qt_dircred_inad
+        descricao: "(VII.a.5.1) Aquisições | Direitos Creditórios Inadimplentes | Quantidade"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_a5_2_vl_dircred_inad
+        descricao: "(VII.a.5.2) Aquisições | Direitos Creditórios Inadimplentes | Valor"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_b1_1_qt_cedente
+        descricao: "(VII.b.1.1) Alienações | Para o Cedente e Partes Relacionadas aos Cedentes | Quantidade"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_b1_2_vl_cedente
+        descricao: "(VII.b.1.2) Alienações | Para o Cedente e Partes Relacionadas aos Cedentes | Valor"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_b1_3_vl_contab_cedente
+        descricao: "(VII.b.1.3) Alienações | Para o Cedente e Partes Relacionadas aos Cedentes | Valor Contábil"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_b2_1_qt_prest
+        descricao: "(VII.b.2.1) Alienações | Para os Prestadores de Serviços e Partes Relacionadas aos Prestadores de Serviços | Quantidade"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_b2_2_vl_prest
+        descricao: "(VII.b.2.2) Alienações | Para os Prestadores de Serviços e Partes Relacionadas aos Prestadores de Serviços | Valor"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_b2_3_vl_contab_prest
+        descricao: "(VII.b.2.3) Alienações | Para os Prestadores de Serviços e Partes Relacionadas aos Prestadores de Serviços | Valor Contábil"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_b3_1_qt_terceiro
+        descricao: "(VII.b.3.1) Alienações | Para Terceiros | Quantidade"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_b3_2_vl_terceiro
+        descricao: "(VII.b.3.2) Alienações | Para Terceiros | Valor"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_b3_3_vl_contab_terceiro
+        descricao: "(VII.b.3.3) Alienações | Para Terceiros | Valor Contábil"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_c_1_qt_subst
+        descricao: "(VII.c.1) Substituições | Quantidade"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_c_2_vl_subst
+        descricao: "(VII.c.2) Substituições | Valor"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_c_3_vl_contab_subst
+        descricao: "(VII.c.3) Substituições | Valor Contábil"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_d_1_qt_recompra
+        descricao: "(VII.d.1) Recompras | Quantidade"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_d_2_vl_recompra
+        descricao: "(VII.d.2) Recompras | Valor"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_vii_d_3_vl_contab_recompra
+        descricao: "(VII.d.3) Recompras | Valor Contábil"
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tp_fundo_classe
+        descricao: Tipo de fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 25
+  tab_x:
+    descricao: Distribuicao de SCR (Sistema de Informacoes de Credito) por rating AA/A/B/C/D/E/F/G/H -- separadamente por risco do devedor e risco da operacao.
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_X.txt
+    quantidade_campos: 23
+    campos:
+      - nome: cnpj_fundo_classe
+        descricao: CNPJ do fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: tab_x_debito_tribut
+        descricao: (X.9.1) Valor total dos direitos creditórios cedidos por cedentes que possuem débitos tributários inscritos em dívida Ativa da União
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_devedor_a
+        descricao: (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - A
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_devedor_aa
+        descricao: (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - AA
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_devedor_b
+        descricao: (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - B
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_devedor_c
+        descricao: (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - C
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_devedor_d
+        descricao: (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - D
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_devedor_e
+        descricao: (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - E
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_devedor_f
+        descricao: (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - F
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_devedor_g
+        descricao: (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - G
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_devedor_h
+        descricao: (X.8.1) Valor Total dos direitos creditórios reportados ao SCR com base nas classificações de riscos dos devedores - H
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_oper_a
+        descricao: (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - A
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_oper_aa
+        descricao: (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - AA
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_oper_b
+        descricao: (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - B
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_oper_c
+        descricao: (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - C
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_oper_d
+        descricao: (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - D
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_oper_e
+        descricao: (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - E
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_oper_f
+        descricao: (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - F
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_oper_g
+        descricao: (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - G
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tab_x_scr_risco_oper_h
+        descricao: (X.8.2) Valor total dos direitos creditórios reportados ao SCR com base nas classificações de risco das operações - H
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 2
+      - nome: tp_fundo_classe
+        descricao: Tipo de fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 25
+  tab_x_1:
+    descricao: Numero de cotistas POR classe/serie (uma linha por tab_x_classe_serie x id_subclasse).
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_X_1.txt
+    quantidade_campos: 5
+    campos:
+      - nome: cnpj_fundo
+        descricao: CNPJ do fundo
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: tab_x_classe_serie
+        descricao: (X) Classe/Série
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 49
+      - nome: tab_x_nr_cotst
+        descricao: (X.1) Número de Cotistas
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 0
+  tab_x_1_1:
+    descricao: Numero de cotistas POR TIPO DE INVESTIDOR (banco, PF, PJ financeira/nao financeira, EAPC, EFPC, RPPS, InvNR, FII, clube, seguradora, corretora, capitalizacao, cota_fidc, outro_fi, outros) -- quebrado em Senior e Subordinada, NAO por serie.
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_X_1_1.txt
+    quantidade_campos: 36
+    campos:
+      - nome: cnpj_fundo_classe
+        descricao: CNPJ do fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: tab_x_nr_cotst_senior_banco
+        descricao: (X.1.1) Número de Cotistas (Classe Sênior) - Banco comercial
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_senior_capitaliz
+        descricao: (X.1.1) Número de Cotistas (Classe Sênior) - Sociedade de capitalização e de arrendamento mercantil
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_senior_clube
+        descricao: (X.1.1) Número de Cotistas (Classe Sênior) - Clubes de investimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_senior_corretora_distrib
+        descricao: (X.1.1) Número de Cotistas (Classe Sênior) - Corretora ou distribuidora
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_senior_cota_fidc
+        descricao: (X.1.1) Número de Cotistas (Classe Sênior) - Fundos de investimento em cotas de FIDC
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_senior_eapc
+        descricao: (X.1.1) Número de Cotistas (Classe Sênior) - Entidade aberta de previdência complementar
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_senior_efpc
+        descricao: (X.1.1) Número de Cotistas (Classe Sênior) - Entidade fechada de previdência complementar
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_senior_fii
+        descricao: (X.1.1) Número de Cotistas (Classe Sênior) - Fundos de investimento imobiliário
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_senior_invnr
+        descricao: (X.1.1) Número de Cotistas (Classe Sênior) - Investidores não residentes
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_senior_outro
+        descricao: (X.1.1) Número de Cotistas (Classe Sênior) - Outros
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_senior_outro_fi
+        descricao: (X.1.1) Número de Cotistas (Classe Sênior) - Outros fundos de investimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_senior_pf
+        descricao: (X.1.1) Número de Cotistas (Classe Sênior) - Pessoa física
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_senior_pj_financ
+        descricao: (X.1.1) Número de Cotistas (Classe Sênior) - Outras pessoas jurídicas financeiras
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_senior_pj_nao_financ
+        descricao: (X.1.1) Número de Cotistas (Classe Sênior) - Pessoa jurídica não-financeira
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_senior_rpps
+        descricao: (X.1.1) Número de Cotistas (Classe Sênior) - Regime próprio de previdência dos servidores públicos
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_senior_segur
+        descricao: (X.1.1) Número de Cotistas (Classe Sênior) - Sociedade seguradora ou resseguradora
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_subord_banco
+        descricao: (X.1.2) Número de Cotistas (Classe Subordinada) - Banco comercial
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_subord_capitaliz
+        descricao: (X.1.2) Número de Cotistas (Classe Subordinada) - Sociedade de capitalização e de arrendamento mercantil
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_subord_clube
+        descricao: (X.1.2) Número de Cotistas (Classe Subordinada) - Clubes de investimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_subord_corretora_distrib
+        descricao: (X.1.2) Número de Cotistas (Classe Subordinada) - Corretora ou distribuidora
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_subord_cota_fidc
+        descricao: (X.1.2) Número de Cotistas (Classe Subordinada) - Fundos de investimento em cotas de FIDC
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_subord_eapc
+        descricao: (X.1.2) Número de Cotistas (Classe Subordinada) - Entidade aberta de previdência complementar
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_subord_efpc
+        descricao: (X.1.2) Número de Cotistas (Classe Subordinada) - Entidade fechada de previdência complementar
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_subord_fii
+        descricao: (X.1.2) Número de Cotistas (Classe Subordinada) - Fundos de investimento imobiliário
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_subord_invnr
+        descricao: (X.1.2) Número de Cotistas (Classe Subordinada) - Investidores não residentes
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_subord_outro
+        descricao: (X.1.2) Número de Cotistas (Classe Subordinada) - Outros
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_subord_outro_fi
+        descricao: (X.1.2) Número de Cotistas (Classe Subordinada) - Outros fundos de investimento
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_subord_pf
+        descricao: (X.1.2) Número de Cotistas (Classe Subordinada) - Pessoa física
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_subord_pj_financ
+        descricao: (X.1.2) Número de Cotistas (Classe Subordinada) - Outras pessoas jurídicas financeiras
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_subord_pj_nao_financ
+        descricao: (X.1.2) Número de Cotistas (Classe Subordinada) - Pessoa jurídica não-financeira
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_subord_rpps
+        descricao: (X.1.2) Número de Cotistas (Classe Subordinada) - Regime próprio de previdência dos servidores públicos
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tab_x_nr_cotst_subord_segur
+        descricao: (X.1.2) Número de Cotistas (Classe Subordinada) - Sociedade seguradora ou resseguradora
+        dominio: Numérico
+        tipo: numeric
+        precisao: 14
+        scale: 0
+      - nome: tp_fundo_classe
+        descricao: Tipo de fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 25
+  tab_x_2:
+    descricao: Quantidade e valor da cota POR classe/serie. PL por subclasse deriva de qt_cota x vl_cota -- UNICA fonte oficial. Campo tab_x_qt_cota vem frequentemente NULL (ver dicionario.md).
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_X_2.txt
+    quantidade_campos: 6
+    campos:
+      - nome: cnpj_fundo
+        descricao: CNPJ do fundo
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: tab_x_classe_serie
+        descricao: (X) Classe/Série
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 49
+      - nome: tab_x_qt_cota
+        descricao: (X) Quantidade de Cotas
+        dominio: Numérico
+        tipo: numeric
+        precisao: 29
+        scale: 8
+      - nome: tab_x_vl_cota
+        descricao: (X.2) Valor da Cota
+        dominio: Numérico
+        tipo: numeric
+        precisao: 29
+        scale: 8
+  tab_x_3:
+    descricao: "Rentabilidade apurada no mes (%) POR classe/serie."
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_X_3.txt
+    quantidade_campos: 5
+    campos:
+      - nome: cnpj_fundo
+        descricao: CNPJ do fundo
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: tab_x_classe_serie
+        descricao: (X) Classe/Série
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 49
+      - nome: tab_x_vl_rentab_mes
+        descricao: (X.3) Rentabilidade Apurada no Mês
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+  tab_x_4:
+    descricao: Movimentacoes do mes -- captacoes, resgates, resgates solicitados, amortizacoes -- valor em R$ e quantidade de cotas, POR classe/serie.
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_X_4.txt
+    quantidade_campos: 7
+    campos:
+      - nome: cnpj_fundo
+        descricao: CNPJ do fundo
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: tab_x_classe_serie
+        descricao: (X) Classe/Série
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 49
+      - nome: tab_x_qt_cota
+        descricao: (X) Quantidade de Cotas
+        dominio: Numérico
+        tipo: numeric
+        precisao: 29
+        scale: 8
+      - nome: tab_x_tp_oper
+        descricao: (X.4) Tipo de Operação
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: tab_x_vl_total
+        descricao: (X.4) Valor Total
+        dominio: Numérico
+        tipo: numeric
+        precisao: 23
+        scale: 8
+  tab_x_5:
+    descricao: "Liquidez escalonada do ativo -- R$ liquidavel em 0/30/60/90/180/360/>360 dias."
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_X_5.txt
+    quantidade_campos: 11
+    campos:
+      - nome: cnpj_fundo_classe
+        descricao: CNPJ do fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: tab_x_vl_liquidez_0
+        descricao: (X.5) Ativos com liquidez imediata
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_x_vl_liquidez_180
+        descricao: (X.5) Ativos que podem ser liquidados em até 180 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_x_vl_liquidez_30
+        descricao: (X.5) Ativos que podem ser liquidados em até 30 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_x_vl_liquidez_360
+        descricao: (X.5) Ativos que podem ser liquidados em até 360 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_x_vl_liquidez_60
+        descricao: (X.5) Ativos que podem ser liquidados em até 60 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_x_vl_liquidez_90
+        descricao: (X.5)  Ativos que podem ser liquidados em até 90 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_x_vl_liquidez_maior_360
+        descricao: (X.5) Ativos que podem ser liquidados em mais de 360 dias
+        dominio: Numérico
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tp_fundo_classe
+        descricao: Tipo de fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 25
+  tab_x_6:
+    descricao: Desempenho percentual esperado vs realizado POR classe/serie.
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_X_6.txt
+    quantidade_campos: 6
+    campos:
+      - nome: cnpj_fundo
+        descricao: CNPJ do fundo
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: tab_x_classe_serie
+        descricao: (X) Classe/Série
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 49
+      - nome: tab_x_pr_desemp_real
+        descricao: "Domínio   :"
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_x_pr_desemp_esperado
+        descricao: "Domínio   :"
+        tipo: numeric
+        precisao: 17
+        scale: 2
+  tab_x_7:
+    descricao: Garantias atreladas aos direitos creditorios -- valor (R$) e percentual.
+    arquivo_cvm_meta: meta_inf_mensal_fidc_tab_X_7.txt
+    quantidade_campos: 6
+    campos:
+      - nome: cnpj_fundo_classe
+        descricao: CNPJ do fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 20
+      - nome: denom_social
+        descricao: Denominação Social
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 100
+      - nome: dt_comptc
+        descricao: Data de competência do documento
+        dominio: AAAA-MM-DD
+        tipo: date
+        tamanho: 10
+      - nome: tp_fundo_classe
+        descricao: Tipo de fundo/classe
+        dominio: Alfanumérico
+        tipo: varchar
+        tamanho: 25
+      - nome: tab_x_pr_garantia_dircred
+        descricao: "Domínio   :"
+        tipo: numeric
+        precisao: 17
+        scale: 2
+      - nome: tab_x_vl_garantia_dircred
+        descricao: "Domínio   :"
+        tipo: numeric
+        precisao: 17
+        scale: 2
+omissoes_observadas:
+  - campo: tab_x_2.tab_x_qt_cota
+    descricao: "Quantidade de cotas por classe/serie. Campo opcional no preenchimento. Muitos administradores (ex.: QI Corretora pos-Res.175) deixam NULL. Sem qt_cota nao ha como derivar PL da subclasse (pl = qt * vl)."
+    casos_conhecidos:
+    - 13.805.152/0001-03 (Puma FIDC NP Multissetorial) -- NULL em toda a serie 2025-02..2026-03
+    mitigacao: Mostrar somente vl_cota + nr_cotst na UI; declarar na lista de limitacoes. Rateio por nr_cotst NAO e proxy valido.
+  - campo: tab_x_4.tab_x_qt_cota
+    descricao: Quantidade de cotas movimentada (captacao/resgate/amortizacao). Mesmo padrao de omissao de tab_x_2.tab_x_qt_cota -- quando o admin nao preenche estoque, tambem nao preenche fluxo.
+    casos_conhecidos:
+    - 13.805.152/0001-03 (Puma FIDC NP Multissetorial)
+    mitigacao: Derivar fluxo em R$ via tab_x_vl_total (sempre populado). Quantidade de cotas movimentadas fica indisponivel.
+  - campo: tab_i.tab_i2a12_pr_cedente_{1..9}
+    descricao: "Concentracao dos 9 maiores cedentes (% do PL). CVM nao coleta top-10+ nem qualquer informacao dos SACADOS."
+    casos_conhecidos:
+    - Todos os FIDCs
+    mitigacao: Relatorios de agencias (Austin etc.) que citam top-10/20 e sacados usam fonte do ADMINISTRADOR, nao CVM -- irreproduzivel via dado publico.
+  - campo: "tab_v.tab_v_b*_vl_inad_*"
+    descricao: "Buckets de inadimplencia comecam em 0-30 dias. CVM NAO tem bucket 'ate 15d' (usado por Austin)."
+    casos_conhecidos:
+    - Esquema CVM -- limitacao estrutural
+    mitigacao: "Ficha da UI apresenta os 10 buckets CVM (0-30..>1080) com nota inline."

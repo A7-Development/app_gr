@@ -1,0 +1,949 @@
+-----------------------
+Campo: ADMIN
+-----------------------
+   Descrição : Nome do Administrador
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 100
+
+-----------------------
+Campo: CLASSE
+-----------------------
+   Descrição : Classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: CNPJ_ADMIN
+-----------------------
+   Descrição : CNPJ do Administrador
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 20
+
+-----------------------
+Campo: CNPJ_FUNDO_CLASSE
+-----------------------
+   Descrição : CNPJ do fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 20
+
+-----------------------
+Campo: CONDOM
+-----------------------
+   Descrição : Forma de condomínio
+   Domínio   : Aberto/Fechado
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: COTST_INTERESSE
+-----------------------
+   Descrição : Indica se todos os cotistas são vinculados por interesse único e indissociável
+   Domínio   : S/N
+   Tipo Dados: varchar
+   Tamanho   : 1
+
+-----------------------
+Campo: DENOM_SOCIAL
+-----------------------
+   Descrição : Denominação Social
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 100
+
+-----------------------
+Campo: DT_COMPTC
+-----------------------
+   Descrição : Data de competência do documento
+   Domínio   : AAAA-MM-DD
+   Tipo Dados: date
+   Tamanho   : 10
+
+-----------------------
+Campo: FUNDO_EXCLUSIVO
+-----------------------
+   Descrição : Indica se é fundo exclusivo
+   Domínio   : S/N
+   Tipo Dados: varchar
+   Tamanho   : 1
+
+-----------------------
+Campo: PRAZO_CONVERSAO_COTA
+-----------------------
+   Descrição : Prazo mínimo entre a data do pedido de resgate e a correspondente conversão em quantidade de cotas
+   Domínio   : Numérico
+   Tipo Dados: int
+   Precisão  : 10
+   Scale     : 0
+
+-----------------------
+Campo: PRAZO_PAGTO_RESGATE
+-----------------------
+   Descrição : Prazo para o pagamento do resgate após a conversão em quantidade de cotas
+   Domínio   : Numérico
+   Tipo Dados: int
+   Precisão  : 10
+   Scale     : 0
+
+-----------------------
+Campo: TAB_I_VL_ATIVO
+-----------------------
+   Descrição : (Tabela I) Ativo
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 38
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I1_VL_DISP
+-----------------------
+   Descrição : (I.1) Disponibilidades
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2_COTA_FIDC
+-----------------------
+   Descrição : (I.2) (-) Provisões sobre Cotas de Fundos de Investimento em Direitos Creditórios
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2_DEBENTURE_CRI
+-----------------------
+   Descrição : (I.2) (-) Provisões sobre Debêntures, CRI, Notas Promissórias e Letras Financeiras
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2_VL_CARTEIRA
+-----------------------
+   Descrição : (I.2) Carteira
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 37
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2_VL_OUTRO_ATIVO
+-----------------------
+   Descrição : (I.2) (-) Provisões sobre outros ativos
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A_VL_DIRCRED_RISCO
+-----------------------
+   Descrição : (I.2.a) Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 22
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A1_VL_CRED_VENC_AD
+-----------------------
+   Descrição : (I.2.a.1) Créditos Existentes a Vencer e Adimplentes
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A10_VL_CRED_DIVERSO
+-----------------------
+   Descrição : (I.2.a.10) Outros créditos, de natureza diversa, não enquadráveis no disposto no inciso I do art. 2º da ICVM 356
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A11_VL_REDUCAO_RECUP
+-----------------------
+   Descrição : (I.2.a.11) Provisão para Redução no Valor de Recuperação (-)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A12_CPF_CNPJ_CEDENTE_1
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 1 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2A12_CPF_CNPJ_CEDENTE_2
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 2 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2A12_CPF_CNPJ_CEDENTE_3
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 3 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2A12_CPF_CNPJ_CEDENTE_4
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 4 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2A12_CPF_CNPJ_CEDENTE_5
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 5 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2A12_CPF_CNPJ_CEDENTE_6
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 6 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2A12_CPF_CNPJ_CEDENTE_7
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 7 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2A12_CPF_CNPJ_CEDENTE_8
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 8 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2A12_CPF_CNPJ_CEDENTE_9
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 9 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2A12_PR_CEDENTE_1
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 1 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A12_PR_CEDENTE_2
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 2 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A12_PR_CEDENTE_3
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 3 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A12_PR_CEDENTE_4
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 4 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A12_PR_CEDENTE_5
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 5 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A12_PR_CEDENTE_6
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 6 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A12_PR_CEDENTE_7
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 7 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A12_PR_CEDENTE_8
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 8 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A12_PR_CEDENTE_9
+-----------------------
+   Descrição : (I.2.a.12) Direitos Creditórios: Cedente 9 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A2_VL_CRED_VENC_INAD
+-----------------------
+   Descrição : (I.2.a.2) Créditos Existentes a Vencer com Parcelas Inadimplentes
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A21_VL_TOTAL_PARCELA_INAD
+-----------------------
+   Descrição : (I.2.a.2.1) Valor Total das Parcelas Inadimplentes
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A3_VL_CRED_INAD
+-----------------------
+   Descrição : (I.2.a.3) Créditos Existentes Inadimplentes
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A4_VL_CRED_DIRCRED_PERFM
+-----------------------
+   Descrição : (I.2.a.4) Créditos Referentes a Direitos Creditórios a Performar
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A5_VL_CRED_VENCIDO_PENDENTE
+-----------------------
+   Descrição : (I.2.a.5) Créditos que estejam vencidos e pendentes de pagamento quando da sua cessão para o fundo
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A6_VL_CRED_EMP_RECUP
+-----------------------
+   Descrição : (I.2.a.6) Créditos Originados de Empresas em Processo de Recuperação Judicial ou Extrajudicial
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A7_VL_CRED_RECEITA_PUBLICA
+-----------------------
+   Descrição : (I.2.a.7) Créditos decorrentes de receitas públicas originárias ou derivadas da União, Estados, Distrito Federal e Municípios, suas Autarquias e Fundações
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A8_VL_CRED_ACAO_JUDIC
+-----------------------
+   Descrição : (I.2.a.8) Créditos que resultem de ações judiciais em curso, constituam seu objeto de litígio ou tenham sido judicialmente penhorados ou dados em garantia
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2A9_VL_CRED_FATOR_RISCO
+-----------------------
+   Descrição : (I.2.a.9) Créditos cuja constituição ou validade jurídica da cessão para o fundo seja considerada um fator preponderante de risco
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B_VL_DIRCRED_SEM_RISCO
+-----------------------
+   Descrição : (I.2.b) Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B1_VL_CRED_VENC_AD
+-----------------------
+   Descrição : (I.2.b.1) Créditos Existentes a Vencer e Adimplentes (ICVM 576)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B10_VL_CRED_DIVERSO
+-----------------------
+   Descrição : (I.2.b.10) Outros créditos, de natureza diversa, não enquadráveis no disposto no inciso I do art. 2º da ICVM 356
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B11_VL_REDUCAO_RECUP
+-----------------------
+   Descrição : (I.2.b.11) Provisão para Redução no Valor de Recuperação (-)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B12_CPF_CNPJ_CEDENTE_1
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 1 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2B12_CPF_CNPJ_CEDENTE_2
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 2 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2B12_CPF_CNPJ_CEDENTE_3
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 3 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2B12_CPF_CNPJ_CEDENTE_4
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 4 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2B12_CPF_CNPJ_CEDENTE_5
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 5 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2B12_CPF_CNPJ_CEDENTE_6
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 6 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2B12_CPF_CNPJ_CEDENTE_7
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 7 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2B12_CPF_CNPJ_CEDENTE_8
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 8 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2B12_CPF_CNPJ_CEDENTE_9
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 9 - CPF ou CNPJ
+   Domínio   : Numérico
+   Tipo Dados: varchar
+   Tamanho   : 255
+
+-----------------------
+Campo: TAB_I2B12_PR_CEDENTE_1
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 1 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B12_PR_CEDENTE_2
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 2 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B12_PR_CEDENTE_3
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 3 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B12_PR_CEDENTE_4
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 4 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B12_PR_CEDENTE_5
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 5 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B12_PR_CEDENTE_6
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 6 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B12_PR_CEDENTE_7
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 7 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B12_PR_CEDENTE_8
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 8 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B12_PR_CEDENTE_9
+-----------------------
+   Descrição : (I.2.b.12) Direitos Creditórios: Cedente 9 - Valor do Percentual de Participação
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B2_VL_CRED_VENC_INAD
+-----------------------
+   Descrição : (I.2.b.2) Créditos Existentes a Vencer com Parcelas Inadimplentes
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B21_VL_TOTAL_PARCELA_INAD
+-----------------------
+   Descrição : (I.2.b.2.1) Valor Total das Parcelas Inadimplentes
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B3_VL_CRED_INAD
+-----------------------
+   Descrição : (I.2.b.3) Créditos Existentes Inadimplentes
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B4_VL_CRED_DIRCRED_PERFM
+-----------------------
+   Descrição : (I.2.b.4) Créditos Referentes a Direitos Creditórios a Performar
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B5_VL_CRED_VENCIDO_PENDENTE
+-----------------------
+   Descrição : (I.2.b.5) Créditos que estejam vencidos e pendentes de pagamento quando da sua cessão para o fundo
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B6_VL_CRED_EMP_RECUP
+-----------------------
+   Descrição : (I.2.b.6) Créditos Originados de Empresas em Processo de Recuperação Judicial ou Extrajudicial
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B7_VL_CRED_RECEITA_PUBLICA
+-----------------------
+   Descrição : (I.2.b.7) Créditos decorrentes de receitas públicas originárias ou derivadas da União, Estados, Distrito Federal e Municípios, suas Autarquias e Fundações
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B8_VL_CRED_ACAO_JUDIC
+-----------------------
+   Descrição : (I.2.b.8) Créditos que resultem de ações judiciais em curso, constituam seu objeto de litígio ou tenham sido judicialmente penhorados ou dados em garantia
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2B9_VL_CRED_FATOR_RISCO
+-----------------------
+   Descrição : (I.2.b.9) Créditos cuja constituição ou validade jurídica da cessão para o fundo seja considerada um fator preponderante de risco
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2C_VL_VLMOB
+-----------------------
+   Descrição : (I.2.c) Valores Mobiliários
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 22
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2C1_VL_DEBENTURE
+-----------------------
+   Descrição : (I.2.c.1) Debêntures
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2C2_VL_CRI
+-----------------------
+   Descrição : (I.2.c.2) CRI
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2C3_VL_NP_COMERC
+-----------------------
+   Descrição : (I.2.c.3) Notas Promissórias Comerciais
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2C4_VL_LETRA_FINANC
+-----------------------
+   Descrição : (I.2.c.4) Letras Financeiras
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2C5_VL_COTA_FIF
+-----------------------
+   Descrição : (I.2.c.5) Classes de Cotas dos FIF - Anexo I da RCVM 175
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2C5_VL_COTA_FUNDO_ICVM555
+-----------------------
+   Descrição : (I.2.c.5) Cotas de Fundos da ICVM 555
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2C6_VL_OUTRO
+-----------------------
+   Descrição : (I.2.c.6) Outros
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2D_VL_TITPUB_FED
+-----------------------
+   Descrição : (I.2.d) Títulos Públicos Federais
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2E_VL_CDB
+-----------------------
+   Descrição : (I.2.e) Certificados de Depósitos Bancários
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2F_VL_OPER_COMPROM
+-----------------------
+   Descrição : (I.2.f) Aplicações em Operações Compromissadas
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2G_VL_OUTRO_RF
+-----------------------
+   Descrição : (I.2.g) Outros Ativos Financeiros de Renda Fixa
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2H_VL_COTA_FIDC
+-----------------------
+   Descrição : (I.2.h) Cotas de Fundos de Investimento em Direitos Creditórios
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2I_VL_COTA_FIDC_NP
+-----------------------
+   Descrição : (I.2.i) Cotas de Fundos de Investimento em Direitos Creditórios Não Padronizados
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I2J_VL_CONTRATO_FUTURO
+-----------------------
+   Descrição : (I.2.j) Warrants, Contrato de Compra e Venda de Produtos, Mercadorias e/ou Serviços para Entrega ou Prestação Futura
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I3_VL_POSICAO_DERIV
+-----------------------
+   Descrição : (I.3) Posições Mantidas em Mercados de Derivativos
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 20
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I3A_VL_MERCADO_TERMO
+-----------------------
+   Descrição : (I.3.a) Mercado a Termo - Posições Compradas
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I3B_VL_MERCADO_OPCAO
+-----------------------
+   Descrição : (I.3.b) Mercado de Opções - Posições Titulares
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I3C_VL_MERCADO_FUTURO
+-----------------------
+   Descrição : (I.3.c) Mercado Futuro - Ajustes Positivos
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I3D_VL_DIFER_SWAP
+-----------------------
+   Descrição : (I.3.d) Diferencial de Swap a Receber
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I3E_VL_COBERTURA
+-----------------------
+   Descrição : (I.3.e) Coberturas Prestadas
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I3F_VL_DEPOSITO_MARGEM
+-----------------------
+   Descrição : (I.3.f) Depósitos de Margem
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I4_VL_OUTRO_ATIVO
+-----------------------
+   Descrição : (I.4) Outros Ativos
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I4A_VL_CPRAZO
+-----------------------
+   Descrição : (I.4.a) Curto Prazo (realização em até 12 meses da data do informe)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_I4B_VL_LPRAZO
+-----------------------
+   Descrição : (I.4.b) Longo Prazo (realização após 12 meses da data do informe)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TP_FUNDO_CLASSE
+-----------------------
+   Descrição : Tipo de fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 25
+
+-----------------------
+Campo: TP_PRAZO_CONVERSAO_COTA
+-----------------------
+   Descrição : Tipo do prazo para conversão em quantidade de cotas
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 13
+
+-----------------------
+Campo: TP_PRAZO_PAGTO_RESGATE
+-----------------------
+   Descrição : Tipo do prazo para o pagamento do resgate
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 13
+
+-----------------------
+Campo: CLASSE_UNICA
+-----------------------
+   Descrição : 
+   Domínio   : 
+   Tipo Dados: varchar
+   Tamanho   : 1
+
+-----------------------
+Campo: CNPJ_CLASSE
+-----------------------
+   Descrição : 
+   Domínio   : 
+   Tipo Dados: varchar
+   Tamanho   : 50
+

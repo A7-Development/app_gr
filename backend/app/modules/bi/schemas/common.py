@@ -40,15 +40,28 @@ class BIFilters(BaseModel):
 class Provenance(BaseModel):
     """Metadata de proveniencia — anexada a toda resposta analitica do BI.
 
-    Segue o mesmo padrao do `/audit/ping` (CLAUDE.md 14.1).
+    Dois eixos temporais distintos (CLAUDE.md 14.6):
+
+    - `last_sync_at`: GLOBAL — ultima sincronizacao bem-sucedida do pipeline
+      para este adapter/tenant (vem de `decision_log`, independe dos filtros
+      da tela). Responde: "o pipeline esta vivo?".
+
+    - `last_source_updated_at`: FILTRADO — maior `source_updated_at` dentro
+      das linhas que entraram na agregacao atual. Responde: "ate quando vai
+      o dado que estou olhando?".
+
+    `last_ingested_at` foi removido: `MAX(ingested_at)` dentro de um filtro
+    da "ultima vez que uma row NOVA entrou no set" — semantica interna que
+    confunde o usuario final. Para frescor do pipeline, use `last_sync_at`.
     """
 
     source_type: str = Field(description="Origem do dado (ex.: 'erp:bitfin', 'derived')")
     source_ids: list[str] = Field(
         default_factory=list, description="IDs/fontes consultadas nesta agregacao"
     )
-    last_ingested_at: datetime | None = Field(
-        default=None, description="Timestamp do ETL mais recente que contribuiu"
+    last_sync_at: datetime | None = Field(
+        default=None,
+        description="Ultima sincronizacao bem-sucedida do pipeline (decision_log).",
     )
     last_source_updated_at: datetime | None = Field(
         default=None, description="Timestamp max de source_updated_at dos registros agregados"

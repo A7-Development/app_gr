@@ -15,7 +15,10 @@ from uuid import UUID
 from sqlalchemy import select
 
 from app.core.database import AsyncSessionLocal
+from app.core.enums import SourceType
+from app.modules.integracoes.adapters.erp.bitfin.config import BitfinConfig
 from app.modules.integracoes.adapters.erp.bitfin.etl import sync_all
+from app.modules.integracoes.services.source_config import get_decrypted_config
 from app.shared.identity.tenant import Tenant
 
 
@@ -28,10 +31,22 @@ async def _resolve_tenant_id(slug: str) -> UUID:
         return tenant.id
 
 
+async def _load_config(tenant_id: UUID) -> BitfinConfig:
+    async with AsyncSessionLocal() as db:
+        cfg_dict = await get_decrypted_config(db, tenant_id, SourceType.ERP_BITFIN)
+    if cfg_dict is None:
+        raise SystemExit(
+            f"Tenant {tenant_id} nao tem tenant_source_config para erp:bitfin. "
+            f"Configure via endpoint admin antes de rodar o bootstrap."
+        )
+    return BitfinConfig.from_dict(cfg_dict)
+
+
 async def _main(tenant_slug: str) -> None:
     tenant_id = await _resolve_tenant_id(tenant_slug)
-    print(f"[bootstrap] tenant={tenant_slug} ({tenant_id})")
-    summary = await sync_all(tenant_id, since=None)
+    config = await _load_config(tenant_id)
+    print(f"[bootstrap] tenant={tenant_slug} ({tenant_id}) db={config.database_bitfin}")
+    summary = await sync_all(tenant_id, config, since=None)
     print(json.dumps(summary, default=str, indent=2, ensure_ascii=False))
 
 

@@ -30,6 +30,7 @@ from app.modules.bi.schemas.benchmark import (
 )
 from app.modules.bi.schemas.benchmark_comparativo import ComparativoResponse
 from app.modules.bi.schemas.common import BIResponse
+from app.modules.bi.schemas.fundo import FichaFundo
 from app.modules.bi.services import benchmark as svc
 
 router = APIRouter(prefix="/benchmark", tags=["bi:benchmark"])
@@ -242,6 +243,30 @@ async def comparativo(
                 detail=f"CNPJ invalido (precisa ter 14 digitos): {c!r}",
             )
     data, prov = await svc.get_comparativo(db, cnpjs, competencia, meses=meses)
+    return BIResponse(data=data, provenance=prov)
+
+
+@router.get("/fundo/{cnpj}", response_model=BIResponse[FichaFundo])
+async def fundo(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    cnpj: str,
+    meses: Annotated[
+        int,
+        Query(ge=3, le=120, description="Meses das series (default 24)"),
+    ] = 24,
+    _: None = _Guard,
+) -> BIResponse[FichaFundo]:
+    """Ficha do fundo -- snapshot + series ~24m. Dados publicos CVM FIDC."""
+    digits = re.sub(r"\D", "", cnpj)
+    if not _CNPJ_DIGITS_RE.match(digits):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"CNPJ invalido (14 digitos obrigatorios): {cnpj!r}",
+        )
+    try:
+        data, prov = await svc.get_fundo(db, digits, meses=meses)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
     return BIResponse(data=data, provenance=prov)
 
 

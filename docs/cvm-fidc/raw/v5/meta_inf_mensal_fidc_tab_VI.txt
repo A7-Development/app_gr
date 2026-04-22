@@ -1,0 +1,329 @@
+-----------------------
+Campo: CNPJ_FUNDO_CLASSE
+-----------------------
+   Descrição : CNPJ do fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 20
+
+-----------------------
+Campo: DENOM_SOCIAL
+-----------------------
+   Descrição : Denominação Social
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 100
+
+-----------------------
+Campo: DT_COMPTC
+-----------------------
+   Descrição : Data de competência do documento
+   Domínio   : AAAA-MM-DD
+   Tipo Dados: date
+   Tamanho   : 10
+
+-----------------------
+Campo: TAB_VI_A_VL_DIRCRED_PRAZO
+-----------------------
+   Descrição : (VI.a) Por Prazo de Vencimento (R$)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 26
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_A1_VL_PRAZO_VENC_30
+-----------------------
+   Descrição : (VI.a.1) Até 30 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_A10_VL_PRAZO_VENC_MAIOR_1080
+-----------------------
+   Descrição : (VI.a.10) Acima de 1080 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_A2_VL_PRAZO_VENC_60
+-----------------------
+   Descrição : (VI.a.2) De 31 a 60 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_A3_VL_PRAZO_VENC_90
+-----------------------
+   Descrição : (VI.a.3)  De 61 a 90 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_A4_VL_PRAZO_VENC_120
+-----------------------
+   Descrição : (VI.a.4) De 91 a 120 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_A5_VL_PRAZO_VENC_150
+-----------------------
+   Descrição : (VI.a.5) De 121 a 150 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_A6_VL_PRAZO_VENC_180
+-----------------------
+   Descrição : (VI.a.6) De 151 a 180 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_A7_VL_PRAZO_VENC_360
+-----------------------
+   Descrição : (VI.a.7) De 181 a 360 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_A8_VL_PRAZO_VENC_720
+-----------------------
+   Descrição : (VI.a.8) De 361 a 720 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_A9_VL_PRAZO_VENC_1080
+-----------------------
+   Descrição : (VI.a.9) De 721 a 1080 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_B_VL_DIRCRED_INAD
+-----------------------
+   Descrição : (VI.b) Inadimplentes (Valor das Parcelas Inadimplentes, em R$)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 26
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_B1_VL_INAD_30
+-----------------------
+   Descrição : (VI.b.1) Vencidos e não Pagos entre 1 e 30 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_B10_VL_INAD_MAIOR_1080
+-----------------------
+   Descrição : (VI.b.10) Vencidos e não Pagos acima de 1080 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_B2_VL_INAD_60
+-----------------------
+   Descrição : (VI.b.2) Vencidos e não Pagos entre 31 e 60 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_B3_VL_INAD_90
+-----------------------
+   Descrição : (VI.b.3) Vencidos e não Pagos entre 61 e 90 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_B4_VL_INAD_120
+-----------------------
+   Descrição : (VI.b.4) Vencidos e não Pagos entre 91 e 120 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_B5_VL_INAD_150
+-----------------------
+   Descrição : (VI.b.5) Vencidos e não Pagos entre 121 e 150 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_B6_VL_INAD_180
+-----------------------
+   Descrição : (VI.b.6) Vencidos e não Pagos entre 151 e 180 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_B7_VL_INAD_360
+-----------------------
+   Descrição : (VI.b.7) Vencidos e não Pagos entre 181 e 360 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_B8_VL_INAD_720
+-----------------------
+   Descrição : (VI.b.8) Vencidos e não Pagos entre 361 e 720 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_B9_VL_INAD_1080
+-----------------------
+   Descrição : (VI.b.9) Vencidos e não Pagos entre 721 e 1080 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_C_VL_DIRCRED_ANTECIPADO
+-----------------------
+   Descrição : (VI.c) Pagos Antecipadamente (R$)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 26
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_C1_VL_ANTECIPADO_30
+-----------------------
+   Descrição : (VI.c.1) Pagos Antecipadamente entre 1 e 30 dias do vencimento
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_C10_VL_ANTECIPADO_MAIOR_1080
+-----------------------
+   Descrição : (VI.c.10) Pagos Antecipadamente acima de 1080 dias do vencimento
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_C2_VL_ANTECIPADO_60
+-----------------------
+   Descrição : (VI.c.2) Pagos Antecipadamente entre 31 e 60 dias do vencimento
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_C3_VL_ANTECIPADO_90
+-----------------------
+   Descrição : (VI.c.3) Pagos Antecipadamente entre 61 e 90 dias do vencimento
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_C4_VL_ANTECIPADO_120
+-----------------------
+   Descrição : (VI.c.4) Pagos Antecipadamente entre 91 e 120 dias do vencimento
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_C5_VL_ANTECIPADO_150
+-----------------------
+   Descrição : (VI.c.5) Pagos Antecipadamente entre 121 e 150 dias do vencimento
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_C6_VL_ANTECIPADO_180
+-----------------------
+   Descrição : (VI.c.6) Pagos Antecipadamente entre 151 e 180 dias do vencimento
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_C7_VL_ANTECIPADO_360
+-----------------------
+   Descrição : (VI.c.7) Pagos Antecipadamente entre 181 e 360 dias do vencimento
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_C8_VL_ANTECIPADO_720
+-----------------------
+   Descrição : (VI.c.8) Pagos Antecipadamente entre 361 e 720 dias do vencimento
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VI_C9_VL_ANTECIPADO_1080
+-----------------------
+   Descrição : (VI.c.9) Pagos Antecipadamente entre 721 e 1080 dias do vencimento
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TP_FUNDO_CLASSE
+-----------------------
+   Descrição : Tipo de fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 25
+

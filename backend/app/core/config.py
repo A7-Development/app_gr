@@ -35,12 +35,8 @@ class Settings(BaseSettings):
     # ---------- CORS ----------
     CORS_ORIGINS: str = "http://localhost:3000"
 
-    # ---------- Bitfin (optional in Sprint 1; used from Sprint 2+) ----------
-    BITFIN_HOST: str = ""
-    BITFIN_DATABASE: str = ""
-    BITFIN_USER: str = ""
-    BITFIN_PASSWORD: str = ""
-    BITFIN_DRIVER: str = "ODBC Driver 17 for SQL Server"
+    # Credenciais de adapters (ex.: Bitfin) vivem em `tenant_source_config` — NAO aqui.
+    # Cada tenant tem seu proprio banco (ver CLAUDE.md §13 regra 4).
 
     @property
     def cors_origins_list(self) -> list[str]:

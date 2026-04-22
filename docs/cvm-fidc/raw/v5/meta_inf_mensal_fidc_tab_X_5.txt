@@ -1,0 +1,95 @@
+-----------------------
+Campo: CNPJ_FUNDO_CLASSE
+-----------------------
+   Descrição : CNPJ do fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 20
+
+-----------------------
+Campo: DENOM_SOCIAL
+-----------------------
+   Descrição : Denominação Social
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 100
+
+-----------------------
+Campo: DT_COMPTC
+-----------------------
+   Descrição : Data de competência do documento
+   Domínio   : AAAA-MM-DD
+   Tipo Dados: date
+   Tamanho   : 10
+
+-----------------------
+Campo: TAB_X_VL_LIQUIDEZ_0
+-----------------------
+   Descrição : (X.5) Ativos com liquidez imediata
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_VL_LIQUIDEZ_180
+-----------------------
+   Descrição : (X.5) Ativos que podem ser liquidados em até 180 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_VL_LIQUIDEZ_30
+-----------------------
+   Descrição : (X.5) Ativos que podem ser liquidados em até 30 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_VL_LIQUIDEZ_360
+-----------------------
+   Descrição : (X.5) Ativos que podem ser liquidados em até 360 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_VL_LIQUIDEZ_60
+-----------------------
+   Descrição : (X.5) Ativos que podem ser liquidados em até 60 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_VL_LIQUIDEZ_90
+-----------------------
+   Descrição : (X.5)  Ativos que podem ser liquidados em até 90 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_X_VL_LIQUIDEZ_MAIOR_360
+-----------------------
+   Descrição : (X.5) Ativos que podem ser liquidados em mais de 360 dias
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TP_FUNDO_CLASSE
+-----------------------
+   Descrição : Tipo de fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 25
+

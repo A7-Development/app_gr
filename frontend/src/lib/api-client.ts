@@ -155,12 +155,20 @@ export type BIFilters = {
 export type Provenance = {
   source_type: string
   source_ids: string[]
-  last_ingested_at: string | null
+  /** Ultima sync bem-sucedida do pipeline — global, independe dos filtros. */
+  last_sync_at: string | null
+  /** Maior source_updated_at dentro do set filtrado. */
   last_source_updated_at: string | null
   trust_level: "high" | "medium" | "low"
   ingested_by_version: string
   row_count: number
 }
+
+export type SyncHealthEntry = {
+  last_sync_at: string | null
+  adapter_version: string | null
+}
+export type SyncHealth = Record<string, SyncHealthEntry>
 
 export type BIResponse<T> = {
   data: T
@@ -558,6 +566,166 @@ function comparativoQS(a: ComparativoArgs): string {
   return `?${p.toString()}`
 }
 
+// L3 Ficha do fundo — snapshot + series ~24m por CNPJ.
+// Payload espelha `FichaFundo` em app/modules/bi/schemas/fundo.py.
+
+export type FundoIdentificacao = {
+  cnpj: string
+  denom_social: string | null
+  tp_fundo_classe: string | null
+  condom: string | null
+  classe: string | null
+  admin: string | null
+  cnpj_admin: string | null
+  prazo_conversao_cota: number | null
+  prazo_pagto_resgate: number | null
+  competencia_atual: string
+  competencia_primeira: string
+}
+
+export type FundoPLPonto = { competencia: string; pl: number }
+
+// Ativo (Tabela I) do Informe Mensal FIDC CVM.
+// Hierarquia: (I) Ativo = (I.1) Disp + (I.2) Carteira + (I.3) Deriv + (I.4) Outros.
+export type FundoCarteiraPonto = {
+  competencia: string
+  disp: number              // (I.1)
+  dc_risco: number          // (I.2.a) DC com aquisicao substancial de riscos
+  dc_sem_risco: number      // (I.2.b) DC sem aquisicao substancial de riscos
+  vlmob: number             // (I.2.c) Valores mobiliarios (subtotal)
+  tit_pub: number           // (I.2.d)
+  cdb: number               // (I.2.e)
+  oper_comprom: number      // (I.2.f)
+  outros_rf: number         // (I.2.g)
+  cotas_fidc: number        // (I.2.h)
+  cotas_fidc_np: number     // (I.2.i)
+  contrato_futuro: number   // (I.2.j) Warrants/futuros
+  carteira_sub: number      // (I.2)  Subtotal Carteira
+  deriv: number             // (I.3)
+  outro_ativo: number       // (I.4)
+  pdd_aprox: number         // (I.2.a.11) redutor ja contido em dc_risco
+  ativo_total: number       // (I)
+}
+
+export type FundoAtrasoBuckets = {
+  b0_30: number
+  b30_60: number
+  b60_90: number
+  b90_120: number
+  b120_150: number
+  b150_180: number
+  b180_360: number
+  b360_720: number
+  b720_1080: number
+  b1080_plus: number
+}
+
+export type FundoAtrasoPonto = {
+  competencia: string
+  buckets: FundoAtrasoBuckets
+  pct_pl_total: number
+}
+
+export type FundoPrazoMedioPonto = { competencia: string; dias_aprox: number }
+
+export type FundoCedenteLinha = {
+  cpf_cnpj: string | null
+  rank: number
+  pct: number
+}
+
+export type FundoSetorLinha = { setor: string; valor: number; pct: number }
+
+export type FundoSubclasseLinha = {
+  classe_serie: string
+  id_subclasse: string | null
+  qt_cota: number
+  vl_cota: number
+  pl: number
+  pct_pl: number
+  nr_cotst: number
+}
+
+export type FundoCotistasPonto = {
+  competencia: string
+  por_serie: Record<string, number>
+}
+
+export type FundoPLSubclassesPonto = {
+  competencia: string
+  por_subclasse: Record<string, number>
+}
+
+export type FundoRentPonto = {
+  competencia: string
+  por_subclasse: Record<string, number>
+}
+
+export type FundoRentAcumuladaPonto = {
+  competencia: string
+  por_subclasse: Record<string, number>
+  cdi_acum: number | null
+}
+
+export type FundoDesempenhoGap = {
+  esperado: number
+  realizado: number
+  gap: number
+}
+
+export type FundoDesempenhoPonto = {
+  competencia: string
+  por_subclasse: Record<string, FundoDesempenhoGap>
+}
+
+export type FundoLiquidezFaixas = {
+  d0: number
+  d30: number
+  d60: number
+  d90: number
+  d180: number
+  d360: number
+  mais_360: number
+}
+
+export type FundoLiquidezPonto = {
+  competencia: string
+  faixas: FundoLiquidezFaixas
+}
+
+export type FundoFluxoCotasPonto = {
+  competencia: string
+  tp_oper: string
+  classe_serie: string
+  vl_total: number
+  qt_cota: number
+}
+
+export type FundoSCRLinha = { rating: string; valor: number; pct: number }
+
+export type FundoGarantias = { vl_garantia: number; pct_garantia: number }
+
+export type FichaFundo = {
+  identificacao: FundoIdentificacao
+  pl_serie: FundoPLPonto[]
+  carteira_serie: FundoCarteiraPonto[]
+  atraso_serie: FundoAtrasoPonto[]
+  prazo_medio_serie: FundoPrazoMedioPonto[]
+  cedentes: FundoCedenteLinha[]
+  setores: FundoSetorLinha[]
+  subclasses: FundoSubclasseLinha[]
+  cotistas_serie: FundoCotistasPonto[]
+  pl_subclasses_serie: FundoPLSubclassesPonto[]
+  rent_serie: FundoRentPonto[]
+  rent_acumulada: FundoRentAcumuladaPonto[]
+  desempenho_vs_meta: FundoDesempenhoPonto[]
+  liquidez_serie: FundoLiquidezPonto[]
+  fluxo_cotas: FundoFluxoCotasPonto[]
+  scr_distribuicao: FundoSCRLinha[]
+  garantias: FundoGarantias | null
+  limitacoes: string[]
+}
+
 export const biBenchmark = {
   resumo: (f: BenchmarkFilters = {}) =>
     apiClient.get<BIResponse<BenchmarkResumo>>(
@@ -587,6 +755,12 @@ export const biBenchmark = {
     apiClient.get<BIResponse<ComparativoResponse>>(
       `/bi/benchmark/comparativo${comparativoQS(a)}`,
     ),
+  fundo: (cnpj: string, meses = 24) => {
+    const digits = cnpj.replace(/\D/g, "")
+    return apiClient.get<BIResponse<FichaFundo>>(
+      `/bi/benchmark/fundo/${digits}?meses=${meses}`,
+    )
+  },
 }
 
 //
@@ -615,4 +789,11 @@ export const biMetadata = {
   uas: () => apiClient.get<UAOption[]>("/bi/metadata/uas"),
   produtos: () => apiClient.get<ProdutoOption[]>("/bi/metadata/produtos"),
   dataMinima: () => apiClient.get<DataMinimaResponse>("/bi/metadata/data-minima"),
+}
+
+//
+// System — cross-cutting (pipeline health, etc).
+//
+export const system = {
+  syncHealth: () => apiClient.get<SyncHealth>("/system/sync-health"),
 }

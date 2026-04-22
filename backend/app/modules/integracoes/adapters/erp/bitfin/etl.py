@@ -22,14 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
 from app.core.enums import SourceType, TrustLevel
+from app.modules.integracoes.adapters.erp.bitfin.config import BitfinConfig
 from app.modules.integracoes.adapters.erp.bitfin.connection import fetch_rows
 from app.modules.integracoes.adapters.erp.bitfin.hashing import sha256_of_row
 from app.modules.integracoes.adapters.erp.bitfin.queries import analytics, bitfin
-from app.modules.integracoes.adapters.erp.bitfin.version import (
-    ADAPTER_VERSION,
-    DB_ANALYTICS,
-    DB_BITFIN,
-)
+from app.modules.integracoes.adapters.erp.bitfin.version import ADAPTER_VERSION
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 from app.warehouse.dim import (
     DimDreClassificacao,
@@ -269,10 +266,12 @@ async def _bulk_upsert(
 # ---- Sync functions (uma por tabela alvo) ----
 
 
-async def sync_titulo_snapshot(tenant_id: UUID, since: date | None = None) -> dict[str, Any]:
+async def sync_titulo_snapshot(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
     cutoff = since or EPOCH
     rows = await asyncio.to_thread(
-        fetch_rows, DB_ANALYTICS, analytics.SELECT_SNAPSHOT_TITULO, (cutoff,)
+        fetch_rows, config, config.database_analytics, analytics.SELECT_SNAPSHOT_TITULO, (cutoff,)
     )
     mapped = [_map_titulo_snapshot(r, tenant_id) for r in rows]
     async with AsyncSessionLocal() as db:
@@ -282,61 +281,89 @@ async def sync_titulo_snapshot(tenant_id: UUID, since: date | None = None) -> di
     return {"table": "wh_titulo_snapshot", "rows": count}
 
 
-async def sync_operacao(tenant_id: UUID, since: date | None = None) -> dict[str, Any]:
+async def sync_operacao(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
     cutoff = since or EPOCH
-    rows = await asyncio.to_thread(fetch_rows, DB_BITFIN, bitfin.SELECT_OPERACAO, (cutoff,))
+    rows = await asyncio.to_thread(
+        fetch_rows, config, config.database_bitfin, bitfin.SELECT_OPERACAO, (cutoff,)
+    )
     mapped = [_map_operacao(r, tenant_id) for r in rows]
     async with AsyncSessionLocal() as db:
         count = await _bulk_upsert(db, Operacao, mapped, ["tenant_id", "source_id"])
     return {"table": "wh_operacao", "rows": count}
 
 
-async def sync_operacao_item(tenant_id: UUID) -> dict[str, Any]:
-    rows = await asyncio.to_thread(fetch_rows, DB_BITFIN, bitfin.SELECT_OPERACAO_ITEM)
+async def sync_operacao_item(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
+    rows = await asyncio.to_thread(
+        fetch_rows, config, config.database_bitfin, bitfin.SELECT_OPERACAO_ITEM
+    )
     mapped = [_map_operacao_item(r, tenant_id) for r in rows]
     async with AsyncSessionLocal() as db:
         count = await _bulk_upsert(db, OperacaoItem, mapped, ["tenant_id", "source_id"])
     return {"table": "wh_operacao_item", "rows": count}
 
 
-async def sync_titulo(tenant_id: UUID, since: date | None = None) -> dict[str, Any]:
+async def sync_titulo(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
     cutoff = since or EPOCH
-    rows = await asyncio.to_thread(fetch_rows, DB_BITFIN, bitfin.SELECT_TITULO, (cutoff,))
+    rows = await asyncio.to_thread(
+        fetch_rows, config, config.database_bitfin, bitfin.SELECT_TITULO, (cutoff,)
+    )
     mapped = [_map_titulo(r, tenant_id) for r in rows]
     async with AsyncSessionLocal() as db:
         count = await _bulk_upsert(db, Titulo, mapped, ["tenant_id", "source_id"])
     return {"table": "wh_titulo", "rows": count}
 
 
-async def sync_dre_mensal(tenant_id: UUID, since: date | None = None) -> dict[str, Any]:
+async def sync_dre_mensal(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
     cutoff = since or EPOCH
-    rows = await asyncio.to_thread(fetch_rows, DB_ANALYTICS, analytics.SELECT_DRE, (cutoff,))
+    rows = await asyncio.to_thread(
+        fetch_rows, config, config.database_analytics, analytics.SELECT_DRE, (cutoff,)
+    )
     mapped = [_map_dre_mensal(r, tenant_id) for r in rows]
     async with AsyncSessionLocal() as db:
         count = await _bulk_upsert(db, DreMensal, mapped, ["tenant_id", "source_id"])
     return {"table": "wh_dre_mensal", "rows": count}
 
 
-async def sync_dim_mes(tenant_id: UUID) -> dict[str, Any]:
-    rows = await asyncio.to_thread(fetch_rows, DB_ANALYTICS, analytics.SELECT_DIM_MES, (EPOCH,))
+async def sync_dim_mes(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
+    rows = await asyncio.to_thread(
+        fetch_rows, config, config.database_analytics, analytics.SELECT_DIM_MES, (EPOCH,)
+    )
     mapped = [_map_dim_mes(r, tenant_id) for r in rows]
     async with AsyncSessionLocal() as db:
         count = await _bulk_upsert(db, DimMes, mapped, ["tenant_id", "source_id"])
     return {"table": "wh_dim_mes", "rows": count}
 
 
-async def sync_dim_dre_classificacao(tenant_id: UUID) -> dict[str, Any]:
-    rows = await asyncio.to_thread(fetch_rows, DB_ANALYTICS, analytics.SELECT_DIM_DRE_CLASSIFICACAO)
+async def sync_dim_dre_classificacao(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
+    rows = await asyncio.to_thread(
+        fetch_rows, config, config.database_analytics, analytics.SELECT_DIM_DRE_CLASSIFICACAO
+    )
     mapped = [_map_dim_dre_classificacao(r, tenant_id) for r in rows]
     async with AsyncSessionLocal() as db:
         count = await _bulk_upsert(db, DimDreClassificacao, mapped, ["tenant_id", "source_id"])
     return {"table": "wh_dim_dre_classificacao", "rows": count}
 
 
-async def sync_dim_ua(tenant_id: UUID) -> dict[str, Any]:
+async def sync_dim_ua(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
     """Full refresh da dim UA — Bitfin tem poucas linhas (ordem de 3-10)
     e raramente mudam; custo desprezivel."""
-    rows = await asyncio.to_thread(fetch_rows, DB_BITFIN, bitfin.SELECT_UNIDADE_ADMINISTRATIVA)
+    rows = await asyncio.to_thread(
+        fetch_rows, config, config.database_bitfin, bitfin.SELECT_UNIDADE_ADMINISTRATIVA
+    )
     mapped = [_map_dim_ua(r, tenant_id) for r in rows]
     async with AsyncSessionLocal() as db:
         count = await _bulk_upsert(
@@ -345,10 +372,14 @@ async def sync_dim_ua(tenant_id: UUID) -> dict[str, Any]:
     return {"table": "wh_dim_unidade_administrativa", "rows": count}
 
 
-async def sync_dim_produto(tenant_id: UUID) -> dict[str, Any]:
+async def sync_dim_produto(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
     """Full refresh da dim Produto — Bitfin tem ~20 linhas, full table
     sempre. Custo desprezivel."""
-    rows = await asyncio.to_thread(fetch_rows, DB_BITFIN, bitfin.SELECT_PRODUTO)
+    rows = await asyncio.to_thread(
+        fetch_rows, config, config.database_bitfin, bitfin.SELECT_PRODUTO
+    )
     mapped = [_map_dim_produto(r, tenant_id) for r in rows]
     async with AsyncSessionLocal() as db:
         count = await _bulk_upsert(db, DimProduto, mapped, ["tenant_id", "source_id"])
@@ -370,7 +401,9 @@ SYNC_PIPELINE = [
 ]
 
 
-async def sync_all(tenant_id: UUID, since: date | None = None) -> dict[str, Any]:
+async def sync_all(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
     """Executa todas as syncs em sequencia + registra no decision_log."""
     started_at = datetime.now(UTC)
     t0 = time.monotonic()
@@ -379,11 +412,7 @@ async def sync_all(tenant_id: UUID, since: date | None = None) -> dict[str, Any]
 
     for sync_fn in SYNC_PIPELINE:
         try:
-            # Passar `since` so nas funcoes que aceitam (kwargs-style seria melhor; por ora via try)
-            try:
-                result = await sync_fn(tenant_id, since=since)  # type: ignore[call-arg]
-            except TypeError:
-                result = await sync_fn(tenant_id)
+            result = await sync_fn(tenant_id, config, since=since)
             results.append(result)
         except Exception as e:
             errors.append(f"{sync_fn.__name__}: {type(e).__name__}: {e}")

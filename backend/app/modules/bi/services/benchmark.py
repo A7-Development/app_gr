@@ -67,10 +67,33 @@ from app.modules.bi.schemas.benchmark_comparativo import (
     RankingValor,
 )
 from app.modules.bi.schemas.common import KPI, CategoryValue, Point, Provenance
+from app.modules.bi.schemas.fundo import (
+    AtrasoBuckets,
+    AtrasoPonto,
+    CarteiraPonto,
+    CedenteLinha,
+    CotistasPonto,
+    DesempenhoGap,
+    DesempenhoPonto,
+    FichaFundo,
+    FluxoCotasPonto,
+    Garantias,
+    Identificacao,
+    LiquidezFaixas,
+    LiquidezPonto,
+    PLPonto,
+    PLSubclassesPonto,
+    PrazoMedioPonto,
+    RentAcumuladaPonto,
+    RentPonto,
+    SCRLinha,
+    SetorLinha,
+    SubclasseLinha,
+)
 
 # Versao do adapter que ingeriu esses dados. Cresce com o schema do ETL.
 # Deixar alinhado com cvm_fidc_etl/cvm_fidc/transformer.py::ADAPTER_VERSION.
-ADAPTER_VERSION = "cvm_fidc_etl_v0.2.0"
+ADAPTER_VERSION = "cvm_fidc_etl_v0.3.0"
 
 # Limite de linhas retornadas pela aba Fundos (sem paginacao no MVP).
 FUNDOS_LIMIT = 100
@@ -197,6 +220,11 @@ async def _build_provenance(
 ) -> Provenance:
     """Monta bloco de proveniencia para a resposta.
 
+    Para a fonte CVM (publica, federada via FDW), o pipeline de ingestao
+    roda no repo `etl-cvm` separado — nao tem entrada no `decision_log` do
+    GR. Usamos `MAX(cvm_remote.tab_i.ingested_at)` como proxy de "ultima
+    entrega do ETL externo" (preenche `last_sync_at`).
+
     row_count: contagem distinta de CNPJs (fundo/classe) na competencia.
     """
     if competencia is None:
@@ -206,7 +234,6 @@ async def _build_provenance(
                     """
                     SELECT
                         COUNT(DISTINCT cnpj_fundo_classe) AS rc,
-                        MAX(ingested_at)                  AS last_ing,
                         MAX(competencia)                  AS last_comp
                     FROM cvm_remote.tab_i
                     """
@@ -220,7 +247,6 @@ async def _build_provenance(
                     """
                     SELECT
                         COUNT(DISTINCT cnpj_fundo_classe) AS rc,
-                        MAX(ingested_at)                  AS last_ing,
                         MAX(competencia)                  AS last_comp
                     FROM cvm_remote.tab_i
                     WHERE competencia = :comp
@@ -230,7 +256,6 @@ async def _build_provenance(
             )
         ).one()
 
-    last_ing = row.last_ing
     last_comp: date | None = row.last_comp
 
     # last_source_updated_at: usamos competencia como proxy (CVM publica
@@ -239,6 +264,13 @@ async def _build_provenance(
         datetime.combine(last_comp, datetime.min.time()) if last_comp else None
     )
 
+    # last_sync_at: proxy por MAX(ingested_at) da tabela principal da CVM.
+    # Global (sem filtro de competencia) — representa "ultima entrega do ETL
+    # externo", independente da janela analitica em tela.
+    last_sync = (
+        await db.execute(text("SELECT MAX(ingested_at) FROM cvm_remote.tab_i"))
+    ).scalar_one_or_none()
+
     return Provenance(
         source_type="public:cvm_fidc",
         source_ids=[
@@ -246,7 +278,7 @@ async def _build_provenance(
             "cvm_remote.tab_iv",
             "cvm_remote.tab_v",
         ],
-        last_ingested_at=last_ing,
+        last_sync_at=last_sync,
         last_source_updated_at=last_source_updated,
         trust_level="high",  # fonte oficial reguladora
         ingested_by_version=ADAPTER_VERSION,
@@ -1331,3 +1363,767 @@ def _build_fatias(
         pct = (v / total * 100) if (total and total > 0) else None
         out.append(ComposicaoFatia(categoria=cat, valor=v, percentual=pct))
     return out
+
+
+# ===========================================================================
+# L3 Ficha do Fundo -- snapshot + series ~24m de 1 fundo
+#
+# Chaves de todas as queries: cnpj_fundo_classe (masked) + competencia.
+# CVM armazena CNPJ como "XX.XXX.XXX/XXXX-XX"; a rota passa digits-only.
+# ===========================================================================
+
+# Pontos medios (dias) dos buckets "a vencer" da tab_v -- ordem alinhada
+# com a1..a10: 0-30, 30-60, 60-90, 90-120, 120-150, 150-180, 180-360,
+# 360-720, 720-1080, >1080. Usados pra calcular duration aproximada.
+_PRAZO_MIDPOINTS = [15.0, 45.0, 75.0, 105.0, 135.0, 165.0, 270.0, 540.0, 900.0, 1260.0]
+
+# PT-BR: o que a CVM NAO publica e o frontend precisa sinalizar como "nao
+# reproduzivel". Texto estavel -- alterar aqui se a lista evoluir.
+_LIMITACOES_FICHA: list[str] = [
+    "Rating, perspectiva e analistas -- dado proprietario da agencia",
+    "Natureza dos DC (duplicata/cheque/confissao) -- CVM agrega apenas por setor economico",
+    "Recompras e WOP -- dado operacional interno, nao reportado a CVM",
+    "Concentracao de sacados -- CVM coleta apenas top-9 cedentes",
+    "Top-10/20 cedentes -- CVM so publica top-9",
+    "Rentabilidade x CDI -- CDI externo nao ingerido no MVP",
+]
+
+# Humanizacao dos rotulos setoriais (tab_ii_*). Chave = nome da coluna.
+_SETOR_LABELS: dict[str, str] = {
+    "tab_ii_a_vl_indust":        "Industrial",
+    "tab_ii_b_vl_imobil":        "Imobiliario",
+    "tab_ii_c_vl_comerc":        "Comercial",
+    "tab_ii_d_vl_serv":          "Servicos",
+    "tab_ii_e_vl_agroneg":       "Agronegocio",
+    "tab_ii_f_vl_financ":        "Financeiro",
+    "tab_ii_g_vl_credito":       "Credito",
+    "tab_ii_h_vl_factor":        "Factoring",
+    "tab_ii_i_vl_setor_publico": "Setor publico",
+    "tab_ii_j_vl_judicial":      "Judicial",
+    "tab_ii_k_vl_marca":         "Marca/IP",
+}
+
+
+def _parse_num_text(v: Any) -> float:
+    """Converte texto/numerico em float (tolerante a ',' decimal e '%').
+
+    Fallback 0.0 pra evitar propagar None em agregacoes -- o consumer decide
+    se quer tratar ausencia como zero (setores, fluxo_cotas) ou como
+    omissao (secoes inteiras retornam lista vazia antes de chamar aqui).
+    """
+    if v is None:
+        return 0.0
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip().replace("%", "").replace(",", ".")
+    if not s:
+        return 0.0
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
+def _yyyymm(d: date) -> str:
+    return d.strftime("%Y-%m")
+
+
+async def get_fundo(
+    db: AsyncSession, cnpj: str, meses: int = 24
+) -> tuple[FichaFundo, Provenance]:
+    """Ficha completa do fundo: snapshot + series ~N meses.
+
+    `cnpj` digits-only (14). Converte para o formato mascarado da CVM
+    antes do SQL. `meses` controla o tamanho das series (3..120).
+
+    Raises ValueError quando o fundo nao existe na base (rota converte em 404).
+    """
+    cnpj_fmt = _format_cnpj_db(cnpj)
+    if not cnpj_fmt:
+        raise ValueError(f"CNPJ malformado: {cnpj!r}")
+
+    # -----------------------------------------------------------------
+    # 1) Competencias de referencia (atual = max, primeira = min).
+    # -----------------------------------------------------------------
+    comps = (
+        await db.execute(
+            text(
+                """
+                SELECT MAX(competencia) AS max_c, MIN(competencia) AS min_c
+                FROM cvm_remote.tab_i
+                WHERE cnpj_fundo_classe = :cnpj
+                """
+            ),
+            {"cnpj": cnpj_fmt},
+        )
+    ).one()
+    comp_atual: date | None = comps.max_c
+    comp_primeira: date | None = comps.min_c
+    if comp_atual is None or comp_primeira is None:
+        raise ValueError(f"Fundo {cnpj} sem dados no CVM")
+
+    inicio = _sub_months(comp_atual, max(meses, 1) - 1)
+    fim = comp_atual
+    params_range = {"cnpj": cnpj_fmt, "inicio": inicio, "fim": fim}
+
+    # -----------------------------------------------------------------
+    # 2) Identificacao (1 linha, competencia atual).
+    # -----------------------------------------------------------------
+    ident_row = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    denom_social,
+                    tp_fundo_classe,
+                    condom,
+                    classe,
+                    admin,
+                    cnpj_admin,
+                    prazo_conversao_cota,
+                    prazo_pagto_resgate
+                FROM cvm_remote.tab_i
+                WHERE cnpj_fundo_classe = :cnpj
+                  AND competencia       = :comp
+                """
+            ),
+            {"cnpj": cnpj_fmt, "comp": comp_atual},
+        )
+    ).one()
+
+    identificacao = Identificacao(
+        cnpj=cnpj_fmt,
+        denom_social=ident_row.denom_social,
+        tp_fundo_classe=ident_row.tp_fundo_classe,
+        condom=ident_row.condom,
+        classe=ident_row.classe,
+        admin=ident_row.admin,
+        cnpj_admin=ident_row.cnpj_admin,
+        prazo_conversao_cota=ident_row.prazo_conversao_cota,
+        prazo_pagto_resgate=ident_row.prazo_pagto_resgate,
+        competencia_atual=_yyyymm(comp_atual),
+        competencia_primeira=_yyyymm(comp_primeira),
+    )
+
+    # -----------------------------------------------------------------
+    # 3) pl_serie -- tab_iv_a_vl_pl
+    # -----------------------------------------------------------------
+    pl_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT competencia, tab_iv_a_vl_pl AS pl
+                FROM cvm_remote.tab_iv
+                WHERE cnpj_fundo_classe = :cnpj
+                  AND competencia BETWEEN :inicio AND :fim
+                ORDER BY competencia
+                """
+            ),
+            params_range,
+        )
+    ).all()
+    pl_serie = [PLPonto(competencia=r.competencia, pl=_as_float(r.pl)) for r in pl_rows]
+    # Indice rapido pra cruzar na atraso_serie (pct_pl_total).
+    pl_por_comp: dict[date, float] = {p.competencia: p.pl for p in pl_serie}
+
+    # -----------------------------------------------------------------
+    # 4) carteira_serie -- Ativo (Tabela I) do Informe Mensal FIDC
+    #
+    # Fonte unica: `cvm_remote.tab_i`. Traz todas as 13 categorias + subtotal
+    # Carteira (I.2) + total Ativo (I). Ocultacao de linhas 100% zeradas fica
+    # a cargo do frontend (regra de apresentacao, nao de dado).
+    # -----------------------------------------------------------------
+    cart_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    competencia,
+                    COALESCE(tab_i1_vl_disp,             0) AS disp,
+                    COALESCE(tab_i2a_vl_dircred_risco,   0) AS dc_risco,
+                    COALESCE(tab_i2b_vl_dircred_sem_risco,0) AS dc_sem_risco,
+                    COALESCE(tab_i2c_vl_vlmob,           0) AS vlmob,
+                    COALESCE(tab_i2d_vl_titpub_fed,      0) AS tit_pub,
+                    COALESCE(tab_i2e_vl_cdb,             0) AS cdb,
+                    COALESCE(tab_i2f_vl_oper_comprom,    0) AS oper_comprom,
+                    COALESCE(tab_i2g_vl_outro_rf,        0) AS outros_rf,
+                    COALESCE(tab_i2h_vl_cota_fidc,       0) AS cotas_fidc,
+                    COALESCE(tab_i2i_vl_cota_fidc_np,    0) AS cotas_fidc_np,
+                    COALESCE(tab_i2j_vl_contrato_futuro, 0) AS contrato_futuro,
+                    COALESCE(tab_i2_vl_carteira,         0) AS carteira_sub,
+                    COALESCE(tab_i3_vl_posicao_deriv,    0) AS deriv,
+                    COALESCE(tab_i4_vl_outro_ativo,      0) AS outro_ativo,
+                    COALESCE(tab_i2a11_vl_reducao_recup, 0) AS pdd_aprox,
+                    COALESCE(tab_i_vl_ativo,             0) AS ativo_total
+                FROM cvm_remote.tab_i
+                WHERE cnpj_fundo_classe = :cnpj
+                  AND competencia BETWEEN :inicio AND :fim
+                ORDER BY competencia
+                """
+            ),
+            params_range,
+        )
+    ).all()
+    carteira_serie = [
+        CarteiraPonto(
+            competencia=r.competencia,
+            disp=_as_float(r.disp),
+            dc_risco=_as_float(r.dc_risco),
+            dc_sem_risco=_as_float(r.dc_sem_risco),
+            vlmob=_as_float(r.vlmob),
+            tit_pub=_as_float(r.tit_pub),
+            cdb=_as_float(r.cdb),
+            oper_comprom=_as_float(r.oper_comprom),
+            outros_rf=_as_float(r.outros_rf),
+            cotas_fidc=_as_float(r.cotas_fidc),
+            cotas_fidc_np=_as_float(r.cotas_fidc_np),
+            contrato_futuro=_as_float(r.contrato_futuro),
+            carteira_sub=_as_float(r.carteira_sub),
+            deriv=_as_float(r.deriv),
+            outro_ativo=_as_float(r.outro_ativo),
+            pdd_aprox=_as_float(r.pdd_aprox),
+            ativo_total=_as_float(r.ativo_total),
+        )
+        for r in cart_rows
+    ]
+
+    # -----------------------------------------------------------------
+    # 5) atraso_serie -- buckets b1..b10 + pct sobre PL
+    # -----------------------------------------------------------------
+    atraso_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    competencia,
+                    COALESCE(tab_v_b1_vl_inad_30,         0) AS b0_30,
+                    COALESCE(tab_v_b2_vl_inad_60,         0) AS b30_60,
+                    COALESCE(tab_v_b3_vl_inad_90,         0) AS b60_90,
+                    COALESCE(tab_v_b4_vl_inad_120,        0) AS b90_120,
+                    COALESCE(tab_v_b5_vl_inad_150,        0) AS b120_150,
+                    COALESCE(tab_v_b6_vl_inad_180,        0) AS b150_180,
+                    COALESCE(tab_v_b7_vl_inad_360,        0) AS b180_360,
+                    COALESCE(tab_v_b8_vl_inad_720,        0) AS b360_720,
+                    COALESCE(tab_v_b9_vl_inad_1080,       0) AS b720_1080,
+                    COALESCE(tab_v_b10_vl_inad_maior_1080,0) AS b1080_plus
+                FROM cvm_remote.tab_v
+                WHERE cnpj_fundo_classe = :cnpj
+                  AND competencia BETWEEN :inicio AND :fim
+                ORDER BY competencia
+                """
+            ),
+            params_range,
+        )
+    ).all()
+
+    atraso_serie: list[AtrasoPonto] = []
+    for r in atraso_rows:
+        buckets = AtrasoBuckets(
+            b0_30=_as_float(r.b0_30),
+            b30_60=_as_float(r.b30_60),
+            b60_90=_as_float(r.b60_90),
+            b90_120=_as_float(r.b90_120),
+            b120_150=_as_float(r.b120_150),
+            b150_180=_as_float(r.b150_180),
+            b180_360=_as_float(r.b180_360),
+            b360_720=_as_float(r.b360_720),
+            b720_1080=_as_float(r.b720_1080),
+            b1080_plus=_as_float(r.b1080_plus),
+        )
+        total = (
+            buckets.b0_30 + buckets.b30_60 + buckets.b60_90 + buckets.b90_120
+            + buckets.b120_150 + buckets.b150_180 + buckets.b180_360
+            + buckets.b360_720 + buckets.b720_1080 + buckets.b1080_plus
+        )
+        pl = pl_por_comp.get(r.competencia, 0.0)
+        pct = (total / pl * 100) if pl > 0 else 0.0
+        atraso_serie.append(
+            AtrasoPonto(
+                competencia=r.competencia,
+                buckets=buckets,
+                pct_pl_total=pct,
+            )
+        )
+
+    # -----------------------------------------------------------------
+    # 6) prazo_medio_serie -- weighted avg via midpoints
+    # -----------------------------------------------------------------
+    prazo_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    competencia,
+                    COALESCE(tab_v_a1_vl_prazo_venc_30,          0) AS a1,
+                    COALESCE(tab_v_a2_vl_prazo_venc_60,          0) AS a2,
+                    COALESCE(tab_v_a3_vl_prazo_venc_90,          0) AS a3,
+                    COALESCE(tab_v_a4_vl_prazo_venc_120,         0) AS a4,
+                    COALESCE(tab_v_a5_vl_prazo_venc_150,         0) AS a5,
+                    COALESCE(tab_v_a6_vl_prazo_venc_180,         0) AS a6,
+                    COALESCE(tab_v_a7_vl_prazo_venc_360,         0) AS a7,
+                    COALESCE(tab_v_a8_vl_prazo_venc_720,         0) AS a8,
+                    COALESCE(tab_v_a9_vl_prazo_venc_1080,        0) AS a9,
+                    COALESCE(tab_v_a10_vl_prazo_venc_maior_1080, 0) AS a10
+                FROM cvm_remote.tab_v
+                WHERE cnpj_fundo_classe = :cnpj
+                  AND competencia BETWEEN :inicio AND :fim
+                ORDER BY competencia
+                """
+            ),
+            params_range,
+        )
+    ).all()
+
+    prazo_medio_serie: list[PrazoMedioPonto] = []
+    for r in prazo_rows:
+        vals = [
+            _as_float(r.a1), _as_float(r.a2), _as_float(r.a3), _as_float(r.a4),
+            _as_float(r.a5), _as_float(r.a6), _as_float(r.a7), _as_float(r.a8),
+            _as_float(r.a9), _as_float(r.a10),
+        ]
+        soma = sum(vals)
+        if soma > 0:
+            dias = sum(v * mp for v, mp in zip(vals, _PRAZO_MIDPOINTS, strict=True)) / soma
+        else:
+            dias = 0.0
+        prazo_medio_serie.append(
+            PrazoMedioPonto(competencia=r.competencia, dias_aprox=dias)
+        )
+
+    # -----------------------------------------------------------------
+    # 7) cedentes -- top-9 da competencia atual (tab_i2a12_*)
+    # -----------------------------------------------------------------
+    ced_row = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    tab_i2a12_cpf_cnpj_cedente_1 AS cnpj_1, tab_i2a12_pr_cedente_1 AS pr_1,
+                    tab_i2a12_cpf_cnpj_cedente_2 AS cnpj_2, tab_i2a12_pr_cedente_2 AS pr_2,
+                    tab_i2a12_cpf_cnpj_cedente_3 AS cnpj_3, tab_i2a12_pr_cedente_3 AS pr_3,
+                    tab_i2a12_cpf_cnpj_cedente_4 AS cnpj_4, tab_i2a12_pr_cedente_4 AS pr_4,
+                    tab_i2a12_cpf_cnpj_cedente_5 AS cnpj_5, tab_i2a12_pr_cedente_5 AS pr_5,
+                    tab_i2a12_cpf_cnpj_cedente_6 AS cnpj_6, tab_i2a12_pr_cedente_6 AS pr_6,
+                    tab_i2a12_cpf_cnpj_cedente_7 AS cnpj_7, tab_i2a12_pr_cedente_7 AS pr_7,
+                    tab_i2a12_cpf_cnpj_cedente_8 AS cnpj_8, tab_i2a12_pr_cedente_8 AS pr_8,
+                    tab_i2a12_cpf_cnpj_cedente_9 AS cnpj_9, tab_i2a12_pr_cedente_9 AS pr_9
+                FROM cvm_remote.tab_i
+                WHERE cnpj_fundo_classe = :cnpj AND competencia = :comp
+                """
+            ),
+            {"cnpj": cnpj_fmt, "comp": comp_atual},
+        )
+    ).one_or_none()
+
+    cedentes: list[CedenteLinha] = []
+    if ced_row is not None:
+        for rank in range(1, 10):
+            pr = getattr(ced_row, f"pr_{rank}", None)
+            cnpj_c = getattr(ced_row, f"cnpj_{rank}", None)
+            pct_val = _as_float(pr)
+            # CVM as vezes grava fracao 0..1, as vezes percentual 0..100.
+            # Normaliza pra percentual pra UI.
+            pct_norm = pct_val * 100 if 0 < pct_val <= 1 else pct_val
+            if pct_norm <= 0 and not cnpj_c:
+                continue
+            cedentes.append(
+                CedenteLinha(
+                    cpf_cnpj=cnpj_c if cnpj_c else None,
+                    rank=rank,
+                    pct=pct_norm,
+                )
+            )
+
+    # -----------------------------------------------------------------
+    # 8) setores -- tab_ii, melt das colunas de valor setorial
+    # -----------------------------------------------------------------
+    setores_cols = list(_SETOR_LABELS.keys())
+    setores_select = ",\n                    ".join(
+        f"COALESCE({c}, 0) AS {c}" for c in setores_cols
+    )
+    setores_row = (
+        await db.execute(
+            text(
+                f"""
+                SELECT
+                    {setores_select}
+                FROM cvm_remote.tab_ii
+                WHERE cnpj_fundo_classe = :cnpj AND competencia = :comp
+                """
+            ),
+            {"cnpj": cnpj_fmt, "comp": comp_atual},
+        )
+    ).one_or_none()
+
+    setores: list[SetorLinha] = []
+    if setores_row is not None:
+        pares = [
+            (_SETOR_LABELS[c], _as_float(getattr(setores_row, c, 0)))
+            for c in setores_cols
+        ]
+        total_set = sum(v for _, v in pares if v > 0)
+        for nome, val in pares:
+            if val <= 0:
+                continue
+            pct = (val / total_set * 100) if total_set > 0 else 0.0
+            setores.append(SetorLinha(setor=nome, valor=val, pct=pct))
+        setores.sort(key=lambda s: s.valor, reverse=True)
+
+    # -----------------------------------------------------------------
+    # 9) subclasses -- join tab_x_1 + tab_x_2 (classe_serie; sem id_subclasse em x_2)
+    # -----------------------------------------------------------------
+    # tab_x_2.qt_cota e text(NULL no Puma); tab_x_2.vl_cota text; tab_x_1.nr_cotst int.
+    sub_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    x1.tab_x_classe_serie AS classe_serie,
+                    x1.id_subclasse        AS id_subclasse,
+                    x1.tab_x_nr_cotst      AS nr_cotst,
+                    x2.tab_x_qt_cota       AS qt_cota,
+                    x2.tab_x_vl_cota       AS vl_cota
+                FROM cvm_remote.tab_x_1 x1
+                LEFT JOIN cvm_remote.tab_x_2 x2
+                    ON x2.competencia        = x1.competencia
+                   AND x2.cnpj_fundo_classe  = x1.cnpj_fundo_classe
+                   AND x2.tab_x_classe_serie = x1.tab_x_classe_serie
+                WHERE x1.cnpj_fundo_classe = :cnpj
+                  AND x1.competencia       = :comp
+                """
+            ),
+            {"cnpj": cnpj_fmt, "comp": comp_atual},
+        )
+    ).all()
+
+    subclasses_raw: list[tuple[str, str | None, int, float, float, float]] = []
+    for r in sub_rows:
+        qt = _parse_num_text(r.qt_cota)
+        vl = _parse_num_text(r.vl_cota)
+        pl_sub = qt * vl
+        subclasses_raw.append(
+            (str(r.classe_serie), r.id_subclasse, int(r.nr_cotst or 0), qt, vl, pl_sub)
+        )
+    pl_sub_total = sum(row[5] for row in subclasses_raw) or 0.0
+    subclasses = [
+        SubclasseLinha(
+            classe_serie=classe,
+            id_subclasse=id_sub,
+            qt_cota=qt,
+            vl_cota=vl,
+            pl=pl_sub,
+            pct_pl=(pl_sub / pl_sub_total * 100) if pl_sub_total > 0 else 0.0,
+            nr_cotst=nr,
+        )
+        for classe, id_sub, nr, qt, vl, pl_sub in subclasses_raw
+    ]
+
+    # -----------------------------------------------------------------
+    # 10) cotistas_serie -- pivota tab_x_1 no Python
+    # -----------------------------------------------------------------
+    cotst_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT competencia, tab_x_classe_serie AS classe_serie, tab_x_nr_cotst AS nr
+                FROM cvm_remote.tab_x_1
+                WHERE cnpj_fundo_classe = :cnpj
+                  AND competencia BETWEEN :inicio AND :fim
+                ORDER BY competencia
+                """
+            ),
+            params_range,
+        )
+    ).all()
+    cotistas_map: dict[date, dict[str, int]] = {}
+    for r in cotst_rows:
+        cotistas_map.setdefault(r.competencia, {})[str(r.classe_serie)] = int(r.nr or 0)
+    cotistas_serie = [
+        CotistasPonto(competencia=comp, por_serie=mapa)
+        for comp, mapa in sorted(cotistas_map.items())
+    ]
+
+    # -----------------------------------------------------------------
+    # 11) pl_subclasses_serie -- pivota tab_x_2 no Python (qt * vl)
+    # -----------------------------------------------------------------
+    plsub_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    competencia,
+                    tab_x_classe_serie AS classe_serie,
+                    tab_x_qt_cota      AS qt,
+                    tab_x_vl_cota      AS vl
+                FROM cvm_remote.tab_x_2
+                WHERE cnpj_fundo_classe = :cnpj
+                  AND competencia BETWEEN :inicio AND :fim
+                ORDER BY competencia
+                """
+            ),
+            params_range,
+        )
+    ).all()
+    plsub_map: dict[date, dict[str, float]] = {}
+    for r in plsub_rows:
+        qt = _parse_num_text(r.qt)
+        vl = _parse_num_text(r.vl)
+        plsub_map.setdefault(r.competencia, {})[str(r.classe_serie)] = qt * vl
+    pl_subclasses_serie = [
+        PLSubclassesPonto(competencia=comp, por_subclasse=mapa)
+        for comp, mapa in sorted(plsub_map.items())
+    ]
+
+    # -----------------------------------------------------------------
+    # 12) rent_serie -- pivota tab_x_3
+    # -----------------------------------------------------------------
+    rent_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    competencia,
+                    tab_x_classe_serie  AS classe_serie,
+                    tab_x_vl_rentab_mes AS rent
+                FROM cvm_remote.tab_x_3
+                WHERE cnpj_fundo_classe = :cnpj
+                  AND competencia BETWEEN :inicio AND :fim
+                ORDER BY competencia
+                """
+            ),
+            params_range,
+        )
+    ).all()
+    rent_map: dict[date, dict[str, float]] = {}
+    for r in rent_rows:
+        rent_map.setdefault(r.competencia, {})[str(r.classe_serie)] = _parse_num_text(
+            r.rent
+        )
+    rent_serie = [
+        RentPonto(competencia=comp, por_subclasse=mapa)
+        for comp, mapa in sorted(rent_map.items())
+    ]
+
+    # -----------------------------------------------------------------
+    # 13) rent_acumulada -- derivada, acumula (1 + rent/100) por subclasse
+    # -----------------------------------------------------------------
+    rent_acumulada: list[RentAcumuladaPonto] = []
+    acum_por_sub: dict[str, float] = {}
+    for ponto in rent_serie:
+        for sub, rent_pct in ponto.por_subclasse.items():
+            prev = acum_por_sub.get(sub, 1.0)
+            acum_por_sub[sub] = prev * (1.0 + rent_pct / 100.0)
+        snapshot = {
+            sub: (acum - 1.0) * 100.0 for sub, acum in acum_por_sub.items()
+        }
+        rent_acumulada.append(
+            RentAcumuladaPonto(
+                competencia=ponto.competencia,
+                por_subclasse=snapshot,
+                cdi_acum=None,
+            )
+        )
+
+    # -----------------------------------------------------------------
+    # 14) desempenho_vs_meta -- tab_x_6 por subclasse/competencia
+    # -----------------------------------------------------------------
+    desemp_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    competencia,
+                    tab_x_classe_serie       AS classe_serie,
+                    tab_x_pr_desemp_esperado AS esperado,
+                    tab_x_pr_desemp_real     AS real
+                FROM cvm_remote.tab_x_6
+                WHERE cnpj_fundo_classe = :cnpj
+                  AND competencia BETWEEN :inicio AND :fim
+                ORDER BY competencia
+                """
+            ),
+            params_range,
+        )
+    ).all()
+    desemp_map: dict[date, dict[str, DesempenhoGap]] = {}
+    for r in desemp_rows:
+        esp = _parse_num_text(r.esperado)
+        realz = _parse_num_text(r.real)
+        desemp_map.setdefault(r.competencia, {})[str(r.classe_serie)] = DesempenhoGap(
+            esperado=esp, realizado=realz, gap=realz - esp
+        )
+    desempenho_vs_meta = [
+        DesempenhoPonto(competencia=comp, por_subclasse=mapa)
+        for comp, mapa in sorted(desemp_map.items())
+    ]
+
+    # -----------------------------------------------------------------
+    # 15) liquidez_serie -- tab_x_5 (colunas text no CSV)
+    # -----------------------------------------------------------------
+    liq_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    competencia,
+                    tab_x_vl_liquidez_0         AS d0,
+                    tab_x_vl_liquidez_30        AS d30,
+                    tab_x_vl_liquidez_60        AS d60,
+                    tab_x_vl_liquidez_90        AS d90,
+                    tab_x_vl_liquidez_180       AS d180,
+                    tab_x_vl_liquidez_360       AS d360,
+                    tab_x_vl_liquidez_maior_360 AS mais_360
+                FROM cvm_remote.tab_x_5
+                WHERE cnpj_fundo_classe = :cnpj
+                  AND competencia BETWEEN :inicio AND :fim
+                ORDER BY competencia
+                """
+            ),
+            params_range,
+        )
+    ).all()
+    liquidez_serie = [
+        LiquidezPonto(
+            competencia=r.competencia,
+            faixas=LiquidezFaixas(
+                d0=_parse_num_text(r.d0),
+                d30=_parse_num_text(r.d30),
+                d60=_parse_num_text(r.d60),
+                d90=_parse_num_text(r.d90),
+                d180=_parse_num_text(r.d180),
+                d360=_parse_num_text(r.d360),
+                mais_360=_parse_num_text(r.mais_360),
+            ),
+        )
+        for r in liq_rows
+    ]
+
+    # -----------------------------------------------------------------
+    # 16) fluxo_cotas -- tab_x_4, uma linha por combinacao
+    # -----------------------------------------------------------------
+    fluxo_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    competencia,
+                    tab_x_tp_oper       AS tp_oper,
+                    tab_x_classe_serie  AS classe_serie,
+                    tab_x_vl_total      AS vl_total,
+                    tab_x_qt_cota       AS qt_cota
+                FROM cvm_remote.tab_x_4
+                WHERE cnpj_fundo_classe = :cnpj
+                  AND competencia BETWEEN :inicio AND :fim
+                ORDER BY competencia, tab_x_classe_serie, tab_x_tp_oper
+                """
+            ),
+            params_range,
+        )
+    ).all()
+    fluxo_cotas = [
+        FluxoCotasPonto(
+            competencia=r.competencia,
+            tp_oper=str(r.tp_oper or ""),
+            classe_serie=str(r.classe_serie or ""),
+            vl_total=_parse_num_text(r.vl_total),
+            qt_cota=_parse_num_text(r.qt_cota),
+        )
+        for r in fluxo_rows
+    ]
+
+    # -----------------------------------------------------------------
+    # 17) scr_distribuicao -- tab_x (valores, nao %), competencia atual
+    # -----------------------------------------------------------------
+    scr_row = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    tab_x_scr_risco_devedor_aa AS aa,
+                    tab_x_scr_risco_devedor_a  AS a,
+                    tab_x_scr_risco_devedor_b  AS b,
+                    tab_x_scr_risco_devedor_c  AS c,
+                    tab_x_scr_risco_devedor_d  AS d,
+                    tab_x_scr_risco_devedor_e  AS e,
+                    tab_x_scr_risco_devedor_f  AS f,
+                    tab_x_scr_risco_devedor_g  AS g,
+                    tab_x_scr_risco_devedor_h  AS h
+                FROM cvm_remote.tab_x
+                WHERE cnpj_fundo_classe = :cnpj AND competencia = :comp
+                """
+            ),
+            {"cnpj": cnpj_fmt, "comp": comp_atual},
+        )
+    ).one_or_none()
+
+    scr_distribuicao: list[SCRLinha] = []
+    if scr_row is not None:
+        pares_scr = [
+            ("AA", _parse_num_text(scr_row.aa)),
+            ("A",  _parse_num_text(scr_row.a)),
+            ("B",  _parse_num_text(scr_row.b)),
+            ("C",  _parse_num_text(scr_row.c)),
+            ("D",  _parse_num_text(scr_row.d)),
+            ("E",  _parse_num_text(scr_row.e)),
+            ("F",  _parse_num_text(scr_row.f)),
+            ("G",  _parse_num_text(scr_row.g)),
+            ("H",  _parse_num_text(scr_row.h)),
+        ]
+        total_scr = sum(v for _, v in pares_scr if v > 0)
+        for rating, val in pares_scr:
+            if val <= 0:
+                continue
+            pct = (val / total_scr * 100) if total_scr > 0 else 0.0
+            scr_distribuicao.append(SCRLinha(rating=rating, valor=val, pct=pct))
+
+    # -----------------------------------------------------------------
+    # 18) garantias -- tab_x_7 competencia atual
+    # -----------------------------------------------------------------
+    gar_row = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    tab_x_vl_garantia_dircred AS vl,
+                    tab_x_pr_garantia_dircred AS pr
+                FROM cvm_remote.tab_x_7
+                WHERE cnpj_fundo_classe = :cnpj AND competencia = :comp
+                """
+            ),
+            {"cnpj": cnpj_fmt, "comp": comp_atual},
+        )
+    ).one_or_none()
+
+    garantias: Garantias | None = None
+    if gar_row is not None:
+        vl_g = _parse_num_text(gar_row.vl)
+        pr_g = _parse_num_text(gar_row.pr)
+        # CVM as vezes publica fracao 0..1, as vezes 0..100.
+        pct_g = pr_g * 100 if 0 < pr_g <= 1 else pr_g
+        if vl_g > 0 or pct_g > 0:
+            garantias = Garantias(vl_garantia=vl_g, pct_garantia=pct_g)
+
+    # -----------------------------------------------------------------
+    # Monta resposta + proveniencia na competencia atual.
+    # -----------------------------------------------------------------
+    ficha = FichaFundo(
+        identificacao=identificacao,
+        pl_serie=pl_serie,
+        carteira_serie=carteira_serie,
+        atraso_serie=atraso_serie,
+        prazo_medio_serie=prazo_medio_serie,
+        cedentes=cedentes,
+        setores=setores,
+        subclasses=subclasses,
+        cotistas_serie=cotistas_serie,
+        pl_subclasses_serie=pl_subclasses_serie,
+        rent_serie=rent_serie,
+        rent_acumulada=rent_acumulada,
+        desempenho_vs_meta=desempenho_vs_meta,
+        liquidez_serie=liquidez_serie,
+        fluxo_cotas=fluxo_cotas,
+        scr_distribuicao=scr_distribuicao,
+        garantias=garantias,
+        limitacoes=list(_LIMITACOES_FICHA),
+    )
+    return ficha, await _build_provenance(db, comp_atual)

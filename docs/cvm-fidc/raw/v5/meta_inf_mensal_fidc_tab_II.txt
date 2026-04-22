@@ -1,0 +1,329 @@
+-----------------------
+Campo: CNPJ_FUNDO_CLASSE
+-----------------------
+   Descrição : CNPJ do fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 20
+
+-----------------------
+Campo: DENOM_SOCIAL
+-----------------------
+   Descrição : Denominação Social
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 100
+
+-----------------------
+Campo: DT_COMPTC
+-----------------------
+   Descrição : Data de competência do documento
+   Domínio   : AAAA-MM-DD
+   Tipo Dados: date
+   Tamanho   : 10
+
+-----------------------
+Campo: TAB_II_A_VL_INDUST
+-----------------------
+   Descrição : (II.a) Industrial
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_B_VL_IMOBIL
+-----------------------
+   Descrição : (II.b) Mercado Imobiliário (não financeiro - ver itens f6 e f7)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_C_VL_COMERC
+-----------------------
+   Descrição : (II.c) Comercial
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 19
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_C1_VL_COMERC
+-----------------------
+   Descrição : (II.c.1) Comercial
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_C2_VL_VAREJO
+-----------------------
+   Descrição : (II.c.2) Comercial - Varejo
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_C3_VL_ARREND
+-----------------------
+   Descrição : (II.c.3) Arrendamento Mercantil
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_D_VL_SERV
+-----------------------
+   Descrição : (II.d) Serviços
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 20
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_D1_VL_SERV
+-----------------------
+   Descrição : (II.d.1) Serviços
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_D2_VL_SERV_PUBLICO
+-----------------------
+   Descrição : (II.d.2) Serviços Públicos (eletricidade, telefonia, transporte, saneamento, etc)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_D3_VL_SERV_EDUC
+-----------------------
+   Descrição : (II.d.3) Serviços Educacionais
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_D4_VL_ENTRET
+-----------------------
+   Descrição : (II.d.4) Entretenimento
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_E_VL_AGRONEG
+-----------------------
+   Descrição : (II.e) Agronegócio
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_F_VL_FINANC
+-----------------------
+   Descrição : (II.f) Financeiro
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 24
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_F1_VL_CRED_PESSOA
+-----------------------
+   Descrição : (II.f.1) Crédito Pessoal
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_F2_VL_CRED_PESSOA_CONSIG
+-----------------------
+   Descrição : (II.f.2) Crédito Pessoal Consignado
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_F3_VL_CRED_CORP
+-----------------------
+   Descrição : (II.f.3) Direitos Crédito Corporativo
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_F4_VL_MIDMARKET
+-----------------------
+   Descrição : (II.f.4) Middle Market
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_F5_VL_VEICULO
+-----------------------
+   Descrição : (II.f.5) Veículos
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_F6_VL_IMOBIL_EMPRESA
+-----------------------
+   Descrição : (II.f.6) Carteira Imobiliária - Empresarial
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_F7_VL_IMOBIL_RESID
+-----------------------
+   Descrição : (II.f.7) Carteira Imobiliária - Residencial
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_F8_VL_OUTRO
+-----------------------
+   Descrição : (II.f.8) Outros
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_G_VL_CREDITO
+-----------------------
+   Descrição : (II.g) Cartão de Crédito
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_H_VL_FACTOR
+-----------------------
+   Descrição : (II.h) Factoring
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 18
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_H1_VL_PESSOA
+-----------------------
+   Descrição : (II.h.1) Factoring - Pessoal (Perfil do Sacado)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_H2_VL_CORP
+-----------------------
+   Descrição : (II.h.2) Factoring - Corporativo (Perfil do Sacado)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_I_VL_SETOR_PUBLICO
+-----------------------
+   Descrição : (II.i) Setor Público (art. 1º, §1º, II, ICVM 444)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 20
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_I1_VL_PRECAT
+-----------------------
+   Descrição : (II.i.1) Precatórios
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_I2_VL_TRIBUT
+-----------------------
+   Descrição : (II.i.2) Créditos Tributários
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_I3_VL_ROYALTIES
+-----------------------
+   Descrição : (II.i.3) Royalties
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_I4_VL_OUTRO
+-----------------------
+   Descrição : (II.i.4) Outros
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_J_VL_JUDICIAL
+-----------------------
+   Descrição : (II.j) Ações Judiciais (art. 1º, §1º, III, ICVM 444)
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_K_VL_MARCA
+-----------------------
+   Descrição : (II.k) Propriedade Intelectual e Marcas & Patentes
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_II_VL_CARTEIRA
+-----------------------
+   Descrição : (Tabela II) Carteira por Segmento
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 30
+   Scale     : 2
+
+-----------------------
+Campo: TP_FUNDO_CLASSE
+-----------------------
+   Descrição : Tipo de fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 25
+

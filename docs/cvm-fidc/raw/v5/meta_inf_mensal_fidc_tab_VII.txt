@@ -1,0 +1,257 @@
+-----------------------
+Campo: CNPJ_FUNDO_CLASSE
+-----------------------
+   Descrição : CNPJ do fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 20
+
+-----------------------
+Campo: DENOM_SOCIAL
+-----------------------
+   Descrição : Denominação Social
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 100
+
+-----------------------
+Campo: DT_COMPTC
+-----------------------
+   Descrição : Data de competência do documento
+   Domínio   : AAAA-MM-DD
+   Tipo Dados: date
+   Tamanho   : 10
+
+-----------------------
+Campo: TAB_VII_A1_1_QT_DIRCRED_RISCO
+-----------------------
+   Descrição : (VII.a.1.1) Aquisições | Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Quantidade
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_A1_2_VL_DIRCRED_RISCO
+-----------------------
+   Descrição : (VII.a.1.2) Aquisições | Direitos Creditórios com Aquisição Substancial dos Riscos e Benefícios | Valor
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_A2_1_QT_DIRCRED_SEM_RISCO
+-----------------------
+   Descrição : (VII.a.2.1) Aquisições | Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Quantidade
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_A2_2_VL_DIRCRED_SEM_RISCO
+-----------------------
+   Descrição : (VII.a.2.2) Aquisições | Direitos Creditórios sem Aquisição Substancial dos Riscos e Benefícios | Valor
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_A3_1_QT_DIRCRED_VENC_AD
+-----------------------
+   Descrição : (VII.a.3.1) Aquisições | Direitos Creditórios a Vencer e com parcela(s) Adimplentes | Quantidade
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_A3_2_VL_DIRCRED_VENC_AD
+-----------------------
+   Descrição : (VII.a.3.2) Aquisições | Direitos Creditórios a Vencer e com parcela(s) Adimplentes | Valor
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_A4_1_QT_DIRCRED_VENC_INAD
+-----------------------
+   Descrição : (VII.a.4.1) Aquisições | Direitos Creditórios a Vencer com Parcelas Inadimplentes | Quantidade
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_A4_2_VL_DIRCRED_VENC_INAD
+-----------------------
+   Descrição : (VII.a.4.2) Aquisições | Direitos Creditórios a Vencer com Parcelas Inadimplentes | Valor
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_A5_1_QT_DIRCRED_INAD
+-----------------------
+   Descrição : (VII.a.5.1) Aquisições | Direitos Creditórios Inadimplentes | Quantidade
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_A5_2_VL_DIRCRED_INAD
+-----------------------
+   Descrição : (VII.a.5.2) Aquisições | Direitos Creditórios Inadimplentes | Valor
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_B1_1_QT_CEDENTE
+-----------------------
+   Descrição : (VII.b.1.1) Alienações | Para o Cedente e Partes Relacionadas aos Cedentes | Quantidade
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_B1_2_VL_CEDENTE
+-----------------------
+   Descrição : (VII.b.1.2) Alienações | Para o Cedente e Partes Relacionadas aos Cedentes | Valor
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_B1_3_VL_CONTAB_CEDENTE
+-----------------------
+   Descrição : (VII.b.1.3) Alienações | Para o Cedente e Partes Relacionadas aos Cedentes | Valor Contábil
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_B2_1_QT_PREST
+-----------------------
+   Descrição : (VII.b.2.1) Alienações | Para os Prestadores de Serviços e Partes Relacionadas aos Prestadores de Serviços | Quantidade
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_B2_2_VL_PREST
+-----------------------
+   Descrição : (VII.b.2.2) Alienações | Para os Prestadores de Serviços e Partes Relacionadas aos Prestadores de Serviços | Valor
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_B2_3_VL_CONTAB_PREST
+-----------------------
+   Descrição : (VII.b.2.3) Alienações | Para os Prestadores de Serviços e Partes Relacionadas aos Prestadores de Serviços | Valor Contábil
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_B3_1_QT_TERCEIRO
+-----------------------
+   Descrição : (VII.b.3.1) Alienações | Para Terceiros | Quantidade
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_B3_2_VL_TERCEIRO
+-----------------------
+   Descrição : (VII.b.3.2) Alienações | Para Terceiros | Valor
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_B3_3_VL_CONTAB_TERCEIRO
+-----------------------
+   Descrição : (VII.b.3.3) Alienações | Para Terceiros | Valor Contábil
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_C_1_QT_SUBST
+-----------------------
+   Descrição : (VII.c.1) Substituições | Quantidade
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_C_2_VL_SUBST
+-----------------------
+   Descrição : (VII.c.2) Substituições | Valor
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_C_3_VL_CONTAB_SUBST
+-----------------------
+   Descrição : (VII.c.3) Substituições | Valor Contábil
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_D_1_QT_RECOMPRA
+-----------------------
+   Descrição : (VII.d.1) Recompras | Quantidade
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_D_2_VL_RECOMPRA
+-----------------------
+   Descrição : (VII.d.2) Recompras | Valor
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TAB_VII_D_3_VL_CONTAB_RECOMPRA
+-----------------------
+   Descrição : (VII.d.3) Recompras | Valor Contábil
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 17
+   Scale     : 2
+
+-----------------------
+Campo: TP_FUNDO_CLASSE
+-----------------------
+   Descrição : Tipo de fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 25
+

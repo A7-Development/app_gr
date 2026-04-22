@@ -1,7 +1,18 @@
 """Public contract of Integracoes module.
 
-Outros modulos NAO deveriam chamar Integracoes — sempre leem do warehouse ja populado.
-Este public.py existe para completude do padrao; ficara majoritariamente vazio.
+Outros modulos podem importar APENAS o que esta exposto aqui. Internals
+(`models/`, `services/`, `adapters/`) sao proibidos de serem acessados de fora.
+
+Consumidores atuais:
+- `app/scheduler/jobs/bitfin_sync.py` usa `run_sync_cycle` para disparar ciclos.
+- Outros modulos podem usar `is_source_enabled` para checar se uma fonte esta
+  habilitada para um tenant (ex.: empty state no BI).
 """
 
-__all__: list[str] = []
+from app.modules.integracoes.services.eligibility import is_source_enabled
+from app.modules.integracoes.services.sync_runner import run_sync_cycle
+
+__all__ = [
+    "is_source_enabled",
+    "run_sync_cycle",
+]

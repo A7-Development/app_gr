@@ -1,6 +1,8 @@
-"""Catalog of external data sources + per-tenant configuration."""
+"""Catalog of external data sources (global registry).
+
+Per-tenant source configuration lives in `app.modules.integracoes.models.tenant_source_config`.
+"""
 
 from app.shared.catalog.source_catalog import SourceCatalog
-from app.shared.catalog.tenant_source_config import TenantSourceConfig
 
-__all__ = ["SourceCatalog", "TenantSourceConfig"]
+__all__ = ["SourceCatalog"]

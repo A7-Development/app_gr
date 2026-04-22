@@ -50,10 +50,20 @@ function subMonths(d: Date, months: number): Date {
   return copy
 }
 
+function startOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1)
+}
+
 /**
  * Calcula o range ISO `{start, end}` do preset, relativo a `today`.
  * `dataMinima` (ISO) e usado quando o preset e `all` — se ausente,
  * cai no fallback `FALLBACK_ALL_START`.
+ *
+ * Presets rolling (3m/6m/12m/24m/36m) normalizam o inicio para o primeiro
+ * dia do mes — caso contrario o bucket mensal mais antigo fica truncado
+ * (ex.: "12m" em 2026-04-22 comecaria em 2025-04-22 e o bucket de Abr/25
+ * mostraria so 9 dias de dados). O mes corrente continua parcial por
+ * construcao (esperado: periodo estende ate hoje).
  */
 export function computePresetRange(
   preset: PresetKey,
@@ -67,15 +77,15 @@ export function computePresetRange(
       return { start: `${y}-01-01`, end }
     }
     case "3m":
-      return { start: toISO(subMonths(today, 3)), end }
+      return { start: toISO(startOfMonth(subMonths(today, 3))), end }
     case "6m":
-      return { start: toISO(subMonths(today, 6)), end }
+      return { start: toISO(startOfMonth(subMonths(today, 6))), end }
     case "12m":
-      return { start: toISO(subMonths(today, 12)), end }
+      return { start: toISO(startOfMonth(subMonths(today, 12))), end }
     case "24m":
-      return { start: toISO(subMonths(today, 24)), end }
+      return { start: toISO(startOfMonth(subMonths(today, 24))), end }
     case "36m":
-      return { start: toISO(subMonths(today, 36)), end }
+      return { start: toISO(startOfMonth(subMonths(today, 36))), end }
     case "all":
       return { start: dataMinima ?? FALLBACK_ALL_START, end }
   }

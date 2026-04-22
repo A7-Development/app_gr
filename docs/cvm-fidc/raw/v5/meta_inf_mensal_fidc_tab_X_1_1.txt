@@ -1,0 +1,320 @@
+-----------------------
+Campo: CNPJ_FUNDO_CLASSE
+-----------------------
+   Descrição : CNPJ do fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 20
+
+-----------------------
+Campo: DENOM_SOCIAL
+-----------------------
+   Descrição : Denominação Social
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 100
+
+-----------------------
+Campo: DT_COMPTC
+-----------------------
+   Descrição : Data de competência do documento
+   Domínio   : AAAA-MM-DD
+   Tipo Dados: date
+   Tamanho   : 10
+
+-----------------------
+Campo: TAB_X_NR_COTST_SENIOR_BANCO
+-----------------------
+   Descrição : (X.1.1) Número de Cotistas (Classe Sênior) - Banco comercial
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SENIOR_CAPITALIZ
+-----------------------
+   Descrição : (X.1.1) Número de Cotistas (Classe Sênior) - Sociedade de capitalização e de arrendamento mercantil
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SENIOR_CLUBE
+-----------------------
+   Descrição : (X.1.1) Número de Cotistas (Classe Sênior) - Clubes de investimento
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SENIOR_CORRETORA_DISTRIB
+-----------------------
+   Descrição : (X.1.1) Número de Cotistas (Classe Sênior) - Corretora ou distribuidora
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SENIOR_COTA_FIDC
+-----------------------
+   Descrição : (X.1.1) Número de Cotistas (Classe Sênior) - Fundos de investimento em cotas de FIDC
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SENIOR_EAPC
+-----------------------
+   Descrição : (X.1.1) Número de Cotistas (Classe Sênior) - Entidade aberta de previdência complementar
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SENIOR_EFPC
+-----------------------
+   Descrição : (X.1.1) Número de Cotistas (Classe Sênior) - Entidade fechada de previdência complementar
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SENIOR_FII
+-----------------------
+   Descrição : (X.1.1) Número de Cotistas (Classe Sênior) - Fundos de investimento imobiliário
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SENIOR_INVNR
+-----------------------
+   Descrição : (X.1.1) Número de Cotistas (Classe Sênior) - Investidores não residentes
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SENIOR_OUTRO
+-----------------------
+   Descrição : (X.1.1) Número de Cotistas (Classe Sênior) - Outros
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SENIOR_OUTRO_FI
+-----------------------
+   Descrição : (X.1.1) Número de Cotistas (Classe Sênior) - Outros fundos de investimento
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SENIOR_PF
+-----------------------
+   Descrição : (X.1.1) Número de Cotistas (Classe Sênior) - Pessoa física
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SENIOR_PJ_FINANC
+-----------------------
+   Descrição : (X.1.1) Número de Cotistas (Classe Sênior) - Outras pessoas jurídicas financeiras
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SENIOR_PJ_NAO_FINANC
+-----------------------
+   Descrição : (X.1.1) Número de Cotistas (Classe Sênior) - Pessoa jurídica não-financeira
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SENIOR_RPPS
+-----------------------
+   Descrição : (X.1.1) Número de Cotistas (Classe Sênior) - Regime próprio de previdência dos servidores públicos
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SENIOR_SEGUR
+-----------------------
+   Descrição : (X.1.1) Número de Cotistas (Classe Sênior) - Sociedade seguradora ou resseguradora
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SUBORD_BANCO
+-----------------------
+   Descrição : (X.1.2) Número de Cotistas (Classe Subordinada) - Banco comercial
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SUBORD_CAPITALIZ
+-----------------------
+   Descrição : (X.1.2) Número de Cotistas (Classe Subordinada) - Sociedade de capitalização e de arrendamento mercantil
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SUBORD_CLUBE
+-----------------------
+   Descrição : (X.1.2) Número de Cotistas (Classe Subordinada) - Clubes de investimento
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SUBORD_CORRETORA_DISTRIB
+-----------------------
+   Descrição : (X.1.2) Número de Cotistas (Classe Subordinada) - Corretora ou distribuidora
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SUBORD_COTA_FIDC
+-----------------------
+   Descrição : (X.1.2) Número de Cotistas (Classe Subordinada) - Fundos de investimento em cotas de FIDC
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SUBORD_EAPC
+-----------------------
+   Descrição : (X.1.2) Número de Cotistas (Classe Subordinada) - Entidade aberta de previdência complementar
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SUBORD_EFPC
+-----------------------
+   Descrição : (X.1.2) Número de Cotistas (Classe Subordinada) - Entidade fechada de previdência complementar
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SUBORD_FII
+-----------------------
+   Descrição : (X.1.2) Número de Cotistas (Classe Subordinada) - Fundos de investimento imobiliário
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SUBORD_INVNR
+-----------------------
+   Descrição : (X.1.2) Número de Cotistas (Classe Subordinada) - Investidores não residentes
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SUBORD_OUTRO
+-----------------------
+   Descrição : (X.1.2) Número de Cotistas (Classe Subordinada) - Outros
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SUBORD_OUTRO_FI
+-----------------------
+   Descrição : (X.1.2) Número de Cotistas (Classe Subordinada) - Outros fundos de investimento
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SUBORD_PF
+-----------------------
+   Descrição : (X.1.2) Número de Cotistas (Classe Subordinada) - Pessoa física
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SUBORD_PJ_FINANC
+-----------------------
+   Descrição : (X.1.2) Número de Cotistas (Classe Subordinada) - Outras pessoas jurídicas financeiras
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SUBORD_PJ_NAO_FINANC
+-----------------------
+   Descrição : (X.1.2) Número de Cotistas (Classe Subordinada) - Pessoa jurídica não-financeira
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SUBORD_RPPS
+-----------------------
+   Descrição : (X.1.2) Número de Cotistas (Classe Subordinada) - Regime próprio de previdência dos servidores públicos
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TAB_X_NR_COTST_SUBORD_SEGUR
+-----------------------
+   Descrição : (X.1.2) Número de Cotistas (Classe Subordinada) - Sociedade seguradora ou resseguradora
+   Domínio   : Numérico
+   Tipo Dados: numeric
+   Precisão  : 14
+   Scale     : 0
+
+-----------------------
+Campo: TP_FUNDO_CLASSE
+-----------------------
+   Descrição : Tipo de fundo/classe
+   Domínio   : Alfanumérico
+   Tipo Dados: varchar
+   Tamanho   : 25
+

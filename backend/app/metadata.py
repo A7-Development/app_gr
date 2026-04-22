@@ -6,12 +6,12 @@ can auto-detect them during migration generation.
 
 # Core base
 from app.core.database import Base
+from app.modules.integracoes.models.tenant_source_config import TenantSourceConfig  # noqa: F401
 
 # Shared kernel
 from app.shared.audit_log.decision_log import DecisionLog  # noqa: F401
 from app.shared.audit_log.premise_set import PremiseSet  # noqa: F401
 from app.shared.catalog.source_catalog import SourceCatalog  # noqa: F401
-from app.shared.catalog.tenant_source_config import TenantSourceConfig  # noqa: F401
 from app.shared.identity.subscription import TenantModuleSubscription  # noqa: F401
 from app.shared.identity.tenant import Tenant  # noqa: F401
 from app.shared.identity.user import User  # noqa: F401

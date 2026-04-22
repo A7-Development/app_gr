@@ -4,6 +4,11 @@
 > (Informes Mensais da CVM) atraves de um ETL externo + DB dedicada +
 > `postgres_fdw`. Primeiro (e por enquanto unico) exemplo do padrao de **fonte
 > externa federada** descrito no CLAUDE.md 13.1.
+>
+> **Dicionario dos campos CVM:** [`cvm-fidc/dicionario.md`](./cvm-fidc/dicionario.md)
+> (Q&A "onde esta X?", limitacoes conhecidas por fundo) +
+> [`cvm-fidc/dicionario.yaml`](./cvm-fidc/dicionario.yaml) (catalogo gerado do
+> zip oficial via `scripts/parse_cvm_metadata.py`).
 
 ---
 
