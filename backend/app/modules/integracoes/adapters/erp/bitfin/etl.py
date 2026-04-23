@@ -402,9 +402,17 @@ SYNC_PIPELINE = [
 
 
 async def sync_all(
-    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+    tenant_id: UUID,
+    config: BitfinConfig,
+    since: date | None = None,
+    *,
+    triggered_by: str = "system:scheduler",
 ) -> dict[str, Any]:
-    """Executa todas as syncs em sequencia + registra no decision_log."""
+    """Executa todas as syncs em sequencia + registra no decision_log.
+
+    `triggered_by` identifica quem disparou o ciclo (scheduler automatico,
+    bootstrap CLI, ou usuario via API: "user:<uuid>").
+    """
     started_at = datetime.now(UTC)
     t0 = time.monotonic()
     results: list[dict[str, Any]] = []
@@ -438,7 +446,7 @@ async def sync_all(
                 rule_or_model_version=ADAPTER_VERSION,
                 output=summary,
                 explanation=("OK" if not errors else f"{len(errors)} erro(s): {errors}"),
-                triggered_by="system:scheduler",
+                triggered_by=triggered_by,
             )
         )
         await db.commit()

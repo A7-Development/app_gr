@@ -62,3 +62,14 @@ class SourceType(enum.StrEnum):
     PEER_DECLARED = "peer_declared"
     INTERNAL_NOTE = "internal_note"
     DERIVED = "derived"
+
+
+class Environment(enum.StrEnum):
+    """External-source environment (sandbox vs production).
+
+    Stored per-row in `tenant_source_config` so the same tenant can coexist
+    with a sandbox and a production config for the same source_type.
+    """
+
+    SANDBOX = "sandbox"
+    PRODUCTION = "production"

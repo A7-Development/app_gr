@@ -849,3 +849,125 @@ export const biMetadata = {
 export const system = {
   syncHealth: () => apiClient.get<SyncHealth>("/system/sync-health"),
 }
+
+//
+// Integracoes — catalogo de fontes + CRUD de credenciais por tenant.
+//
+
+export type Environment = "sandbox" | "production"
+
+/** Valores aceitos pelo `source_type` no backend (espelha core/enums.py::SourceType). */
+export type SourceTypeId =
+  | "erp:bitfin"
+  | "admin:qitech"
+  | "bureau:serasa_refinho"
+  | "bureau:serasa_pfin"
+  | "bureau:scr_bacen"
+  | "document:nfe"
+  | "self_declared"
+  | "peer_declared"
+  | "internal_note"
+  | "derived"
+
+export type SourceListItem = {
+  source_type: SourceTypeId
+  label: string
+  category: string
+  owner_org: string | null
+  description: string | null
+  configured: boolean
+  enabled: boolean
+  environment: Environment | null
+  last_sync_at: string | null
+}
+
+export type SourceDetail = {
+  source_type: SourceTypeId
+  label: string
+  category: string
+  owner_org: string | null
+  description: string | null
+  environment: Environment
+  configured: boolean
+  enabled: boolean
+  /** Campos com secrets vem como "***SET***" — nunca em claro. */
+  config: Record<string, unknown>
+  sync_frequency_minutes: number | null
+  updated_at: string | null
+}
+
+export type ConfigUpdatePayload = {
+  config?: Record<string, unknown>
+  environment?: Environment
+  enabled?: boolean
+  sync_frequency_minutes?: number | null
+}
+
+export type TestResult = {
+  ok: boolean
+  latency_ms: number | null
+  detail: unknown
+  adapter_version: string | null
+}
+
+export type SyncResult = {
+  adapter_version: string | null
+  started_at: string | null
+  elapsed_seconds: number | null
+  since: string | null
+  tables: Array<Record<string, unknown>>
+  errors: string[]
+}
+
+export type RunEntry = {
+  id: string
+  occurred_at: string
+  rule_or_model: string | null
+  rule_or_model_version: string | null
+  triggered_by: string
+  explanation: string | null
+  output: Record<string, unknown> | null
+}
+
+/** Helpers do modulo integracoes.
+ * Obs: `source_type` contem `:` (ex.: `erp:bitfin`) — NAO encode, o backend aceita literal.
+ */
+export const integracoes = {
+  listSources: (environment: Environment = "production") =>
+    apiClient.get<SourceListItem[]>(
+      `/integracoes/sources?environment=${environment}`,
+    ),
+  getSource: (
+    sourceType: SourceTypeId,
+    environment: Environment = "production",
+  ) =>
+    apiClient.get<SourceDetail>(
+      `/integracoes/sources/${sourceType}?environment=${environment}`,
+    ),
+  updateConfig: (sourceType: SourceTypeId, payload: ConfigUpdatePayload) =>
+    apiClient.put<SourceDetail>(
+      `/integracoes/sources/${sourceType}/config`,
+      payload,
+    ),
+  setEnabled: (
+    sourceType: SourceTypeId,
+    enabled: boolean,
+    environment: Environment = "production",
+  ) =>
+    apiClient.post<SourceDetail>(
+      `/integracoes/sources/${sourceType}/enable`,
+      { enabled, environment },
+    ),
+  test: (sourceType: SourceTypeId, environment: Environment = "production") =>
+    apiClient.post<TestResult>(
+      `/integracoes/sources/${sourceType}/test?environment=${environment}`,
+    ),
+  sync: (sourceType: SourceTypeId, environment: Environment = "production") =>
+    apiClient.post<SyncResult>(
+      `/integracoes/sources/${sourceType}/sync?environment=${environment}`,
+    ),
+  runs: (sourceType: SourceTypeId, limit = 50) =>
+    apiClient.get<RunEntry[]>(
+      `/integracoes/sources/${sourceType}/runs?limit=${limit}`,
+    ),
+}

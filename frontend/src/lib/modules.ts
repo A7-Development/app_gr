@@ -143,10 +143,13 @@ export const MODULES: ModuleDefinition[] = [
     initials: "IN",
     icon: RiStackLine,
     color: "rose",
-    enabled: false,
-    permission: "none",
+    enabled: true,
+    permission: "admin",
     basePath: "/integracoes",
-    sections: [{ name: "Em breve", href: "#", enabled: false }],
+    sections: [
+      { name: "Catalogo", href: "/integracoes/catalogo", enabled: true },
+      { name: "Sync", href: "/integracoes/sync", enabled: true },
+    ],
   },
   {
     id: "laboratorio",

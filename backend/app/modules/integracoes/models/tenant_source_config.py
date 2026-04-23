@@ -16,22 +16,28 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from app.core.database import Base
-from app.core.enums import SourceType
+from app.core.enums import Environment, SourceType
 
 
 class TenantSourceConfig(Base):
-    """Tenant-specific config for a given source.
+    """Tenant-specific config for a given source + environment.
 
     Example (Bitfin ERP): contains connection string, filter (cnpj), field mappings.
-    Example (QiTech admin): contains api_key, subscription_id.
+    Example (QiTech admin): contains api_key, client private key PEM, base URL.
 
-    Secrets are stored plaintext in MVP; `source_config` service applies a no-op
-    encrypt/decrypt wrapper that can be swapped for real encryption later without
-    call-site changes.
+    The `config` JSONB is stored as an envelope (see `app.shared.crypto.envelope`);
+    plaintext decryption is centralized in `services.source_config`.
+
+    `environment` lets the same tenant keep a sandbox and a production config
+    coexisting for the same source_type without clobbering each other.
     """
 
     __tablename__ = "tenant_source_config"
-    __table_args__ = (UniqueConstraint("tenant_id", "source_type", name="uq_tenant_source"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "source_type", "environment", name="uq_tenant_source_env"
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
@@ -44,6 +50,12 @@ class TenantSourceConfig(Base):
         SAEnum(SourceType, name="source_type", native_enum=False, length=64),
         ForeignKey("source_catalog.source_type"),
         nullable=False,
+    )
+    environment: Mapped[Environment] = mapped_column(
+        SAEnum(Environment, name="environment", native_enum=False, length=16),
+        nullable=False,
+        default=Environment.PRODUCTION,
+        server_default=Environment.PRODUCTION.name,
     )
 
     enabled: Mapped[bool] = mapped_column(
@@ -65,5 +77,6 @@ class TenantSourceConfig(Base):
     def __repr__(self) -> str:
         return (
             f"<TenantSourceConfig tenant={self.tenant_id} "
-            f"source={self.source_type.value} enabled={self.enabled}>"
+            f"source={self.source_type.value} env={self.environment.value} "
+            f"enabled={self.enabled}>"
         )

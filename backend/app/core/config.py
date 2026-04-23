@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     # ---------- CORS ----------
     CORS_ORIGINS: str = "http://localhost:3000"
 
+    # ---------- Integracoes: criptografia de secrets ----------
+    # KEK (Key Encryption Key) Fernet 32-byte URL-safe base64. Usada para
+    # envelope encryption do campo `tenant_source_config.config`. Gerar com:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Em prod futuro: substituir por KMS (AWS/GCP) sem mudar call sites.
+    APP_CONFIG_KEK: str = Field(..., min_length=32)
+
     # Credenciais de adapters (ex.: Bitfin) vivem em `tenant_source_config` — NAO aqui.
     # Cada tenant tem seu proprio banco (ver CLAUDE.md §13 regra 4).
 
