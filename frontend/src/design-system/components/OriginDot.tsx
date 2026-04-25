@@ -8,7 +8,7 @@ import { Tooltip } from "@/components/tremor/Tooltip"
 //
 // OriginDot -- ponto de proveniencia (handoff COMPONENTS.md §11).
 //
-// 12x12 no canto inferior direito de KPICard / VizCard. Indica fonte do
+// 12x12 no canto inferior direito de KpiCard / VizCard. Indica fonte do
 // dado + timestamp. Hover revela tooltip completo. Nao usa cor semantica
 // de sucesso/erro: e um ponto neutro (gray-400) que realca em hover.
 //

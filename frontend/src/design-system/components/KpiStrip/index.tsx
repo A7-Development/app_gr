@@ -8,6 +8,7 @@ import * as React from "react"
 import { RiArrowUpLine, RiArrowDownLine, RiAlertLine, RiErrorWarningLine } from "@remixicon/react"
 import { tv, type VariantProps } from "tailwind-variants"
 import { cx } from "@/lib/utils"
+import { OriginDot } from "@/design-system/components/OriginDot"
 
 export type IntensityTone  = "pos" | "neg" | "neu" | "info"
 export type IntensityLevel = "low" | "mid" | "high" | "critical"
@@ -238,6 +239,10 @@ export interface KpiCardProps extends VariantProps<typeof kpiCardVariants> {
   sparkColor?:     string
   alertThreshold?: AlertThreshold
   currentValue?:   number
+  /** Provenance: data source label (e.g., "QiTech", "CVM"). Renders OriginDot when set. */
+  source?:         string
+  /** ISO timestamp of last data refresh. Shown in OriginDot tooltip. */
+  updatedAtISO?:   string | null
   className?:      string
 }
 
@@ -252,6 +257,8 @@ export function KpiCard({
   sparkColor = "#2563EB",
   alertThreshold,
   currentValue,
+  source,
+  updatedAtISO,
   variant    = "default",
   className,
 }: KpiCardProps) {
@@ -306,6 +313,8 @@ export function KpiCard({
           <Sparkline data={sparkData} color={sparkColor} />
         </div>
       )}
+
+      {source && <OriginDot source={source} updatedAtISO={updatedAtISO} />}
     </div>
   )
 }

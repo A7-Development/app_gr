@@ -25,7 +25,7 @@ import { AIDrawer } from "@/design-system/components/AIDrawer"
 import { FilterBar, MoreFiltersButton } from "@/design-system/components/FilterBar"
 import { FilterChip } from "@/design-system/components/FilterBar"
 import { Insight, InsightBar } from "@/design-system/components/Insight"
-import { KPICard, KPIStrip } from "@/design-system/components/KPICard"
+import { KpiCard, KpiStrip } from "@/design-system/components/KpiStrip"
 import { PageHeader } from "@/design-system/components/PageHeader"
 import { VizCard } from "@/design-system/components/VizCard"
 import { Button } from "@/components/tremor/Button"
@@ -104,8 +104,8 @@ export default function BIFrameworkPreviewPage() {
         />
 
         {/* Z3 - KPI Strip (6 cards, com intensity v2, OriginDot) */}
-        <KPIStrip>
-          <KPICard
+        <KpiStrip>
+          <KpiCard
             label="PL total do mercado"
             value="R$ 490 bi"
             sub="abr/26"
@@ -114,7 +114,7 @@ export default function BIFrameworkPreviewPage() {
             source={SOURCE}
             updatedAtISO={UPDATED_AT}
           />
-          <KPICard
+          <KpiCard
             label="Fundos reportando"
             value="2.872"
             sub="abr/26"
@@ -123,7 +123,7 @@ export default function BIFrameworkPreviewPage() {
             source={SOURCE}
             updatedAtISO={UPDATED_AT}
           />
-          <KPICard
+          <KpiCard
             label="PL mediano"
             value="R$ 82 mi"
             sub="por fundo"
@@ -131,7 +131,7 @@ export default function BIFrameworkPreviewPage() {
             source={SOURCE}
             updatedAtISO={UPDATED_AT}
           />
-          <KPICard
+          <KpiCard
             label="Administradoras"
             value="184"
             sub="distintas"
@@ -139,7 +139,7 @@ export default function BIFrameworkPreviewPage() {
             source={SOURCE}
             updatedAtISO={UPDATED_AT}
           />
-          <KPICard
+          <KpiCard
             label="% Aberto"
             value="62,4%"
             sub="1.792 fundos"
@@ -148,7 +148,7 @@ export default function BIFrameworkPreviewPage() {
             source={SOURCE}
             updatedAtISO={UPDATED_AT}
           />
-          <KPICard
+          <KpiCard
             label="Maior administrador"
             value="BRL Trust"
             sub="R$ 48 bi PL"
@@ -156,7 +156,7 @@ export default function BIFrameworkPreviewPage() {
             source={SOURCE}
             updatedAtISO={UPDATED_AT}
           />
-        </KPIStrip>
+        </KpiStrip>
 
         {/* Z4 - Insights IA (tons variados v2) */}
         <InsightBar>

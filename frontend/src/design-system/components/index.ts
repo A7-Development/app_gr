@@ -59,9 +59,6 @@ export { FilterPill, type FilterPillOption } from "./FilterPill"
 export { InfoTooltip } from "./InfoTooltip"
 export { Insight, InsightBar, type InsightTone } from "./Insight"
 export { JsonPreview } from "./JsonPreview"
-// KPICard is the legacy A7 Credit KPI (handoff v1) — kept alongside Strata's KpiCard.
-// Pages may migrate to KpiCard at their own pace.
-export { KPICard, KPIIntensity, KPIStrip, type KPIIntensityTone, type KPIIntensityLevel } from "./KPICard"
 export { LastSyncCell } from "./LastSyncCell"
 export { Logo } from "./Logo"
 export { ModuleSwitcher } from "./ModuleSwitcher"
