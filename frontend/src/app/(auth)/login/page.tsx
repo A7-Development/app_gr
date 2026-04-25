@@ -18,7 +18,7 @@ import { Checkbox } from "@/components/tremor/Checkbox"
 import { Divider } from "@/components/tremor/Divider"
 import { Input } from "@/components/tremor/Input"
 import { Label } from "@/components/tremor/Label"
-import { Logo } from "@/components/app/Logo"
+import { Logo } from "@/design-system/components/Logo"
 import { ApiError, login } from "@/lib/api-client"
 
 //

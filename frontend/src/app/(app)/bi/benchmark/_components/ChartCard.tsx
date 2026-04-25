@@ -1,7 +1,7 @@
 import * as React from "react"
 
 import { cx } from "@/lib/utils"
-import { InfoTooltip } from "@/components/app/InfoTooltip"
+import { InfoTooltip } from "@/design-system/components/InfoTooltip"
 
 //
 // Wrapper leve de titulo + chart — espelha exatamente o ChartCard interno

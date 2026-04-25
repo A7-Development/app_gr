@@ -11,7 +11,7 @@ import { useQuery } from "@tanstack/react-query"
 import * as React from "react"
 
 import { cx } from "@/lib/utils"
-import { EmptyState } from "@/components/app/EmptyState"
+import { EmptyState } from "@/design-system/components/EmptyState"
 import { Badge } from "@/components/tremor/Badge"
 import {
   Select,

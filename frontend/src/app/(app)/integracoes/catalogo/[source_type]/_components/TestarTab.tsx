@@ -17,7 +17,7 @@ import { Badge } from "@/components/tremor/Badge"
 import { Button } from "@/components/tremor/Button"
 import { Card } from "@/components/tremor/Card"
 import { Divider } from "@/components/tremor/Divider"
-import { JsonPreview } from "@/components/app/JsonPreview"
+import { JsonPreview } from "@/design-system/components/JsonPreview"
 import { useSyncSource, useTestSource } from "@/lib/hooks/integracoes"
 import type { SourceDetail, SourceTypeId } from "@/lib/api-client"
 

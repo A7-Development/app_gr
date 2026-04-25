@@ -55,7 +55,7 @@ Arquivo dedicado em `src/lib/schemas/`. Usar `z.object({...})`. Tipos inferidos 
 
 ### Layout
 
-Usar `FormLayout` de `@/components/app/FormLayout` (criar se nao existir). Contem:
+Usar `FormLayout` de `@/design-system/components/FormLayout` (criar se nao existir). Contem:
 - `PageHeader` (reutilizado).
 - Agrupamento de campos em secoes semanticas (cada secao com titulo h2 opcional).
 - Rodape fixo com botoes de acao: `<Button variant="secondary">Cancelar</Button> <Button type="submit" variant="primary">Salvar</Button>`.

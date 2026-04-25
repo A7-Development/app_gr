@@ -22,7 +22,7 @@ import { Divider } from "@/components/tremor/Divider"
 import { Input } from "@/components/tremor/Input"
 import { Label } from "@/components/tremor/Label"
 import { Switch } from "@/components/tremor/Switch"
-import { SecretInput } from "@/components/app/SecretInput"
+import { SecretInput } from "@/design-system/components/SecretInput"
 import {
   useSetSourceEnabled,
   useUpdateSourceConfig,

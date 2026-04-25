@@ -87,8 +87,8 @@ Herdar tokens Tremor ao inves de valores magicos.
 
 ### 9. Componentes fora das camadas (alerta)
 
-- Arquivo em `src/components/app/` importando de `src/components/<dominio>/` (errado; `app/` e dominio-neutro).
-- Arquivo em `src/components/tremor/` importando de `src/components/app/` ou `src/components/<dominio>/` (errado; tremor e camada base).
+- Arquivo em `src/design-system/components/` importando de `src/components/<dominio>/` (errado; `app/` e dominio-neutro).
+- Arquivo em `src/components/tremor/` importando de `src/design-system/components/` ou `src/components/<dominio>/` (errado; tremor e camada base).
 - Arquivo em `src/components/charts/` importando de `src/components/<dominio>/` (errado).
 
 ### 10. `any` em codigo de dominio (alerta)
@@ -101,7 +101,7 @@ Ver CLAUDE.md secao 11.6. Sistema tem exatamente 3 niveis de navegacao: L1 (modu
 
 Violacoes a detectar:
 
-- **Sidebar com aninhamento de 3+ niveis.** Procurar em `src/components/app/AppSidebar.tsx` (ou equivalente) por `SidebarMenuSub` aninhado dentro de outro `SidebarMenuSub`. Se houver, e violacao.
+- **Sidebar com aninhamento de 3+ niveis.** Procurar em `src/design-system/components/AppSidebar.tsx` (ou equivalente) por `SidebarMenuSub` aninhado dentro de outro `SidebarMenuSub`. Se houver, e violacao.
 - **Tabs criadas fora de `TabNavigation` do Tremor.** Em qualquer `src/app/(app)/**/page.tsx`, `<Tabs>` ou `<TabsList>` de `@radix-ui/react-tabs` direto e proibido — deve ser `TabNavigation` do Tremor em todos os casos de navegacao de L3.
 - **Ausencia de `L3` via URL.** Pagina que mostra tabs mas tem estado somente em React state (sem search param) — viola a regra "URL como fonte unica da verdade". Procurar `useState<string>` combinado com tabs ou switch case de conteudo — suspeito de nao-deep-link.
 - **Sidebar sem suporte a active state via `pathname`.** `SidebarSubLink` com `isActive={false}` hard-coded — deveria ser `isActive={pathname === item.href}` ou similar.

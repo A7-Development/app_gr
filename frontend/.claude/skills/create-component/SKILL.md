@@ -1,11 +1,11 @@
 ---
 name: create-component
-description: Cria um componente reutilizavel em src/components/app/ (camada de composicao neutra). Use quando for criar PageHeader, EmptyState, ErrorState, Breadcrumb, DataTable, FormLayout ou qualquer composicao que agregue primitivos Tremor.
+description: Cria um componente reutilizavel em src/design-system/components/ (camada de composicao neutra). Use quando for criar PageHeader, EmptyState, ErrorState, Breadcrumb, DataTable, FormLayout ou qualquer composicao que agregue primitivos Tremor.
 ---
 
 # create-component
 
-Use para criar **componentes de composicao** que vivem em `src/components/app/`. Esta camada fica entre os primitivos Tremor e os componentes de dominio.
+Use para criar **componentes de composicao** que vivem em `src/design-system/components/`. Esta camada fica entre os primitivos Tremor e os componentes de dominio.
 
 ## Pre-condicao obrigatoria
 
@@ -34,7 +34,7 @@ Ler `CLAUDE.md` na raiz. Regras nao-negociaveis.
 ## Estrutura a produzir
 
 ```
-src/components/app/<NomeComponente>.tsx
+src/design-system/components/<NomeComponente>.tsx
 ```
 
 Um unico arquivo. Se precisar de sub-componentes, exportar todos a partir do mesmo arquivo (como o Tremor faz com Card/CardHeader/CardContent).

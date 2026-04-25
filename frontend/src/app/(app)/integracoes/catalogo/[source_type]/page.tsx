@@ -14,9 +14,9 @@ import * as React from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { RiArrowLeftLine } from "@remixicon/react"
 
-import { PageHeader } from "@/components/app/PageHeader"
-import { AdapterStatusBadge, statusFrom } from "@/components/app/AdapterStatusBadge"
-import { ErrorState } from "@/components/app/ErrorState"
+import { PageHeader } from "@/design-system/components/PageHeader"
+import { AdapterStatusBadge, statusFrom } from "@/design-system/components/AdapterStatusBadge"
+import { ErrorState } from "@/design-system/components/ErrorState"
 import { Button } from "@/components/tremor/Button"
 import {
   Select,

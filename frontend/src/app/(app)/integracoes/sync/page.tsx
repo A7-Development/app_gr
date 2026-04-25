@@ -22,14 +22,14 @@ import {
   RiStackLine,
 } from "@remixicon/react"
 
-import { PageHeader } from "@/components/app/PageHeader"
+import { PageHeader } from "@/design-system/components/PageHeader"
 import {
   AdapterStatusBadge,
   statusFrom,
-} from "@/components/app/AdapterStatusBadge"
-import { EmptyState } from "@/components/app/EmptyState"
-import { ErrorState } from "@/components/app/ErrorState"
-import { LastSyncCell } from "@/components/app/LastSyncCell"
+} from "@/design-system/components/AdapterStatusBadge"
+import { EmptyState } from "@/design-system/components/EmptyState"
+import { ErrorState } from "@/design-system/components/ErrorState"
+import { LastSyncCell } from "@/design-system/components/LastSyncCell"
 import { Button } from "@/components/tremor/Button"
 import {
   Select,

@@ -22,9 +22,9 @@ import {
   RiEditLine,
 } from "@remixicon/react"
 
-import { EmptyState } from "@/components/app/EmptyState"
-import { ErrorState } from "@/components/app/ErrorState"
-import { PageHeader } from "@/components/app/PageHeader"
+import { EmptyState } from "@/design-system/components/EmptyState"
+import { ErrorState } from "@/design-system/components/ErrorState"
+import { PageHeader } from "@/design-system/components/PageHeader"
 import { Badge } from "@/components/tremor/Badge"
 import { Button } from "@/components/tremor/Button"
 import {

@@ -10,16 +10,17 @@
 
 O sistema usa **Tremor Raw** como **ponto de partida** de design system. Ele cobre ~90% dos casos; quando cobrir, use verbatim.
 
-> **Nada que nao esteja em `frontend/src/components/tremor/`, `frontend/src/components/charts/` ou `frontend/src/components/app/` pode aparecer na UI.**
+> **Nada que nao esteja em `frontend/src/components/tremor/`, `frontend/src/components/charts/` ou `frontend/src/design-system/` pode aparecer na UI.**
 
 Ordem de escolha quando for montar uma tela:
 
 1. Existe em `tremor/` ou `charts/`? Use direto.
 2. Existe no Tremor Raw upstream mas ainda nao foi copiado? Copie verbatim de https://tremor.so/docs e use.
-3. Nao existe no Tremor? **Componha em `src/components/app/`** a partir de primitivos Tremor + Radix. Um componente novo e aceito se:
+3. Existe em `src/design-system/components/`? Use direto via barrel `@/design-system/components`.
+4. Nao existe ainda? **Componha em `src/design-system/components/`** a partir de primitivos Tremor + Radix. Um componente novo e aceito se:
    - **(a)** Usa apenas tokens desta secao §4 (cores, tipografia, spacing, radius). Zero valor arbitrario.
    - **(b)** Reutiliza Radix UI quando houver equivalente (Dialog, Popover, Dropdown, Tooltip, etc) — nunca reimplementar a mecanica de acessibilidade.
-   - **(c)** E documentado em `frontend/src/components/app/README.md` com proposito + exemplo + quando usar/nao usar, antes de ir pra producao.
+   - **(c)** E documentado na rota `/design` (dev-only) com proposito + exemplo + quando usar/nao usar, antes de ir pra producao.
 4. Se a proposta quebrar uma das 3 regras acima OU introduzir uma primitiva que o Tremor ja oferece com outro nome, **pare e discuta antes de escrever codigo.**
 
 Tremor Raw e referencia, nao cela. Quando "fazer como o Tremor faz" conflitar com "resolver melhor o problema do usuario", vence o segundo — desde que (a), (b) e (c) sejam respeitados. Design system e vivo.
@@ -52,30 +53,48 @@ Instalar qualquer biblioteca fora desta tabela exige autorizacao explicita do us
 
 ---
 
-## 3. Arquitetura em 4 camadas
+## 3. Arquitetura em 5 camadas (Strata Design System)
 
 ```
-src/components/tremor/      <- Primitivos Tremor Raw (verbatim da doc).
-                                Nao editar. Substitua apenas ao atualizar a versao upstream.
+src/components/tremor/             <- Primitivos Tremor Raw (verbatim da doc).
+                                       Nao editar. Substitua apenas ao atualizar a versao upstream.
 
-src/components/charts/      <- Charts do Tremor (verbatim). Mesma regra.
+src/components/charts/             <- Charts do Tremor (verbatim). Mesma regra.
 
-src/components/app/         <- Composicoes reutilizaveis de dominio neutro
-                                (ex.: PageHeader, DataTable, FormLayout, EmptyState).
-                                USA apenas tremor/ e charts/, nunca Tailwind bruto
-                                de cor / Radix cru.
+src/design-system/tokens/          <- Tokens TS espelhando CSS vars do globals.css.
+                                       (colors, fonts, spacing, radius, motion, echarts-theme).
 
-src/components/<dominio>/   <- Componentes amarrados a um dominio especifico
-                                (ex.: "contratos", "fornecedores", "dashboards").
-                                Compostos de app/ + tremor/ + charts/.
+src/design-system/primitives/      <- Barrel re-exporta `tremor/*` + Sheet (right-side drawer).
+                                       Ponto de entrada unico para primitivas.
+
+src/design-system/components/      <- Componentes do Strata Design System (FIDC-domain).
+                                       Strata canonicos: StatusPill, KpiStrip, FilterBar,
+                                       DataTable, DrillDownSheet, CommandPalette, EChartsCard,
+                                       ApprovalQueueBadge, Sidebar.
+                                       A7 Credit composites: AIButton, PageHeader, EmptyState,
+                                       ErrorState, OriginDot, CompactSeriesTable, etc.
+                                       USA apenas tremor/ + charts/ + tokens/, nunca Tailwind
+                                       bruto de cor / Radix cru.
+
+src/design-system/patterns/        <- Composicoes copy-paste-edit (DashboardOperacional,
+                                       ListagemComDrilldown). Templates de pagina.
+
+src/components/<dominio>/          <- Componentes amarrados a um dominio especifico
+                                       (ex.: "bi", "contratos", "fornecedores").
+                                       Compostos de design-system/ + tremor/ + charts/.
 ```
 
 **Imports permitidos por camada:**
 
 - `tremor/` importa: `@/lib/utils`, `@/lib/chartUtils`, `@remixicon/react`, `tailwind-variants`, Radix UI (interno), Recharts (interno).
 - `charts/` importa: o mesmo que `tremor/` + `react`.
-- `app/` importa: `@/components/tremor/*`, `@/components/charts/*`, `@/lib/*`, `@remixicon/react`, primitivos Radix **sem equivalente no Tremor** (ex.: `@radix-ui/react-avatar`), `cmdk`. **Proibido**: Radix para o que o Tremor ja cobre, Recharts direto, classes de cor Tailwind ad-hoc.
-- `<dominio>/` importa: `@/components/app/*`, `@/components/tremor/*`, `@/components/charts/*`, hooks de dominio, types de dominio.
+- `design-system/tokens/` importa: nada externo (apenas `react` para hooks).
+- `design-system/primitives/` importa: `@/components/tremor/*` + nova `Sheet.tsx`.
+- `design-system/components/` importa: `@/components/tremor/*`, `@/components/charts/*`, `@/design-system/tokens/*`, `@/design-system/primitives/*`, `@/lib/*`, `@remixicon/react`, primitivos Radix **sem equivalente no Tremor** (ex.: `@radix-ui/react-avatar`, `@radix-ui/react-hover-card`), `cmdk`, `echarts-for-react`. **Proibido**: Radix para o que o Tremor ja cobre, Recharts direto, classes de cor Tailwind ad-hoc.
+- `design-system/patterns/` importa: `@/design-system/components/*` + `@/design-system/tokens/*` + `@/components/tremor/*`. **Sao templates copiaveis** — escopo: composicao + dados de exemplo.
+- `<dominio>/` importa: `@/design-system/*`, `@/components/tremor/*`, `@/components/charts/*`, hooks de dominio, types de dominio. **Nunca importa de outro dominio.**
+
+**Barrel oficial:** `import { ... } from "@/design-system/components"` re-exporta tudo.
 
 ---
 
@@ -99,7 +118,7 @@ src/components/<dominio>/   <- Componentes amarrados a um dominio especifico
 - Gradientes manuais (`bg-gradient-to-*` com cores arbitrarias).
 
 **Excecao oficial -- botao "Perguntar a IA" (`AIButton`):**
-Unico ponto do sistema que usa `violet` fora de chart series ou avatar de Laboratorio. Combinacao fixa: `bg-gray-900 text-white` + icone (`RiSparklingLine` ou `RiMagicLine`) em `text-violet-400`/`text-violet-500`. Vive em `src/components/app/AIButton.tsx`. Aparece no header de toda pagina de BI (Zona Z2 -- ver secao 19). Qualquer outro uso de violeta em botao/badge/texto e proibido.
+Unico ponto do sistema que usa `violet` fora de chart series ou avatar de Laboratorio. Combinacao fixa: `bg-gray-900 text-white` + icone (`RiSparklingLine` ou `RiMagicLine`) em `text-violet-400`/`text-violet-500`. Vive em `src/design-system/components/AIButton.tsx`. Aparece no header de toda pagina de BI (Zona Z2 -- ver secao 19). Qualquer outro uso de violeta em botao/badge/texto e proibido.
 
 **Dark mode:** sempre suportar. Usar as mesmas classes que o Tremor usa (`dark:bg-gray-950`, `dark:text-gray-50`, `dark:border-gray-800`). O `<html>` ja tem `dark:bg-gray-950` em `layout.tsx`.
 
@@ -123,24 +142,28 @@ Unico ponto do sistema que usa `violet` fora de chart series ou avatar de Labora
 **Formularios** sempre compoem apenas primitivos `tremor/`: `Input`, `Select`, `Textarea`, `Checkbox`, `Switch`, `RadioGroup`, `Label`, `DatePicker`, `NumberInput` (via Input com `type="number"`).
 
 - Validacao: `react-hook-form` + `zod`.
-- Layout: `src/components/app/FormLayout` (a criar como template).
+- Layout: a definir em `src/design-system/patterns/` quando surgir necessidade.
 - Botoes: sempre `Button` do Tremor, nunca `<button>` cru.
 
-**Tabelas** sempre com `Table` do Tremor. Para tabelas com sort/filter/paginacao, usar `@tanstack/react-table` por baixo + componentes Tremor no render. Nunca AG Grid, nunca data grid externo.
+**Tabelas:**
+- **Transacionais** (cessoes, cedentes, sacados, listagens grandes) — usar `DataTable` em `src/design-system/components/DataTable/` (TanStack Table v8 + TanStack Virtual + 3 densidades + ColumnManager + ExportMenu + 9 cell renderers tipados). Virtualizacao automatica se rows > 100.
+- **Series temporais FIDC** (PL, cotas, rentabilidade mes a mes) — usar `CompactSeriesTable` em `src/design-system/components/CompactSeriesTable.tsx` (Austin-style, density compact default).
+- Nunca AG Grid, nunca data grid externo, nunca `Table` do Tremor cru em pagina (Tremor `Table` so como primitivo dentro de DataTable/CompactSeriesTable).
 
 ---
 
-## 7. Paginas e rotas
+## 7. Paginas e rotas — Patterns canonicos
 
-Toda pagina nasce de um dos 5 templates canonicos (quando existirem em `src/templates/`):
+Toda pagina nasce de um dos patterns canonicos em `src/design-system/patterns/`:
 
-- **ListTemplate** — tela de listagem com busca/filtro/tabela.
-- **FormTemplate** — criar/editar recurso.
-- **DetailTemplate** — visualizacao de recurso.
-- **DashboardTemplate** — KPIs + charts.
-- **WizardTemplate** — fluxo multi-step.
+- **DashboardOperacional** — PageHeader + FilterBar + KpiStrip (4 KPIs) + Grid 2×2 EChartsCards + DataTable de atividade recente. Use para `/bi/operacoes`, `/bi/carteira`, `/bi/rentabilidade`.
+- **ListagemComDrilldown** — PageHeader + FilterBar + DataTable + DrillDownSheet (URL-synced via `?selected=ID`). Use para Cessoes, Cedentes, Sacados, Cobranca, Reconciliacao, Eventos.
 
-Antes de escrever uma `page.tsx` nova, pergunte: "qual template aplica?". Se nenhum, e sinal de que precisa de discussao, nao de uma excecao.
+Patterns sao **copy-paste-edit** — nao componentes black-box. Copie do pattern, troque os tipos de dominio, adapte os campos. Os comentarios `HOW TO ADAPT:` no topo de cada arquivo guiam a customizacao.
+
+Antes de escrever uma `page.tsx` nova, pergunte: "qual pattern aplica?". Se nenhum, e sinal de que precisa de discussao, nao de uma excecao.
+
+A rota `/design` (dev-only via `process.env.NODE_ENV !== "production"`) mostra todos os tokens, primitives, components e patterns ao vivo. Util como referencia rapida.
 
 ---
 
@@ -152,7 +175,7 @@ Em `frontend/.claude/skills/` vivem skills que automatizam o nascimento de novo 
 - `create-form-page` — nova pagina de formulario
 - `create-detail-page` — nova pagina de detalhe
 - `create-dashboard-page` — novo dashboard
-- `create-component` — novo componente reutilizavel em `components/app/`
+- `create-component` — novo componente reutilizavel em `design-system/components/`
 - `audit-page-consistency` — verificar se uma pagina segue as regras acima
 
 Quando o usuario pedir "cria uma pagina de X" ou "audita a tela Y", prefira invocar a skill ao inves de escrever do zero.
@@ -271,8 +294,10 @@ src/app/(app)/
 ├── risco/...
 ├── integracoes/...
 ├── laboratorio/...
-├── admin/...
-└── templates/            # dev-only, fora de modulos
+└── admin/...
+
+src/app/design/           # Strata Design System ao vivo (dev-only via NODE_ENV check)
+src/app/preview/          # paginas de preview/QA (gated em layout)
 ```
 
 Cada modulo pode ter seu proprio `layout.tsx` interno e submenus proprios.
@@ -283,7 +308,7 @@ Cada modulo pode ter seu proprio `layout.tsx` interno e submenus proprios.
 - Um modulo desabilitado (subscription `enabled=false`) **nao aparece** no `ModuleSwitcher` nem e acessivel.
 - Um modulo sem permissao de usuario (`permission=none`) **nao aparece** no `ModuleSwitcher`.
 - Breadcrumbs hierarquicos: `Modulo > Funcionalidade > Recurso`.
-- Pagina do modulo X nunca importa componentes especificos de modulo Y. Componentes compartilhados ficam em `src/components/app/`.
+- Pagina do modulo X nunca importa componentes especificos de modulo Y. Componentes compartilhados ficam em `src/design-system/components/`.
 
 ### 11.6 Navegacao — hierarquia de 3 niveis (regra oficial)
 
@@ -575,7 +600,7 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 
 ### Frontend (pagina)
 
-- [ ] Usa apenas componentes de `tremor/`, `charts/`, `app/` ou do proprio dominio?
+- [ ] Usa apenas componentes de `tremor/`, `charts/`, `design-system/` ou do proprio dominio?
 - [ ] Zero `import` de `lucide-react`, `shadcn`, `@mui`, etc?
 - [ ] `cx()` e nao `cn()`?
 - [ ] Icones sao `Ri*` de `@remixicon/react`?

@@ -20,14 +20,14 @@ import {
   RiSparklingFill,
 } from "@remixicon/react"
 
-import { AIButton } from "@/components/app/AIButton"
-import { AIDrawer } from "@/components/app/AIDrawer"
-import { FilterBar, MoreFiltersButton } from "@/components/app/FilterBar"
-import { FilterChip } from "@/components/app/FilterChip"
-import { Insight, InsightBar } from "@/components/app/Insight"
-import { KPICard, KPIStrip } from "@/components/app/KPICard"
-import { PageHeader } from "@/components/app/PageHeader"
-import { VizCard } from "@/components/app/VizCard"
+import { AIButton } from "@/design-system/components/AIButton"
+import { AIDrawer } from "@/design-system/components/AIDrawer"
+import { FilterBar, MoreFiltersButton } from "@/design-system/components/FilterBar"
+import { FilterChip } from "@/design-system/components/FilterBar"
+import { Insight, InsightBar } from "@/design-system/components/Insight"
+import { KPICard, KPIStrip } from "@/design-system/components/KPICard"
+import { PageHeader } from "@/design-system/components/PageHeader"
+import { VizCard } from "@/design-system/components/VizCard"
 import { Button } from "@/components/tremor/Button"
 import {
   TabNavigation,

@@ -13,7 +13,7 @@ import {
 
 import { LineChart } from "@/components/charts/LineChart"
 import { SparkAreaChart } from "@/components/charts/SparkChart"
-import { ChartSkeleton } from "@/components/app/ChartSkeleton"
+import { ChartSkeleton } from "@/design-system/components/ChartSkeleton"
 import { cx, focusRing } from "@/lib/utils"
 import { biMetadata } from "@/lib/api-client"
 import type {

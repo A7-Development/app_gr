@@ -1,6 +1,6 @@
-import { AppSidebar } from "@/components/app/AppSidebar"
-import { AuthGuard } from "@/components/app/AuthGuard"
-import { HeaderBreadcrumbs } from "@/components/app/Breadcrumbs"
+import { AppSidebar } from "@/design-system/components/Sidebar"
+import { AuthGuard } from "@/design-system/components/AuthGuard"
+import { HeaderBreadcrumbs } from "@/design-system/components/Breadcrumbs"
 import {
   SidebarProvider,
   SidebarTrigger,

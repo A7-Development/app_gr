@@ -34,7 +34,7 @@ src/lib/services/<dominio>-service.ts           <- adicionar getById
 ### Header
 
 `PageHeader` com:
-- Breadcrumb opcional (via `<Breadcrumb />` de `@/components/app/` — criar se nao existir).
+- Breadcrumb opcional (via `<Breadcrumb />` de `@/design-system/components/` — criar se nao existir).
 - Titulo (nome do registro).
 - Badge de status ao lado do titulo, se aplicavel.
 - Acoes secundarias/primarias: sempre via `Button` ou `DropdownMenu` do Tremor.
@@ -58,7 +58,7 @@ Excluir / arquivar / cancelar sempre abrem `Dialog` do Tremor como confirmacao. 
 ### Estado de loading / erro
 
 - Loading: skeleton baseado em `animate-pulse` com cores Tremor.
-- 404: componente `<NotFoundState />` de `@/components/app/` com icone Ri*, titulo e link de volta.
+- 404: componente `<NotFoundState />` de `@/design-system/components/` com icone Ri*, titulo e link de volta.
 - Erro: `<ErrorState />` com `RiErrorWarningLine` e retry.
 
 ## Proibicoes duras

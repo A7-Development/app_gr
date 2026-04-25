@@ -24,10 +24,10 @@ import * as React from "react"
 import { useSearchParams } from "next/navigation"
 import { RiDownloadLine, RiShare2Line } from "@remixicon/react"
 
-import { AIButton } from "@/components/app/AIButton"
-import { AIDrawer } from "@/components/app/AIDrawer"
-import { FilterBar } from "@/components/app/FilterBar"
-import { PageHeader } from "@/components/app/PageHeader"
+import { AIButton } from "@/design-system/components/AIButton"
+import { AIDrawer } from "@/design-system/components/AIDrawer"
+import { FilterBar } from "@/design-system/components/FilterBar"
+import { PageHeader } from "@/design-system/components/PageHeader"
 import { Button } from "@/components/tremor/Button"
 import {
   TabNavigation,

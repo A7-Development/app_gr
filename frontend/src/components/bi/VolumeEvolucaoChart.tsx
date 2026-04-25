@@ -13,7 +13,7 @@ import { AreaChart } from "@/components/charts/AreaChart"
 import { BarChart } from "@/components/charts/BarChart"
 import { LineChart } from "@/components/charts/LineChart"
 import type { BarChartEventProps } from "@/components/charts/BarChart"
-import { ChartSkeleton } from "@/components/app/ChartSkeleton"
+import { ChartSkeleton } from "@/design-system/components/ChartSkeleton"
 import { cx, focusRing } from "@/lib/utils"
 import type {
   PointDim,

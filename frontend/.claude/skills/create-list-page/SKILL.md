@@ -35,7 +35,7 @@ src/types/<dominio>.ts                     <- tipos do dominio (se ainda nao exi
 
 ### Header da pagina
 
-Sempre com `PageHeader` de `@/components/app/PageHeader` (criar se nao existir), contendo:
+Sempre com `PageHeader` de `@/design-system/components/PageHeader` (criar se nao existir), contendo:
 - Titulo (h1)
 - Subtitulo opcional
 - Acao primaria: `<Button variant="primary"><RiAddLine className="size-4" /> Novo X</Button>`
@@ -58,7 +58,7 @@ Sempre com `PageHeader` de `@/components/app/PageHeader` (criar se nao existir),
 
 ### Estado vazio
 
-Quando a lista estiver vazia, renderizar `<EmptyState />` de `@/components/app/EmptyState` (criar se nao existir) com icone Ri*, titulo, subtitulo e acao primaria.
+Quando a lista estiver vazia, renderizar `<EmptyState />` de `@/design-system/components/EmptyState` (criar se nao existir) com icone Ri*, titulo, subtitulo e acao primaria.
 
 ### Loading
 

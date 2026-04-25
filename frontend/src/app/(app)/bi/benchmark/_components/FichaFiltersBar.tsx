@@ -8,8 +8,8 @@ import { Button } from "@/components/tremor/Button"
 import {
   MonthRangePicker,
   type MonthRange,
-} from "@/components/app/MonthRangePicker"
-import { PeriodoPresets } from "@/components/app/PeriodoPresets"
+} from "@/design-system/components/MonthRangePicker"
+import { PeriodoPresets } from "@/design-system/components/PeriodoPresets"
 import { cx } from "@/lib/utils"
 import { biBenchmark } from "@/lib/api-client"
 import { useBiFilters } from "@/lib/hooks/useBiFilters"
