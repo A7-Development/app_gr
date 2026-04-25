@@ -22,14 +22,20 @@
 import Link from "next/link"
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
+import { RiDownloadLine, RiShare2Line } from "@remixicon/react"
 
+import { AIButton } from "@/components/app/AIButton"
+import { AIDrawer } from "@/components/app/AIDrawer"
+import { FilterBar } from "@/components/app/FilterBar"
 import { PageHeader } from "@/components/app/PageHeader"
+import { Button } from "@/components/tremor/Button"
 import {
   TabNavigation,
   TabNavigationLink,
 } from "@/components/tremor/TabNavigation"
 import { ProvenanceFooter } from "@/components/bi/ProvenanceFooter"
 
+import { BenchmarkFiltersBar } from "./_components/BenchmarkFiltersBar"
 import { ComparativoTab } from "./_components/ComparativoTab"
 import { FichaFiltersBar } from "./_components/FichaFiltersBar"
 import { FichaFundoTab } from "./_components/FichaFundoTab"
@@ -69,13 +75,43 @@ const PROVENANCE_MOCK = {
   row_count: 2_872,
 }
 
+const TAB_LABELS: Record<TabKey, string> = {
+  mercado: "Mercado",
+  lista: "Lista de fundos",
+  ficha: "Ficha do fundo",
+  comparativo: "Comparativo",
+}
+
 export default function BenchmarkPage() {
   const activeTab = useActiveTab()
   const buildTabHref = useBuildTabHref()
+  const [aiOpen, setAiOpen] = React.useState(false)
 
   return (
     <div className="flex flex-col gap-6 px-12 py-6 pb-28">
-      <PageHeader title="BI · Benchmark" info={PAGE_INFO} />
+      {activeTab === "mercado" && (
+        <FilterBar>
+          <BenchmarkFiltersBar />
+        </FilterBar>
+      )}
+      <PageHeader
+        title="BI · Benchmark"
+        subtitle="Mercado FIDC a partir dos Informes Mensais publicados pela CVM. Dado público, atualização mensal."
+        info={PAGE_INFO}
+        actions={
+          <>
+            <Button variant="secondary" className="gap-1.5">
+              <RiShare2Line className="size-4" aria-hidden="true" />
+              Compartilhar
+            </Button>
+            <Button variant="secondary" className="gap-1.5">
+              <RiDownloadLine className="size-4" aria-hidden="true" />
+              Exportar
+            </Button>
+            <AIButton onClick={() => setAiOpen(true)} />
+          </>
+        }
+      />
 
       <TabNavigation>
         {TABS.map((t) => (
@@ -98,6 +134,15 @@ export default function BenchmarkPage() {
       )}
 
       <SelecaoStickyBar />
+
+      <AIDrawer
+        open={aiOpen}
+        onOpenChange={setAiOpen}
+        context={{
+          page: "Benchmark",
+          tab: TAB_LABELS[activeTab],
+        }}
+      />
     </div>
   )
 }

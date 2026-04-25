@@ -36,7 +36,10 @@ import type {
 //
 // Descritor de campo. `secret` => usa SecretInput; `multiline` => Textarea (PEM).
 //
-type FieldType = "text" | "secret" | "secret-multiline"
+// `secret-json` = textarea de JSON cifrado em repouso; parseado client-side
+// no submit. Util quando o shape do valor varia por contrato (ex.: payload
+// de credenciais da QiTech e repassado tal e qual pro endpoint de token).
+type FieldType = "text" | "secret" | "secret-multiline" | "secret-json"
 
 type FieldDescriptor = {
   key: string
@@ -98,28 +101,32 @@ const FIELDS_BY_SOURCE: Partial<Record<SourceTypeId, FieldDescriptor[]>> = {
       key: "base_url",
       label: "Base URL",
       type: "text",
-      placeholder: "https://api.qitech.com.br",
-      required: true,
+      placeholder: "https://api-portal.singulare.com.br",
+      helper:
+        "Default: https://api-portal.singulare.com.br (QiTech herdou o portal da Singulare).",
     },
     {
-      key: "client_key",
-      label: "Client Key (UUID do tenant na QiTech)",
+      key: "client_id",
+      label: "Client ID",
+      type: "secret",
+      required: true,
+      helper:
+        "Identificador emitido pela QiTech ao tenant. Vai no Authorization: Basic base64(client_id:client_secret) da request de token.",
+    },
+    {
+      key: "client_secret",
+      label: "Client Secret",
+      type: "secret",
+      required: true,
+      helper:
+        "Secret correspondente ao Client ID. Cifrado em repouso via envelope encryption.",
+    },
+    {
+      key: "token_ttl_seconds",
+      label: "TTL do token (segundos)",
       type: "text",
-      required: true,
-    },
-    { key: "api_key", label: "API Key", type: "secret", required: true },
-    {
-      key: "client_private_key_pem",
-      label: "Chave privada ECDSA P-521 (PEM)",
-      type: "secret-multiline",
-      required: true,
-      helper: "Conteudo completo do arquivo .pem, incluindo BEGIN/END.",
-    },
-    {
-      key: "qi_public_key_pem",
-      label: "Chave publica da QiTech (PEM)",
-      type: "secret-multiline",
-      required: true,
+      placeholder: "3600",
+      helper: "Opcional. Default: 3600 (1h).",
     },
   ],
 }
@@ -325,11 +332,25 @@ function CredenciaisForm({
     }
 
     // Monta payload: text sempre, secret so se preenchido nesta sessao.
+    // `secret-json` parseia — JSON invalido = erro visivel sem bater no backend.
     const nextConfig: Record<string, unknown> = {}
     for (const f of fields) {
       const v = (values as Record<string, string>)[f.key]
       if (f.type === "text") {
         if (v !== undefined && v !== "") nextConfig[f.key] = v
+      } else if (f.type === "secret-json") {
+        if (!v) continue
+        try {
+          const parsed = JSON.parse(v)
+          if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+            toast.error(`${f.label}: JSON deve ser um objeto.`)
+            return
+          }
+          nextConfig[f.key] = parsed
+        } catch {
+          toast.error(`${f.label}: JSON invalido.`)
+          return
+        }
       } else if (v) {
         nextConfig[f.key] = v
       }
@@ -360,7 +381,8 @@ function CredenciaisForm({
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {fields.map((f) => {
             const isSecret = f.type !== "text"
-            const isMultiline = f.type === "secret-multiline"
+            const isMultiline =
+              f.type === "secret-multiline" || f.type === "secret-json"
             const fieldError = errors[f.key as keyof typeof errors]?.message as
               | string
               | undefined

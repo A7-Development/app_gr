@@ -65,6 +65,10 @@ senha*.txt
 *.p12
 *.pfx
 
+# ---------- Amostras de API (exploracao, podem conter dados reais) ----------
+qitech_samples/
+*_samples/
+
 # ---------- Claude Code ----------
 .claude/settings.local.json
 .mcp.json

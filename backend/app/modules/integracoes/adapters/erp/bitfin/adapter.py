@@ -19,11 +19,14 @@ from app.modules.integracoes.adapters.erp.bitfin.etl import sync_all
 from app.modules.integracoes.adapters.erp.bitfin.version import ADAPTER_VERSION
 
 
-async def adapter_ping(config_dict: dict) -> dict[str, Any]:
+async def adapter_ping(config_dict: dict, **_: Any) -> dict[str, Any]:
     """Abre conexao MSSQL e executa `SELECT DB_NAME(), @@VERSION`.
 
     Retorna `{ok, latency_ms, detail}`. Nunca levanta — erros viram `ok=False`
     com `detail` contendo classe + mensagem.
+
+    Aceita kwargs extras (tenant_id, environment) por compatibilidade com
+    adapters que precisam de contexto por tenant — Bitfin nao usa.
     """
     config = BitfinConfig.from_dict(config_dict)
     t0 = time.monotonic()

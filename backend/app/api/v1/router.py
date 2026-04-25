@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import audit, auth, system
 from app.modules.bi.api.router import router as bi_router
+from app.modules.cadastros.api.router import router as cadastros_router
 from app.modules.integracoes.routers.sources import router as integracoes_sources_router
 
 api_router = APIRouter()
@@ -15,6 +16,9 @@ api_router.include_router(system.router)
 
 # Modules (each endpoint uses `require_module(Module.X, Permission.Y)`).
 api_router.include_router(bi_router, prefix="/bi", tags=["bi"])
+api_router.include_router(
+    cadastros_router, prefix="/cadastros", tags=["cadastros"]
+)
 api_router.include_router(
     integracoes_sources_router, prefix="/integracoes", tags=["integracoes"]
 )

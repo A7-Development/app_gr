@@ -8,16 +8,21 @@
 
 ## 1. Palavra de ordem: **padrao e consistencia visual**
 
-O sistema usa **Tremor Raw** como **unico** design system. Qualquer desvio quebra a razao de existir do projeto. Regra dura:
+O sistema usa **Tremor Raw** como **ponto de partida** de design system. Ele cobre ~90% dos casos; quando cobrir, use verbatim.
 
-> **Nada que nao esteja em `frontend/src/components/tremor/` ou `frontend/src/components/charts/` pode aparecer na UI.**
+> **Nada que nao esteja em `frontend/src/components/tremor/`, `frontend/src/components/charts/` ou `frontend/src/components/app/` pode aparecer na UI.**
 
-Nao existe excecao "so dessa vez". Se faltar um componente, voce:
+Ordem de escolha quando for montar uma tela:
 
-1. Verifica se o Tremor Raw publica ele (https://tremor.so/docs).
-2. Se sim: copia verbatim do docs oficial para `src/components/tremor/` e usa.
-3. Se nao: compoe a partir dos primitivos existentes dentro de `src/components/app/` (camada de composicao — nunca "invencao").
-4. Em ultimo caso extremo, abra a discussao antes de escrever codigo.
+1. Existe em `tremor/` ou `charts/`? Use direto.
+2. Existe no Tremor Raw upstream mas ainda nao foi copiado? Copie verbatim de https://tremor.so/docs e use.
+3. Nao existe no Tremor? **Componha em `src/components/app/`** a partir de primitivos Tremor + Radix. Um componente novo e aceito se:
+   - **(a)** Usa apenas tokens desta secao §4 (cores, tipografia, spacing, radius). Zero valor arbitrario.
+   - **(b)** Reutiliza Radix UI quando houver equivalente (Dialog, Popover, Dropdown, Tooltip, etc) — nunca reimplementar a mecanica de acessibilidade.
+   - **(c)** E documentado em `frontend/src/components/app/README.md` com proposito + exemplo + quando usar/nao usar, antes de ir pra producao.
+4. Se a proposta quebrar uma das 3 regras acima OU introduzir uma primitiva que o Tremor ja oferece com outro nome, **pare e discuta antes de escrever codigo.**
+
+Tremor Raw e referencia, nao cela. Quando "fazer como o Tremor faz" conflitar com "resolver melhor o problema do usuario", vence o segundo — desde que (a), (b) e (c) sejam respeitados. Design system e vivo.
 
 ---
 
@@ -81,11 +86,6 @@ src/components/<dominio>/   <- Componentes amarrados a um dominio especifico
 | Destrutivo / erro | `red-*` (em qualquer escala + `dark:`) | ErrorState, Dialog destructive, Button destructive, validacao de form, toasts de erro |
 | **Dados (chart)** — paleta A7 Credit | cores de `chartColors` em `@/lib/chartUtils`, na ordem canonica: `slate` → `sky` → `teal` → `emerald` → `amber` → `rose` → `violet` → `indigo`. `blue`/`gray`/`cyan`/`pink`/`lime`/`fuchsia` existem no dicionario mas **nao iteram no default** — use por override explicito. | **apenas em `src/components/charts/`** ou quando a cor vier dinamicamente de `getColorClassName()`. `slate` (1a serie) escolhido por ser azul-acinzentado de baixa saturacao — nao cansa durante horas de analise. |
 
-**Racional da paleta dual (v0.3.0, 2026-04-21):**
-- **`blue-*` chama atencao** (seletivo, pontual) — aparece onde o olho precisa ir primeiro: "algo esta aplicado", "algo e clicavel", "algo esta em foco".
-- **`slate-*` acomoda o olho** (horas de leitura) — para series de chart que ficam renderizadas longamente.
-- Esta divisao resolve o conflito entre "sistema convidativo" (precisa de contraste em interacao) e "sistema que nao cansa" (charts com baixa saturacao).
-
 **Proibido:**
 - Valores arbitrarios de cor: `text-[#123abc]`, `bg-[rgb(...)]`, `border-[hsl(...)]`.
 - **`slate-*` como cor de atencao/selecao** — use `blue-*`. `slate` e exclusivamente para dados de chart + neutros raros.
@@ -93,6 +93,9 @@ src/components/<dominio>/   <- Componentes amarrados a um dominio especifico
 - Cores Tailwind fora das categorias acima: `orange-*`, `purple-*`, `yellow-*`, `stone-*`, `zinc-*`, `neutral-*`. (`teal`, `sky`, `rose`, `indigo`, `violet` estao liberadas **somente para series de chart**, via `chartUtils`.)
 - Usar cores de dados (`emerald`, `teal`, `rose`, etc) como cor semantica geral fora de charts (ex.: `bg-emerald-500` em badge de "ativo" — use `Badge variant="success"` do Tremor).
 - Gradientes manuais (`bg-gradient-to-*` com cores arbitrarias).
+
+**Excecao oficial -- botao "Perguntar a IA" (`AIButton`):**
+Unico ponto do sistema que usa `violet` fora de chart series ou avatar de Laboratorio. Combinacao fixa: `bg-gray-900 text-white` + icone (`RiSparklingLine` ou `RiMagicLine`) em `text-violet-400`/`text-violet-500`. Vive em `src/components/app/AIButton.tsx`. Aparece no header de toda pagina de BI (Zona Z2 -- ver secao 19). Qualquer outro uso de violeta em botao/badge/texto e proibido.
 
 **Dark mode:** sempre suportar. Usar as mesmas classes que o Tremor usa (`dark:bg-gray-950`, `dark:text-gray-50`, `dark:border-gray-800`). O `<html>` ja tem `dark:bg-gray-950` em `layout.tsx`.
 
@@ -313,18 +316,24 @@ L1 (dropdown no topo): [BI ▾]
 - L2 ativo: `SidebarLink` com `isActive={pathname.startsWith(section.href)}` — borda/texto azul via `data-active=true`.
 - L3 ativo: `TabNavigationLink active={pathname includes tab}` ou comparacao com search param.
 
-**Avatars de modulo — cor canonica (uma por modulo, paleta A7 Credit):**
+**Avatars de modulo — cor canonica (handoff v2, 2026-04-24):**
 
-| Modulo | Cor |
-|---|---|
-| BI | `blue` |
-| Cadastros | `sky` |
-| Operacoes | `teal` |
-| Controladoria | `emerald` |
-| Risco | `amber` |
-| Integracoes | `rose` |
-| Laboratorio | `violet` |
-| Admin | `slate` |
+| Modulo | Token | Classe | Hex |
+|---|---|---|---|
+| BI | `gray` | `bg-gray-800` | `#1F2937` |
+| Cadastros | `blue` | `bg-blue-500` | `#3B82F6` |
+| Operacoes | `emerald` | `bg-emerald-500` | `#10B981` |
+| Controladoria | `teal` | `bg-teal-500` | `#14B8A6` |
+| Risco | `amber` | `bg-amber-500` | `#F59E0B` |
+| Integracoes | `red` | `bg-red-600` | `#DC2626` |
+| Laboratorio | `violet` | `bg-violet-500` | `#8B5CF6` |
+| Admin | `slate` | `bg-slate-600` | `#475569` |
+
+**Regras:**
+- Avatars sao tiles retangulares (`rounded-sm` = 2px) com iniciais de 2 letras. Estilo Linear/Notion — escolha deliberada pra separar "identidade de modulo" de "series de chart".
+- Estas cores sao **exclusivas do avatar de modulo**. `blue` aqui NAO conflita com §4 (blue de atencao/selecao) porque aparece so no tile; botoes, abas, filtros continuam usando `blue-500` da §4 como antes.
+- `red-600` em Integracoes e intencional (nao e "erro" — e identidade). Nao reutilize `red-*` para chips/badges que nao sejam destrutivos.
+- BI ancorado em `gray-800` reflete que e o modulo "principal"/"neutro" do sistema (estilo Linear).
 
 Qualquer outro uso de cor nessa escala dentro de componentes `app/` e proibido (exceto chart series). Ver `src/lib/modules.ts::MODULE_AVATAR_COLORS`.
 
@@ -403,13 +412,6 @@ Retorna:
 
 Frontend usa `enabled_modules` + `user_permissions` para renderizar sidebar e esconder areas. Ainda assim, backend valida em toda request (defense in depth).
 
-### 12.5 Evolucao (nao no MVP)
-
-- `Role` + `RoleModulePermission` + `UserRole` quando `user_module_permission` virar repetitivo
-- Permissoes de objeto (filial, carteira) quando a necessidade aparecer
-- Multi-role por user
-- Planos agregados (`Plan` + `PlanModule`) para spinoff comercial
-
 ---
 
 ## 13. Backend -- Adapter pattern (fontes externas)
@@ -461,7 +463,7 @@ Nem toda fonte externa que popula o GR vira adapter no bounded context `integrac
 - DB dedicada na mesma instancia Postgres da VM 27 (ver §17). Role dona da DB isolada.
 - Repo de ETL separado, deploy independente (sem Docker — venv + pip + cron ou systemd).
 - `gr_db` le via `CREATE EXTENSION postgres_fdw` + `CREATE SERVER` + `IMPORT FOREIGN SCHEMA <fonte> INTO <fonte>_remote`.
-- Backend GR trata as foreign tables como locais, mas **anota no `decision_log`** `source_type='public:<fonte>'` sempre que calcular metrica derivada. Badge de proveniencia no frontend mostra a origem publica + competencia + versao do adapter que ingeriu (CLAUDE.md §14.6).
+- Backend GR trata as foreign tables como locais, mas **anota no `decision_log`** `source_type='public:<fonte>'` sempre que calcular metrica derivada. Badge de proveniencia no frontend mostra a origem publica + competencia + versao do adapter que ingeriu (CLAUDE.md §14.5).
 - **Nao duplicar dado** no `gr_db`. Se performance pedir, usar materialized view local OU indices no banco federado. Nunca copy-to-gr_db.
 
 **O que NAO e fonte federada (continua sendo adapter em `modules/integracoes`):**
@@ -472,6 +474,21 @@ Nem toda fonte externa que popula o GR vira adapter no bounded context `integrac
 
 **Primeiro exemplo em producao:** CVM FIDC (Informes Mensais, dados abertos). Detalhes completos em [`docs/integracao-cvm-fidc.md`](./docs/integracao-cvm-fidc.md) — arquitetura, schema, ponte FDW, consumo pelo modulo BI.
 
+### 13.2 Camada raw (bronze) -> canonico (silver) -- regra geral
+
+**Toda fonte externa transacional ingerida via adapter** (ERP, admin API, bureau pago, parser de documento) **deve gravar em duas camadas no warehouse**:
+
+| Camada | Nome da tabela | Conteudo | Mutabilidade |
+|---|---|---|---|
+| **Raw (bronze)** | `wh_<vendor>_raw_<entidade>` | Payload cru em JSONB, exatamente como a fonte devolveu | Imutavel apos gravacao (upsert por idempotencia, mas nunca reescrita semantica) |
+| **Canonico (silver)** | `wh_<entidade>` (sem prefixo de vendor) | Dado normalizado, schema independente da fonte, populado por mapper a partir da raw | Reescrito por re-mapeamento — proveniencia preservada via `Auditable` |
+
+Raw nao usa `Auditable` — carrega proveniencia em colunas proprias (`fetched_at`, `fetched_by_version`, `payload_sha256`). Fluxo ETL, schema minimo e excecoes: ver `docs/WAREHOUSE_LAYERS.md`.
+
+**Convencao de nomes:**
+- Raw inclui o vendor: `wh_qitech_raw_outros_fundos`, `wh_serasa_refinho_raw_consulta`
+- Canonico nao inclui vendor: `wh_posicao_cota_fundo`, `wh_titulo`
+
 ---
 
 ## 14. Backend -- Proveniencia e auditabilidade (DNA do sistema)
@@ -481,6 +498,8 @@ Em mercado financeiro regulado (CVM/ANBIMA/Bacen), **explicabilidade + rastreabi
 ### 14.1 Modelo `Auditable` (mixin SQLAlchemy)
 
 **Toda** tabela de dominio que armazena dado ingerido de fonte externa herda deste mixin. Campos obrigatorios:
+
+> **Excecao:** tabelas raw (`wh_<vendor>_raw_*`, ver §13.2) **nao** usam `Auditable` — elas sao a fonte, nao referenciam outra fonte upstream. Raw carrega proveniencia em colunas dedicadas (`fetched_at`, `fetched_by_version`, `payload_sha256`).
 
 | Campo | Tipo | Proposito |
 |---|---|---|
@@ -495,38 +514,15 @@ Em mercado financeiro regulado (CVM/ANBIMA/Bacen), **explicabilidade + rastreabi
 
 ### 14.2 Tabela `decision_log` (append-only)
 
-Toda decisao/calculo/sync do sistema e registrado aqui. Particionada por tenant + data.
+Toda decisao/calculo/sync registrado aqui, particionado por tenant + data. **Append-only** — correcao e nova entrada que referencia a anterior. Campos completos: ver `docs/AUDITABILIDADE.md`.
 
-**Append-only:** sem UPDATE, sem DELETE. Correcao se da por NOVA entrada que referencia a anterior.
+### 14.3 Premissas, versionamento e explicabilidade
 
-**Campos principais:**
-- `id`, `tenant_id`, `occurred_at`
-- `decision_type` (enum: "sync", "calculation", "alert", "recommendation", "score", "reconciliation_check", ...)
-- `inputs_ref` (JSON ou FK para tabela de inputs estruturados)
-- `rule_or_model` + `rule_or_model_version`
-- `output` (JSON)
-- `explanation` (texto estruturado, top-N fatores quando aplicavel)
-- `triggered_by` (user_id ou "system:scheduler")
+- **`premise_set`:** premissas de calculos (CDI, curva, cortes) vivem em tabelas versionadas, nunca em constantes. Cada edicao cria nova versao; projecao referencia o `premise_set_id` usado.
+- **Versionamento de regras:** toda regra de negocio, formula ou modelo de score tem versao explicita. v2 coexiste com v1 — nao substitui.
+- **Explicabilidade obrigatoria:** score, alerta ou recomendacao registra no `decision_log` os 3-5 fatores que geraram o output. Preferir modelos interpretaveis (regressao logistica, GBM + SHAP); se caixa-preta, registrar inputs + outputs + explicacao gerada.
 
-### 14.3 Tabela `premise_set` (premissas como dado)
-
-Premissas de calculos/projecoes (taxa CDI, curva, tolerancias, cortes) vivem em tabelas versionadas, nao em constantes no codigo.
-
-- Usuario edita via UI; cada edicao cria nova versao
-- Projecao referencia o `premise_set_id` usado
-- Historico preservado — replay de projecao antiga reutiliza premissas da epoca
-
-### 14.4 Versionamento de regras e modelos
-
-Regra de negocio, formula DRE, modelo de score: **todas** tem versao explicita. Decisao tomada com v1 fica imutavelmente referenciando v1 mesmo 5 anos depois. v2 nao substitui — coexiste.
-
-### 14.5 Explicabilidade obrigatoria para qualquer output derivado
-
-Score, alerta, recomendacao, classificacao: o sistema registra no `decision_log` os 3-5 fatores principais que geraram o output. Nao e optional — e contrato de produto.
-
-**Escolha de ferramentas de ML:** preferir modelos interpretaveis (regressao logistica, GBM com SHAP) sobre caixas-preta. Quando caixa-preta for necessaria, registrar inputs + outputs + explicacao gerada sistematicamente.
-
-### 14.6 Trust metadata visivel na UI
+### 14.5 Trust metadata visivel na UI
 
 Frontend exibe:
 - Badge `<DataOriginBadge />` ao lado de cada KPI/numero: tooltip/click abre proveniencia (source, timestamp, versao do adapter, trust level)
@@ -550,50 +546,7 @@ Frontend exibe:
 
 ## 16. Backend -- Dev workflow e deploy
 
-### Desenvolvimento local (Windows)
-
-```
-C:\app_gr\backend\
-├── .venv\                    # venv local (nao commitar)
-├── .env                      # config local (nao commitar)
-├── pyproject.toml            # ou requirements.txt
-├── alembic.ini
-├── alembic\versions\
-└── app\...
-```
-
-- Python 3.11+ instalado
-- Postgres local (ou remoto via SSH tunnel para VM) com database `gr_db_dev`
-- `.env` aponta para Postgres local
-- Rodar: `source .venv/Scripts/activate && uvicorn app.main:app --reload`
-
-### Producao (VM Linux Ubuntu/Debian)
-
-```
-/opt/app_gr/backend/
-├── .venv/
-├── .env                      # config prod (chmod 600)
-├── app/...
-└── alembic/...
-```
-
-- Systemd service: `/etc/systemd/system/gr-api.service`
-- Rodar: `systemctl start gr-api`
-- Postgres na VM: database `gr_db` (separada do banco do app_controladoria que continua na mesma instancia)
-
-### Deploy (manual inicial, automavel depois)
-
-```bash
-ssh vm
-cd /opt/app_gr/backend
-git pull
-source .venv/bin/activate
-pip install -r requirements.txt  # ou poetry install
-alembic upgrade head
-sudo systemctl restart gr-api
-```
-
-CI via GitHub Actions roda lint + pytest em cada push.
+Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: systemd + uvicorn em `/opt/app_gr/backend/`, database `gr_db`. Deploy: `git pull` + `pip install` + `alembic upgrade head` + `systemctl restart gr-api`. CI: GitHub Actions (lint + pytest). Ver `docs/DEV_WORKFLOW.md`.
 
 ---
 
@@ -628,6 +581,9 @@ CI via GitHub Actions roda lint + pytest em cada push.
 - [ ] **Pagina respeita regra de 3 niveis (L1 sidebar grupo / L2 sidebar sub-item / L3 TabNavigation)?**
 - [ ] **Sidebar nao aninha em 3+ niveis (L3 sempre como tabs na pagina, nunca sub-sub-item)?**
 - [ ] **Estado de navegacao (modulo/secao/tab/filtros) e deep-linkavel via URL?**
+- [ ] **Se e pagina de BI, respeita as 7 zonas do BI Framework (secao 19)?**
+- [ ] **KPI strip sem sparkline? KPIs tem `intensity` (3 barrinhas) e `<OriginDot />`?**
+- [ ] **Pagina de BI termina com `<ProvenanceFooter />` (fonte + timestamp + SLA)?**
 - [ ] `npx tsc --noEmit` passa?
 - [ ] `npm run build` passa?
 
@@ -659,3 +615,42 @@ CI via GitHub Actions roda lint + pytest em cada push.
 - [ ] Teste de integracao com fonte (mock ou sandbox) existe?
 
 Se qualquer item reprovar, **nao corrija pontualmente** — pare e revise a mudanca inteira.
+
+---
+
+## 19. BI Framework -- 7 zonas obrigatorias
+
+Toda pagina de BI segue **exatamente estas 7 zonas, nesta ordem**. Composicao por componente e ordem de criacao em `docs/BI_FRAMEWORK.md`.
+
+```
+Z1 · FILTER BAR      (sticky top, chips canonicos + "Mais filtros")
+Z2 · PAGE HEADER     (titulo + subtitulo | Compartilhar + Exportar + AIButton)
+Z3 · KPI STRIP       (6 cards, com barrinhas de intensidade, OriginDot)
+Z4 · INSIGHTS IA     (faixa horizontal, tons variados, dismissivel)
+Z5 · L3 TABS         (TabNavigation do Tremor, 3-6 abas)
+Z6 · GRID VIZ        (hero 3:2 + painel de leitura + cards com menu triplo-ponto)
+Z7 · PROVENANCE      (fonte + timestamp + SLA, sem borda)
+```
+
+### 19.1 Regras duras
+
+- **Z3 sem sparkline.** Sparkline infla o card e quebra a densidade da strip de 6. Para sinalizacao rapida use `intensity` (3 barrinhas, handoff v2) \u2014 carrega interpretacao direta (pos/neu/neg/info) sem poluir o card. Se precisar de tendencia completa, e card de visualizacao em Z6, nao KPI.
+- **Z6 hero nunca ocupa 100% da largura.** Sempre emparelhado 3:2 com painel de leitura a direita (numero grande + delta + notas inline).
+- **Z7 sempre presente.** Falta de ProvenanceFooter = falta de proveniencia = bug de auditabilidade (viola §14.5).
+- **Tabelas em Z6** usam `<CompactSeriesTable />` existente para series temporais FIDC (Austin-style). Para tabelas transacionais genericas, `Table` do Tremor com `@tanstack/react-table`.
+- **AIButton** aparece em TODA pagina de BI (ultimo botao da direita no PageHeader). Abre `<AIDrawer />` (drawer lateral com chat contextualizado).
+- **Raios ≤ 6px** em toda a pagina. Tremor ja respeita.
+
+### 19.2 Checklist de compliance BI (subset do §18)
+
+- [ ] Z1 Filter bar sticky com `<FilterChip />` canonicos (icone + label + pipe + valor + chevron); active=blue quando != default
+- [ ] Z2 PageHeader tem `subtitle` + botoes secundarios (Compartilhar / Exportar) + `<AIButton />` ao final
+- [ ] Z3 exatamente 6 KPIs com `intensity` (tone + level); cada um com `<OriginDot />`
+- [ ] Z4 Insights IA (se houver) com 1 linha + botao fechar + `tone` variado (violet/amber/blue)
+- [ ] Z5 L3 TabNavigation (3-6 abas)
+- [ ] Z6 Hero 3:2 com painel de leitura (nunca chart 100% largura)
+- [ ] Z6 Cards tem menu "⋯" com as 3 secoes (Agrupar / Recorte / Tipo)
+- [ ] Z7 `<ProvenanceFooter />` presente com fonte + timestamp + SLA
+- [ ] Paleta dos KPIs/cards respeita §4 (zero cor arbitraria)
+- [ ] Respeita §11.6 (3 niveis de navegacao)
+

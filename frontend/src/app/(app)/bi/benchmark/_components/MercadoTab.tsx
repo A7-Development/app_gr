@@ -2,14 +2,21 @@
 
 import { useQuery } from "@tanstack/react-query"
 
+import {
+  RiAlertLine,
+  RiArrowUpCircleLine,
+  RiSparklingFill,
+} from "@remixicon/react"
+
 import { AreaChart } from "@/components/charts/AreaChart"
 import { BarChart } from "@/components/charts/BarChart"
 import { BarList } from "@/components/charts/BarList"
 import { DonutChart } from "@/components/charts/DonutChart"
+import { Insight, InsightBar } from "@/components/app/Insight"
+import { KPICard, KPIStrip } from "@/components/app/KPICard"
 import { biBenchmark } from "@/lib/api-client"
 
 import { labelCompetencia, moedaCompacta, numero } from "./formatters"
-import { BenchmarkFiltersBar } from "./BenchmarkFiltersBar"
 import { ChartCard } from "./ChartCard"
 import { useBenchmarkFilters } from "../_hooks/useBenchmarkFilters"
 
@@ -99,9 +106,182 @@ export function MercadoTab() {
     Fechado: p.fechado_qtd,
   }))
 
+  // ---------------------------------------------------------------------
+  // Zona Z3 (BI Framework, CLAUDE.md §19) — KPI strip do mercado.
+  // 6 cards, SEM sparkline, cada um com OriginDot.
+  // ---------------------------------------------------------------------
+  const plTotalSerie = evolucao.data?.data.pl_total ?? []
+  const plTotalLast = plTotalSerie.at(-1)
+  const plTotalPrev = plTotalSerie.at(-2)
+  const plTotalDelta =
+    plTotalLast && plTotalPrev && plTotalPrev.valor !== 0
+      ? ((plTotalLast.valor - plTotalPrev.valor) / plTotalPrev.valor) * 100
+      : undefined
+
+  const plMedianoSerie = evolucao.data?.data.pl_mediano ?? []
+  const plMedianoLast = plMedianoSerie.at(-1)
+
+  const fundosSerie = evolucao.data?.data.num_fundos ?? []
+  const fundosLast = fundosSerie.at(-1)
+  const fundosPrev = fundosSerie.at(-2)
+  const fundosDelta =
+    fundosLast && fundosPrev ? fundosLast.valor - fundosPrev.valor : undefined
+
+  const topAdmin = adminsData?.top_por_pl.at(0)
+  const adminSource = "cvm_remote (Informes Mensais)"
+  const kpiUpdatedISO = plTotalLast
+    ? `${plTotalLast.periodo}-01T00:00:00Z`
+    : null
+
+  // ---------------------------------------------------------------------
+  // Intensidade dos KPIs (barrinhas 3) — heuristicas baseadas na leitura
+  // do mercado FIDC. Regras simples, conservadoras (Handoff v2 §Z3):
+  //   pos (emerald) = leitura favoravel; neu (amber) = estavel/neutro;
+  //   neg (red) = leitura desfavoravel; info (blue) = informativo.
+  // ---------------------------------------------------------------------
+  const plTotalIntensity =
+    plTotalDelta === undefined
+      ? undefined
+      : ({
+          tone: plTotalDelta >= 0 ? "pos" : "neg",
+          level:
+            Math.abs(plTotalDelta) >= 5
+              ? "high"
+              : Math.abs(plTotalDelta) >= 1
+                ? "mid"
+                : "low",
+        } as const)
+
+  const fundosIntensity =
+    fundosDelta === undefined
+      ? undefined
+      : ({
+          tone: fundosDelta >= 0 ? "pos" : "neg",
+          level:
+            Math.abs(fundosDelta) >= 30
+              ? "high"
+              : Math.abs(fundosDelta) >= 5
+                ? "mid"
+                : "low",
+        } as const)
+
   return (
-    <div className="flex flex-col gap-6">
-      <BenchmarkFiltersBar fimMercado={adminsData?.competencia} />
+    <div className="flex flex-col gap-4">
+      <h2 className="text-[17px] font-semibold leading-tight tracking-tight text-gray-900 dark:text-gray-50">
+        Visão geral
+      </h2>
+
+      <KPIStrip>
+        <KPICard
+          label="PL total do mercado"
+          value={
+            plTotalLast ? moedaCompacta.format(plTotalLast.valor) : "--"
+          }
+          sub={plTotalLast ? labelCompetencia(plTotalLast.periodo) : undefined}
+          delta={
+            plTotalDelta !== undefined
+              ? {
+                  value: plTotalDelta,
+                  suffix: "%",
+                  direction: plTotalDelta >= 0 ? "up" : "down",
+                }
+              : undefined
+          }
+          intensity={plTotalIntensity}
+          source={adminSource}
+          updatedAtISO={kpiUpdatedISO}
+        />
+        <KPICard
+          label="Fundos reportando"
+          value={fundosLast ? numero.format(fundosLast.valor) : "--"}
+          sub={fundosLast ? labelCompetencia(fundosLast.periodo) : undefined}
+          delta={
+            fundosDelta !== undefined
+              ? {
+                  value: fundosDelta,
+                  direction: fundosDelta >= 0 ? "up" : "down",
+                }
+              : undefined
+          }
+          intensity={fundosIntensity}
+          source={adminSource}
+          updatedAtISO={kpiUpdatedISO}
+        />
+        <KPICard
+          label="PL mediano"
+          value={
+            plMedianoLast ? moedaCompacta.format(plMedianoLast.valor) : "--"
+          }
+          sub="por fundo"
+          intensity={{ tone: "info", level: "mid" }}
+          source={adminSource}
+          updatedAtISO={kpiUpdatedISO}
+        />
+        <KPICard
+          label="Administradoras"
+          value={
+            adminsData ? numero.format(adminsData.total_admins) : "--"
+          }
+          sub="distintas no mercado"
+          intensity={{ tone: "info", level: "high" }}
+          source={adminSource}
+          updatedAtISO={kpiUpdatedISO}
+        />
+        <KPICard
+          label="% Aberto"
+          value={
+            condomData ? `${condomData.aberto_pct.toFixed(1)}%` : "--"
+          }
+          sub={`${numero.format(condomData?.aberto_qtd ?? 0)} fundos`}
+          intensity={
+            condomData
+              ? {
+                  tone: "neu",
+                  level:
+                    condomData.aberto_pct >= 60
+                      ? "high"
+                      : condomData.aberto_pct >= 30
+                        ? "mid"
+                        : "low",
+                }
+              : undefined
+          }
+          source={adminSource}
+          updatedAtISO={kpiUpdatedISO}
+        />
+        <KPICard
+          label="Maior administrador"
+          value={topAdmin?.admin ?? "--"}
+          sub={
+            topAdmin ? moedaCompacta.format(topAdmin.pl_total) + " PL" : undefined
+          }
+          intensity={{ tone: "neu", level: "high" }}
+          source={adminSource}
+          updatedAtISO={kpiUpdatedISO}
+        />
+      </KPIStrip>
+
+      <InsightBar>
+        {plTotalDelta !== undefined && plTotalLast && (
+          <Insight
+            tone={plTotalDelta >= 0 ? "blue" : "amber"}
+            icon={plTotalDelta >= 0 ? RiArrowUpCircleLine : RiAlertLine}
+            text={
+              plTotalDelta >= 0
+                ? `PL total do mercado cresceu ${plTotalDelta.toFixed(1)}% na competencia ${labelCompetencia(plTotalLast.periodo)}.`
+                : `PL total do mercado recuou ${Math.abs(plTotalDelta).toFixed(1)}% na competencia ${labelCompetencia(plTotalLast.periodo)}.`
+            }
+            cta={{ label: "Ver no grafico", href: "#pl-total" }}
+          />
+        )}
+        {topAdmin && adminsData && (
+          <Insight
+            tone="violet"
+            icon={RiSparklingFill}
+            text={`${topAdmin.admin} concentra ${moedaCompacta.format(topAdmin.pl_total)} de PL \u2014 maior administrador do mercado FIDC na competencia.`}
+          />
+        )}
+      </InsightBar>
 
       {/* Linha 1 — PL total (wide) + Fundos reportando */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

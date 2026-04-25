@@ -47,13 +47,17 @@ _Guard = Depends(require_module(Module.INTEGRACOES, Permission.ADMIN))
 # rule_or_model: valor usado pelo adapter ao gravar no decision_log.
 _SOURCE_SECRET_FIELDS: dict[SourceType, frozenset[str]] = {
     SourceType.ERP_BITFIN: frozenset({"password"}),
-    SourceType.ADMIN_QITECH: frozenset(
-        {"api_key", "client_private_key_pem", "qi_public_key_pem"}
-    ),
+    # QiTech/Singulare autentica via Basic Auth com par client_id+client_secret
+    # emitido ao tenant. Ambos sao tratados como sensiveis e mascarados no GET
+    # para evitar vazamento de credencial pela API, mesmo que client_id seja
+    # tecnicamente "publico" em OAuth2 puro — no contexto do GR sao duas
+    # metades da credencial do tenant.
+    SourceType.ADMIN_QITECH: frozenset({"client_id", "client_secret"}),
 }
 
 _SOURCE_RULE_NAME: dict[SourceType, str] = {
     SourceType.ERP_BITFIN: "bitfin_adapter",
+    SourceType.ADMIN_QITECH: "qitech_adapter",
 }
 
 

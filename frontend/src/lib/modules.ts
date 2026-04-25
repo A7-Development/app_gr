@@ -30,17 +30,18 @@ export type ModuleSection = {
   enabled: boolean
 }
 
-// Paleta A7 Credit v0.2.0 (migracao blue → slate).
-// `blue` saiu da rotacao default; `indigo` entrou como 8a cor.
+// Paleta de avatar de modulo v0.4.0 (handoff A7 Credit v2, 2026-04-24).
+// Cada modulo tem cor de identidade fixa — nao iterativa. Difere da paleta de
+// chart series (essa segue `chartColors` em @/lib/chartUtils). Ver CLAUDE.md §11.6.
 export type ModuleColor =
-  | "slate"
-  | "sky"
-  | "teal"
+  | "gray"
+  | "blue"
   | "emerald"
+  | "teal"
   | "amber"
-  | "rose"
+  | "red"
   | "violet"
-  | "indigo"
+  | "slate"
 
 export type ModuleDefinition = {
   id: ModuleId
@@ -58,17 +59,19 @@ export type ModuleDefinition = {
   sections: ModuleSection[]
 }
 
-// Mapeia cor do modulo para as classes Tailwind do avatar (bg + texto branco).
-// Usa tokens da paleta A7 Credit do chartUtils.ts (tambem validados pelo CLAUDE.md §4).
+// Mapeia cor do modulo para classes Tailwind do avatar (bg + texto branco).
+// Cores alinhadas ao handoff v2: BI ancora em gray-800 (estilo Linear/Notion),
+// demais modulos em tons sobrios. Exceptional — sao cores de identidade, nao
+// de status (rose nao = erro, red aqui nao = destrutivo).
 export const MODULE_AVATAR_COLORS: Record<ModuleColor, string> = {
-  slate: "bg-slate-700 dark:bg-slate-600",
-  sky: "bg-sky-600 dark:bg-sky-500",
-  teal: "bg-teal-600 dark:bg-teal-500",
-  emerald: "bg-emerald-600 dark:bg-emerald-500",
-  amber: "bg-amber-600 dark:bg-amber-500",
-  rose: "bg-rose-600 dark:bg-rose-500",
-  violet: "bg-violet-600 dark:bg-violet-500",
-  indigo: "bg-indigo-600 dark:bg-indigo-500",
+  gray: "bg-gray-800 dark:bg-gray-700",
+  blue: "bg-blue-500 dark:bg-blue-500",
+  emerald: "bg-emerald-500 dark:bg-emerald-500",
+  teal: "bg-teal-500 dark:bg-teal-500",
+  amber: "bg-amber-500 dark:bg-amber-500",
+  red: "bg-red-600 dark:bg-red-500",
+  violet: "bg-violet-500 dark:bg-violet-500",
+  slate: "bg-slate-600 dark:bg-slate-500",
 }
 
 export const MODULES: ModuleDefinition[] = [
@@ -77,7 +80,7 @@ export const MODULES: ModuleDefinition[] = [
     name: "BI",
     initials: "BI",
     icon: RiPieChart2Line,
-    color: "slate",
+    color: "gray",
     enabled: true,
     permission: "admin",
     basePath: "/bi",
@@ -98,18 +101,24 @@ export const MODULES: ModuleDefinition[] = [
     name: "Cadastros",
     initials: "CA",
     icon: RiContactsBookLine,
-    color: "sky",
-    enabled: false,
-    permission: "none",
+    color: "blue",
+    enabled: true,
+    permission: "admin",
     basePath: "/cadastros",
-    sections: [{ name: "Em breve", href: "#", enabled: false }],
+    sections: [
+      {
+        name: "Unidades administrativas",
+        href: "/cadastros/unidades-administrativas",
+        enabled: true,
+      },
+    ],
   },
   {
     id: "operacoes",
     name: "Operacoes",
     initials: "OP",
     icon: RiExchangeFundsLine,
-    color: "teal",
+    color: "emerald",
     enabled: false,
     permission: "none",
     basePath: "/operacoes",
@@ -120,7 +129,7 @@ export const MODULES: ModuleDefinition[] = [
     name: "Controladoria",
     initials: "CO",
     icon: RiBuilding2Line,
-    color: "emerald",
+    color: "teal",
     enabled: false,
     permission: "none",
     basePath: "/controladoria",
@@ -142,7 +151,7 @@ export const MODULES: ModuleDefinition[] = [
     name: "Integracoes",
     initials: "IN",
     icon: RiStackLine,
-    color: "rose",
+    color: "red",
     enabled: true,
     permission: "admin",
     basePath: "/integracoes",
@@ -167,7 +176,7 @@ export const MODULES: ModuleDefinition[] = [
     name: "Admin",
     initials: "AD",
     icon: RiSettings3Line,
-    color: "indigo",
+    color: "slate",
     enabled: false,
     permission: "none",
     basePath: "/admin",

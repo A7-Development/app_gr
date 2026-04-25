@@ -21,6 +21,12 @@ from uuid import UUID
 
 from app.core.database import AsyncSessionLocal
 from app.core.enums import Environment, SourceType
+from app.modules.integracoes.adapters.admin.qitech.adapter import (
+    adapter_ping as qitech_ping,
+)
+from app.modules.integracoes.adapters.admin.qitech.adapter import (
+    adapter_sync as qitech_sync,
+)
 from app.modules.integracoes.adapters.erp.bitfin.adapter import (
     adapter_ping as bitfin_ping,
 )
@@ -35,8 +41,11 @@ from app.modules.integracoes.services.source_config import (
 
 logger = logging.getLogger("gr.integracoes.sync_runner")
 
-# Adapter contracts (both async, both take a plain config dict)
-PingFn = Callable[[dict], Awaitable[dict[str, Any]]]
+# Adapter contracts. Ping recebe config + tenant_id/environment opcionais
+# para adapters que precisam chavear cache ou contexto por tenant (ex.:
+# QiTech cacheia token por (tenant, env)). Adapters sem essa necessidade
+# declaram `**_` para aceitar sem usar.
+PingFn = Callable[..., Awaitable[dict[str, Any]]]
 SyncFn = Callable[[UUID, dict, date | None], Awaitable[dict[str, Any]]]
 
 
@@ -50,6 +59,7 @@ class AdapterEntry:
 
 _ADAPTER_REGISTRY: dict[SourceType, AdapterEntry] = {
     SourceType.ERP_BITFIN: AdapterEntry(sync=bitfin_sync, ping=bitfin_ping),
+    SourceType.ADMIN_QITECH: AdapterEntry(sync=qitech_sync, ping=qitech_ping),
 }
 
 
@@ -162,4 +172,4 @@ async def run_ping(
             ),
         }
     plain = decrypt_config(row.config)
-    return await adapter.ping(plain)
+    return await adapter.ping(plain, tenant_id=tenant_id, environment=environment)

@@ -971,3 +971,67 @@ export const integracoes = {
       `/integracoes/sources/${sourceType}/runs?limit=${limit}`,
     ),
 }
+
+/** Modulo cadastros — entidades primarias do tenant. */
+
+export type TipoUA =
+  | "fidc"
+  | "consultoria"
+  | "securitizadora"
+  | "factoring"
+  | "gestora"
+
+export type UnidadeAdministrativa = {
+  id: string
+  tenant_id: string
+  nome: string
+  cnpj: string | null
+  tipo: TipoUA
+  ativa: boolean
+  bitfin_ua_id: number | null
+  created_at: string
+  updated_at: string
+}
+
+export type UACreatePayload = {
+  nome: string
+  cnpj?: string | null
+  tipo: TipoUA
+  ativa?: boolean
+  bitfin_ua_id?: number | null
+}
+
+export type UAUpdatePayload = Partial<UACreatePayload>
+
+export type UAListFilters = {
+  ativa?: boolean
+  tipo?: TipoUA
+}
+
+export const cadastros = {
+  listUAs: (filters: UAListFilters = {}) => {
+    const params = new URLSearchParams()
+    if (filters.ativa !== undefined) params.set("ativa", String(filters.ativa))
+    if (filters.tipo !== undefined) params.set("tipo", filters.tipo)
+    const qs = params.toString()
+    return apiClient.get<UnidadeAdministrativa[]>(
+      `/cadastros/unidades-administrativas${qs ? `?${qs}` : ""}`,
+    )
+  },
+  getUA: (id: string) =>
+    apiClient.get<UnidadeAdministrativa>(
+      `/cadastros/unidades-administrativas/${id}`,
+    ),
+  createUA: (payload: UACreatePayload) =>
+    apiClient.post<UnidadeAdministrativa>(
+      "/cadastros/unidades-administrativas",
+      payload,
+    ),
+  updateUA: (id: string, payload: UAUpdatePayload) =>
+    apiClient.patch<UnidadeAdministrativa>(
+      `/cadastros/unidades-administrativas/${id}`,
+      payload,
+    ),
+  deleteUA: (id: string) =>
+    apiClient.delete<void>(`/cadastros/unidades-administrativas/${id}`),
+}

@@ -25,16 +25,18 @@ import * as React from "react"
 type AvatarProps = {
   module: ModuleDefinition
   size?: "sm" | "md"
+  active?: boolean
 }
 
-function ModuleAvatar({ module, size = "md" }: AvatarProps) {
+function ModuleAvatar({ module, size = "md", active = false }: AvatarProps) {
   const sizeClass = size === "sm" ? "size-7" : "size-8"
   return (
     <span
       className={cx(
         MODULE_AVATAR_COLORS[module.color],
         sizeClass,
-        "flex aspect-square items-center justify-center rounded p-2 text-xs font-medium text-white",
+        "flex aspect-square shrink-0 items-center justify-center rounded-sm text-[11px] font-semibold tracking-wide text-white",
+        active && "ring-2 ring-blue-500 ring-offset-1 ring-offset-white dark:ring-offset-gray-950",
       )}
       aria-hidden="true"
     >
@@ -90,14 +92,15 @@ export function ModuleSwitcher() {
           {visibleModules.map((module) => {
             const firstSection = module.sections.find((s) => s.enabled)
             const href = firstSection?.href ?? module.basePath
+            const isCurrent = module.id === activeModule.id
             return (
               <DropdownMenuItem
                 key={module.id}
                 onSelect={() => router.push(href)}
               >
                 <div className="flex w-full items-center gap-x-2.5">
-                  <ModuleAvatar module={module} />
-                  <div>
+                  <ModuleAvatar module={module} active={isCurrent} />
+                  <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 dark:text-gray-50">
                       {module.name}
                     </p>
@@ -105,6 +108,24 @@ export function ModuleSwitcher() {
                       {PERMISSION_LABEL[module.permission]}
                     </p>
                   </div>
+                  {isCurrent && (
+                    <span
+                      className="text-blue-600 dark:text-blue-400"
+                      aria-hidden="true"
+                    >
+                      <svg
+                        className="size-3.5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M5 12l5 5 10-10" />
+                      </svg>
+                    </span>
+                  )}
                 </div>
               </DropdownMenuItem>
             )
