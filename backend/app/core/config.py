@@ -42,6 +42,20 @@ class Settings(BaseSettings):
     # Em prod futuro: substituir por KMS (AWS/GCP) sem mudar call sites.
     APP_CONFIG_KEK: str = Field(..., min_length=32)
 
+    # ---------- QiTech ----------
+    # Secret usado pra HMAC-SHA256 do `jobId` no callback receiver da QiTech
+    # (familia /v2/queue/scheduler/report/*). A QiTech NAO assina os
+    # callbacks (validado em 2026-04-25 — sem header X-Signature ou JWT),
+    # entao colocamos um token=hmac na query string do callbackUrl ao
+    # criar o job. Receiver valida que token bate com hmac(jobId, secret),
+    # bloqueando spoof de callbacks por terceiros que descubram a URL.
+    # Gerar com: python -c "import secrets; print(secrets.token_hex(32))"
+    QITECH_WEBHOOK_SECRET: str = Field(default="", min_length=0)
+
+    # Base public URL onde a QiTech vai bater no callback. Em PROD:
+    # https://callback.a7credit.com.br. Em DEV: ngrok ou webhook.site.
+    QITECH_WEBHOOK_BASE_URL: str = Field(default="")
+
     # Credenciais de adapters (ex.: Bitfin) vivem em `tenant_source_config` — NAO aqui.
     # Cada tenant tem seu proprio banco (ver CLAUDE.md §13 regra 4).
 

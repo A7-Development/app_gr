@@ -7,7 +7,7 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from app.scheduler.jobs import bitfin_sync
+from app.scheduler.jobs import bitfin_sync, qitech_jobs_poll
 
 logger = logging.getLogger("gr.scheduler")
 
@@ -30,10 +30,20 @@ def start_scheduler() -> AsyncIOScheduler:
         coalesce=True,
         misfire_grace_time=300,
     )
+    _scheduler.add_job(
+        qitech_jobs_poll.run,
+        trigger=IntervalTrigger(minutes=qitech_jobs_poll.INTERVAL_MINUTES),
+        id="qitech_jobs_poll",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=120,
+    )
     _scheduler.start()
     logger.info(
-        "scheduler started: bitfin_sync every %s minutes",
+        "scheduler started: bitfin_sync every %s min, qitech_jobs_poll every %s min",
         bitfin_sync.INTERVAL_MINUTES,
+        qitech_jobs_poll.INTERVAL_MINUTES,
     )
     return _scheduler
 

@@ -12,6 +12,9 @@ NAO grava no banco. NAO faz side-effect. Isso facilita:
 Padrao igual aos `_map_*` do adapter Bitfin (ver etl.py do bitfin).
 """
 
+from app.modules.integracoes.adapters.admin.qitech.mappers.aquisicao_consolidada import (
+    map_aquisicao_consolidada,
+)
 from app.modules.integracoes.adapters.admin.qitech.mappers.conta_corrente import (
     map_conta_corrente,
 )
@@ -19,7 +22,19 @@ from app.modules.integracoes.adapters.admin.qitech.mappers.cpr import map_cpr
 from app.modules.integracoes.adapters.admin.qitech.mappers.demonstrativo_caixa import (
     map_demonstrativo_caixa,
 )
+from app.modules.integracoes.adapters.admin.qitech.mappers.detalhes_operacoes import (
+    map_detalhes_operacoes,
+)
+from app.modules.integracoes.adapters.admin.qitech.mappers.fidc_estoque import (
+    map_fidc_estoque,
+)
+from app.modules.integracoes.adapters.admin.qitech.mappers.liquidados_baixados import (
+    map_liquidados_baixados,
+)
 from app.modules.integracoes.adapters.admin.qitech.mappers.mec import map_mec
+from app.modules.integracoes.adapters.admin.qitech.mappers.movimento_aberto import (
+    map_movimento_aberto,
+)
 from app.modules.integracoes.adapters.admin.qitech.mappers.outros_ativos import (
     map_outros_ativos,
 )
@@ -38,10 +53,15 @@ from app.modules.integracoes.adapters.admin.qitech.mappers.tesouraria import (
 )
 
 __all__ = [
+    "map_aquisicao_consolidada",
     "map_conta_corrente",
     "map_cpr",
     "map_demonstrativo_caixa",
+    "map_detalhes_operacoes",
+    "map_fidc_estoque",
+    "map_liquidados_baixados",
     "map_mec",
+    "map_movimento_aberto",
     "map_outros_ativos",
     "map_outros_fundos",
     "map_rentabilidade",

@@ -17,12 +17,17 @@ Camadas (CLAUDE.md secao 13.2):
   estavel, populado por mapper a partir da raw. Carrega `Auditable`.
 """
 
+from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel
 from app.warehouse.cpr_movimento import CprMovimento
 from app.warehouse.dim import DimDreClassificacao, DimMes
 from app.warehouse.dre import DreMensal
+from app.warehouse.estoque_recebivel import EstoqueRecebivel
+from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel
 from app.warehouse.mec_evolucao_cotas import MecEvolucaoCotas
+from app.warehouse.movimento_aberto import MovimentoAberto
 from app.warehouse.movimento_caixa import MovimentoCaixa
 from app.warehouse.operacao import Operacao, OperacaoItem
+from app.warehouse.operacao_remessa import OperacaoRemessa
 from app.warehouse.posicao_compromissada import PosicaoCompromissada
 from app.warehouse.posicao_cota_fundo import PosicaoCotaFundo
 from app.warehouse.posicao_outros_ativos import PosicaoOutrosAtivos
@@ -35,14 +40,19 @@ from app.warehouse.titulo import Titulo
 from app.warehouse.titulo_snapshot import TituloSnapshot
 
 __all__ = [
+    "AquisicaoRecebivel",
     "CprMovimento",
     "DimDreClassificacao",
     "DimMes",
     "DreMensal",
+    "EstoqueRecebivel",
+    "LiquidacaoRecebivel",
     "MecEvolucaoCotas",
+    "MovimentoAberto",
     "MovimentoCaixa",
     "Operacao",
     "OperacaoItem",
+    "OperacaoRemessa",
     "PosicaoCompromissada",
     "PosicaoCotaFundo",
     "PosicaoOutrosAtivos",

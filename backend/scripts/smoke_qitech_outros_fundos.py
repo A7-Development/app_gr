@@ -21,6 +21,11 @@ import sys
 from datetime import date
 from uuid import UUID
 
+# Side-effect imports: registram tabelas referenciadas por FK no metadata
+# do SQLAlchemy. Sem isso, o flush do DecisionLog (FK -> tenants) falha
+# com NoReferencedTableError. O FastAPI app faz isso ao subir; script
+# standalone precisa fazer manualmente.
+import app.shared.identity.tenant  # noqa: F401
 from app.core.database import AsyncSessionLocal
 from app.core.enums import Environment, SourceType
 from app.modules.integracoes.adapters.admin.qitech.config import QiTechConfig
@@ -29,12 +34,6 @@ from app.modules.integracoes.services.source_config import (
     decrypt_config,
     get_config,
 )
-
-# Side-effect imports: registram tabelas referenciadas por FK no metadata
-# do SQLAlchemy. Sem isso, o flush do DecisionLog (FK -> tenants) falha
-# com NoReferencedTableError. O FastAPI app faz isso ao subir; script
-# standalone precisa fazer manualmente.
-import app.shared.identity.tenant  # noqa: F401
 
 A7_CREDIT_TENANT_ID = UUID("7f00cc2b-8bb4-483f-87b7-b1db24d20902")
 

@@ -42,7 +42,11 @@ Tremor Raw e referencia, nao cela. Quando "fazer como o Tremor faz" conflitar co
 | Forms | `react-hook-form` + `zod` | Formik, uncontrolled manual |
 | HTTP | `@tanstack/react-query` via `src/lib/api-client.ts` | fetch/axios direto em componentes |
 | Estado global | `zustand` quando necessario | Redux, MobX, Recoil, Jotai |
+| URL state | `nuqs` para search params tipados | qs, query-string, manipulacao manual de URLSearchParams |
 | Datas | `date-fns` | moment, dayjs, luxon |
+| Virtualizacao | `@tanstack/react-virtual` quando lista > ~100 itens | react-window, react-virtualized |
+| Command palette | `cmdk` | reimplementacao manual de command menu |
+| Primitivos Radix | `@radix-ui/react-avatar` e outros sem equivalente no Tremor | Radix cru para o que o Tremor ja cobre |
 
 Instalar qualquer biblioteca fora desta tabela exige autorizacao explicita do usuario no chat.
 
@@ -70,7 +74,7 @@ src/components/<dominio>/   <- Componentes amarrados a um dominio especifico
 
 - `tremor/` importa: `@/lib/utils`, `@/lib/chartUtils`, `@remixicon/react`, `tailwind-variants`, Radix UI (interno), Recharts (interno).
 - `charts/` importa: o mesmo que `tremor/` + `react`.
-- `app/` importa: `@/components/tremor/*`, `@/components/charts/*`, `@/lib/*`, `@remixicon/react`. **Proibido**: Radix direto, Recharts direto, classes de cor Tailwind ad-hoc.
+- `app/` importa: `@/components/tremor/*`, `@/components/charts/*`, `@/lib/*`, `@remixicon/react`, primitivos Radix **sem equivalente no Tremor** (ex.: `@radix-ui/react-avatar`), `cmdk`. **Proibido**: Radix para o que o Tremor ja cobre, Recharts direto, classes de cor Tailwind ad-hoc.
 - `<dominio>/` importa: `@/components/app/*`, `@/components/tremor/*`, `@/components/charts/*`, hooks de dominio, types de dominio.
 
 ---

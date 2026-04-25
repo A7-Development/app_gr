@@ -35,6 +35,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -90,7 +91,15 @@ class QiTechRawRelatorio(Base):
 
     # Body cru exatamente como QiTech retornou. JSONB pra indexar caminhos
     # especificos depois (ex.: GIN em `payload->'relatórios'`) sem migration.
-    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    # Pode ser NULL quando a fonte e CSV/texto puro (ai vai em payload_text).
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+    # Para fontes que devolvem arquivo de texto (CSV, TSV) em vez de JSON
+    # (ex.: relatorios assincronos /queue/scheduler/report/* da QiTech).
+    # Mantemos no campo separado pra evitar overhead de JSONB com texto cru
+    # e permitir LIKE/regex sem cast. Pelo menos 1 dos dois (payload OU
+    # payload_text) deve estar preenchido — invariante checada na app.
+    payload_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # 200 OK ou 400-com-shape-canonico (envelope vazio "sem dados pra esse
     # mercado neste dia"). Ambos sao gravados; distinguir um do outro pra
