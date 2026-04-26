@@ -116,16 +116,21 @@ async def _upsert_raw(
     data_posicao: date,
     payload: dict[str, Any],
     http_status: int,
+    unidade_administrativa_id: UUID | None = None,
 ) -> None:
     """Grava 1 linha em `wh_qitech_raw_relatorio` (idempotente por UQ).
 
     Re-roda o mesmo dia substitui payload + atualiza `fetched_at` e
     `payload_sha256` — preserva historico apenas se conteudo mudou (sha bate).
+
+    Multi-UA (Phase F): UQ inclui `unidade_administrativa_id`, entao 2 UAs
+    do mesmo tenant podem fetchar o mesmo (tipo, data) sem colidir.
     """
     row = {
         "tenant_id": tenant_id,
         "tipo_de_mercado": tipo_de_mercado,
         "data_posicao": data_posicao,
+        "unidade_administrativa_id": unidade_administrativa_id,
         "payload": payload,
         "http_status": http_status,
         "payload_sha256": sha256_of_row(payload),
@@ -150,7 +155,12 @@ async def _upsert_raw(
 
 
 async def _bulk_upsert_canonical(
-    db: AsyncSession, model, rows: list[dict], conflict_columns: list[str]
+    db: AsyncSession,
+    model,
+    rows: list[dict],
+    conflict_columns: list[str],
+    *,
+    unidade_administrativa_id: UUID | None = None,
 ) -> int:
     """Upsert idempotente em chunks (replica do padrao Bitfin).
 
@@ -160,12 +170,28 @@ async def _bulk_upsert_canonical(
        mapper podem omitir chaves quando valor e None — preenchemos None.
     3. **Deduplicacao**: ON CONFLICT falha se o mesmo batch tem duas linhas
        com mesma unique key. Mantem a ultima ocorrencia.
+
+    Multi-UA (Phase F): se `unidade_administrativa_id` for fornecido, e
+    injetado em todas as rows que nao trouxerem o campo do mapper. Mappers
+    podem sobrescrever, mas em geral o caller passa UA do contexto e os
+    mappers nao se preocupam.
     """
     if not rows:
         return 0
 
     all_columns = [c.name for c in model.__table__.columns if c.name != "id"]
-    normalized = [{col: row.get(col) for col in all_columns} for row in rows]
+    has_ua_column = "unidade_administrativa_id" in all_columns
+
+    normalized: list[dict] = []
+    for row in rows:
+        norm = {col: row.get(col) for col in all_columns}
+        if (
+            has_ua_column
+            and unidade_administrativa_id is not None
+            and norm.get("unidade_administrativa_id") is None
+        ):
+            norm["unidade_administrativa_id"] = unidade_administrativa_id
+        normalized.append(norm)
 
     seen: dict[tuple, dict] = {}
     for r in normalized:
@@ -204,6 +230,7 @@ async def _sync_endpoint(
     environment: Environment,
     config: QiTechConfig,
     data_posicao: date,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Pipeline generico fetch -> raw -> mapper -> canonico para 1 endpoint.
 
@@ -235,7 +262,10 @@ async def _sync_endpoint(
     # --- 1. Fetch -------------------------------------------------------
     try:
         async with build_async_client(
-            tenant_id=tenant_id, environment=environment, config=config
+            tenant_id=tenant_id,
+            environment=environment,
+            config=config,
+            unidade_administrativa_id=unidade_administrativa_id,
         ) as client:
             payload = await fetch_market_report(
                 client=client,
@@ -268,6 +298,7 @@ async def _sync_endpoint(
                     data_posicao=data_posicao,
                     payload=payload,
                     http_status=step["raw_http_status"],
+                    unidade_administrativa_id=unidade_administrativa_id,
                 )
                 await db.commit()
             step["raw_persisted"] = True
@@ -291,7 +322,11 @@ async def _sync_endpoint(
         try:
             async with AsyncSessionLocal() as db:
                 count = await _bulk_upsert_canonical(
-                    db, model, canonical_rows, conflict_columns
+                    db,
+                    model,
+                    canonical_rows,
+                    conflict_columns,
+                    unidade_administrativa_id=unidade_administrativa_id,
                 )
                 await db.commit()
             step["canonical_rows_upserted"] = count
@@ -314,6 +349,7 @@ async def sync_outros_fundos(
     environment: Environment,
     config: QiTechConfig,
     data_posicao: date,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """outros-fundos -> wh_posicao_cota_fundo."""
     return await _sync_endpoint(
@@ -325,6 +361,7 @@ async def sync_outros_fundos(
         environment=environment,
         config=config,
         data_posicao=data_posicao,
+        unidade_administrativa_id=unidade_administrativa_id,
     )
 
 
@@ -334,6 +371,7 @@ async def sync_conta_corrente(
     environment: Environment,
     config: QiTechConfig,
     data_posicao: date,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """conta-corrente -> wh_saldo_conta_corrente."""
     return await _sync_endpoint(
@@ -345,6 +383,7 @@ async def sync_conta_corrente(
         environment=environment,
         config=config,
         data_posicao=data_posicao,
+        unidade_administrativa_id=unidade_administrativa_id,
     )
 
 
@@ -354,6 +393,7 @@ async def sync_tesouraria(
     environment: Environment,
     config: QiTechConfig,
     data_posicao: date,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """tesouraria -> wh_saldo_tesouraria."""
     return await _sync_endpoint(
@@ -365,6 +405,7 @@ async def sync_tesouraria(
         environment=environment,
         config=config,
         data_posicao=data_posicao,
+        unidade_administrativa_id=unidade_administrativa_id,
     )
 
 
@@ -374,6 +415,7 @@ async def sync_outros_ativos(
     environment: Environment,
     config: QiTechConfig,
     data_posicao: date,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """outros-ativos -> wh_posicao_outros_ativos."""
     return await _sync_endpoint(
@@ -385,6 +427,7 @@ async def sync_outros_ativos(
         environment=environment,
         config=config,
         data_posicao=data_posicao,
+        unidade_administrativa_id=unidade_administrativa_id,
     )
 
 
@@ -394,6 +437,7 @@ async def sync_demonstrativo_caixa(
     environment: Environment,
     config: QiTechConfig,
     data_posicao: date,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """demonstrativo-caixa -> wh_movimento_caixa."""
     return await _sync_endpoint(
@@ -405,6 +449,7 @@ async def sync_demonstrativo_caixa(
         environment=environment,
         config=config,
         data_posicao=data_posicao,
+        unidade_administrativa_id=unidade_administrativa_id,
     )
 
 
@@ -414,6 +459,7 @@ async def sync_cpr(
     environment: Environment,
     config: QiTechConfig,
     data_posicao: date,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """cpr -> wh_cpr_movimento."""
     return await _sync_endpoint(
@@ -425,6 +471,7 @@ async def sync_cpr(
         environment=environment,
         config=config,
         data_posicao=data_posicao,
+        unidade_administrativa_id=unidade_administrativa_id,
     )
 
 
@@ -434,6 +481,7 @@ async def sync_mec(
     environment: Environment,
     config: QiTechConfig,
     data_posicao: date,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """mec -> wh_mec_evolucao_cotas."""
     return await _sync_endpoint(
@@ -445,6 +493,7 @@ async def sync_mec(
         environment=environment,
         config=config,
         data_posicao=data_posicao,
+        unidade_administrativa_id=unidade_administrativa_id,
     )
 
 
@@ -454,6 +503,7 @@ async def sync_rentabilidade(
     environment: Environment,
     config: QiTechConfig,
     data_posicao: date,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """rentabilidade -> wh_rentabilidade_fundo."""
     return await _sync_endpoint(
@@ -465,6 +515,7 @@ async def sync_rentabilidade(
         environment=environment,
         config=config,
         data_posicao=data_posicao,
+        unidade_administrativa_id=unidade_administrativa_id,
     )
 
 
@@ -474,6 +525,7 @@ async def sync_rf(
     environment: Environment,
     config: QiTechConfig,
     data_posicao: date,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """rf -> wh_posicao_renda_fixa."""
     return await _sync_endpoint(
@@ -485,6 +537,7 @@ async def sync_rf(
         environment=environment,
         config=config,
         data_posicao=data_posicao,
+        unidade_administrativa_id=unidade_administrativa_id,
     )
 
 
@@ -494,6 +547,7 @@ async def sync_rf_compromissadas(
     environment: Environment,
     config: QiTechConfig,
     data_posicao: date,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """rf-compromissadas -> wh_posicao_compromissada."""
     return await _sync_endpoint(
@@ -505,6 +559,7 @@ async def sync_rf_compromissadas(
         environment=environment,
         config=config,
         data_posicao=data_posicao,
+        unidade_administrativa_id=unidade_administrativa_id,
     )
 
 
@@ -548,6 +603,7 @@ async def sync_all(
     *,
     environment: Environment = Environment.PRODUCTION,
     triggered_by: str = "system:scheduler",
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Executa todos os syncs registrados em `_PIPELINE` + grava decision_log.
 
@@ -555,6 +611,9 @@ async def sync_all(
     rodar (cada `sync_<tipo>` ja captura suas exceptions e devolve `step`
     com `errors`). Falha catastrofica (raise saindo do `sync_<tipo>`) e
     capturada aqui e vai pra `errors` agregado.
+
+    Multi-UA (Phase F): `unidade_administrativa_id` propaga para fetch
+    (chave de cache de token) + raw + canonical (vincula linhas a UA).
     """
     started_at = datetime.now(UTC)
     t0 = time.monotonic()
@@ -571,6 +630,7 @@ async def sync_all(
                 environment=environment,
                 config=config,
                 data_posicao=data_posicao,
+                unidade_administrativa_id=unidade_administrativa_id,
             )
             steps.append(step)
             rows_total += int(step.get("canonical_rows_upserted") or 0)
@@ -584,6 +644,11 @@ async def sync_all(
         "ok": not errors,
         "adapter_version": ADAPTER_VERSION,
         "tenant_id": str(tenant_id),
+        "unidade_administrativa_id": (
+            str(unidade_administrativa_id)
+            if unidade_administrativa_id
+            else None
+        ),
         "environment": environment.value,
         "data_posicao": data_posicao.isoformat(),
         "started_at": started_at.isoformat(),

@@ -55,10 +55,13 @@ class QiTechRawRelatorio(Base):
     __tablename__ = "wh_qitech_raw_relatorio"
     __table_args__ = (
         # Idempotencia: re-rodar o ETL pro mesmo dia substitui via upsert.
+        # Multi-UA (Phase F, 2026-04-25): UA entra na chave porque dois FIDCs
+        # do mesmo tenant podem fetchar o mesmo (tipo, data) em paralelo.
         UniqueConstraint(
             "tenant_id",
             "tipo_de_mercado",
             "data_posicao",
+            "unidade_administrativa_id",
             name="uq_wh_qitech_raw_relatorio",
         ),
         # Acesso canonico: "todas as raws de um tenant num dia / num tipo".
@@ -120,3 +123,15 @@ class QiTechRawRelatorio(Base):
     # Versao do adapter QiTech que rodou o fetch. Permite saber se eventual
     # bug de paginacao/parse afetou ate qual versao.
     fetched_by_version: Mapped[str] = mapped_column(String(128), nullable=False)
+
+    # UA dona da credencial que produziu este fetch (multi-UA). Nullable
+    # apenas para retrocompat com linhas legacy ingeridas antes do Phase F;
+    # toda nova linha gravada pelo adapter informa explicitamente.
+    unidade_administrativa_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(
+            "cadastros_unidade_administrativa.id", ondelete="RESTRICT"
+        ),
+        nullable=True,
+        index=True,
+    )

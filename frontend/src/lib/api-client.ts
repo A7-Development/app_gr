@@ -879,6 +879,8 @@ export type SourceListItem = {
   enabled: boolean
   environment: Environment | null
   last_sync_at: string | null
+  /** Multi-UA: para fontes admin (QiTech), pode haver N entradas, uma por UA. */
+  unidade_administrativa_id: string | null
 }
 
 export type SourceDetail = {
@@ -894,6 +896,7 @@ export type SourceDetail = {
   config: Record<string, unknown>
   sync_frequency_minutes: number | null
   updated_at: string | null
+  unidade_administrativa_id: string | null
 }
 
 export type ConfigUpdatePayload = {
@@ -901,6 +904,8 @@ export type ConfigUpdatePayload = {
   environment?: Environment
   enabled?: boolean
   sync_frequency_minutes?: number | null
+  /** Multi-UA: vincula esta credencial a uma UA do tenant. */
+  unidade_administrativa_id?: string | null
 }
 
 export type TestResult = {
@@ -931,7 +936,15 @@ export type RunEntry = {
 
 /** Helpers do modulo integracoes.
  * Obs: `source_type` contem `:` (ex.: `erp:bitfin`) — NAO encode, o backend aceita literal.
+ *
+ * Multi-UA (Phase F): rotas que escopam credencial admin (QiTech) aceitam
+ * `unidade_administrativa_id` como query param opcional. Sem o param, casa
+ * a linha legacy (UA=NULL) — preserva retrocompat.
  */
+function _appendUa(qs: URLSearchParams, uaId?: string | null) {
+  if (uaId) qs.set("unidade_administrativa_id", uaId)
+}
+
 export const integracoes = {
   listSources: (environment: Environment = "production") =>
     apiClient.get<SourceListItem[]>(
@@ -940,10 +953,14 @@ export const integracoes = {
   getSource: (
     sourceType: SourceTypeId,
     environment: Environment = "production",
-  ) =>
-    apiClient.get<SourceDetail>(
-      `/integracoes/sources/${sourceType}?environment=${environment}`,
-    ),
+    uaId?: string | null,
+  ) => {
+    const qs = new URLSearchParams({ environment })
+    _appendUa(qs, uaId)
+    return apiClient.get<SourceDetail>(
+      `/integracoes/sources/${sourceType}?${qs.toString()}`,
+    )
+  },
   updateConfig: (sourceType: SourceTypeId, payload: ConfigUpdatePayload) =>
     apiClient.put<SourceDetail>(
       `/integracoes/sources/${sourceType}/config`,
@@ -953,19 +970,38 @@ export const integracoes = {
     sourceType: SourceTypeId,
     enabled: boolean,
     environment: Environment = "production",
+    uaId?: string | null,
   ) =>
     apiClient.post<SourceDetail>(
       `/integracoes/sources/${sourceType}/enable`,
-      { enabled, environment },
+      {
+        enabled,
+        environment,
+        unidade_administrativa_id: uaId ?? null,
+      },
     ),
-  test: (sourceType: SourceTypeId, environment: Environment = "production") =>
-    apiClient.post<TestResult>(
-      `/integracoes/sources/${sourceType}/test?environment=${environment}`,
-    ),
-  sync: (sourceType: SourceTypeId, environment: Environment = "production") =>
-    apiClient.post<SyncResult>(
-      `/integracoes/sources/${sourceType}/sync?environment=${environment}`,
-    ),
+  test: (
+    sourceType: SourceTypeId,
+    environment: Environment = "production",
+    uaId?: string | null,
+  ) => {
+    const qs = new URLSearchParams({ environment })
+    _appendUa(qs, uaId)
+    return apiClient.post<TestResult>(
+      `/integracoes/sources/${sourceType}/test?${qs.toString()}`,
+    )
+  },
+  sync: (
+    sourceType: SourceTypeId,
+    environment: Environment = "production",
+    uaId?: string | null,
+  ) => {
+    const qs = new URLSearchParams({ environment })
+    _appendUa(qs, uaId)
+    return apiClient.post<SyncResult>(
+      `/integracoes/sources/${sourceType}/sync?${qs.toString()}`,
+    )
+  },
   runs: (sourceType: SourceTypeId, limit = 50) =>
     apiClient.get<RunEntry[]>(
       `/integracoes/sources/${sourceType}/runs?limit=${limit}`,

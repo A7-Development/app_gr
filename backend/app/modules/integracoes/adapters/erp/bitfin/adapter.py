@@ -53,7 +53,15 @@ async def adapter_sync(
     since: date | None = None,
     *,
     triggered_by: str = "system:scheduler",
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
-    """Entrypoint unificado de sync. Decifra config, roda pipeline completa."""
+    """Entrypoint unificado de sync. Decifra config, roda pipeline completa.
+
+    `unidade_administrativa_id` aceito por compatibilidade com sync_runner
+    multi-UA, mas o ETL Bitfin atual filtra por CNPJ (no proprio config) e
+    nao consome UA. Quando o adapter Bitfin evoluir pra escopar canonico
+    por UA, passar adiante.
+    """
+    _ = unidade_administrativa_id
     config = BitfinConfig.from_dict(config_dict)
     return await sync_all(tenant_id, config, since=since, triggered_by=triggered_by)

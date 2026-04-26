@@ -74,6 +74,18 @@ class OperacaoRemessa(Auditable, Base):
         nullable=False,
         index=True,
     )
+    # UA dona da credencial que produziu esta linha (multi-UA, Phase F).
+    # Nullable apenas para retrocompat com linhas legacy ingeridas antes
+    # da introducao de multi-UA. Toda nova linha gravada pelo adapter
+    # informa explicitamente.
+    unidade_administrativa_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(
+            "cadastros_unidade_administrativa.id", ondelete="RESTRICT"
+        ),
+        nullable=True,
+        index=True,
+    )
 
     # ---- Quando ----
     # `data` no payload = data de importacao do arquivo no FIDC.

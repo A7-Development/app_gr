@@ -54,10 +54,12 @@ function buildHref(
   sourceType: string,
   tab: TabKey,
   environment: Environment,
+  uaId?: string | null,
 ): string {
   const qs = new URLSearchParams()
   qs.set("tab", tab)
   qs.set("environment", environment)
+  if (uaId) qs.set("ua", uaId)
   return `/integracoes/catalogo/${encodeURIComponent(sourceType)}?${qs.toString()}`
 }
 
@@ -69,14 +71,16 @@ export default function SourceDetailPage() {
   const activeTab = useActiveTab()
   const environment: Environment =
     sp.get("environment") === "sandbox" ? "sandbox" : "production"
+  const uaIdParam = sp.get("ua")
 
   const { data, isLoading, isError, refetch } = useSource(
     sourceType,
     environment,
+    uaIdParam,
   )
 
   function setEnvironment(e: Environment) {
-    router.replace(buildHref(sourceType, activeTab, e))
+    router.replace(buildHref(sourceType, activeTab, e, uaIdParam))
   }
 
   return (
@@ -139,7 +143,7 @@ export default function SourceDetailPage() {
                 asChild
                 active={activeTab === t.key}
               >
-                <Link href={buildHref(sourceType, t.key, environment)}>
+                <Link href={buildHref(sourceType, t.key, environment, uaIdParam)}>
                   {t.label}
                 </Link>
               </TabNavigationLink>

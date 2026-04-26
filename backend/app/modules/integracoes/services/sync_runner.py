@@ -1,10 +1,14 @@
 """Orquestrador de ciclo de sync.
 
 Responsabilidades:
-- Descobrir quais tenants tem a fonte habilitada (via `eligibility.list_enabled_configs`).
+- Descobrir quais (tenant, ua) tem a fonte habilitada (via `eligibility.list_enabled_configs`).
 - Resolver o adapter correspondente ao `source_type` via `_ADAPTER_REGISTRY`.
-- Decifrar a config do tenant e passar para o adapter (ping ou sync).
-- Isolar falhas por tenant (um tenant quebrar nao derruba o ciclo).
+- Decifrar a config + passar para o adapter (ping ou sync).
+- Isolar falhas por linha de config (uma UA quebrar nao derruba o ciclo).
+
+Multi-UA (CLAUDE.md secao 13, 2026-04-25): cada linha de `tenant_source_config`
+representa uma credencial — pode haver N por tenant na mesma fonte/ambiente,
+uma por UA. O ciclo de sync itera por linha, nao por tenant.
 
 O scheduler ([app/scheduler/jobs/bitfin_sync.py]) chama `run_sync_cycle`;
 o endpoint admin ([routers/sources.py]) usa `run_sync_one` + `run_ping`.
@@ -41,19 +45,19 @@ from app.modules.integracoes.services.source_config import (
 
 logger = logging.getLogger("gr.integracoes.sync_runner")
 
-# Adapter contracts. Ping recebe config + tenant_id/environment opcionais
-# para adapters que precisam chavear cache ou contexto por tenant (ex.:
-# QiTech cacheia token por (tenant, env)). Adapters sem essa necessidade
+# Adapter contracts. Ping recebe config + tenant_id/environment/ua opcionais
+# para adapters que precisam chavear cache ou contexto por (tenant, env, ua)
+# (ex.: QiTech cacheia token por essa tripla). Adapters sem essa necessidade
 # declaram `**_` para aceitar sem usar.
 PingFn = Callable[..., Awaitable[dict[str, Any]]]
-SyncFn = Callable[[UUID, dict, date | None], Awaitable[dict[str, Any]]]
+SyncFn = Callable[..., Awaitable[dict[str, Any]]]
 
 
 @dataclass(frozen=True)
 class AdapterEntry:
     """Registered adapter for a source_type."""
 
-    sync: Callable[..., Awaitable[dict[str, Any]]]
+    sync: SyncFn
     ping: PingFn
 
 
@@ -80,9 +84,9 @@ async def run_sync_cycle(
 ) -> list[dict[str, Any]]:
     """Executa um ciclo completo de sync para a fonte + ambiente.
 
-    Itera todos os tenants com `tenant_source_config.enabled=true`, chama o
-    adapter registrado. Retorna lista de summaries (um por tenant processado,
-    inclusive os que falharam).
+    Itera todas as linhas com `tenant_source_config.enabled=true` (pode ser
+    >1 por tenant em multi-UA), chama o adapter registrado por linha. Retorna
+    lista de summaries (um por linha processada, inclusive os que falharam).
     """
     adapter = get_adapter(source_type)
 
@@ -91,7 +95,7 @@ async def run_sync_cycle(
 
     if not configs:
         logger.info(
-            "sync_cycle: source=%s env=%s sem tenants elegiveis",
+            "sync_cycle: source=%s env=%s sem configs elegiveis",
             source_type.value,
             environment.value,
         )
@@ -100,27 +104,36 @@ async def run_sync_cycle(
     summaries: list[dict[str, Any]] = []
     for cfg in configs:
         logger.info(
-            "sync_cycle: start tenant=%s source=%s env=%s",
+            "sync_cycle: start tenant=%s ua=%s source=%s env=%s",
             cfg.tenant_id,
+            cfg.unidade_administrativa_id,
             source_type.value,
             environment.value,
         )
         try:
             plain = decrypt_config(cfg.config)
             summary = await adapter.sync(
-                cfg.tenant_id, plain, since, triggered_by=triggered_by
+                cfg.tenant_id,
+                plain,
+                since,
+                triggered_by=triggered_by,
+                unidade_administrativa_id=cfg.unidade_administrativa_id,
             )
             summaries.append(summary)
             logger.info(
-                "sync_cycle: done tenant=%s source=%s elapsed=%s errors=%s",
+                "sync_cycle: done tenant=%s ua=%s source=%s elapsed=%s errors=%s",
                 cfg.tenant_id,
+                cfg.unidade_administrativa_id,
                 source_type.value,
                 summary.get("elapsed_seconds"),
                 len(summary.get("errors", [])),
             )
         except Exception:
             logger.exception(
-                "sync_cycle: fatal tenant=%s source=%s", cfg.tenant_id, source_type.value
+                "sync_cycle: fatal tenant=%s ua=%s source=%s",
+                cfg.tenant_id,
+                cfg.unidade_administrativa_id,
+                source_type.value,
             )
     return summaries
 
@@ -132,23 +145,39 @@ async def run_sync_one(
     environment: Environment = Environment.PRODUCTION,
     since: date | None = None,
     triggered_by: str = "system:api",
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
-    """Dispara sync para um unico tenant+fonte. Nao verifica `enabled`.
+    """Dispara sync para uma config (tenant + fonte + UA). Nao verifica `enabled`.
 
     Usado pelo endpoint admin POST /integracoes/sources/{source_type}/sync.
-    Propaga erros (diferente do cycle, que isola por tenant) para que o
+    Propaga erros (diferente do cycle, que isola por linha) para que o
     operador veja a falha imediatamente.
+
+    Multi-UA: `unidade_administrativa_id=None` busca a config legacy (linha
+    sem UA preenchida). Caller que conhece a UA passa explicitamente.
     """
     adapter = get_adapter(source_type)
     async with AsyncSessionLocal() as db:
-        row = await get_config(db, tenant_id, source_type, environment)
+        row = await get_config(
+            db,
+            tenant_id,
+            source_type,
+            environment,
+            unidade_administrativa_id=unidade_administrativa_id,
+        )
     if row is None:
         raise ValueError(
             f"Tenant {tenant_id} nao tem tenant_source_config para "
-            f"{source_type.value}/{environment.value}"
+            f"{source_type.value}/{environment.value}/ua={unidade_administrativa_id}"
         )
     plain = decrypt_config(row.config)
-    return await adapter.sync(tenant_id, plain, since, triggered_by=triggered_by)
+    return await adapter.sync(
+        tenant_id,
+        plain,
+        since,
+        triggered_by=triggered_by,
+        unidade_administrativa_id=row.unidade_administrativa_id,
+    )
 
 
 async def run_ping(
@@ -156,20 +185,33 @@ async def run_ping(
     source_type: SourceType,
     *,
     environment: Environment = Environment.PRODUCTION,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
-    """Chama `adapter.ping(config)` pro tenant+fonte informado.
+    """Chama `adapter.ping(config)` para a tupla (tenant, fonte, ambiente, ua).
 
     Retorna o resultado do ping (nunca levanta — erros viram ok=False no dict).
     """
     adapter = get_adapter(source_type)
     async with AsyncSessionLocal() as db:
-        row = await get_config(db, tenant_id, source_type, environment)
+        row = await get_config(
+            db,
+            tenant_id,
+            source_type,
+            environment,
+            unidade_administrativa_id=unidade_administrativa_id,
+        )
     if row is None:
         return {
             "ok": False,
             "detail": (
-                f"sem config para {source_type.value}/{environment.value} neste tenant"
+                f"sem config para {source_type.value}/{environment.value}/"
+                f"ua={unidade_administrativa_id} neste tenant"
             ),
         }
     plain = decrypt_config(row.config)
-    return await adapter.ping(plain, tenant_id=tenant_id, environment=environment)
+    return await adapter.ping(
+        plain,
+        tenant_id=tenant_id,
+        environment=environment,
+        unidade_administrativa_id=row.unidade_administrativa_id,
+    )

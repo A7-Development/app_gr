@@ -12,6 +12,7 @@
 import * as React from "react"
 import { Controller, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { toast } from "sonner"
 import { RiLoader4Line, RiInformationLine } from "@remixicon/react"
@@ -21,17 +22,34 @@ import { Card } from "@/components/tremor/Card"
 import { Divider } from "@/components/tremor/Divider"
 import { Input } from "@/components/tremor/Input"
 import { Label } from "@/components/tremor/Label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/tremor/Select"
 import { Switch } from "@/components/tremor/Switch"
 import { SecretInput } from "@/design-system/components/SecretInput"
 import {
   useSetSourceEnabled,
   useUpdateSourceConfig,
 } from "@/lib/hooks/integracoes"
+import { cadastros } from "@/lib/api-client"
 import type {
   ConfigUpdatePayload,
   SourceDetail,
   SourceTypeId,
+  UnidadeAdministrativa,
 } from "@/lib/api-client"
+
+// Source types que tem credencial por UA (multi-UA, Phase F).
+// QiTech emite 1 token por entidade administrada — cada UA do tenant tem
+// seu proprio par client_id+client_secret. Bitfin nao usa essa quebra
+// (config e por database/CNPJ).
+const SOURCES_WITH_PER_UA_CREDENTIALS = new Set<SourceTypeId>([
+  "admin:qitech",
+])
 
 //
 // Descritor de campo. `secret` => usa SecretInput; `multiline` => Textarea (PEM).
@@ -142,6 +160,7 @@ export function CredenciaisTab({
   sourceType: SourceTypeId
 }) {
   const fields = FIELDS_BY_SOURCE[sourceType]
+  const supportsPerUaCreds = SOURCES_WITH_PER_UA_CREDENTIALS.has(sourceType)
 
   const updateMut = useUpdateSourceConfig(sourceType)
   const enableMut = useSetSourceEnabled(sourceType)
@@ -177,7 +196,11 @@ export function CredenciaisTab({
         disabled={!detail.configured || enableMut.isPending}
         onToggle={(next) =>
           enableMut.mutate(
-            { enabled: next, environment: detail.environment },
+            {
+              enabled: next,
+              environment: detail.environment,
+              uaId: detail.unidade_administrativa_id,
+            },
             {
               onSuccess: () =>
                 toast.success(
@@ -195,6 +218,7 @@ export function CredenciaisTab({
       <CredenciaisForm
         detail={detail}
         fields={fields}
+        supportsPerUaCreds={supportsPerUaCreds}
         submitting={updateMut.isPending}
         onSubmit={(payload) =>
           updateMut.mutate(payload, {
@@ -255,14 +279,30 @@ function EnabledToggle({
 function CredenciaisForm({
   detail,
   fields,
+  supportsPerUaCreds,
   submitting,
   onSubmit,
 }: {
   detail: SourceDetail
   fields: FieldDescriptor[]
+  supportsPerUaCreds: boolean
   submitting: boolean
   onSubmit: (payload: ConfigUpdatePayload) => void
 }) {
+  // Carrega UAs ativas pra alimentar o selector quando o source type
+  // tem credencial por UA (QiTech). Skip pra fontes que nao usam.
+  const uasQuery = useQuery({
+    queryKey: ["cadastros", "uas", { ativa: true }],
+    queryFn: () => cadastros.listUAs({ ativa: true }),
+    enabled: supportsPerUaCreds,
+  })
+
+  const [uaId, setUaId] = React.useState<string | null>(
+    detail.unidade_administrativa_id,
+  )
+  React.useEffect(() => {
+    setUaId(detail.unidade_administrativa_id)
+  }, [detail.unidade_administrativa_id])
   // Schema zod dinamico: text = string; secret = string opcional (mantem mascara se vazio).
   const schema = React.useMemo(() => {
     const shape: Record<string, z.ZodTypeAny> = {}
@@ -355,9 +395,17 @@ function CredenciaisForm({
         nextConfig[f.key] = v
       }
     }
+    if (supportsPerUaCreds && !uaId) {
+      toast.error(
+        "Selecione a Unidade Administrativa dona desta credencial.",
+      )
+      return
+    }
+
     onSubmit({
       config: nextConfig,
       environment: detail.environment,
+      unidade_administrativa_id: supportsPerUaCreds ? uaId : null,
     })
   }
 
@@ -375,6 +423,18 @@ function CredenciaisForm({
             <span className="font-medium">Substituir</span> para rotacionar.
           </p>
         </div>
+
+        {supportsPerUaCreds && (
+          <>
+            <Divider />
+            <UASelector
+              uaId={uaId}
+              onChange={setUaId}
+              uas={uasQuery.data ?? []}
+              loading={uasQuery.isLoading}
+            />
+          </>
+        )}
 
         <Divider />
 
@@ -474,4 +534,72 @@ function CredenciaisForm({
       </Card>
     </form>
   )
+}
+
+//
+// Selector de UA (multi-UA, Phase F).
+// Aparece apenas para sources com credencial por UA (admin:qitech).
+// Cada UA do tenant pode ter seu proprio par client_id+client_secret —
+// 2 FIDCs do mesmo tenant precisam de 2 linhas de credencial.
+//
+function UASelector({
+  uaId,
+  onChange,
+  uas,
+  loading,
+}: {
+  uaId: string | null
+  onChange: (next: string | null) => void
+  uas: UnidadeAdministrativa[]
+  loading: boolean
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor="ua-select">
+        Unidade Administrativa
+        <span className="ml-1 text-red-600 dark:text-red-500" aria-hidden>
+          *
+        </span>
+      </Label>
+      <Select
+        value={uaId ?? ""}
+        onValueChange={(v) => onChange(v || null)}
+        disabled={loading || uas.length === 0}
+      >
+        <SelectTrigger id="ua-select" className="w-full md:w-96">
+          <SelectValue
+            placeholder={
+              loading
+                ? "Carregando UAs..."
+                : uas.length === 0
+                  ? "Nenhuma UA cadastrada"
+                  : "Selecione a UA"
+            }
+          />
+        </SelectTrigger>
+        <SelectContent>
+          {uas.map((ua) => (
+            <SelectItem key={ua.id} value={ua.id}>
+              {ua.nome}
+              {ua.cnpj && (
+                <span className="ml-2 text-gray-500 dark:text-gray-400">
+                  · {formatCnpj(ua.cnpj)}
+                </span>
+              )}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <span className="text-xs text-gray-500 dark:text-gray-400">
+        QiTech emite 1 par client_id/client_secret por entidade administrada.
+        Cadastre uma credencial separada para cada UA do tenant.
+      </span>
+    </div>
+  )
+}
+
+// Formata CNPJ digits-only para exibicao: 11.222.333/0001-44
+function formatCnpj(cnpj: string): string {
+  const d = cnpj.replace(/\D/g, "").padStart(14, "0")
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`
 }

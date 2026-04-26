@@ -59,7 +59,12 @@ export function TestarTab({
             type="button"
             variant="primary"
             disabled={notConfigured || testMut.isPending}
-            onClick={() => testMut.mutate(detail.environment)}
+            onClick={() =>
+              testMut.mutate({
+                environment: detail.environment,
+                uaId: detail.unidade_administrativa_id,
+              })
+            }
           >
             {testMut.isPending ? (
               <RiLoader4Line className="mr-1.5 size-4 animate-spin" aria-hidden />
@@ -132,7 +137,12 @@ export function TestarTab({
             type="button"
             variant="secondary"
             disabled={notConfigured || syncMut.isPending}
-            onClick={() => syncMut.mutate(detail.environment)}
+            onClick={() =>
+              syncMut.mutate({
+                environment: detail.environment,
+                uaId: detail.unidade_administrativa_id,
+              })
+            }
           >
             {syncMut.isPending ? (
               <RiLoader4Line className="mr-1.5 size-4 animate-spin" aria-hidden />

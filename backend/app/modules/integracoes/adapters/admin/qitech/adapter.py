@@ -55,6 +55,7 @@ async def adapter_ping(
     *,
     tenant_id: UUID | None = None,
     environment: Environment = Environment.PRODUCTION,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Tenta obter um token de API. `ok=True` se o QiTech retornou token.
 
@@ -64,6 +65,7 @@ async def adapter_ping(
             um UUID sentinela ("no-tenant") e nunca persiste no cache —
             util so em scripts ad-hoc.
         environment: padrao `production`.
+        unidade_administrativa_id: UA dona desta credencial (multi-UA).
 
     Returns:
         Dict no formato `{ok, latency_ms, detail, adapter_version}`.
@@ -79,7 +81,10 @@ async def adapter_ping(
 
     try:
         token = await get_api_token(
-            tenant_id=tid, environment=environment, config=config
+            tenant_id=tid,
+            environment=environment,
+            config=config,
+            unidade_administrativa_id=unidade_administrativa_id,
         )
     except QiTechAdapterError as e:
         return _shape_err(t0=t0, e=e)
@@ -93,6 +98,11 @@ async def adapter_ping(
             "token_prefix": f"{token[:8]}...",
             "base_url": config.base_url,
             "environment": environment.value,
+            "unidade_administrativa_id": (
+                str(unidade_administrativa_id)
+                if unidade_administrativa_id
+                else None
+            ),
         },
     )
 
@@ -104,6 +114,7 @@ async def adapter_sync(
     *,
     triggered_by: str = "system:scheduler",
     environment: Environment = Environment.PRODUCTION,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Orquestra sync completo: auth + endpoints + raw + canonico + decision_log.
 
@@ -113,6 +124,10 @@ async def adapter_sync(
 
     Auth e validado uma vez antes do pipeline rodar. Falha de auth aborta
     todo o ciclo; falha em endpoint individual nao aborta os demais.
+
+    Multi-UA: `unidade_administrativa_id` chaveia cache de token e e
+    propagado pra raw + canonical, garantindo que dados de UA-A nao
+    sobrescrevam dados de UA-B no warehouse.
     """
     config = QiTechConfig.from_dict(config_dict)
     t0 = time.monotonic()
@@ -123,12 +138,18 @@ async def adapter_sync(
             tenant_id=tenant_id,
             environment=environment,
             config=config,
+            unidade_administrativa_id=unidade_administrativa_id,
         )
     except QiTechAdapterError as e:
         return {
             "ok": False,
             "adapter_version": ADAPTER_VERSION,
             "tenant_id": str(tenant_id),
+            "unidade_administrativa_id": (
+                str(unidade_administrativa_id)
+                if unidade_administrativa_id
+                else None
+            ),
             "environment": environment.value,
             "triggered_by": triggered_by,
             "since": since.isoformat() if since else None,
@@ -144,4 +165,5 @@ async def adapter_sync(
         since,
         environment=environment,
         triggered_by=triggered_by,
+        unidade_administrativa_id=unidade_administrativa_id,
     )

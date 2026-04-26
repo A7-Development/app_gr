@@ -74,7 +74,11 @@ def _mask_secrets(source_type: SourceType, config: dict) -> dict:
 
 
 class SourceListItem(BaseModel):
-    """Linha do catalogo com status para o tenant atual."""
+    """Linha do catalogo com status para o tenant atual.
+
+    Multi-UA: para fontes admin que tem credencial por UA (QiTech), pode
+    haver N entradas — uma por UA. `unidade_administrativa_id` distingue.
+    """
 
     source_type: SourceType
     label: str
@@ -86,6 +90,7 @@ class SourceListItem(BaseModel):
     enabled: bool
     environment: Environment | None
     last_sync_at: datetime | None
+    unidade_administrativa_id: UUID | None = None
 
 
 class SourceDetail(BaseModel):
@@ -102,6 +107,7 @@ class SourceDetail(BaseModel):
     config: dict[str, Any]  # secrets mascarados
     sync_frequency_minutes: int | None
     updated_at: datetime | None
+    unidade_administrativa_id: UUID | None = None
 
 
 class ConfigUpdate(BaseModel):
@@ -111,6 +117,7 @@ class ConfigUpdate(BaseModel):
     environment: Environment = Environment.PRODUCTION
     enabled: bool | None = None
     sync_frequency_minutes: int | None = None
+    unidade_administrativa_id: UUID | None = None
 
 
 class EnableUpdate(BaseModel):
@@ -118,6 +125,7 @@ class EnableUpdate(BaseModel):
 
     enabled: bool
     environment: Environment = Environment.PRODUCTION
+    unidade_administrativa_id: UUID | None = None
 
 
 class TestResult(BaseModel):
@@ -195,10 +203,18 @@ async def _build_source_detail(
     tenant_id: UUID,
     source_type: SourceType,
     environment: Environment,
+    *,
+    unidade_administrativa_id: UUID | None = None,
 ) -> SourceDetail:
     """Monta o SourceDetail sem passar pela dependency do guard (reuso interno)."""
     cat = await _catalog_row(db, source_type)
-    row = await get_config(db, tenant_id, source_type, environment)
+    row = await get_config(
+        db,
+        tenant_id,
+        source_type,
+        environment,
+        unidade_administrativa_id=unidade_administrativa_id,
+    )
     config_plain: dict[str, Any] = {}
     if row is not None:
         config_plain = decrypt_config(row.config)
@@ -214,6 +230,7 @@ async def _build_source_detail(
         config=_mask_secrets(source_type, config_plain),
         sync_frequency_minutes=row.sync_frequency_minutes if row else None,
         updated_at=row.updated_at if row else None,
+        unidade_administrativa_id=row.unidade_administrativa_id if row else None,
     )
 
 
@@ -227,25 +244,52 @@ async def list_sources(
     environment: Annotated[Environment, Query()] = Environment.PRODUCTION,
     _: None = _Guard,
 ) -> list[SourceListItem]:
-    """Lista catalogo + status de cada fonte para o tenant atual no ambiente pedido."""
+    """Lista catalogo + status de cada fonte para o tenant atual no ambiente pedido.
+
+    Pos-multi-UA: pra fontes com credencial por UA (QiTech), retorna 1 linha
+    por UA configurada (alem da entrada base do catalogo). Bitfin continua
+    com 1 linha so.
+    """
+    from app.modules.integracoes.services.source_config import list_configs
+
     catalog = await _load_catalog(db)
     out: list[SourceListItem] = []
     for c in catalog:
-        row = await get_config(db, principal.tenant_id, c.source_type, environment)
-        last_sync = await _last_sync_at(db, principal.tenant_id, c.source_type)
-        out.append(
-            SourceListItem(
-                source_type=c.source_type,
-                label=c.label,
-                category=c.category,
-                owner_org=c.owner_org,
-                description=c.description,
-                configured=row is not None,
-                enabled=bool(row and row.enabled),
-                environment=row.environment if row else None,
-                last_sync_at=last_sync,
-            )
+        configs = await list_configs(
+            db, principal.tenant_id, c.source_type, environment
         )
+        last_sync = await _last_sync_at(db, principal.tenant_id, c.source_type)
+        if not configs:
+            out.append(
+                SourceListItem(
+                    source_type=c.source_type,
+                    label=c.label,
+                    category=c.category,
+                    owner_org=c.owner_org,
+                    description=c.description,
+                    configured=False,
+                    enabled=False,
+                    environment=None,
+                    last_sync_at=last_sync,
+                    unidade_administrativa_id=None,
+                )
+            )
+            continue
+        for row in configs:
+            out.append(
+                SourceListItem(
+                    source_type=c.source_type,
+                    label=c.label,
+                    category=c.category,
+                    owner_org=c.owner_org,
+                    description=c.description,
+                    configured=True,
+                    enabled=row.enabled,
+                    environment=row.environment,
+                    last_sync_at=last_sync,
+                    unidade_administrativa_id=row.unidade_administrativa_id,
+                )
+            )
     return out
 
 
@@ -255,11 +299,20 @@ async def get_source(
     db: Annotated[AsyncSession, Depends(get_db)],
     source_type: Annotated[SourceType, Path()],
     environment: Annotated[Environment, Query()] = Environment.PRODUCTION,
+    unidade_administrativa_id: Annotated[UUID | None, Query()] = None,
     _: None = _Guard,
 ) -> SourceDetail:
-    """Detalhe do source para o tenant. Secrets nunca saem em claro."""
+    """Detalhe do source para o tenant. Secrets nunca saem em claro.
+
+    `unidade_administrativa_id` (multi-UA): quando informado, retorna a config
+    da UA especifica. Sem o param, casa a linha legacy (UA=NULL).
+    """
     return await _build_source_detail(
-        db, principal.tenant_id, source_type, environment
+        db,
+        principal.tenant_id,
+        source_type,
+        environment,
+        unidade_administrativa_id=unidade_administrativa_id,
     )
 
 
@@ -274,7 +327,9 @@ async def update_source_config(
     """Merge parcial: campos ausentes em `payload.config` preservam valor persistido.
 
     Permite rotacionar um secret sem re-enviar os demais. Para remover um campo,
-    passe-o com valor `null`.
+    passe-o com valor `null`. `unidade_administrativa_id` (multi-UA) escopa
+    a linha — admin pode ter N credenciais por (tenant, source, env), uma
+    por UA.
     """
     await _catalog_row(db, source_type)
     await merge_config(
@@ -285,9 +340,14 @@ async def update_source_config(
         environment=payload.environment,
         enabled=payload.enabled,
         sync_frequency_minutes=payload.sync_frequency_minutes,
+        unidade_administrativa_id=payload.unidade_administrativa_id,
     )
     return await _build_source_detail(
-        db, principal.tenant_id, source_type, payload.environment
+        db,
+        principal.tenant_id,
+        source_type,
+        payload.environment,
+        unidade_administrativa_id=payload.unidade_administrativa_id,
     )
 
 
@@ -299,7 +359,7 @@ async def enable_source(
     payload: EnableUpdate,
     _: None = _Guard,
 ) -> SourceDetail:
-    """Liga ou desliga a fonte para (tenant, environment). Exige config ja persistida."""
+    """Liga ou desliga a fonte para (tenant, environment, UA). Exige config persistida."""
     await _catalog_row(db, source_type)
     ok = await set_enabled(
         db,
@@ -307,17 +367,23 @@ async def enable_source(
         source_type,
         payload.enabled,
         environment=payload.environment,
+        unidade_administrativa_id=payload.unidade_administrativa_id,
     )
     if not ok:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 f"Nao existe config persistida para {source_type.value}/"
-                f"{payload.environment.value}. Envie PUT /config primeiro."
+                f"{payload.environment.value}/ua={payload.unidade_administrativa_id}. "
+                f"Envie PUT /config primeiro."
             ),
         )
     return await _build_source_detail(
-        db, principal.tenant_id, source_type, payload.environment
+        db,
+        principal.tenant_id,
+        source_type,
+        payload.environment,
+        unidade_administrativa_id=payload.unidade_administrativa_id,
     )
 
 
@@ -326,11 +392,15 @@ async def test_source(
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     source_type: Annotated[SourceType, Path()],
     environment: Annotated[Environment, Query()] = Environment.PRODUCTION,
+    unidade_administrativa_id: Annotated[UUID | None, Query()] = None,
     _: None = _Guard,
 ) -> TestResult:
     """Dispara `adapter.ping` contra a config persistida. Nunca levanta — erro vira `ok=False`."""
     result = await run_ping(
-        principal.tenant_id, source_type, environment=environment
+        principal.tenant_id,
+        source_type,
+        environment=environment,
+        unidade_administrativa_id=unidade_administrativa_id,
     )
     return TestResult(**result)
 
@@ -340,12 +410,13 @@ async def sync_source(
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     source_type: Annotated[SourceType, Path()],
     environment: Annotated[Environment, Query()] = Environment.PRODUCTION,
+    unidade_administrativa_id: Annotated[UUID | None, Query()] = None,
     _: None = _Guard,
 ) -> SyncResult:
     """Dispara sync manual sincronico (nao verifica `enabled`).
 
     Propaga erros para o operador ver falha imediatamente — diferente do ciclo
-    automatico, que isola por tenant.
+    automatico, que isola por linha.
     """
     try:
         summary = await run_sync_one(
@@ -353,6 +424,7 @@ async def sync_source(
             source_type,
             environment=environment,
             triggered_by=f"user:{principal.user_id}",
+            unidade_administrativa_id=unidade_administrativa_id,
         )
     except ValueError as e:
         raise HTTPException(

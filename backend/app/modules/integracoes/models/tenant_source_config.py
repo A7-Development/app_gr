@@ -34,8 +34,18 @@ class TenantSourceConfig(Base):
 
     __tablename__ = "tenant_source_config"
     __table_args__ = (
+        # Multi-UA (CLAUDE.md secao 13): cada credencial pertence a uma UA do
+        # tenant. QiTech emite 1 token por entidade administrada — 2 FIDCs do
+        # mesmo tenant precisam de 2 linhas, uma por UA. UA NULL permite
+        # configs legacy / em transicao (Postgres trata cada NULL como
+        # distinto, entao multiplas linhas sem UA coexistem ate cada uma ser
+        # vinculada).
         UniqueConstraint(
-            "tenant_id", "source_type", "environment", name="uq_tenant_source_env"
+            "tenant_id",
+            "source_type",
+            "environment",
+            "unidade_administrativa_id",
+            name="uq_tenant_source_env_ua",
         ),
     )
 
@@ -56,6 +66,18 @@ class TenantSourceConfig(Base):
         nullable=False,
         default=Environment.PRODUCTION,
         server_default=Environment.PRODUCTION.name,
+    )
+    # UA dona desta credencial. Nullable em transicao — todas as linhas
+    # existentes sao backfilladas pela migration que introduz a coluna; novas
+    # linhas devem informar a UA explicitamente. RESTRICT no FK protege a
+    # config: deletar UA so depois de remover/realocar suas integracoes.
+    unidade_administrativa_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(
+            "cadastros_unidade_administrativa.id", ondelete="RESTRICT"
+        ),
+        nullable=True,
+        index=True,
     )
 
     enabled: Mapped[bool] = mapped_column(
