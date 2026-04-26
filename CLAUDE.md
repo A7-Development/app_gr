@@ -666,7 +666,7 @@ Z7 · PROVENANCE      (fonte + timestamp + SLA, sem borda)
 - **Z3 sem sparkline.** Sparkline infla o card e quebra a densidade da strip de 6. Para sinalizacao rapida use `intensity` (3 barrinhas, handoff v2) \u2014 carrega interpretacao direta (pos/neu/neg/info) sem poluir o card. Se precisar de tendencia completa, e card de visualizacao em Z6, nao KPI.
 - **Z6 hero nunca ocupa 100% da largura.** Sempre emparelhado 3:2 com painel de leitura a direita (numero grande + delta + notas inline).
 - **Z7 sempre presente.** Falta de ProvenanceFooter = falta de proveniencia = bug de auditabilidade (viola §14.5).
-- **Tabelas em Z6** usam `<CompactSeriesTable />` existente para series temporais FIDC (Austin-style). Para tabelas transacionais genericas, `Table` do Tremor com `@tanstack/react-table`.
+- **Tabelas em Z6** usam `<CompactSeriesTable />` para series temporais FIDC (Austin-style). Para listagens transacionais, `<DataTable />` (TanStack Table v8 + Virtual). Nunca `Table` do Tremor cru em pagina.
 - **AIButton** aparece em TODA pagina de BI (ultimo botao da direita no PageHeader). Abre `<AIDrawer />` (drawer lateral com chat contextualizado).
 - **Raios ≤ 6px** em toda a pagina. Tremor ja respeita.
 
