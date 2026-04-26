@@ -22,8 +22,6 @@ Camada de composicao -- 37 componentes que compoem `tremor/*` + `charts/*` + `to
 
 | Componente | Arquivo | Proposito |
 |---|---|---|
-| **AIButton** | `AIButton.tsx` | Botao "Perguntar a IA" -- unico uso de violet fora de chart series. CLAUDE.md §4 excecao oficial. |
-| **AIDrawer** | `AIDrawer.tsx` | Drawer lateral com chat IA contextualizado (pos-MVP de IA). |
 | **AdapterStatusBadge** | `AdapterStatusBadge.tsx` | Badge de status de adapter (ok / falha / sincronizando). |
 | **AuthGuard** | `AuthGuard.tsx` | Auth wrapper para `(app)/*`. Redireciona para `/login` se nao autenticado. |
 | **HeaderBreadcrumbs** | `Breadcrumbs.tsx` | Breadcrumbs sticky no header (3 niveis: Modulo > Secao > Pagina). |
@@ -43,7 +41,7 @@ Camada de composicao -- 37 componentes que compoem `tremor/*` + `charts/*` + `to
 | **MonthRangePicker** | `MonthRangePicker.tsx` | Range mes-a-mes p/ filtros temporais. |
 | **OriginDot** | `OriginDot.tsx` | Dot 12x12 com tooltip de proveniencia (source + updatedAtISO). Integrado em `<KpiCard>` quando `source` e passado. |
 | **OverrideChip** | `OverrideChip.tsx` | Chip "Top 10 × resetar" em VizCard quando override aplicado via CardMenu. |
-| **PageHeader** | `PageHeader.tsx` | Header de pagina (Z2 BI): titulo + subtitle + botoes secundarios + `<AIButton>` ao final. |
+| **PageHeader** | `PageHeader.tsx` | Header de pagina: titulo + subtitle + botoes secundarios. |
 | **PeriodoPresets** | `PeriodoPresets.tsx` | Presets rapidos (7d, 30d, 90d, 12M, YTD). |
 | **SecretInput** | `SecretInput.tsx` | Input de senha com toggle mostrar/ocultar. |
 | **Stepper** | `Stepper.tsx` | Wizard horizontal multi-step. |

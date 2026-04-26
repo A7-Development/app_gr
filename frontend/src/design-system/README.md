@@ -32,8 +32,6 @@ src/design-system/
 │   ├── KpiStrip/           # KpiCard (3 variants) + Sparkline + IntensityBars + FIDC_KPI_META presets
 │   ├── Sidebar/            # AppSidebar (collapsed mode + Avatar + tooltips), wired ao usePathname/getActiveModule
 │   ├── StatusPill/         # FIDC lifecycle (em-dia/atrasado/inadimplente/recomprado/liquidado)
-│   ├── AIButton.tsx        # Botao "Perguntar a IA" (unico uso de violet fora de chart)
-│   ├── AIDrawer.tsx        # Drawer lateral com chat IA contextualizado
 │   ├── AdapterStatusBadge.tsx  # Badge de status de adapter (ok/falha/sincronizando)
 │   ├── AuthGuard.tsx       # Auth wrapper para rotas (app)/*
 │   ├── Breadcrumbs.tsx     # HeaderBreadcrumbs (sticky, 3 niveis)
@@ -53,7 +51,7 @@ src/design-system/
 │   ├── MonthRangePicker.tsx # Range mes-a-mes p/ filtros temporais
 │   ├── OriginDot.tsx       # Dot 12x12 com tooltip de proveniencia (em KpiCard/VizCard)
 │   ├── OverrideChip.tsx    # Chip "Top 10 × resetar" em VizCard quando override aplicado
-│   ├── PageHeader.tsx      # Header de pagina (titulo + subtitle + botoes secundarios + AIButton)
+│   ├── PageHeader.tsx      # Header de pagina (titulo + subtitle + botoes secundarios)
 │   ├── PeriodoPresets.tsx  # Presets rapidos (7d, 30d, 90d, 12M, YTD)
 │   ├── SecretInput.tsx     # Input de senha com mostrar/ocultar
 │   ├── Stepper.tsx         # Wizard horizontal (multi-step)
@@ -107,7 +105,6 @@ import {
   EChartsCard, SparkChart, useEChartsTheme,
 
   // A7 Credit composites
-  AIButton, AIDrawer,
   AdapterStatusBadge, AuthGuard, HeaderBreadcrumbs,
   CardMenu, ChartSkeleton, CompactSeriesTable,
   DropdownUserProfile, EmptyState, ErrorState,

@@ -44,8 +44,6 @@ export {
 } from "./EChartsCard"
 
 // ── A7 Credit domain composites (migrated from components/app/) ──────────────
-export { AIButton } from "./AIButton"
-export { AIDrawer } from "./AIDrawer"
 export { AdapterStatusBadge } from "./AdapterStatusBadge"
 export { AuthGuard } from "./AuthGuard"
 export { HeaderBreadcrumbs } from "./Breadcrumbs"

@@ -71,8 +71,8 @@ src/design-system/components/      <- Componentes do Strata Design System (FIDC-
                                        Strata canonicos: StatusPill, KpiStrip, FilterBar,
                                        DataTable, DrillDownSheet, CommandPalette, EChartsCard,
                                        ApprovalQueueBadge, Sidebar.
-                                       A7 Credit composites: AIButton, PageHeader, EmptyState,
-                                       ErrorState, OriginDot, CompactSeriesTable, etc.
+                                       A7 Credit composites: PageHeader, EmptyState, ErrorState,
+                                       OriginDot, CompactSeriesTable, etc.
                                        USA apenas tremor/ + charts/ + tokens/, nunca Tailwind
                                        bruto de cor / Radix cru.
 
@@ -116,9 +116,6 @@ src/components/<dominio>/          <- Componentes amarrados a um dominio especif
 - Cores Tailwind fora das categorias acima: `orange-*`, `purple-*`, `yellow-*`, `stone-*`, `zinc-*`, `neutral-*`. (`teal`, `sky`, `rose`, `indigo`, `violet` estao liberadas **somente para series de chart**, via `chartUtils`.)
 - Usar cores de dados (`emerald`, `teal`, `rose`, etc) como cor semantica geral fora de charts (ex.: `bg-emerald-500` em badge de "ativo" — use `Badge variant="success"` do Tremor).
 - Gradientes manuais (`bg-gradient-to-*` com cores arbitrarias).
-
-**Excecao oficial -- botao "Perguntar a IA" (`AIButton`):**
-Unico ponto do sistema que usa `violet` fora de chart series ou avatar de Laboratorio. Combinacao fixa: `bg-gray-900 text-white` + icone (`RiSparklingLine` ou `RiMagicLine`) em `text-violet-400`/`text-violet-500`. Vive em `src/design-system/components/AIButton.tsx`. Aparece no header de toda pagina de BI (Zona Z2 -- ver secao 19). Qualquer outro uso de violeta em botao/badge/texto e proibido.
 
 **Dark mode:** sempre suportar. Usar as mesmas classes que o Tremor usa (`dark:bg-gray-950`, `dark:text-gray-50`, `dark:border-gray-800`). O `<html>` ja tem `dark:bg-gray-950` em `layout.tsx`.
 
@@ -610,9 +607,6 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] **Pagina respeita regra de 3 niveis (L1 sidebar grupo / L2 sidebar sub-item / L3 TabNavigation)?**
 - [ ] **Sidebar nao aninha em 3+ niveis (L3 sempre como tabs na pagina, nunca sub-sub-item)?**
 - [ ] **Estado de navegacao (modulo/secao/tab/filtros) e deep-linkavel via URL?**
-- [ ] **Se e pagina de BI, respeita as 7 zonas do BI Framework (secao 19)?**
-- [ ] **KPI strip sem sparkline? KPIs tem `intensity` (3 barrinhas) e `<OriginDot />`?**
-- [ ] **Pagina de BI termina com `<ProvenanceFooter />` (fonte + timestamp + SLA)?**
 - [ ] `npx tsc --noEmit` passa?
 - [ ] `npm run build` passa?
 
@@ -644,42 +638,3 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] Teste de integracao com fonte (mock ou sandbox) existe?
 
 Se qualquer item reprovar, **nao corrija pontualmente** — pare e revise a mudanca inteira.
-
----
-
-## 19. BI Framework -- 7 zonas obrigatorias
-
-Toda pagina de BI segue **exatamente estas 7 zonas, nesta ordem**. Composicao por componente e ordem de criacao em `docs/BI_FRAMEWORK.md`.
-
-```
-Z1 · FILTER BAR      (sticky top, chips canonicos + "Mais filtros")
-Z2 · PAGE HEADER     (titulo + subtitulo | Compartilhar + Exportar + AIButton)
-Z3 · KPI STRIP       (6 cards, com barrinhas de intensidade, OriginDot)
-Z4 · INSIGHTS IA     (faixa horizontal, tons variados, dismissivel)
-Z5 · L3 TABS         (TabNavigation do Tremor, 3-6 abas)
-Z6 · GRID VIZ        (hero 3:2 + painel de leitura + cards com menu triplo-ponto)
-Z7 · PROVENANCE      (fonte + timestamp + SLA, sem borda)
-```
-
-### 19.1 Regras duras
-
-- **Z3 sem sparkline.** Sparkline infla o card e quebra a densidade da strip de 6. Para sinalizacao rapida use `intensity` (3 barrinhas, handoff v2) \u2014 carrega interpretacao direta (pos/neu/neg/info) sem poluir o card. Se precisar de tendencia completa, e card de visualizacao em Z6, nao KPI.
-- **Z6 hero nunca ocupa 100% da largura.** Sempre emparelhado 3:2 com painel de leitura a direita (numero grande + delta + notas inline).
-- **Z7 sempre presente.** Falta de ProvenanceFooter = falta de proveniencia = bug de auditabilidade (viola §14.5).
-- **Tabelas em Z6** usam `<CompactSeriesTable />` para series temporais FIDC (Austin-style). Para listagens transacionais, `<DataTable />` (TanStack Table v8 + Virtual). Nunca `Table` do Tremor cru em pagina.
-- **AIButton** aparece em TODA pagina de BI (ultimo botao da direita no PageHeader). Abre `<AIDrawer />` (drawer lateral com chat contextualizado).
-- **Raios ≤ 6px** em toda a pagina. Tremor ja respeita.
-
-### 19.2 Checklist de compliance BI (subset do §18)
-
-- [ ] Z1 Filter bar sticky com `<FilterChip />` canonicos (icone + label + pipe + valor + chevron); active=blue quando != default
-- [ ] Z2 PageHeader tem `subtitle` + botoes secundarios (Compartilhar / Exportar) + `<AIButton />` ao final
-- [ ] Z3 exatamente 6 KPIs com `intensity` (tone + level); cada um com `<OriginDot />`
-- [ ] Z4 Insights IA (se houver) com 1 linha + botao fechar + `tone` variado (violet/amber/blue)
-- [ ] Z5 L3 TabNavigation (3-6 abas)
-- [ ] Z6 Hero 3:2 com painel de leitura (nunca chart 100% largura)
-- [ ] Z6 Cards tem menu "⋯" com as 3 secoes (Agrupar / Recorte / Tipo)
-- [ ] Z7 `<ProvenanceFooter />` presente com fonte + timestamp + SLA
-- [ ] Paleta dos KPIs/cards respeita §4 (zero cor arbitraria)
-- [ ] Respeita §11.6 (3 niveis de navegacao)
-
