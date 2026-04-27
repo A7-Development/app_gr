@@ -1,6 +1,6 @@
 # Components
 
-Camada de composicao -- 37 componentes que compoem `tremor/*` + `charts/*` + `tokens/*` em algo de dominio FIDC. Esta e a unica fonte de componentes para a UI da aplicacao alem dos primitivos Tremor.
+Camada de composicao -- 38 componentes que compoem `tremor/*` + `charts/*` + `tokens/*` em algo de dominio FIDC. Esta e a unica fonte de componentes para a UI da aplicacao alem dos primitivos Tremor.
 
 ## Mapa por categoria
 
@@ -28,6 +28,7 @@ Camada de composicao -- 37 componentes que compoem `tremor/*` + `charts/*` + `to
 | **CardMenu** | `CardMenu.tsx` | Menu "..." canonico p/ VizCard / EChartsCard com 3 secoes (Agrupar / Recorte / Tipo). |
 | **ChartSkeleton** | `ChartSkeleton.tsx` | Loading skeleton p/ charts. |
 | **CompactSeriesTable** | `CompactSeriesTable.tsx` | Tabela compacta p/ series temporais FIDC (Austin-style, density compact default). |
+| **DashboardHeaderActions** | `DashboardHeaderActions.tsx` | Set canonico de acoes do header de dashboard (handoff bi-padrao): `[DarkToggle, Compartilhar, Exportar, Mais, IA]`. Slot `actions` obrigatorio em paginas derivadas de `DashboardBiPadrao` (CLAUDE.md §7). |
 | **DropdownUserProfile** | `DropdownUserProfile.tsx` | Menu do user no rodape da Sidebar (logout, configuracoes). |
 | **EmptyState** | `EmptyState.tsx` | Estado vazio com ilustracao + CTA. |
 | **ErrorState** | `ErrorState.tsx` | Estado de erro com retry button. |

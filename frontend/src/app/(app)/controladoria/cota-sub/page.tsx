@@ -30,7 +30,6 @@ import {
   RiEqualizerLine,
   RiFundsLine,
   RiInformationLine,
-  RiShareLine,
 } from "@remixicon/react"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 import type { EChartsOption } from "echarts"
@@ -52,6 +51,9 @@ import {
 } from "@/components/tremor/TabNavigation"
 
 import { PageHeader } from "@/design-system/components/PageHeader"
+import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
+import { ProvenanceFooter, type ProvenanceSource } from "@/design-system/components/ProvenanceFooter"
+import { VizParam } from "@/design-system/components/VizParam"
 import {
   KpiCard,
   KpiStrip,
@@ -82,7 +84,6 @@ import {
 } from "@/design-system/components/DrillDownSheet"
 import {
   AIPanel,
-  AIToggleButton,
   useAIPanel,
   type AIInsight,
 } from "@/design-system/components/AIPanel"
@@ -119,7 +120,7 @@ const MOCK_INSIGHTS: AIInsight[] = [
   { text: "Top 3 cotistas concentram 62% do PL subordinado — acima do alerta interno de 50%. Considerar diversificacao." },
 ]
 
-const MOCK_PROVENANCE = [
+const MOCK_PROVENANCE: ProvenanceSource[] = [
   { label: "Bitfin", updated: "ha 12 min", sla: "15 min", stale: false },
   { label: "QiTech", updated: "ha 8 min",  sla: "30 min", stale: false },
   { label: "PDD",    updated: "ha 47 min", sla: "30 min", stale: true  },
@@ -538,42 +539,8 @@ function AddFilterMenu({
   )
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// VizParam (chip group de período curto)
-// ───────────────────────────────────────────────────────────────────────────
-
-function VizParam({
-  options,
-  value,
-  onChange,
-}: {
-  options:  readonly string[]
-  value:    string
-  onChange: (v: string) => void
-}) {
-  return (
-    <div className="flex gap-0.5">
-      {options.map((opt) => {
-        const active = opt === value
-        return (
-          <button
-            key={opt}
-            type="button"
-            onClick={() => onChange(opt)}
-            className={cx(
-              "rounded-sm border px-2 py-0.5 text-[11px] transition-colors",
-              active
-                ? "border-blue-500 bg-blue-500 text-white"
-                : "border-gray-200 bg-transparent text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800",
-            )}
-          >
-            {opt}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
+// VizParam (chip group de período curto) — agora vem de
+// `@/design-system/components/VizParam`. Mantido import abaixo.
 
 // ───────────────────────────────────────────────────────────────────────────
 // Variacao diaria — componentes da analise
@@ -665,48 +632,24 @@ function VariacaoHero({
 
 function PlCategoriaTable({ categorias }: { categorias: PlCategoria[] }) {
   return (
-    <div className="rounded border border-gray-200 dark:border-gray-800 overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-2.5 dark:border-gray-800">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">PL por categoria</h3>
+    <div className="rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 overflow-hidden">
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-4 py-2.5 dark:border-gray-800 dark:bg-gray-950">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
+          PL por categoria
+        </h3>
         <span className="rounded-full border border-gray-200 bg-gray-50 px-1.5 text-[11px] text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
           {categorias.length}
         </span>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left dark:border-gray-800">
-              <th className="px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Categoria</th>
-              <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">D-1</th>
-              <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">D0</th>
-              <th className="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Δ</th>
-              <th className="px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Fonte</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-            {categorias.map((cat) => {
-              const isPos = cat.delta > 0
-              const isNeg = cat.delta < 0
-              return (
-                <tr key={cat.key} className="hover:bg-gray-50 dark:hover:bg-gray-900/40">
-                  <td className="px-4 py-1.5 text-sm font-medium text-gray-900 dark:text-gray-50">{cat.label}</td>
-                  <td className="px-4 py-1.5 text-right text-sm tabular-nums text-gray-700 dark:text-gray-300">{BRL(cat.d1)}</td>
-                  <td className="px-4 py-1.5 text-right text-sm tabular-nums text-gray-700 dark:text-gray-300">{BRL(cat.d0)}</td>
-                  <td className={cx(
-                    "px-4 py-1.5 text-right text-sm font-medium tabular-nums",
-                    isPos && "text-emerald-600 dark:text-emerald-400",
-                    isNeg && "text-red-600 dark:text-red-400",
-                    !isPos && !isNeg && "text-gray-400 dark:text-gray-600",
-                  )}>
-                    {cat.delta === 0 ? "—" : (cat.delta > 0 ? "+" : "") + BRL(cat.delta)}
-                  </td>
-                  <td className="px-4 py-1.5 font-mono text-[10px] text-gray-400 dark:text-gray-600">{cat.source}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        data={categorias}
+        columns={PL_CATEGORIA_COLUMNS}
+        density="compact"
+        showColumnManager={false}
+        showDensityToggle={false}
+        showExport={false}
+        virtualize={false}
+      />
     </div>
   )
 }
@@ -1096,6 +1039,13 @@ function VisaoGeralTab({
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Insights IA — alinhado com handoff bi-padrao (acima de tudo na aba) */}
+      <InsightBar>
+        {MOCK_INSIGHTS.map((ins, i) => (
+          <Insight key={i} tone="violet" text={ins.text} />
+        ))}
+      </InsightBar>
+
       {/* Variacao diaria — analise principal (espelho da planilha) */}
       <VariacaoDiariaSection
         data={variacao}
@@ -1105,13 +1055,6 @@ function VisaoGeralTab({
         fundoSelected={fundoSelected}
         onOpenDrill={onOpenDrill}
       />
-
-      {/* Insights + charts evolutivos (12M) */}
-      <InsightBar>
-        {MOCK_INSIGHTS.map((ins, i) => (
-          <Insight key={i} tone="violet" text={ins.text} />
-        ))}
-      </InsightBar>
 
       {/* Hero 2/3 + 1/3 */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
@@ -1287,6 +1230,64 @@ function PlaceholderTab({ label }: { label: string }) {
 // DataTable columns
 // ───────────────────────────────────────────────────────────────────────────
 
+const plCategoriaCol = createColumnHelper<PlCategoria>()
+
+const PL_CATEGORIA_COLUMNS: ColumnDef<PlCategoria, unknown>[] = [
+  plCategoriaCol.accessor("label", {
+    header: "Categoria",
+    size:   220,
+  }) as ColumnDef<PlCategoria, unknown>,
+  plCategoriaCol.accessor("d1", {
+    header: () => <div style={{ width: "100%", textAlign: "right" }}>D-1</div>,
+    size:   140,
+    cell:   (info) => (
+      <div style={{ textAlign: "right" }}>
+        <CurrencyCell value={info.getValue<number>()} />
+      </div>
+    ),
+  }) as ColumnDef<PlCategoria, unknown>,
+  plCategoriaCol.accessor("d0", {
+    header: () => <div style={{ width: "100%", textAlign: "right" }}>D0</div>,
+    size:   140,
+    cell:   (info) => (
+      <div style={{ textAlign: "right" }}>
+        <CurrencyCell value={info.getValue<number>()} />
+      </div>
+    ),
+  }) as ColumnDef<PlCategoria, unknown>,
+  plCategoriaCol.accessor("delta", {
+    header: () => <div style={{ width: "100%", textAlign: "right" }}>Δ</div>,
+    size:   140,
+    cell:   (info) => {
+      const v = info.getValue<number>()
+      const isPos = v > 0
+      const isNeg = v < 0
+      return (
+        <div
+          style={{ textAlign: "right" }}
+          className={cx(
+            "tabular-nums",
+            isPos && "text-emerald-600 dark:text-emerald-400",
+            isNeg && "text-red-600 dark:text-red-400",
+            !isPos && !isNeg && "text-gray-400 dark:text-gray-600",
+          )}
+        >
+          {v === 0 ? "—" : (v > 0 ? "+" : "") + BRL(v)}
+        </div>
+      )
+    },
+  }) as ColumnDef<PlCategoria, unknown>,
+  plCategoriaCol.accessor("source", {
+    header: "Fonte",
+    size:   180,
+    cell:   (info) => (
+      <span className="font-mono text-[10px] text-gray-400 dark:text-gray-600">
+        {info.getValue<string>()}
+      </span>
+    ),
+  }) as ColumnDef<PlCategoria, unknown>,
+]
+
 const col = createColumnHelper<MovimentacaoRow>()
 
 const MOVIMENTACOES_COLUMNS: ColumnDef<MovimentacaoRow, unknown>[] = [
@@ -1342,36 +1343,6 @@ const MOVIMENTACOES_COLUMNS: ColumnDef<MovimentacaoRow, unknown>[] = [
     cell:   (info) => <StatusCell value={info.getValue<StatusKey>()} />,
   }) as ColumnDef<MovimentacaoRow, unknown>,
 ]
-
-// ───────────────────────────────────────────────────────────────────────────
-// MockProvenanceFooter
-// ───────────────────────────────────────────────────────────────────────────
-
-function MockProvenanceFooter() {
-  return (
-    <div className="flex shrink-0 flex-wrap items-center gap-4 border-t border-gray-200 bg-gray-50 px-6 py-1.5 dark:border-gray-800 dark:bg-gray-900/40">
-      {MOCK_PROVENANCE.map((s) => (
-        <div key={s.label} className="flex items-center gap-1.5">
-          <span
-            aria-hidden="true"
-            className={cx(
-              "size-1.5 rounded-full",
-              s.stale ? "bg-amber-500" : "bg-emerald-500",
-            )}
-          />
-          <span className="text-[11px] text-gray-600 dark:text-gray-400">
-            <span className="font-medium text-gray-900 dark:text-gray-50">{s.label}</span>
-            {" · "}
-            {s.updated}
-          </span>
-          <span className="text-[10px] text-gray-400 dark:text-gray-600">
-            SLA {s.sla}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
 
 // ───────────────────────────────────────────────────────────────────────────
 // Page
@@ -1526,17 +1497,11 @@ export default function CotaSubPage() {
             title="Cota Sub"
             info="Analise da cota subordinada do FIDC: PL, rentabilidade vs CDI, distribuicao por cotista subordinado e fluxo de subscricao/resgate."
             actions={
-              <>
-                <Button variant="secondary" onClick={handleExport}>
-                  <RiDownloadLine className="size-4 shrink-0" aria-hidden="true" />
-                  Exportar
-                </Button>
-                <Button variant="secondary" onClick={handleShare}>
-                  <RiShareLine className="size-4 shrink-0" aria-hidden="true" />
-                  Compartilhar
-                </Button>
-                <AIToggleButton open={ai.open} onClick={ai.toggle} />
-              </>
+              <DashboardHeaderActions
+                ai={{ open: ai.open, onToggle: ai.toggle }}
+                onShare={handleShare}
+                onExport={handleExport}
+              />
             }
           />
         </div>
@@ -1794,7 +1759,7 @@ export default function CotaSubPage() {
         </div>
 
         {/* Z5 — ProvenanceFooter (mock) */}
-        <MockProvenanceFooter />
+        <ProvenanceFooter sources={MOCK_PROVENANCE} />
       </div>
 
       {/* AI Panel */}

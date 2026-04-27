@@ -261,7 +261,7 @@ export function MercadoTab() {
         />
       </KpiStrip>
 
-      <InsightBar>
+      <InsightBar variant="stacked">
         {plTotalDelta !== undefined && plTotalLast && (
           <Insight
             tone={plTotalDelta >= 0 ? "blue" : "amber"}

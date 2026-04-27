@@ -11,6 +11,16 @@ Use para criar **componentes de composicao** que vivem em `src/design-system/com
 
 Ler `CLAUDE.md` na raiz. Regras nao-negociaveis.
 
+> **🔓 Modo Iteracao de Design ativo** (ver banner em `CLAUDE.md` raiz):
+> Durante este periodo, ao criar componente novo:
+>
+> - Valores arbitrarios de Tailwind sao **aceitaveis** (`text-[13px]`, `rounded-[4px]`, `gap-[3px]`, etc) quando vierem direto do handoff.
+> - Hex literals e `rgba(...)` em codigo do componente sao **aceitaveis** alem do que ja vive em `tokens/`.
+> - Inline styles `style={{...}}` para efeitos que Tailwind nao expressa bem (gradientes complexos, transformacoes pontuais) sao **aceitaveis**.
+> - **Continuam invioaveis**: stack obrigatoria (sem libs novas), 6 camadas, primitivos Tremor (nao reimplementar), ícones Remix, fonte Geist, idioma pt-BR.
+>
+> Lock-down volta no fim da iteracao com promocao a tokens nomeados.
+
 ## Quando usar esta skill
 
 **Use** quando:

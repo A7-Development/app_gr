@@ -157,26 +157,47 @@ async def _request_token(
         )
 
     url = f"{config.base_url}{E_AUTH_TOKEN.path}"
+    # Retry leve em timeout transitorio (ConnectTimeout/ReadTimeout). Singulare
+    # apresenta hiccup esporadico no /painel/token/api (validado 2026-04-27 em
+    # /testar e em loop de repopulacao). Erros HTTP reais (4xx/5xx) NAO entram
+    # aqui — sao tratados depois do request bem-sucedido.
+    last_error: httpx.HTTPError | None = None
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(30.0, connect=10.0),
         transport=transport,
     ) as client:
-        try:
-            resp = await client.request(
-                E_AUTH_TOKEN.method,
-                url,
-                auth=httpx.BasicAuth(config.client_id, config.client_secret),
-            )
-        except httpx.HTTPError as e:
+        for attempt in range(2):
+            try:
+                resp = await client.request(
+                    E_AUTH_TOKEN.method,
+                    url,
+                    auth=httpx.BasicAuth(config.client_id, config.client_secret),
+                )
+                last_error = None
+                break
+            except (httpx.ConnectTimeout, httpx.ReadTimeout) as e:
+                last_error = e
+                if attempt == 0:
+                    logger.warning(
+                        "qitech.auth: timeout transitorio em %s (%s); retry em 1s",
+                        E_AUTH_TOKEN.path,
+                        type(e).__name__,
+                    )
+                    await asyncio.sleep(1.0)
+                    continue
+            except httpx.HTTPError as e:
+                last_error = e
+                break
+        if last_error is not None:
             # {e} de varias httpx exceptions stringifica vazio ("''") — incluir
             # o tipo ajuda a diferenciar ConnectTimeout vs ReadTimeout vs
             # ConnectError sem precisar de traceback.
             raise QiTechHttpError(
                 f"falha de rede ao chamar {E_AUTH_TOKEN.path}: "
-                f"{type(e).__name__}({e!r})",
+                f"{type(last_error).__name__}({last_error!r})",
                 status_code=None,
-                detail=f"{type(e).__name__}: {e!r}",
-            ) from e
+                detail=f"{type(last_error).__name__}: {last_error!r}",
+            ) from last_error
 
     if resp.status_code >= 500:
         raise QiTechHttpError(

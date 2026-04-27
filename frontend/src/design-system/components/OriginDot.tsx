@@ -6,16 +6,21 @@ import { cx } from "@/lib/utils"
 import { Tooltip } from "@/components/tremor/Tooltip"
 
 //
-// OriginDot -- ponto de proveniencia (handoff COMPONENTS.md §11).
+// OriginDot -- proveniencia em KpiCard / VizCard.
 //
-// 12x12 no canto inferior direito de KpiCard / VizCard. Indica fonte do
-// dado + timestamp. Hover revela tooltip completo. Nao usa cor semantica
-// de sucesso/erro: e um ponto neutro (gray-400) que realca em hover.
+// Dois modos:
+//   - `inline` (default): label visivel "🟢 Fonte · ha N min" no flow do
+//     card. Alinhado com handoff bi-padrao 2026-04-26 (KpiCard.source).
+//   - `pinned`: dot 12x12 absolute bottom-right, label so no hover. Usado
+//     em VizCard onde o footer ja carrega a fonte e o ponto e marcador
+//     redundante. Variante legada do handoff COMPONENTS.md §11.
 //
 
 type OriginDotProps = {
   source: string
   updatedAtISO?: string | null
+  /** "inline" (default) shows visible label; "pinned" is dot-only absolute. */
+  variant?: "inline" | "pinned"
   className?: string
 }
 
@@ -35,11 +40,35 @@ function formatRelative(iso: string): string {
 export function OriginDot({
   source,
   updatedAtISO,
+  variant = "inline",
   className,
 }: OriginDotProps) {
-  const tooltipText = updatedAtISO
-    ? `Fonte: ${source} -- atualizado ${formatRelative(updatedAtISO)}`
+  const relative = updatedAtISO ? formatRelative(updatedAtISO) : null
+  const tooltipText = relative
+    ? `Fonte: ${source} -- atualizado ${relative}`
     : `Fonte: ${source}`
+
+  if (variant === "inline") {
+    return (
+      <span
+        aria-label={tooltipText}
+        className={cx(
+          "mt-0.5 inline-flex items-center gap-1.5 text-[10px] leading-none",
+          "text-gray-500 dark:text-gray-400",
+          className,
+        )}
+      >
+        <span
+          aria-hidden="true"
+          className="inline-block size-1.5 shrink-0 rounded-full bg-emerald-500"
+        />
+        <span>
+          <span className="font-medium text-gray-900 dark:text-gray-50">{source}</span>
+          {relative ? ` · ${relative}` : ""}
+        </span>
+      </span>
+    )
+  }
 
   return (
     <Tooltip content={tooltipText} side="top">

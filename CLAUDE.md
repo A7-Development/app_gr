@@ -6,6 +6,48 @@
 
 ---
 
+## 🔓 STATUS — MODO ITERACAO DE DESIGN ATIVO (2026-04-27 → ?)
+
+> Sistema em alinhamento com handoffs Strata (bi-padrao, hero-split-auth, futuros). Durante este periodo as regras visuais abaixo estao **temporariamente suspensas** para liberar fidelidade pixel ao handoff sem brigar com tokens.
+>
+> **Regras suspensas:**
+>
+> 1. **Valores arbitrarios de Tailwind sao permitidos** em qualquer camada (`tremor/`, `charts/`, `design-system/*`, `app/<dominio>/*`, `surfaces/`):
+>    - `text-[13px]`, `text-[18px]`, `p-[7px]`, `gap-[3px]`, `w-[180px]`, `h-[42px]`, etc.
+>    - `rounded-[4px]`, `rounded-[2px]` fora da escala Tremor.
+>    - Espacamentos e larguras especificas do handoff.
+> 2. **Hex literals e `rgba(...)` em componentes / surfaces sao permitidos** alem dos que ja vivem em `tokens/`. Cor solta em codigo de UI nao reprova PR neste periodo.
+> 3. **Inline styles `style={{...}}` sao permitidos** em qualquer camada quando o handoff exigir efeito que Tailwind nao resolve bem (gradientes complexos, positioning especifico, transformacoes pontuais).
+> 4. **Cores Tailwind fora das categorias da §4 sao permitidas** (`orange-*`, `purple-*`, `yellow-*`, `stone-*`, `zinc-*`, `neutral-*`) quando vierem do handoff. Continuam como cor de DADOS apenas em chart series.
+>
+> **Regras que CONTINUAM em vigor (nao sao suspensas):**
+>
+> - §2 **stack obrigatoria** — sem novas libs sem autorizacao explicita do usuario.
+> - §3 **arquitetura em 6 camadas** — `tremor/` continua nao-editavel, `surfaces/` continua sem importar de `components/dashboard`, etc.
+> - §11.1 **enum de modulos fechado** — sem modulo novo sem autorizacao.
+> - §11.3 **bounded contexts (backend)** — cross-import entre modulos so via `public.py`.
+> - §11.6 **hierarquia 3 niveis** de navegacao (L1/L2/L3) — sidebar nao aninha, max 3 niveis.
+> - §10 **multi-tenant absoluto** (backend) — toda tabela tem `tenant_id`, toda query escopada.
+> - §13 **adapter pattern** (backend).
+> - §14 **proveniencia + auditabilidade** (DNA do sistema).
+> - Idioma da UI em pt-BR, alias `@/*` nos imports, `cx()` em vez de `cn()`, icones Remix, fonte Geist.
+>
+> **Quando este modo se desliga:**
+>
+> Quando os handoffs principais (bi-padrao, listagens, formularios, surfaces de marca) tiverem suas implementacoes estabilizadas e visualmente aprovadas. No fim desta janela:
+>
+> 1. Auditoria automatica varre o codigo coletando todos os valores arbitrarios usados (`text-[Npx]`, `rounded-[Npx]`, hex literals, espacamentos especificos).
+> 2. Valores recorrentes sao **promovidos a tokens nomeados** em `frontend/src/design-system/tokens/` + escala Tailwind config.
+> 3. Codigo e refatorado para usar os tokens.
+> 4. **Regras §4 e §5 voltam a vigorar com forca total**: zero magic numbers em codigo novo, zero hex solto fora de tokens.
+> 5. Este banner e removido. CLAUDE.md volta ao estado restritivo, mas agora com vocabulario expandido.
+>
+> **Para Claude Code (qualquer sessao):** durante este modo, NAO bloqueie iteracao visual citando §4 ou §5. NAO sugira "promover a token agora" toda vez que vir uma classe arbitraria — isso vai ser feito em batch no fim. Foque em fidelidade ao handoff. As outras regras (especialmente §2, §3, §10-§14) continuam invioiaveis.
+
+---
+
+---
+
 ## 1. Palavra de ordem: **padrao e consistencia visual**
 
 O sistema usa **Tremor Raw** como **ponto de partida** de design system. Ele cobre ~90% dos casos; quando cobrir, use verbatim.
@@ -217,6 +259,8 @@ Toda **pagina nao-autenticada / superficie de marca** (`src/app/(auth)/*`, `src/
 - (futuros) `SplashScreen`, `ErrorPage404`, `ErrorPage500`, `MarketingHero`.
 
 Patterns e surfaces sao **copy-paste-edit** — nao componentes black-box. Copie o pattern para a pasta da pagina, adapte titulo/copy/mocks/charts ao dominio. Os comentarios `HOW TO ADAPT:` no topo de cada arquivo guiam a customizacao. Pages que copiam um pattern e divergem do template sao esperadas, nao excecao.
+
+**Header de dashboard — set canonico de acoes (handoff bi-padrao 2026-04-26):** toda pagina derivada de `DashboardBiPadrao` usa `<DashboardHeaderActions>` no slot `actions` do `<PageHeader>`. O composite renderiza, em ordem fixa: `[DarkToggle, Compartilhar, Exportar, Mais, IA]`. DarkToggle e IA sao sempre presentes; Share/Export/More sao omitidos quando o callback nao e passado. Substituir por `<Button>` solto ou conjunto custom de botoes e regressao — fecha a porta para que cada pagina invente seu proprio header. Para acoes secundarias (Copiar link, Duplicar, Imprimir, etc.), use o slot `more={[...]}`.
 
 Antes de escrever uma `page.tsx` nova, pergunte:
 - E pagina autenticada? Qual **pattern** aplica? (BI/Controladoria/Risco com IA → `DashboardBiPadrao`. Listagem → `ListagemComDrilldown`.)

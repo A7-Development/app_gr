@@ -54,12 +54,20 @@ export { HeaderBreadcrumbs } from "./Breadcrumbs"
 export { CardMenu, type MenuSection } from "./CardMenu"
 export { ChartSkeleton } from "./ChartSkeleton"
 export { CompactSeriesTable } from "./CompactSeriesTable"
+export {
+  DashboardHeaderActions,
+  type DashboardHeaderActionsProps,
+  type DashboardHeaderMoreItem,
+} from "./DashboardHeaderActions"
 export { DropdownUserProfile } from "./DropdownUserProfile"
 export { EmptyState } from "./EmptyState"
 export { ErrorState } from "./ErrorState"
 export { FilterPill, type FilterPillOption } from "./FilterPill"
 export { InfoTooltip } from "./InfoTooltip"
-export { Insight, InsightBar, type InsightTone } from "./Insight"
+export {
+  Insight, InsightBar,
+  type InsightTone, type InsightBarVariant, type InsightBarItem,
+} from "./Insight"
 export { JsonPreview } from "./JsonPreview"
 export { LastSyncCell } from "./LastSyncCell"
 export { Logo } from "./Logo"
@@ -70,7 +78,9 @@ export { OriginDot } from "./OriginDot"
 export { OverrideChip } from "./OverrideChip"
 export { PageHeader } from "./PageHeader"
 export { PeriodoPresets } from "./PeriodoPresets"
+export { ProvenanceFooter, type ProvenanceSource } from "./ProvenanceFooter"
 export { SecretInput } from "./SecretInput"
 export { Stepper } from "./Stepper"
 export { UserProfile } from "./UserProfile"
 export { VizCard } from "./VizCard"
+export { VizParam } from "./VizParam"

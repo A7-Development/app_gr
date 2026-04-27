@@ -11,6 +11,26 @@ Verificador automatico de conformidade com `CLAUDE.md`. Roda como revisao estati
 
 Ler `CLAUDE.md` na raiz.
 
+> **🔓 Modo Iteracao de Design ativo** (ver banner em `CLAUDE.md` raiz):
+> Durante este periodo, **rebaixar para `info` (nao reportar como erro/alerta)**:
+>
+> - Categoria 3 — Cores arbitrarias (hex literals, `bg-[rgb(...)]`, `text-[#...]`).
+> - Categoria 8 — Tamanhos/espacamentos magicos (`text-[Npx]`, `p-[Npx]`, `gap-[Npx]`, `rounded-[Npx]`, etc).
+> - Categoria adjacente — Inline styles `style={{...}}` em componentes/surfaces.
+> - Cores Tailwind fora da paleta canonica da §4 (orange/purple/yellow/stone/zinc/neutral) quando vierem do handoff.
+>
+> **Continuar reportando como erro grave / alerta** (nao suspensos):
+>
+> - Categoria 1 — Imports proibidos (lucide-react, shadcn, MUI, Chakra, etc).
+> - Categoria 2 — `cn()` em vez de `cx()`.
+> - Componentes fora das 6 camadas (§3 do CLAUDE.md).
+> - Sidebar com 3+ niveis aninhados (§11.6).
+> - Tabs criadas fora de `TabNavigation` do Tremor.
+> - Strings de UI em ingles (deve ser pt-BR).
+> - Imports cruzados entre modulos sem passar por `public.py` (backend §11.3).
+>
+> Quando o modo for desligado, este bloco vira "voltou a vigorar — agora reporta".
+
 ## Entrada
 
 Caminho(s) de arquivo ou pasta a auditar. Se o usuario nao especificar, peca via `AskUserQuestion`.

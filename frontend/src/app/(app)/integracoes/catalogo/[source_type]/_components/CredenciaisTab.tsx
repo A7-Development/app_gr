@@ -10,6 +10,7 @@
 //
 
 import * as React from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Controller, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useQuery } from "@tanstack/react-query"
@@ -297,12 +298,22 @@ function CredenciaisForm({
     enabled: supportsPerUaCreds,
   })
 
-  const [uaId, setUaId] = React.useState<string | null>(
-    detail.unidade_administrativa_id,
+  // UA e fonte unica da URL: o page.tsx pai usa `?ua=<id>` para refetchar o
+  // `detail`. Manter um state local independente desincroniza o select do
+  // detail e mostra config vazia quando o user troca de UA.
+  const router = useRouter()
+  const sp = useSearchParams()
+  const uaId = sp.get("ua")
+
+  const handleUaChange = React.useCallback(
+    (next: string | null) => {
+      const params = new URLSearchParams(Array.from(sp.entries()))
+      if (next) params.set("ua", next)
+      else params.delete("ua")
+      router.replace(`?${params.toString()}`, { scroll: false })
+    },
+    [router, sp],
   )
-  React.useEffect(() => {
-    setUaId(detail.unidade_administrativa_id)
-  }, [detail.unidade_administrativa_id])
   // Schema zod dinamico: text = string; secret = string opcional (mantem mascara se vazio).
   const schema = React.useMemo(() => {
     const shape: Record<string, z.ZodTypeAny> = {}
@@ -429,7 +440,7 @@ function CredenciaisForm({
             <Divider />
             <UASelector
               uaId={uaId}
-              onChange={setUaId}
+              onChange={handleUaChange}
               uas={uasQuery.data ?? []}
               loading={uasQuery.isLoading}
             />

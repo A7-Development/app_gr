@@ -351,8 +351,8 @@ export function DataTable<TData>({
         <ErrorState message={error} onRetry={onRetry} />
       ) : (
         <div ref={parentRef} className="flex-1 overflow-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead className="sticky top-0 z-10 bg-white dark:bg-gray-950">
+          <table className="w-full border-collapse text-[13px]">
+            <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-gray-900/60">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
                   {hg.headers.map((header) => (
@@ -361,9 +361,9 @@ export function DataTable<TData>({
                       colSpan={header.colSpan}
                       style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}
                       className={cx(
-                        "h-9 border-b border-gray-200 dark:border-gray-800 px-3",
-                        "text-left text-[11px] font-medium uppercase tracking-[0.06em]",
-                        "text-gray-500 dark:text-gray-500 whitespace-nowrap select-none",
+                        "h-7 border-b border-gray-200 dark:border-gray-800 px-4",
+                        "text-left text-[10px] font-semibold uppercase tracking-[0.05em]",
+                        "text-gray-400 dark:text-gray-500 whitespace-nowrap select-none",
                         header.column.getCanSort() && "cursor-pointer hover:text-gray-700 dark:hover:text-gray-300",
                       )}
                       onClick={header.column.getToggleSortingHandler()}

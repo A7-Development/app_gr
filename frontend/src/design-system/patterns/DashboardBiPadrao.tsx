@@ -33,11 +33,11 @@
 
 import * as React from "react"
 import {
-  RiLinkM,
   RiCalendarLine,
   RiCheckLine,
   RiDownloadLine,
 } from "@remixicon/react"
+import { toast } from "sonner"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 import type { EChartsOption } from "echarts"
 
@@ -49,6 +49,9 @@ import {
 } from "@/components/tremor/TabNavigation"
 
 import { PageHeader } from "@/design-system/components/PageHeader"
+import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
+import { ProvenanceFooter, type ProvenanceSource } from "@/design-system/components/ProvenanceFooter"
+import { VizParam } from "@/design-system/components/VizParam"
 import {
   KpiCard,
   KpiStrip,
@@ -73,7 +76,6 @@ import {
 import { DrillDownSheet } from "@/design-system/components/DrillDownSheet"
 import {
   AIPanel,
-  AIToggleButton,
   useAIPanel,
   type AIInsight,
 } from "@/design-system/components/AIPanel"
@@ -107,7 +109,7 @@ const MOCK_INSIGHTS: AIInsight[] = [
   { text: "Volume de cessoes crescendo pelo 4° mes consecutivo. PL estimado em R$ 130M ate jul/26." },
 ]
 
-const MOCK_PROVENANCE = [
+const MOCK_PROVENANCE: ProvenanceSource[] = [
   { label: "Bitfin",   updated: "ha 12 min", sla: "15 min", stale: false },
   { label: "CIP/CERC", updated: "ha 8 min",  sla: "30 min", stale: false },
   { label: "PDD",      updated: "ha 47 min", sla: "30 min", stale: true  },
@@ -259,39 +261,6 @@ const SPARK_PL   = [100, 108, 104, 112, 118, 115, 122, 120, 124, 125, 128, 131]
 const SPARK_RENT = [108, 109, 110, 112, 111, 113, 112, 114, 115, 112, 113, 114]
 const SPARK_INAD = [2.8, 2.9, 3.0, 2.9, 3.1, 3.0, 3.1, 3.2, 3.1, 3.2, 3.1, 3.2]
 const SPARK_PDD  = [2.2, 2.1, 2.0, 2.1, 2.2, 2.1, 2.0, 2.1, 2.1, 2.0, 2.1, 2.1]
-
-function VizParam({
-  options,
-  value,
-  onChange,
-}: {
-  options:  readonly string[]
-  value:    string
-  onChange: (v: string) => void
-}) {
-  return (
-    <div className="flex gap-0.5">
-      {options.map((opt) => {
-        const active = opt === value
-        return (
-          <button
-            key={opt}
-            type="button"
-            onClick={() => onChange(opt)}
-            className={cx(
-              "rounded-sm border px-2 py-0.5 text-[11px] transition-colors",
-              active
-                ? "border-blue-500 bg-blue-500 text-white"
-                : "border-gray-200 bg-transparent text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800",
-            )}
-          >
-            {opt}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
 
 function VisaoGeralTab({ onRowClick }: { onRowClick: (row: CessaoRow) => void }) {
   const [plPeriod, setPlPeriod] = React.useState("12M")
@@ -466,32 +435,6 @@ const CESSOES_COLUMNS: ColumnDef<CessaoRow, unknown>[] = [
 // Provenance footer (mock — pagina real usa <ProvenanceFooter /> do bi/)
 // ───────────────────────────────────────────────────────────────────────────
 
-function MockProvenanceFooter() {
-  return (
-    <div className="flex shrink-0 flex-wrap items-center gap-4 border-t border-gray-200 bg-gray-50 px-6 py-1.5 dark:border-gray-800 dark:bg-gray-900/40">
-      {MOCK_PROVENANCE.map((s) => (
-        <div key={s.label} className="flex items-center gap-1.5">
-          <span
-            aria-hidden="true"
-            className={cx(
-              "size-1.5 rounded-full",
-              s.stale ? "bg-amber-500" : "bg-emerald-500",
-            )}
-          />
-          <span className="text-[11px] text-gray-600 dark:text-gray-400">
-            <span className="font-medium text-gray-900 dark:text-gray-50">{s.label}</span>
-            {" · "}
-            {s.updated}
-          </span>
-          <span className="text-[10px] text-gray-400 dark:text-gray-600">
-            SLA {s.sla}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // ───────────────────────────────────────────────────────────────────────────
 // DashboardBiPadrao — page-level pattern
 // ───────────────────────────────────────────────────────────────────────────
@@ -540,8 +483,14 @@ export function DashboardBiPadrao() {
     [period, fundo, tipo, search],
   )
 
-  const handleCopyLink = React.useCallback(() => {
-    void navigator.clipboard?.writeText(window.location.href)
+  const handleShare = React.useCallback(() => {
+    // Stub: substituir por dialog de compartilhamento real (Slack, email, etc).
+    toast.info("Compartilhar — em breve")
+  }, [])
+
+  const handleExport = React.useCallback(() => {
+    // Stub: substituir por menu de export (CSV, PDF, PNG do dashboard).
+    toast.info("Exportar — em breve")
   }, [])
 
   return (
@@ -555,13 +504,11 @@ export function DashboardBiPadrao() {
             title="BI · Pagina padrao"
             info="Template canonico de dashboard BI: KPIs + insights IA + grid 60/40 + tabela + drill-down."
             actions={
-              <>
-                <AIToggleButton open={ai.open} onClick={ai.toggle} />
-                <Button variant="secondary" onClick={handleCopyLink}>
-                  <RiLinkM className="size-4 shrink-0" aria-hidden="true" />
-                  Copiar link
-                </Button>
-              </>
+              <DashboardHeaderActions
+                ai={{ open: ai.open, onToggle: ai.toggle }}
+                onShare={handleShare}
+                onExport={handleExport}
+              />
             }
           />
         </div>
@@ -740,7 +687,7 @@ label="Cessoes Pendentes"
         </div>
 
         {/* Z5 — ProvenanceFooter (mock para handoff) */}
-        <MockProvenanceFooter />
+        <ProvenanceFooter sources={MOCK_PROVENANCE} />
       </div>
 
       {/* AI Panel — drawer in-layout */}

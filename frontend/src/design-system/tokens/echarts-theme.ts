@@ -26,8 +26,11 @@ export function getEChartsTheme(mode: "light" | "dark") {
       },
     },
     legend: {
+      icon: "circle" as const,
+      itemWidth: 8,
+      itemHeight: 8,
       textStyle: {
-        fontSize: 12,
+        fontSize: 11,
         color: d ? "#9CA3AF" : "#6B7280",
       },
     },
@@ -40,6 +43,7 @@ export function getEChartsTheme(mode: "light" | "dark") {
       color: d ? "#9CA3AF" : "#6B7280",
     },
     axisTick: {
+      show: false,
       lineStyle: { color: d ? "#374151" : "#E5E7EB" },
     },
     splitLine: {

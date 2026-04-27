@@ -81,7 +81,7 @@ export function VizCard({
         )}
       </header>
       <div className={cx("px-4 pb-4", bodyClassName)}>{children}</div>
-      {source && <OriginDot source={source} updatedAtISO={updatedAtISO} />}
+      {source && <OriginDot variant="pinned" source={source} updatedAtISO={updatedAtISO} />}
     </section>
   )
 }

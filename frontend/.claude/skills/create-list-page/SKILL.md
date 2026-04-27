@@ -11,6 +11,15 @@ Use esta skill para criar qualquer pagina cuja funcao principal e **listar regis
 
 Ler `CLAUDE.md` na raiz do monorepo antes de qualquer coisa. As regras de design system sao nao-negociaveis.
 
+> **🔓 Modo Iteracao de Design ativo** (ver banner em `CLAUDE.md` raiz):
+> Durante este periodo, ao criar pagina nova:
+> - Valores arbitrarios de Tailwind aceitaveis (`text-[Npx]`, `rounded-[Npx]`, `gap-[Npx]`).
+> - Hex literals e `rgba(...)` aceitaveis em codigo de componente/surface.
+> - Inline styles `style={{...}}` aceitaveis para efeitos especificos do handoff.
+> - Cores Tailwind fora da paleta canonica §4 aceitaveis quando do handoff.
+> - **Continuam invioaveis**: §2 stack, §3 6 camadas, §11.6 hierarquia 3 niveis, idioma pt-BR.
+> Lock-down volta com promocao a tokens nomeados.
+
 ## Informacoes a coletar (via AskUserQuestion se nao vieram no pedido)
 
 1. **Nome do dominio** (ex.: "contratos", "fornecedores") — define o segmento de rota e a pasta.

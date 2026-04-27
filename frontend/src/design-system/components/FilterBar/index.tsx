@@ -129,10 +129,10 @@ export function FilterChip({ label, value, active = false, icon: Icon, children,
     <button
       type="button"
       className={cx(
-        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded border px-2.5 py-1 text-xs",
+        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2 py-[3px] text-xs",
         "transition-colors duration-100",
         active
-          ? "border-blue-400 bg-blue-50 hover:bg-blue-100 dark:border-blue-500 dark:bg-blue-500/10 dark:hover:bg-blue-500/15"
+          ? "border-blue-300 bg-blue-50 hover:bg-blue-100 dark:border-blue-500 dark:bg-blue-500/10 dark:hover:bg-blue-500/15"
           : "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 dark:hover:bg-gray-900",
         focusRing,
         className,
@@ -183,7 +183,7 @@ interface RemovableChipProps {
 export function RemovableChip({ label, value, onRemove, className }: RemovableChipProps) {
   return (
     <div className={cx(
-      "inline-flex items-center gap-1.5 rounded border px-2 py-1 text-xs",
+      "inline-flex items-center gap-1.5 rounded-[4px] border px-2 py-[3px] text-xs",
       "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
       className,
     )}>
@@ -214,10 +214,10 @@ export function MoreFiltersButton({ onClick, count, className }: MoreFiltersButt
       type="button"
       onClick={onClick}
       className={cx(
-        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded border px-2.5 py-1 text-xs transition-colors duration-100",
+        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2 py-[3px] text-xs transition-colors duration-100",
         hasCount
-          ? "border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-500 dark:bg-blue-500/10 dark:text-blue-300"
-          : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300",
+          ? "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-500 dark:bg-blue-500/10 dark:text-blue-300"
+          : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-400",
         focusRing,
         className,
       )}

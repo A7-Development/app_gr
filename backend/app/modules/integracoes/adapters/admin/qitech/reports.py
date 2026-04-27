@@ -17,6 +17,8 @@ a credencial do tenant correto — isolamento fica garantido la em cima.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import date
 from typing import Any
 
@@ -24,6 +26,8 @@ import httpx
 
 from app.modules.integracoes.adapters.admin.qitech.endpoints import E_REPORT_MARKET
 from app.modules.integracoes.adapters.admin.qitech.errors import QiTechHttpError
+
+logger = logging.getLogger(__name__)
 
 # Catalogo de valores conhecidos para `tipo-de-mercado` no path do endpoint
 # GET /v2/netreport/report/market/{tipo-de-mercado}/{data}.
@@ -100,9 +104,32 @@ async def fetch_market_report(
         tipo_de_mercado=tipo_de_mercado,
         data=posicao.isoformat(),
     )
-    try:
-        resp = await client.request(E_REPORT_MARKET.method, path)
-    except httpx.HTTPError as e:
+    # Retry leve em timeout transitorio (mesmo padrao do auth._request_token).
+    # Singulare apresenta hiccup esporadico nesses endpoints (validado
+    # 2026-04-27 em loop de repopulacao). Erros HTTP reais (4xx/5xx) NAO
+    # entram aqui — sao tratados depois da resposta.
+    last_error: httpx.HTTPError | None = None
+    resp: httpx.Response | None = None
+    for attempt in range(2):
+        try:
+            resp = await client.request(E_REPORT_MARKET.method, path)
+            last_error = None
+            break
+        except (httpx.ConnectTimeout, httpx.ReadTimeout) as e:
+            last_error = e
+            if attempt == 0:
+                logger.warning(
+                    "qitech.reports: timeout transitorio em %s (%s); retry em 1s",
+                    path,
+                    type(e).__name__,
+                )
+                await asyncio.sleep(1.0)
+                continue
+        except httpx.HTTPError as e:
+            last_error = e
+            break
+    if last_error is not None or resp is None:
+        e = last_error
         raise QiTechHttpError(
             f"falha de rede em {E_REPORT_MARKET.method} {path}: "
             f"{type(e).__name__}({e!r})",

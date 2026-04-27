@@ -2,6 +2,9 @@
 
 Design system canonico do projeto GR. Tudo que aparece na UI vem daqui ou de `@/components/tremor/` (primitivos verbatim) ou `@/components/charts/` (charts Tremor verbatim).
 
+> **🔓 Modo Iteracao de Design ativo** (ver banner em `CLAUDE.md` raiz):
+> Regras abaixo sobre valores arbitrarios (`text-[Npx]`, `rounded-[Npx]`, hex literals em componentes/surfaces, magic spacing) e cores fora da paleta sao **temporariamente suspensas** para fidelidade pixel ao handoff. Demais regras (libs §2, 6 camadas §3, primitivos Tremor, bounded contexts) seguem invioaveis. Lock-down volta com tokens nomeados.
+
 > **Regra absoluta** (CLAUDE.md §1): nada fora destas 3 fontes pode aparecer na UI. Sem ad-hoc, sem cores arbitrarias, sem Tailwind cru de cor.
 
 ---

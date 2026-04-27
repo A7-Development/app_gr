@@ -201,10 +201,10 @@ const kpiCardVariants = tv({
         deltaCls:  "text-[11px]",
       },
       default: {
-        root:      "gap-0.5",
+        root:      "gap-1.5",
         labelCls:  "text-[11px] tracking-[0.05em]",
-        valueWrap: "gap-0.5",
-        valueCls:  "text-[24px] leading-none",
+        valueWrap: "gap-1.5",
+        valueCls:  "text-[22px] leading-none",
         subCls:    "text-[12px]",
         deltaCls:  "text-[11px]",
       },
