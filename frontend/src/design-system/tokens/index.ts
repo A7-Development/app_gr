@@ -10,8 +10,16 @@ export const tokens = {
       navyDark:    "#050814",
       orange:      "#F05A28",
       orangeLight: "#FF7A4D",
+      orangeGlow:  "rgba(240,90,40,0.18)",
+      orangeGlowMid: "rgba(240,90,40,0.05)",
       blue:        "#3B82F6",
       blueHover:   "#2563EB",
+      heroLine:    "rgba(255,255,255,0.04)",
+      heroLineStrong: "rgba(255,255,255,0.055)",
+      heroBodyText: "rgba(255,255,255,0.62)",
+      heroEyebrow:  "rgba(255,255,255,0.60)",
+      heroDivider:  "rgba(255,255,255,0.15)",
+      heroTrust:    "rgba(255,255,255,0.38)",
     },
     status: {
       "em-dia":       { fg: "#16A34A", bg: "rgba(22,163,74,.10)",   fgDark: "#4ADE80", bgDark: "rgba(74,222,128,.10)" },
@@ -58,6 +66,18 @@ export const tokens = {
       standard:   "cubic-bezier(0.4, 0, 0.2, 1)",
       decelerate: "cubic-bezier(0.16, 1, 0.3, 1)",
       accelerate: "cubic-bezier(0.4, 0, 1, 1)",
+    },
+  },
+  // Typography scale for `surfaces/` (login, splash, marketing).
+  // NOT for use in authenticated pages — they use the Tremor scale.
+  typography: {
+    hero: {
+      display:   { fontSize: "52px", fontWeight: 600, lineHeight: 1.08, letterSpacing: "-0.025em" },
+      lede:      { fontSize: "17px", fontWeight: 400, lineHeight: 1.65, letterSpacing: "0" },
+      eyebrow:   { fontSize: "12px", fontWeight: 500, lineHeight: 1, letterSpacing: "0.08em", textTransform: "uppercase" as const },
+      formTitle: { fontSize: "26px", fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.02em" },
+      trust:     { fontSize: "11px", fontWeight: 500, lineHeight: 1, letterSpacing: "0.02em" },
+      wordmark:  { fontSize: "30px", fontWeight: 700, lineHeight: 1, letterSpacing: "-0.03em" },
     },
   },
 } as const

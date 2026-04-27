@@ -1071,3 +1071,145 @@ export const cadastros = {
   deleteUA: (id: string) =>
     apiClient.delete<void>(`/cadastros/unidades-administrativas/${id}`),
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Controladoria · Cota Sub
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type PlCategoriaKey =
+  | "compromissada"
+  | "mezanino"
+  | "senior"
+  | "titulos_publicos"
+  | "fundos_di"
+  | "dc"
+  | "op_estruturadas"
+  | "outros_ativos"
+  | "pdd"
+  | "cpr"
+  | "tesouraria"
+
+export type PlCategoria = {
+  key:    PlCategoriaKey
+  label:  string
+  d1:     number
+  d0:     number
+  delta:  number
+  source: string
+}
+
+export type DecomposicaoSinal = "ganho" | "prejuizo" | "neutro"
+
+export type DecomposicaoItem = {
+  key:   string
+  label: string
+  valor: number
+  sinal: DecomposicaoSinal
+}
+
+export type ApropriacaoDcLinha = {
+  estoque_d1:  number
+  aquisicoes:  number
+  liquidados:  number
+  estoque_d0:  number
+  apropriacao: number
+}
+
+export type ApropriacaoDc = {
+  a_vencer: ApropriacaoDcLinha
+  vencidos: ApropriacaoDcLinha
+  total:    number
+}
+
+export type CprMovimentoItem = { descricao: string; valor: number }
+
+export type CprDetalhado = {
+  receber_d1: CprMovimentoItem[]
+  receber_d0: CprMovimentoItem[]
+  pagar_d1:   CprMovimentoItem[]
+  pagar_d0:   CprMovimentoItem[]
+  total_d1:   number
+  total_d0:   number
+  variacao:   number
+}
+
+export type VariacaoDiariaResponse = {
+  fundo_id:           string
+  fundo_nome:         string
+  data:               string  // ISO date
+  data_anterior:      string  // ISO date
+  pl_d1:              number
+  pl_d0:              number
+  pl_delta:           number
+  pl_delta_pct:       number
+  categorias:         PlCategoria[]
+  decomposicao:       DecomposicaoItem[]
+  decomposicao_total: number
+  divergencia:        number
+  apropriacao_dc:     ApropriacaoDc
+  cpr_detalhado:      CprDetalhado
+}
+
+// Pydantic v2 serializa Decimal como string. Convertemos para number aqui pra
+// manter os tipos do frontend numericos. Precisao suficiente para displays;
+// se algum calculo critico precisar Decimal, troca para `decimal.js`.
+function _coerceCategoria(c: PlCategoria): PlCategoria {
+  return { ...c, d1: Number(c.d1), d0: Number(c.d0), delta: Number(c.delta) }
+}
+function _coerceDecomp(d: DecomposicaoItem): DecomposicaoItem {
+  return { ...d, valor: Number(d.valor) }
+}
+function _coerceLinha(l: ApropriacaoDcLinha): ApropriacaoDcLinha {
+  return {
+    estoque_d1:  Number(l.estoque_d1),
+    aquisicoes:  Number(l.aquisicoes),
+    liquidados:  Number(l.liquidados),
+    estoque_d0:  Number(l.estoque_d0),
+    apropriacao: Number(l.apropriacao),
+  }
+}
+function _coerceCprItem(i: CprMovimentoItem): CprMovimentoItem {
+  return { ...i, valor: Number(i.valor) }
+}
+function _coerceVariacao(r: VariacaoDiariaResponse): VariacaoDiariaResponse {
+  return {
+    ...r,
+    pl_d1:              Number(r.pl_d1),
+    pl_d0:              Number(r.pl_d0),
+    pl_delta:           Number(r.pl_delta),
+    pl_delta_pct:       Number(r.pl_delta_pct),
+    decomposicao_total: Number(r.decomposicao_total),
+    divergencia:        Number(r.divergencia),
+    categorias:         r.categorias.map(_coerceCategoria),
+    decomposicao:       r.decomposicao.map(_coerceDecomp),
+    apropriacao_dc: {
+      a_vencer: _coerceLinha(r.apropriacao_dc.a_vencer),
+      vencidos: _coerceLinha(r.apropriacao_dc.vencidos),
+      total:    Number(r.apropriacao_dc.total),
+    },
+    cpr_detalhado: {
+      receber_d1: r.cpr_detalhado.receber_d1.map(_coerceCprItem),
+      receber_d0: r.cpr_detalhado.receber_d0.map(_coerceCprItem),
+      pagar_d1:   r.cpr_detalhado.pagar_d1.map(_coerceCprItem),
+      pagar_d0:   r.cpr_detalhado.pagar_d0.map(_coerceCprItem),
+      total_d1:   Number(r.cpr_detalhado.total_d1),
+      total_d0:   Number(r.cpr_detalhado.total_d0),
+      variacao:   Number(r.cpr_detalhado.variacao),
+    },
+  }
+}
+
+export const controladoria = {
+  cotaSubVariacaoDiaria: async (
+    fundoId: string,
+    data: string,           // YYYY-MM-DD
+    dataAnterior?: string,  // YYYY-MM-DD opcional (override de D-1)
+  ): Promise<VariacaoDiariaResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    const raw = await apiClient.get<VariacaoDiariaResponse>(
+      `/controladoria/cota-sub/variacao-diaria?${params.toString()}`,
+    )
+    return _coerceVariacao(raw)
+  },
+}

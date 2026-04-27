@@ -53,7 +53,7 @@ Instalar qualquer biblioteca fora desta tabela exige autorizacao explicita do us
 
 ---
 
-## 3. Arquitetura em 5 camadas (Strata Design System)
+## 3. Arquitetura em 6 camadas (Strata Design System)
 
 ```
 src/components/tremor/             <- Primitivos Tremor Raw (verbatim da doc).
@@ -63,6 +63,8 @@ src/components/charts/             <- Charts do Tremor (verbatim). Mesma regra.
 
 src/design-system/tokens/          <- Tokens TS espelhando CSS vars do globals.css.
                                        (colors, fonts, spacing, radius, motion, echarts-theme).
+                                       Inclui paleta de marca Strata (navy, navy-dark, orange)
+                                       e escala tipografica hero — uso restrito a surfaces/.
 
 src/design-system/primitives/      <- Barrel re-exporta `tremor/*` + Sheet (right-side drawer).
                                        Ponto de entrada unico para primitivas.
@@ -77,12 +79,23 @@ src/design-system/components/      <- Componentes do Strata Design System (FIDC-
                                        bruto de cor / Radix cru.
 
 src/design-system/patterns/        <- Composicoes copy-paste-edit (DashboardOperacional,
-                                       ListagemComDrilldown). Templates de pagina.
+                                       ListagemComDrilldown). Templates de pagina autenticada.
+
+src/design-system/surfaces/        <- Superficies de marca (NAO sao dashboards).
+                                       Login, splash, 404/500, marketing/landing publica.
+                                       Templates: HeroSplitAuth (e futuros).
+                                       Unica camada com permissao de usar paleta Strata
+                                       (navy/navy-dark/orange), gradientes de marca, e
+                                       inline styles para efeitos nao-expressaveis em Tailwind
+                                       (radial-gradient multi-stop, SVG pattern fills) —
+                                       sempre referenciando tokens, zero hex literal solto.
 
 src/components/<dominio>/          <- Componentes amarrados a um dominio especifico
                                        (ex.: "bi", "contratos", "fornecedores").
                                        Compostos de design-system/ + tremor/ + charts/.
 ```
+
+**Catalogo completo de componentes:** ver [`frontend/src/design-system/components/README.md`](frontend/src/design-system/components/README.md) — registro vivo dos 37 componentes (9 canonicos do handoff Strata + 28 A7 Credit composites como `PageHeader`, `ModuleSwitcher`, `AuthGuard`, `Breadcrumbs`, `OriginDot`, `FilterPill`, `CardMenu`, `CompactSeriesTable`, etc.). Antes de criar componente novo, consulte este catalogo — provavelmente ja existe.
 
 **Imports permitidos por camada:**
 
@@ -92,6 +105,7 @@ src/components/<dominio>/          <- Componentes amarrados a um dominio especif
 - `design-system/primitives/` importa: `@/components/tremor/*` + nova `Sheet.tsx`.
 - `design-system/components/` importa: `@/components/tremor/*`, `@/components/charts/*`, `@/design-system/tokens/*`, `@/design-system/primitives/*`, `@/lib/*`, `@remixicon/react`, primitivos Radix **sem equivalente no Tremor** (ex.: `@radix-ui/react-avatar`, `@radix-ui/react-hover-card`), `cmdk`, `echarts-for-react`. **Proibido**: Radix para o que o Tremor ja cobre, Recharts direto, classes de cor Tailwind ad-hoc.
 - `design-system/patterns/` importa: `@/design-system/components/*` + `@/design-system/tokens/*` + `@/components/tremor/*`. **Sao templates copiaveis** — escopo: composicao + dados de exemplo.
+- `design-system/surfaces/` importa: `@/components/tremor/*` + `@/design-system/primitives/*` + `@/design-system/tokens/*` (incluindo `tokens.colors.brand` e `tokens.typography.hero`) + `@remixicon/react` + assets de marca (logo SVG). **Proibido**: importar de `@/design-system/components/*` (componentes de dashboard nao pertencem a superficie de marca), importar de `<dominio>/*`, hex literal solto fora de `tokens/`.
 - `<dominio>/` importa: `@/design-system/*`, `@/components/tremor/*`, `@/components/charts/*`, hooks de dominio, types de dominio. **Nunca importa de outro dominio.**
 
 **Barrel oficial:** `import { ... } from "@/design-system/components"` re-exporta tudo.
@@ -110,16 +124,53 @@ src/components/<dominio>/          <- Componentes amarrados a um dominio especif
 | **Dados (chart)** — paleta A7 Credit | cores de `chartColors` em `@/lib/chartUtils`, na ordem canonica: `slate` → `sky` → `teal` → `emerald` → `amber` → `rose` → `violet` → `indigo`. `blue`/`gray`/`cyan`/`pink`/`lime`/`fuchsia` existem no dicionario mas **nao iteram no default** — use por override explicito. | **apenas em `src/components/charts/`** ou quando a cor vier dinamicamente de `getColorClassName()`. `slate` (1a serie) escolhido por ser azul-acinzentado de baixa saturacao — nao cansa durante horas de analise. |
 
 **Proibido:**
-- Valores arbitrarios de cor: `text-[#123abc]`, `bg-[rgb(...)]`, `border-[hsl(...)]`.
+- Valores arbitrarios de cor em **classes Tailwind**: `text-[#123abc]`, `bg-[rgb(...)]`, `border-[hsl(...)]`.
 - **`slate-*` como cor de atencao/selecao** — use `blue-*`. `slate` e exclusivamente para dados de chart + neutros raros.
 - **`blue-*` como cor de serie default em chart** — a 1a cor iteravel da paleta A7 e `slate`, nao `blue`. `blue` so como override explicito `<Chart colors={["blue"]}>`.
 - Cores Tailwind fora das categorias acima: `orange-*`, `purple-*`, `yellow-*`, `stone-*`, `zinc-*`, `neutral-*`. (`teal`, `sky`, `rose`, `indigo`, `violet` estao liberadas **somente para series de chart**, via `chartUtils`.)
 - Usar cores de dados (`emerald`, `teal`, `rose`, etc) como cor semantica geral fora de charts (ex.: `bg-emerald-500` em badge de "ativo" — use `Badge variant="success"` do Tremor).
 - Gradientes manuais (`bg-gradient-to-*` com cores arbitrarias).
 
+**Excecao explicita — ECharts option objects:** hex literals (`#3B82F6`, `#F59E0B`, `#10B981`, etc.) sao **permitidos** dentro de `EChartsOption` (em `series[].itemStyle.color`, `lineStyle.color`, `areaStyle.color.colorStops`, gradientes de eixo, etc.) porque Tailwind nao alcanca o renderer do canvas. Preferir, quando viavel, valores de `tokens.colors.chart` ou nomes Tremor mapeados — hex inline e aceitavel quando o tipo da `EChartsOption` exige string de cor.
+
 **Dark mode:** sempre suportar. Usar as mesmas classes que o Tremor usa (`dark:bg-gray-950`, `dark:text-gray-50`, `dark:border-gray-800`). O `<html>` ja tem `dark:bg-gray-950` em `layout.tsx`.
 
 **Espacamento, tipografia, radius:** herdar do Tremor. Sem classes magicas (`text-[13px]`, `p-[7px]`). Se precisar de um tamanho que o Tremor nao cobre, pare e discuta.
+
+### 4.1 Tokens de marca Strata (escopo restrito a `surfaces/`)
+
+A paleta institucional da marca (navy + laranja Strata) e **separada** da paleta de produto (gray/blue/red + chart). Ela vive em `tokens.colors.brand`:
+
+| Token | Hex | Uso |
+|---|---|---|
+| `tokens.colors.brand.navy` | `#1B2B4B` | Hero zone (background base) |
+| `tokens.colors.brand.navyDark` | `#050814` | Hero zone (gradient stop final) |
+| `tokens.colors.brand.orange` | `#F05A28` | Logo Strata (StrataIcon), eyebrow de marca, glow do hero |
+| `tokens.colors.brand.orangeLight` | `#FF7A4D` | Highlight de marca (hover/destaque) |
+| `tokens.colors.brand.blue` | `#3B82F6` | CTA primario em superficie de marca (alinhado com `blue-500` do produto) |
+| `tokens.colors.brand.blueHover` | `#2563EB` | Hover do CTA |
+
+**Regras duras:**
+
+1. **Brand tokens sao permitidos APENAS em `src/design-system/surfaces/*`** (login, splash, 404/500, marketing). Pagina autenticada (`src/app/(app)/*`) **nao pode** importar `tokens.colors.brand` — la vale a paleta da §4 acima.
+2. **StrataIcon (logo SVG com hexagono laranja)** e a unica excecao: pode aparecer em qualquer superficie como elemento de marca (ex.: header sticky do app), porque suas cores ja vem hardcoded no SVG e nao se propagam pra Tailwind.
+3. **Gradientes de marca permitidos** em `surfaces/` quando todos os stops sao `tokens.colors.brand.*` ou `gray-*`. Exemplos validos: `linear-gradient(135deg, brand.navy 0%, brand.navyDark 100%)`, `radial-gradient(... brand.orange/.18 ...)`. Continua proibido gradiente com `purple-*`, `orange-500` Tailwind ou hex solto.
+4. **`brand.orange` e identidade, nao status.** Nao reutilize laranja Strata para significar "alerta", "pendente", "atrasado-60" — para isso use `tokens.colors.status.atrasado-60` ou `Badge variant="warning"`.
+
+### 4.2 Tipografia hero (escopo restrito a `surfaces/`)
+
+Escala separada da escala Tremor padrao, registrada em `tokens.typography.hero`:
+
+| Token | Tamanho / peso / line-height / tracking | Uso |
+|---|---|---|
+| `hero.display` | 52px / 600 / 1.08 / -0.025em | Headline principal do hero (ex.: "Inteligencia de fundos creditorios.") |
+| `hero.lede` | 17px / 400 / 1.65 / 0 | Subhead descritivo abaixo da headline |
+| `hero.eyebrow` | 12px / 500 / 1 / 0.08em uppercase | Caption sob o wordmark ("FIDC ANALYTICS") |
+| `hero.formTitle` | 26px / 700 / 1.2 / -0.02em | Titulo do form ("Acesse sua conta") |
+| `hero.trust` | 11px / 500 / 1 / 0.02em | Selos de compliance ("CVM compliant", "ISO 27001") |
+| `hero.wordmark` | 30px / 700 / 1 / -0.03em | Wordmark "Strata" no lockup |
+
+Uso de `hero.*` fora de `surfaces/` e bloqueador de PR. Pagina autenticada continua na escala Tremor (`text-sm`, `text-base`, `text-xl`, etc).
 
 ---
 
@@ -130,7 +181,10 @@ src/components/<dominio>/          <- Componentes amarrados a um dominio especif
 - **Componentes:** `function Component() { return (...) }` exportado. Props tipadas com `type`, nao `interface`, a menos que precise de extends.
 - **`use client`** so quando necessario (interatividade, hooks de browser). Por padrao, Server Components.
 - **Nenhum `any`** em codigo de dominio. Em codigo verbatim do Tremor, preservar com `// eslint-disable-next-line @typescript-eslint/no-explicit-any`.
-- **Nada de inline styles** (`style={{...}}`) exceto quando o Tremor exige (ex.: `style={{ color }}` em cores dinamicas via paleta).
+- **Nada de inline styles** (`style={{...}}`) exceto quando:
+  - O Tremor exige (ex.: `style={{ color }}` em cores dinamicas via paleta).
+  - Codigo em `src/design-system/surfaces/*` precisa expressar efeito **nao representavel em Tailwind** (radial-gradient multi-stop, SVG pattern fills, layered backgrounds com positioning especifico). Mesmo nesse caso, **todo valor referencia tokens** — proibido hex literal solto. Ex.: `background: \`linear-gradient(135deg, ${tokens.colors.brand.navy}, ${tokens.colors.brand.navyDark})\``.
+  - Cores, gradientes e tipografia dentro de `EChartsOption` (series, axis, tooltip). Tailwind nao chega no canvas do ECharts. Preferir `tokens.colors.chart`; hex inline aceitavel quando o tipo exige.
 
 ---
 
@@ -149,18 +203,28 @@ src/components/<dominio>/          <- Componentes amarrados a um dominio especif
 
 ---
 
-## 7. Paginas e rotas — Patterns canonicos
+## 7. Paginas e rotas — Patterns canonicos e Surfaces
 
-Toda pagina nasce de um dos patterns canonicos em `src/design-system/patterns/`:
+Toda **pagina autenticada** (`src/app/(app)/*`) **deve preferir** comecar de um dos patterns canonicos em `src/design-system/patterns/`:
 
-- **DashboardOperacional** — PageHeader + FilterBar + KpiStrip (4 KPIs) + Grid 2×2 EChartsCards + DataTable de atividade recente. Use para `/bi/operacoes`, `/bi/carteira`, `/bi/rentabilidade`.
+- **DashboardBiPadrao** — Pagina canonica do BI (handoff bi-padrao 2026-04-26). 5 zonas: Z1 PageHeader (titulo + IA + acoes) · Z2 TabNavigation L3 · Z3 FilterBar sticky · Z4 conteudo (InsightBar + KpiStrip 5 KPIs + grid 2/3+1/3 + grid 3-col + DataTable) · Z5 ProvenanceFooter. Lateral: AIPanel violeta in-layout + DrillDownSheet. Use para qualquer dashboard analitico (BI, Controladoria, Risco) que envolva KPIs + charts + tabela com drill-down.
+- **DashboardOperacional** — PageHeader + FilterBar + KpiStrip (4 KPIs) + Grid 2×2 EChartsCards + DataTable de atividade recente. Use para dashboards mais simples sem AI panel (`/bi/operacoes` legado, telas operacionais).
 - **ListagemComDrilldown** — PageHeader + FilterBar + DataTable + DrillDownSheet (URL-synced via `?selected=ID`). Use para Cessoes, Cedentes, Sacados, Cobranca, Reconciliacao, Eventos.
 
-Patterns sao **copy-paste-edit** — nao componentes black-box. Copie do pattern, troque os tipos de dominio, adapte os campos. Os comentarios `HOW TO ADAPT:` no topo de cada arquivo guiam a customizacao.
+Toda **pagina nao-autenticada / superficie de marca** (`src/app/(auth)/*`, `src/app/error.tsx`, `not-found.tsx`, futuras paginas publicas) nasce de um template em `src/design-system/surfaces/`:
 
-Antes de escrever uma `page.tsx` nova, pergunte: "qual pattern aplica?". Se nenhum, e sinal de que precisa de discussao, nao de uma excecao.
+- **HeroSplitAuth** — Layout 60/40 com hero zone (gradiente navy + glow laranja + pattern de linhas + logo + headline + trust signals) a esquerda e zona de form a direita. Use para `/login`, `/recover-password`, `/onboarding/welcome`.
+- (futuros) `SplashScreen`, `ErrorPage404`, `ErrorPage500`, `MarketingHero`.
 
-A rota `/design` (dev-only via `process.env.NODE_ENV !== "production"`) mostra todos os tokens, primitives, components e patterns ao vivo. Util como referencia rapida.
+Patterns e surfaces sao **copy-paste-edit** — nao componentes black-box. Copie o pattern para a pasta da pagina, adapte titulo/copy/mocks/charts ao dominio. Os comentarios `HOW TO ADAPT:` no topo de cada arquivo guiam a customizacao. Pages que copiam um pattern e divergem do template sao esperadas, nao excecao.
+
+Antes de escrever uma `page.tsx` nova, pergunte:
+- E pagina autenticada? Qual **pattern** aplica? (BI/Controladoria/Risco com IA → `DashboardBiPadrao`. Listagem → `ListagemComDrilldown`.)
+- E pagina nao-autenticada / pagina de erro / landing? Qual **surface** aplica?
+
+Se nenhum pattern atual couber, componha direto a partir de `design-system/components/` + `tremor/`. Se a estrutura for util a outras telas, **promova-a a pattern** (novo arquivo em `patterns/`) — patterns nascem de pages reais, nao de especulacao.
+
+A rota `/design` (dev-only via `process.env.NODE_ENV !== "production"`) mostra todos os tokens, primitives, components, patterns **e surfaces** ao vivo. Util como referencia rapida.
 
 ---
 
@@ -282,28 +346,48 @@ app/
 ### 11.4 Estrutura de rotas do frontend
 
 ```
-src/app/(app)/
-├── page.tsx              # home global (atalhos por modulo)
-├── bi/...
-├── cadastros/...
-├── operacoes/...
-├── controladoria/...
-├── risco/...
-├── integracoes/...
-├── laboratorio/...
-└── admin/...
-
-src/app/design/           # Strata Design System ao vivo (dev-only via NODE_ENV check)
-src/app/preview/          # paginas de preview/QA (gated em layout)
+src/app/
+├── layout.tsx                # root layout (html, ThemeProvider, QueryProvider, Toaster)
+├── globals.css               # tokens CSS vars + Tailwind directives
+│
+├── (app)/                    # route group AUTENTICADO — envolvido por <AuthGuard>
+│   ├── layout.tsx            # AuthGuard + SidebarProvider + AppSidebar + header sticky
+│   ├── page.tsx              # home global (atalhos por modulo)
+│   ├── bi/...                # rota /bi (operacoes, benchmark, ...)
+│   ├── cadastros/...         # rota /cadastros
+│   ├── operacoes/...         # rota /operacoes (futuro)
+│   ├── controladoria/...     # rota /controladoria (futuro)
+│   ├── risco/...             # rota /risco (futuro)
+│   ├── integracoes/...       # rota /integracoes (catalogo, sync)
+│   ├── laboratorio/...       # rota /laboratorio (futuro)
+│   └── admin/...             # rota /admin (futuro)
+│
+├── (auth)/                   # route group PUBLICO — sem AuthGuard
+│   ├── layout.tsx            # layout minimo (centra o card de login)
+│   └── login/page.tsx        # rota /login
+│
+├── design/                   # rota /design — Strata Design System ao vivo (dev-only via NODE_ENV)
+└── preview/                  # rota /preview/* — paginas de preview/QA (gated em layout)
 ```
+
+**Sobre route groups (`(app)`, `(auth)`):** convencao do Next 14 — diretorios entre parenteses **nao entram na URL**. `src/app/(auth)/login/page.tsx` serve a rota `/login`, nao `/(auth)/login`. Servem para agrupar rotas que compartilham layout (no caso, `(app)` envolve com `<AuthGuard>` + sidebar; `(auth)` deixa rotas publicas sem auth).
+
+**Onde achar coisas comuns** (atalho para skills/agents):
+- Login: [`src/app/(auth)/login/page.tsx`](frontend/src/app/(auth)/login/page.tsx)
+- Sidebar: [`src/design-system/components/Sidebar/index.tsx`](frontend/src/design-system/components/Sidebar/index.tsx) — `<AppSidebar />` self-wired (le `usePathname` + `getActiveModule`)
+- Module switcher: [`src/design-system/components/ModuleSwitcher.tsx`](frontend/src/design-system/components/ModuleSwitcher.tsx)
+- Registro de modulos: [`src/lib/modules.ts`](frontend/src/lib/modules.ts) — `MODULES[]`, `MODULE_AVATAR_COLORS`, `getActiveModule()`, `getVisibleModules()`
+- Breadcrumbs do header: [`src/design-system/components/Breadcrumbs.tsx`](frontend/src/design-system/components/Breadcrumbs.tsx) — `<HeaderBreadcrumbs />`, auto-gerado do `pathname`
+- Auth guard: [`src/design-system/components/AuthGuard.tsx`](frontend/src/design-system/components/AuthGuard.tsx)
+- Catalogo de componentes: [`src/design-system/components/README.md`](frontend/src/design-system/components/README.md)
 
 Cada modulo pode ter seu proprio `layout.tsx` interno e submenus proprios.
 
 ### 11.5 Regras do frontend
 
 - Sidebar: um modulo ativo por vez (selecionado via `ModuleSwitcher`), lista plana das secoes L2 abaixo.
-- Um modulo desabilitado (subscription `enabled=false`) **nao aparece** no `ModuleSwitcher` nem e acessivel.
-- Um modulo sem permissao de usuario (`permission=none`) **nao aparece** no `ModuleSwitcher`.
+- Um modulo desabilitado (subscription `enabled=false`) ou sem permissao do usuario (`permission=none`) **nao aparece na lista principal** do `ModuleSwitcher` e **nao e acessivel** por rota direta.
+- Pode aparecer numa secao secundaria "Em breve" do `ModuleSwitcher` (estado disabled, item nao clicavel) — opcional, usado para sinalizar roadmap ao usuario sem dar acesso. Coerente com §11.6 regra 4.
 - Breadcrumbs hierarquicos: `Modulo > Funcionalidade > Recurso`.
 - Pagina do modulo X nunca importa componentes especificos de modulo Y. Componentes compartilhados ficam em `src/design-system/components/`.
 
@@ -331,7 +415,8 @@ L1 (dropdown no topo): [BI ▾]
 **Regras duras:**
 
 1. **Maximo 3 niveis.** Se surgir L4, o modulo precisa ser dividido OU aquilo vira filtro/modal/drawer — nunca 4o nivel de navegacao.
-2. **Sidebar nao aninha.** Sidebar mostra SO as secoes L2 do modulo ativo, como lista plana. Sem grupos colapsaveis, sem arvore. L3 sempre e `TabNavigation` na pagina.
+2. **Sidebar nao aninha.** Sidebar mostra SO as secoes L2 do modulo ativo, como lista plana — sem grupos colapsaveis, sem arvore clicavel, sem expand/collapse. L3 sempre e `TabNavigation` na pagina.
+   - **Captions tipograficos sao permitidos:** se `ModuleSection.groupLabel` for definido, a sidebar renderiza o texto como separador visual antes do primeiro item do grupo (ex.: "OPERACAO", "FINANCEIRO"). Captions sao **apenas labels textuais nao clicaveis** — nao introduzem hierarquia, nao expandem/colapsam, nao alteram a contagem de niveis. Servem para densificar listas longas dentro de um modulo (ex.: BI agrupa "Visao geral / Operacao / Financeiro / Analise").
 3. **URL e a fonte unica da verdade.** Modulo, secao, tab e filtros sao todos deep-linkaveis (ex.: `/bi/carteira?tab=por-produto&periodo=30d`). O modulo ativo e inferido do pathname.
 4. **Troca entre modulos (L1) e SEMPRE pelo `ModuleSwitcher`** (dropdown no topo da sidebar). O switcher lista os modulos com subscription + permissao; demais ficam em "Em breve" (disabled). Sem icon rail, sem module picker separado do header, sem tabs de modulo.
 5. **Breadcrumbs sticky no header** mostram o path: `Modulo > Secao > Pagina` (L1 > L2 > L3).
@@ -595,9 +680,11 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 
 ## 18. Checklist antes de commitar
 
-### Frontend (pagina)
+### Frontend (pagina autenticada — `src/app/(app)/*`)
 
-- [ ] Usa apenas componentes de `tremor/`, `charts/`, `design-system/` ou do proprio dominio?
+- [ ] Usa apenas componentes de `tremor/`, `charts/`, `design-system/components/` ou do proprio dominio?
+- [ ] Zero import de `@/design-system/surfaces/*` (surfaces sao para paginas nao-autenticadas)?
+- [ ] Zero import de `tokens.colors.brand` ou `tokens.typography.hero`?
 - [ ] Zero `import` de `lucide-react`, `shadcn`, `@mui`, etc?
 - [ ] `cx()` e nao `cn()`?
 - [ ] Icones sao `Ri*` de `@remixicon/react`?
@@ -607,6 +694,18 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] **Pagina respeita regra de 3 niveis (L1 sidebar grupo / L2 sidebar sub-item / L3 TabNavigation)?**
 - [ ] **Sidebar nao aninha em 3+ niveis (L3 sempre como tabs na pagina, nunca sub-sub-item)?**
 - [ ] **Estado de navegacao (modulo/secao/tab/filtros) e deep-linkavel via URL?**
+- [ ] `npx tsc --noEmit` passa?
+- [ ] `npm run build` passa?
+
+### Frontend (superficie de marca — `src/app/(auth)/*`, `error.tsx`, `not-found.tsx`)
+
+- [ ] Composta sobre um template de `src/design-system/surfaces/*` (ex.: `HeroSplitAuth`)?
+- [ ] Cores da marca (`brand.navy`, `brand.navyDark`, `brand.orange`) vem de `tokens.colors.brand` — zero hex literal solto?
+- [ ] Tipografia hero (`hero.display`, `hero.lede`, etc) vem de `tokens.typography.hero`?
+- [ ] Inline styles sao usados **apenas** para efeitos nao-expressaveis em Tailwind (radial-gradient multi-stop, SVG pattern fills) e referenciam tokens?
+- [ ] Form usa `react-hook-form` + `zod` e primitivos Tremor (`Input`, `Label`, `Button`, `Checkbox`)?
+- [ ] Animacoes respeitam `prefers-reduced-motion: reduce`?
+- [ ] Dark mode testado?
 - [ ] `npx tsc --noEmit` passa?
 - [ ] `npm run build` passa?
 

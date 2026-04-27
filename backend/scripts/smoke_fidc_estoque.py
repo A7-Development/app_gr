@@ -70,9 +70,11 @@ async def main() -> int:
             db.add(job)
             await db.commit()
             await db.refresh(job)
-            print(f"[smoke] job criado id={job.id}")
+            local_job_id = job.id
+            print(f"[smoke] job criado id={local_job_id}")
         else:
-            print(f"[smoke] job ja existia id={existing.id} status={existing.status}")
+            local_job_id = existing.id
+            print(f"[smoke] job ja existia id={local_job_id} status={existing.status}")
             if existing.result_downloaded_at is not None:
                 print("[smoke] AVISO: result_downloaded_at preenchido — ja processado")
 
@@ -86,6 +88,7 @@ async def main() -> int:
     async with AsyncSessionLocal() as db:
         result = await process_fidc_estoque_callback(
             db=db,
+            local_job_id=local_job_id,
             qitech_job_id=QITECH_JOB_ID,
             file_link=FILE_LINK,
             qitech_webhook_id=WEBHOOK_ID,

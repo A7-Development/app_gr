@@ -171,31 +171,36 @@ async def _process_group(
         cfg_row = await get_config(
             db, tenant_id, SourceType.ADMIN_QITECH, environment
         )
-    if cfg_row is None:
-        logger.warning(
-            "tenant=%s sem config QiTech mas tem jobs pendentes — pulando",
+
+    config: QiTechConfig | None = None
+    if cfg_row is not None:
+        plain = decrypt_config(cfg_row.config)
+        candidate = QiTechConfig.from_dict(plain)
+        if candidate.has_credentials():
+            config = candidate
+
+    qitech_status_by_id: dict[str, str] = {}
+    if config is None:
+        # Tenant com jobs pendentes mas sem config valida (ex.: config QiTech
+        # removida por migracao multi-UA). Nao da pra pollar a API; ainda
+        # assim aplicamos timeout por idade, senao WAITING fica pendurado
+        # para sempre e este branch se repete a cada tick.
+        logger.debug(
+            "tenant=%s sem config QiTech; aplicando apenas timeout por idade",
             tenant_id,
         )
-        return (0, 0)
-
-    plain = decrypt_config(cfg_row.config)
-    config = QiTechConfig.from_dict(plain)
-    if not config.has_credentials():
-        return (0, 0)
-
-    # Lista jobs na QiTech
-    qitech_jobs = await _list_qitech_jobs_for_tenant(
-        tenant_id=tenant_id,
-        environment=environment,
-        config=config,
-        report_type=report_type,
-    )
-    qitech_status_by_id: dict[str, str] = {}
-    for j in qitech_jobs:
-        task_id = j.get("taskId") or j.get("jobId")
-        st = j.get("status")
-        if task_id and st:
-            qitech_status_by_id[str(task_id)] = str(st)
+    else:
+        qitech_jobs = await _list_qitech_jobs_for_tenant(
+            tenant_id=tenant_id,
+            environment=environment,
+            config=config,
+            report_type=report_type,
+        )
+        for j in qitech_jobs:
+            task_id = j.get("taskId") or j.get("jobId")
+            st = j.get("status")
+            if task_id and st:
+                qitech_status_by_id[str(task_id)] = str(st)
 
     # Atualiza local
     n_updated = 0

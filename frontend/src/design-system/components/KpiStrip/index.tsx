@@ -164,7 +164,7 @@ function AlertBadge({ threshold }: { threshold: AlertThreshold }) {
       aria-label={threshold.message ?? (isWarn ? "Atenção" : "Crítico")}
       title={threshold.message}
       className={cx(
-        "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5",
+        "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-px",
         "text-[10px] font-semibold leading-none",
         isWarn
           ? "bg-[rgba(202,138,4,.12)] text-[#CA8A04]"
@@ -196,15 +196,15 @@ const kpiCardVariants = tv({
         root:      "gap-1",
         labelCls:  "text-[10px] tracking-[0.05em]",
         valueWrap: "gap-1",
-        valueCls:  "text-[18px]",
+        valueCls:  "text-[18px] leading-none",
         subCls:    "text-[11px]",
         deltaCls:  "text-[11px]",
       },
       default: {
-        root:      "gap-1.5",
+        root:      "gap-0.5",
         labelCls:  "text-[11px] tracking-[0.05em]",
-        valueWrap: "gap-1.5",
-        valueCls:  "text-[22px]",
+        valueWrap: "gap-0.5",
+        valueCls:  "text-[24px] leading-none",
         subCls:    "text-[12px]",
         deltaCls:  "text-[11px]",
       },
@@ -212,7 +212,7 @@ const kpiCardVariants = tv({
         root:      "gap-2",
         labelCls:  "text-sm tracking-[0.04em]",
         valueWrap: "gap-2",
-        valueCls:  "text-4xl",
+        valueCls:  "text-4xl leading-none",
         subCls:    "text-sm",
         deltaCls:  "text-xs",
       },
@@ -320,8 +320,18 @@ export function KpiCard({
 }
 
 export function KpiStrip({ children, className }: { children: React.ReactNode; className?: string }) {
+  // Handoff bi-padrao: KPIs vivem dentro de um painel (bg + border + shadow + padding).
+  // Ref: page-padrao-bi/Components.jsx KpiStrip — { padding:'18px 20px', background:'var(--panel)',
+  // border:'1px solid var(--border)', borderRadius:6, boxShadow:'var(--shadow-xs)' }.
   return (
-    <div className={cx("grid grid-cols-2 gap-5 min-[720px]:grid-cols-3 xl:grid-cols-6", className)}>
+    <div
+      className={cx(
+        "grid grid-cols-2 gap-5 min-[720px]:grid-cols-3 xl:grid-cols-6",
+        "rounded border border-gray-200 bg-white px-5 py-[18px] shadow-xs",
+        "dark:border-gray-800 dark:bg-gray-925",
+        className,
+      )}
+    >
       {children}
     </div>
   )

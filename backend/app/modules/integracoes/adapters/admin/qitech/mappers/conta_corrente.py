@@ -30,6 +30,7 @@ Payload (forma observada):
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -37,7 +38,11 @@ from app.modules.integracoes.adapters.admin.qitech.mappers._common import (
     build_provenance,
     parse_iso_or_none,
     to_decimal,
+    to_decimal_or_none_within,
 )
+
+# Teto absoluto dos campos NUMERIC(8,4) no schema canonico.
+_PCT_MAX_ABS = Decimal("9999.9999")
 
 
 def map_conta_corrente(
@@ -81,11 +86,16 @@ def map_conta_corrente(
                 "instituicao": str(item.get("instituição", "")),
                 # Fatos
                 "valor_total": to_decimal(item.get("valorTotal")),
-                "percentual_sobre_conta_corrente": to_decimal(
-                    item.get("percentualSobreContaCorrente")
+                # Pct podem vir como lixo (~1e18) quando o saldo liquido da
+                # carteira e zero — clampamos pra None pra nao estourar o
+                # NUMERIC(8,4). Ver `to_decimal_or_none_within` em _common.
+                "percentual_sobre_conta_corrente": to_decimal_or_none_within(
+                    item.get("percentualSobreContaCorrente"),
+                    max_abs=_PCT_MAX_ABS,
                 ),
-                "percentual_sobre_total": to_decimal(
-                    item.get("percentualSobreTotal")
+                "percentual_sobre_total": to_decimal_or_none_within(
+                    item.get("percentualSobreTotal"),
+                    max_abs=_PCT_MAX_ABS,
                 ),
                 # Proveniencia
                 **build_provenance(

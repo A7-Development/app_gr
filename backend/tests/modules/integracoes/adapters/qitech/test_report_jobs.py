@@ -66,28 +66,28 @@ def _cfg() -> QiTechConfig:
 
 
 def test_compute_token_determinista():
-    t1 = compute_callback_token(qitech_job_id="job-123", secret="s3cret")
-    t2 = compute_callback_token(qitech_job_id="job-123", secret="s3cret")
+    t1 = compute_callback_token(ref="job-123", secret="s3cret")
+    t2 = compute_callback_token(ref="job-123", secret="s3cret")
     assert t1 == t2
     assert len(t1) == 32
 
 
 def test_compute_token_difere_por_secret():
-    t1 = compute_callback_token(qitech_job_id="job-123", secret="alpha")
-    t2 = compute_callback_token(qitech_job_id="job-123", secret="beta")
+    t1 = compute_callback_token(ref="job-123", secret="alpha")
+    t2 = compute_callback_token(ref="job-123", secret="beta")
     assert t1 != t2
 
 
-def test_compute_token_difere_por_jobid():
-    t1 = compute_callback_token(qitech_job_id="job-123", secret="s")
-    t2 = compute_callback_token(qitech_job_id="job-456", secret="s")
+def test_compute_token_difere_por_ref():
+    t1 = compute_callback_token(ref="job-123", secret="s")
+    t2 = compute_callback_token(ref="job-456", secret="s")
     assert t1 != t2
 
 
 def test_compute_token_sem_secret_retorna_vazio():
     """Sem secret configurado, token vazio. Receiver trata como ausencia
     de validacao (caso DEV/test)."""
-    t = compute_callback_token(qitech_job_id="job-123", secret="")
+    t = compute_callback_token(ref="job-123", secret="")
     assert t == ""
 
 
@@ -97,9 +97,9 @@ def test_verify_token_valido():
         "app.modules.integracoes.adapters.admin.qitech.report_jobs.get_settings"
     ) as gs:
         gs.return_value.QITECH_WEBHOOK_SECRET = secret
-        token = compute_callback_token(qitech_job_id="job-x")
-        assert verify_callback_token(qitech_job_id="job-x", token=token) is True
-        assert verify_callback_token(qitech_job_id="job-x", token="errado") is False
+        token = compute_callback_token(ref="job-x")
+        assert verify_callback_token(ref="job-x", token=token) is True
+        assert verify_callback_token(ref="job-x", token="errado") is False
 
 
 def test_verify_token_sem_secret_aceita_qualquer():
@@ -108,7 +108,7 @@ def test_verify_token_sem_secret_aceita_qualquer():
         "app.modules.integracoes.adapters.admin.qitech.report_jobs.get_settings"
     ) as gs:
         gs.return_value.QITECH_WEBHOOK_SECRET = ""
-        assert verify_callback_token(qitech_job_id="job-x", token="qualquer") is True
+        assert verify_callback_token(ref="job-x", token="qualquer") is True
 
 
 def test_extract_s3_expiry_real_sample():
@@ -127,16 +127,34 @@ def test_extract_s3_expiry_sem_expires_retorna_none():
     assert extract_s3_expiry("https://example.com/foo.csv?bar=baz") is None
 
 
-def test_build_callback_url_inclui_token():
+def test_build_callback_url_inclui_ref_e_token():
     with patch(
         "app.modules.integracoes.adapters.admin.qitech.report_jobs.get_settings"
     ) as gs:
         gs.return_value.QITECH_WEBHOOK_SECRET = "s3cret"
-        gs.return_value.QITECH_WEBHOOK_BASE_URL = "https://callback.a7credit.com.br"
-        url = build_callback_url(qitech_job_id="job-x")
+        gs.return_value.QITECH_WEBHOOK_BASE_URL = "https://callback.strataai.com.br"
+        url = build_callback_url(ref="abc-123")
         assert url.startswith(
-            "https://callback.a7credit.com.br"
-            "/api/v1/integracoes/webhooks/qitech/job-callback?token="
+            "https://callback.strataai.com.br"
+            "/api/v1/integracoes/webhooks/qitech/job-callback?ref=abc-123&token="
+        )
+        # Token deve ser HMAC nao-vazio (secret configurado)
+        token_part = url.split("&token=", 1)[1]
+        assert len(token_part) == 32
+
+
+def test_build_callback_url_sem_secret_inclui_ref_token_vazio():
+    """Sem secret (DEV), URL ainda traz ?ref=&token= (token vazio).
+    Receiver aceita token vazio quando secret nao configurado."""
+    with patch(
+        "app.modules.integracoes.adapters.admin.qitech.report_jobs.get_settings"
+    ) as gs:
+        gs.return_value.QITECH_WEBHOOK_SECRET = ""
+        gs.return_value.QITECH_WEBHOOK_BASE_URL = "https://callback.strataai.com.br"
+        url = build_callback_url(ref="abc-123")
+        assert url == (
+            "https://callback.strataai.com.br"
+            "/api/v1/integracoes/webhooks/qitech/job-callback?ref=abc-123&token="
         )
 
 
@@ -157,7 +175,10 @@ async def test_request_fidc_estoque_cria_job(tenant_a: Tenant):
             body = json.loads(request.content)
             assert body["cnpjFundo"] == "42449234000160"
             assert body["date"] == "2026-01-08"
-            assert body["callbackUrl"].endswith("/job-callback")
+            # callbackUrl agora sempre traz ?ref=<uuid>&token=<hmac>
+            cb = body["callbackUrl"]
+            assert "/job-callback?ref=" in cb
+            assert "&token=" in cb
             return httpx.Response(
                 200,
                 json={"jobId": unique_job_id, "status": "WAITING"},
@@ -234,10 +255,11 @@ async def test_process_callback_baixa_csv_e_grava_raw_e_canonico(
 
     mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
-    # 3. Processa callback
+    # 3. Processa callback (lookup pelo `id` do job, nao pelo qitech_job_id)
     async with AsyncSessionLocal() as db:
         result = await process_fidc_estoque_callback(
             db=db,
+            local_job_id=job_id,
             qitech_job_id=qitech_job_id,
             file_link=file_link,
             qitech_webhook_id=809341,
@@ -306,6 +328,8 @@ async def test_process_callback_idempotente(tenant_a: Tenant, csv_text: str):
         )
         db.add(job)
         await db.commit()
+        await db.refresh(job)
+        job_id = job.id
 
     file_link = "https://fidc-custodia.s3.amazonaws.com/x.csv?Expires=1778942307"
 
@@ -318,6 +342,7 @@ async def test_process_callback_idempotente(tenant_a: Tenant, csv_text: str):
     async with AsyncSessionLocal() as db:
         r1 = await process_fidc_estoque_callback(
             db=db,
+            local_job_id=job_id,
             qitech_job_id=qitech_job_id,
             file_link=file_link,
             qitech_webhook_id=1,
@@ -330,6 +355,7 @@ async def test_process_callback_idempotente(tenant_a: Tenant, csv_text: str):
     async with AsyncSessionLocal() as db:
         r2 = await process_fidc_estoque_callback(
             db=db,
+            local_job_id=job_id,
             qitech_job_id=qitech_job_id,
             file_link=file_link,
             qitech_webhook_id=1,
@@ -352,13 +378,14 @@ async def test_process_callback_idempotente(tenant_a: Tenant, csv_text: str):
 
 
 @pytest.mark.asyncio
-async def test_process_callback_jobid_desconhecido_levanta():
-    """Callback com jobId que nao existe no DB -> ValueError (orphan/spoof)."""
+async def test_process_callback_local_job_id_desconhecido_levanta():
+    """Callback com local_job_id que nao existe no DB -> ValueError (orphan/spoof)."""
     with pytest.raises(ValueError, match="desconhecido"):
         async with AsyncSessionLocal() as db:
             await process_fidc_estoque_callback(
                 db=db,
-                qitech_job_id="orfao-nao-existe",
+                local_job_id=uuid4(),
+                qitech_job_id="qualquer",
                 file_link="https://x/y.csv",
             )
 
@@ -385,6 +412,8 @@ async def test_process_callback_isolamento_tenant(
         )
         db.add(job)
         await db.commit()
+        await db.refresh(job)
+        job_id = job.id
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text=csv_text)
@@ -393,6 +422,7 @@ async def test_process_callback_isolamento_tenant(
     async with AsyncSessionLocal() as db:
         await process_fidc_estoque_callback(
             db=db,
+            local_job_id=job_id,
             qitech_job_id=qitech_job_id,
             file_link="https://x/y.csv?Expires=1778942307",
             qitech_webhook_id=1,

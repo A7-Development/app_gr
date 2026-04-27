@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api.v1 import audit, auth, system
 from app.modules.bi.api.router import router as bi_router
 from app.modules.cadastros.api.router import router as cadastros_router
+from app.modules.controladoria.api.router import router as controladoria_router
 from app.modules.integracoes.routers.qitech_custodia import (
     router as integracoes_qitech_custodia_router,
 )
@@ -25,6 +26,9 @@ api_router.include_router(system.router)
 api_router.include_router(bi_router, prefix="/bi", tags=["bi"])
 api_router.include_router(
     cadastros_router, prefix="/cadastros", tags=["cadastros"]
+)
+api_router.include_router(
+    controladoria_router, prefix="/controladoria", tags=["controladoria"]
 )
 api_router.include_router(
     integracoes_sources_router, prefix="/integracoes", tags=["integracoes"]

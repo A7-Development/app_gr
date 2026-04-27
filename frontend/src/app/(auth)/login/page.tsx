@@ -7,18 +7,12 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { toast } from "sonner"
-import {
-  RiGoogleFill,
-  RiLoader4Line,
-  RiMicrosoftFill,
-} from "@remixicon/react"
+import { RiErrorWarningLine, RiLoader4Line } from "@remixicon/react"
 
 import { Button } from "@/components/tremor/Button"
-import { Checkbox } from "@/components/tremor/Checkbox"
-import { Divider } from "@/components/tremor/Divider"
 import { Input } from "@/components/tremor/Input"
 import { Label } from "@/components/tremor/Label"
-import { Logo } from "@/design-system/components/Logo"
+import { HeroSplitAuth, STRATA_TRUST_SIGNALS } from "@/design-system/surfaces"
 import { ApiError, login } from "@/lib/api-client"
 
 //
@@ -31,7 +25,6 @@ const loginSchema = z.object({
     .min(1, "Informe seu e-mail")
     .email("E-mail invalido"),
   password: z.string().min(1, "Informe sua senha"),
-  remember: z.boolean(),
 })
 
 type LoginFormValues = z.infer<typeof loginSchema>
@@ -43,88 +36,104 @@ type LoginFormValues = z.infer<typeof loginSchema>
 export default function LoginPage() {
   const router = useRouter()
   const [submitting, setSubmitting] = React.useState(false)
+  const [authError, setAuthError] = React.useState<string | null>(null)
+  const [shakeKey, setShakeKey] = React.useState(0)
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "", remember: false },
+    defaultValues: { email: "", password: "" },
   })
 
   const errors = form.formState.errors
-  const rememberChecked = form.watch("remember")
 
   async function onSubmit(values: LoginFormValues) {
     setSubmitting(true)
+    setAuthError(null)
     try {
       await login(values.email, values.password)
       toast.success("Login efetuado com sucesso")
       router.push("/")
     } catch (error) {
       console.error("[login] error", error)
-      if (error instanceof ApiError && error.status === 401) {
-        toast.error("Email ou senha invalidos")
-      } else {
-        toast.error("Nao foi possivel fazer login. Tente novamente.")
-      }
+      const message =
+        error instanceof ApiError && error.status === 401
+          ? "E-mail ou senha incorretos. Verifique as credenciais e tente novamente."
+          : "Nao foi possivel fazer login. Tente novamente em instantes."
+      setAuthError(message)
+      setShakeKey((k) => k + 1)
     } finally {
       setSubmitting(false)
     }
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="rounded border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:p-8">
-        <div className="flex flex-col items-center gap-4 text-center">
-          <Logo variant="full" />
-          <div className="flex flex-col gap-1">
-            <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-50">
-              Acessar sua conta
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Entre com suas credenciais para continuar
-            </p>
-          </div>
-        </div>
+    <HeroSplitAuth>
+      {/* ── HERO ZONE (60%) ───────────────────────────────────────── */}
+      <HeroSplitAuth.Hero>
+        <HeroSplitAuth.Brand wordmark="Strata" eyebrow="FIDC Analytics" />
+        <HeroSplitAuth.HeroSpacer />
+        <HeroSplitAuth.Headline>
+          Inteligência de dados
+          <br />
+          para FIDC
+        </HeroSplitAuth.Headline>
+        <HeroSplitAuth.Lede>
+          A plataforma de analytics para gestores de FIDC que operam com
+          precisão institucional.
+        </HeroSplitAuth.Lede>
+        <HeroSplitAuth.HeroSpacer />
+        <HeroSplitAuth.TrustSignals items={STRATA_TRUST_SIGNALS} />
+      </HeroSplitAuth.Hero>
 
-        {/* SSO */}
-        <div className="mt-6 flex flex-col gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            disabled
-            className="w-full gap-2"
+      {/* ── FORM ZONE (40%) ───────────────────────────────────────── */}
+      <HeroSplitAuth.FormPanel
+        title="Acesse sua conta"
+        description="Bem-vindo de volta. Faça login para continuar."
+        footer={
+          <>
+            Sem acesso?{" "}
+            <Link
+              href="#"
+              className="font-medium text-blue-600 hover:underline dark:text-blue-500"
+            >
+              Contate seu administrador
+            </Link>
+          </>
+        }
+      >
+        {authError && (
+          <div
+            key={shakeKey}
+            data-hero-anim
+            role="alert"
+            className="mb-5 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2.5 dark:border-red-900/50 dark:bg-red-950/30"
+            style={{ animation: "heroShake 0.5s ease both" }}
           >
-            <RiMicrosoftFill
-              className="size-5 shrink-0"
+            <RiErrorWarningLine
+              className="mt-0.5 size-4 shrink-0 text-red-600 dark:text-red-400"
               aria-hidden="true"
             />
-            Entrar com Microsoft
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled
-            className="w-full gap-2"
-          >
-            <RiGoogleFill className="size-5 shrink-0" aria-hidden="true" />
-            Entrar com Google
-          </Button>
-        </div>
+            <p className="text-[13px] leading-relaxed text-red-700 dark:text-red-300">
+              {authError}
+            </p>
+          </div>
+        )}
 
-        <Divider>ou</Divider>
-
-        {/* Credenciais */}
         <form
           onSubmit={form.handleSubmit(onSubmit)}
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-[18px]"
         >
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="email">E-mail</Label>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="email" className="text-[13px] font-medium">
+              E-mail
+            </Label>
             <Input
               id="email"
               type="email"
-              placeholder="voce@a7credit.com.br"
+              placeholder="seu@email.com.br"
               autoComplete="email"
-              hasError={!!errors.email}
+              disabled={submitting}
+              hasError={!!errors.email || !!authError}
               aria-invalid={!!errors.email}
               {...form.register("email")}
             />
@@ -138,22 +147,25 @@ export default function LoginPage() {
             )}
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
-              <Label htmlFor="password">Senha</Label>
+              <Label htmlFor="password" className="text-[13px] font-medium">
+                Senha
+              </Label>
               <Link
                 href="#"
-                className="text-xs font-medium text-blue-600 transition hover:text-blue-700 dark:text-blue-500 dark:hover:text-blue-400"
+                className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-500"
               >
-                Esqueci minha senha
+                Esqueceu a senha?
               </Link>
             </div>
             <Input
               id="password"
               type="password"
-              placeholder="Sua senha"
+              placeholder="********"
               autoComplete="current-password"
-              hasError={!!errors.password}
+              disabled={submitting}
+              hasError={!!errors.password || !!authError}
               aria-invalid={!!errors.password}
               {...form.register("password")}
             />
@@ -167,43 +179,25 @@ export default function LoginPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="remember"
-              checked={rememberChecked}
-              onCheckedChange={(checked) =>
-                form.setValue("remember", checked === true, {
-                  shouldDirty: true,
-                })
-              }
-            />
-            <Label
-              htmlFor="remember"
-              className="cursor-pointer font-normal text-gray-700 dark:text-gray-300"
-            >
-              Manter conectado
-            </Label>
-          </div>
-
           <Button
             type="submit"
             disabled={submitting}
-            className="mt-2 w-full gap-2"
+            className="mt-1 h-11 w-full gap-2 text-sm font-semibold"
           >
-            {submitting && (
-              <RiLoader4Line
-                className="size-4 shrink-0 animate-spin"
-                aria-hidden="true"
-              />
+            {submitting ? (
+              <>
+                <RiLoader4Line
+                  className="size-4 shrink-0 animate-spin"
+                  aria-hidden="true"
+                />
+                Entrando...
+              </>
+            ) : (
+              "Entrar"
             )}
-            Entrar
           </Button>
         </form>
-      </div>
-
-      <p className="text-center text-xs text-gray-500 dark:text-gray-400">
-        Nao tem acesso? Fale com o administrador do sistema.
-      </p>
-    </div>
+      </HeroSplitAuth.FormPanel>
+    </HeroSplitAuth>
   )
 }

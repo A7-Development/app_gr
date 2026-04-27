@@ -3,3 +3,4 @@
 
 export { DashboardOperacional } from "./DashboardOperacional"
 export { ListagemComDrilldown } from "./ListagemComDrilldown"
+export { DashboardBiPadrao } from "./DashboardBiPadrao"

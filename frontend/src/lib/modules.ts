@@ -3,14 +3,24 @@
 // A ordem canonica aqui e a mesma da sidebar — mexer aqui mexe na UI.
 
 import {
+  RiBarChartGroupedLine,
+  RiBookOpenLine,
   RiBuilding2Line,
   RiContactsBookLine,
+  RiDashboard3Line,
   RiExchangeFundsLine,
+  RiFileChart2Line,
   RiFlaskLine,
+  RiLineChartLine,
+  RiMoneyDollarBoxLine,
+  RiPercentLine,
   RiPieChart2Line,
+  RiRefreshLine,
   RiSettings3Line,
   RiShieldCheckLine,
   RiStackLine,
+  RiUserStarLine,
+  RiWallet3Line,
   type RemixiconComponentType,
 } from "@remixicon/react"
 
@@ -28,6 +38,12 @@ export type ModuleSection = {
   name: string
   href: string
   enabled: boolean
+  // Icone proprio da secao. Fallback: icone do modulo (CLAUDE.md §11.6).
+  icon?: RemixiconComponentType
+  // Caption tipografico que agrupa visualmente itens contiguos com o mesmo
+  // valor (ex.: "OPERACAO", "FINANCEIRO"). Nao e grupo colapsavel —
+  // apenas separador visual. Permitido por CLAUDE.md §11.6.
+  groupLabel?: string
 }
 
 // Paleta de avatar de modulo v0.4.0 (handoff A7 Credit v2, 2026-04-24).
@@ -85,15 +101,16 @@ export const MODULES: ModuleDefinition[] = [
     permission: "admin",
     basePath: "/bi",
     sections: [
-      { name: "Operacoes", href: "/bi/operacoes", enabled: true },
-      { name: "Carteira", href: "/bi/carteira", enabled: false },
-      { name: "Comportamento", href: "/bi/comportamento", enabled: false },
-      { name: "Receitas", href: "/bi/receitas", enabled: false },
-      { name: "Fluxo de caixa", href: "/bi/fluxo-caixa", enabled: false },
-      { name: "DRE", href: "/bi/dre", enabled: false },
+      { name: "Operacoes", href: "/bi/operacoes", enabled: true, icon: RiDashboard3Line, groupLabel: "Visao geral" },
+      { name: "Pagina padrao", href: "/bi/padrao", enabled: true, icon: RiBookOpenLine, groupLabel: "Templates" },
+      { name: "Carteira", href: "/bi/carteira", enabled: false, icon: RiWallet3Line, groupLabel: "Operacao" },
+      { name: "Comportamento", href: "/bi/comportamento", enabled: false, icon: RiUserStarLine, groupLabel: "Operacao" },
+      { name: "Receitas", href: "/bi/receitas", enabled: false, icon: RiMoneyDollarBoxLine, groupLabel: "Financeiro" },
+      { name: "Fluxo de caixa", href: "/bi/fluxo-caixa", enabled: false, icon: RiLineChartLine, groupLabel: "Financeiro" },
+      { name: "DRE", href: "/bi/dre", enabled: false, icon: RiFileChart2Line, groupLabel: "Financeiro" },
       // Benchmark — dados publicos CVM FIDC via postgres_fdw.
       // Ver docs/integracao-cvm-fidc.md e CLAUDE.md §13.1.
-      { name: "Benchmark", href: "/bi/benchmark", enabled: true },
+      { name: "Benchmark", href: "/bi/benchmark", enabled: true, icon: RiBarChartGroupedLine, groupLabel: "Analise" },
     ],
   },
   {
@@ -110,6 +127,7 @@ export const MODULES: ModuleDefinition[] = [
         name: "Unidades administrativas",
         href: "/cadastros/unidades-administrativas",
         enabled: true,
+        icon: RiBuilding2Line,
       },
     ],
   },
@@ -130,10 +148,17 @@ export const MODULES: ModuleDefinition[] = [
     initials: "CO",
     icon: RiBuilding2Line,
     color: "teal",
-    enabled: false,
-    permission: "none",
+    enabled: true,
+    permission: "admin",
     basePath: "/controladoria",
-    sections: [{ name: "Em breve", href: "#", enabled: false }],
+    sections: [
+      {
+        name: "Cota Sub",
+        href: "/controladoria/cota-sub",
+        enabled: true,
+        icon: RiPercentLine,
+      },
+    ],
   },
   {
     id: "risco",
@@ -156,8 +181,8 @@ export const MODULES: ModuleDefinition[] = [
     permission: "admin",
     basePath: "/integracoes",
     sections: [
-      { name: "Catalogo", href: "/integracoes/catalogo", enabled: true },
-      { name: "Sync", href: "/integracoes/sync", enabled: true },
+      { name: "Catalogo", href: "/integracoes/catalogo", enabled: true, icon: RiBookOpenLine },
+      { name: "Sync", href: "/integracoes/sync", enabled: true, icon: RiRefreshLine },
     ],
   },
   {

@@ -19,7 +19,14 @@ export default function AppShellLayout({
   return (
     <AuthGuard>
       <SidebarProvider defaultOpen={defaultOpen}>
-        <AppSidebar />
+        {/* badgeCounts: chave = href da secao. TODO: substituir por contagens reais
+            vindas do backend (ex.: queue de aprovacoes em /bi/operacoes). */}
+        <AppSidebar
+          badgeCounts={{
+            "/bi/operacoes": 12,
+            "/bi/carteira": 3,
+          }}
+        />
         <div className="w-full">
           <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-4 dark:border-gray-800 dark:bg-gray-950">
             <SidebarTrigger className="-ml-1" />

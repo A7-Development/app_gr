@@ -6,7 +6,7 @@ funciona via job + callback:
     1. POST /v2/queue/scheduler/report/<tipo> body={callbackUrl, cnpjFundo, date}
        -> retorna {jobId, status:WAITING}
     2. QiTech processa (~10s a varios minutos)
-    3. POST callback {WEBHOOK_BASE}/...?token=...
+    3. POST callback {WEBHOOK_BASE}/...?ref=<uuid_local>&token=<hmac>
        body: {webhookId, jobId, eventType, data:{fileLink}}
     4. fileLink e URL S3 presigned com TTL ~24h (CSV)
 
@@ -14,11 +14,14 @@ Modulo expoe:
 - `request_fidc_estoque_report(...)` -- dispara POST e cria QitechReportJob
 - `process_fidc_estoque_callback(...)` -- ao receber callback: valida token,
   baixa CSV, salva raw, mapper, upsert canonico, atualiza job
-- `compute_callback_token(...)` -- HMAC-SHA256 truncado de jobId
+- `compute_callback_token(...)` -- HMAC-SHA256 truncado de um `ref` opaco
 - `_extract_s3_expiry(...)` -- parse `Expires=<unix>` do query string
 
-Anti-spoof: a QiTech NAO assina o callback. Defesa = HMAC do jobId na URL,
-validado pelo receiver. Sem o `QITECH_WEBHOOK_SECRET` ninguem forja.
+Anti-spoof: a QiTech NAO assina o callback. Defesa = HMAC de um UUID local
+nosso (`ref`) embutido no callbackUrl como `?ref=<uuid>&token=<hmac>`. O
+UUID e o `id` do `QitechReportJob` (pre-gerado antes do POST), garantindo
+que o token possa ser computado ANTES de conhecermos o `qitech_job_id`
+devolvido pela QiTech. Sem `QITECH_WEBHOOK_SECRET` ninguem forja.
 """
 
 from __future__ import annotations
@@ -29,10 +32,9 @@ import re
 from datetime import UTC, date, datetime
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
-from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,44 +68,51 @@ _TOKEN_LEN = 32
 # ---- Anti-spoof helpers ---------------------------------------------------
 
 
-def compute_callback_token(*, qitech_job_id: str, secret: str | None = None) -> str:
-    """HMAC-SHA256(secret, jobId) truncado pra 32 hex chars.
+def compute_callback_token(*, ref: str, secret: str | None = None) -> str:
+    """HMAC-SHA256(secret, ref) truncado pra 32 hex chars.
 
-    Defesa contra spoof de callback: a QiTech entrega `jobId` no body do
-    callback; receiver computa o token esperado e compara com o `?token=`
-    da URL. Sem conhecer `QITECH_WEBHOOK_SECRET`, atacante nao consegue
-    forjar callback.
+    `ref` e um identificador opaco que vai no callbackUrl (`?ref=<...>`)
+    junto com o token. Receiver computa o token esperado a partir do `ref`
+    da query string e compara com o `?token=`. Sem conhecer
+    `QITECH_WEBHOOK_SECRET`, atacante nao consegue forjar callback.
+
+    No fluxo atual o `ref` e o `id` do `QitechReportJob` (UUID local
+    pre-gerado antes do POST). Mantemos o param opaco pra deixar o helper
+    reutilizavel se outra familia de relatorio precisar.
     """
     s = secret if secret is not None else get_settings().QITECH_WEBHOOK_SECRET
     if not s:
         # Sem secret configurado, callback funciona mas sem proteçao.
         # Retornamos string vazia — receiver tem que tratar igual.
         return ""
-    digest = hmac.new(s.encode("utf-8"), qitech_job_id.encode("utf-8"), hashlib.sha256)
+    digest = hmac.new(s.encode("utf-8"), ref.encode("utf-8"), hashlib.sha256)
     return digest.hexdigest()[:_TOKEN_LEN]
 
 
-def verify_callback_token(*, qitech_job_id: str, token: str) -> bool:
-    """Valida token vindo do query string contra o esperado."""
-    expected = compute_callback_token(qitech_job_id=qitech_job_id)
+def verify_callback_token(*, ref: str, token: str) -> bool:
+    """Valida token vindo do query string contra o esperado para `ref`."""
+    expected = compute_callback_token(ref=ref)
     if not expected:
         # Sem secret -> sem validacao. Em prod isso DEVE ser configurado.
         return True
     return hmac.compare_digest(expected, token or "")
 
 
-def build_callback_url(*, qitech_job_id: str, base_url: str | None = None) -> str:
+def build_callback_url(*, ref: str, base_url: str | None = None) -> str:
     """Monta URL de callback que vai no body do POST QiTech.
 
-    Formato: {BASE}/api/v1/integracoes/webhooks/qitech/job-callback?token=<hmac>
+    Formato: {BASE}/api/v1/integracoes/webhooks/qitech/job-callback
+             ?ref=<ref>&token=<hmac>
+
+    Quando nao ha `QITECH_WEBHOOK_SECRET` (DEV/test), o `?token=` sai vazio
+    e o receiver aceita qualquer valor — `?ref=` continua presente porque
+    e ele que identifica o job no DB.
     """
     base = base_url if base_url is not None else get_settings().QITECH_WEBHOOK_BASE_URL
     base = base.rstrip("/")
-    token = compute_callback_token(qitech_job_id=qitech_job_id)
+    token = compute_callback_token(ref=ref)
     suffix = "/api/v1/integracoes/webhooks/qitech/job-callback"
-    if token:
-        return f"{base}{suffix}?token={token}"
-    return f"{base}{suffix}"
+    return f"{base}{suffix}?ref={ref}&token={token}"
 
 
 # ---- S3 presigned URL helpers ---------------------------------------------
@@ -146,15 +155,18 @@ async def request_fidc_estoque_report(
 ) -> QitechReportJob:
     """Dispara POST /v2/queue/scheduler/report/fidc-estoque + persiste job.
 
-    1. Faz POST com callbackUrl construido a partir de QITECH_WEBHOOK_BASE_URL
-       + token HMAC do (futuro) jobId. Como nao temos jobId antes do POST,
-       usamos um placeholder e atualizamos a callback_url depois — OU
-       computamos o token sobre o jobId retornado e gravamos so a versao
-       final em DB. Optei pelo segundo: enviamos URL temporaria sem token
-       no POST, depois substituimos no DB e callback_url_used registra o
-       que efetivamente foi usado. (QiTech ja salvou a URL deles, entao
-       pra o teste real precisamos de URL sem token tambem — TODO: rever
-       quando subir webhook receiver.)
+    Estrategia anti-spoof:
+        Pre-geramos `local_uuid = uuid4()` que sera o `id` do job no DB.
+        O callbackUrl enviado a QiTech ja vem assinado:
+            ?ref=<local_uuid>&token=hmac(local_uuid)
+        Quando o callback chega, receiver:
+            1. Valida HMAC(ref) == token (sem consultar banco).
+            2. Faz lookup do job por id == ref.
+            3. Pega qitech_job_id do DB (e cross-checa com body.jobId).
+
+    Isso resolve o catch-22 anterior: nao precisamos esperar o jobId da
+    QiTech pra montar o token, porque o token assina algo que NOS
+    geramos antes do POST.
 
     Args:
         db: sessao SQLAlchemy aberta.
@@ -173,27 +185,18 @@ async def request_fidc_estoque_report(
         QiTechHttpError: erro no POST.
         QiTechAdapterError: response sem jobId.
     """
-    settings = get_settings()
-    base = (settings.QITECH_WEBHOOK_BASE_URL or "").rstrip("/")
-    if not base:
-        # Em DEV/test sem base configurado, usamos placeholder que sera
-        # claramente identificavel se chegar request real.
-        base = "https://localhost-no-callback-base-configured"
-
-    # POST. Como a callback URL inclui token derivado do jobId, e o jobId
-    # so e gerado pela QiTech, mandamos URL "preliminar" sem token. Depois
-    # atualizamos no DB com o token correto. NOTA: a QiTech ja salvou
-    # internamente a URL preliminar — pra producao real, a estrategia
-    # correta e pre-computar nosso proprio job_id (UUID local) e enviar
-    # token=hmac(local_uuid). Quando QiTech responder com jobId, salvamos
-    # o mapping local_uuid <-> jobId.
-    #
-    # Por agora (MVP), usamos URL sem token e a defesa fica via lookup
-    # no DB pelo qitech_job_id.
-    callback_url_sent = (
-        f"{base}/api/v1/integracoes/webhooks/qitech/job-callback"
+    # 1. Pre-gera UUID local que vai assinar o token + identificar o job
+    #    quando o callback voltar. Sem isso, callback chega rejeitado por
+    #    token vazio (ver historico do bug 2026-04-26).
+    local_uuid = uuid4()
+    base_url_setting = get_settings().QITECH_WEBHOOK_BASE_URL
+    base_url = base_url_setting or "https://localhost-no-callback-base-configured"
+    callback_url_sent = build_callback_url(
+        ref=str(local_uuid), base_url=base_url
     )
+    callback_token = compute_callback_token(ref=str(local_uuid))
 
+    # 2. POST com callbackUrl ja assinado
     body = {
         "callbackUrl": callback_url_sent,
         "cnpjFundo": cnpj_fundo,
@@ -228,19 +231,16 @@ async def request_fidc_estoque_report(
             f"response sem jobId: {post_body}"
         )
 
-    # Token correto, agora que temos jobId.
-    callback_token = compute_callback_token(qitech_job_id=qitech_job_id)
-
-    # Normaliza status (defensivo).
+    # 3. Normaliza status (defensivo) e CNPJ (digits-only pra idempotencia).
     try:
         status = QitechJobStatus(qitech_status_raw)
     except ValueError:
         status = QitechJobStatus.WAITING
-
-    # Normaliza CNPJ pra digits-only (idempotencia / lookup).
     cnpj_digits = re.sub(r"\D", "", cnpj_fundo)
 
+    # 4. Persiste com `id=local_uuid` — esse UUID e o ref usado pelo callback
     job = QitechReportJob(
+        id=local_uuid,
         tenant_id=tenant_id,
         environment=environment,
         report_type="fidc-estoque",
@@ -265,8 +265,9 @@ async def request_fidc_estoque_report(
 async def process_fidc_estoque_callback(
     *,
     db: AsyncSession,
-    qitech_job_id: str,
+    local_job_id: UUID,
     file_link: str,
+    qitech_job_id: str | None = None,
     qitech_webhook_id: int | None = None,
     http_client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
@@ -276,8 +277,12 @@ async def process_fidc_estoque_callback(
 
     Args:
         db: sessao SQLAlchemy.
-        qitech_job_id: vem do body do callback (campo `jobId`).
+        local_job_id: `id` do `QitechReportJob` extraido do `?ref=` da URL
+            do callback (validado por HMAC pelo receiver).
         file_link: URL S3 presigned do CSV (do `data.fileLink`).
+        qitech_job_id: vem do body do callback (campo `jobId`). Opcional —
+            se passado, fazemos cross-check contra o que ficou salvo no
+            DB e logamos warning em caso de divergencia (defense in depth).
         qitech_webhook_id: id numerico interno da QiTech (do `webhookId`).
         http_client: opcional pra mockar download em testes.
 
@@ -285,16 +290,26 @@ async def process_fidc_estoque_callback(
         Resumo com {ok, rows_canonical, raw_id, idempotent, error?}.
 
     Raises:
-        ValueError: jobId nao existe (callback orfao -- atacante ou bug).
+        ValueError: local_job_id nao existe (callback orfao — atacante,
+            bug, ou job deletado entre POST e callback).
     """
-    # 1. Lookup
-    stmt = select(QitechReportJob).where(
-        QitechReportJob.qitech_job_id == qitech_job_id
-    )
-    job = (await db.execute(stmt)).scalar_one_or_none()
+    # 1. Lookup pelo UUID local (que o receiver validou via HMAC)
+    job = await db.get(QitechReportJob, local_job_id)
     if job is None:
         raise ValueError(
-            f"qitech_job_id {qitech_job_id} desconhecido — callback orfao"
+            f"local_job_id {local_job_id} desconhecido — callback orfao"
+        )
+
+    # 1a. Cross-check defensivo: body.jobId deve casar com o salvo no DB.
+    #     Em condicoes normais sempre bate; divergencia indica bug ou
+    #     replay cruzado (ref de um job, jobId de outro).
+    if qitech_job_id is not None and qitech_job_id != job.qitech_job_id:
+        import logging
+        logging.getLogger("gr.integracoes.qitech").warning(
+            "callback jobId %r diverge do esperado %r (local_job_id=%s)",
+            qitech_job_id,
+            job.qitech_job_id,
+            local_job_id,
         )
 
     # 2. Idempotencia
@@ -355,7 +370,7 @@ async def process_fidc_estoque_callback(
         "rows_estimate": csv_text.count("\n"),
         "bytes": len(csv_text.encode("utf-8")),
         "qitech_webhook_id": qitech_webhook_id,
-        "qitech_job_id": qitech_job_id,
+        "qitech_job_id": job.qitech_job_id,
     }
     raw = QiTechRawRelatorio(
         tenant_id=job.tenant_id,
@@ -456,5 +471,5 @@ async def process_fidc_estoque_callback(
         "rows_canonical": rows_inserted,
         "raw_id": str(raw_id) if raw_id else None,
         "job_id": str(job.id),
-        "qitech_job_id": qitech_job_id,
+        "qitech_job_id": job.qitech_job_id,
     }

@@ -40,6 +40,10 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_settings.cors_origins_list,
+    # Dev: aceita qualquer porta de localhost (Next.js dev server cai em
+    # porta aleatoria via autoPort:true quando 3000 esta ocupada). Seguro
+    # porque so origens locais batem o regex.
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

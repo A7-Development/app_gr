@@ -42,6 +42,10 @@ export {
   EChartsCard, SparkChart, useEChartsTheme,
   type EChartsCardProps, type SparkChartProps,
 } from "./EChartsCard"
+export {
+  AIPanel, AIToggleButton, useAIPanel, AI_PANEL_STORAGE_KEY,
+  type AIPanelProps, type AIContext, type AIInsight, type AIMessage, type SendMessageFn,
+} from "./AIPanel"
 
 // ── A7 Credit domain composites (migrated from components/app/) ──────────────
 export { AdapterStatusBadge } from "./AdapterStatusBadge"
@@ -60,6 +64,7 @@ export { JsonPreview } from "./JsonPreview"
 export { LastSyncCell } from "./LastSyncCell"
 export { Logo } from "./Logo"
 export { ModuleSwitcher } from "./ModuleSwitcher"
+export { StrataIcon } from "./StrataIcon"
 export { MonthRangePicker, type MonthRange } from "./MonthRangePicker"
 export { OriginDot } from "./OriginDot"
 export { OverrideChip } from "./OverrideChip"

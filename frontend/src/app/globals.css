@@ -120,4 +120,36 @@
       transform: translateX(100%);
     }
   }
+
+}
+
+/* ── HeroSplitAuth surface animations (defined OUTSIDE @theme so the
+   browser receives global @keyframes, not Tailwind v4 utility tokens) ── */
+@keyframes heroFadeSlideLeft {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes heroFadeSlideRight {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes heroFadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes heroShake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-5px); }
+  30% { transform: translateX(5px); }
+  45% { transform: translateX(-4px); }
+  60% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+  90% { transform: translateX(2px); }
+}
+
+/* Disable hero animations for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  [data-hero-anim] {
+    animation: none !important;
+  }
 }

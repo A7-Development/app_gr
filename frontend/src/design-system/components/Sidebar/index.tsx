@@ -18,6 +18,7 @@ import {
 } from "@remixicon/react"
 import { cx, focusRing } from "@/lib/utils"
 import { getActiveModule, MODULE_AVATAR_COLORS } from "@/lib/modules"
+import { Button } from "@/components/tremor/Button"
 import { ApprovalQueueBadge } from "@/design-system/components/ApprovalQueueBadge"
 import { ModuleSwitcher } from "@/design-system/components/ModuleSwitcher"
 import { Logo } from "@/design-system/components/Logo"
@@ -225,7 +226,7 @@ export function AppSidebar({
   return (
     <aside
       className={cx(
-        "relative flex h-full flex-col shrink-0 overflow-hidden",
+        "relative flex min-h-svh flex-col shrink-0 overflow-hidden",
         "bg-gray-50 dark:bg-gray-925",
         "border-r border-gray-200 dark:border-gray-800",
         "transition-[width] duration-150 ease-in-out",
@@ -298,45 +299,68 @@ export function AppSidebar({
 
         <div className="my-2 h-px bg-gray-200 dark:bg-gray-800" />
 
-        {!collapsed && (
+        {!collapsed && !activeModule.sections.some((s) => s.groupLabel) && (
           <p className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
             {activeModule.name}
           </p>
         )}
         <div className={cx("flex flex-col", collapsed ? "items-center gap-0.5" : "gap-0.5")}>
-          {activeModule.sections.map((section) => {
+          {activeModule.sections.map((section, idx) => {
             const isActive =
               section.enabled &&
               section.href !== "#" &&
               pathname.startsWith(section.href)
+            const Icon = section.icon ?? activeModule.icon
 
-            return collapsed ? (
-              <NavLinkCollapsed
-                key={section.name}
-                label={section.name}
-                href={section.enabled ? section.href : "#"}
-                icon={activeModule.icon}
-                isActive={isActive}
-                disabled={!section.enabled}
-                badgeCount={badgeCounts[section.href] ?? 0}
-              />
-            ) : (
-              <NavLinkExpanded
-                key={section.name}
-                label={section.name}
-                href={section.enabled ? section.href : "#"}
-                icon={activeModule.icon}
-                isActive={isActive}
-                disabled={!section.enabled}
-                badgeCount={badgeCounts[section.href] ?? 0}
-                trailing={
-                  !section.enabled ? (
-                    <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                      breve
-                    </span>
-                  ) : undefined
-                }
-              />
+            // Renderizar caption tipografico quando groupLabel muda em
+            // relacao ao item anterior. Nao e grupo colapsavel — apenas
+            // separador visual permitido por CLAUDE.md §11.6.
+            const prevGroup = idx > 0 ? activeModule.sections[idx - 1].groupLabel : undefined
+            const showGroupCaption =
+              !collapsed && section.groupLabel && section.groupLabel !== prevGroup
+            const showCollapsedDivider = collapsed && idx > 0 &&
+              section.groupLabel && section.groupLabel !== prevGroup
+
+            return (
+              <React.Fragment key={section.name}>
+                {showGroupCaption && (
+                  <p className={cx(
+                    "px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600",
+                    idx === 0 ? "pt-1" : "pt-3",
+                  )}>
+                    {section.groupLabel}
+                  </p>
+                )}
+                {showCollapsedDivider && (
+                  <div className="my-1 h-px w-6 bg-gray-200 dark:bg-gray-800" aria-hidden="true" />
+                )}
+                {collapsed ? (
+                  <NavLinkCollapsed
+                    label={section.name}
+                    href={section.enabled ? section.href : "#"}
+                    icon={Icon}
+                    isActive={isActive}
+                    disabled={!section.enabled}
+                    badgeCount={badgeCounts[section.href] ?? 0}
+                  />
+                ) : (
+                  <NavLinkExpanded
+                    label={section.name}
+                    href={section.enabled ? section.href : "#"}
+                    icon={Icon}
+                    isActive={isActive}
+                    disabled={!section.enabled}
+                    badgeCount={badgeCounts[section.href] ?? 0}
+                    trailing={
+                      !section.enabled ? (
+                        <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                          breve
+                        </span>
+                      ) : undefined
+                    }
+                  />
+                )}
+              </React.Fragment>
             )
           })}
         </div>
@@ -348,9 +372,9 @@ export function AppSidebar({
       )}>
         {collapsed ? (
           <NavTooltip label={user.name}>
-            <button className={cx("rounded", focusRing)} type="button">
+            <Button variant="ghost" className="size-7 rounded-full p-0">
               <UserAvatar name={user.name} imageUrl={user.imageUrl} />
-            </button>
+            </Button>
           </NavTooltip>
         ) : (
           <>
@@ -361,21 +385,18 @@ export function AppSidebar({
                 <p className="truncate text-[11px] text-gray-500 dark:text-gray-400">{user.email}</p>
               )}
             </div>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
               aria-label="Configurações"
-              className={cx(
-                "flex size-7 shrink-0 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200",
-                "transition-colors duration-100",
-                focusRing,
-              )}
+              className="size-7 shrink-0 p-0 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
             >
               <RiSettings3Line className="size-4" aria-hidden="true" />
-            </button>
+            </Button>
           </>
         )}
       </div>
 
+      {/* <button> cru intencional: este e um affordance posicional (chip de toggle anexado a borda da sidebar, half-translate na borda) com geometria size-5 + rounded-full + border, fora do paradigma do Button do Tremor. Usar Button aqui significa lutar contra base styles dele (px-3 py-2, rounded, shadow-xs). Excecao documentada (CLAUDE.md §6). */}
       <button
         type="button"
         onClick={toggle}
