@@ -1,9 +1,13 @@
 """ETL sincrono para a familia QiTech `/v2/fidc-custodia/report/*`.
 
 Diferente da familia /netreport/* (data unica no path), aqui temos:
-- 2 endpoints com PERIODO no path (data_inicial + data_final)
-- 1 endpoint com data unica no path
-- 1 endpoint snapshot (sem data) — TODO quando aparecer dado real
+- 2 endpoints com PERIODO no path (data_inicial + data_final):
+    aquisicao-consolidada, liquidados-baixados
+- 1 endpoint com data unica no path: detalhes-operacoes (fundo/{cnpj}/data/{data})
+- 1 endpoint snapshot (sem data no path): movimento-aberto. Implementado;
+  schema validado contra spec, mas sample real veio vazio — tipos serao
+  reconfirmados quando aparecer dado em producao (ver docstring de
+  sync_movimento_aberto).
 
 Diferente da familia /queue/scheduler/* (callback assincrono), aqui o
 GET retorna JSON imediatamente — modelo igual ao /netreport/, so muda
