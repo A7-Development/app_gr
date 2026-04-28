@@ -34,6 +34,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
+from functools import lru_cache
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -106,13 +107,63 @@ def _is_fundo_di(ativo_nome: str, ativo_instituicao: str) -> bool:
     return " di" in a or "renda fixa" in a or "renda fixa" in i or a.startswith("di ")
 
 
-def _dia_util_anterior(d: date) -> date:
-    """D-1 simples: dia util anterior considerando apenas finais de semana.
+def _pascoa(year: int) -> date:
+    """Domingo de Pascoa pelo algoritmo Anonymous Gregorian (Meeus/Jones/Butcher)."""
+    a = year % 19
+    b = year // 100
+    c = year % 100
+    d_ = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d_ - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    ll = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * ll) // 451
+    month = (h + ll - 7 * m + 114) // 31
+    day = ((h + ll - 7 * m + 114) % 31) + 1
+    return date(year, month, day)
 
-    TODO: usar calendario B3/Anbima quando integrarmos `holidays_br`.
+
+@lru_cache(maxsize=64)
+def _feriados_b3(year: int) -> frozenset[date]:
+    """Feriados nacionais observados pela B3 (mercado financeiro) num ano.
+
+    Inclui fixos federais + moveis baseados em Pascoa (Carnaval seg/ter,
+    Sexta-feira Santa, Corpus Christi). Nao inclui feriados estaduais
+    (ex.: aniversario de Sao Paulo) nem dias de pregao reduzido.
+    Consciencia Negra (20/11) e feriado nacional desde 2024.
     """
+    pascoa = _pascoa(year)
+    return frozenset({
+        date(year, 1, 1),                # Confraternizacao Universal
+        pascoa - timedelta(days=48),     # Carnaval (segunda)
+        pascoa - timedelta(days=47),     # Carnaval (terca)
+        pascoa - timedelta(days=2),      # Sexta-feira Santa
+        date(year, 4, 21),               # Tiradentes
+        date(year, 5, 1),                # Dia do Trabalho
+        pascoa + timedelta(days=60),     # Corpus Christi
+        date(year, 9, 7),                # Independencia
+        date(year, 10, 12),              # Nossa Senhora Aparecida
+        date(year, 11, 2),                # Finados
+        date(year, 11, 15),              # Proclamacao da Republica
+        date(year, 11, 20),              # Consciencia Negra
+        date(year, 12, 25),              # Natal
+    })
+
+
+def _e_dia_util(d: date) -> bool:
+    """True se `d` for dia util B3 (nao e fim de semana nem feriado nacional)."""
+    if d.weekday() >= 5:  # 5=sab, 6=dom
+        return False
+    return d not in _feriados_b3(d.year)
+
+
+def _dia_util_anterior(d: date) -> date:
+    """D-1: dia util anterior considerando finais de semana e feriados B3."""
     prev = d - timedelta(days=1)
-    while prev.weekday() >= 5:  # 5=sab, 6=dom
+    while not _e_dia_util(prev):
         prev -= timedelta(days=1)
     return prev
 
