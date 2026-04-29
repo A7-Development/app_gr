@@ -218,16 +218,6 @@ export function MercadoTab() {
           updatedAtISO={kpiUpdatedISO}
         />
         <KpiCard
-          label="Administradoras"
-          value={
-            adminsData ? numero.format(adminsData.total_admins) : "--"
-          }
-          sub="distintas no mercado"
-          intensity={{ tone: "info", level: "high" }}
-          source={adminSource}
-          updatedAtISO={kpiUpdatedISO}
-        />
-        <KpiCard
           label="% Aberto"
           value={
             condomData ? `${condomData.aberto_pct.toFixed(1)}%` : "--"

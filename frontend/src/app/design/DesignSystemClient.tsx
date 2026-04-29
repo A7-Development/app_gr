@@ -229,8 +229,35 @@ export function DesignSystemClient() {
               </div>
             </Card>
 
-            <Card title="KpiStrip — 3 variants">
+            <Card title="KpiStrip — canonico (5 cols, default variant)">
               <KpiStrip>
+                <KpiCard {...FIDC_KPI_META.pl} value="R$ 124,5M" sub="abr/26" delta={{ value: 2.34, suffix: "%" }} variant="default" />
+                <KpiCard {...FIDC_KPI_META.rentabilidade} value="112,4%" delta={{ value: 3.1, suffix: "pp" }} variant="default" />
+                <KpiCard
+                  {...FIDC_KPI_META.inadimplencia}
+                  value="3,2%"
+                  delta={{ value: 0.4, suffix: "pp", direction: "up", good: false }}
+                  currentValue={3.2}
+                  variant="default"
+                />
+                <KpiCard
+                  {...FIDC_KPI_META.pdd}
+                  value="2,1%"
+                  delta={{ value: 0.1, suffix: "pp", direction: "up", good: false }}
+                  currentValue={2.1}
+                  variant="default"
+                />
+                <KpiCard
+                  {...FIDC_KPI_META.cessoesPendentes}
+                  value="42"
+                  currentValue={42}
+                  variant="default"
+                />
+              </KpiStrip>
+            </Card>
+
+            <Card title="KpiStrip — hero feel (cols=4)">
+              <KpiStrip cols={4}>
                 <KpiCard {...FIDC_KPI_META.pl} value="R$ 124,5M" sub="abr/26" delta={{ value: 2.34, suffix: "%" }} variant="default" />
                 <KpiCard {...FIDC_KPI_META.rentabilidade} value="112,4%" delta={{ value: 3.1, suffix: "pp" }} variant="default" />
                 <KpiCard

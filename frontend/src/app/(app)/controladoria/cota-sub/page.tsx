@@ -1689,7 +1689,7 @@ export default function CotaSubPage() {
             />
           ) : (
             <div className="flex flex-col gap-4">
-              <KpiStrip className="grid-cols-2 min-[720px]:grid-cols-3 lg:grid-cols-5 xl:grid-cols-5">
+              <KpiStrip>
                 <KpiCard
                   label="PL da Cota Sub"
                   deltaSub="vs mes anterior"

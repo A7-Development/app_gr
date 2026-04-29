@@ -229,7 +229,7 @@ export function DashboardOperacional() {
         <div className="flex flex-col gap-5 p-6">
           <section aria-label="KPIs principais">
             <div className="rounded border border-gray-200 dark:border-gray-900 bg-white dark:bg-[#090E1A] px-5 py-4 shadow-xs">
-              <KpiStrip>
+              <KpiStrip cols={4}>
                 <KpiCard
                   {...FIDC_KPI_META.pl}
                   value="R$ 124,5M"

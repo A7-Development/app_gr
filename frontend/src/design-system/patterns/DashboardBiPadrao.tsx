@@ -634,8 +634,8 @@ export function DashboardBiPadrao() {
         {/* Z4 — Conteudo da aba */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
           <div className="flex flex-col gap-4">
-            {/* KpiStrip — 5 KPIs (override grid) */}
-            <KpiStrip className="grid-cols-2 min-[720px]:grid-cols-3 lg:grid-cols-5 xl:grid-cols-5">
+            {/* KpiStrip — 5 KPIs (canonico) */}
+            <KpiStrip cols={5}>
               <KpiCard
 {...FIDC_KPI_META.pl}
                 value="R$ 124,5M"
