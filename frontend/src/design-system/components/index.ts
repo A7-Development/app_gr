@@ -22,6 +22,14 @@ export {
   type DataTableProps,
 } from "./DataTable"
 export {
+  DataTableShell,
+  type DataTableShellProps,
+  type ShellSearchConfig,
+  type ShellSegmentOption,
+  type ShellSegmentsConfig,
+  type ShellEmptyState,
+} from "./DataTableShell"
+export {
   AppSidebar, useSidebarCollapsed,
   type AppSidebarProps, type BadgeCounts,
 } from "./Sidebar"
@@ -80,6 +88,7 @@ export { PageHeader } from "./PageHeader"
 export { PeriodoPresets } from "./PeriodoPresets"
 export { ProvenanceFooter, type ProvenanceSource } from "./ProvenanceFooter"
 export { SecretInput } from "./SecretInput"
+export { SegmentSwitch, type SegmentDef, type SegmentSwitchProps } from "./SegmentSwitch"
 export { Stepper } from "./Stepper"
 export { UserProfile } from "./UserProfile"
 export { VizCard } from "./VizCard"

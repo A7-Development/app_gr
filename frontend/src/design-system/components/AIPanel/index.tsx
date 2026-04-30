@@ -26,6 +26,8 @@ import {
   RiArrowUpSLine,
   RiArrowRightLine,
 } from "@remixicon/react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 
 import { cx } from "@/lib/utils"
 
@@ -218,6 +220,7 @@ function InsightChip({ insight, index }: { insight: AIInsight; index: number }) 
 
 function ChatBubble({ msg }: { msg: AIMessage }) {
   const isAI = msg.role === "ai"
+  const isLoading = "loading" in msg && msg.loading
   return (
     <div
       className={cx(
@@ -235,14 +238,66 @@ function ChatBubble({ msg }: { msg: AIMessage }) {
       >
         {isAI ? "› Strata IA" : "Voce"}
       </div>
-      <p className="whitespace-pre-wrap text-gray-900 dark:text-gray-100">
-        {msg.text}
-        {"loading" in msg && msg.loading && (
-          <span aria-hidden="true" className="animate-pulse opacity-50">
-            {" "}▋
-          </span>
-        )}
-      </p>
+      {isAI ? (
+        <div className="ai-markdown text-gray-900 dark:text-gray-100">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              p: ({ children }) => <p className="mb-1.5 last:mb-0">{children}</p>,
+              ul: ({ children }) => (
+                <ul className="mb-1.5 list-disc space-y-0.5 pl-4 last:mb-0">{children}</ul>
+              ),
+              ol: ({ children }) => (
+                <ol className="mb-1.5 list-decimal space-y-0.5 pl-4 last:mb-0">{children}</ol>
+              ),
+              li: ({ children }) => <li>{children}</li>,
+              code: ({ children, className }) => {
+                const isBlock = className?.includes("language-")
+                return isBlock ? (
+                  <code className="block overflow-x-auto rounded bg-gray-900 p-2 font-mono text-[11px] text-gray-100 dark:bg-gray-800">
+                    {children}
+                  </code>
+                ) : (
+                  <code className="rounded bg-gray-100 px-1 font-mono text-[11px] dark:bg-gray-800">
+                    {children}
+                  </code>
+                )
+              },
+              pre: ({ children }) => <div className="mb-1.5 last:mb-0">{children}</div>,
+              table: ({ children }) => (
+                <div className="mb-1.5 overflow-x-auto last:mb-0">
+                  <table className="min-w-full text-[11px]">{children}</table>
+                </div>
+              ),
+              th: ({ children }) => (
+                <th className="border-b border-violet-200 px-1.5 py-1 text-left font-semibold dark:border-violet-700/40">
+                  {children}
+                </th>
+              ),
+              td: ({ children }) => (
+                <td className="border-b border-violet-100 px-1.5 py-1 dark:border-violet-700/20">
+                  {children}
+                </td>
+              ),
+              strong: ({ children }) => (
+                <strong className="font-semibold text-gray-900 dark:text-gray-50">{children}</strong>
+              ),
+              a: ({ children, href }) => (
+                <a href={href} className="text-violet-600 underline dark:text-violet-400" target="_blank" rel="noreferrer">
+                  {children}
+                </a>
+              ),
+            }}
+          >
+            {msg.text}
+          </ReactMarkdown>
+          {isLoading && (
+            <span aria-hidden="true" className="animate-pulse opacity-50">▋</span>
+          )}
+        </div>
+      ) : (
+        <p className="whitespace-pre-wrap text-gray-900 dark:text-gray-100">{msg.text}</p>
+      )}
     </div>
   )
 }

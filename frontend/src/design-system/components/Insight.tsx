@@ -149,6 +149,13 @@ type InsightBarProps = {
   variant?: InsightBarVariant
   /** Eyebrow do panel. Default: "ANALISE IA · AUTO". */
   eyebrow?: string
+  /**
+   * Quando fornecido (modo `panel`), renderiza um botao X no canto superior
+   * direito que permite ao usuario dispensar o painel — util quando ele quer
+   * mais espaco para os dados. Modo `stacked` ignora (cada `<Insight />` ja
+   * tem seu proprio `onDismiss`).
+   */
+  onDismiss?: () => void
   className?: string
 }
 
@@ -186,6 +193,7 @@ export function InsightBar({
   items,
   variant = "panel",
   eyebrow = "ANALISE IA · AUTO",
+  onDismiss,
   className,
 }: InsightBarProps) {
   if (variant === "stacked") {
@@ -202,9 +210,12 @@ export function InsightBar({
   return (
     <div
       className={cx(
-        "flex gap-2.5 rounded-[6px] border px-3.5 py-2.5",
+        "relative flex gap-2.5 rounded-[6px] border px-3.5 py-2.5",
         "border-violet-200 bg-violet-50",
         "dark:border-violet-700/40 dark:bg-violet-500/[0.08]",
+        // Reserva espaco a direita para o botao X nao colidir com o texto
+        // dos bullets quando truncar/quebrar perto da borda.
+        onDismiss && "pr-9",
         className,
       )}
     >
@@ -220,6 +231,21 @@ export function InsightBar({
           ))}
         </div>
       </div>
+      {onDismiss && (
+        <button
+          type="button"
+          aria-label="Fechar análise IA"
+          onClick={onDismiss}
+          className={cx(
+            "absolute right-1.5 top-1.5 inline-flex size-6 items-center justify-center rounded-sm",
+            "text-violet-500/70 hover:bg-violet-500/10 hover:text-violet-700",
+            "dark:text-violet-400/70 dark:hover:bg-violet-500/15 dark:hover:text-violet-300",
+            "transition-colors",
+          )}
+        >
+          <RiCloseLine className="size-4" />
+        </button>
+      )}
     </div>
   )
 }

@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.modules.bi.api import benchmark, metadata, operacoes
+from app.modules.bi.api import benchmark, benchmark2, metadata, operacoes
 
 router = APIRouter()
 
@@ -12,6 +12,9 @@ router.include_router(operacoes.router)
 # L2 Benchmark (CVM FIDC via postgres_fdw — CLAUDE.md 13.1).
 # Pre-requisito runtime: schema `cvm_remote.*` configurado no gr_db.
 router.include_router(benchmark.router)
+
+# L2 Benchmark2 (lista completa de fundos CVM — usa <DataTableShell>).
+router.include_router(benchmark2.router)
 
 # Endpoints de taxonomia/metadata usados pelos filtros do frontend.
 router.include_router(metadata.router)

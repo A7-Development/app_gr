@@ -4,7 +4,7 @@ import enum
 
 
 class Module(enum.StrEnum):
-    """The 8 official modules of the GR system.
+    """The 9 official modules of the GR system.
 
     Adding a new value requires explicit authorization + update of CLAUDE.md section 11.1.
     """
@@ -12,6 +12,7 @@ class Module(enum.StrEnum):
     BI = "bi"
     CADASTROS = "cadastros"
     OPERACOES = "operacoes"
+    CREDITO = "credito"
     CONTROLADORIA = "controladoria"
     RISCO = "risco"
     INTEGRACOES = "integracoes"
@@ -36,6 +37,46 @@ class Permission(enum.StrEnum):
             Permission.ADMIN: 3,
         }
         return order[self] >= order[required]
+
+
+class AICapability(enum.StrEnum):
+    """User permission scale for the AI capability (parallel to Permission).
+
+    AI is a transversal capability, not a module — it lives outside the closed
+    `Module` enum (CLAUDE.md sec 11.1). Tenant-level entitlement is in
+    `tenant_ai_subscription`; user-level in `user_ai_permission`.
+    """
+
+    NONE = "none"
+    READ = "read"     # can chat / receive insights
+    WRITE = "write"   # can save / share conversations
+    ADMIN = "admin"   # can manage tier / topup of own tenant
+
+    def satisfies(self, required: "AICapability") -> bool:
+        order = {
+            AICapability.NONE: 0,
+            AICapability.READ: 1,
+            AICapability.WRITE: 2,
+            AICapability.ADMIN: 3,
+        }
+        return order[self] >= order[required]
+
+
+class AIProvider(enum.StrEnum):
+    """Supported LLM providers (centralized credentials)."""
+
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+
+
+class AIUsageStatus(enum.StrEnum):
+    """Final status of an AI usage event."""
+
+    OK = "ok"
+    RATE_LIMITED = "rate_limited"
+    ERROR = "error"
+    OVER_BUDGET = "over_budget"
+    INJECTION_BLOCKED = "injection_blocked"
 
 
 class TrustLevel(enum.StrEnum):

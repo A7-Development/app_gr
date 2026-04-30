@@ -110,3 +110,108 @@ class VariacaoDiariaResponse(BaseModel):
     divergencia:        Decimal   = Field(description="decomposicao_total - pl_delta (deve ser ~0)")
     apropriacao_dc:     ApropriacaoDc
     cpr_detalhado:      CprDetalhado
+
+
+# ── Balanco · otica Sub Jr ──────────────────────────────────────────────────
+
+BalanceRowType = Literal["section", "line", "subtotal", "total"]
+
+
+class BalanceRow(BaseModel):
+    """Linha do balanco.
+
+    - `type='line'` tem cosif/source e pode ter `sub_rows` populadas (1 nivel de
+      detalhamento por dimensao util da fonte: papel, codigo, emitente, etc.)
+    - `type='section'`/'subtotal'/'total' nao tem cosif nem subRows
+    - Sub-rows sao filhas de uma `line` e seguem o mesmo schema (recursivo).
+    """
+
+    id:        str
+    type:      BalanceRowType
+    label:     str
+    cosif:     str | None = None
+    descricao: str | None = Field(
+        default=None,
+        description="Descricao da origem na silver (ex.: 'CC - BRADESCO', 'Saldo em Tesouraria').",
+    )
+    source:    str | None = Field(default=None, description="Tabela(s) silver origem + filtro")
+    d1:        Decimal | None = None
+    d0:        Decimal | None = None
+    delta:     Decimal | None = Field(default=None, description="d0 - d1")
+    sub_rows:  list[BalanceRow] | None = Field(
+        default=None,
+        alias="subRows",
+        description="Detalhamento da linha por dimensao util (papel, banco, emitente, etc.)",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+BalanceRow.model_rebuild()
+
+
+class BalancoResponse(BaseModel):
+    """Resposta do endpoint GET /controladoria/cota-sub/balanco.
+
+    Balanco patrimonial diario na otica do cotista subordinado:
+      ATIVO (8 linhas) + Subtotal Ativo
+      PASSIVO (3 linhas: CPR, Cota Mez, Cota Sr) + Subtotal Passivo
+      = Cota Subordinada (residual)
+
+    Todas as fontes vem de silver canonico (CLAUDE.md §13.2.1).
+    """
+
+    fundo_id:      str  = Field(description="UUID da Unidade Administrativa")
+    fundo_nome:    str
+    data:          date = Field(description="D0 (dia analisado)")
+    data_anterior: date = Field(description="D-1 (dia util anterior)")
+    rows:          list[BalanceRow]
+
+
+# ── Variacoes do Dia · auditoria de movimentos do PL ────────────────────────
+
+
+class VariacaoItem(BaseModel):
+    """Item individual em apropriacao / pagamento / anomalia."""
+
+    cosif:     str | None = Field(default=None, description="COSIF analitico (quando aplicavel)")
+    label:     str = Field(description="Categoria (Cobranca, Consultoria, etc.)")
+    historico: str | None = Field(default=None, description="historico_traduzido da silver")
+    descricao: str | None = Field(default=None, description="descricao textual da silver")
+    valor:     Decimal
+
+
+class ConferenciaVariacao(BaseModel):
+    """Sanity-check do regime de competencia."""
+
+    delta_passivo_contabil: Decimal = Field(description="ΔSubtotal Passivo Contabil entre D-1 e D0")
+    soma_apropriacoes:      Decimal = Field(description="Σ apropriacoes do dia")
+    divergencia:            Decimal = Field(description="delta - soma. Deve ser ~0 se regime de competencia esta consistente")
+    ok:                     bool = Field(description="True se |divergencia| < 0,01")
+
+
+class VariacoesDiaResponse(BaseModel):
+    """Resposta do endpoint GET /controladoria/cota-sub/variacoes-dia.
+
+    Decompoe o Δ do PL Sub Jr entre D-1 e D0 em 3 movimentos:
+      1. Apropriacoes (provisoes diarias do CPR — regime competencia)
+      2. Pagamentos efetivados (saidas em wh_movimento_caixa)
+      3. Anomalias (pagamentos sem provisao previa — possivel fraude/erro)
+
+    Cruza wh_cpr_movimento (D-1 vs D0) com wh_movimento_caixa (D0) por
+    similaridade de descricao para identificar pagamentos sem provisao.
+    """
+
+    fundo_id:      str
+    data:          date
+    data_anterior: date
+
+    apropriacoes:        list[VariacaoItem]
+    apropriacoes_total:  Decimal
+
+    pagamentos:          list[VariacaoItem]
+    pagamentos_total:    Decimal
+
+    anomalias:           list[VariacaoItem]
+
+    conferencia:         ConferenciaVariacao

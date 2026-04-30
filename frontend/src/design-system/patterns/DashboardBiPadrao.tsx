@@ -439,7 +439,27 @@ const CESSOES_COLUMNS: ColumnDef<CessaoRow, unknown>[] = [
 // DashboardBiPadrao — page-level pattern
 // ───────────────────────────────────────────────────────────────────────────
 
-export function DashboardBiPadrao() {
+export type DashboardBiPadraoProps = {
+  /**
+   * Funcao de envio do chat IA. Quando omitida, AIPanel fica em modo placeholder
+   * (resposta canned). Em pagina real, passar `useAIChat({...}).send`.
+   */
+  sendMessage?: (text: string, context: { page: string; period?: string; filters?: string }) => Promise<string>
+  /**
+   * Insights automaticos para a InsightBar (Z4) e o AIPanel.
+   * Quando omitido, usa MOCK_INSIGHTS.
+   */
+  insights?: AIInsight[]
+  /**
+   * Slot opcional renderizado abaixo do PageHeader (Z1) — uso pra <AIQuotaIndicator />.
+   */
+  quotaSlot?: React.ReactNode
+}
+
+export function DashboardBiPadrao(props: DashboardBiPadraoProps = {}) {
+  const { sendMessage, insights, quotaSlot } = props
+  const effectiveInsights = insights ?? MOCK_INSIGHTS
+
   // Filtros (estado local — pagina real usa `useBiFilters`).
   const [search, setSearch] = React.useState("")
   const [period, setPeriod] = React.useState<PeriodOption>("Ultimos 30 dias")
@@ -504,11 +524,14 @@ export function DashboardBiPadrao() {
             title="BI · Pagina padrao"
             info="Template canonico de dashboard BI: KPIs + insights IA + grid 60/40 + tabela + drill-down."
             actions={
-              <DashboardHeaderActions
-                ai={{ open: ai.open, onToggle: ai.toggle }}
-                onShare={handleShare}
-                onExport={handleExport}
-              />
+              <div className="flex items-center gap-2">
+                {quotaSlot}
+                <DashboardHeaderActions
+                  ai={{ open: ai.open, onToggle: ai.toggle }}
+                  onShare={handleShare}
+                  onExport={handleExport}
+                />
+              </div>
             }
           />
         </div>
@@ -695,7 +718,8 @@ label="Cessoes Pendentes"
         open={ai.open}
         onClose={() => ai.setOpen(false)}
         context={aiContext}
-        insights={MOCK_INSIGHTS}
+        insights={effectiveInsights}
+        sendMessage={sendMessage}
       />
 
       {/* Drill-down sheet */}

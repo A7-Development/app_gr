@@ -6,8 +6,8 @@ import { QueryProvider } from "@/lib/QueryProvider"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "A7 Credit",
-  description: "Sistema de controladoria financeira",
+  title: "Strata",
+  description: "Inteligencia de dados para FIDCs",
 }
 
 export default function RootLayout({

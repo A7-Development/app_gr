@@ -16,6 +16,18 @@ from app.modules.integracoes.models.qitech_report_job import QitechReportJob  # 
 from app.modules.integracoes.models.tenant_source_config import TenantSourceConfig  # noqa: F401
 
 # Shared kernel
+from app.shared.ai.models import (  # noqa: F401
+    AIConversation,
+    AIConversationSummary,
+    AICreditBalance,
+    AIMessage,
+    AIPrompt,
+    AIPromptActive,
+    AIProviderCredential,
+    AIUsageEvent,
+    TenantAISubscription,
+    UserAIPermission,
+)
 from app.shared.audit_log.decision_log import DecisionLog  # noqa: F401
 from app.shared.audit_log.premise_set import PremiseSet  # noqa: F401
 from app.shared.catalog.source_catalog import SourceCatalog  # noqa: F401

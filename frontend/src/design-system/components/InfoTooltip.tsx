@@ -29,7 +29,16 @@ export function InfoTooltip({
   ariaLabel = "Mais informacoes",
 }: InfoTooltipProps) {
   return (
-    <Tooltip content={content} side={side} asChild>
+    // Workaround: Tremor Tooltip nao seta z-index no Content (Dialog/Drawer/
+    // DropdownMenu/Select usam z-50). Sem isso, o tooltip fica atras de
+    // headers sticky de DataTable (z-10) e similares. `tremor/` nao pode ser
+    // editado (CLAUDE.md §3), entao forcamos via className aqui.
+    <Tooltip
+      content={content}
+      side={side}
+      asChild
+      className="z-50"
+    >
       <button
         type="button"
         aria-label={ariaLabel}

@@ -11,11 +11,13 @@ import {
   getCoreRowModel,
   getSortedRowModel,
   getFilteredRowModel,
+  getExpandedRowModel,
   flexRender,
   type ColumnDef,
   type SortingState,
   type RowSelectionState,
   type VisibilityState,
+  type ExpandedState,
 } from "@tanstack/react-table"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import {
@@ -47,11 +49,47 @@ export interface DataTableProps<TData> {
   virtualize?:         boolean
   showDensityToggle?:  boolean
   showColumnManager?:  boolean
+  /**
+   * Estado inicial de visibilidade das colunas (por column id).
+   * Ex.: `{ source: false }` esconde a coluna "source" por padrao —
+   * usuario pode reativar via ColumnManager se ela estiver disponivel.
+   * Default: `{}` (todas visiveis).
+   */
+  initialColumnVisibility?: VisibilityState
   showExport?:         boolean
   onExport?:           (format: "csv" | "xlsx" | "pdf", rows: TData[]) => void
   error?:              string | null
   onRetry?:            () => void
   loading?:            boolean
+  /**
+   * Optional callback to compute a className for each `<tr>`. Receives the row
+   * data and returns extra Tailwind classes (e.g. for section/subtotal/total
+   * rows in a balance-sheet-style table). Additive — does not override the
+   * canonical row styling (height, borders, hover, selection).
+   */
+  rowClassName?:       (row: TData) => string
+  // ── Expand/collapse (hierarquical rows via TanStack getExpandedRowModel) ──
+  /**
+   * Habilita expand/collapse de sub-rows. Quando true, requer `getSubRows`.
+   * Default: false (tabela continua flat como antes).
+   */
+  enableExpanding?:    boolean
+  /**
+   * Acessor que devolve sub-rows de uma linha. Retorne `undefined` para folhas.
+   */
+  getSubRows?:         (row: TData) => TData[] | undefined
+  /**
+   * Estado inicial de expansao. Default: `{}` (tudo colapsado).
+   * Use `true` para expandir tudo, ou objeto `{ rowId: true }` para abrir
+   * linhas especificas.
+   */
+  defaultExpanded?:    ExpandedState
+  /**
+   * Id da coluna onde o chevron de expand renderiza (default: id da primeira
+   * coluna acessor). Use quando a primeira coluna nao for a apropriada
+   * (ex.: tem coluna de checkbox antes).
+   */
+  expandedColumnId?:   string
 }
 
 const DENSITY_ICONS: Record<DensityMode, React.ReactNode> = {
@@ -270,11 +308,20 @@ export function DataTable<TData>({
   error             = null,
   onRetry,
   loading           = false,
+  rowClassName,
+  enableExpanding   = false,
+  getSubRows,
+  defaultExpanded   = {},
+  expandedColumnId,
+  initialColumnVisibility,
 }: DataTableProps<TData>) {
   const [sorting, setSorting]               = React.useState<SortingState>([])
   const [rowSelection, setRowSelection]     = React.useState<RowSelectionState>({})
-  const [colVisibility, setColVisibility]   = React.useState<VisibilityState>({})
+  const [colVisibility, setColVisibility]   = React.useState<VisibilityState>(
+    initialColumnVisibility ?? {},
+  )
   const [density, setDensity]               = React.useState<DensityMode>(densityProp)
+  const [expanded, setExpanded]             = React.useState<ExpandedState>(defaultExpanded)
 
   const parentRef = React.useRef<HTMLDivElement>(null)
   const shouldVirtualize = virtualize ?? data.length > 100
@@ -282,17 +329,31 @@ export function DataTable<TData>({
   const table = useReactTable({
     data,
     columns,
-    state: { sorting, rowSelection, globalFilter, columnVisibility: colVisibility },
-    onSortingChange: setSorting,
-    onRowSelectionChange: setRowSelection,
+    state: {
+      sorting,
+      rowSelection,
+      globalFilter,
+      columnVisibility: colVisibility,
+      expanded,
+    },
+    onSortingChange:          setSorting,
+    onRowSelectionChange:     setRowSelection,
     onColumnVisibilityChange: setColVisibility,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    enableRowSelection: selectable,
-    enableMultiSort: true,
-    globalFilterFn: "includesString",
+    onExpandedChange:         setExpanded,
+    getCoreRowModel:          getCoreRowModel(),
+    getSortedRowModel:        getSortedRowModel(),
+    getFilteredRowModel:      getFilteredRowModel(),
+    getExpandedRowModel:      enableExpanding ? getExpandedRowModel() : undefined,
+    getSubRows:               enableExpanding ? getSubRows : undefined,
+    enableRowSelection:       selectable,
+    enableExpanding,
+    enableMultiSort:          true,
+    globalFilterFn:           "includesString",
   })
+
+  // Resolve qual coluna recebe o chevron (default: primeira coluna).
+  const expandColId = expandedColumnId ?? (columns[0] as { id?: string; accessorKey?: string })?.id
+    ?? (columns[0] as { accessorKey?: string })?.accessorKey ?? null
 
   const { rows } = table.getRowModel()
 
@@ -352,32 +413,43 @@ export function DataTable<TData>({
       ) : (
         <div ref={parentRef} className="flex-1 overflow-auto">
           <table className="w-full border-collapse text-[13px]">
-            <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-gray-900/60">
+            <thead className="sticky top-0 z-[1] bg-gray-50 dark:bg-gray-900/60">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <th
-                      key={header.id}
-                      colSpan={header.colSpan}
-                      style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}
-                      className={cx(
-                        "h-7 border-b border-gray-200 dark:border-gray-800 px-4",
-                        "text-left text-[10px] font-semibold uppercase tracking-[0.05em]",
-                        "text-gray-400 dark:text-gray-500 whitespace-nowrap select-none",
-                        header.column.getCanSort() && "cursor-pointer hover:text-gray-700 dark:hover:text-gray-300",
-                      )}
-                      onClick={header.column.getToggleSortingHandler()}
-                    >
-                      {header.isPlaceholder ? null : (
-                        <span className="inline-flex items-center">
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                          {header.column.getCanSort() && (
-                            <SortIcon direction={header.column.getIsSorted()} />
-                          )}
-                        </span>
-                      )}
-                    </th>
-                  ))}
+                  {hg.headers.map((header) => {
+                    // Header alignment via column meta — alinha o titulo da coluna
+                    // ao alinhamento dos dados. Default: left. Use `meta: { align: "right" }`
+                    // em colunas numericas (valores, deltas) para alinhar a direita.
+                    const align = (header.column.columnDef.meta as { align?: "left" | "right" | "center" } | undefined)?.align ?? "left"
+                    return (
+                      <th
+                        key={header.id}
+                        colSpan={header.colSpan}
+                        style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}
+                        className={cx(
+                          "h-7 border-b border-gray-200 dark:border-gray-800 px-4",
+                          "text-[10px] font-semibold uppercase tracking-[0.05em]",
+                          "text-gray-400 dark:text-gray-500 whitespace-nowrap select-none",
+                          align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left",
+                          header.column.getCanSort() && "cursor-pointer hover:text-gray-700 dark:hover:text-gray-300",
+                        )}
+                        onClick={header.column.getToggleSortingHandler()}
+                      >
+                        {header.isPlaceholder ? null : (
+                          <span className={cx(
+                            "inline-flex items-center",
+                            align === "right" && "justify-end",
+                            align === "center" && "justify-center",
+                          )}>
+                            {flexRender(header.column.columnDef.header, header.getContext())}
+                            {header.column.getCanSort() && (
+                              <SortIcon direction={header.column.getIsSorted()} />
+                            )}
+                          </span>
+                        )}
+                      </th>
+                    )
+                  })}
                 </tr>
               ))}
             </thead>
@@ -405,13 +477,62 @@ export function DataTable<TData>({
                       isSel
                         ? "bg-blue-50 dark:bg-blue-500/10 border-l-2 border-l-blue-500"
                         : "border-l-2 border-l-transparent hover:bg-gray-50 dark:hover:bg-gray-900/50",
+                      rowClassName?.(row.original),
                     )}
                   >
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-3 text-gray-900 dark:text-gray-50">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
+                    {row.getVisibleCells().map((cell) => {
+                      const isExpandCol = enableExpanding && expandColId !== null && cell.column.id === expandColId
+                      const depth = row.depth
+                      const canExpand = row.getCanExpand()
+                      const isExpanded = row.getIsExpanded()
+                      return (
+                        <td key={cell.id} className="px-3 text-gray-900 dark:text-gray-50">
+                          {isExpandCol ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              {/* Indent baseado em depth (16px por nivel) */}
+                              {depth > 0 && (
+                                <span aria-hidden="true" style={{ display: "inline-block", width: depth * 16 }} />
+                              )}
+                              {/* Chevron clicavel quando ha sub-rows */}
+                              {canExpand ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    row.getToggleExpandedHandler()()
+                                  }}
+                                  className={cx(
+                                    "inline-flex size-4 shrink-0 items-center justify-center rounded",
+                                    "text-gray-400 hover:text-gray-700 hover:bg-gray-100",
+                                    "dark:text-gray-500 dark:hover:text-gray-200 dark:hover:bg-gray-800",
+                                  )}
+                                  aria-label={isExpanded ? "Recolher" : "Expandir"}
+                                  aria-expanded={isExpanded}
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    className={cx(
+                                      "inline-block font-mono text-[12px] leading-none transition-transform duration-100",
+                                      isExpanded && "rotate-90",
+                                    )}
+                                  >
+                                    {">"}
+                                  </span>
+                                </button>
+                              ) : (
+                                /* Sem chevron: placeholder pra alinhar com linhas que tem */
+                                <span aria-hidden="true" className="inline-block size-4 shrink-0" />
+                              )}
+                              <span className="min-w-0 flex-1">
+                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                              </span>
+                            </span>
+                          ) : (
+                            flexRender(cell.column.columnDef.cell, cell.getContext())
+                          )}
+                        </td>
+                      )
+                    })}
                   </tr>
                 )
               })}

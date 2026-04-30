@@ -10,7 +10,7 @@ export default function Home() {
         />
         <div>
           <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-50">
-            Bem-vindo ao A7 Credit
+            Bem-vindo ao Strata
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Etapa 1 da refatoracao -- app shell configurado

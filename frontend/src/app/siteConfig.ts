@@ -1,7 +1,7 @@
 export const siteConfig = {
-  name: "A7 Credit",
-  url: "https://a7credit.com.br",
-  description: "Sistema de controladoria financeira",
+  name: "Strata",
+  url: "https://strata.a7credit.com.br",
+  description: "Inteligencia de dados para FIDCs",
   baseLinks: {
     home: "/",
     // adicionar rotas conforme forem criadas

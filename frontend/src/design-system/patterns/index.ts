@@ -4,3 +4,5 @@
 export { DashboardOperacional } from "./DashboardOperacional"
 export { ListagemComDrilldown } from "./ListagemComDrilldown"
 export { DashboardBiPadrao } from "./DashboardBiPadrao"
+export { ListagemCrudInline } from "./ListagemCrudInline"
+export { ListagemCrudExpand } from "./ListagemCrudExpand"

@@ -15,6 +15,7 @@ import { cx } from "@/lib/utils"
 import { StatusPill } from "@/design-system/components/StatusPill"
 import { Sparkline } from "@/design-system/components/KpiStrip"
 import type { StatusKey } from "@/design-system/tokens"
+import { tableTokens } from "@/design-system/tokens/table"
 
 function useCopy(text: string) {
   const [copied, setCopied] = React.useState(false)
@@ -35,10 +36,15 @@ const fmtBRL = new Intl.NumberFormat("pt-BR", {
 })
 
 export function CurrencyCell({ value }: { value: number | null | undefined }) {
-  if (value == null) return <span className="text-gray-400 dark:text-gray-600">—</span>
+  if (value == null) return <span className={tableTokens.cellMuted}>—</span>
   const negative = value < 0
   return (
-    <span className={cx("tabular-nums font-medium text-right", negative && "text-gray-500 dark:text-gray-400")}>
+    <span
+      className={cx(
+        negative ? tableTokens.cellNumberSecondary : tableTokens.cellNumber,
+        "font-medium text-right",
+      )}
+    >
       {negative ? `(${fmtBRL.format(Math.abs(value))})` : fmtBRL.format(value)}
     </span>
   )
@@ -51,9 +57,9 @@ export function PercentageCell({
   value:     number | null | undefined
   decimals?: number
 }) {
-  if (value == null) return <span className="text-gray-400 dark:text-gray-600">—</span>
+  if (value == null) return <span className={tableTokens.cellMuted}>—</span>
   return (
-    <span className="tabular-nums">
+    <span className={tableTokens.cellNumber}>
       {value.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}%
     </span>
   )
@@ -80,7 +86,7 @@ export function DateCell({
   value:   string | null | undefined
   format?: "relative" | "absolute"
 }) {
-  if (!value) return <span className="text-gray-400 dark:text-gray-600">—</span>
+  if (!value) return <span className={tableTokens.cellMuted}>—</span>
 
   const display = format === "relative" ? relativeDate(value) : absoluteDate(value)
   const tooltip = absoluteDate(value)
@@ -89,7 +95,7 @@ export function DateCell({
     <TooltipPrimitive.Provider delayDuration={400}>
       <TooltipPrimitive.Root>
         <TooltipPrimitive.Trigger asChild>
-          <span className="tabular-nums text-gray-500 dark:text-gray-400 cursor-default">{display}</span>
+          <span className={cx(tableTokens.cellNumberSecondary, "cursor-default")}>{display}</span>
         </TooltipPrimitive.Trigger>
         <TooltipPrimitive.Portal>
           <TooltipPrimitive.Content
@@ -121,10 +127,10 @@ export function IdCell({ value, maxLen = 16 }: { value: string; maxLen?: number 
             type="button"
             onClick={copy}
             className={cx(
-              "group inline-flex items-center gap-1",
-              "font-mono text-xs tabular-nums",
-              "text-blue-600 dark:text-blue-400",
-              "hover:underline",
+              "group inline-flex items-center gap-1 tabular-nums",
+              tableTokens.cellTextMono,
+              // Override cor: blue indica "clicavel/copiavel" (semantica de acao).
+              "!text-blue-600 dark:!text-blue-400 hover:underline",
             )}
           >
             {truncated}
@@ -164,10 +170,9 @@ export function CpfCnpjCell({ value }: { value: string }) {
       onClick={copy}
       title={copied ? "Copiado!" : "Clique para copiar"}
       className={cx(
-        "group inline-flex items-center gap-1",
-        "font-mono text-xs tabular-nums tracking-[0.02em]",
-        "text-gray-700 dark:text-gray-300",
-        "hover:text-gray-900 dark:hover:text-gray-50",
+        "group inline-flex items-center gap-1 tabular-nums tracking-[0.02em]",
+        tableTokens.cellTextMono,
+        "hover:text-blue-600 dark:hover:text-blue-400",
       )}
     >
       {formatted}
@@ -194,7 +199,7 @@ export function RelationshipCell({
   meta?: RelationshipMeta
 }) {
   if (!meta) {
-    return <span className="text-sm text-gray-900 dark:text-gray-50">{value}</span>
+    return <span className={tableTokens.cellText}>{value}</span>
   }
 
   return (
@@ -204,9 +209,10 @@ export function RelationshipCell({
           href={meta.href ?? "#"}
           onClick={(e) => !meta.href && e.preventDefault()}
           className={cx(
-            "inline-flex items-center gap-1 text-sm",
-            "text-blue-600 dark:text-blue-400",
-            "hover:underline",
+            "inline-flex items-center gap-1",
+            tableTokens.cellText,
+            // Override cor: blue indica "clicavel" (link semantica).
+            "!text-blue-600 dark:!text-blue-400 hover:underline",
           )}
         >
           {value}

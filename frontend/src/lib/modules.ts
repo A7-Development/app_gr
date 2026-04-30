@@ -11,6 +11,8 @@ import {
   RiExchangeFundsLine,
   RiFileChart2Line,
   RiFlaskLine,
+  RiHandCoinLine,
+  RiKey2Line,
   RiLineChartLine,
   RiMoneyDollarBoxLine,
   RiPercentLine,
@@ -28,6 +30,7 @@ export type ModuleId =
   | "bi"
   | "cadastros"
   | "operacoes"
+  | "credito"
   | "controladoria"
   | "risco"
   | "integracoes"
@@ -58,6 +61,7 @@ export type ModuleColor =
   | "red"
   | "violet"
   | "slate"
+  | "indigo"
 
 export type ModuleDefinition = {
   id: ModuleId
@@ -88,6 +92,7 @@ export const MODULE_AVATAR_COLORS: Record<ModuleColor, string> = {
   red: "bg-red-600 dark:bg-red-500",
   violet: "bg-violet-500 dark:bg-violet-500",
   slate: "bg-slate-600 dark:bg-slate-500",
+  indigo: "bg-indigo-500 dark:bg-indigo-500",
 }
 
 export const MODULES: ModuleDefinition[] = [
@@ -111,6 +116,8 @@ export const MODULES: ModuleDefinition[] = [
       // Benchmark — dados publicos CVM FIDC via postgres_fdw.
       // Ver docs/integracao-cvm-fidc.md e CLAUDE.md §13.1.
       { name: "Benchmark", href: "/bi/benchmark", enabled: true, icon: RiBarChartGroupedLine, groupLabel: "Analise" },
+      // Benchmark2 — listagem completa de fundos CVM via <DataTableShell>.
+      { name: "Benchmark2", href: "/bi/benchmark2", enabled: true, icon: RiBarChartGroupedLine, groupLabel: "Analise" },
     ],
   },
   {
@@ -140,6 +147,17 @@ export const MODULES: ModuleDefinition[] = [
     enabled: false,
     permission: "none",
     basePath: "/operacoes",
+    sections: [{ name: "Em breve", href: "#", enabled: false }],
+  },
+  {
+    id: "credito",
+    name: "Credito",
+    initials: "CR",
+    icon: RiHandCoinLine,
+    color: "indigo",
+    enabled: false,
+    permission: "none",
+    basePath: "/credito",
     sections: [{ name: "Em breve", href: "#", enabled: false }],
   },
   {
@@ -202,10 +220,43 @@ export const MODULES: ModuleDefinition[] = [
     initials: "AD",
     icon: RiSettings3Line,
     color: "slate",
-    enabled: false,
-    permission: "none",
+    // MVP: hardcoded enabled+admin para o tenant mantenedor (a7-credit).
+    // TODO Phase 2: derivar dinamicamente do `/auth/me` via campo
+    // `tenant.is_system_maintainer`. Backend ja protege com
+    // `require_system_maintainer` (HTTP 403), entao expor extra na UI nao vaza.
+    enabled: true,
+    permission: "admin",
     basePath: "/admin",
-    sections: [{ name: "Em breve", href: "#", enabled: false }],
+    sections: [
+      {
+        name: "Provedores",
+        href: "/admin/ia/providers",
+        enabled: true,
+        icon: RiKey2Line,
+        groupLabel: "Inteligencia Artificial",
+      },
+      {
+        name: "Assinaturas",
+        href: "/admin/ia/subscriptions",
+        enabled: false,
+        icon: RiHandCoinLine,
+        groupLabel: "Inteligencia Artificial",
+      },
+      {
+        name: "Prompts",
+        href: "/admin/ia/prompts",
+        enabled: true,
+        icon: RiBookOpenLine,
+        groupLabel: "Inteligencia Artificial",
+      },
+      {
+        name: "Uso",
+        href: "/admin/ia/usage",
+        enabled: false,
+        icon: RiLineChartLine,
+        groupLabel: "Inteligencia Artificial",
+      },
+    ],
   },
 ]
 

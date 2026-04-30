@@ -108,11 +108,216 @@ export type LoginResponse = {
   expires_in_minutes: number
 }
 
+export type Permission = "none" | "read" | "write" | "admin"
+
 export type MeResponse = {
   user: { id: string; email: string; name: string }
-  tenant: { id: string; slug: string; name: string }
+  tenant: { id: string; slug: string; name: string; is_system_maintainer: boolean }
   enabled_modules: string[]
-  user_permissions: Record<string, "none" | "read" | "write" | "admin">
+  user_permissions: Record<string, Permission>
+  ai_enabled: boolean
+  ai_permission: Permission
+}
+
+//
+// Tipos do modulo IA (transversal — ver CLAUDE.md sec 19)
+//
+
+export type AIQuota = {
+  granted: number
+  consumed: number
+  carryover: number
+  topup: number
+  remaining: number
+  exhausted: boolean
+  period_yyyymm: string
+}
+
+export type AIConversationListItem = {
+  id: string
+  title: string | null
+  page_context: string | null
+  last_msg_at: string
+  turn_count: number
+}
+
+export type AIConversationMessage = {
+  id: string
+  turn_index: number
+  role: "user" | "ai"
+  text: string
+  occurred_at: string
+}
+
+export type AIInsightsResponse = {
+  insights: { text: string }[]
+  generated_at: string
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Admin IA — gestao de credenciais de provedores LLM (system maintainer)
+// Espelha endpoints em backend/app/modules/admin/api/ai_provider_credentials.py
+// ───────────────────────────────────────────────────────────────────────────
+
+export type AIProvider = "openai" | "anthropic"
+
+export type AIProviderCredentialRead = {
+  id: string
+  provider: AIProvider
+  alias: string
+  zdr_enabled: boolean
+  active: boolean
+  rotated_at: string | null
+  notes: string | null
+  created_at: string
+}
+
+export type AIProviderCredentialCreatePayload = {
+  provider: AIProvider
+  alias: string
+  api_key: string
+  org_id?: string | null
+  zdr_enabled: boolean
+  notes?: string | null
+}
+
+export type AIProviderCredentialUpdatePayload = {
+  api_key?: string
+  org_id?: string | null
+  zdr_enabled?: boolean
+  active?: boolean
+  notes?: string | null
+}
+
+export const adminAI = {
+  providers: {
+    list: () =>
+      apiClient.get<AIProviderCredentialRead[]>("/admin/ai/providers"),
+    create: (payload: AIProviderCredentialCreatePayload) =>
+      apiClient.post<AIProviderCredentialRead>("/admin/ai/providers", payload),
+    update: (id: string, payload: AIProviderCredentialUpdatePayload) =>
+      apiClient.put<AIProviderCredentialRead>(
+        `/admin/ai/providers/${id}`,
+        payload,
+      ),
+    remove: (id: string) =>
+      apiClient.delete<void>(`/admin/ai/providers/${id}`),
+  },
+  prompts: {
+    list: (includeArchived = false) =>
+      apiClient.get<AIPromptVersionInfo[]>(
+        `/admin/ai/prompts${includeArchived ? "?include_archived=true" : ""}`,
+      ),
+    get: (id: string) =>
+      apiClient.get<AIPromptDetail>(`/admin/ai/prompts/${id}`),
+    create: (payload: AIPromptCreatePayload) =>
+      apiClient.post<AIPromptDetail>("/admin/ai/prompts", payload),
+    update: (id: string, payload: AIPromptUpdatePayload) =>
+      apiClient.put<AIPromptDetail>(`/admin/ai/prompts/${id}`, payload),
+    activate: (name: string, versionId: string) =>
+      apiClient.put<AIPromptVersionInfo>(
+        `/admin/ai/prompts/${encodeURIComponent(name)}/active`,
+        { version_id: versionId },
+      ),
+    archive: (id: string) =>
+      apiClient.post<AIPromptDetail>(`/admin/ai/prompts/${id}/archive`),
+    preview: (id: string, context: Record<string, string>) =>
+      apiClient.post<AIPromptPreview>(`/admin/ai/prompts/${id}/preview`, {
+        context,
+      }),
+  },
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Tipos do admin de prompts
+// ───────────────────────────────────────────────────────────────────────────
+
+export type AIPromptVersionInfo = {
+  id: string
+  name: string
+  version: string
+  is_active: boolean
+  model: string
+  fallback_model: string | null
+  temperature: number
+  max_tokens: number
+  description: string | null
+  created_at: string
+  archived_at: string | null
+}
+
+export type AIPromptDetail = {
+  id: string
+  name: string
+  version: string
+  is_active: boolean
+  system_text: string
+  user_context_template: string | null
+  assistant_prime: string | null
+  model: string
+  fallback_model: string | null
+  temperature: number
+  max_tokens: number
+  cache_strategy: "none" | "after_system"
+  description: string | null
+  created_at: string
+  updated_at: string
+  archived_at: string | null
+}
+
+export type AIPromptCreatePayload = {
+  name: string
+  system_text: string
+  user_context_template?: string
+  assistant_prime?: string
+  model: string
+  fallback_model?: string
+  temperature?: number
+  max_tokens?: number
+  cache_strategy?: "none" | "after_system"
+  description?: string
+}
+
+export type AIPromptUpdatePayload = Partial<Omit<AIPromptCreatePayload, "name">>
+
+export type AIPromptPreview = {
+  name: string
+  version: string
+  model: string
+  temperature: number
+  max_tokens: number
+  messages: Array<{
+    role: string
+    content: Array<{ type: string; text: string; cache_control?: { type: string } | null }>
+  }>
+}
+
+/**
+ * Endpoint URL absoluto (precisa para o stream SSE via fetch).
+ * Inclui o Bearer token no header.
+ */
+export function buildAIChatRequest(
+  body: {
+    message: string
+    context: { page: string; period?: string | null; filters?: string | null }
+    conversation_id?: string | null
+  },
+): { url: string; init: RequestInit } {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+  }
+  const token = getToken()
+  if (token) headers.Authorization = `Bearer ${token}`
+  return {
+    url: `${API_URL}/ai/chat`,
+    init: {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      cache: "no-store",
+    },
+  }
 }
 
 //
@@ -837,6 +1042,30 @@ export type DataMinimaResponse = {
   data_minima: string | null
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// BI · Benchmark2 (lista completa de fundos CVM via <DataTableShell>)
+// ───────────────────────────────────────────────────────────────────────────
+
+export type Benchmark2FundoRow = {
+  cnpj: string
+  fundo: string
+  condom: "aberto" | "fechado" | null
+  cotistas: number | null
+  pl_medio_3m: number | null
+  pl_ult_mes: number | null
+}
+
+export type Benchmark2FundosLista = {
+  competencia: string
+  fundos: Benchmark2FundoRow[]
+  total: number
+}
+
+export const biBenchmark2 = {
+  fundos: () =>
+    apiClient.get<Benchmark2FundosLista>("/bi/benchmark2/fundos"),
+}
+
 export const biMetadata = {
   uas: () => apiClient.get<UAOption[]>("/bi/metadata/uas"),
   produtos: () => apiClient.get<ProdutoOption[]>("/bi/metadata/produtos"),
@@ -1199,6 +1428,72 @@ function _coerceVariacao(r: VariacaoDiariaResponse): VariacaoDiariaResponse {
   }
 }
 
+// ── Balanco diario · otica Sub Jr ──────────────────────────────────────────
+
+export type BalanceRowType = "section" | "line" | "subtotal" | "total"
+
+export type BalanceRowDTO = {
+  id:         string
+  type:       BalanceRowType
+  label:      string
+  cosif?:     string | null
+  descricao?: string | null
+  source?:    string | null
+  d1?:        number | string | null  // Pydantic Decimal -> string; coerce abaixo
+  d0?:        number | string | null
+  delta?:     number | string | null
+  subRows?:   BalanceRowDTO[] | null
+}
+
+export type BalanceRow = {
+  id:         string
+  type:       BalanceRowType
+  label:      string
+  cosif?:     string | null
+  descricao?: string | null
+  source?:    string | null
+  d1:         number | null
+  d0:         number | null
+  delta:      number | null
+  subRows?:   BalanceRow[]
+}
+
+export type BalancoResponse = {
+  fundo_id:      string
+  fundo_nome:    string
+  data:          string  // ISO date
+  data_anterior: string  // ISO date
+  rows:          BalanceRow[]
+}
+
+type BalancoResponseRaw = {
+  fundo_id:      string
+  fundo_nome:    string
+  data:          string
+  data_anterior: string
+  rows:          BalanceRowDTO[]
+}
+
+function _coerceBalanceVal(v: number | string | null | undefined): number | null {
+  if (v === null || v === undefined) return null
+  return Number(v)
+}
+
+function _coerceBalanceRow(r: BalanceRowDTO): BalanceRow {
+  return {
+    id:        r.id,
+    type:      r.type,
+    label:     r.label,
+    cosif:     r.cosif ?? null,
+    descricao: r.descricao ?? null,
+    source:    r.source ?? null,
+    d1:        _coerceBalanceVal(r.d1),
+    d0:        _coerceBalanceVal(r.d0),
+    delta:     _coerceBalanceVal(r.delta),
+    subRows:   r.subRows ? r.subRows.map(_coerceBalanceRow) : undefined,
+  }
+}
+
 export const controladoria = {
   cotaSubVariacaoDiaria: async (
     fundoId: string,
@@ -1212,4 +1507,112 @@ export const controladoria = {
     )
     return _coerceVariacao(raw)
   },
+
+  cotaSubBalanco: async (
+    fundoId: string,
+    data: string,           // YYYY-MM-DD
+    dataAnterior?: string,  // YYYY-MM-DD opcional (override de D-1)
+  ): Promise<BalancoResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    const raw = await apiClient.get<BalancoResponseRaw>(
+      `/controladoria/cota-sub/balanco?${params.toString()}`,
+    )
+    return {
+      ...raw,
+      rows: raw.rows.map(_coerceBalanceRow),
+    }
+  },
+
+  cotaSubVariacoesDia: async (
+    fundoId: string,
+    data: string,
+    dataAnterior?: string,
+  ): Promise<VariacoesDiaResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    const raw = await apiClient.get<VariacoesDiaResponseRaw>(
+      `/controladoria/cota-sub/variacoes-dia?${params.toString()}`,
+    )
+    return {
+      ...raw,
+      apropriacoes:       raw.apropriacoes.map(_coerceVariacaoItem),
+      apropriacoes_total: Number(raw.apropriacoes_total),
+      pagamentos:         raw.pagamentos.map(_coerceVariacaoItem),
+      pagamentos_total:   Number(raw.pagamentos_total),
+      anomalias:          raw.anomalias.map(_coerceVariacaoItem),
+      conferencia: {
+        delta_passivo_contabil: Number(raw.conferencia.delta_passivo_contabil),
+        soma_apropriacoes:      Number(raw.conferencia.soma_apropriacoes),
+        divergencia:            Number(raw.conferencia.divergencia),
+        ok:                     raw.conferencia.ok,
+      },
+    }
+  },
+}
+
+// ── Variacoes do Dia (auditoria de movimentos) ─────────────────────────────
+
+export type VariacaoItem = {
+  cosif:     string | null
+  label:     string
+  historico: string | null
+  descricao: string | null
+  valor:     number
+}
+
+type VariacaoItemRaw = {
+  cosif:     string | null
+  label:     string
+  historico: string | null
+  descricao: string | null
+  valor:     number | string
+}
+
+export type ConferenciaVariacao = {
+  delta_passivo_contabil: number
+  soma_apropriacoes:      number
+  divergencia:            number
+  ok:                     boolean
+}
+
+type ConferenciaVariacaoRaw = {
+  delta_passivo_contabil: number | string
+  soma_apropriacoes:      number | string
+  divergencia:            number | string
+  ok:                     boolean
+}
+
+export type VariacoesDiaResponse = {
+  fundo_id:           string
+  data:               string
+  data_anterior:      string
+  apropriacoes:       VariacaoItem[]
+  apropriacoes_total: number
+  pagamentos:         VariacaoItem[]
+  pagamentos_total:   number
+  anomalias:          VariacaoItem[]
+  conferencia:        ConferenciaVariacao
+}
+
+type VariacoesDiaResponseRaw = {
+  fundo_id:           string
+  data:               string
+  data_anterior:      string
+  apropriacoes:       VariacaoItemRaw[]
+  apropriacoes_total: number | string
+  pagamentos:         VariacaoItemRaw[]
+  pagamentos_total:   number | string
+  anomalias:          VariacaoItemRaw[]
+  conferencia:        ConferenciaVariacaoRaw
+}
+
+function _coerceVariacaoItem(r: VariacaoItemRaw): VariacaoItem {
+  return {
+    cosif:     r.cosif ?? null,
+    label:     r.label,
+    historico: r.historico ?? null,
+    descricao: r.descricao ?? null,
+    valor:     Number(r.valor),
+  }
 }

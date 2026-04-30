@@ -518,6 +518,15 @@ export function KpiCard({
           {label}
         </span>
         {showAlert && alertThreshold && <AlertBadge threshold={alertThreshold} />}
+        {/* OriginDot inline ao lado do label — metadata visual sem competir
+            com o sparkline (ver wrapper para historico do design). */}
+        {source && (
+          <OriginDot
+            source={source}
+            updatedAtISO={updatedAtISO}
+            variant="dot"
+          />
+        )}
       </div>
 
       <div
@@ -600,6 +609,14 @@ export function KpiCard({
   ) : null
 
   return (
+    // OriginDot vai INLINE no header do contentColumn (ao lado do label e
+    // de eventual AlertBadge), nao no canto superior direito do card.
+    // Motivacao: em layout=side com sparkline de tendencia, o canto direito
+    // colide com o endpoint da linha — o dot acaba lendo como ponto de dados
+    // do grafico, nao metadado. Inline com label associa o dot ao label
+    // semanticamente (ambos sao "cabecalho" do card) e fica longe do chart.
+    // Ganho de altura preservado: dot ocupa o slot vertical do label, zero
+    // altura extra (~18-20px de economia vs modo inline legado).
     <div className={cx("flex flex-col", s.rootGap, className)}>
       {layout === "side" ? (
         <div className={cx("flex items-center", s.sideGap)}>
@@ -612,57 +629,52 @@ export function KpiCard({
           {sparkChart && <div className="-mx-1">{sparkChart}</div>}
         </>
       )}
-
-      {source && (
-        <div className="mt-0.5">
-          <OriginDot source={source} updatedAtISO={updatedAtISO} />
-        </div>
-      )}
     </div>
   )
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// KpiStrip — container com cols configuravel
+// KpiStrip — container full-width, KPIs com largura natural
 // ════════════════════════════════════════════════════════════════════════
 //
 // Densidade canonica = 5 KPIs em xl (densidade natural de dashboard FIDC
 // operacional: PL, Subordinacao, Rentabilidade, Concentracao, Resgates).
 // Para dashboards executivos / "hero feel" usa cols={4}.
 //
-// Cada cols tem um max-w que garante que `variant="default"` (chart 100x44,
-// value 20px) caiba sem squeeze em todos os cards do strip.
+// Layout em xl: `flex justify-between` — card encosta nas bordas do
+// container pai (sem max-w / mx-auto), cada KpiCard mantem largura
+// natural (label + value + sparkline = ~conteudo intrinseco), e o
+// espaco entre os cards distribui uniformemente. Telas <xl caem para
+// grid (1 col mobile, 2 cols sm).
+//
+// Prop `cols` continua existindo como anotacao semantica (5 = canonico,
+// 4 = hero feel, 6 = sugere variant=compact). Em xl ele nao dita largura
+// — quem dita e o conteudo de cada KpiCard. Em telas pequenas continua
+// caindo em grid 1/2 colunas.
 
 export type KpiStripCols = 3 | 4 | 5 | 6
 
-const STRIP_COLS_CONFIG: Record<
-  KpiStripCols,
-  { gridCls: string; maxWCls: string }
-> = {
-  3: { gridCls: "xl:grid-cols-3", maxWCls: "max-w-[960px]" },
-  4: { gridCls: "xl:grid-cols-4", maxWCls: "max-w-[1280px]" },
-  5: { gridCls: "xl:grid-cols-5", maxWCls: "max-w-[1480px]" }, // canonico
-  6: { gridCls: "xl:grid-cols-6", maxWCls: "max-w-[1680px]" }, // sugere variant=compact
-}
-
 export function KpiStrip({
   children,
-  cols = 5,
+  cols: _cols = 5,
   className,
 }: {
   children: React.ReactNode
-  /** Numero de colunas em xl. Default 5 (canonico). 4 = "hero feel". */
+  /**
+   * Anotacao semantica do numero de KPIs (default 5 = canonico).
+   * Em xl o layout e flex justify-between independente do valor.
+   */
   cols?: KpiStripCols
   className?: string
 }) {
-  const config = STRIP_COLS_CONFIG[cols]
   return (
     <div
       className={cx(
+        // <xl: grid responsivo (1 col mobile, 2 cols sm+)
         "grid grid-cols-1 gap-5 sm:grid-cols-2",
-        config.gridCls,
-        "mx-auto w-full",
-        config.maxWCls,
+        // xl+: flex full-width, KPIs com largura natural, espaco uniforme entre
+        "xl:flex xl:flex-nowrap xl:items-start xl:justify-between xl:gap-4",
+        "w-full",
         "rounded border border-gray-200 bg-white px-5 py-4 shadow-xs",
         "dark:border-gray-800 dark:bg-gray-925",
         className,

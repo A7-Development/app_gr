@@ -8,19 +8,26 @@ import { Tooltip } from "@/components/tremor/Tooltip"
 //
 // OriginDot -- proveniencia em KpiCard / VizCard.
 //
-// Dois modos:
+// Tres modos:
 //   - `inline` (default): label visivel "🟢 Fonte · ha N min" no flow do
 //     card. Alinhado com handoff bi-padrao 2026-04-26 (KpiCard.source).
-//   - `pinned`: dot 12x12 absolute bottom-right, label so no hover. Usado
+//   - `pinned`: dot 12x12 absolute bottom-right (positioning interno). Usado
 //     em VizCard onde o footer ja carrega a fonte e o ponto e marcador
 //     redundante. Variante legada do handoff COMPONENTS.md §11.
+//   - `dot`: dot 6x6 SEM positioning interno (caller wrappa). Usado em
+//     KpiCard para colar a proveniencia no canto superior direito sem
+//     forcar 18-20px de altura extra (handoff pos-iteracao 2026-04-30).
 //
 
 type OriginDotProps = {
   source: string
   updatedAtISO?: string | null
-  /** "inline" (default) shows visible label; "pinned" is dot-only absolute. */
-  variant?: "inline" | "pinned"
+  /**
+   * "inline" (default) — label visivel no flow.
+   * "pinned"          — dot 12x12 absolute bottom-right (positioning interno).
+   * "dot"             — dot 6x6 sem positioning (caller decide onde colar).
+   */
+  variant?: "inline" | "pinned" | "dot"
   className?: string
 }
 
@@ -70,6 +77,29 @@ export function OriginDot({
     )
   }
 
+  if (variant === "dot") {
+    // Dot-only sem positioning. O caller wrappa com `absolute top-X right-X`
+    // OU usa em flow inline. Mantem visual minimo + tooltip nativo do
+    // Tremor pra revelar a fonte completa no hover.
+    return (
+      <Tooltip content={tooltipText} side="top">
+        <span
+          aria-label={tooltipText}
+          className={cx(
+            "inline-block size-1.5 shrink-0 rounded-full",
+            "bg-emerald-500 hover:bg-emerald-600",
+            "dark:bg-emerald-500 dark:hover:bg-emerald-400",
+            "transition-colors duration-100",
+            // cursor-help sinaliza hover-revealable info pro usuario
+            "cursor-help",
+            className,
+          )}
+        />
+      </Tooltip>
+    )
+  }
+
+  // variant === "pinned" (legacy, VizCard)
   return (
     <Tooltip content={tooltipText} side="top">
       <span

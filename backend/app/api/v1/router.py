@@ -3,6 +3,8 @@
 from fastapi import APIRouter
 
 from app.api.v1 import audit, auth, system
+from app.api.v1.ai import router as ai_router
+from app.modules.admin.api import router as admin_router
 from app.modules.bi.api.router import router as bi_router
 from app.modules.cadastros.api.router import router as cadastros_router
 from app.modules.controladoria.api.router import router as controladoria_router
@@ -21,6 +23,12 @@ api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(audit.router)
 api_router.include_router(system.router)
+
+# AI capability (transversal — own subscription/permission, see CLAUDE.md sec 19).
+api_router.include_router(ai_router)
+
+# Admin module (system maintainer only — gestao global de IA, credenciais, etc).
+api_router.include_router(admin_router)
 
 # Modules (each endpoint uses `require_module(Module.X, Permission.Y)`).
 api_router.include_router(bi_router, prefix="/bi", tags=["bi"])

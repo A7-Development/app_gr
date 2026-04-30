@@ -90,6 +90,10 @@ Tremor Raw e referencia, nao cela. Quando "fazer como o Tremor faz" conflitar co
 | Virtualizacao | `@tanstack/react-virtual` quando lista > ~100 itens | react-window, react-virtualized |
 | Command palette | `cmdk` | reimplementacao manual de command menu |
 | Primitivos Radix | `@radix-ui/react-avatar` e outros sem equivalente no Tremor | Radix cru para o que o Tremor ja cobre |
+| Markdown (output IA) | `react-markdown` + `remark-gfm` — uso restrito a `<AIPanel />` e telas de auditoria de IA | uso de markdown em tabelas/forms regulares; renderizacao manual ad-hoc de markdown |
+| LLM gateway (backend) | adapter proprio em `app/modules/integracoes/adapters/llm/<provider>/`; LiteLLM aceito por baixo se virar multi-provider real | chamadas diretas ao SDK do provider em codigo de dominio |
+| PII redaction (backend) | regex CPF/CNPJ com check digit (MVP) → `presidio-analyzer` + `presidio-anonymizer` na Fase 2 | enviar payload bruto a LLM externo |
+| Cache + rate limit (backend) | em-processo no MVP; Redis em Phase 2 (tenant token bucket multi-dim TPM/RPM/BRL/dia) | `threading.Timer`, sleeps, locks ad-hoc |
 
 Instalar qualquer biblioteca fora desta tabela exige autorizacao explicita do usuario no chat.
 
@@ -113,8 +117,9 @@ src/design-system/primitives/      <- Barrel re-exporta `tremor/*` + Sheet (righ
 
 src/design-system/components/      <- Componentes do Strata Design System (FIDC-domain).
                                        Strata canonicos: StatusPill, KpiStrip, FilterBar,
-                                       DataTable, DrillDownSheet, CommandPalette, EChartsCard,
-                                       ApprovalQueueBadge, Sidebar.
+                                       DataTable, DataTableShell, DrillDownSheet,
+                                       CommandPalette, EChartsCard, ApprovalQueueBadge, Sidebar,
+                                       SegmentSwitch.
                                        A7 Credit composites: PageHeader, EmptyState, ErrorState,
                                        OriginDot, CompactSeriesTable, etc.
                                        USA apenas tremor/ + charts/ + tokens/, nunca Tailwind
@@ -239,8 +244,11 @@ Uso de `hero.*` fora de `surfaces/` e bloqueador de PR. Pagina autenticada conti
 - Botoes: sempre `Button` do Tremor, nunca `<button>` cru.
 
 **Tabelas:**
-- **Transacionais** (cessoes, cedentes, sacados, listagens grandes) — usar `DataTable` em `src/design-system/components/DataTable/` (TanStack Table v8 + TanStack Virtual + 3 densidades + ColumnManager + ExportMenu + 9 cell renderers tipados). Virtualizacao automatica se rows > 100.
-- **Series temporais FIDC** (PL, cotas, rentabilidade mes a mes) — usar `CompactSeriesTable` em `src/design-system/components/CompactSeriesTable.tsx` (Austin-style, density compact default).
+- **Listagens CRUD/admin** (Provedores, Usuarios, Etiquetas, Templates — pequenas a medias, ~5-200 rows) — usar **`<DataTableShell>`** em `src/design-system/components/DataTableShell/`. Encapsula `Card + FilterSearch + SegmentSwitch + counter + DataTable` num so componente. Garante layout/gap/ordem identicos entre paginas. Demo isolada: `/preview/data-table-shell`.
+- **Transacionais grandes** (cessoes, cedentes, sacados — milhares de rows com filtros complexos) — usar `<DataTable>` direta em `src/design-system/components/DataTable/`. Virtualization automatica se rows > 100.
+- **Series temporais FIDC** (PL, cotas, rentabilidade mes a mes) — usar `<CompactSeriesTable>` (Austin-style, density compact default).
+- **Tabelas hierarquicas** (BalanceTable, etc — multi-nivel com expand) — `<DataTable>` direta + `enableExpanding`/`getSubRows`/`expandedColumnId`. Nao cabe no `<DataTableShell>`.
+- **Tipografia + cores em CELL renderers**: SEMPRE via **`tableTokens.*`** de `@/design-system/tokens/table` — NUNCA `text-xs`, `text-sm`, `text-[Npx]`, `text-gray-XXX` literais inline. Excecao com `// MOTIVO:` no proprio cell. Tokens disponiveis: `cellText` (12px texto), `cellTextMono` (12px mono), `cellSecondary` (12px gray-500), `cellMuted` (12px placeholder), `cellStrong` (12px semibold), `cellNumber`/`cellNumberSecondary`/`cellNumberPositive`/`cellNumberNegative` (tabular-nums), `badge`/`badgeWithDot` (11px), `header` (10px eyebrow). Tudo 12px de base — cabe em row de density compact (h-8). **Texto principal em dark = `gray-100`, NAO `gray-50`.**
 - Nunca AG Grid, nunca data grid externo, nunca `Table` do Tremor cru em pagina (Tremor `Table` so como primitivo dentro de DataTable/CompactSeriesTable).
 
 ---
@@ -251,7 +259,8 @@ Toda **pagina autenticada** (`src/app/(app)/*`) **deve preferir** comecar de um 
 
 - **DashboardBiPadrao** — Pagina canonica do BI (handoff bi-padrao 2026-04-26). 5 zonas: Z1 PageHeader (titulo + IA + acoes) · Z2 TabNavigation L3 · Z3 FilterBar sticky · Z4 conteudo (InsightBar + KpiStrip 5 KPIs + grid 2/3+1/3 + grid 3-col + DataTable) · Z5 ProvenanceFooter. Lateral: AIPanel violeta in-layout + DrillDownSheet. Use para qualquer dashboard analitico (BI, Controladoria, Risco) que envolva KPIs + charts + tabela com drill-down.
 - **DashboardOperacional** — PageHeader + FilterBar + KpiStrip (4 KPIs) + Grid 2×2 EChartsCards + DataTable de atividade recente. Use para dashboards mais simples sem AI panel (`/bi/operacoes` legado, telas operacionais).
-- **ListagemComDrilldown** — PageHeader + FilterBar + DataTable + DrillDownSheet (URL-synced via `?selected=ID`). Use para Cessoes, Cedentes, Sacados, Cobranca, Reconciliacao, Eventos.
+- **ListagemComDrilldown** — PageHeader + FilterBar + DataTable + DrillDownSheet (URL-synced via `?selected=ID`). Use para listagem de **dados de dominio** (gerados pelo sistema): Cessoes, Cedentes, Sacados, Cobranca, Reconciliacao, Eventos. Drill-down abre painel rico (PropertyList + Tabs + Timeline + LinkedObjects).
+- **ListagemCrudInline** — PageHeader (com botao "+ Novo") + Card { `<FilterSearch>` + `<SegmentSwitch>` + contador `X de Y` + DataTable } + DrillDownSheet de criar (`?action=new`) + DrillDownSheet de editar (`?selected=<id>`) + Dialog destrutivo (state local). Use para **gestao administrativa** de cadastros pequenos a medios (~5-200 rows) onde criar/editar/excluir acontecem inline: credenciais de provedor LLM, usuarios do tenant, etiquetas, templates, regras de classificacao. Filtros sao **client-side** ate ~200 rows (busca via `globalFilter` do TanStack + segments locais); acima disso, copy-paste-edit + adicione `<FilterChip>` por coluna; acima de 2000 rows, migre para server-side (paginacao + busca debounced). Primeira instancia em producao: [`/admin/ia/providers`](frontend/src/app/(app)/admin/ia/providers/page.tsx).
 
 Toda **pagina nao-autenticada / superficie de marca** (`src/app/(auth)/*`, `src/app/error.tsx`, `not-found.tsx`, futuras paginas publicas) nasce de um template em `src/design-system/surfaces/`:
 
@@ -263,7 +272,11 @@ Patterns e surfaces sao **copy-paste-edit** — nao componentes black-box. Copie
 **Header de dashboard — set canonico de acoes (handoff bi-padrao 2026-04-26):** toda pagina derivada de `DashboardBiPadrao` usa `<DashboardHeaderActions>` no slot `actions` do `<PageHeader>`. O composite renderiza, em ordem fixa: `[DarkToggle, Compartilhar, Exportar, Mais, IA]`. DarkToggle e IA sao sempre presentes; Share/Export/More sao omitidos quando o callback nao e passado. Substituir por `<Button>` solto ou conjunto custom de botoes e regressao — fecha a porta para que cada pagina invente seu proprio header. Para acoes secundarias (Copiar link, Duplicar, Imprimir, etc.), use o slot `more={[...]}`.
 
 Antes de escrever uma `page.tsx` nova, pergunte:
-- E pagina autenticada? Qual **pattern** aplica? (BI/Controladoria/Risco com IA → `DashboardBiPadrao`. Listagem → `ListagemComDrilldown`.)
+- E pagina autenticada? Qual **pattern** aplica?
+  - Dashboard com KPIs + IA → `DashboardBiPadrao`
+  - Dashboard simples sem IA → `DashboardOperacional`
+  - Listagem de dados de dominio (drill-down de leitura) → `ListagemComDrilldown`
+  - Gestao administrativa CRUD (criar/editar/excluir inline) → `ListagemCrudInline`
 - E pagina nao-autenticada / pagina de erro / landing? Qual **surface** aplica?
 
 Se nenhum pattern atual couber, componha direto a partir de `design-system/components/` + `tremor/`. Se a estrutura for util a outras telas, **promova-a a pattern** (novo arquivo em `patterns/`) — patterns nascem de pages reais, nao de especulacao.
@@ -335,20 +348,21 @@ O GR e **multi-tenant desde o dia 1**, mesmo rodando com 1 tenant real no MVP.
 
 O GR e **modular** em 4 dimensoes simultaneas (UI, codigo, permissao, licenciamento). Modularizacao e **estrutural**, aplicada desde o Sprint 1. Retrofit e caro.
 
-### 11.1 Os 8 modulos oficiais (enum fechado)
+### 11.1 Os 9 modulos oficiais (enum fechado)
 
 | Modulo | Proposito |
 |---|---|
 | `bi` | Dashboards, analises, cruzamentos (MVP) |
 | `cadastros` | Empresas, pessoas, cedentes, sacados |
 | `operacoes` | Contratos, titulos, pagamentos, recebimentos |
+| `credito` | Analise de credito, politicas, limites de cessao |
 | `controladoria` | Contabilidade, plano de contas, DRE, balancete |
 | `risco` | Scoring, limites, PDD, stress, concentracao |
 | `integracoes` | Adapters, catalogo de fontes, sync, reconciliacao |
 | `laboratorio` | Teses de dados, correlacoes, experimentos |
 | `admin` | Tenants, users, roles, subscriptions, config sistemica |
 
-Adicionar um nono modulo exige **autorizacao explicita** + atualizacao deste documento + atualizacao do enum `Module` em `app/core/enums.py`.
+Adicionar um decimo modulo exige **autorizacao explicita** + atualizacao deste documento + atualizacao do enum `Module` em `app/core/enums.py`.
 
 ### 11.2 Estrutura fisica (bounded contexts)
 
@@ -368,6 +382,7 @@ app/
 │   │   └── api/
 │   ├── cadastros/
 │   ├── operacoes/
+│   ├── credito/
 │   ├── controladoria/
 │   ├── risco/
 │   ├── integracoes/
@@ -400,6 +415,7 @@ src/app/
 │   ├── bi/...                # rota /bi (operacoes, benchmark, ...)
 │   ├── cadastros/...         # rota /cadastros
 │   ├── operacoes/...         # rota /operacoes (futuro)
+│   ├── credito/...           # rota /credito (futuro)
 │   ├── controladoria/...     # rota /controladoria (futuro)
 │   ├── risco/...             # rota /risco (futuro)
 │   ├── integracoes/...       # rota /integracoes (catalogo, sync)
@@ -478,6 +494,7 @@ L1 (dropdown no topo): [BI ▾]
 | BI | `gray` | `bg-gray-800` | `#1F2937` |
 | Cadastros | `blue` | `bg-blue-500` | `#3B82F6` |
 | Operacoes | `emerald` | `bg-emerald-500` | `#10B981` |
+| Credito | `indigo` | `bg-indigo-500` | `#6366F1` |
 | Controladoria | `teal` | `bg-teal-500` | `#14B8A6` |
 | Risco | `amber` | `bg-amber-500` | `#F59E0B` |
 | Integracoes | `red` | `bg-red-600` | `#DC2626` |
@@ -504,7 +521,7 @@ Acesso a cada modulo e controlado em duas camadas independentes:
 ### 12.1 Enums centralizados
 
 `app/core/enums.py`:
-- `Module` — um valor por modulo: `BI`, `CADASTROS`, `OPERACOES`, `CONTROLADORIA`, `RISCO`, `INTEGRACOES`, `LABORATORIO`, `ADMIN`
+- `Module` — um valor por modulo: `BI`, `CADASTROS`, `OPERACOES`, `CREDITO`, `CONTROLADORIA`, `RISCO`, `INTEGRACOES`, `LABORATORIO`, `ADMIN`
 - `Permission` — escala: `NONE`, `READ`, `WRITE`, `ADMIN` (ordem crescente)
 
 ### 12.2 Tabelas
@@ -644,6 +661,33 @@ Raw nao usa `Auditable` — carrega proveniencia em colunas proprias (`fetched_a
 - Raw inclui o vendor: `wh_qitech_raw_outros_fundos`, `wh_serasa_refinho_raw_consulta`
 - Canonico nao inclui vendor: `wh_posicao_cota_fundo`, `wh_titulo`
 
+### 13.2.1 Regra de consumo — silver-only (REGRA DURA)
+
+**Servicos de dominio, endpoints, jobs analiticos, hooks do frontend e relatorios consomem APENAS da camada silver (canonico).** A camada bronze e fonte para o ETL e para auditoria/replay — nao e API.
+
+**Proibido em codigo de servico/dominio/UI:**
+- `SELECT ... FROM wh_<vendor>_raw_*` em service de modulo
+- `payload->'relatorios'->...` (parsing de JSONB raw fora do mapper) em qualquer camada que nao seja `app/modules/integracoes/adapters/<vendor>/mappers/`
+- Endpoint que retorna estrutura derivada do raw sem passar pelo silver
+
+**Quem pode tocar bronze:**
+- `app/modules/integracoes/adapters/<vendor>/mappers/*.py` — leem raw, gravam silver
+- `app/modules/integracoes/adapters/<vendor>/etl.py` — orquestra a leitura do raw
+- Scripts de auditoria/replay em `backend/scripts/` — leitura ad-hoc, nunca em endpoint
+- Migrations de remapeamento (Alembic) — quando a regra do mapper muda e precisa reprocessar
+
+**Por que:** silver e o **contrato estavel**. Bronze e formato cru do fornecedor, muda quando o vendor muda a API, tem campos com nomes em portugues com acento, valores em cents/string mistos, layout instavel. Acoplar dominio ao raw acopla a feature ao vendor — quebra a abstracao do adapter.
+
+**Quando o silver nao tem o campo necessario:**
+1. **Nao leia do raw direto.** Adicione a coluna no modelo silver canonico.
+2. Atualize o mapper do adapter para popular a nova coluna (a partir do raw).
+3. Re-rode o ETL para repopular o silver historico.
+4. So entao o servico/endpoint le o campo novo.
+
+Re-mapeamento e barato (raw e imutavel, mapper e idempotente). Acoplar dominio ao raw e caro (refactor cascateia).
+
+**Em PR:** consumo de raw fora dos mappers e bloqueador. Reviewer rejeita.
+
 ---
 
 ## 14. Backend -- Proveniencia e auditabilidade (DNA do sistema)
@@ -738,6 +782,9 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] **Pagina respeita regra de 3 niveis (L1 sidebar grupo / L2 sidebar sub-item / L3 TabNavigation)?**
 - [ ] **Sidebar nao aninha em 3+ niveis (L3 sempre como tabs na pagina, nunca sub-sub-item)?**
 - [ ] **Estado de navegacao (modulo/secao/tab/filtros) e deep-linkavel via URL?**
+- [ ] **Listagem CRUD/admin usa `<DataTableShell>` (nao monta `Card + FilterSearch + DataTable` manual)?**
+- [ ] **Cells custom (inline ou em `_components/<X>Table.tsx`) usam `tableTokens.*` (nao escrevem `text-xs|sm|[Npx]` ou `text-gray-XXX` literais)?**
+- [ ] **Fuga do `<DataTableShell>` ou de `tableTokens.*` tem comentario `// MOTIVO:` no caller?**
 - [ ] `npx tsc --noEmit` passa?
 - [ ] `npm run build` passa?
 
@@ -762,6 +809,7 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] **Teste de regressao de permissao de modulo existe (user sem permissao recebe 403)?**
 - [ ] Se cria dado no warehouse, aplica mixin `Auditable` com proveniencia completa?
 - [ ] Se e decisao/calculo, registra no `decision_log`?
+- [ ] **Servico/endpoint le APENAS de silver (`wh_<entidade>`), nunca de raw (`wh_<vendor>_raw_*`)?** Ver §13.2.1.
 - [ ] **Import cruzado entre modulos so passa por `modules/Y/public.py`? Zero import de internals de outro modulo?**
 - [ ] **Se introduziu modulo novo, atualizou enum `Module` + CLAUDE.md secao 11.1?**
 - [ ] Type hints completos? Zero `any`?
@@ -780,4 +828,82 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] Registro correspondente adicionado em `source_catalog`?
 - [ ] Teste de integracao com fonte (mock ou sandbox) existe?
 
+### Endpoint / feature de IA (§19)
+
+- [ ] Endpoint sob `/api/v1/ai/*` usa `require_ai(AICapability.X)` (NAO `require_module`)?
+- [ ] Endpoint admin global (gestao de keys, tier, prompts) usa **`require_system_maintainer` + `require_module(Module.ADMIN, Permission.ADMIN)`** combinados?
+- [ ] Toda chamada de IA grava em `decision_log` (via `services/audit.py`) e `ai_usage_event` (via `services/metering.py`)?
+- [ ] Mensagem do usuario passa por `services/redaction.py` antes de subir ao LLM (CPF/CNPJ redactados)?
+- [ ] Prompt template usado e versionado (`<categoria>/<nome>_vN.py`) e registra `prompt_template_version` no metering?
+- [ ] Adapter LLM usado tem `ADAPTER_VERSION` e suas credenciais sao lidas de `ai_provider_credential` (cifradas via envelope Fernet)?
+- [ ] Frontend chama via SSE com `fetch` + `ReadableStream` (nao `EventSource` -- nao passa Bearer token)?
+- [ ] Markdown nas respostas IA renderiza via `react-markdown` + `remark-gfm` (nao texto plano)?
+- [ ] Saldo de creditos exibido no frontend e via `<AIQuotaIndicator />` (nunca token-count cru)?
+
 Se qualquer item reprovar, **nao corrija pontualmente** — pare e revise a mudanca inteira.
+
+---
+
+## 19. IA -- Capability transversal
+
+A IA (chat + insights automaticos) e uma **capability transversal**, NAO um decimo modulo. Decisao tomada no plano de 2026-04-30 (`vamos-fazer-uso-de-jiggly-bonbon.md`). Mantem o enum `Module` fechado (§11.1).
+
+### 19.1 Estrutura paralela ao modulo
+
+- **`tenant_ai_subscription`** -- entitlement do tenant (enabled, plan_ref, monthly_credit_quota, hard_cap_brl). Espelha `tenant_module_subscription`.
+- **`user_ai_permission`** -- permissao do user (NONE/READ/WRITE/ADMIN via enum `AICapability`). Espelha `user_module_permission`.
+- **`require_ai(AICapability.X)`** em `app/core/ai_guard.py` -- guarda paralelo ao `require_module`. Aplica em endpoints sob `/api/v1/ai/*`.
+- **`require_system_maintainer()`** em `app/core/system_maintainer_guard.py` -- gating de endpoints globais (gestao de keys + tier de tenants + prompt library). Compoe com `require_module(Module.ADMIN, Permission.ADMIN)`.
+
+### 19.2 Tabela `tenants.is_system_maintainer` (excecao §10)
+
+Coluna boolean com **partial unique index** garantindo no maximo 1 tenant marcado. Apenas membros desse tenant podem editar credenciais globais (`ai_provider_credential`) e gerir tier dos demais tenants. **Nao** confunda com role admin do proprio tenant.
+
+### 19.3 Adapter LLM (segue §13)
+
+Provedores externos (Anthropic, OpenAI) sao adapters versionados em `app/modules/integracoes/adapters/llm/<provider>/`, cada um com seu `ADAPTER_VERSION`. **Credenciais sao globais** (tabela `ai_provider_credential`, sem `tenant_id`) e cifradas com envelope Fernet (`app.shared.crypto`). ZDR contratado e exigido em prod (coluna `zdr_enabled` bloqueia chamada quando false em ambiente de producao).
+
+### 19.4 Prompt library versionada (DB-backed)
+
+**Decisao 2026-04-30:** prompts saem do codigo e passam a viver em DB para curadoria continua sem deploy. Time de produto/IA pode iterar sem PR; rollback de 1 click.
+
+- **Storage**: tabela `ai_prompt` (id, name, version, system_text, user_context_template, assistant_prime, model, fallback_model, temperature, max_tokens, cache_strategy, description, created_by, created_at, archived_at). Naming: `<categoria>.<nome>` (ex.: `chat.fidc_geral`, `insight.carteira_3bullets`).
+- **Imutabilidade**: `(name, version)` UNIQUE. Toda edicao **cria nova versao** copiando a base + patches. Versao base nunca muda — preserva audit trail.
+- **Versao ativa**: tabela `ai_prompt_active` (uma linha por nome) aponta para a versao em producao. Trocar = 1 UPDATE (rollback de 1 click sem deploy).
+- **Soft-delete**: `archived_at` marca versao como nao-ativavel. Versao ativa nao pode ser arquivada (constraint).
+- **Repository**: `app/shared/ai/prompts/repository.py::resolve(db, name, version="active")` retorna `Prompt` instanciado a partir da row. Servicos chamam APENAS via repository — nunca leem `ai_prompt` direto.
+- **Edicao**: via `/admin/ia/prompts` (system maintainer only — `require_system_maintainer` + `require_module(ADMIN, ADMIN)`). Endpoints: GET (list), GET /{id}, POST (cria nova familia=v1), PUT /{id} (cria nova versao), PUT /{name}/active (ativa versao), POST /{id}/archive (soft-delete), POST /{id}/preview (render sem chamar LLM).
+- **Variaveis**: `user_context_template` e `assistant_prime` aceitam `{nome}` via Python `str.format`. Variaveis ausentes em `context` retornam erro 400 no preview.
+- **Auditoria**: a versao usada vai automaticamente em `decision_log.rule_or_model_version` (`<adapter_version>+<prompt.full_id>`) e em `ai_usage_event.prompt_template_version`.
+
+Migration que seedou os 4 prompts iniciais (`chat.fidc_geral@v1`, `insight.carteira_3bullets@v1`, `system.prompt_injection_detector@v1`, `summary.conversation_compact@v1`): `7c2dffe119a4_ai_prompt_db_managed.py`.
+
+### 19.5 Auditabilidade reusa `decision_log`
+
+Toda chamada de IA grava entrada com:
+- `decision_type = RECOMMENDATION`
+- `rule_or_model = <model_id>` (ex.: `claude-opus-4-7`)
+- `rule_or_model_version = <adapter_version>+<prompt_full_id>` (ex.: `anthropic_adapter_v1.0.0+chat.fidc_geral@v1`)
+- `inputs_ref = {conversation_id, user_message_id, page, period, filters, redacted}`
+- `output = {text_redacted, stop_reason, tokens}`
+
+Sem tabela de audit nova. Tudo encaixa nativamente.
+
+### 19.6 Multi-turn server-side
+
+Historico em `ai_conversation` + `ai_message` (com `text_redacted` + `text_encrypted` para retencao 7 anos). Sumarizacao automatica em `ai_conversation_summary` quando `turn_count` excede o limite (default 20). Cache breakpoint apos `system` block para maximizar prompt caching cross-tenant (Anthropic).
+
+### 19.7 Frontend
+
+- **Single entry point**: `<AIPanel />` em `design-system/components/AIPanel/` (drawer violeta in-layout, atalho Cmd/Ctrl+I, mantido pelo handoff bi-padrao). Markdown nas respostas via `react-markdown` + `remark-gfm`.
+- **Hooks**: `useAIChat`, `useAIInsights`, `useAIQuota`, `useAIConversations` em `src/lib/hooks/ai.ts`. SSE via `fetch` + `ReadableStream` (NAO `EventSource` -- nao passa Bearer token).
+- **Quota**: `<AIQuotaIndicator />` em `design-system/components/AIQuotaIndicator/` (variant `compact` no header da pagina, `strip` dentro do AIPanel). Cor amber em 75%, red em 90%.
+- **Admin**: rotas em `/admin/ia/{providers,subscriptions,prompts,usage,conversations}`. Visiveis somente quando `tenant.is_system_maintainer === true` (campo em `/auth/me`).
+
+### 19.8 Billing (creditos abstraidos)
+
+UI nunca expoe token-count -- expoe **creditos**. 1 chat ~= `tokens_input/1000 + tokens_output/100` creditos; 1 insight = 5 creditos (flat); 1 prompt-injection check = 1 credito. Tier mensal incluso em `monthly_credit_quota`; overage em `topup` (pre-pago avulso). Hard cap diario em BRL via `tenant_ai_subscription.hard_cap_brl`.
+
+### 19.9 LGPD / dados pessoais
+
+PII (CPF, CNPJ, conta-agencia, email) e redactada antes de subir ao LLM via `services/redaction.py` (regex + check digit no MVP, Microsoft Presidio na Fase 2). Mensagens armazenam `text_redacted` + `text_encrypted` (versao com PII original cifrada via envelope Fernet, acesso restrito a auditoria com trilha em `decision_log`).

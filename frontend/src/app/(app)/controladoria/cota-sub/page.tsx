@@ -21,20 +21,16 @@
 
 import * as React from "react"
 import {
-  RiAlertLine,
-  RiArrowDownLine,
-  RiArrowUpLine,
   RiCalendarLine,
   RiCheckLine,
   RiDownloadLine,
   RiEqualizerLine,
   RiFundsLine,
-  RiInformationLine,
 } from "@remixicon/react"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 import type { EChartsOption } from "echarts"
 
-import { format, isSameDay, parseISO } from "date-fns"
+import { format, isSameDay } from "date-fns"
 import { ptBR } from "date-fns/locale"
 
 import { cx, focusRing } from "@/lib/utils"
@@ -69,8 +65,8 @@ import {
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { Insight, InsightBar } from "@/design-system/components/Insight"
 import { useUAs } from "@/lib/hooks/cadastros"
-import { useVariacaoDiaria } from "@/lib/hooks/controladoria"
-import type { VariacaoDiariaResponse as ApiVariacao } from "@/lib/api-client"
+import { useBalanco, useVariacoesDia } from "@/lib/hooks/controladoria"
+import type { VariacoesDiaResponse } from "@/lib/api-client"
 import {
   CurrencyCell,
   DataTable,
@@ -88,6 +84,8 @@ import {
   type AIInsight,
 } from "@/design-system/components/AIPanel"
 import { tokens, type StatusKey } from "@/design-system/tokens"
+import { BalanceTable, type BalanceRow } from "./_components/BalanceTable"
+import { PagamentosDiaPanel } from "./_components/PagamentosDiaPanel"
 
 // ───────────────────────────────────────────────────────────────────────────
 // Tipos + Mocks
@@ -125,190 +123,6 @@ const MOCK_PROVENANCE: ProvenanceSource[] = [
   { label: "QiTech", updated: "ha 8 min",  sla: "30 min", stale: false },
   { label: "PDD",    updated: "ha 47 min", sla: "30 min", stale: true  },
 ]
-
-// ───────────────────────────────────────────────────────────────────────────
-// Variacao diaria — contrato com backend (futuro endpoint
-// GET /controladoria/cota-sub/variacao-diaria?fundo_id={id}&data={D0}).
-//
-// Logica espelhada da planilha "VariacaoDeCota_Preenchida.xlsx" (aba Analise):
-//   PL Sub Jr (D0) − PL Sub Jr (D-1) = Σ delta por categoria de ativo
-//   Painel de Impactos atribui parcelas a "causas" (apropriacao vs movimento).
-//
-// Origem dos campos no warehouse silver (canonico) — ver mapeamento aprovado:
-//   - PL Sub Jr           ← wh_mec_evolucao_cotas (campo `patrimonio`)
-//   - Compromissada       ← wh_posicao_compromissada (sum valor_bruto)
-//   - Mezanino/Senior     ← wh_mec_evolucao_cotas (classe Mez/Sr, patrimonio × −1)
-//   - Titulos Publicos    ← wh_posicao_outros_ativos (filtro TPF)
-//   - Fundos DI           ← wh_posicao_cota_fundo (filtro DI)
-//   - DC                  ← wh_estoque_recebivel.valor_presente (liquido de PDD)
-//   - Op Estruturadas/    ← wh_posicao_outros_ativos (trazer tudo, segregar
-//     Outros Ativos          por tipo_do_ativo no frontend)
-//   - PDD                 ← wh_estoque_recebivel.valor_pdd (absoluto, negativo)
-//   - CPR                 ← wh_cpr_movimento (sum valor agregado)
-//   - Tesouraria          ← wh_saldo_tesouraria + wh_saldo_conta_corrente
-//   - Apropriacao DC      ← derivado: G − (D + E + F) sobre wh_estoque_recebivel
-//                          + wh_aquisicao_recebivel + wh_liquidacao_recebivel
-//   - Apropriacao despesas ← derivado de wh_cpr_movimento (D37 da aba CPR)
-
-type PlCategoriaKey =
-  | "compromissada" | "mezanino" | "senior" | "titulos_publicos"
-  | "fundos_di" | "dc" | "op_estruturadas" | "outros_ativos"
-  | "pdd" | "cpr" | "tesouraria"
-
-type PlCategoria = {
-  key:    PlCategoriaKey
-  label:  string
-  d1:     number   // valor em D-1 (R$)
-  d0:     number   // valor em D0  (R$)
-  delta:  number   // d0 − d1
-  source: string   // tabela canonica origem
-}
-
-type DecomposicaoSinal = "ganho" | "prejuizo" | "neutro"
-
-type DecomposicaoItem = {
-  key:    string
-  label:  string
-  valor:  number
-  sinal:  DecomposicaoSinal
-}
-
-type ApropriacaoDcLinha = {
-  estoque_d1:  number
-  aquisicoes:  number
-  liquidados:  number  // negativo = saida
-  estoque_d0:  number
-  apropriacao: number  // estoque_d0 − (estoque_d1 + aquisicoes + liquidados)
-}
-
-type ApropriacaoDc = {
-  a_vencer:  ApropriacaoDcLinha
-  vencidos:  ApropriacaoDcLinha
-  total:     number
-}
-
-type CprMovimentoItem = {
-  descricao: string
-  valor:     number
-}
-
-type CprDetalhado = {
-  receber_d1: CprMovimentoItem[]
-  receber_d0: CprMovimentoItem[]
-  pagar_d1:   CprMovimentoItem[]
-  pagar_d0:   CprMovimentoItem[]
-  total_d1:   number  // recebivel − pagavel em D-1
-  total_d0:   number  // recebivel − pagavel em D0
-  variacao:   number  // total_d0 − total_d1
-}
-
-type VariacaoDiariaResponse = {
-  fundo_id:           string
-  fundo_nome:         string
-  data:               string  // ISO D0
-  data_anterior:      string  // ISO D-1 (dia util anterior)
-  pl_d1:              number
-  pl_d0:              number
-  pl_delta:           number  // pl_d0 − pl_d1
-  pl_delta_pct:       number  // pl_delta / pl_d1
-  categorias:         PlCategoria[]
-  decomposicao:       DecomposicaoItem[]
-  decomposicao_total: number
-  divergencia:        number  // decomposicao_total − pl_delta (deve ser ~0)
-  apropriacao_dc:     ApropriacaoDc
-  cpr_detalhado:      CprDetalhado
-}
-
-// Mock construido a partir da planilha (28/11/2025 → 01/12/2025).
-// Substituir por useQuery contra /controladoria/cota-sub/variacao-diaria.
-const MOCK_VARIACAO: VariacaoDiariaResponse = {
-  fundo_id:      "realinvet-001",
-  fundo_nome:    "Realinvet",
-  data:          "2025-12-01",
-  data_anterior: "2025-11-28",
-  pl_d1:          9_931_604.76,
-  pl_d0:          9_907_498.55,
-  pl_delta:        -24_106.21,
-  pl_delta_pct:    -0.002428,
-  categorias: [
-    { key: "compromissada",     label: "Compromissada",     d1:           0, d0:            0, delta:          0,    source: "wh_posicao_compromissada" },
-    { key: "mezanino",          label: "Mezanino",          d1:   -748_968.54, d0:    -749_554.75, delta:       -586.21, source: "wh_mec_evolucao_cotas (classe Mez × −1)" },
-    { key: "senior",            label: "Senior",            d1:  -6_580_013.75, d0:  -7_182_520.07, delta:   -602_506.32, source: "wh_mec_evolucao_cotas (classe Sr × −1)" },
-    { key: "titulos_publicos",  label: "Titulos Publicos",  d1:      12_091.03, d0:      12_066.77, delta:        -24.26, source: "wh_posicao_outros_ativos (TPF)" },
-    { key: "fundos_di",         label: "Fundos DI",         d1:      35_614.96, d0:     550_634.35, delta:    515_019.39, source: "wh_posicao_cota_fundo (DI)" },
-    { key: "dc",                label: "DC",                d1:  17_175_520.63, d0:  17_072_781.29, delta:   -102_739.34, source: "wh_estoque_recebivel.valor_presente" },
-    { key: "op_estruturadas",   label: "Op Estruturadas",   d1:     220_608.15, d0:     199_828.94, delta:    -20_779.21, source: "wh_posicao_outros_ativos (estruturadas)" },
-    { key: "outros_ativos",     label: "Outros Ativos",     d1:           0, d0:            0, delta:          0,    source: "wh_posicao_outros_ativos (demais)" },
-    { key: "pdd",               label: "PDD",               d1:    -333_940.40, d0:    -336_007.70, delta:     -2_067.30, source: "wh_estoque_recebivel.valor_pdd" },
-    { key: "cpr",               label: "CPR",               d1:     149_615.77, d0:     339_796.27, delta:    190_180.50, source: "wh_cpr_movimento (sum valor)" },
-    { key: "tesouraria",        label: "Tesouraria",        d1:       1_076.91, d0:         473.45, delta:       -603.46, source: "wh_saldo_tesouraria + wh_saldo_conta_corrente" },
-  ],
-  decomposicao: [
-    { key: "pdd",            label: "PDD",                  valor:     -2_067.30, sinal: "prejuizo" },
-    { key: "apropriacao_dc", label: "Apropriacao de DC",    valor:     26_425.11, sinal: "ganho" },
-    { key: "fundos_di",      label: "Fundos DI",            valor:    600_000.00, sinal: "ganho" },
-    { key: "apropriacao_dsp",label: "Apropriacao despesas", valor:     -5_785.23, sinal: "prejuizo" },
-    { key: "compromissada",  label: "Compromissada",        valor:           0, sinal: "neutro" },
-    { key: "senior",         label: "Senior",               valor:   -602_506.32, sinal: "prejuizo" },
-    { key: "mezanino",       label: "Mezanino",             valor:       -586.21, sinal: "prejuizo" },
-    { key: "titulos",        label: "Titulos Publicos",     valor:        -24.26, sinal: "prejuizo" },
-    { key: "tarifas",        label: "Tarifas",              valor:           0, sinal: "neutro" },
-  ],
-  decomposicao_total: 15_455.79,
-  divergencia:        39_562.00,
-  apropriacao_dc: {
-    a_vencer: {
-      estoque_d1:   16_506_992.33,
-      aquisicoes:      568_996.10,
-      liquidados:      -45_959.99,
-      estoque_d0:   16_392_350.47,
-      apropriacao:    -637_637.97,
-    },
-    vencidos: {
-      estoque_d1:      668_528.22,
-      aquisicoes:            0.00,
-      liquidados:     -652_160.52,
-      estoque_d0:      680_430.78,
-      apropriacao:     664_063.08,
-    },
-    total:              26_425.11,
-  },
-  cpr_detalhado: {
-    receber_d1: [
-      { descricao: "Valores a receber 1b · item 1", valor: 2_417.26 },
-      { descricao: "Valores a receber 1b · item 2", valor: 3_283.42 },
-    ],
-    receber_d0: [
-      { descricao: "Valores a receber 2b · item 1", valor: 2_377.63 },
-      { descricao: "Valores a receber 2b · item 2", valor: 3_251.54 },
-    ],
-    pagar_d1: [
-      { descricao: "Valores a pagar 1a · item 1", valor: -6_371.03 },
-      { descricao: "Valores a pagar 1a · item 2", valor:   -701.35 },
-      { descricao: "Valores a pagar 1a · item 3", valor:     -2.53 },
-      { descricao: "Valores a pagar 1a · item 4", valor: -4_253.26 },
-      { descricao: "Valores a pagar 1a · item 5", valor: -13_535.33 },
-      { descricao: "Valores a pagar 1a · item 6", valor: -6_379.89 },
-    ],
-    pagar_d0: [
-      { descricao: "Valores a pagar 2a · item 1",  valor:     -2.53 },
-      { descricao: "Valores a pagar 2a · item 2",  valor: -6_408.73 },
-      { descricao: "Valores a pagar 2a · item 3",  valor: -4_545.45 },
-      { descricao: "Valores a pagar 2a · item 4",  valor:   -701.35 },
-      { descricao: "Valores a pagar 2a · item 5",  valor:    -31.88 },
-      { descricao: "Valores a pagar 2a · item 6",  valor:     -0.12 },
-      { descricao: "Valores a pagar 2a · item 7",  valor: -4_253.26 },
-      { descricao: "Valores a pagar 2a · item 8",  valor:   -193.33 },
-      { descricao: "Valores a pagar 2a · item 9",  valor: -13_535.33 },
-      { descricao: "Valores a pagar 2a · item 10", valor:   -615.24 },
-      { descricao: "Valores a pagar 2a · item 11", valor: -6_379.89 },
-      { descricao: "Valores a pagar 2a · item 12", valor:   -290.00 },
-    ],
-    total_d1:    -25_542.71,
-    total_d0:    -31_327.94,
-    variacao:     -5_785.23,
-  },
-}
 
 // ───────────────────────────────────────────────────────────────────────────
 // L3 Tabs
@@ -546,514 +360,72 @@ function AddFilterMenu({
 // Variacao diaria — componentes da analise
 // ───────────────────────────────────────────────────────────────────────────
 
-const BRL = (n: number) =>
-  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 2 })
-
-const BRL_COMPACT = (n: number) => {
-  const abs = Math.abs(n)
-  if (abs >= 1_000_000) return `${n < 0 ? "−" : ""}R$ ${(abs / 1_000_000).toFixed(1)}M`
-  if (abs >= 1_000)     return `${n < 0 ? "−" : ""}R$ ${(abs / 1_000).toFixed(1)}k`
-  return BRL(n)
-}
-
-const PCT = (n: number) => `${(n * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`
-
-function VariacaoHero({
-  data,
-  dataAnterior,
-  plD1,
-  plD0,
-  plDelta,
-  plDeltaPct,
-}: {
-  data:         string
-  dataAnterior: string
-  plD1:         number
-  plD0:         number
-  plDelta:      number
-  plDeltaPct:   number
-}) {
-  const positive = plDelta >= 0
-  const ArrowIcon = positive ? RiArrowUpLine : RiArrowDownLine
-  const deltaColor = positive
-    ? "text-emerald-600 dark:text-emerald-400"
-    : "text-red-600 dark:text-red-400"
-
-  const fmtData = (iso: string) => format(parseISO(iso), "dd/MM/yyyy", { locale: ptBR })
-
-  return (
-    <div className="grid grid-cols-1 gap-4 rounded border border-gray-200 bg-white p-5 shadow-xs dark:border-gray-800 dark:bg-gray-925 lg:grid-cols-[1fr_auto_1fr_auto_1fr]">
-      {/* PL D-1 */}
-      <div className="flex flex-col gap-1">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-500 dark:text-gray-400">
-          PL Sub Jr · {fmtData(dataAnterior)}
-        </span>
-        <span className="text-2xl font-semibold leading-none tracking-tight tabular-nums text-gray-900 dark:text-gray-50">
-          {BRL(plD1)}
-        </span>
-      </div>
-
-      <div className="hidden items-center justify-center lg:flex">
-        <span className="text-2xl text-gray-300 dark:text-gray-700">→</span>
-      </div>
-
-      {/* PL D0 */}
-      <div className="flex flex-col gap-1">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-500 dark:text-gray-400">
-          PL Sub Jr · {fmtData(data)}
-        </span>
-        <span className="text-2xl font-semibold leading-none tracking-tight tabular-nums text-gray-900 dark:text-gray-50">
-          {BRL(plD0)}
-        </span>
-      </div>
-
-      <div className="hidden items-center justify-center lg:flex">
-        <span className="h-10 w-px bg-gray-200 dark:bg-gray-800" aria-hidden="true" />
-      </div>
-
-      {/* Variacao */}
-      <div className="flex flex-col gap-1">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-500 dark:text-gray-400">
-          Variacao
-        </span>
-        <div className="flex items-baseline gap-2">
-          <span className={cx("inline-flex items-center gap-0.5 text-2xl font-semibold leading-none tabular-nums", deltaColor)}>
-            <ArrowIcon className="size-5 shrink-0" aria-hidden="true" />
-            {BRL(Math.abs(plDelta))}
-          </span>
-          <span className={cx("text-sm font-medium tabular-nums", deltaColor)}>
-            ({PCT(Math.abs(plDeltaPct))})
-          </span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function PlCategoriaTable({ categorias }: { categorias: PlCategoria[] }) {
-  return (
-    <div className="rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 overflow-hidden">
-      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-4 py-2.5 dark:border-gray-800 dark:bg-gray-950">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
-          PL por categoria
-        </h3>
-        <span className="rounded-full border border-gray-200 bg-gray-50 px-1.5 text-[11px] text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
-          {categorias.length}
-        </span>
-      </div>
-      <DataTable
-        data={categorias}
-        columns={PL_CATEGORIA_COLUMNS}
-        density="compact"
-        showColumnManager={false}
-        showDensityToggle={false}
-        showExport={false}
-        virtualize={false}
-      />
-    </div>
-  )
-}
-
-function decomposicaoWaterfallOption(items: DecomposicaoItem[], total: number): EChartsOption {
-  // Padrao waterfall: cada barra "stacked" sobre uma barra invisivel que representa
-  // o acumulado anterior. Calculamos posicoes [acumulado_inicial, valor_da_barra]
-  // pra cada item, e adicionamos uma barra final "Total" alinhada no zero.
-  const labels: string[] = items.map((i) => i.label).concat(["Total"])
-  const placeholders: number[] = []
-  const values: number[] = []
-  const colors: string[] = []
-  let acc = 0
-  for (const it of items) {
-    if (it.valor >= 0) {
-      placeholders.push(acc)
-      values.push(it.valor)
-    } else {
-      placeholders.push(acc + it.valor)
-      values.push(-it.valor)
-    }
-    acc += it.valor
-    colors.push(
-      it.sinal === "ganho"    ? "#10B981"
-      : it.sinal === "prejuizo" ? "#EF4444"
-      :                            "#9CA3AF",
-    )
-  }
-  // Total — barra desde 0 ate o total
-  placeholders.push(0)
-  values.push(Math.abs(total))
-  colors.push(total >= 0 ? "#3B82F6" : "#EF4444")
-
-  return {
-    grid: { top: 16, right: 16, bottom: 60, left: 64 },
-    xAxis: {
-      type: "category",
-      data: labels,
-      axisLabel: { interval: 0, rotate: 30, fontSize: 10 },
-      axisTick: { show: false },
-    },
-    yAxis: {
-      type: "value",
-      axisLabel: { formatter: (v: number) => BRL_COMPACT(v) },
-    },
-    series: [
-      {
-        name: "_placeholder",
-        type: "bar",
-        stack: "wf",
-        itemStyle: { color: "transparent" },
-        emphasis: { itemStyle: { color: "transparent" } },
-        data: placeholders,
-        silent: true,
-      },
-      {
-        name: "Variacao",
-        type: "bar",
-        stack: "wf",
-        barMaxWidth: 28,
-        data: values.map((v, i) => ({
-          value: v,
-          itemStyle: { color: colors[i], borderRadius: [3, 3, 0, 0] },
-        })),
-      },
-    ],
-    tooltip: {
-      trigger: "axis",
-      formatter: (params: unknown) => {
-        const arr = params as { dataIndex: number; name: string }[]
-        const idx = arr[0]?.dataIndex ?? 0
-        const isTotal = idx === items.length
-        const valor = isTotal ? total : items[idx].valor
-        const label = isTotal ? "Total" : items[idx].label
-        return `<b>${label}</b><br/>${BRL(valor)}`
-      },
-    },
-  }
-}
-
-function DivergenciaPanel({
-  divergencia,
-  total,
-  plDelta,
-}: {
-  divergencia: number
-  total:       number
-  plDelta:     number
-}) {
-  const tolerance = 1  // R$ 1 — abaixo disso considera reconciliado
-  const ok = Math.abs(divergencia) < tolerance
-  return (
-    <div className={cx(
-      "flex items-start gap-3 rounded border p-4",
-      ok
-        ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/20"
-        : "border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40",
-    )}>
-      <div className={cx(
-        "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full",
-        ok ? "bg-emerald-500 text-white" : "bg-amber-500 text-white",
-      )}>
-        {ok
-          ? <RiCheckLine className="size-3" aria-hidden="true" />
-          : <RiAlertLine className="size-3" aria-hidden="true" />}
-      </div>
-      <div className="flex-1 text-sm">
-        <p className="font-medium text-gray-900 dark:text-gray-50">
-          {ok ? "Decomposicao reconciliada" : "Divergencia detectada"}
-        </p>
-        <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-          Σ decomposicao = <span className="font-mono tabular-nums">{BRL(total)}</span>
-          {"  ·  "}
-          Δ PL = <span className="font-mono tabular-nums">{BRL(plDelta)}</span>
-          {"  ·  "}
-          Diferenca = <span className={cx(
-            "font-mono tabular-nums font-semibold",
-            ok ? "text-emerald-600 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400",
-          )}>{BRL(divergencia)}</span>
-        </p>
-        {!ok && (
-          <p className="mt-2 text-xs text-gray-500 dark:text-gray-500">
-            Indica que ha categoria(s) impactando o PL fora do escopo decomposto.
-            Verifique tarifas, ajustes manuais ou ativos nao mapeados.
-          </p>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function ApropriacaoDcDrill({ data }: { data: ApropriacaoDc }) {
-  const Row = ({ label, value, mono = true }: { label: string; value: number | string; mono?: boolean }) => (
-    <div className="flex items-baseline justify-between gap-3 py-1">
-      <span className="text-xs text-gray-600 dark:text-gray-400">{label}</span>
-      <span className={cx(
-        "text-sm tabular-nums text-gray-900 dark:text-gray-50",
-        mono && "font-mono",
-      )}>
-        {typeof value === "number" ? BRL(value) : value}
-      </span>
-    </div>
-  )
-
-  const Block = ({ title, linha }: { title: string; linha: ApropriacaoDcLinha }) => (
-    <div className="rounded border border-gray-200 p-4 dark:border-gray-800">
-      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{title}</h4>
-      <Row label="Estoque D-1 (VP)" value={linha.estoque_d1} />
-      <Row label="Aquisicoes" value={linha.aquisicoes} />
-      <Row label="Liquidados" value={linha.liquidados} />
-      <Row label="Estoque D0 (VP)" value={linha.estoque_d0} />
-      <div className="mt-2 border-t border-gray-200 pt-2 dark:border-gray-800">
-        <Row label="Apropriacao = G − (D + E + F)" value={linha.apropriacao} />
-      </div>
-    </div>
-  )
-
-  return (
-    <div className="flex flex-col gap-4 p-6">
-      <p className="text-xs text-gray-500 dark:text-gray-400">
-        Origem: <span className="font-mono">wh_estoque_recebivel</span> + <span className="font-mono">wh_aquisicao_recebivel</span> + <span className="font-mono">wh_liquidacao_recebivel</span>
-      </p>
-      <Block title="A vencer" linha={data.a_vencer} />
-      <Block title="Vencidos" linha={data.vencidos} />
-      <div className="rounded border border-blue-200 bg-blue-50/50 p-4 dark:border-blue-900 dark:bg-blue-950/20">
-        <Row label="Total apropriacao DC" value={data.total} />
-      </div>
-    </div>
-  )
-}
-
-function CprDrill({ data }: { data: CprDetalhado }) {
-  const List = ({ title, items }: { title: string; items: CprMovimentoItem[] }) => (
-    <div className="rounded border border-gray-200 dark:border-gray-800">
-      <div className="border-b border-gray-200 bg-gray-50 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
-        {title} · {items.length} item(s)
-      </div>
-      <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-        {items.length === 0 && (
-          <li className="px-3 py-2 text-xs text-gray-400 dark:text-gray-600">—</li>
-        )}
-        {items.map((it, i) => (
-          <li key={i} className="flex items-baseline justify-between gap-3 px-3 py-1.5">
-            <span className="text-xs text-gray-700 dark:text-gray-300">{it.descricao}</span>
-            <span className={cx(
-              "font-mono text-xs tabular-nums",
-              it.valor >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400",
-            )}>
-              {BRL(it.valor)}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-
-  return (
-    <div className="flex flex-col gap-4 p-6">
-      <p className="text-xs text-gray-500 dark:text-gray-400">
-        Origem: <span className="font-mono">wh_cpr_movimento</span> — segregacao receber/pagar pelo sinal de <span className="font-mono">valor</span>.
-      </p>
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <List title="A receber D-1" items={data.receber_d1} />
-        <List title="A receber D0"  items={data.receber_d0} />
-        <List title="A pagar D-1"   items={data.pagar_d1} />
-        <List title="A pagar D0"    items={data.pagar_d0} />
-      </div>
-      <div className="rounded border border-blue-200 bg-blue-50/50 p-4 dark:border-blue-900 dark:bg-blue-950/20">
-        <div className="flex items-baseline justify-between gap-3 py-1">
-          <span className="text-xs text-gray-600 dark:text-gray-400">Total D-1 (rec − pag)</span>
-          <span className="font-mono text-sm tabular-nums">{BRL(data.total_d1)}</span>
-        </div>
-        <div className="flex items-baseline justify-between gap-3 py-1">
-          <span className="text-xs text-gray-600 dark:text-gray-400">Total D0 (rec − pag)</span>
-          <span className="font-mono text-sm tabular-nums">{BRL(data.total_d0)}</span>
-        </div>
-        <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-blue-200 pt-2 dark:border-blue-900">
-          <span className="text-xs font-medium text-gray-900 dark:text-gray-50">Δ Apropriacao despesas</span>
-          <span className="font-mono text-sm font-semibold tabular-nums">{BRL(data.variacao)}</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-type DrillTarget = "apropriacao_dc" | "cpr" | null
-
-function VariacaoSectionEmpty({ title, message }: { title: string; message: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded border border-dashed border-gray-200 bg-white py-12 dark:border-gray-800 dark:bg-gray-925">
-      <RiInformationLine className="size-5 text-gray-400" aria-hidden="true" />
-      <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{title}</p>
-      <p className="text-xs text-gray-500 dark:text-gray-500">{message}</p>
-    </div>
-  )
-}
-
-function VariacaoDiariaSection({
-  data,
-  isLoading,
-  isError,
-  error,
-  fundoSelected,
-  onOpenDrill,
-}: {
-  data:           VariacaoDiariaResponse | undefined
-  isLoading:      boolean
-  isError:        boolean
-  error:          Error | null
-  fundoSelected:  boolean
-  onOpenDrill:    (target: DrillTarget) => void
-}) {
-  const wfOption = React.useMemo(
-    () => data
-      ? decomposicaoWaterfallOption(data.decomposicao, data.decomposicao_total)
-      : undefined,
-    [data],
-  )
-
-  const Header = (
-    <div className="flex items-center gap-2">
-      <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-50">Variacao diaria da Cota</h2>
-    </div>
-  )
-
-  if (!fundoSelected) {
-    return (
-      <div className="flex flex-col gap-3">
-        {Header}
-        <VariacaoSectionEmpty
-          title="Selecione um fundo"
-          message="Use o filtro 'Fundo' acima para escolher uma UA do tipo FIDC."
-        />
-      </div>
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col gap-3">
-        {Header}
-        <VariacaoSectionEmpty title="Carregando variacao..." message="Consultando warehouse." />
-      </div>
-    )
-  }
-
-  if (isError) {
-    return (
-      <div className="flex flex-col gap-3">
-        {Header}
-        <div className="rounded border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/30">
-          <p className="text-sm font-medium text-red-900 dark:text-red-200">Falha ao carregar variacao</p>
-          <p className="mt-1 font-mono text-xs text-red-700 dark:text-red-400">
-            {error?.message ?? "Erro desconhecido"}
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!data) {
-    return (
-      <div className="flex flex-col gap-3">
-        {Header}
-        <VariacaoSectionEmpty title="Sem dados" message="Nenhuma variacao disponivel para esses parametros." />
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      {Header}
-
-      <VariacaoHero
-        data={data.data}
-        dataAnterior={data.data_anterior}
-        plD1={data.pl_d1}
-        plD0={data.pl_d0}
-        plDelta={data.pl_delta}
-        plDeltaPct={data.pl_delta_pct}
-      />
-
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <PlCategoriaTable categorias={data.categorias} />
-
-        <div className="flex flex-col gap-3">
-          <EChartsCard
-            title="Decomposicao da variacao"
-            caption="Waterfall · clique em uma barra para drill-down"
-            option={wfOption!}
-            height={260}
-            actions={
-              <div className="flex gap-2 text-[11px]">
-                <button type="button" onClick={() => onOpenDrill("apropriacao_dc")} className="text-blue-600 hover:underline dark:text-blue-400">
-                  Apropriacao DC →
-                </button>
-                <button type="button" onClick={() => onOpenDrill("cpr")} className="text-blue-600 hover:underline dark:text-blue-400">
-                  CPR →
-                </button>
-              </div>
-            }
-          />
-          <DivergenciaPanel
-            divergencia={data.divergencia}
-            total={data.decomposicao_total}
-            plDelta={data.pl_delta}
-          />
-        </div>
-      </div>
-    </div>
-  )
-}
+// (Helpers de formatacao migraram para BalanceTable._components quando aplicavel.)
+// (deprecated VariacaoDiariaSection helpers removed — substituido por BalanceTable)
 
 // ───────────────────────────────────────────────────────────────────────────
 // Visao geral
 // ───────────────────────────────────────────────────────────────────────────
 
 function VisaoGeralTab({
-  variacao,
-  variacaoLoading,
-  variacaoError,
-  variacaoErrorMsg,
-  fundoSelected,
-  onOpenDrill,
   rows,
   tableStatus,
   setTableStatus,
   tableCotista,
   setTableCotista,
   onRowClick,
+  balanceRows,
+  balanceData,
+  balanceDataAnterior,
+  balanceEmptyMessage,
+  variacoes,
+  variacoesLoading,
+  variacoesError,
 }: {
-  variacao:         VariacaoDiariaResponse | undefined
-  variacaoLoading:  boolean
-  variacaoError:    boolean
-  variacaoErrorMsg: Error | null
-  fundoSelected:    boolean
-  onOpenDrill:      (target: DrillTarget) => void
-  rows:             MovimentacaoRow[]
-  tableStatus:      string
-  setTableStatus:   (v: string) => void
-  tableCotista:     string
-  setTableCotista:  (v: string) => void
-  onRowClick:       (row: MovimentacaoRow) => void
+  rows:                 MovimentacaoRow[]
+  tableStatus:          string
+  setTableStatus:       (v: string) => void
+  tableCotista:         string
+  setTableCotista:      (v: string) => void
+  onRowClick:           (row: MovimentacaoRow) => void
+  balanceRows:          BalanceRow[]
+  balanceData?:         string
+  balanceDataAnterior?: string
+  balanceEmptyMessage?: string
+  variacoes:            VariacoesDiaResponse | undefined
+  variacoesLoading:     boolean
+  variacoesError:       Error | null
 }) {
   const [plPeriod, setPlPeriod] = React.useState("12M")
   const [subPeriod, setSubPeriod] = React.useState("12M")
+  // Permite ao usuario dispensar o painel de analise IA pra ganhar espaco
+  // visual quando estiver focado nos dados. Reload restaura — sem persistencia.
+  const [insightsDismissed, setInsightsDismissed] = React.useState(false)
 
   return (
     <div className="flex flex-col gap-6">
       {/* Insights IA — alinhado com handoff bi-padrao (acima de tudo na aba) */}
-      <InsightBar>
-        {MOCK_INSIGHTS.map((ins, i) => (
-          <Insight key={i} tone="violet" text={ins.text} />
-        ))}
-      </InsightBar>
+      {!insightsDismissed && (
+        <InsightBar onDismiss={() => setInsightsDismissed(true)}>
+          {MOCK_INSIGHTS.map((ins, i) => (
+            <Insight key={i} tone="violet" text={ins.text} />
+          ))}
+        </InsightBar>
+      )}
 
-      {/* Variacao diaria — analise principal (espelho da planilha) */}
-      <VariacaoDiariaSection
-        data={variacao}
-        isLoading={variacaoLoading}
-        isError={variacaoError}
-        error={variacaoErrorMsg}
-        fundoSelected={fundoSelected}
-        onOpenDrill={onOpenDrill}
+      {/* Balanço · ótica Sub Jr (data-driven via /controladoria/cota-sub/balanco) */}
+      <BalanceTable
+        rows={balanceRows}
+        data={balanceData}
+        dataAnterior={balanceDataAnterior}
+        emptyMessage={balanceEmptyMessage}
+      />
+
+      {/* Pagamentos do Dia — saidas de caixa em D0 (silver: wh_movimento_caixa) */}
+      <PagamentosDiaPanel
+        variacoes={variacoes}
+        loading={variacoesLoading}
+        error={variacoesError}
       />
 
       {/* Hero 2/3 + 1/3 */}
@@ -1230,64 +602,6 @@ function PlaceholderTab({ label }: { label: string }) {
 // DataTable columns
 // ───────────────────────────────────────────────────────────────────────────
 
-const plCategoriaCol = createColumnHelper<PlCategoria>()
-
-const PL_CATEGORIA_COLUMNS: ColumnDef<PlCategoria, unknown>[] = [
-  plCategoriaCol.accessor("label", {
-    header: "Categoria",
-    size:   220,
-  }) as ColumnDef<PlCategoria, unknown>,
-  plCategoriaCol.accessor("d1", {
-    header: () => <div style={{ width: "100%", textAlign: "right" }}>D-1</div>,
-    size:   140,
-    cell:   (info) => (
-      <div style={{ textAlign: "right" }}>
-        <CurrencyCell value={info.getValue<number>()} />
-      </div>
-    ),
-  }) as ColumnDef<PlCategoria, unknown>,
-  plCategoriaCol.accessor("d0", {
-    header: () => <div style={{ width: "100%", textAlign: "right" }}>D0</div>,
-    size:   140,
-    cell:   (info) => (
-      <div style={{ textAlign: "right" }}>
-        <CurrencyCell value={info.getValue<number>()} />
-      </div>
-    ),
-  }) as ColumnDef<PlCategoria, unknown>,
-  plCategoriaCol.accessor("delta", {
-    header: () => <div style={{ width: "100%", textAlign: "right" }}>Δ</div>,
-    size:   140,
-    cell:   (info) => {
-      const v = info.getValue<number>()
-      const isPos = v > 0
-      const isNeg = v < 0
-      return (
-        <div
-          style={{ textAlign: "right" }}
-          className={cx(
-            "tabular-nums",
-            isPos && "text-emerald-600 dark:text-emerald-400",
-            isNeg && "text-red-600 dark:text-red-400",
-            !isPos && !isNeg && "text-gray-400 dark:text-gray-600",
-          )}
-        >
-          {v === 0 ? "—" : (v > 0 ? "+" : "") + BRL(v)}
-        </div>
-      )
-    },
-  }) as ColumnDef<PlCategoria, unknown>,
-  plCategoriaCol.accessor("source", {
-    header: "Fonte",
-    size:   180,
-    cell:   (info) => (
-      <span className="font-mono text-[10px] text-gray-400 dark:text-gray-600">
-        {info.getValue<string>()}
-      </span>
-    ),
-  }) as ColumnDef<PlCategoria, unknown>,
-]
-
 const col = createColumnHelper<MovimentacaoRow>()
 
 const MOVIMENTACOES_COLUMNS: ColumnDef<MovimentacaoRow, unknown>[] = [
@@ -1391,9 +705,6 @@ export default function CotaSubPage() {
 
   const [selected, setSelected] = React.useState<MovimentacaoRow | null>(null)
 
-  // Drill-down de Variacao diaria — abre Apropriacao DC ou CPR detalhado.
-  const [drillTarget, setDrillTarget] = React.useState<DrillTarget>(null)
-
   // Lookup do UUID da UA selecionada (para o endpoint backend que exige fundo_id).
   const fundoId = React.useMemo(() => {
     if (fundo === "Todos") return null
@@ -1401,8 +712,8 @@ export default function CotaSubPage() {
   }, [fundo, fundosQuery.data])
 
   const dayIso = React.useMemo(() => format(day, "yyyy-MM-dd"), [day])
-  const variacaoQuery = useVariacaoDiaria(fundoId, dayIso)
-  const variacaoData = variacaoQuery.data as VariacaoDiariaResponse | undefined
+  const balanceQuery   = useBalanco(fundoId, dayIso)
+  const variacoesQuery = useVariacoesDia(fundoId, dayIso)
   // Pagina requer fundo selecionado. Sem fundo, Z4 entra em EmptyState.
   const fundoSelecionado = fundoId !== null
 
@@ -1738,18 +1049,25 @@ export default function CotaSubPage() {
 
               {activeTab === "visao-geral" && (
                 <VisaoGeralTab
-                  variacao={variacaoData}
-                  variacaoLoading={variacaoQuery.isLoading}
-                  variacaoError={variacaoQuery.isError}
-                  variacaoErrorMsg={variacaoQuery.error as Error | null}
-                  fundoSelected
-                  onOpenDrill={setDrillTarget}
                   rows={filteredRows}
                   tableStatus={tableStatus}
                   setTableStatus={setTableStatus}
                   tableCotista={tableCotista}
                   setTableCotista={setTableCotista}
                   onRowClick={setSelected}
+                  balanceRows={balanceQuery.data?.rows ?? []}
+                  balanceData={balanceQuery.data?.data}
+                  balanceDataAnterior={balanceQuery.data?.data_anterior}
+                  balanceEmptyMessage={
+                    balanceQuery.isLoading
+                      ? "Carregando..."
+                      : balanceQuery.isError
+                      ? `Erro: ${(balanceQuery.error as Error)?.message ?? "desconhecido"}`
+                      : undefined
+                  }
+                  variacoes={variacoesQuery.data}
+                  variacoesLoading={variacoesQuery.isLoading}
+                  variacoesError={variacoesQuery.error as Error | null}
                 />
               )}
               {activeTab === "evolucao" && <PlaceholderTab label="Evolucao" />}
@@ -1841,18 +1159,6 @@ export default function CotaSubPage() {
         )}
       </DrillDownSheet>
 
-      {/* DrillDown da Variacao diaria (Apropriacao DC / CPR) */}
-      <DrillDownSheet
-        open={drillTarget !== null}
-        onClose={() => setDrillTarget(null)}
-        title={
-          drillTarget === "apropriacao_dc" ? "Apropriacao de DC" :
-          drillTarget === "cpr"            ? "CPR detalhado"      : ""
-        }
-      >
-        {drillTarget === "apropriacao_dc" && variacaoData && <ApropriacaoDcDrill data={variacaoData.apropriacao_dc} />}
-        {drillTarget === "cpr"            && variacaoData && <CprDrill            data={variacaoData.cpr_detalhado} />}
-      </DrillDownSheet>
     </div>
   )
 }

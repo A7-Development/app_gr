@@ -7,9 +7,9 @@ type LogoVariant = "icon" | "full"
 
 type LogoProps = {
   /**
-   * - "icon" (padrao): apenas o simbolo (`public/Logo-only.png`).
+   * - "icon" (padrao): apenas o simbolo (`public/strata-icon.png`).
    *   Usado na sidebar e em slots pequenos.
-   * - "full": simbolo + wordmark (`public/logo-a7-credit.png`).
+   * - "full": simbolo + wordmark (`public/strata-logo.png`).
    *   Usado em telas de login, splash e afins.
    */
   variant?: LogoVariant
@@ -17,16 +17,16 @@ type LogoProps = {
 }
 
 const SOURCES: Record<LogoVariant, string> = {
-  icon: "/Logo-only.png",
-  full: "/logo-a7-credit.png",
+  icon: "/strata-icon.png",
+  full: "/strata-logo.png",
 }
 
 /**
- * Logo da marca A7 Credit.
+ * Logo da marca Strata.
  *
  * Renderiza uma das variantes do logo (icone ou wordmark completa).
  * Se o arquivo PNG nao estiver presente em `public/`, exibe fallback
- * text-based com as iniciais "A7".
+ * text-based com o nome "Strata".
  */
 export function Logo({ variant = "icon", className }: LogoProps) {
   const [imgFailed, setImgFailed] = React.useState(false)
@@ -42,7 +42,7 @@ export function Logo({ variant = "icon", className }: LogoProps) {
           : "h-14 w-auto",
         className,
       )}
-      aria-label="A7 Credit"
+      aria-label="Strata"
     >
       {imgFailed ? (
         <span
@@ -52,7 +52,7 @@ export function Logo({ variant = "icon", className }: LogoProps) {
             isIcon ? "text-xs" : "text-lg",
           )}
         >
-          A7 Credit
+          Strata
         </span>
       ) : (
         // eslint-disable-next-line @next/next/no-img-element

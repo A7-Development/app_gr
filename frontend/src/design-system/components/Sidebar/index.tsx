@@ -243,8 +243,8 @@ export function AppSidebar({
             <div className="mb-3 flex items-center gap-2.5">
               <Logo className="size-8" />
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-50">A7 Credit</p>
-                <p className="text-[11px] text-gray-500 dark:text-gray-400">Plataforma GR</p>
+                <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-50">Strata</p>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">FIDC Analytics</p>
               </div>
             </div>
             <ModuleSwitcher />
