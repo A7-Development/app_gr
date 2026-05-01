@@ -33,20 +33,35 @@ import { useSource } from "@/lib/hooks/integracoes"
 import type { Environment, SourceTypeId } from "@/lib/api-client"
 
 import { CredenciaisTab } from "./_components/CredenciaisTab"
+import { ContasBancariasTab } from "./_components/ContasBancariasTab"
 import { TestarTab } from "./_components/TestarTab"
 import { HistoricoTab } from "./_components/HistoricoTab"
 
-const TABS = [
+// Source types que tem familia de "Contas bancarias" (admin:qitech usa
+// /v2/bank-account/* — saldo + extrato por agencia+conta da UA dona da
+// credencial). Bitfin nao tem analogo (extrato vem por SQL direto da DB
+// do tenant, sem conta separada).
+const SOURCES_WITH_BANK_ACCOUNTS = new Set<SourceTypeId>(["admin:qitech"])
+
+const TABS_BASE = [
   { key: "credenciais", label: "Credenciais" },
   { key: "testar", label: "Testar" },
   { key: "historico", label: "Historico" },
 ] as const
-type TabKey = (typeof TABS)[number]["key"]
+const TABS_WITH_BANK_ACCOUNTS = [
+  { key: "credenciais", label: "Credenciais" },
+  { key: "contas-bancarias", label: "Contas bancarias" },
+  { key: "testar", label: "Testar" },
+  { key: "historico", label: "Historico" },
+] as const
+type TabKey =
+  | (typeof TABS_BASE)[number]["key"]
+  | (typeof TABS_WITH_BANK_ACCOUNTS)[number]["key"]
 
-function useActiveTab(): TabKey {
+function useActiveTab(tabs: ReadonlyArray<{ key: string }>): TabKey {
   const sp = useSearchParams()
   const t = sp.get("tab")
-  if (t && TABS.some((x) => x.key === t)) return t as TabKey
+  if (t && tabs.some((x) => x.key === t)) return t as TabKey
   return "credenciais"
 }
 
@@ -68,7 +83,10 @@ export default function SourceDetailPage() {
   const sourceType = decodeURIComponent(params.source_type) as SourceTypeId
   const sp = useSearchParams()
   const router = useRouter()
-  const activeTab = useActiveTab()
+  const tabs = SOURCES_WITH_BANK_ACCOUNTS.has(sourceType)
+    ? TABS_WITH_BANK_ACCOUNTS
+    : TABS_BASE
+  const activeTab = useActiveTab(tabs)
   const environment: Environment =
     sp.get("environment") === "sandbox" ? "sandbox" : "production"
   const uaIdParam = sp.get("ua")
@@ -137,7 +155,7 @@ export default function SourceDetailPage() {
       {!isError && (
         <>
           <TabNavigation>
-            {TABS.map((t) => (
+            {tabs.map((t) => (
               <TabNavigationLink
                 key={t.key}
                 asChild
@@ -156,6 +174,9 @@ export default function SourceDetailPage() {
 
           {!isLoading && data && activeTab === "credenciais" && (
             <CredenciaisTab detail={data} sourceType={sourceType} />
+          )}
+          {!isLoading && data && activeTab === "contas-bancarias" && (
+            <ContasBancariasTab detail={data} sourceType={sourceType} />
           )}
           {!isLoading && data && activeTab === "testar" && (
             <TestarTab detail={data} sourceType={sourceType} />

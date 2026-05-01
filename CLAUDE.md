@@ -94,6 +94,8 @@ Tremor Raw e referencia, nao cela. Quando "fazer como o Tremor faz" conflitar co
 | LLM gateway (backend) | adapter proprio em `app/modules/integracoes/adapters/llm/<provider>/`; LiteLLM aceito por baixo se virar multi-provider real | chamadas diretas ao SDK do provider em codigo de dominio |
 | PII redaction (backend) | regex CPF/CNPJ com check digit (MVP) → `presidio-analyzer` + `presidio-anonymizer` na Fase 2 | enviar payload bruto a LLM externo |
 | Cache + rate limit (backend) | em-processo no MVP; Redis em Phase 2 (tenant token bucket multi-dim TPM/RPM/BRL/dia) | `threading.Timer`, sleeps, locks ad-hoc |
+| Specialist agents (backend) | `claude-agent-sdk >= 0.1.72` (autorizado 2026-04-30 para modulo credito - workflow visual + agentes IA especialistas) | usar SDK direto da Anthropic para agentes; reimplementar loop agentico manualmente |
+| Workflow visual editor (frontend) | `@xyflow/react` (React Flow v12+) — autorizado 2026-04-30 para editor de workflow do modulo credito | reimplementar canvas drag-and-drop manualmente; libs alternativas (rete, dagre standalone) |
 
 Instalar qualquer biblioteca fora desta tabela exige autorizacao explicita do usuario no chat.
 
@@ -260,7 +262,8 @@ Toda **pagina autenticada** (`src/app/(app)/*`) **deve preferir** comecar de um 
 - **DashboardBiPadrao** — Pagina canonica do BI (handoff bi-padrao 2026-04-26). 5 zonas: Z1 PageHeader (titulo + IA + acoes) · Z2 TabNavigation L3 · Z3 FilterBar sticky · Z4 conteudo (InsightBar + KpiStrip 5 KPIs + grid 2/3+1/3 + grid 3-col + DataTable) · Z5 ProvenanceFooter. Lateral: AIPanel violeta in-layout + DrillDownSheet. Use para qualquer dashboard analitico (BI, Controladoria, Risco) que envolva KPIs + charts + tabela com drill-down.
 - **DashboardOperacional** — PageHeader + FilterBar + KpiStrip (4 KPIs) + Grid 2×2 EChartsCards + DataTable de atividade recente. Use para dashboards mais simples sem AI panel (`/bi/operacoes` legado, telas operacionais).
 - **ListagemComDrilldown** — PageHeader + FilterBar + DataTable + DrillDownSheet (URL-synced via `?selected=ID`). Use para listagem de **dados de dominio** (gerados pelo sistema): Cessoes, Cedentes, Sacados, Cobranca, Reconciliacao, Eventos. Drill-down abre painel rico (PropertyList + Tabs + Timeline + LinkedObjects).
-- **ListagemCrudInline** — PageHeader (com botao "+ Novo") + Card { `<FilterSearch>` + `<SegmentSwitch>` + contador `X de Y` + DataTable } + DrillDownSheet de criar (`?action=new`) + DrillDownSheet de editar (`?selected=<id>`) + Dialog destrutivo (state local). Use para **gestao administrativa** de cadastros pequenos a medios (~5-200 rows) onde criar/editar/excluir acontecem inline: credenciais de provedor LLM, usuarios do tenant, etiquetas, templates, regras de classificacao. Filtros sao **client-side** ate ~200 rows (busca via `globalFilter` do TanStack + segments locais); acima disso, copy-paste-edit + adicione `<FilterChip>` por coluna; acima de 2000 rows, migre para server-side (paginacao + busca debounced). Primeira instancia em producao: [`/admin/ia/providers`](frontend/src/app/(app)/admin/ia/providers/page.tsx).
+- **ListagemCrudInline** — PageHeader (com botao "+ Novo") + Card { `<FilterSearch>` + `<SegmentSwitch>` + contador `X de Y` + DataTable } + DrillDownSheet de criar (`?action=new`) + DrillDownSheet de editar (`?selected=<id>`) + Dialog destrutivo (state local). Use para **gestao administrativa** de cadastros pequenos a medios (~5-200 rows) onde **cada entidade tem identidade tabular** (compara linha-a-linha) e criar/editar/excluir acontecem inline: credenciais de provedor LLM, usuarios do tenant, etiquetas, templates de regra, fornecedores. Filtros sao **client-side** ate ~200 rows (busca via `globalFilter` do TanStack + segments locais); acima disso, copy-paste-edit + adicione `<FilterChip>` por coluna; acima de 2000 rows, migre para server-side (paginacao + busca debounced). Primeira instancia em producao: [`/admin/ia/providers`](frontend/src/app/(app)/admin/ia/providers/page.tsx).
+- **ListagemCrudCards** — PageHeader (`title` + `info` tooltip + `subtitle` eyebrow + botao "+ Novo") + Card { `<FilterSearch>` + `<SegmentSwitch>` + contador `X de Y` } + grid responsivo `1/2/3` colunas de `EntityCard` + DrillDownSheet de criar (`?action=new`) + (opcional) DrillDownSheet de editar (`?selected=<id>`, omita se edit redireciona pra outra rota) + Dialog destrutivo. Use para **gestao administrativa** onde **cada entidade tem identidade visual** (icone + titulo + descricao + metadata heterogeneo + badges + acoes) e cabe melhor em CARD do que em linha de tabela: workflows, agentes IA, dashboards salvos, conexoes externas, templates de extracao. Volume tipico < ~50 cards (~3 paginas de scroll); acima de 200 items considere migrar pra `ListagemCrudInline`. **EntityCard canonico**: `<Card>` com `<div className={cardTokens.body}>`, hover `border-blue-500`, layout em 3 linhas (avatar+badges+dropdown / titulo+descricao / metadata com `·`), DropdownMenu de acoes com `e.stopPropagation()` no trigger. Cor do avatar via tokens nomeados (ex.: `nodeCategoryTokens`) — proibido `bg-X-N` solto. Primeira instancia em producao: [`/credito/workflows`](frontend/src/app/(app)/credito/workflows/page.tsx).
 
 Toda **pagina nao-autenticada / superficie de marca** (`src/app/(auth)/*`, `src/app/error.tsx`, `not-found.tsx`, futuras paginas publicas) nasce de um template em `src/design-system/surfaces/`:
 
@@ -276,7 +279,8 @@ Antes de escrever uma `page.tsx` nova, pergunte:
   - Dashboard com KPIs + IA → `DashboardBiPadrao`
   - Dashboard simples sem IA → `DashboardOperacional`
   - Listagem de dados de dominio (drill-down de leitura) → `ListagemComDrilldown`
-  - Gestao administrativa CRUD (criar/editar/excluir inline) → `ListagemCrudInline`
+  - Gestao administrativa CRUD com identidade tabular (linha-a-linha) → `ListagemCrudInline`
+  - Gestao administrativa CRUD com identidade visual (icone + descricao rica) → `ListagemCrudCards`
 - E pagina nao-autenticada / pagina de erro / landing? Qual **surface** aplica?
 
 Se nenhum pattern atual couber, componha direto a partir de `design-system/components/` + `tremor/`. Se a estrutura for util a outras telas, **promova-a a pattern** (novo arquivo em `patterns/`) — patterns nascem de pages reais, nao de especulacao.
@@ -604,12 +608,13 @@ app/adapters/<tipo>/<nome>/
 **Exemplos (plano):**
 - `app/adapters/erp/bitfin/` — leitura SQL Server do Bitfin
 - `app/adapters/admin/qitech/` — API QiTech (pos-MVP)
-- `app/adapters/bureau/serasa_refinho/` — Serasa Refinho (pos-MVP)
+- `app/adapters/bureau/serasa_pj/` — Serasa PJ (Business Information Report — endpoint CNPJ)
+- `app/adapters/bureau/serasa_pf/` — Serasa PF (Person Information Report — endpoint CPF)
 - `app/adapters/document/nfe/` — parser XML de NFe (pos-MVP)
 
 **Regras do adapter:**
 
-1. **Um adapter por ENDPOINT/API, nao por provedor.** Refinho e PFIN sao adapters separados mesmo sendo ambos Serasa.
+1. **Um adapter por ENDPOINT/API, nao por provedor.** `serasa_pj` (Business Information Report, CNPJ) e `serasa_pf` (Person Information Report, CPF) sao adapters separados mesmo sendo ambos Serasa — endpoints distintos, schemas distintos.
 2. **Versao embutida no adapter:** constante `ADAPTER_VERSION = "1.0.0"` registrada em toda linha ingerida (`ingested_by_version`).
 3. **Output sempre em modelo canonico.** Adapter conhece a fonte e conhece o canonico; dominio nao conhece fontes.
 4. **Config por tenant:** cada tenant tem seu registro de configuracao (connection string, credenciais, parametros) em tabela `tenant_source_config`. Adapter le config do tenant, nao ha hardcode.
@@ -658,7 +663,7 @@ Nem toda fonte externa que popula o GR vira adapter no bounded context `integrac
 Raw nao usa `Auditable` — carrega proveniencia em colunas proprias (`fetched_at`, `fetched_by_version`, `payload_sha256`). Fluxo ETL, schema minimo e excecoes: ver `docs/WAREHOUSE_LAYERS.md`.
 
 **Convencao de nomes:**
-- Raw inclui o vendor: `wh_qitech_raw_outros_fundos`, `wh_serasa_refinho_raw_consulta`
+- Raw inclui o vendor: `wh_qitech_raw_outros_fundos`, `wh_serasa_pj_raw_pj_analitico`
 - Canonico nao inclui vendor: `wh_posicao_cota_fundo`, `wh_titulo`
 
 ### 13.2.1 Regra de consumo — silver-only (REGRA DURA)
@@ -702,7 +707,7 @@ Em mercado financeiro regulado (CVM/ANBIMA/Bacen), **explicabilidade + rastreabi
 
 | Campo | Tipo | Proposito |
 |---|---|---|
-| `source_type` | enum | "erp:bitfin", "admin:qitech", "bureau:serasa_refinho", "self_declared", "peer_declared", "internal_note", "derived" |
+| `source_type` | enum | "erp:bitfin", "admin:qitech", "bureau:serasa_pj", "bureau:serasa_pf", "self_declared", "peer_declared", "internal_note", "derived" |
 | `source_id` | text | ID do registro na fonte original |
 | `source_updated_at` | timestamp | Quando o dado foi atualizado na fonte |
 | `ingested_at` | timestamp | Quando foi lido para o warehouse |
@@ -782,9 +787,12 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] **Pagina respeita regra de 3 niveis (L1 sidebar grupo / L2 sidebar sub-item / L3 TabNavigation)?**
 - [ ] **Sidebar nao aninha em 3+ niveis (L3 sempre como tabs na pagina, nunca sub-sub-item)?**
 - [ ] **Estado de navegacao (modulo/secao/tab/filtros) e deep-linkavel via URL?**
-- [ ] **Listagem CRUD/admin usa `<DataTableShell>` (nao monta `Card + FilterSearch + DataTable` manual)?**
+- [ ] **Pagina nasce de um pattern canonico em `src/design-system/patterns/` (DashboardBiPadrao / DashboardOperacional / ListagemComDrilldown / ListagemCrudInline / ListagemCrudExpand / ListagemCrudCards) — divergencia tem `// MOTIVO:` no header do arquivo?**
+- [ ] **Listagem CRUD/admin tabular usa `<DataTableShell>` (nao monta `Card + FilterSearch + DataTable` manual)?**
+- [ ] **Listagem CRUD/admin visual (workflows, agentes, dashboards salvos) segue pattern `ListagemCrudCards` com `<EntityCard>` canonico (avatar via tokens nomeados, hover `border-blue-500`, DropdownMenu com `e.stopPropagation()`)?**
+- [ ] **PageHeader usa `info` (tooltip) + `subtitle` (eyebrow "Modulo · Categoria") + `actions` — nao so `title`?**
 - [ ] **Cells custom (inline ou em `_components/<X>Table.tsx`) usam `tableTokens.*` (nao escrevem `text-xs|sm|[Npx]` ou `text-gray-XXX` literais)?**
-- [ ] **Fuga do `<DataTableShell>` ou de `tableTokens.*` tem comentario `// MOTIVO:` no caller?**
+- [ ] **Fuga do `<DataTableShell>`, do pattern, ou de `tableTokens.*` tem comentario `// MOTIVO:` no caller?**
 - [ ] `npx tsc --noEmit` passa?
 - [ ] `npm run build` passa?
 

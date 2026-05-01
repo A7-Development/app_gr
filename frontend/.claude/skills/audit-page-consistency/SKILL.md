@@ -126,7 +126,25 @@ Violacoes a detectar:
 - **Ausencia de `L3` via URL.** Pagina que mostra tabs mas tem estado somente em React state (sem search param) — viola a regra "URL como fonte unica da verdade". Procurar `useState<string>` combinado com tabs ou switch case de conteudo — suspeito de nao-deep-link.
 - **Sidebar sem suporte a active state via `pathname`.** `SidebarSubLink` com `isActive={false}` hard-coded — deveria ser `isActive={pathname === item.href}` ou similar.
 
-### 12. Module guard no backend (erro grave)
+### 12. Pattern canonico nao aplicado (erro)
+
+CLAUDE.md §7 — toda pagina autenticada (`src/app/(app)/*`) **deve preferir** comecar de um pattern em `frontend/src/design-system/patterns/`:
+
+- `DashboardBiPadrao` / `DashboardOperacional` — dashboards
+- `ListagemComDrilldown` — listagem de dados de dominio com drill-down de leitura
+- `ListagemCrudInline` — CRUD admin com identidade tabular (DataTableShell)
+- `ListagemCrudCards` — CRUD admin com identidade visual (grid de EntityCard)
+- `ListagemCrudExpand` — variante de inline com row expand
+
+Heuristica de deteccao:
+- **Pagina invento estrutura propria de listagem** (Card + map manual de items, sem DataTableShell e sem grid no padrao do `ListagemCrudCards`) → erro. Se foi escolha deliberada, deve ter comentario `// MOTIVO:` no header explicando por que pattern X nao serve.
+- **PageHeader sem `info` E sem `subtitle`** numa pagina que tem CTA + listagem → suspeito. Pages canonicas usam ao menos `info` (tooltip "i" novo padrao Tremor) ou `subtitle` (eyebrow "Modulo · Categoria") alem do `title`.
+- **CRUD admin que faz `<Card>` + `<FilterSearch>` + `<DataTable>` manualmente, sem `<DataTableShell>` nem `<EntityCard>`** → pattern nao aplicado. Provavel violacao de CLAUDE.md §6.
+- **Edit que abre Dialog modal em vez de `<DrillDownSheet>` lateral** em CRUD inline → divergencia do canonico (DrillDownSheet eh padrao em ListagemCrudInline e ListagemCrudCards). Aceitar com `// MOTIVO:` so se o form for trivial (1-2 campos).
+
+Pattern conformity nao precisa ser perfeita — divergencia justificada (com `// MOTIVO:`) e aceita. Mas pagina **sem nenhuma referencia a um pattern canonico** e que reinventa estrutura e violacao.
+
+### 13. Module guard no backend (erro grave)
 
 Verificar `src/app/(app)/<modulo>/` — toda rota de modulo no frontend pressupoe que o backend tenha `require_module(Module.X, Permission.READ)` no endpoint correspondente. Auditoria so e relevante no frontend para:
 

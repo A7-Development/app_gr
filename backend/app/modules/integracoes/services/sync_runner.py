@@ -31,6 +31,12 @@ from app.modules.integracoes.adapters.admin.qitech.adapter import (
 from app.modules.integracoes.adapters.admin.qitech.adapter import (
     adapter_sync as qitech_sync,
 )
+from app.modules.integracoes.adapters.bureau.serasa_pj.adapter import (
+    adapter_ping as serasa_pj_ping,
+)
+from app.modules.integracoes.adapters.bureau.serasa_pj.adapter import (
+    adapter_sync as serasa_pj_sync,
+)
 from app.modules.integracoes.adapters.erp.bitfin.adapter import (
     adapter_ping as bitfin_ping,
 )
@@ -64,6 +70,11 @@ class AdapterEntry:
 _ADAPTER_REGISTRY: dict[SourceType, AdapterEntry] = {
     SourceType.ERP_BITFIN: AdapterEntry(sync=bitfin_sync, ping=bitfin_ping),
     SourceType.ADMIN_QITECH: AdapterEntry(sync=qitech_sync, ping=qitech_ping),
+    # Bureau: ping autentica de verdade; sync e stub explicativo (consultas
+    # sao sob demanda via workflow do credito, nao periodicas).
+    SourceType.BUREAU_SERASA_PJ: AdapterEntry(
+        sync=serasa_pj_sync, ping=serasa_pj_ping
+    ),
 }
 
 

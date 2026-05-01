@@ -343,9 +343,18 @@ export function DesignSystemClient() {
           </Section>
 
           <Section id="patterns" title="4. Patterns">
+            <Card title="DashboardBiPadrao">
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                Composição (5 zonas): PageHeader → TabNavigation L3 → FilterBar sticky → conteúdo (InsightBar + KpiStrip + grid + DataTable) → ProvenanceFooter. AIPanel + DrillDownSheet laterais.
+              </p>
+              <code className="text-xs font-mono text-blue-600 dark:text-blue-400">
+                {`import { DashboardBiPadrao } from "@/design-system/patterns"`}
+              </code>
+            </Card>
+
             <Card title="DashboardOperacional">
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                Composição: PageHeader → FilterBar → KpiStrip → 2×2 chart grid → DataTable
+                Composição: PageHeader → FilterBar → KpiStrip (4 KPIs) → 2×2 EChartsCards → DataTable. Para dashboards mais simples sem AI panel.
               </p>
               <code className="text-xs font-mono text-blue-600 dark:text-blue-400">
                 {`import { DashboardOperacional } from "@/design-system/patterns"`}
@@ -354,10 +363,37 @@ export function DesignSystemClient() {
 
             <Card title="ListagemComDrilldown">
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                Composição: PageHeader → FilterBar → DataTable → DrillDownSheet (URL-synced)
+                Composição: PageHeader → FilterBar → DataTable → DrillDownSheet (URL-synced via ?selected). Para listagens de DADOS de domínio (cessões, cedentes, sacados).
               </p>
               <code className="text-xs font-mono text-blue-600 dark:text-blue-400">
                 {`import { ListagemComDrilldown } from "@/design-system/patterns"`}
+              </code>
+            </Card>
+
+            <Card title="ListagemCrudInline">
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                Composição: PageHeader (com "+ Novo") → DataTableShell → DrillDownSheet (?action=new / ?selected) → Dialog destrutivo. Para CRUD ADMIN com identidade tabular (usuários, etiquetas, credenciais). Primeira instância: /admin/ia/providers.
+              </p>
+              <code className="text-xs font-mono text-blue-600 dark:text-blue-400">
+                {`import { ListagemCrudInline } from "@/design-system/patterns"`}
+              </code>
+            </Card>
+
+            <Card title="ListagemCrudExpand">
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                Variante de ListagemCrudInline com linhas que expandem inline (em vez de drawer lateral). Use quando o detail couber numa expansão e o usuário ganhar com comparação lado-a-lado.
+              </p>
+              <code className="text-xs font-mono text-blue-600 dark:text-blue-400">
+                {`import { ListagemCrudExpand } from "@/design-system/patterns"`}
+              </code>
+            </Card>
+
+            <Card title="ListagemCrudCards">
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                Composição: PageHeader (title + info tooltip + subtitle eyebrow + "+ Novo") → Card[FilterSearch + SegmentSwitch + counter] → grid 1/2/3 de EntityCard → DrillDownSheet → Dialog destrutivo. Para CRUD ADMIN com identidade VISUAL (workflows, agentes, dashboards salvos, conexões). Primeira instância: /credito/workflows.
+              </p>
+              <code className="text-xs font-mono text-blue-600 dark:text-blue-400">
+                {`import { ListagemCrudCards } from "@/design-system/patterns"`}
               </code>
             </Card>
           </Section>

@@ -79,6 +79,7 @@ export {
 export { JsonPreview } from "./JsonPreview"
 export { LastSyncCell } from "./LastSyncCell"
 export { Logo } from "./Logo"
+export { DynamicForm } from "./DynamicForm"
 export { ModuleSwitcher } from "./ModuleSwitcher"
 export { StrataIcon } from "./StrataIcon"
 export { MonthRangePicker, type MonthRange } from "./MonthRangePicker"

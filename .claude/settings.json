@@ -76,5 +76,20 @@
       "Bash(npm publish:*)",
       "Bash(npm uninstall:*)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/app_gr/.claude/hooks/audit-design-system.cjs\"",
+            "shell": "bash",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
   }
 }

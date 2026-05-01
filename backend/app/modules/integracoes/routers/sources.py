@@ -53,11 +53,16 @@ _SOURCE_SECRET_FIELDS: dict[SourceType, frozenset[str]] = {
     # tecnicamente "publico" em OAuth2 puro — no contexto do GR sao duas
     # metades da credencial do tenant.
     SourceType.ADMIN_QITECH: frozenset({"client_id", "client_secret"}),
+    # Serasa PJ: client_id+client_secret sao a credencial de distribuidor.
+    # `retailer_document_id` (CNPJ do consultante) NAO e segredo — operador
+    # precisa ver pra confirmar config; revelar nao da acesso a nada.
+    SourceType.BUREAU_SERASA_PJ: frozenset({"client_id", "client_secret"}),
 }
 
 _SOURCE_RULE_NAME: dict[SourceType, str] = {
     SourceType.ERP_BITFIN: "bitfin_adapter",
     SourceType.ADMIN_QITECH: "qitech_adapter",
+    SourceType.BUREAU_SERASA_PJ: "serasa_pj_adapter",
 }
 
 

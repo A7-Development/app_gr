@@ -8,6 +8,10 @@ from app.modules.admin.api import router as admin_router
 from app.modules.bi.api.router import router as bi_router
 from app.modules.cadastros.api.router import router as cadastros_router
 from app.modules.controladoria.api.router import router as controladoria_router
+from app.modules.credito.api.router import router as credito_router
+from app.modules.integracoes.routers.qitech_bank_account import (
+    router as integracoes_qitech_bank_account_router,
+)
 from app.modules.integracoes.routers.qitech_custodia import (
     router as integracoes_qitech_custodia_router,
 )
@@ -38,6 +42,9 @@ api_router.include_router(
 api_router.include_router(
     controladoria_router, prefix="/controladoria", tags=["controladoria"]
 )
+# Modulo credito — dossie inteligente + workflow visual + agentes especialistas.
+# (router ja inclui prefix="/credito" internamente)
+api_router.include_router(credito_router)
 api_router.include_router(
     integracoes_sources_router, prefix="/integracoes", tags=["integracoes"]
 )
@@ -53,4 +60,9 @@ api_router.include_router(
     integracoes_qitech_custodia_router,
     prefix="/integracoes",
     tags=["integracoes:qitech-custodia"],
+)
+api_router.include_router(
+    integracoes_qitech_bank_account_router,
+    prefix="/integracoes",
+    tags=["integracoes:qitech-bank-account"],
 )

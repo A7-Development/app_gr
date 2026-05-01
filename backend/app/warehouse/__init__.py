@@ -36,6 +36,15 @@ from app.warehouse.qitech_raw_relatorio import QiTechRawRelatorio
 from app.warehouse.rentabilidade_fundo import RentabilidadeFundo
 from app.warehouse.saldo_conta_corrente import SaldoContaCorrente
 from app.warehouse.saldo_tesouraria import SaldoTesouraria
+from app.warehouse.serasa_pj_consulta import SerasaPjConsulta
+from app.warehouse.serasa_pj_endereco import SerasaPjEndereco
+from app.warehouse.serasa_pj_inquiry_anterior import SerasaPjInquiryAnterior
+from app.warehouse.serasa_pj_pagamento_bucket import SerasaPjPagamentoBucket
+from app.warehouse.serasa_pj_participacao import SerasaPjParticipacao
+from app.warehouse.serasa_pj_raw_relatorio import SerasaPjRawRelatorio
+from app.warehouse.serasa_pj_restricao import SerasaPjRestricao
+from app.warehouse.serasa_pj_restricao_summary import SerasaPjRestricaoSummary
+from app.warehouse.serasa_pj_socio import SerasaPjSocio
 from app.warehouse.titulo import Titulo
 from app.warehouse.titulo_snapshot import TituloSnapshot
 
@@ -61,6 +70,15 @@ __all__ = [
     "RentabilidadeFundo",
     "SaldoContaCorrente",
     "SaldoTesouraria",
+    "SerasaPjConsulta",
+    "SerasaPjEndereco",
+    "SerasaPjInquiryAnterior",
+    "SerasaPjPagamentoBucket",
+    "SerasaPjParticipacao",
+    "SerasaPjRawRelatorio",
+    "SerasaPjRestricao",
+    "SerasaPjRestricaoSummary",
+    "SerasaPjSocio",
     "Titulo",
     "TituloSnapshot",
 ]

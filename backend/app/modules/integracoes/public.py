@@ -12,6 +12,9 @@ Consumidores atuais:
 """
 
 from app.modules.integracoes.services.eligibility import is_source_enabled
+from app.modules.integracoes.services.serasa_pj_query import (
+    execute_pj_query as execute_serasa_pj_query,
+)
 from app.modules.integracoes.services.sync_runner import (
     run_ping,
     run_sync_cycle,
@@ -19,6 +22,7 @@ from app.modules.integracoes.services.sync_runner import (
 )
 
 __all__ = [
+    "execute_serasa_pj_query",
     "is_source_enabled",
     "run_ping",
     "run_sync_cycle",

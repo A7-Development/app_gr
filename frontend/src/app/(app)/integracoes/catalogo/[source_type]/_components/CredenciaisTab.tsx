@@ -148,6 +148,41 @@ const FIELDS_BY_SOURCE: Partial<Record<SourceTypeId, FieldDescriptor[]>> = {
       helper: "Opcional. Default: 3600 (1h).",
     },
   ],
+  "bureau:serasa_pj": [
+    {
+      key: "base_url",
+      label: "Base URL",
+      type: "text",
+      placeholder: "https://api.serasaexperian.com.br",
+      helper:
+        "Producao: https://api.serasaexperian.com.br · UAT: https://uat-api.serasaexperian.com.br. Use o ambiente coerente com a fonte (sandbox/producao).",
+    },
+    {
+      key: "client_id",
+      label: "Client ID",
+      type: "secret",
+      required: true,
+      helper:
+        "Emitido pelo Serasa Developers Portal. Vai no Authorization: Basic base64(client_id:client_secret) da request de login.",
+    },
+    {
+      key: "client_secret",
+      label: "Client Secret",
+      type: "secret",
+      required: true,
+      helper:
+        "Secret correspondente ao Client ID. Cifrado em repouso via envelope encryption.",
+    },
+    {
+      key: "retailer_document_id",
+      label: "CNPJ Consultante (X-Retailer-Document-Id)",
+      type: "text",
+      placeholder: "11222333000144",
+      required: true,
+      helper:
+        "CNPJ (so digitos) do consultante real — A7 Credit consome como distribuidor, e este header e OBRIGATORIO em toda chamada. Sem ele, o consumo conta para a A7 em vez do tenant.",
+    },
+  ],
 }
 
 // Valor que o backend usa para indicar "secret persistido sem vazamento".

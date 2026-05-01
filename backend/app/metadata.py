@@ -12,6 +12,23 @@ from app.modules.bi.models.user_fund_favorite import UserFundFavorite  # noqa: F
 from app.modules.cadastros.models.unidade_administrativa import (  # noqa: F401
     UnidadeAdministrativa,
 )
+
+# Modulo credito — dossie inteligente + workflow + agentes especialistas (2026-04-30)
+from app.modules.credito.models import (  # noqa: F401
+    CreditAnalysisItem,
+    CreditDocumentTemplate,
+    CreditDossier,
+    CreditDossierAnalysis,
+    CreditDossierBureauQuery,
+    CreditDossierCheck,
+    CreditDossierCompany,
+    CreditDossierDocument,
+    CreditDossierFinancial,
+    CreditDossierOpinion,
+    CreditDossierPerson,
+    CreditDossierPleito,
+    CreditDossierRedFlag,
+)
 from app.modules.integracoes.models.qitech_report_job import QitechReportJob  # noqa: F401
 from app.modules.integracoes.models.tenant_source_config import TenantSourceConfig  # noqa: F401
 
@@ -35,6 +52,16 @@ from app.shared.identity.subscription import TenantModuleSubscription  # noqa: F
 from app.shared.identity.tenant import Tenant  # noqa: F401
 from app.shared.identity.user import User  # noqa: F401
 from app.shared.identity.user_permission import UserModulePermission  # noqa: F401
+
+# Workflow engine (shared kernel — modulo credito o consome, futuros modulos
+# como Risco e Laboratorio tambem virao a usar).
+from app.shared.workflow.models import (  # noqa: F401
+    WorkflowDefinition,
+    WorkflowDefinitionActive,
+    WorkflowNodeRun,
+    WorkflowNotification,
+    WorkflowRun,
+)
 from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel  # noqa: F401
 from app.warehouse.cpr_movimento import CprMovimento  # noqa: F401
 
@@ -52,8 +79,16 @@ from app.warehouse.posicao_compromissada import PosicaoCompromissada  # noqa: F4
 from app.warehouse.posicao_cota_fundo import PosicaoCotaFundo  # noqa: F401
 from app.warehouse.posicao_outros_ativos import PosicaoOutrosAtivos  # noqa: F401
 from app.warehouse.posicao_renda_fixa import PosicaoRendaFixa  # noqa: F401
+from app.warehouse.extrato_bancario import ExtratoBancario  # noqa: F401
+from app.warehouse.qitech_raw_bank_account_balance import (  # noqa: F401
+    QiTechRawBankAccountBalance,
+)
+from app.warehouse.qitech_raw_bank_account_statement import (  # noqa: F401
+    QiTechRawBankAccountStatement,
+)
 from app.warehouse.qitech_raw_relatorio import QiTechRawRelatorio  # noqa: F401
 from app.warehouse.rentabilidade_fundo import RentabilidadeFundo  # noqa: F401
+from app.warehouse.saldo_bancario_diario import SaldoBancarioDiario  # noqa: F401
 from app.warehouse.saldo_conta_corrente import SaldoContaCorrente  # noqa: F401
 from app.warehouse.saldo_tesouraria import SaldoTesouraria  # noqa: F401
 from app.warehouse.titulo import Titulo  # noqa: F401
