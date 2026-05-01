@@ -98,15 +98,21 @@ const PT_STOPWORDS = new Set([
   "em", "no", "na", "nos", "nas", "para", "pelo", "pela", "com",
 ])
 
-/** True se a string esta toda em maiusculas E tem >=2 palavras (com espaco).
- * Strings curtas sem espaco (NTN, LFT, S/A, NTN-B, PDD) sao tratadas como
- * siglas — nao normaliza. */
+/** True se a string esta toda em maiusculas e merece Title Case.
+ * Heuristica para tokens unicos (sem espaco):
+ *   - Siglas curtas (<= 4 chars) ou sem vogais => preserva (NTN, LFT, S/A,
+ *     NTN-B, PDD, VCNC, NCPX).
+ *   - Palavras longas (>= 5 chars) com vogais => normaliza (ATIVO, PASSIVO,
+ *     TOTAL, DIVERSOS, TESOURARIA). */
 function shouldNormalize(s: string): boolean {
   if (!s) return false
   if (!/[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ]/.test(s)) return false
   if (s !== s.toUpperCase()) return false
-  // Sem espaco -> sigla potencial. Nao normaliza. (NTN-B, S/A, PDD, LFT...)
-  if (!/\s/.test(s)) return false
+  // Frase com espaco -> sempre normaliza ("FUNDOS DI" -> "Fundos DI").
+  if (/\s/.test(s)) return true
+  // Token unico: heuristica sigla vs palavra.
+  if (s.length < 5) return false
+  if (!/[AEIOUÁÀÂÃÉÊÍÓÔÕÚ]/.test(s)) return false
   return true
 }
 
@@ -314,14 +320,18 @@ const ROW_BG: Record<BalanceRowType, string> = {
   // !border-l-0 anula o `border-l-2 border-l-transparent` da DataTable canonica
   // (que reserva 2px na esquerda mesmo invisivel e cria "step" visivel ao
   // combinar com border-y/border-t).
-  section:  "!h-6 !border-l-0 bg-gray-50 dark:bg-gray-900/60 border-y border-gray-200 dark:border-gray-800",
+  // Section: border-y intencional (borda em cima E embaixo) — destaca o cabecalho
+  // de bloco. border-y-gray-200 evita override da border-bottom-color default
+  // gray-100 da DataTable (que aparecia como borda dupla quando combinada).
+  section:  "!h-6 !border-l-0 bg-gray-50 dark:bg-gray-900/60 border-y border-y-gray-200 dark:border-y-gray-800",
   line:     "",
-  subtotal: "!border-l-0 bg-gray-50 dark:bg-gray-900/40 border-t border-gray-300 dark:border-gray-700",
-  // Total (PL Total / Cota Sub residual): destaque vem do peso e tamanho da
-  // fonte (text-[15px] font-semibold no cell renderer da coluna Linha) +
-  // border-t sutil. Sem fundo colorido — alinhado ao padrao Strata/Tremor.
-  // !border-l-0 garante zero striping na esquerda (vide comentario em section).
-  total:    "!border-l-0 border-t border-gray-200 dark:border-gray-800",
+  // Subtotal: APENAS border-top. border-t-gray-300 (em vez do shorthand
+  // border-gray-300) preserva a border-bottom-color default da DataTable —
+  // o shorthand sobrescrevia os 4 lados e causava aparencia "boxed".
+  subtotal: "!border-l-0 bg-gray-50 dark:bg-gray-900/40 border-t border-t-gray-300 dark:border-t-gray-700",
+  // Total (PL Total / Cota Sub residual): mesmo padrao do subtotal. border-t
+  // exclusivo via border-t-gray-200 — sem shorthand que vaze para o bottom.
+  total:    "!border-l-0 border-t border-t-gray-200 dark:border-t-gray-800",
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -350,7 +360,7 @@ export function BalanceTable({
     // separado da tabela pelo gap, sem precisar de border-b.
     <Card className="flex flex-col gap-3 p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
+        <h3 className="text-sm text-gray-900 dark:text-gray-50">
           Balancete Diário
         </h3>
       </div>

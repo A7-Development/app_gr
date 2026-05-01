@@ -1,6 +1,41 @@
 // src/design-system/components/FilterBar/index.tsx
-// Sticky filter bar — canonical Z1 zone for all listing screens.
-// Adds: saved views dropdown, RemovableChip, MoreFiltersButton, search input.
+//
+// FilterBar — Z3 canonica dos patterns DashboardBiPadrao / DashboardOperacional /
+// ListagemComDrilldown. Ver CLAUDE.md §7.1.
+//
+// ANATOMY (refinamento 2026-05-01)
+// ─────────────────────────────────────────────────────────────────────────────
+// Faixa sticky externa (bg-gray-50) + Card interno (bg-white border rounded
+// p-3) — mesma estrutura visual de `/credito/workflows` (ListagemCrudCards).
+// A faixa cinza mascara conteudo passando por baixo durante scroll; o Card
+// delimita visualmente a zona de filtros sem brigar com a TabNavigation acima.
+//
+// CONTROLES — altura e tipografia canonica
+// ─────────────────────────────────────────────────────────────────────────────
+// Todos os controles (FilterChip, FilterSearch, RemovableChip, MoreFiltersButton,
+// SavedViewsDropdown) renderizam a `h-[30px] px-2.5 text-[13px]` — mesma altura
+// dos botoes do header (HEADER_BTN_CLASS em DashboardHeaderActions). Esses dois
+// valores sao candidatos a token (tokens.controls.height/text) na varredura
+// final do Modo Iteracao de Design.
+//
+// PER-ELEMENT COLORING (regra dura)
+// ─────────────────────────────────────────────────────────────────────────────
+// Controles compostos (icon + label + valor) NAO usam `text-X` no <button>
+// raiz — cor no raiz se propaga por inheritance e achata a hierarquia visual.
+// Padrao FilterChip:
+//   - Icone:  text-gray-500 (inactive) / text-blue-500 (active)
+//   - Label:  text-[11px] text-gray-500
+//   - Valor:  font-medium text-gray-900 (inactive) / text-blue-700 (active)
+//
+// Componentes:
+//   FilterBar           Faixa sticky + Card interno (composicao Z3 completa)
+//   FilterSearch        Input de busca (h-[30px], expand-on-focus 56→72)
+//   FilterChip          Trigger de filtro categorico (label + valor + chevron)
+//   RemovableChip       Filtro aplicado com botao X
+//   MoreFiltersButton   Botao "Mais filtros" (onClick handler) — nao suporta
+//                       asChild ainda; paginas que precisam Popover trigger
+//                       duplicam anatomy (CLAUDE.md §7.1 antipattern)
+//   SavedViewsDropdown  Dropdown de visualizacoes salvas (localStorage)
 
 "use client"
 
@@ -53,22 +88,30 @@ export function FilterBar({ children, extraActions, className }: FilterBarProps)
   return (
     <>
       <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
+      {/* Faixa sticky com fundo da pagina — mascara conteudo que passa por baixo durante scroll. */}
       <div
-        role="toolbar"
-        aria-label="Filtros"
         className={cx(
-          "sticky top-0 z-10 -mx-6 flex flex-wrap items-center gap-2 px-6 py-2",
-          "bg-white dark:bg-gray-950",
-          "border-b border-gray-200 dark:border-gray-800",
+          "sticky top-0 z-10 -mx-6 px-6 pt-2 pb-3",
+          "bg-gray-50 dark:bg-gray-950",
           scrolled && "shadow-xs",
           "transition-shadow duration-150",
-          className,
         )}
       >
-        <div className="flex flex-1 flex-wrap items-center gap-2">{children}</div>
-        {extraActions && (
-          <div className="ml-auto flex shrink-0 items-center gap-2">{extraActions}</div>
-        )}
+        {/* Card visualmente delimitado — mesma anatomia de /credito/workflows. */}
+        <div
+          role="toolbar"
+          aria-label="Filtros"
+          className={cx(
+            "flex flex-wrap items-center gap-2 rounded border p-3",
+            "border-gray-200 bg-white dark:border-gray-900 dark:bg-[#090E1A]",
+            className,
+          )}
+        >
+          <div className="flex flex-1 flex-wrap items-center gap-2">{children}</div>
+          {extraActions && (
+            <div className="ml-auto flex shrink-0 items-center gap-2">{extraActions}</div>
+          )}
+        </div>
       </div>
     </>
   )
@@ -88,7 +131,7 @@ export function FilterSearch({ className, onClear, ...props }: FilterSearchProps
       <input
         type="search"
         className={cx(
-          "h-7 w-56 rounded border pl-7 text-sm",
+          "h-[30px] w-56 rounded border pl-7 text-[13px]",
           props.value ? "pr-7" : "pr-2.5",
           "border-gray-200 dark:border-gray-800",
           "bg-white dark:bg-gray-950",
@@ -129,7 +172,7 @@ export function FilterChip({ label, value, active = false, icon: Icon, children,
     <button
       type="button"
       className={cx(
-        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2 py-[3px] text-xs",
+        "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2.5 text-[13px]",
         "transition-colors duration-100",
         active
           ? "border-blue-300 bg-blue-50 hover:bg-blue-100 dark:border-blue-500 dark:bg-blue-500/10 dark:hover:bg-blue-500/15"
@@ -183,7 +226,7 @@ interface RemovableChipProps {
 export function RemovableChip({ label, value, onRemove, className }: RemovableChipProps) {
   return (
     <div className={cx(
-      "inline-flex items-center gap-1.5 rounded-[4px] border px-2 py-[3px] text-xs",
+      "inline-flex h-[30px] items-center gap-1.5 rounded-[4px] border px-2.5 text-[13px]",
       "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
       className,
     )}>
@@ -214,16 +257,21 @@ export function MoreFiltersButton({ onClick, count, className }: MoreFiltersButt
       type="button"
       onClick={onClick}
       className={cx(
-        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2 py-[3px] text-xs transition-colors duration-100",
+        "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2.5 text-[13px] transition-colors duration-100",
         hasCount
-          ? "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-500 dark:bg-blue-500/10 dark:text-blue-300"
-          : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-400",
+          ? "border-blue-300 bg-blue-50 hover:bg-blue-100 dark:border-blue-500 dark:bg-blue-500/10 dark:hover:bg-blue-500/15"
+          : "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 dark:hover:bg-gray-900",
         focusRing,
         className,
       )}
     >
-      <RiEqualizerLine className="size-3.5 shrink-0" aria-hidden="true" />
-      <span className="font-medium">Mais filtros</span>
+      <RiEqualizerLine
+        className={cx("size-3.5 shrink-0", hasCount ? "text-blue-500" : "text-gray-500 dark:text-gray-400")}
+        aria-hidden="true"
+      />
+      <span className={cx("font-medium", hasCount ? "text-blue-700 dark:text-blue-300" : "text-gray-900 dark:text-gray-50")}>
+        Mais filtros
+      </span>
       {hasCount && (
         <span className="inline-flex min-w-4 items-center justify-center rounded-sm bg-blue-500 px-1 text-[10px] font-semibold text-white">
           {count}
@@ -292,7 +340,7 @@ export function SavedViewsDropdown({
     <button
       type="button"
       className={cx(
-        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded border px-2.5 py-1 text-xs transition-colors duration-100",
+        "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded border px-2.5 text-[13px] transition-colors duration-100",
         activeView
           ? "border-blue-400 bg-blue-50 text-blue-700 dark:border-blue-500 dark:bg-blue-500/10 dark:text-blue-300"
           : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300",

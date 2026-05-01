@@ -68,7 +68,10 @@ senha*.txt
 # ---------- Amostras de API (exploracao, podem conter dados reais) ----------
 qitech_samples/
 *_samples/
+backend/payload-*.json
+backend/payload_*.json
 
 # ---------- Claude Code ----------
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 .mcp.json

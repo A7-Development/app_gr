@@ -226,6 +226,12 @@ export const MODULES: ModuleDefinition[] = [
         enabled: true,
         icon: RiPercentLine,
       },
+      {
+        name: "Pagamento Diario",
+        href: "/controladoria/pagamento-diario",
+        enabled: true,
+        icon: RiHandCoinLine,
+      },
     ],
   },
   {

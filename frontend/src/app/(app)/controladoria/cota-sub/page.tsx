@@ -13,7 +13,7 @@
 //      wh_movimentacao_cotista (warehouse silver).
 //   5. Conectar AIPanel.sendMessage no LLM real (api.aiChat).
 //
-// L3 tabs por agora: Visao geral · Evolucao · Cotistas. Quando outras
+// L3 tabs por agora: Diario · Evolucao · Cotistas. Quando outras
 // dimensoes (por classe, por sacado da operacao, por safra) entrarem,
 // basta adicionar entradas em TABS — pagina nao precisa de refactor.
 
@@ -85,7 +85,7 @@ import {
 } from "@/design-system/components/AIPanel"
 import { tokens, type StatusKey } from "@/design-system/tokens"
 import { BalanceTable, type BalanceRow } from "./_components/BalanceTable"
-import { PagamentosDiaPanel } from "./_components/PagamentosDiaPanel"
+import { PagamentosDiaPanel } from "@/components/controladoria/PagamentosDiaPanel"
 
 // ───────────────────────────────────────────────────────────────────────────
 // Tipos + Mocks
@@ -129,9 +129,9 @@ const MOCK_PROVENANCE: ProvenanceSource[] = [
 // ───────────────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { key: "visao-geral", label: "Visao geral" },
-  { key: "evolucao",    label: "Evolucao" },
-  { key: "cotistas",    label: "Cotistas" },
+  { key: "diario",   label: "Diario" },
+  { key: "evolucao", label: "Evolucao" },
+  { key: "cotistas", label: "Cotistas" },
 ] as const
 
 type TabKey = (typeof TABS)[number]["key"]
@@ -320,14 +320,14 @@ function AddFilterMenu({
         <button
           type="button"
           className={cx(
-            "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded border px-2.5 py-1 text-xs transition-colors duration-100",
-            "border-gray-200 bg-white text-gray-700 hover:bg-gray-50",
-            "dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300",
+            "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2.5 text-[13px] transition-colors duration-100",
+            "border-gray-200 bg-white hover:bg-gray-50",
+            "dark:border-gray-800 dark:bg-gray-950 dark:hover:bg-gray-900",
             focusRing,
           )}
         >
-          <RiEqualizerLine className="size-3.5 shrink-0" aria-hidden="true" />
-          <span className="font-medium">Mais filtros</span>
+          <RiEqualizerLine className="size-3.5 shrink-0 text-gray-500 dark:text-gray-400" aria-hidden="true" />
+          <span className="font-medium text-gray-900 dark:text-gray-50">Mais filtros</span>
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" sideOffset={6} className="min-w-44 p-1">
@@ -364,10 +364,10 @@ function AddFilterMenu({
 // (deprecated VariacaoDiariaSection helpers removed — substituido por BalanceTable)
 
 // ───────────────────────────────────────────────────────────────────────────
-// Visao geral
+// Diario
 // ───────────────────────────────────────────────────────────────────────────
 
-function VisaoGeralTab({
+function DiarioTab({
   rows,
   tableStatus,
   setTableStatus,
@@ -664,7 +664,7 @@ const MOVIMENTACOES_COLUMNS: ColumnDef<MovimentacaoRow, unknown>[] = [
 
 export default function CotaSubPage() {
   const [search, setSearch] = React.useState("")
-  // Dia: tab "Visao geral" analisa um unico dia por vez. Default = hoje.
+  // Dia: tab "Diario" analisa um unico dia por vez. Default = hoje.
   const today = React.useMemo(() => new Date(), [])
   const [day, setDay] = React.useState<Date>(today)
   // Fundo: opcoes vem de Cadastros · UAs do tipo FIDC. "Todos" e a opcao implicita default.
@@ -684,7 +684,7 @@ export default function CotaSubPage() {
   const [tableStatus,  setTableStatus]  = React.useState<string>("Todos")
   const [tableCotista, setTableCotista] = React.useState<string>("Todos")
 
-  const [activeTab, setActiveTab] = React.useState<TabKey>("visao-geral")
+  const [activeTab, setActiveTab] = React.useState<TabKey>("diario")
 
   // Atalhos Cmd/Ctrl + 1..3 para tabs (regra L3 do CLAUDE.md §11.6).
   React.useEffect(() => {
@@ -1047,8 +1047,8 @@ export default function CotaSubPage() {
                 />
               </KpiStrip>
 
-              {activeTab === "visao-geral" && (
-                <VisaoGeralTab
+              {activeTab === "diario" && (
+                <DiarioTab
                   rows={filteredRows}
                   tableStatus={tableStatus}
                   setTableStatus={setTableStatus}

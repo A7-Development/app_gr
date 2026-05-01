@@ -372,7 +372,7 @@ export function DesignSystemClient() {
 
             <Card title="ListagemCrudInline">
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                Composição: PageHeader (com "+ Novo") → DataTableShell → DrillDownSheet (?action=new / ?selected) → Dialog destrutivo. Para CRUD ADMIN com identidade tabular (usuários, etiquetas, credenciais). Primeira instância: /admin/ia/providers.
+                Composição: PageHeader (com &quot;+ Novo&quot;) → DataTableShell → DrillDownSheet (?action=new / ?selected) → Dialog destrutivo. Para CRUD ADMIN com identidade tabular (usuários, etiquetas, credenciais). Primeira instância: /admin/ia/providers.
               </p>
               <code className="text-xs font-mono text-blue-600 dark:text-blue-400">
                 {`import { ListagemCrudInline } from "@/design-system/patterns"`}
@@ -390,7 +390,7 @@ export function DesignSystemClient() {
 
             <Card title="ListagemCrudCards">
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                Composição: PageHeader (title + info tooltip + subtitle eyebrow + "+ Novo") → Card[FilterSearch + SegmentSwitch + counter] → grid 1/2/3 de EntityCard → DrillDownSheet → Dialog destrutivo. Para CRUD ADMIN com identidade VISUAL (workflows, agentes, dashboards salvos, conexões). Primeira instância: /credito/workflows.
+                Composição: PageHeader (title + info tooltip + subtitle eyebrow + &quot;+ Novo&quot;) → Card[FilterSearch + SegmentSwitch + counter] → grid 1/2/3 de EntityCard → DrillDownSheet → Dialog destrutivo. Para CRUD ADMIN com identidade VISUAL (workflows, agentes, dashboards salvos, conexões). Primeira instância: /credito/workflows.
               </p>
               <code className="text-xs font-mono text-blue-600 dark:text-blue-400">
                 {`import { ListagemCrudCards } from "@/design-system/patterns"`}

@@ -251,6 +251,7 @@ Uso de `hero.*` fora de `surfaces/` e bloqueador de PR. Pagina autenticada conti
 - **Series temporais FIDC** (PL, cotas, rentabilidade mes a mes) — usar `<CompactSeriesTable>` (Austin-style, density compact default).
 - **Tabelas hierarquicas** (BalanceTable, etc — multi-nivel com expand) — `<DataTable>` direta + `enableExpanding`/`getSubRows`/`expandedColumnId`. Nao cabe no `<DataTableShell>`.
 - **Tipografia + cores em CELL renderers**: SEMPRE via **`tableTokens.*`** de `@/design-system/tokens/table` — NUNCA `text-xs`, `text-sm`, `text-[Npx]`, `text-gray-XXX` literais inline. Excecao com `// MOTIVO:` no proprio cell. Tokens disponiveis: `cellText` (12px texto), `cellTextMono` (12px mono), `cellSecondary` (12px gray-500), `cellMuted` (12px placeholder), `cellStrong` (12px semibold), `cellNumber`/`cellNumberSecondary`/`cellNumberPositive`/`cellNumberNegative` (tabular-nums), `badge`/`badgeWithDot` (11px), `header` (10px eyebrow). Tudo 12px de base — cabe em row de density compact (h-8). **Texto principal em dark = `gray-100`, NAO `gray-50`.**
+- **Bordas em `rowClassName` da DataTable**: use sempre `border-t-{color}` / `border-b-{color}` / `border-y-{color}` (forma com lado explicito) — NUNCA o shorthand `border-{color}`. O shorthand seta `border-color` nos 4 lados, sobrescrevendo a `border-bottom-color: gray-100` default que a DataTable aplica em todo `<tr>`. Resultado visual: linhas com `border-t border-gray-200` ficam parecendo "boxed" (borda tambem embaixo, na cor errada). Mesma regra para `subtotal`, `total`, `section` em tabelas hierarquicas.
 - Nunca AG Grid, nunca data grid externo, nunca `Table` do Tremor cru em pagina (Tremor `Table` so como primitivo dentro de DataTable/CompactSeriesTable).
 
 ---
@@ -259,7 +260,7 @@ Uso de `hero.*` fora de `surfaces/` e bloqueador de PR. Pagina autenticada conti
 
 Toda **pagina autenticada** (`src/app/(app)/*`) **deve preferir** comecar de um dos patterns canonicos em `src/design-system/patterns/`:
 
-- **DashboardBiPadrao** — Pagina canonica do BI (handoff bi-padrao 2026-04-26). 5 zonas: Z1 PageHeader (titulo + IA + acoes) · Z2 TabNavigation L3 · Z3 FilterBar sticky · Z4 conteudo (InsightBar + KpiStrip 5 KPIs + grid 2/3+1/3 + grid 3-col + DataTable) · Z5 ProvenanceFooter. Lateral: AIPanel violeta in-layout + DrillDownSheet. Use para qualquer dashboard analitico (BI, Controladoria, Risco) que envolva KPIs + charts + tabela com drill-down.
+- **DashboardBiPadrao** — Pagina canonica do BI (handoff bi-padrao 2026-04-26). 5 zonas: Z1 PageHeader (titulo + IA + acoes) · Z2 TabNavigation L3 · Z3 FilterBar sticky **(Card branco em faixa cinza-50 — anatomy igual `/credito/workflows`, ver §7.1)** · Z4 conteudo (InsightBar + KpiStrip 5 KPIs + grid 2/3+1/3 + grid 3-col + DataTable) · Z5 ProvenanceFooter. Lateral: AIPanel violeta in-layout + DrillDownSheet. Use para qualquer dashboard analitico (BI, Controladoria, Risco) que envolva KPIs + charts + tabela com drill-down.
 - **DashboardOperacional** — PageHeader + FilterBar + KpiStrip (4 KPIs) + Grid 2×2 EChartsCards + DataTable de atividade recente. Use para dashboards mais simples sem AI panel (`/bi/operacoes` legado, telas operacionais).
 - **ListagemComDrilldown** — PageHeader + FilterBar + DataTable + DrillDownSheet (URL-synced via `?selected=ID`). Use para listagem de **dados de dominio** (gerados pelo sistema): Cessoes, Cedentes, Sacados, Cobranca, Reconciliacao, Eventos. Drill-down abre painel rico (PropertyList + Tabs + Timeline + LinkedObjects).
 - **ListagemCrudInline** — PageHeader (com botao "+ Novo") + Card { `<FilterSearch>` + `<SegmentSwitch>` + contador `X de Y` + DataTable } + DrillDownSheet de criar (`?action=new`) + DrillDownSheet de editar (`?selected=<id>`) + Dialog destrutivo (state local). Use para **gestao administrativa** de cadastros pequenos a medios (~5-200 rows) onde **cada entidade tem identidade tabular** (compara linha-a-linha) e criar/editar/excluir acontecem inline: credenciais de provedor LLM, usuarios do tenant, etiquetas, templates de regra, fornecedores. Filtros sao **client-side** ate ~200 rows (busca via `globalFilter` do TanStack + segments locais); acima disso, copy-paste-edit + adicione `<FilterChip>` por coluna; acima de 2000 rows, migre para server-side (paginacao + busca debounced). Primeira instancia em producao: [`/admin/ia/providers`](frontend/src/app/(app)/admin/ia/providers/page.tsx).
@@ -273,6 +274,27 @@ Toda **pagina nao-autenticada / superficie de marca** (`src/app/(auth)/*`, `src/
 Patterns e surfaces sao **copy-paste-edit** — nao componentes black-box. Copie o pattern para a pasta da pagina, adapte titulo/copy/mocks/charts ao dominio. Os comentarios `HOW TO ADAPT:` no topo de cada arquivo guiam a customizacao. Pages que copiam um pattern e divergem do template sao esperadas, nao excecao.
 
 **Header de dashboard — set canonico de acoes (handoff bi-padrao 2026-04-26):** toda pagina derivada de `DashboardBiPadrao` usa `<DashboardHeaderActions>` no slot `actions` do `<PageHeader>`. O composite renderiza, em ordem fixa: `[DarkToggle, Compartilhar, Exportar, Mais, IA]`. DarkToggle e IA sao sempre presentes; Share/Export/More sao omitidos quando o callback nao e passado. Substituir por `<Button>` solto ou conjunto custom de botoes e regressao — fecha a porta para que cada pagina invente seu proprio header. Para acoes secundarias (Copiar link, Duplicar, Imprimir, etc.), use o slot `more={[...]}`.
+
+### 7.1 FilterBar (Z3) — anatomy canonica + controles
+
+**Estrutura visual** (refinamento 2026-05-01): a Z3 do `DashboardBiPadrao` (e tambem usada em `DashboardOperacional` e `ListagemComDrilldown`) renderiza como **Card branco dentro de uma faixa sticky cinza-50** — mesma anatomy de `/credito/workflows` (`ListagemCrudCards`):
+
+- Faixa externa: `sticky top-0 z-10 -mx-6 px-6 pt-2 pb-3 bg-gray-50 dark:bg-gray-950` + `shadow-xs` quando scrolled. E ela quem mascara conteudo passando por baixo durante scroll.
+- Card interno: `flex flex-wrap items-center gap-2 rounded border p-3 border-gray-200 bg-white dark:border-gray-900 dark:bg-[#090E1A]` (mesmas classes do `<Card>` Tremor canonico).
+
+Implementacao oficial em [`src/design-system/components/FilterBar/index.tsx`](frontend/src/design-system/components/FilterBar/index.tsx). Nenhuma pagina deve recriar essa estrutura inline — composer com `<FilterBar>` + filhos canonicos.
+
+**Altura canonica dos controles** = ~30px (alinhada com `HEADER_BTN_CLASS` do `DashboardHeaderActions`). Todos os controles do FilterBar (FilterChip, FilterSearch, RemovableChip, MoreFiltersButton, SavedViewsDropdown) usam `h-[30px] px-2.5 text-[13px]` explicito. Botoes do header tambem chegam em ~30px via `py-1 text-[13px]`. Esses dois valores (`h-[30px]`, `text-[13px]`) sao candidatos a token (`tokens.controls.height`/`text`) na varredura final do Modo Iteracao de Design — por enquanto continuam como arbitrary values padronizados.
+
+**Per-element coloring em controles compostos** (regra dura): em controles com multiplos elementos visuais (ícone + label + valor + chevron, etc), aplique cor **por elemento**, nunca via `text-X` no `<button>`/`<div>` raiz. Razao: cor no elemento raiz se propaga por inheritance e achata a hierarquia visual (label e valor ficam mesma cor). Padrao canonico do FilterChip:
+
+- Ícone inactive: `text-gray-500 dark:text-gray-400`; active: `text-blue-500`
+- Label `text-[11px]`: `text-gray-500 dark:text-gray-400`
+- Valor `font-medium`: `text-gray-900 dark:text-gray-50`; active: `text-blue-700 dark:text-blue-300`
+
+Botoes que parecem chip (ex.: `MoreFiltersButton`, qualquer Popover trigger custom) tambem seguem essa anatomy — texto principal em `gray-900` (nao `gray-600`/`700`) para nao parecerem "menores" que os chips reais.
+
+**Antipattern: button cru duplicando MoreFiltersButton.** Quando uma pagina precisa de um trigger "Mais filtros" wrapped num Popover (lista de dimensoes para adicionar), e tentador escrever um `<button>` cru — o `MoreFiltersButton` canonico hoje nao aceita `asChild` para Popover wrapping. Se for inevitavel duplicar, **espelhe a anatomy completa** (mesmas classes, mesmas cores per-element). Followup: estender `MoreFiltersButton` com suporte a `asChild` para fechar essa porta.
 
 Antes de escrever uma `page.tsx` nova, pergunte:
 - E pagina autenticada? Qual **pattern** aplica?
