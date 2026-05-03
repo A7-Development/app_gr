@@ -208,7 +208,16 @@ export default function WorkflowEditorPage() {
 
   const { data: activeWorkflow } = useQuery({
     queryKey: ["credito", "workflow-active", workflow?.name],
-    queryFn: () => credito.workflows.getActive(workflow!.name),
+    queryFn: async () => {
+      try {
+        return await credito.workflows.getActive(workflow!.name)
+      } catch (e) {
+        // 404 é esperado quando nenhuma versão deste fluxo foi publicada
+        // ainda (estado normal de DRAFT). Engole pra não poluir o console.
+        if ((e as { status?: number }).status === 404) return null
+        throw e
+      }
+    },
     enabled: Boolean(workflow?.name),
     retry: false,
   })
