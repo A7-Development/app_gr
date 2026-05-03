@@ -12,15 +12,16 @@ import json
 from typing import Any
 from uuid import UUID
 
-from claude_agent_sdk import tool
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.shared.agents.tools._base import AgentTool
 
 
 def make_reference_tools(
     tenant_id: UUID,
     dossier_id: UUID,
     db: AsyncSession,
-) -> list:
+) -> list[AgentTool]:
     """Build a list of cross-reference tools.
 
     The (tenant_id, dossier_id, db) closure isn't used by the math helpers
@@ -29,14 +30,7 @@ def make_reference_tools(
     """
     _ = (tenant_id, dossier_id, db)  # silence linter, future-use placeholder
 
-    @tool(
-        "compare_values",
-        "Compara dois valores numericos e classifica a divergencia. "
-        "Retorna percentual, classificacao ('consistent' < 5%, 'minor_diff' "
-        "5-15%, 'major_diff' > 15%) e o valor absoluto da diferenca.",
-        {"label_a": str, "value_a": float, "label_b": str, "value_b": float},
-    )
-    async def compare_values(args: dict[str, Any]) -> dict[str, Any]:
+    async def _compare_values(args: dict[str, Any]) -> str:
         a = float(args["value_a"])
         b = float(args["value_b"])
         diff = abs(a - b)
@@ -50,47 +44,30 @@ def make_reference_tools(
         else:
             classification = "major_diff"
 
-        return {
-            "content": [
-                {
-                    "type": "text",
-                    "text": json.dumps(
-                        {
-                            "label_a": args["label_a"],
-                            "value_a": a,
-                            "label_b": args["label_b"],
-                            "value_b": b,
-                            "diff_abs": diff,
-                            "diff_pct": round(pct, 2),
-                            "classification": classification,
-                        },
-                        ensure_ascii=False,
-                    ),
-                }
-            ]
-        }
+        return json.dumps(
+            {
+                "label_a": args["label_a"],
+                "value_a": a,
+                "label_b": args["label_b"],
+                "value_b": b,
+                "diff_abs": diff,
+                "diff_pct": round(pct, 2),
+                "classification": classification,
+            },
+            ensure_ascii=False,
+        )
 
-    @tool(
-        "calculate_metric",
-        "Calcula um indicador financeiro padrao. Formulas suportadas: "
-        "'gross_margin' (gross_profit/revenue), 'ebitda_margin' "
-        "(ebitda/revenue), 'current_ratio' (current_assets/current_liab), "
-        "'debt_to_equity' (total_liab/equity), 'debt_to_revenue' "
-        "(total_debt/revenue).",
-        {"formula": str, "values": str},
-    )
-    async def calculate_metric(args: dict[str, Any]) -> dict[str, Any]:
-        try:
-            v = json.loads(args["values"])
-        except (ValueError, TypeError):
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "Erro: 'values' deve ser JSON com os campos necessarios.",
-                    }
-                ]
-            }
+    async def _calculate_metric(args: dict[str, Any]) -> str:
+        raw_values = args.get("values")
+        if isinstance(raw_values, str):
+            try:
+                v = json.loads(raw_values)
+            except (ValueError, TypeError):
+                return "Erro: 'values' deve ser JSON com os campos necessarios."
+        elif isinstance(raw_values, dict):
+            v = raw_values
+        else:
+            return "Erro: 'values' deve ser JSON com os campos necessarios."
 
         formula = args["formula"]
         result: dict[str, Any] = {"formula": formula}
@@ -101,7 +78,9 @@ def make_reference_tools(
             elif formula == "ebitda_margin":
                 result["value"] = (v["ebitda"] / v["revenue"]) if v["revenue"] else 0.0
             elif formula == "current_ratio":
-                result["value"] = (v["current_assets"] / v["current_liab"]) if v["current_liab"] else 0.0
+                result["value"] = (
+                    (v["current_assets"] / v["current_liab"]) if v["current_liab"] else 0.0
+                )
             elif formula == "debt_to_equity":
                 result["value"] = (v["total_liab"] / v["equity"]) if v["equity"] else 0.0
             elif formula == "debt_to_revenue":
@@ -111,6 +90,59 @@ def make_reference_tools(
         except (KeyError, TypeError, ZeroDivisionError) as e:
             result["error"] = str(e)
 
-        return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]}
+        return json.dumps(result, ensure_ascii=False)
 
-    return [compare_values, calculate_metric]
+    return [
+        AgentTool(
+            name="compare_values",
+            description=(
+                "Compara dois valores numericos e classifica a divergencia. "
+                "Retorna percentual, classificacao ('consistent' < 5%, "
+                "'minor_diff' 5-15%, 'major_diff' > 15%) e a diferenca absoluta."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "label_a": {"type": "string", "description": "Label do valor A."},
+                    "value_a": {"type": "number", "description": "Valor numerico A."},
+                    "label_b": {"type": "string", "description": "Label do valor B."},
+                    "value_b": {"type": "number", "description": "Valor numerico B."},
+                },
+                "required": ["label_a", "value_a", "label_b", "value_b"],
+                "additionalProperties": False,
+            },
+            handler=_compare_values,
+        ),
+        AgentTool(
+            name="calculate_metric",
+            description=(
+                "Calcula um indicador financeiro padrao. Formulas suportadas: "
+                "'gross_margin' (gross_profit/revenue), 'ebitda_margin' "
+                "(ebitda/revenue), 'current_ratio' (current_assets/current_liab), "
+                "'debt_to_equity' (total_liab/equity), 'debt_to_revenue' "
+                "(total_debt/revenue). `values` e string JSON com os campos."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "formula": {
+                        "type": "string",
+                        "enum": [
+                            "gross_margin",
+                            "ebitda_margin",
+                            "current_ratio",
+                            "debt_to_equity",
+                            "debt_to_revenue",
+                        ],
+                    },
+                    "values": {
+                        "type": "string",
+                        "description": "JSON serializado com os campos necessarios.",
+                    },
+                },
+                "required": ["formula", "values"],
+                "additionalProperties": False,
+            },
+            handler=_calculate_metric,
+        ),
+    ]

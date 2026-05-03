@@ -1,33 +1,42 @@
-"""Specialist Agent runtime — invokes Claude via claude-agent-sdk.
+"""Specialist Agent runtime — invoca Claude via Anthropic Messages API.
 
-Flow per agent invocation:
-1. Resolve prompt from `ai_prompt` table (versioned, editable without deploy).
-2. Render prompt with context (workflow node previous outputs + dossie data).
-3. Build in-process MCP server with tools requested by the agent spec.
-4. Invoke claude-agent-sdk's `query()` with thinking budget.
-5. Capture token usage from the result (for metering).
-6. Parse the agent's text output as JSON, validate against `output_schema`.
-   Retry once on validation failure with a correction prompt.
-7. Persist a `decision_log` entry + `ai_usage_event` for billing/audit.
-8. Return `AgentRunResult` to the workflow node.
+Migrado de `claude-agent-sdk` (subprocess do CLI) para o SDK oficial
+`anthropic` em 2026-05-02. Razao:
+    - subprocess do Claude Code CLI exige `ProactorEventLoop` no Windows;
+      backends que usam `SelectorEventLoop` (compat asyncpg legacy)
+      quebram com `NotImplementedError` em `_make_subprocess_transport`.
+    - HTTP direto e ~10x mais rapido por chamada (sem spawn) e habilita
+      prompt caching nativo + batch API + vision.
 
-This is a SECOND adapter layer over the LLM, separate from
-`adapters/llm/anthropic/` (which handles simple chat). Reason: the SDKs
-are different packages (`claude-agent-sdk` vs `anthropic`) and the
-abstraction levels differ (agent loop with tools vs single completion).
+Fluxo por invocacao:
+    1. Resolve prompt do `ai_prompt` (versionado, editavel sem deploy).
+    2. Renderiza com contexto (outputs anteriores + dados do dossie).
+    3. Cria lista de `AgentTool` (tenant-scoped via closure).
+    4. Chama `messages.create()` com `tools=[...]` no Messages API.
+    5. Loop de tool execution: enquanto `stop_reason == "tool_use"`,
+       executa cada tool requisitado e devolve `tool_result` ate o
+       modelo encerrar (`end_turn`).
+    6. Captura uso (input/output/cache tokens) pra `ai_usage_event`.
+    7. Extrai JSON do texto final, valida com `output_schema` Pydantic;
+       retry-com-correcao 1x em caso de falha de schema.
+    8. Retorna `AgentRunResult`.
+
+Esta camada e separada do adapter LLM "puro" (`adapters/llm/anthropic/`)
+porque agentes especialistas tem loop com tools + JSON validation,
+diferente de chat simples.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 import re
-from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
+from anthropic import APIStatusError as AnthropicAPIError  # type: ignore[no-redef]
+from anthropic import AsyncAnthropic
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,6 +54,8 @@ from app.shared.agents.catalog import (
     TOOL_REF_COMPARE,
     SpecialistAgentSpec,
 )
+from app.shared.agents.model_resolver import ResolvedModels, resolve_models_for_agent
+from app.shared.agents.tools._base import AgentTool
 from app.shared.ai.prompts import repository as prompt_repo
 
 if TYPE_CHECKING:
@@ -52,17 +63,23 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Safety cap pro tool execution loop. Cada agente especialista tem 1-3
+# tools relevantes; 12 iteracoes deixa folga sem permitir loop infinito.
+_MAX_TOOL_ITERATIONS = 12
+
 
 @dataclass(slots=True)
 class AgentRunResult:
     """Outcome of a Specialist Agent run."""
 
     output_data: dict[str, Any]      # parsed + validated agent output
-    output_schema_name: str           # e.g. 'SocialContractAnalysis'
+    output_schema_name: str          # e.g. 'SocialContractAnalysis'
     tokens_input: int = 0
     tokens_output: int = 0
+    tokens_cache_read: int = 0
+    tokens_cache_creation: int = 0
     cost_brl: Decimal = Decimal("0")
-    prompt_full_id: str = ""          # 'agent.social_contract@v1'
+    prompt_full_id: str = ""         # 'agent.social_contract@v1'
 
 
 # ─── Prompt rendering helpers ─────────────────────────────────────────────
@@ -170,36 +187,32 @@ def _build_tools_for_agent(
     tenant_id: Any,
     dossier_id: Any,
     db: AsyncSession,
-) -> list:
-    """Instantiate the tool list for this agent based on spec.tools.
+) -> list[AgentTool]:
+    """Instantiate AgentTools for this agent based on `spec.tools`.
 
-    Imports are local here to avoid loading claude-agent-sdk at module
-    import time (so unrelated tests don't need it installed).
+    The factories close over `(tenant_id, dossier_id, db)` so each
+    handler queries with the right scope without trusting agent-supplied IDs.
     """
     from app.shared.agents.tools.document_tools import make_document_tools
     from app.shared.agents.tools.dossier_tools import make_dossier_tools
     from app.shared.agents.tools.reference_tools import make_reference_tools
 
-    selected: list = []
+    selected: list[AgentTool] = []
     requested = set(spec.tools)
 
     if requested & {TOOL_DOSSIER_READ, TOOL_DOSSIER_FLAG, TOOL_DOSSIER_SAVE}:
-        all_dossier = make_dossier_tools(tenant_id, dossier_id, db)
-        # Filter by name match.
-        for t in all_dossier:
-            if t.name in requested:  # type: ignore[attr-defined]
+        for t in make_dossier_tools(tenant_id, dossier_id, db):
+            if t.name in requested:
                 selected.append(t)
 
     if requested & {TOOL_DOC_GET, TOOL_DOC_LIST}:
-        all_doc = make_document_tools(tenant_id, dossier_id, db)
-        for t in all_doc:
-            if t.name in requested:  # type: ignore[attr-defined]
+        for t in make_document_tools(tenant_id, dossier_id, db):
+            if t.name in requested:
                 selected.append(t)
 
     if requested & {TOOL_REF_COMPARE, TOOL_REF_CALC}:
-        all_ref = make_reference_tools(tenant_id, dossier_id, db)
-        for t in all_ref:
-            if t.name in requested:  # type: ignore[attr-defined]
+        for t in make_reference_tools(tenant_id, dossier_id, db):
+            if t.name in requested:
                 selected.append(t)
 
     return selected
@@ -247,7 +260,7 @@ def _extract_json_object(text: str) -> dict[str, Any]:
     return json.loads(text)
 
 
-# ─── Main entry point ─────────────────────────────────────────────────────
+# ─── Main entry points ────────────────────────────────────────────────────
 
 
 async def run_specialist_agent(
@@ -269,8 +282,6 @@ async def run_specialist_agent(
     )
 
     # Inject checklist items defined by the tenant for this agent's section.
-    # Each tenant configures its own items via /credito/checklist; the agent
-    # receives them dynamically — prompts stay generic across tenants.
     checklist_block = await _render_checklist_block(
         db,
         tenant_id=ctx.tenant_id,
@@ -286,7 +297,7 @@ async def run_specialist_agent(
     )
     user_text = "\n\n".join(user_parts)
 
-    output_data, tokens_in, tokens_out, cost = await _invoke_with_validation(
+    output_data, usage, _resolved = await _invoke_with_validation(
         spec=spec,
         system_text=system_text,
         user_text=user_text,
@@ -297,9 +308,11 @@ async def run_specialist_agent(
     return AgentRunResult(
         output_data=output_data,
         output_schema_name=spec.output_schema.__name__,
-        tokens_input=tokens_in,
-        tokens_output=tokens_out,
-        cost_brl=cost,
+        tokens_input=usage.tokens_input,
+        tokens_output=usage.tokens_output,
+        tokens_cache_read=usage.tokens_cache_read,
+        tokens_cache_creation=usage.tokens_cache_creation,
+        cost_brl=Decimal("0"),  # billing layer computes via FX rate
         prompt_full_id=prompt.full_id,
     )
 
@@ -316,10 +329,8 @@ async def run_document_extraction(
 
     Resolves the prompt name dynamically: `extract.<doc_type>` (falls back
     to `extract.document` if the specific one isn't seeded yet). When a
-    `template_id` is passed (or auto-resolved from a tenant template that
-    matches the doc_type), the template's `instructions` and `fields_schema`
-    are injected into the user prompt — guiding extraction without changing
-    the prompt itself.
+    `template_id` is passed, the template's `instructions` and
+    `fields_schema` are injected into the user prompt.
 
     Persists `ai_extraction` directly on the document row.
     """
@@ -333,7 +344,6 @@ async def run_document_extraction(
     try:
         prompt = await prompt_repo.resolve(db, name=prompt_name_specific)
     except prompt_repo.PromptNotFoundError:
-        # Fallback to the base extractor prompt.
         prompt = await prompt_repo.resolve(db, name=spec.prompt_name)
 
     rendered = prompt.render(context={"page": "credito.documento", "period": "", "filters": ""})
@@ -341,7 +351,6 @@ async def run_document_extraction(
         block.text for msg in rendered if msg.role == "system" for block in msg.content
     )
 
-    # Optionally pull tenant template guidance (or starter template) for this doc_type.
     template_block = await _render_template_block(
         db,
         tenant_id=ctx.tenant_id,
@@ -360,28 +369,28 @@ async def run_document_extraction(
     )
     user_text = "\n\n".join(user_parts)
 
-    output_data, tokens_in, tokens_out, cost = await _invoke_with_validation(
+    output_data, usage, resolved = await _invoke_with_validation(
         spec=spec,
         system_text=system_text,
         user_text=user_text,
         ctx=ctx,
         db=db,
-        # No tools for extractor.
-        tools_override=[],
+        tools_override=[],  # extractor nao usa tools
     )
 
-    # Persist on the document row.
     document.ai_extraction = output_data
-    document.ai_model_used = spec.preferred_model
+    document.ai_model_used = resolved.model
     document.ai_prompt_version = prompt.full_id
     await db.flush()
 
     return AgentRunResult(
         output_data=output_data,
         output_schema_name=spec.output_schema.__name__,
-        tokens_input=tokens_in,
-        tokens_output=tokens_out,
-        cost_brl=cost,
+        tokens_input=usage.tokens_input,
+        tokens_output=usage.tokens_output,
+        tokens_cache_read=usage.tokens_cache_read,
+        tokens_cache_creation=usage.tokens_cache_creation,
+        cost_brl=Decimal("0"),
         prompt_full_id=prompt.full_id,
     )
 
@@ -395,12 +404,8 @@ async def _render_template_block(
 ) -> str:
     """Build a guidance block from a CreditDocumentTemplate (when applicable).
 
-    Resolution order:
-    1. If `template_id` is provided and belongs to the tenant — use it.
-    2. Otherwise no template — return empty (free-form extraction).
-
-    We deliberately DO NOT auto-pick a template here; tenant explicitly opts
-    in by linking a template at upload time. Avoids surprises.
+    Resolution: if `template_id` is provided and belongs to the tenant
+    (or is a Strata starter template), use it. Otherwise return empty.
     """
     if template_id is None:
         return ""
@@ -445,25 +450,27 @@ async def _render_template_block(
 # ─── Internals ────────────────────────────────────────────────────────────
 
 
-@contextmanager
-def _ensure_anthropic_api_key(api_key: str) -> Iterator[None]:
-    """Garante que ANTHROPIC_API_KEY esta no env enquanto o claude-agent-sdk
-    roda. O SDK e wrapper do CLI Claude Code que herda env vars do processo
-    Python — sem a key no env, ele tenta OAuth e falha com 'Failed to start
-    Claude Code'.
+@dataclass(slots=True)
+class _Usage:
+    """Token counts acumulados ao longo do tool loop."""
 
-    Restaura o valor anterior ao sair (defensivo em concorrencia, embora
-    hoje todas as credenciais Anthropic sejam globais — CLAUDE.md §19.3).
-    """
-    prev = os.environ.get("ANTHROPIC_API_KEY")
-    os.environ["ANTHROPIC_API_KEY"] = api_key
-    try:
-        yield
-    finally:
-        if prev is None:
-            os.environ.pop("ANTHROPIC_API_KEY", None)
-        else:
-            os.environ["ANTHROPIC_API_KEY"] = prev
+    tokens_input: int = 0
+    tokens_output: int = 0
+    tokens_cache_read: int = 0
+    tokens_cache_creation: int = 0
+
+    def add(self, response_usage: Any) -> None:
+        """Acumula a partir de um `Usage` retornado pelo SDK."""
+        if response_usage is None:
+            return
+        self.tokens_input += int(getattr(response_usage, "input_tokens", 0) or 0)
+        self.tokens_output += int(getattr(response_usage, "output_tokens", 0) or 0)
+        self.tokens_cache_read += int(
+            getattr(response_usage, "cache_read_input_tokens", 0) or 0
+        )
+        self.tokens_cache_creation += int(
+            getattr(response_usage, "cache_creation_input_tokens", 0) or 0
+        )
 
 
 async def _invoke_with_validation(
@@ -473,18 +480,15 @@ async def _invoke_with_validation(
     user_text: str,
     ctx: NodeContext,
     db: AsyncSession,
-    tools_override: list | None = None,
-) -> tuple[dict[str, Any], int, int, Decimal]:
-    """Invoke the agent and validate output, retrying once on schema failure."""
-    from claude_agent_sdk import (  # type: ignore[import-not-found]
-        ClaudeAgentOptions,
-        ResultMessage,
-        create_sdk_mcp_server,
-        query,
-    )
+    tools_override: list[AgentTool] | None = None,
+) -> tuple[dict[str, Any], _Usage, ResolvedModels]:
+    """Invoke the agent and validate output, retrying once on schema failure.
 
-    # Resolver credencial Anthropic ativa antes de invocar o SDK.
-    # Sem ANTHROPIC_API_KEY no env, o CLI bundled tenta OAuth e falha.
+    Implementacao via Anthropic Messages API direta (sem subprocess).
+    Resolve o modelo a usar via `agent_config` (DB) com fallback no
+    catalog default — permite ao mantenedor trocar modelo sem deploy.
+    """
+    # Resolve credencial Anthropic ativa.
     try:
         credential = await get_active_anthropic_credential(db)
     except CredentialNotFoundError as e:
@@ -493,152 +497,229 @@ async def _invoke_with_validation(
             "esta cadastrada. Cadastre uma em /admin/ia/providers (mantenedor)."
         ) from e
 
+    # Resolve modelo via DB override (com fallback ao catalog default).
+    resolved = await resolve_models_for_agent(db, spec)
+
     tools = (
         tools_override
         if tools_override is not None
-        else _build_tools_for_agent(spec, ctx.tenant_id, ctx.trigger_data.get("dossier_id"), db)
+        else _build_tools_for_agent(
+            spec, ctx.tenant_id, ctx.trigger_data.get("dossier_id"), db
+        )
     )
 
-    options_kwargs: dict[str, Any] = {
-        "model": spec.preferred_model,
-        "system_prompt": system_text,
-    }
-
-    if tools:
-        mcp_server = create_sdk_mcp_server(
-            name=f"agent_{spec.name}",
-            version="1.0.0",
+    client = AsyncAnthropic(api_key=credential.api_key)
+    try:
+        # Primeira tentativa.
+        raw_text, usage = await _run_tool_loop(
+            client=client,
+            spec=spec,
+            model=resolved.model,
+            fallback_model=resolved.fallback_model,
+            system_text=system_text,
+            user_text=user_text,
             tools=tools,
         )
-        options_kwargs["mcp_servers"] = {f"agent_{spec.name}": mcp_server}
-        options_kwargs["allowed_tools"] = [
-            f"mcp__agent_{spec.name}__{t.name}" for t in tools  # type: ignore[attr-defined]
-        ]
 
-    options = ClaudeAgentOptions(**options_kwargs)
+        try:
+            parsed = _extract_json_object(raw_text)
+            validated = spec.output_schema.model_validate(parsed)
+            return validated.model_dump(mode="json"), usage, resolved
+        except (ValidationError, ValueError, json.JSONDecodeError) as e:
+            logger.warning(
+                "Agent %s produced invalid output, retrying once: %s",
+                spec.name,
+                e,
+            )
+            first_error = e
 
-    with _ensure_anthropic_api_key(credential.api_key):
-        raw_text, tokens_in, tokens_out, cost = await _call_query(
-            prompt=user_text,
-            options=options,
-            query_fn=query,
-            ResultMessage=ResultMessage,
+        # Retry com prompt de correcao.
+        correction_prompt = (
+            user_text
+            + "\n\nIMPORTANTE: a resposta anterior nao validou contra o schema. "
+            "Erro: "
+            + str(first_error)[:500]
+            + "\n\nProduza apenas um objeto JSON correto dentro de ```json ... ```."
+        )
+        raw_text2, usage2 = await _run_tool_loop(
+            client=client,
+            spec=spec,
+            model=resolved.model,
+            fallback_model=resolved.fallback_model,
+            system_text=system_text,
+            user_text=correction_prompt,
+            tools=tools,
         )
 
-    # Try to parse + validate.
-    try:
-        parsed = _extract_json_object(raw_text)
-        validated = spec.output_schema.model_validate(parsed)
-        return validated.model_dump(mode="json"), tokens_in, tokens_out, cost
-    except (ValidationError, ValueError, json.JSONDecodeError) as e:
-        logger.warning(
-            "Agent %s produced invalid output, retrying once: %s",
-            spec.name,
-            e,
-        )
+        # Acumula tokens das duas chamadas.
+        usage.tokens_input += usage2.tokens_input
+        usage.tokens_output += usage2.tokens_output
+        usage.tokens_cache_read += usage2.tokens_cache_read
+        usage.tokens_cache_creation += usage2.tokens_cache_creation
 
-    # One retry with correction prompt.
-    correction_prompt = (
-        user_text
-        + "\n\nIMPORTANTE: a resposta anterior nao validou contra o schema. "
-        "Erro: "
-        + str(e)[:500]
-        + "\n\nProduza apenas um objeto JSON correto dentro de ```json ... ```."
-    )
-    options2 = ClaudeAgentOptions(**options_kwargs)
-    with _ensure_anthropic_api_key(credential.api_key):
-        raw_text2, tin2, tout2, cost2 = await _call_query(
-            prompt=correction_prompt,
-            options=options2,
-            query_fn=query,
-            ResultMessage=ResultMessage,
-        )
+        try:
+            parsed2 = _extract_json_object(raw_text2)
+            validated2 = spec.output_schema.model_validate(parsed2)
+        except (ValidationError, ValueError, json.JSONDecodeError) as e2:
+            raise ValueError(
+                f"Agente {spec.name}: validacao falhou apos retry. "
+                f"Erro final: {e2}"
+            ) from e2
 
-    try:
-        parsed2 = _extract_json_object(raw_text2)
-        validated2 = spec.output_schema.model_validate(parsed2)
-    except (ValidationError, ValueError, json.JSONDecodeError) as e2:
-        raise ValueError(
-            f"Agente {spec.name}: validacao falhou apos retry. Erro final: {e2}"
-        ) from e2
-
-    return (
-        validated2.model_dump(mode="json"),
-        tokens_in + tin2,
-        tokens_out + tout2,
-        cost + cost2,
-    )
+        return validated2.model_dump(mode="json"), usage, resolved
+    finally:
+        await client.close()
 
 
-async def _call_query(
+async def _run_tool_loop(
     *,
-    prompt: str,
-    options: Any,
-    query_fn: Any,
-    ResultMessage: Any,
-) -> tuple[str, int, int, Decimal]:
-    """Drive the Agent SDK query and return final text + token usage.
+    client: AsyncAnthropic,
+    spec: SpecialistAgentSpec,
+    model: str,
+    fallback_model: str | None,
+    system_text: str,
+    user_text: str,
+    tools: list[AgentTool],
+) -> tuple[str, _Usage]:
+    """Roda o loop tool_use ate o modelo encerrar com texto final.
 
-    The SDK streams messages of multiple types; we accumulate the result
-    text on `ResultMessage(subtype='success')` events.
+    `model` e `fallback_model` vem ja resolvidos do DB override
+    (via `resolve_models_for_agent`); o caller nao deve mais ler
+    `spec.preferred_model` direto.
+
+    Retorna o texto da ultima resposta (sem blocos `tool_use`) + usage
+    acumulado.
     """
-    final_text = ""
-    tokens_in = 0
-    tokens_out = 0
-    cost = Decimal("0")
+    # System prompt como bloco com cache_control — primeiro request cria
+    # o cache; tool-loop subsequentes acertam (read).
+    system_blocks = [
+        {
+            "type": "text",
+            "text": system_text,
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
 
-    try:
-        message_iterator = query_fn(prompt=prompt, options=options)
-    except Exception as exc:
-        # Captura erros sincronos na construcao do iterator.
-        logger.exception(
-            "claude-agent-sdk query() raised on construction: %s (%r)",
-            exc,
-            exc,
+    tool_definitions = [t.to_api_definition() for t in tools] if tools else None
+    tool_dispatch: dict[str, AgentTool] = {t.name: t for t in tools}
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": user_text},
+    ]
+
+    usage = _Usage()
+    max_tokens = max(spec.thinking_budget_tokens + 4000, 4000)
+
+    last_text_response = ""
+    for iteration in range(_MAX_TOOL_ITERATIONS):
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "system": system_blocks,
+            "messages": messages,
+        }
+        if tool_definitions:
+            kwargs["tools"] = tool_definitions
+
+        try:
+            response = await client.messages.create(**kwargs)
+        except AnthropicAPIError as exc:
+            # Fallback para o modelo secundario se configurado.
+            if fallback_model and fallback_model != model:
+                logger.warning(
+                    "Agent %s primary model %s falhou (%s); tentando fallback %s",
+                    spec.name,
+                    model,
+                    exc,
+                    fallback_model,
+                )
+                kwargs["model"] = fallback_model
+                response = await client.messages.create(**kwargs)
+            else:
+                raise
+
+        usage.add(response.usage)
+
+        # Se o modelo terminou (end_turn / max_tokens / stop_sequence),
+        # extrai texto final e sai do loop.
+        if response.stop_reason in ("end_turn", "max_tokens", "stop_sequence"):
+            last_text_response = "".join(
+                block.text for block in response.content if block.type == "text"
+            )
+            return last_text_response, usage
+
+        if response.stop_reason != "tool_use":
+            # Stop reason inesperado — registra e sai com o que tem.
+            logger.warning(
+                "Agent %s stop_reason inesperado: %s (iter %d)",
+                spec.name,
+                response.stop_reason,
+                iteration,
+            )
+            last_text_response = "".join(
+                block.text for block in response.content if block.type == "text"
+            )
+            return last_text_response, usage
+
+        # tool_use: append assistant turn + executa tools + append tool_results.
+        # Echo do `response.content` direto preserva qualquer thinking block
+        # ou text block que o modelo emitiu.
+        messages.append(
+            {
+                "role": "assistant",
+                "content": [block.model_dump() for block in response.content],
+            }
         )
-        raise
 
-    async for message in _iter_with_logging(message_iterator):
-        if isinstance(message, ResultMessage):
-            # The result message exposes the final text + usage.
-            if hasattr(message, "result") and message.result:
-                final_text = str(message.result)
-            # Best-effort usage capture; SDK exposes it on .usage when present.
-            usage = getattr(message, "usage", None)
-            if usage:
-                tokens_in += int(getattr(usage, "input_tokens", 0) or 0)
-                tokens_out += int(getattr(usage, "output_tokens", 0) or 0)
-            total_cost = getattr(message, "total_cost_usd", None)
-            if total_cost is not None:
-                # USD → BRL conversion is approximate at this layer; the
-                # billing layer converts properly via current FX rate.
-                cost += Decimal(str(total_cost))
-            break
+        tool_results: list[dict[str, Any]] = []
+        for block in response.content:
+            if block.type != "tool_use":
+                continue
+            tool = tool_dispatch.get(block.name)
+            if tool is None:
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": (
+                            f"Erro: tool '{block.name}' nao registrada. "
+                            f"Disponiveis: {sorted(tool_dispatch.keys())}."
+                        ),
+                        "is_error": True,
+                    }
+                )
+                continue
 
-    if not final_text:
-        raise ValueError("Agente nao produziu texto de resposta (sem ResultMessage de sucesso).")
-    return final_text, tokens_in, tokens_out, cost
+            try:
+                result_text = await tool.handler(dict(block.input or {}))
+            except Exception as exc:
+                logger.exception(
+                    "Tool %s falhou no agente %s: %s", block.name, spec.name, exc
+                )
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": f"Erro ao executar {block.name}: {exc}",
+                        "is_error": True,
+                    }
+                )
+                continue
 
+            tool_results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": result_text,
+                }
+            )
 
-async def _iter_with_logging(iterator: Any) -> Any:
-    """Wrap async iterator pra logar exceptions com cause chain completa.
+        messages.append({"role": "user", "content": tool_results})
 
-    Sem isso, erros do SDK chegam como mensagens vagas (`Failed to start
-    Claude Code:`) sem tracking do que de fato falhou. Aqui logamos a
-    cadeia inteira (cause/context) com traceback antes de propagar.
-    """
-    try:
-        async for item in iterator:
-            yield item
-    except Exception as exc:
-        # Coleta cadeia de causes pra identificar a raiz.
-        chain: list[str] = []
-        current: BaseException | None = exc
-        while current is not None:
-            chain.append(f"{type(current).__name__}: {current!r}")
-            current = current.__cause__ or current.__context__
-        logger.exception(
-            "claude-agent-sdk query() FAILED — cause chain:\n  %s",
-            "\n  ".join(chain),
-        )
-        raise
+    # Esgotou _MAX_TOOL_ITERATIONS — devolve o que tiver de texto.
+    logger.warning(
+        "Agent %s atingiu %d iteracoes de tool_use sem encerrar.",
+        spec.name,
+        _MAX_TOOL_ITERATIONS,
+    )
+    return last_text_response, usage

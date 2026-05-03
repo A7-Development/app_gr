@@ -35,6 +35,12 @@ export const tokens = {
       neg: { light: "#DC2626", dark: "#F87171" },
       neu: { light: "#D97706", dark: "#FCD34D" },
     },
+    // Sinal funcional de "filtro aplicado" (FilterChip/MoreFiltersButton, A1b).
+    // Espelha --color-active-indicator de globals.css. Em componentes prefira
+    // a utility Tailwind `bg-active-indicator`; este string e pra ECharts/inline.
+    active: {
+      indicator: "var(--color-active-indicator)",
+    },
   },
   fonts: {
     sans:    "var(--font-sans)",
@@ -44,7 +50,7 @@ export const tokens = {
   spacing: {
     sidebarExpanded:  "240px",
     sidebarCollapsed: "56px",
-    headerH:          "56px",
+    headerH:          "48px",
     filterBarH:       "48px",
     drawerSm:         "400px",
     drawerMd:         "560px",

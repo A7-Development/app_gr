@@ -146,7 +146,7 @@ export default function PagamentoDiarioPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] overflow-hidden bg-gray-50 dark:bg-gray-950">
+    <div className="flex h-[calc(100vh-3rem)] overflow-hidden bg-gray-50 dark:bg-gray-950">
       {/* Coluna principal */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
 

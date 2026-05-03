@@ -42,6 +42,7 @@ from app.shared.ai.models import (  # noqa: F401
     AIPromptActive,
     AIProviderCredential,
     AIUsageEvent,
+    AgentConfig,
     TenantAISubscription,
     UserAIPermission,
 )

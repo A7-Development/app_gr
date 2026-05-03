@@ -240,17 +240,32 @@ async def submit_node_input(
             ),
         )
 
-    # Mark this node row as completed by removing it (engine will create a
-    # new node_run row when it re-executes the node with pending_input).
-    waiting.status = NodeRunStatus.COMPLETED
-    waiting.output_data = {**(waiting.output_data or {}), "_superseded": True}
+    # Remove the WAITING_INPUT row so the engine re-executes the node with the
+    # submitted pending_input. If we left it as COMPLETED here, `_execute_run`
+    # would treat the node as already settled and skip re-execution — the
+    # `output` in context_data would never be populated with the submitted
+    # values, breaking templates like `{{node.<id>.output.cnpj}}` in
+    # downstream nodes (e.g. bureau_query.entity_ref).
+    await db.delete(waiting)
     await db.flush()
 
     # Resume the workflow run with the submitted values.
+    submitted = dict(payload.values)
     await workflow_engine.resume_run(
         db,
         run_id=dossier.workflow_run_id,
-        pending_inputs={node_id: dict(payload.values)},
+        pending_inputs={node_id: submitted},
+    )
+
+    # If the human_input collected an identity field (cnpj/cpf/razao_social/
+    # nome), populate dossier.target_* retroactively. Lets fluxos genericos
+    # comecarem sem identidade e ganharem identidade ao longo da execucao —
+    # importante pra UI mostrar "Analise · ACME LTDA" depois que coletou.
+    await dossier_svc.absorb_identity_from_human_input(
+        db,
+        tenant_id=principal.tenant_id,
+        dossier_id=dossier_id,
+        submitted=submitted,
     )
 
     # Sync dossier status from updated workflow run.

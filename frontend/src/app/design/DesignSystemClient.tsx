@@ -15,6 +15,7 @@ import { StatusPill, type StatusKey } from "@/design-system/components/StatusPil
 import { ApprovalQueueBadge } from "@/design-system/components/ApprovalQueueBadge"
 import { KpiCard, KpiStrip, FIDC_KPI_META } from "@/design-system/components/KpiStrip"
 import { FilterBar, FilterChip, FilterSearch, RemovableChip } from "@/design-system/components/FilterBar"
+import { InsightStrip } from "@/design-system/components/InsightStrip"
 import { DrillDownSheet } from "@/design-system/components/DrillDownSheet"
 import { CommandPaletteProvider, useCommandPalette } from "@/design-system/components/CommandPalette"
 import { EChartsCard } from "@/design-system/components/EChartsCard"
@@ -301,6 +302,20 @@ export function DesignSystemClient() {
               </FilterBar>
             </Card>
 
+            <Card title="InsightStrip — slim AI insight (handoff A1b)">
+              <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+                Single-line 38px violeta. Primeiro insight inline + popover &quot;+N analises&quot; + dismiss-localStorage.
+              </p>
+              <InsightStrip
+                insights={[
+                  { id: "1", text: "Inadimplencia de 3,2% (+0,4pp) concentrada em Acme Ltda — acima do limite de 25%." },
+                  { id: "2", text: "PDD caiu 5,2% apos recuperacao de R$ 110k no cedente Nexus em mar/26." },
+                  { id: "3", text: "Volume de cessoes crescendo pelo 4o mes consecutivo." },
+                ]}
+                storageKey="strata:design-system:insight-strip-demo"
+              />
+            </Card>
+
             <Card title="EChartsCard">
               <EChartsCard
                 title="Rentabilidade vs CDI"
@@ -343,9 +358,12 @@ export function DesignSystemClient() {
           </Section>
 
           <Section id="patterns" title="4. Patterns">
-            <Card title="DashboardBiPadrao">
+            <Card title="DashboardBiPadrao (A1b · 2026-05-02)">
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                Composição (5 zonas): PageHeader → TabNavigation L3 → FilterBar sticky → conteúdo (InsightBar + KpiStrip + grid + DataTable) → ProvenanceFooter. AIPanel + DrillDownSheet laterais.
+                Composição (chrome 152px): Title row 70px (PageHeader com subtitle visível) → Toolbar unificada 44px sticky (tabs L3 + filtros) → InsightStrip 38px (violeta, dismiss-localStorage) → Conteúdo (KpiStrip + tabs + DataTable) → ProvenanceFooter. AIPanel + DrillDownSheet laterais.
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                FilterChip active state: dot laranja 5×5 (<code className="font-mono">--color-active-indicator</code>) + value font-semibold. Sem fundo azul.
               </p>
               <code className="text-xs font-mono text-blue-600 dark:text-blue-400">
                 {`import { DashboardBiPadrao } from "@/design-system/patterns"`}

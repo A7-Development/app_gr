@@ -76,6 +76,7 @@ export {
   Insight, InsightBar,
   type InsightTone, type InsightBarVariant, type InsightBarItem,
 } from "./Insight"
+export { InsightStrip, type InsightStripItem } from "./InsightStrip"
 export { JsonPreview } from "./JsonPreview"
 export { LastSyncCell } from "./LastSyncCell"
 export { Logo } from "./Logo"

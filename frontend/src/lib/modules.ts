@@ -8,6 +8,7 @@ import {
   RiBuilding2Line,
   RiCheckboxCircleLine,
   RiContactsBookLine,
+  RiCpuLine,
   RiDashboard3Line,
   RiExchangeFundsLine,
   RiFileChart2Line,
@@ -156,29 +157,30 @@ export const MODULES: ModuleDefinition[] = [
   },
   {
     id: "credito",
-    name: "Credito",
-    initials: "CR",
+    name: "StrataFlow",
+    initials: "SF",
     icon: RiHandCoinLine,
     color: "indigo",
-    // Habilitado em 2026-04-30 com a estreia do modulo: dossie de credito
-    // semi-automatizado por agentes especialistas IA + workflow visual.
+    // Modulo de credito (id mantido como "credito" pra preservar URLs e
+    // enums backend). Renomeado pra StrataFlow no display em 2026-05-02 —
+    // marca propria do produto de credito do Strata, com fluxos visuais.
     enabled: true,
     permission: "admin",
     basePath: "/credito",
     sections: [
       {
-        name: "Dossies",
+        name: "Análises",
         href: "/credito/dossies",
         enabled: true,
         icon: RiFolderUserLine,
-        groupLabel: "Analise",
+        groupLabel: "Execucao",
       },
       {
-        name: "Novo Dossie",
+        name: "Nova análise",
         href: "/credito/dossies/novo",
         enabled: true,
         icon: RiHandCoinLine,
-        groupLabel: "Analise",
+        groupLabel: "Execucao",
       },
       {
         name: "Workflows",
@@ -303,6 +305,13 @@ export const MODULES: ModuleDefinition[] = [
         href: "/admin/ia/prompts",
         enabled: true,
         icon: RiBookOpenLine,
+        groupLabel: "Inteligencia Artificial",
+      },
+      {
+        name: "Agentes",
+        href: "/admin/ia/agents",
+        enabled: true,
+        icon: RiCpuLine,
         groupLabel: "Inteligencia Artificial",
       },
       {

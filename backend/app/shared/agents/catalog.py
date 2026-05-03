@@ -152,7 +152,12 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         prompt_name="agent.opinion",
         tools=(TOOL_DOSSIER_READ,),
         output_schema=OpinionDraft,
-        thinking_budget_tokens=20000,
+        # 8k thinking + 4k headroom -> 12k max_tokens. Mantem abaixo do
+        # threshold do Anthropic SDK que exige stream=True (~24k em Sonnet/
+        # Opus 4.5). Para parecer (~600-1500 palavras + raciocinio interno)
+        # 8k de thinking budget e folgado. Se virar gargalo, migrar runtime
+        # para messages.stream() -- refactor de _run_tool_loop.
+        thinking_budget_tokens=8000,
         section_id="opinion",
     ),
     "document_extractor": SpecialistAgentSpec(

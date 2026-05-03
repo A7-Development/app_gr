@@ -51,6 +51,7 @@ import { ConditionBuilder } from "./ConditionBuilder"
 import { DocumentsBuilder } from "./DocumentsBuilder"
 import { FieldsBuilder, type FieldDef } from "./FieldsBuilder"
 import type { StrataNodeData } from "./StrataNode"
+import { VariablePicker } from "./VariablePicker"
 
 // ─── Props ──────────────────────────────────────────────────────────────
 
@@ -59,6 +60,10 @@ type Props = {
   nodes: Node[]
   edges: Edge[]
   nodeTypes: NodeTypeMeta[]
+  /** Map { nodeId: { varName: vartype } } vindo do /workflows/_validate.
+   *  Usado pelo VariablePicker pra listar variáveis upstream tipadas
+   *  ao usuário no entity_ref do bureau, expression do branch, etc. */
+  producedByNode: Record<string, Record<string, string>>
   onUpdateConfig: (nodeId: string, config: Record<string, unknown>) => void
   onUpdateLabel: (nodeId: string, label: string) => void
 }
@@ -70,6 +75,7 @@ export function NodeInspector({
   nodes,
   edges,
   nodeTypes,
+  producedByNode,
   onUpdateConfig,
   onUpdateLabel,
 }: Props) {
@@ -111,6 +117,7 @@ export function NodeInspector({
         nodes={nodes}
         edges={edges}
         meta={meta}
+        producedByNode={producedByNode}
         onUpdateConfig={(cfg) => onUpdateConfig(selectedNode.id, cfg)}
       />
     </div>
@@ -139,12 +146,14 @@ function NodeConfigDispatcher({
   nodes,
   edges,
   meta,
+  producedByNode,
   onUpdateConfig,
 }: {
   node: Node
   nodes: Node[]
   edges: Edge[]
   meta: NodeTypeMeta | undefined
+  producedByNode: Record<string, Record<string, string>>
   onUpdateConfig: (cfg: Record<string, unknown>) => void
 }) {
   const data = node.data as unknown as StrataNodeData
@@ -181,7 +190,16 @@ function NodeConfigDispatcher({
       )
 
     case "bureau_query":
-      return <BureauInspector config={config} onUpdateConfig={onUpdateConfig} />
+      return (
+        <BureauInspector
+          nodeId={node.id}
+          config={config}
+          nodes={nodes}
+          edges={edges}
+          producedByNode={producedByNode}
+          onUpdateConfig={onUpdateConfig}
+        />
+      )
 
     default:
       // Fallback: ConfigForm generico (substitui JSON quando possivel).
@@ -442,14 +460,32 @@ function inferSelectedKey(config: Record<string, unknown>): string {
 }
 
 function BureauInspector({
+  nodeId,
   config,
+  nodes,
+  edges,
+  producedByNode,
   onUpdateConfig,
 }: {
+  nodeId: string
   config: Record<string, unknown>
+  nodes: Node[]
+  edges: Edge[]
+  producedByNode: Record<string, Record<string, string>>
   onUpdateConfig: (cfg: Record<string, unknown>) => void
 }) {
   const entityRef = (config.entity_ref as string | undefined) ?? ""
   const environment = (config.environment as string | undefined) ?? "production"
+
+  // Tipo esperado depende do adapter selecionado: serasa_pj/bigdata/infosimples → CNPJ;
+  // serasa_pf → CPF. Mapa espelha _ADAPTER_INPUT_TYPE em backend.
+  const adapter = config.adapter as string | undefined
+  const expectedType =
+    adapter === "serasa_pf"
+      ? "cpf"
+      : adapter && ["serasa_pj", "bigdatacorp", "infosimples"].includes(adapter)
+        ? "cnpj"
+        : undefined
 
   const selectedKey = inferSelectedKey(config)
   const selectedEntry = DATA_PRODUCT_PALETTE.find((p) => p.key === selectedKey)
@@ -496,21 +532,33 @@ function BureauInspector({
 
       <div>
         <Label htmlFor="bureau-entity" className="text-xs">
-          CNPJ a consultar <span className="ml-0.5 text-red-600">*</span>
+          {expectedType === "cpf" ? "CPF" : "CNPJ"} a consultar{" "}
+          <span className="ml-0.5 text-red-600">*</span>
         </Label>
-        <Input
-          id="bureau-entity"
-          value={entityRef}
-          onChange={(e) => onUpdateConfig({ ...config, entity_ref: e.target.value })}
-          placeholder="{{trigger.cnpj}}"
-          className="font-mono text-xs"
-        />
+        <div className="flex items-stretch gap-1">
+          <Input
+            id="bureau-entity"
+            value={entityRef}
+            onChange={(e) => onUpdateConfig({ ...config, entity_ref: e.target.value })}
+            placeholder={`{{trigger.${expectedType ?? "cnpj"}}}`}
+            className="font-mono text-xs"
+          />
+          <VariablePicker
+            selectedNodeId={nodeId}
+            nodes={nodes}
+            edges={edges}
+            producedByNode={producedByNode}
+            filterType={expectedType}
+            onPick={(template) =>
+              onUpdateConfig({ ...config, entity_ref: template })
+            }
+          />
+        </div>
         <p className={cx(tableTokens.cellSecondary, "mt-1")}>
-          Use{" "}
-          <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-[11px] dark:bg-gray-900">
-            {"{{trigger.cnpj}}"}
-          </code>
-          {" "}pra puxar o CNPJ do gatilho do dossie, ou cole um valor literal.
+          Use o botão{" "}
+          <span className="font-mono">{"{ }"}</span> pra inserir uma variável
+          de uma etapa anterior — só aparecem variáveis do tipo{" "}
+          <span className="font-mono">{expectedType ?? "cnpj"}</span>.
         </p>
       </div>
 

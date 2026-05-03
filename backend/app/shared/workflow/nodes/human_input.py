@@ -39,7 +39,12 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.shared.workflow.nodes._base import BaseNode, NodeContext, NodeOutput
+from app.shared.workflow.nodes._base import (
+    BaseNode,
+    NodeContext,
+    NodeOutput,
+    VarType,
+)
 
 _VALID_FIELD_TYPES = {
     "string",
@@ -52,6 +57,21 @@ _VALID_FIELD_TYPES = {
     "date",
     "json",
     "boolean",
+}
+
+# Maps form field type -> semantic VarType. Form types not listed here
+# default to STRING (free text).
+_FIELD_TYPE_TO_VAR: dict[str, VarType] = {
+    "string": VarType.STRING,
+    "textarea": VarType.STRING,
+    "select": VarType.STRING,
+    "cnpj": VarType.CNPJ,
+    "cpf": VarType.CPF,
+    "email": VarType.EMAIL,
+    "number": VarType.NUMBER,
+    "date": VarType.DATE,
+    "boolean": VarType.BOOLEAN,
+    "json": VarType.OBJECT,
 }
 
 
@@ -84,6 +104,23 @@ class HumanInputNode(BaseNode):
                         f"human_input: fields[{i}].type='{ftype}' is invalid. "
                         f"Valid types: {sorted(_VALID_FIELD_TYPES)}"
                     )
+
+    def produces(self) -> dict[str, VarType]:
+        """Cada field do form vira uma variável tipada exposta no output.
+
+        Quando o nó está pausado (sem submit ainda) o output expõe o
+        descritor do form (`form_id`, `fields`, etc), mas downstream nodes
+        só serão executados após o resume — quando `output.data` é o dict
+        de valores submetidos. Por isso aqui declaramos os campos.
+        """
+        out: dict[str, VarType] = {}
+        for f in self.config.get("fields", []) or []:
+            key = f.get("key")
+            if not isinstance(key, str) or not key:
+                continue
+            ftype = f.get("type", "string")
+            out[key] = _FIELD_TYPE_TO_VAR.get(ftype, VarType.STRING)
+        return out
 
     async def execute(self, ctx: NodeContext, db: AsyncSession) -> NodeOutput:
         # When resumed, the engine writes the submitted data to

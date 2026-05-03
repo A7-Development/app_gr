@@ -3,8 +3,8 @@
 This is the integration point with `app.shared.agents.runtime`. The node's
 config picks an agent by name; the runtime resolves the agent spec from
 the catalog (system prompt versioned in `ai_prompt`, allowed tools,
-output schema), invokes Claude via `claude-agent-sdk`, validates the
-output, and returns it.
+output schema), invokes Claude via the Anthropic Messages API (official
+`anthropic` SDK with native tool use), validates the output, and returns it.
 
 Config schema:
     {
@@ -18,7 +18,12 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.shared.workflow.nodes._base import BaseNode, NodeContext, NodeOutput
+from app.shared.workflow.nodes._base import (
+    BaseNode,
+    NodeContext,
+    NodeOutput,
+    VarType,
+)
 
 
 class SpecialistAgentNode(BaseNode):
@@ -41,6 +46,41 @@ class SpecialistAgentNode(BaseNode):
                 f"specialist_agent: unknown agent '{agent_name}'. "
                 f"Available: {sorted(CATALOG.keys())}"
             )
+
+    def produces(self) -> dict[str, VarType]:
+        """O output do agente é um Pydantic model serializado em dict.
+
+        Para o validador estático, expomos os top-level fields do schema
+        com tipos pragmáticos: bools como BOOLEAN, lists como LIST, demais
+        como OBJECT. Quem consumir downstream em geral acessa via tool no
+        próprio agente seguinte (read_dossier_section), não por templates
+        — então essa declaração é informativa.
+        """
+        agent_name = self.config.get("agent")
+        if not agent_name:
+            return {}
+        try:
+            from app.shared.agents.catalog import CATALOG
+        except ImportError:
+            return {}
+        spec = CATALOG.get(agent_name)
+        if spec is None:
+            return {}
+        out: dict[str, VarType] = {}
+        for fname, finfo in spec.output_schema.model_fields.items():
+            ann = finfo.annotation
+            type_str = str(ann).lower()
+            if "bool" in type_str:
+                out[fname] = VarType.BOOLEAN
+            elif "list" in type_str or "tuple" in type_str:
+                out[fname] = VarType.LIST
+            elif "int" in type_str or "float" in type_str or "decimal" in type_str:
+                out[fname] = VarType.NUMBER
+            elif "str" in type_str:
+                out[fname] = VarType.STRING
+            else:
+                out[fname] = VarType.OBJECT
+        return out
 
     async def execute(self, ctx: NodeContext, db: AsyncSession) -> NodeOutput:
         from app.shared.agents.catalog import CATALOG

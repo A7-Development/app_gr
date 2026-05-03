@@ -1,6 +1,9 @@
 """Pydantic schemas for the AI capability (request/response DTOs)."""
 
 from app.shared.ai.schemas.ai import (
+    AgentConfigRead,
+    AgentConfigUpdate,
+    AgentModelOption,
     AIContext,
     ChatRequest,
     ConversationListItem,
@@ -25,6 +28,9 @@ from app.shared.ai.schemas.ai import (
 
 __all__ = [
     "AIContext",
+    "AgentConfigRead",
+    "AgentConfigUpdate",
+    "AgentModelOption",
     "ChatRequest",
     "ConversationListItem",
     "ConversationMessageRead",

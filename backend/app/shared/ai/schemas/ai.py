@@ -275,3 +275,45 @@ class PromptPreviewResponse(BaseModel):
     temperature: float
     max_tokens: int
     messages: list[dict]
+
+
+# ---------------------------------------------------------------------------
+# Specialist Agents — model override (etapa 1: provider fixo Anthropic)
+# ---------------------------------------------------------------------------
+
+
+class AgentModelOption(BaseModel):
+    """Uma entrada do dropdown de modelos disponiveis."""
+
+    id: str
+    label: str
+    tier: str  # "opus" | "sonnet" | "haiku"
+    description: str
+
+
+class AgentConfigRead(BaseModel):
+    """GET /api/v1/admin/ai/agents — uma linha por agente do CATALOG."""
+
+    agent_name: str
+    description: str
+    prompt_name: str
+    multimodal: bool
+    section_id: str
+    # Default vindo do CATALOG (codigo). Util pra UI mostrar "padrao".
+    default_model: str
+    default_fallback_model: str | None
+    # Override vigente no DB (None se ainda nao foi customizado).
+    model: str
+    fallback_model: str | None
+    source: str  # "db_override" | "catalog_default"
+    updated_at: datetime | None
+    updated_by_user_id: UUID | None
+
+
+class AgentConfigUpdate(BaseModel):
+    """PUT /api/v1/admin/ai/agents/{agent_name}."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model: str = Field(min_length=1, max_length=64)
+    fallback_model: str | None = Field(default=None, max_length=64)

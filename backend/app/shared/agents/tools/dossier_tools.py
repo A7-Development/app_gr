@@ -16,27 +16,20 @@ import json
 from typing import Any
 from uuid import UUID
 
-from claude_agent_sdk import tool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.shared.agents.tools._base import AgentTool
 
 
 def make_dossier_tools(
     tenant_id: UUID,
     dossier_id: UUID,
     db: AsyncSession,
-) -> list:
-    """Build a list of tool callables scoped to the given tenant + dossier."""
+) -> list[AgentTool]:
+    """Build a list of AgentTool instances scoped to the given tenant + dossier."""
 
-    @tool(
-        "read_dossier_section",
-        "Le dados estruturados de uma secao do dossie. Use para acessar "
-        "dados ja coletados por outros nos do workflow. Secoes validas: "
-        "'plea', 'identification', 'bureau_queries', 'financial', 'indebtedness', "
-        "'legal', 'partners', 'commercial_visit', 'documents', 'cross_reference'.",
-        {"section": str},
-    )
-    async def read_dossier_section(args: dict[str, Any]) -> dict[str, Any]:
+    async def _read_dossier_section(args: dict[str, Any]) -> str:
         section = args["section"]
         # Late import to avoid circular reference.
         from app.modules.credito.models.analysis import CreditDossierAnalysis
@@ -51,27 +44,11 @@ def make_dossier_tools(
             )
         ).scalars().all()
         if not rows:
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": f"Nenhum dado salvo na secao '{section}' ainda.",
-                    }
-                ]
-            }
+            return f"Nenhum dado salvo na secao '{section}' ainda."
         payload = [{"section": r.section, "data": r.ai_analysis} for r in rows]
-        return {
-            "content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}]
-        }
+        return json.dumps(payload, ensure_ascii=False)
 
-    @tool(
-        "flag_red_flag",
-        "Registra um red flag identificado durante a analise. Severity deve ser "
-        "'critical', 'important' ou 'informational'. Cite a evidencia (qual "
-        "documento, fonte ou achado motivou o flag).",
-        {"severity": str, "title": str, "description": str, "evidence": str},
-    )
-    async def flag_red_flag(args: dict[str, Any]) -> dict[str, Any]:
+    async def _flag_red_flag(args: dict[str, Any]) -> str:
         from app.modules.credito.models.red_flag import CreditDossierRedFlag
 
         flag = CreditDossierRedFlag(
@@ -84,25 +61,24 @@ def make_dossier_tools(
         )
         db.add(flag)
         await db.flush()
-        return {
-            "content": [
-                {"type": "text", "text": f"Red flag registrada: {flag.id}"}
-            ]
-        }
+        return f"Red flag registrada: {flag.id}"
 
-    @tool(
-        "save_analysis",
-        "Salva o resumo estruturado de uma analise de secao. Use ao final "
-        "do raciocinio para persistir summary + indicadores principais.",
-        {"section": str, "summary": str, "indicators": str},
-    )
-    async def save_analysis(args: dict[str, Any]) -> dict[str, Any]:
+    async def _save_analysis(args: dict[str, Any]) -> str:
         from app.modules.credito.models.analysis import CreditDossierAnalysis
 
-        try:
-            indicators = json.loads(args["indicators"])
-        except (ValueError, TypeError):
-            indicators = {"raw": args["indicators"]}
+        # `indicators` chega como string JSON serializada (tools de string
+        # sao mais simples pra o modelo). Aceitamos tambem objeto cru caso
+        # algum modelo decida passar o objeto direto.
+        raw_indicators = args.get("indicators")
+        if isinstance(raw_indicators, str):
+            try:
+                indicators = json.loads(raw_indicators)
+            except (ValueError, TypeError):
+                indicators = {"raw": raw_indicators}
+        elif isinstance(raw_indicators, dict):
+            indicators = raw_indicators
+        else:
+            indicators = {}
 
         analysis = CreditDossierAnalysis(
             tenant_id=tenant_id,
@@ -115,10 +91,90 @@ def make_dossier_tools(
         )
         db.add(analysis)
         await db.flush()
-        return {
-            "content": [
-                {"type": "text", "text": f"Analise salva (secao '{args['section']}')."}
-            ]
-        }
+        return f"Analise salva (secao '{args['section']}')."
 
-    return [read_dossier_section, flag_red_flag, save_analysis]
+    return [
+        AgentTool(
+            name="read_dossier_section",
+            description=(
+                "Le dados estruturados de uma secao do dossie. Use para acessar "
+                "dados ja coletados por outros nos do workflow. Secoes validas: "
+                "'plea', 'identification', 'bureau_queries', 'financial', 'indebtedness', "
+                "'legal', 'partners', 'commercial_visit', 'documents', 'cross_reference'."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "section": {
+                        "type": "string",
+                        "description": "Nome da secao (ex.: 'financial').",
+                    }
+                },
+                "required": ["section"],
+                "additionalProperties": False,
+            },
+            handler=_read_dossier_section,
+        ),
+        AgentTool(
+            name="flag_red_flag",
+            description=(
+                "Registra um red flag identificado durante a analise. Severity "
+                "deve ser 'critical', 'important' ou 'informational'. Cite a "
+                "evidencia (qual documento, fonte ou achado motivou o flag)."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "severity": {
+                        "type": "string",
+                        "enum": ["critical", "important", "informational"],
+                        "description": "Gravidade do achado.",
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Titulo curto (max 200 chars).",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Detalhamento do problema.",
+                    },
+                    "evidence": {
+                        "type": "string",
+                        "description": "Fonte ou trecho que motivou o flag.",
+                    },
+                },
+                "required": ["severity", "title", "description", "evidence"],
+                "additionalProperties": False,
+            },
+            handler=_flag_red_flag,
+        ),
+        AgentTool(
+            name="save_analysis",
+            description=(
+                "Salva o resumo estruturado de uma analise de secao. Use ao "
+                "final do raciocinio para persistir summary + indicadores "
+                "principais. `indicators` deve ser uma string JSON com os "
+                "valores numericos relevantes."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "section": {
+                        "type": "string",
+                        "description": "Secao analisada.",
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "Resumo executivo da analise.",
+                    },
+                    "indicators": {
+                        "type": "string",
+                        "description": "JSON serializado com indicadores numericos.",
+                    },
+                },
+                "required": ["section", "summary", "indicators"],
+                "additionalProperties": False,
+            },
+            handler=_save_analysis,
+        ),
+    ]

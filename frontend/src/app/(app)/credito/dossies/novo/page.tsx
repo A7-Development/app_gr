@@ -1,18 +1,18 @@
 // src/app/(app)/credito/dossies/novo/page.tsx
 //
-// Wizard MINIMO de criacao de dossiê.
+// "Iniciar análise" — entrada minimalista do StrataFlow.
 //
-// Filosofia (Bloco F.4): o que o analista digita aqui e SO o necessario
-// para criar o dossie e disparar o workflow run. Tudo o resto (cadastro
-// completo da empresa, sócios, pleito, etc) sai pelos human_input nodes
-// do workflow ATIVO.
+// Filosofia (Fase 1): NÃO há mais "empresa-alvo" cobrada upfront. O fluxo
+// escolhido é quem decide o que coletar (CNPJ, CPF, nada). O que o analista
+// digita aqui é só:
+//   - Qual fluxo rodar (dropdown sempre visível)
+//   - Apelido livre (opcional) — só pra reconhecer essa análise na listagem
+//     antes do fluxo coletar a identidade real
+//   - Notas iniciais (opcional)
 //
-// Campos:
-//   - target_cnpj  (com mascara)
-//   - target_name  (razao social)
-//   - notes (opcional, livre)
-//   - workflow: pre-selecionado com o ATIVO do tenant; "Trocar" para
-//     mudar manualmente. 99% dos analistas nao precisa abrir.
+// Identidade da entidade (CNPJ, CPF, razão social, nome) emerge depois,
+// quando o fluxo executa um `human_input` que coleta esses campos. Backend
+// popula `dossier.target_cnpj`/`target_name` via `absorb_identity_from_human_input`.
 
 "use client"
 
@@ -21,13 +21,11 @@ import { useRouter } from "next/navigation"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import {
   RiArrowLeftLine,
-  RiCheckLine,
   RiFlowChart,
-  RiShieldStarLine,
+  RiPlayLine,
 } from "@remixicon/react"
 import { toast } from "sonner"
 
-import { Badge } from "@/components/tremor/Badge"
 import { Button } from "@/components/tremor/Button"
 import { Card } from "@/components/tremor/Card"
 import { Input } from "@/components/tremor/Input"
@@ -49,91 +47,66 @@ import {
   type WorkflowDefinitionRead,
 } from "@/lib/credito-client"
 
-// CNPJ mask helper (mesma logica do DynamicForm).
-function maskCnpj(raw: string): string {
-  const digits = raw.replace(/\D/g, "").slice(0, 14)
-  if (digits.length <= 2) return digits
-  if (digits.length <= 5) return `${digits.slice(0, 2)}.${digits.slice(2)}`
-  if (digits.length <= 8)
-    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5)}`
-  if (digits.length <= 12)
-    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`
-  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12, 14)}`
-}
-
-const DEFAULT_WORKFLOW_NAME = "credit.a7_standard"
-
-export default function NovoDossiePage() {
+export default function NovoAnalisePage() {
   const router = useRouter()
 
-  // Fetch active workflow as default. Falls back to listing if no active.
-  const { data: activeWorkflow, isLoading: loadingActive } = useQuery({
-    queryKey: ["credito", "workflow-active", DEFAULT_WORKFLOW_NAME],
-    queryFn: () => credito.workflows.getActive(DEFAULT_WORKFLOW_NAME),
-    retry: false,
-  })
-
-  const { data: allWorkflows } = useQuery({
+  const { data: allWorkflows, isLoading: loadingWorkflows } = useQuery({
     queryKey: ["credito", "workflows"],
     queryFn: () => credito.workflows.list(),
   })
 
-  const [cnpj, setCnpj] = React.useState("")
-  const [name, setName] = React.useState("")
-  const [notes, setNotes] = React.useState("")
-  const [workflowId, setWorkflowId] = React.useState<string>("")
-  const [showWorkflowPicker, setShowWorkflowPicker] = React.useState(false)
+  // Filtra só workflows ACTIVE (rascunho não roda).
+  const usableWorkflows = React.useMemo(
+    () => (allWorkflows ?? []).filter((w) => w.status === "active"),
+    [allWorkflows],
+  )
 
-  // Auto-select active workflow when it loads.
+  const [workflowId, setWorkflowId] = React.useState<string>("")
+  const [apelido, setApelido] = React.useState("")
+  const [notes, setNotes] = React.useState("")
+
+  // Pré-seleciona o primeiro workflow ativo do tenant ao carregar.
   React.useEffect(() => {
-    if (!workflowId && activeWorkflow) {
-      setWorkflowId(activeWorkflow.id)
-    } else if (
-      !workflowId &&
-      !loadingActive &&
-      allWorkflows &&
-      allWorkflows.length > 0
-    ) {
-      // Fallback: first available.
-      setWorkflowId(allWorkflows[0].id)
+    if (!workflowId && usableWorkflows.length > 0) {
+      const tenantOwned = usableWorkflows.find((w) => w.tenant_id !== null)
+      setWorkflowId((tenantOwned ?? usableWorkflows[0]).id)
     }
-  }, [activeWorkflow, allWorkflows, loadingActive, workflowId])
+  }, [usableWorkflows, workflowId])
 
   const createMutation = useMutation({
     mutationFn: (payload: DossierCreatePayload) => credito.dossies.create(payload),
     onSuccess: (created) => {
-      toast.success("Dossie criado. Workflow iniciado.")
+      toast.success("Análise iniciada.")
       router.push(`/credito/dossies/${created.id}`)
     },
     onError: (err) => {
-      toast.error(`Erro ao criar dossie: ${(err as Error).message}`)
+      toast.error(`Erro ao iniciar análise: ${(err as Error).message}`)
     },
   })
 
-  const canSubmit =
-    cnpj.replace(/\D/g, "").length === 14 &&
-    name.trim().length > 0 &&
-    workflowId.length > 0
+  const canSubmit = workflowId.length > 0 && !createMutation.isPending
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!canSubmit) return
     createMutation.mutate({
-      target_cnpj: cnpj,
-      target_name: name.trim(),
       workflow_definition_id: workflowId,
+      target_name: apelido.trim() || null,
       notes: notes.trim() || null,
     })
   }
 
-  const selectedWorkflow: WorkflowDefinitionRead | undefined =
-    allWorkflows?.find((w) => w.id === workflowId) ?? activeWorkflow ?? undefined
+  const selectedWorkflow: WorkflowDefinitionRead | undefined = usableWorkflows.find(
+    (w) => w.id === workflowId,
+  )
+  const stepCount = selectedWorkflow?.graph?.nodes?.length ?? 0
 
   return (
     <div className="flex flex-col gap-6 px-12 py-6 pb-28">
       <PageHeader
-        title="Novo dossie de credito"
-        subtitle="Identifique a empresa-alvo. O workflow vai cuidar do resto."
+        title="Iniciar análise"
+        subtitle="StrataFlow · Crédito"
+        info="O fluxo selecionado decide o que coletar (CNPJ, CPF, documentos, etc) ao longo da execução. Você não precisa preencher nada antes."
         actions={
           <Button variant="ghost" onClick={() => router.back()}>
             <RiArrowLeftLine className="size-4" aria-hidden />
@@ -143,115 +116,93 @@ export default function NovoDossiePage() {
       />
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-        {/* Step 1: Empresa */}
+        {/* Step 1: Fluxo */}
         <Card>
           <div className={cx(cardTokens.bodyComfortable, "space-y-4")}>
             <div>
               <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
-                Empresa-alvo
+                Fluxo
               </h3>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Apenas o suficiente para criar o dossie. Cadastro completo
-                vem no primeiro passo do workflow.
+                Escolha o fluxo de análise que vai conduzir essa execução.
               </p>
             </div>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div>
-                <Label htmlFor="cnpj">CNPJ</Label>
-                <Input
-                  id="cnpj"
-                  placeholder="00.000.000/0000-00"
-                  value={cnpj}
-                  onChange={(e) => setCnpj(maskCnpj(e.target.value))}
-                  maxLength={18}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="name">Razao social</Label>
-                <Input
-                  id="name"
-                  placeholder="Nome da empresa"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="notes">Notas iniciais (opcional)</Label>
-              <Textarea
-                id="notes"
-                rows={2}
-                placeholder="Anotacoes do analista, contexto inicial recebido do comercial..."
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </div>
-          </div>
-        </Card>
 
-        {/* Step 2: Workflow (collapsible) */}
-        <Card>
-          <div className={cx(cardTokens.bodyComfortable, "space-y-3")}>
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
-                  Workflow
-                </h3>
-                {selectedWorkflow ? (
-                  <div className="mt-1 flex items-center gap-2">
-                    <RiFlowChart
-                      className="size-4 text-gray-500 dark:text-gray-400"
-                      aria-hidden
-                    />
-                    <span className="text-sm text-gray-900 dark:text-gray-100">
-                      {selectedWorkflow.name}
-                    </span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      v{selectedWorkflow.version}
-                    </span>
-                    {selectedWorkflow.id === activeWorkflow?.id && (
-                      <Badge variant="success">
-                        <RiShieldStarLine className="size-3" aria-hidden />
-                        ATIVO
-                      </Badge>
-                    )}
-                  </div>
-                ) : (
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                    Carregando...
-                  </p>
-                )}
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setShowWorkflowPicker(!showWorkflowPicker)}
-              >
-                {showWorkflowPicker ? "Ocultar" : "Trocar"}
-              </Button>
-            </div>
-
-            {showWorkflowPicker && (
+            {loadingWorkflows ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Carregando fluxos disponíveis…
+              </p>
+            ) : usableWorkflows.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Nenhum fluxo ativo disponível. Crie e ative um em{" "}
+                <button
+                  type="button"
+                  className="text-blue-600 underline hover:text-blue-700 dark:text-blue-400"
+                  onClick={() => router.push("/credito/workflows")}
+                >
+                  Workflows
+                </button>
+                .
+              </p>
+            ) : (
               <div>
-                <Label htmlFor="wf">Selecione o workflow</Label>
+                <Label htmlFor="wf">Fluxo selecionado</Label>
                 <Select value={workflowId} onValueChange={setWorkflowId}>
                   <SelectTrigger id="wf" className="w-full">
-                    <SelectValue placeholder="Selecione" />
+                    <SelectValue placeholder="Selecione um fluxo" />
                   </SelectTrigger>
                   <SelectContent>
-                    {allWorkflows?.map((wf) => (
+                    {usableWorkflows.map((wf) => (
                       <SelectItem key={wf.id} value={wf.id}>
                         {wf.name} v{wf.version}
-                        {wf.id === activeWorkflow?.id ? " (ativo)" : ""}
-                        {wf.tenant_id === null ? " — Strata" : ""}
+                        {wf.tenant_id === null ? " · Strata" : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedWorkflow && stepCount > 0 && (
+                  <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    <RiFlowChart className="size-3.5" aria-hidden />
+                    {stepCount} {stepCount === 1 ? "etapa" : "etapas"} no fluxo
+                  </p>
+                )}
               </div>
             )}
+          </div>
+        </Card>
+
+        {/* Step 2: Identificação opcional */}
+        <Card>
+          <div className={cx(cardTokens.bodyComfortable, "space-y-4")}>
+            <div>
+              <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                Identificação <span className="font-normal text-gray-500 dark:text-gray-400">(opcional)</span>
+              </h3>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Apelido livre só pra reconhecer essa análise na listagem antes
+                do fluxo coletar identidade real.
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="apelido">Apelido</Label>
+              <Input
+                id="apelido"
+                placeholder="ACME LTDA · Locação Sala 305 · Maio/26"
+                value={apelido}
+                onChange={(e) => setApelido(e.target.value)}
+                maxLength={255}
+              />
+            </div>
+            <div>
+              <Label htmlFor="notes">Notas iniciais</Label>
+              <Textarea
+                id="notes"
+                rows={2}
+                placeholder="Contexto recebido do comercial, urgência, restrições conhecidas…"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
           </div>
         </Card>
 
@@ -262,11 +213,11 @@ export default function NovoDossiePage() {
           </Button>
           <Button
             type="submit"
-            disabled={!canSubmit || createMutation.isPending}
+            disabled={!canSubmit}
             isLoading={createMutation.isPending}
           >
-            <RiCheckLine className="size-4" aria-hidden />
-            Criar dossie e iniciar workflow
+            <RiPlayLine className="size-4" aria-hidden />
+            Iniciar análise
           </Button>
         </div>
       </form>

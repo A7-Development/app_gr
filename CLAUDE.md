@@ -91,10 +91,10 @@ Tremor Raw e referencia, nao cela. Quando "fazer como o Tremor faz" conflitar co
 | Command palette | `cmdk` | reimplementacao manual de command menu |
 | Primitivos Radix | `@radix-ui/react-avatar` e outros sem equivalente no Tremor | Radix cru para o que o Tremor ja cobre |
 | Markdown (output IA) | `react-markdown` + `remark-gfm` — uso restrito a `<AIPanel />` e telas de auditoria de IA | uso de markdown em tabelas/forms regulares; renderizacao manual ad-hoc de markdown |
-| LLM gateway (backend) | adapter proprio em `app/modules/integracoes/adapters/llm/<provider>/`; LiteLLM aceito por baixo se virar multi-provider real | chamadas diretas ao SDK do provider em codigo de dominio |
+| LLM gateway (backend) | adapter proprio em `app/modules/integracoes/adapters/llm/<provider>/`; LiteLLM aceito por baixo se virar multi-provider real | chamadas diretas ao SDK do provider em codigo de dominio que NAO seja o adapter |
 | PII redaction (backend) | regex CPF/CNPJ com check digit (MVP) → `presidio-analyzer` + `presidio-anonymizer` na Fase 2 | enviar payload bruto a LLM externo |
 | Cache + rate limit (backend) | em-processo no MVP; Redis em Phase 2 (tenant token bucket multi-dim TPM/RPM/BRL/dia) | `threading.Timer`, sleeps, locks ad-hoc |
-| Specialist agents (backend) | `claude-agent-sdk >= 0.1.72` (autorizado 2026-04-30 para modulo credito - workflow visual + agentes IA especialistas) | usar SDK direto da Anthropic para agentes; reimplementar loop agentico manualmente |
+| Specialist agents (backend) | `anthropic >= 0.71` (SDK oficial Anthropic Messages API com tool use + prompt caching nativos). Usado em `app/shared/agents/runtime.py` para invocar agentes especialistas via HTTP direto. | reimplementar tool loop a mao com httpx; usar subprocess do Claude Code CLI (quebra em `SelectorEventLoop` no Windows) |
 | Workflow visual editor (frontend) | `@xyflow/react` (React Flow v12+) — autorizado 2026-04-30 para editor de workflow do modulo credito | reimplementar canvas drag-and-drop manualmente; libs alternativas (rete, dagre standalone) |
 
 Instalar qualquer biblioteca fora desta tabela exige autorizacao explicita do usuario no chat.
@@ -892,6 +892,13 @@ Coluna boolean com **partial unique index** garantindo no maximo 1 tenant marcad
 ### 19.3 Adapter LLM (segue §13)
 
 Provedores externos (Anthropic, OpenAI) sao adapters versionados em `app/modules/integracoes/adapters/llm/<provider>/`, cada um com seu `ADAPTER_VERSION`. **Credenciais sao globais** (tabela `ai_provider_credential`, sem `tenant_id`) e cifradas com envelope Fernet (`app.shared.crypto`). ZDR contratado e exigido em prod (coluna `zdr_enabled` bloqueia chamada quando false em ambiente de producao).
+
+**Dois caminhos de invocacao Anthropic** (escolha por caso de uso):
+
+1. **Cliente HTTP custom** em `adapters/llm/anthropic/` (httpx + SSE puro). Usado em **chat simples** (`AIPanel`, insights) onde streaming linha-a-linha vai pro frontend via SSE proprio. Tem prompt caching via `cache_control` em system blocks.
+2. **SDK oficial `anthropic`** (`anthropic >= 0.71`) usado em `app/shared/agents/runtime.py` para **specialist agents** que precisam de tool use nativo + tool execution loop + prompt caching de system prompts compartilhados entre runs. Migracao decidida em 2026-05-02 — substituiu `claude-agent-sdk` (que era subprocess do Claude Code CLI e quebrava no Windows com `SelectorEventLoop`). Tools sao definidas como `AgentTool` (`app/shared/agents/tools/_base.py`) com JSON schema + handler async; runtime monta `tools=[...]` para o Messages API e roda o loop `tool_use → tool_result` ate `end_turn` (cap em `_MAX_TOOL_ITERATIONS=12`).
+
+Ambos os caminhos usam o **mesmo storage de credencial** (`get_active_anthropic_credential`) e gravam em `decision_log` + `ai_usage_event` com cache_read e cache_creation tokens separados.
 
 ### 19.4 Prompt library versionada (DB-backed)
 

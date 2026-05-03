@@ -68,18 +68,21 @@ function defaultCopyLinkItem(): DashboardHeaderMoreItem {
   }
 }
 
-// ─── Estilo canonico do botao de header (handoff bi-padrao::HeaderBtn) ────
+// ─── Estilo canonico do botao de header (handoff bi-padrao A1b::HeaderBtn) ─
 //
 // Override sobre Button variant="secondary" para alinhar com o handoff:
-//   padding: 5px 10px (vs Tremor px-3 py-2)
+//   altura : 26px (canonico do FilterBar — chip + button mesma altura)
+//   padding: px-2.5 (h-fixo cuida do vertical)
 //   color  : muted gray (vs Tremor full black)
 //   font   : 13px (vs Tremor text-sm = 14px)
 //   radius : 4px (vs Tremor rounded = 6px)
 //   shadow : none (vs Tremor shadow-xs)
 // twMerge dentro do tv() do Button dedupe os conflitos com a base.
+// Manter alinhado com `h-[26px]` do FilterChip/MoreFiltersButton/etc — toda
+// a barra (filtros + actions header) compartilha a mesma altura visual.
 //
 const HEADER_BTN_CLASS = cx(
-  "gap-1 rounded-[4px] px-2.5 py-1 text-[13px] font-medium",
+  "inline-flex h-[26px] items-center gap-1 rounded-[4px] px-2.5 text-[13px] font-medium",
   "text-gray-600 dark:text-gray-400",
   "border-gray-200 dark:border-gray-800",
   "bg-white hover:bg-gray-50 dark:bg-gray-950 dark:hover:bg-gray-900/60",
@@ -87,7 +90,7 @@ const HEADER_BTN_CLASS = cx(
 )
 
 const HEADER_BTN_ICON_ONLY = cx(
-  "rounded-[4px] p-1.5",
+  "inline-flex size-[26px] items-center justify-center rounded-[4px] p-0",
   "text-gray-600 dark:text-gray-400",
   "border-gray-200 dark:border-gray-800",
   "bg-white hover:bg-gray-50 dark:bg-gray-950 dark:hover:bg-gray-900/60",

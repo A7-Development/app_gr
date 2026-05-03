@@ -65,7 +65,8 @@ export function AIQuotaIndicator({
     return (
       <div
         className={cx(
-          "flex items-center gap-2 rounded px-2.5 py-1.5",
+          // h-[26px] canonico — alinha com FilterChip/HEADER_BTN_CLASS na toolbar A1b.
+          "inline-flex h-[26px] items-center gap-2 rounded-[4px] px-2.5",
           "bg-gray-50 dark:bg-gray-900",
           "text-[11px] text-gray-500 dark:text-gray-400",
           className,
@@ -121,11 +122,11 @@ export function AIQuotaIndicator({
     )
   }
 
-  // compact (default): 1 linha
+  // compact (default): 1 linha — h-[26px] canonico (FilterChip/HEADER_BTN_CLASS).
   return (
     <div
       className={cx(
-        "inline-flex items-center gap-2 rounded px-2.5 py-1",
+        "inline-flex h-[26px] items-center gap-2 rounded-[4px] px-2.5",
         "border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
         "text-[11px]",
         className,

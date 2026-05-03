@@ -30,11 +30,11 @@ dependencies = [
     "apscheduler>=3.10.4",
     # SQL Server (for Bitfin adapter)
     "pyodbc>=5.0.0",
-    # Anthropic SDKs:
-    # - `claude-agent-sdk` (autorizado 2026-04-30, CLAUDE.md §2) para Specialist
-    #   Agents do modulo credito — workflow visual + agentes IA especialistas
-    #   com tools customizadas via MCP server in-process.
-    "claude-agent-sdk>=0.1.72",
+    # Anthropic SDK oficial (CLAUDE.md §2). Messages API direta com tool
+    # use nativo + prompt caching. Usado pelo runtime de Specialist Agents
+    # em `app/shared/agents/runtime.py` e pelo adapter de chat em
+    # `app/modules/integracoes/adapters/llm/anthropic/`.
+    "anthropic>=0.71",
     # Utilities
     "python-multipart>=0.0.17",  # form data support for FastAPI
     "email-validator>=2.2.0",

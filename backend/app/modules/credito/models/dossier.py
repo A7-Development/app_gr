@@ -43,9 +43,13 @@ class CreditDossier(Base):
         index=True,
     )
 
-    # Domain identity
-    target_cnpj: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
-    target_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Domain identity — opcional na criacao. O fluxo coleta via human_input
+    # e, quando captura cnpj/cpf/razao_social/nome, o motor popula esses
+    # campos via `services.dossier.absorb_identity_from_human_input`.
+    # Suporta fluxos PF (cpf), PJ (cnpj), bem como dossies sem identidade
+    # explicita (analise de produto, simulacao etc).
+    target_cnpj: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    target_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Pleito (high-level summary; full structured pleito in `credit_dossier_pleito`)
     operation_type: Mapped[str | None] = mapped_column(String(64), nullable=True)

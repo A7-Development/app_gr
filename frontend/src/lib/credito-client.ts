@@ -100,6 +100,46 @@ export type NodeTypeMeta = {
   config_schema?: NodeConfigField[]
 }
 
+// ─── Semantic validation (Fase 2) ────────────────────────────────────────
+
+export type SemanticValidationError = {
+  node_id: string
+  severity: "error" | "warning"
+  code: string
+  message: string
+  requirement?: string | null
+  expected_type?: string | null
+  found_type?: string | null
+}
+
+export type SemanticValidationResult = {
+  has_errors: boolean
+  errors: SemanticValidationError[]
+  /** node_id -> { var_name: vartype }. Usado pra renderizar chips
+   *  de output tipados em cada nó e pill list de variáveis upstream. */
+  produced_by_node: Record<string, Record<string, string>>
+}
+
+// ─── Dry-run (Fase 3b) ────────────────────────────────────────────────────
+
+export type DryRunStep = {
+  node_id: string
+  node_type: string
+  label: string
+  status: "completed" | "failed" | "skipped" | "unavailable"
+  output: Record<string, unknown>
+  /** Tempo sintético por tipo de nó (ms). Não é tempo real — é uma
+   *  estimativa pra dar ordem de grandeza ("Serasa demora ~4s"). */
+  duration_ms: number
+  error: string | null
+}
+
+export type DryRunResult = {
+  final_status: "completed" | "failed"
+  error: string | null
+  steps: DryRunStep[]
+}
+
 // ─── Dossier types ───────────────────────────────────────────────────────
 
 export type DossierStatus =
@@ -112,8 +152,8 @@ export type DossierStatus =
 
 export type DossierListItem = {
   id: string
-  target_cnpj: string
-  target_name: string
+  target_cnpj: string | null
+  target_name: string | null
   status: DossierStatus
   operation_type: string | null
   requested_amount: string | null
@@ -132,9 +172,9 @@ export type DossierRead = DossierListItem & {
 }
 
 export type DossierCreatePayload = {
-  target_cnpj: string
-  target_name: string
   workflow_definition_id: string
+  target_cnpj?: string | null
+  target_name?: string | null
   operation_type?: string | null
   requested_amount?: string | null
   requested_term_days?: number | null
@@ -382,6 +422,16 @@ export const credito = {
       apiClient.put<WorkflowDefinitionRead>(`/credito/workflows/${name}/active`, {
         definition_id,
       }),
+    validate: (graph: WorkflowGraph) =>
+      apiClient.post<SemanticValidationResult>(
+        "/credito/workflows/_validate",
+        graph,
+      ),
+    dryRun: (workflowId: string, triggerData: Record<string, unknown>) =>
+      apiClient.post<DryRunResult>(
+        `/credito/workflows/${workflowId}/dry-run`,
+        { trigger_data: triggerData },
+      ),
     getActive: (name: string) =>
       apiClient.get<WorkflowDefinitionRead>(
         `/credito/workflows/${encodeURIComponent(name)}/active`,

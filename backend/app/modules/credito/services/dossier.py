@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import DossierStatus, NodeRunStatus, WorkflowRunStatus
+from app.modules.credito.models.analysis import CreditDossierAnalysis
 from app.modules.credito.models.dossier import CreditDossier
 from app.shared.workflow.models.run import WorkflowRun
 from app.shared.workflow.services import engine as workflow_engine
@@ -22,9 +23,9 @@ async def create_dossier(
     db: AsyncSession,
     *,
     tenant_id: UUID,
-    target_cnpj: str,
-    target_name: str,
     workflow_definition_id: UUID,
+    target_cnpj: str | None = None,
+    target_name: str | None = None,
     analyst_id: UUID | None = None,
     operation_type: str | None = None,
     requested_amount: Any | None = None,
@@ -33,8 +34,14 @@ async def create_dossier(
 ) -> CreditDossier:
     """Create a dossier and start its workflow run.
 
-    The dossier and workflow run are created in the same transaction. The
-    caller is responsible for committing.
+    A identidade da entidade analisada (target_cnpj/target_name) e opcional:
+    em fluxos PF/PJ que coletam doc via human_input, o motor ira popular
+    esses campos retroativamente via `absorb_identity_from_human_input`.
+    Em fluxos sem identidade (simulacao, analise de produto), permanecem
+    nulos.
+
+    O dossier e o workflow run sao criados na mesma transacao. O caller
+    se responsabiliza pelo commit.
     """
     dossier = CreditDossier(
         tenant_id=tenant_id,
@@ -51,22 +58,23 @@ async def create_dossier(
     db.add(dossier)
     await db.flush()
 
-    # Kick off the workflow run.
+    # Trigger data — apenas o que foi de fato passado. Os aliases `cnpj`
+    # / `target_cnpj` so existem se o caller forneceu (compat com fluxos
+    # legados que usam `{{trigger.cnpj}}` direto). Fluxos novos coletam
+    # via human_input e usam `{{node.<id>.output.<campo>}}`.
+    trigger_data: dict[str, Any] = {"dossier_id": str(dossier.id)}
+    if target_cnpj:
+        trigger_data["target_cnpj"] = target_cnpj
+        trigger_data["cnpj"] = target_cnpj
+    if target_name:
+        trigger_data["target_name"] = target_name
+
     run = await workflow_engine.start_run(
         db,
         tenant_id=tenant_id,
         definition_id=workflow_definition_id,
         trigger_type="manual",
-        trigger_data={
-            "dossier_id": str(dossier.id),
-            "target_cnpj": target_cnpj,
-            # Alias: templates frequentes usam `{{trigger.cnpj}}` por ser
-            # mais curto e natural. Mantemos os dois pra que ambos os
-            # caminhos funcionem sem o usuario precisar saber qual a chave
-            # canonica.
-            "cnpj": target_cnpj,
-            "target_name": target_name,
-        },
+        trigger_data=trigger_data,
         initiated_by=analyst_id,
     )
 
@@ -138,6 +146,119 @@ async def sync_status_from_workflow(
     return dossier
 
 
+_IDENTITY_KEYS_CNPJ = {"cnpj", "target_cnpj"}
+_IDENTITY_KEYS_CPF = {"cpf", "target_cpf"}
+_IDENTITY_KEYS_NAME = {
+    "razao_social",
+    "target_name",
+    "nome",
+    "nome_completo",
+    "name",
+}
+
+
+def _digits(s: str) -> str:
+    """Strip mask characters from a doc string."""
+    return "".join(ch for ch in s if ch.isdigit())
+
+
+async def absorb_identity_from_human_input(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    dossier_id: UUID,
+    submitted: dict[str, Any],
+) -> None:
+    """Populate target_cnpj/target_name on the dossier when a human_input
+    submitted a document (cnpj/cpf) or a label.
+
+    Idempotent: only writes when the dossier still has the field NULL OR
+    the submitted value is non-empty and different from the current. This
+    lets the analyst correct a previously-typed CNPJ in a later step.
+
+    Called by the resume endpoint right after `engine.resume_run` flushes
+    the human_input output.
+    """
+    if not submitted:
+        return
+
+    dossier = await get_dossier(db, tenant_id=tenant_id, dossier_id=dossier_id)
+    if dossier is None:
+        return
+
+    # Documento — prioriza CNPJ; cai pra CPF.
+    new_doc: str | None = None
+    for key, value in submitted.items():
+        if not isinstance(value, str) or not value.strip():
+            continue
+        lk = key.lower()
+        if lk in _IDENTITY_KEYS_CNPJ:
+            digits = _digits(value)
+            if len(digits) == 14:
+                new_doc = digits
+                break
+        elif lk in _IDENTITY_KEYS_CPF:
+            digits = _digits(value)
+            if len(digits) == 11:
+                new_doc = digits
+                # nao quebra: se vier CNPJ depois, prevalece (cnpj > cpf)
+
+    if new_doc and new_doc != (dossier.target_cnpj or ""):
+        dossier.target_cnpj = new_doc
+
+    # Label/nome.
+    for key, value in submitted.items():
+        if not isinstance(value, str) or not value.strip():
+            continue
+        if key.lower() in _IDENTITY_KEYS_NAME:
+            stripped = value.strip()
+            if stripped != (dossier.target_name or ""):
+                dossier.target_name = stripped[:255]
+            break
+
+    await db.flush()
+
+
+async def save_bureau_analysis(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    dossier_id: UUID,
+    subsection: str,
+    summary: str,
+    indicators: dict[str, Any],
+    raw_data: dict[str, Any],
+    source_meta: dict[str, Any],
+) -> CreditDossierAnalysis:
+    """Persist a bureau query result into the dossier so agents can read it.
+
+    Writes one `CreditDossierAnalysis` row with section='bureau_queries'. The
+    payload follows the same shape that `read_dossier_section` exposes back to
+    agent tools, plus a `raw_data` block with a trimmed dump of the silver
+    tables (top sócios / restrições / etc.) and a `source_meta` block carrying
+    provenance (consulta_id, raw_id, adapter version).
+
+    `subsection` distinguishes multiple bureaus saved into the same section
+    ('serasa_pj', 'bigdatacorp', 'infosimples', ...). Stored inside
+    `ai_analysis.subsection` since the table has no native column for it.
+    """
+    analysis = CreditDossierAnalysis(
+        tenant_id=tenant_id,
+        dossier_id=dossier_id,
+        section="bureau_queries",
+        ai_analysis={
+            "subsection": subsection,
+            "summary": summary,
+            "indicators": indicators,
+            "raw_data": raw_data,
+            "source_meta": source_meta,
+        },
+    )
+    db.add(analysis)
+    await db.flush()
+    return analysis
+
+
 def _status_from_run(run: WorkflowRun) -> DossierStatus:
     """Derive DossierStatus from WorkflowRunStatus + node-level signals."""
     rs = run.status
@@ -160,8 +281,10 @@ def _status_from_run(run: WorkflowRun) -> DossierStatus:
 __all__ = [
     "DossierServiceError",
     "NodeRunStatus",
+    "absorb_identity_from_human_input",
     "create_dossier",
     "get_dossier",
     "list_dossiers",
+    "save_bureau_analysis",
     "sync_status_from_workflow",
 ]

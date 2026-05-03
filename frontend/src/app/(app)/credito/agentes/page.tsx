@@ -95,8 +95,8 @@ export default function AgentesPage() {
     <div className="flex flex-col gap-6 px-6 pt-5 pb-6">
       <PageHeader
         title="Agentes especialistas"
-        info="Catalogo de agentes IA disponiveis para uso nos workflows. Cada um tem prompt versionado + tools tenant-scoped + output schema validado."
-        subtitle="Credito · Configuracao"
+        info="Catalogo de agentes IA disponiveis para uso nos fluxos. Cada um tem prompt versionado + tools tenant-scoped + output schema validado."
+        subtitle="StrataFlow · Configuração"
       />
 
       {/* Faixa de filtros — mesma anatomia do ListagemCrudCards */}

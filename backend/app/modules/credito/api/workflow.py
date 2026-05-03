@@ -8,10 +8,12 @@ Wraps the generic workflow engine with credito-specific semantics:
 
 from __future__ import annotations
 
-from typing import Annotated
+from dataclasses import asdict
+from typing import Annotated, Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,8 +30,14 @@ from app.shared.workflow.schemas.definition import (
     WorkflowDefinitionCreate,
     WorkflowDefinitionRead,
     WorkflowDefinitionUpdate,
+    WorkflowGraph,
 )
+from app.shared.workflow.services.dry_run import dry_run_workflow
 from app.shared.workflow.services.engine import list_node_types_for_editor
+from app.shared.workflow.services.graph_validator import (
+    ValidationResult,
+    validate_graph,
+)
 
 router = APIRouter()
 
@@ -284,6 +292,23 @@ async def activate_workflow(
             detail="Nao e possivel ativar uma versao ARCHIVED.",
         )
 
+    # Gate de validação semântica (Fase 2). DRAFT pode ser inválido — você
+    # constrói incrementalmente. Mas ATIVAR um fluxo que vai rodar em prod
+    # com erro estrutural é bloqueado: 422 com lista de erros pra UI mostrar.
+    graph_obj = WorkflowGraph.model_validate(target.graph)
+    val = validate_graph(graph_obj)
+    if val.has_errors:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": (
+                    "Esta versao tem erros de validacao e nao pode ser ativada. "
+                    "Corrija no editor e tente novamente."
+                ),
+                "validation": _validation_to_response(val),
+            },
+        )
+
     # Find existing active pointer for this (name, tenant) — same tenant scope
     # as the target. If target is a Strata starter (tenant_id IS NULL), the
     # ACTIVE pointer is also tenant-scoped (we create one for THIS tenant).
@@ -397,3 +422,88 @@ async def get_node_types_catalog(
     "em breve" — selling the future vision without confusing users.
     """
     return list_node_types_for_editor()
+
+
+# ─── Semantic validation ──────────────────────────────────────────────────
+
+
+def _validation_to_response(result: ValidationResult) -> dict:
+    """Serialize ValidationResult (dataclasses) for JSON response."""
+    return {
+        "has_errors": result.has_errors,
+        "errors": [asdict(e) for e in result.errors],
+    }
+
+
+@router.post("/workflows/_validate")
+async def validate_workflow_graph(
+    graph: Annotated[WorkflowGraph, Body(embed=False)],
+    _principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    _: None = Depends(require_module(Module.CREDITO, Permission.READ)),
+) -> dict:
+    """Run semantic validation on a graph WITHOUT persisting it.
+
+    Used by the editor to give immediate feedback before save/activate. The
+    response shape is:
+        {
+            "has_errors": bool,
+            "errors": [
+                {"node_id": str, "severity": "error|warning",
+                 "code": str, "message": str (pt-BR), ...}
+            ]
+        }
+    """
+    result = validate_graph(graph)
+    return _validation_to_response(result)
+
+
+class _DryRunPayload(BaseModel):
+    """Body do POST /workflows/{id}/dry-run.
+
+    `trigger_data` é o seed que o engine real receberia em
+    `dossier_svc.create_dossier` (ex.: `{cnpj, target_name, ...}`).
+    """
+
+    trigger_data: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/workflows/{workflow_id}/dry-run")
+async def dry_run_workflow_endpoint(
+    workflow_id: UUID,
+    payload: _DryRunPayload,
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = Depends(require_module(Module.CREDITO, Permission.READ)),
+) -> dict:
+    """Executa o grafo do workflow em modo SANDBOX.
+
+    Não toca DB, não chama Serasa nem Anthropic. Cada nó produz output
+    mock baseado em `produces()` (Fase 2). Útil pro editor "Testar" antes
+    de criar dossier real e queimar requisição paga de bureau.
+    """
+    base = (
+        await db.execute(
+            select(WorkflowDefinition).where(
+                WorkflowDefinition.id == workflow_id,
+                or_(
+                    WorkflowDefinition.tenant_id.is_(None),
+                    WorkflowDefinition.tenant_id == principal.tenant_id,
+                ),
+            )
+        )
+    ).scalar_one_or_none()
+    if base is None:
+        raise HTTPException(
+            status_code=404, detail="Workflow nao encontrado ou nao acessivel."
+        )
+    graph = WorkflowGraph.model_validate(base.graph)
+    result = dry_run_workflow(graph, trigger_data=payload.trigger_data)
+    return {
+        "final_status": result.final_status,
+        "error": result.error,
+        "steps": [asdict(s) for s in result.steps],
+    }
+
+
+# ─── Existing endpoint extensions ─────────────────────────────────────────
+# (Activation is gated by validation: cannot activate a graph with errors.)

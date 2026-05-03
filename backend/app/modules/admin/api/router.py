@@ -11,9 +11,15 @@ Mounted at `/admin` from `api/v1/router.py`.
 
 from fastapi import APIRouter
 
-from app.modules.admin.api import ai_prompts, ai_provider_credentials, ai_subscriptions
+from app.modules.admin.api import (
+    ai_agents,
+    ai_prompts,
+    ai_provider_credentials,
+    ai_subscriptions,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 router.include_router(ai_provider_credentials.router)
 router.include_router(ai_subscriptions.router)
 router.include_router(ai_prompts.router)
+router.include_router(ai_agents.router)

@@ -161,9 +161,9 @@ export default function WorkflowsPage() {
   return (
     <div className="flex flex-col gap-6 px-6 pt-5 pb-6">
       <PageHeader
-        title="Workflows de credito"
-        info="Templates Strata e workflows do tenant. Cada dossie executa um workflow."
-        subtitle="Credito · Configuracao"
+        title="Fluxos"
+        info="Templates Strata e fluxos do tenant. Cada análise executa um fluxo."
+        subtitle="StrataFlow · Configuração"
         actions={
           <Button variant="primary" onClick={openNew} disabled={isLoading}>
             <RiAddLine className="mr-1 size-4" aria-hidden />

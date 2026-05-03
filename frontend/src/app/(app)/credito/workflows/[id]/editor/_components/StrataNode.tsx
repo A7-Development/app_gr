@@ -35,6 +35,7 @@ import {
 } from "@remixicon/react"
 
 import { NODE_CATEGORY_COLOR, type NodeTypeMeta } from "@/lib/credito-client"
+import { varTypeMeta } from "@/design-system/tokens/var-type"
 import { cx } from "@/lib/utils"
 
 import { AGENT_FRIENDLY_LABEL, ETAPA_LABEL, getEtapaLabel } from "../_lib/glossary"
@@ -62,6 +63,10 @@ export type StrataNodeData = {
   meta?: NodeTypeMeta
   validationStatus?: ValidationStatus
   validationMessage?: string
+  /** Map { var_name: vartype_str } do que este nó publica em runtime.
+   *  Vem de SemanticValidationResult.produced_by_node (Fase 2/3a).
+   *  Renderizado como chips coloridos no rodapé do nó. */
+  producedVars?: Record<string, string>
 }
 
 export function StrataNode({ data, selected }: NodeProps) {
@@ -90,10 +95,21 @@ export function StrataNode({ data, selected }: NodeProps) {
       )}
       title={d.validationMessage ?? undefined}
     >
+      {/* 4 handles de conexão — um em cada lado. Todos `source` + ReactFlow
+       *  configurado com `connectionMode=Loose` (no page.tsx) permite que
+       *  qualquer handle se conecte a qualquer outro, independente do tipo.
+       *  Resultado: usuário arrasta de qualquer lado pra qualquer lado. */}
       <Handle
-        type="target"
+        id="top"
+        type="source"
         position={Position.Top}
-        className="!size-2 !bg-gray-400 dark:!bg-gray-600"
+        className="!size-2.5 !-translate-y-1/2 !border !border-white !bg-gray-400 hover:!bg-blue-500 dark:!border-gray-950 dark:!bg-gray-600"
+      />
+      <Handle
+        id="right"
+        type="source"
+        position={Position.Right}
+        className="!size-2.5 !translate-x-1/2 !border !border-white !bg-gray-400 hover:!bg-blue-500 dark:!border-gray-950 dark:!bg-gray-600"
       />
 
       {status !== "ok" && (
@@ -136,11 +152,63 @@ export function StrataNode({ data, selected }: NodeProps) {
           </p>
         )}
       </div>
+      <ProducedVarsRow vars={d.producedVars} />
       <Handle
+        id="bottom"
         type="source"
         position={Position.Bottom}
-        className="!size-2 !bg-gray-400 dark:!bg-gray-600"
+        className="!size-2.5 !translate-y-1/2 !border !border-white !bg-gray-400 hover:!bg-blue-500 dark:!border-gray-950 dark:!bg-gray-600"
       />
+      <Handle
+        id="left"
+        type="source"
+        position={Position.Left}
+        className="!size-2.5 !-translate-x-1/2 !border !border-white !bg-gray-400 hover:!bg-blue-500 dark:!border-gray-950 dark:!bg-gray-600"
+      />
+    </div>
+  )
+}
+
+function ProducedVarsRow({
+  vars,
+}: {
+  vars?: Record<string, string>
+}) {
+  if (!vars || Object.keys(vars).length === 0) return null
+  // Cap em 6 chips pra nó não esticar demais; resto vira "+N".
+  const entries = Object.entries(vars)
+  const visible = entries.slice(0, 6)
+  const overflow = entries.length - visible.length
+
+  return (
+    <div className="flex flex-wrap items-center gap-1 border-t border-gray-100 px-2 py-1.5 dark:border-gray-900">
+      {visible.map(([varName, varType]) => {
+        const meta = varTypeMeta(varType)
+        return (
+          <span
+            key={varName}
+            title={`${varName} · ${meta.description}`}
+            className={cx(
+              "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
+              meta.chipClass,
+            )}
+          >
+            <span
+              aria-hidden
+              className={cx("size-1.5 rounded-full", meta.dotClass)}
+            />
+            <span className="font-mono">{varName}</span>
+          </span>
+        )
+      })}
+      {overflow > 0 && (
+        <span
+          className="text-[10px] text-gray-500 dark:text-gray-400"
+          title={`+${overflow} variável(is) — selecione o nó pra ver tudo`}
+        >
+          +{overflow}
+        </span>
+      )}
     </div>
   )
 }

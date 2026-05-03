@@ -10,7 +10,7 @@ export const sidebar = {
 } as const
 
 export const layout = {
-  headerH:    56,
+  headerH:    48,
   filterBarH: 48,
 } as const
 

@@ -148,7 +148,9 @@ export function AIToggleButton({
       title="Strata IA (Cmd/Ctrl+I)"
       aria-pressed={open}
       className={cx(
-        "inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium",
+        // h-[26px] alinha com FilterChip/HEADER_BTN_CLASS — toda toolbar A1b
+        // compartilha a mesma altura visual.
+        "inline-flex h-[26px] items-center gap-1.5 rounded-[4px] px-2.5 text-[13px] font-medium",
         "transition-colors duration-150",
         open
           ? "border border-transparent bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-400"

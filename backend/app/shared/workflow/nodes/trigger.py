@@ -14,13 +14,36 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.shared.workflow.nodes._base import BaseNode, NodeContext, NodeOutput
+from app.shared.workflow.nodes._base import (
+    BaseNode,
+    NodeContext,
+    NodeOutput,
+    VarType,
+)
 
 
 class TriggerNode(BaseNode):
     """Pass-through node that exposes the trigger payload as output."""
 
     type = "trigger"
+
+    def produces(self) -> dict[str, VarType]:
+        """Campos canônicos que `dossier_svc.create_dossier` injeta no
+        `trigger_data`. Há aliases (cnpj == target_cnpj) — declaramos os
+        dois para que `{{trigger.cnpj}}` e `{{trigger.target_cnpj}}` ambos
+        validem.
+
+        Quando o dossier é criado SEM CNPJ (fluxo PF ou genérico), os
+        templates `{{trigger.cnpj}}` resolvem pra null em runtime — o
+        validador estático só pode checar TIPO, não presença.
+        """
+        return {
+            "dossier_id": VarType.UUID_T,
+            "target_cnpj": VarType.CNPJ,
+            "cnpj": VarType.CNPJ,
+            "target_name": VarType.STRING,
+            "trigger_kind": VarType.STRING,
+        }
 
     async def execute(self, ctx: NodeContext, db: AsyncSession) -> NodeOutput:
         return NodeOutput(

@@ -14,6 +14,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import {
   adminAI,
+  type AIAgentConfigRead,
+  type AIAgentConfigUpdatePayload,
   type AIPromptCreatePayload,
   type AIPromptDetail,
   type AIPromptUpdatePayload,
@@ -27,6 +29,8 @@ const KEYS = {
   prompts: (includeArchived: boolean) =>
     ["admin", "ai", "prompts", { includeArchived }] as const,
   prompt: (id: string) => ["admin", "ai", "prompt", id] as const,
+  agents: ["admin", "ai", "agents"] as const,
+  agentModels: ["admin", "ai", "agents", "models"] as const,
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -149,5 +153,46 @@ export function usePreviewPrompt() {
   return useMutation({
     mutationFn: ({ id, context }: { id: string; context: Record<string, string> }) =>
       adminAI.prompts.preview(id, context),
+  })
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Specialist Agents — model override por agente
+// ───────────────────────────────────────────────────────────────────────────
+
+export function useAdminAgents() {
+  return useQuery({
+    queryKey: KEYS.agents,
+    queryFn: () => adminAI.agents.list(),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useAdminAgentModels() {
+  return useQuery({
+    queryKey: KEYS.agentModels,
+    queryFn: () => adminAI.agents.listModels(),
+    // Lista curada — muda raramente. Pode cachear bem.
+    staleTime: 15 * 60 * 1000,
+  })
+}
+
+export function useUpdateAdminAgent() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      agentName,
+      payload,
+    }: {
+      agentName: string
+      payload: AIAgentConfigUpdatePayload
+    }) => adminAI.agents.update(agentName, payload),
+    onSuccess: (updated: AIAgentConfigRead) => {
+      // Atualiza otimisticamente o cache da listagem.
+      qc.setQueryData<AIAgentConfigRead[]>(KEYS.agents, (prev) =>
+        prev?.map((a) => (a.agent_name === updated.agent_name ? updated : a)) ??
+        prev,
+      )
+    },
   })
 }

@@ -1,20 +1,29 @@
 // src/design-system/patterns/DashboardBiPadrao.tsx
 //
-// PATTERN — BI · Pagina padrao (handoff bi-padrao, 2026-04-26).
+// PATTERN — BI · Pagina padrao (handoff bi-padrao A1b, 2026-05-02).
 // Copy, paste, adapt. NAO e black-box: voce vai mexer aqui.
 //
-// Composicao das 5 zonas canonicas + AI panel violeta in-layout:
+// Chrome reduzido para 152px (vs ~204px da versao A1):
 //
-//   ┌─ Z1 PageHeader (titulo + info + botao IA + acoes) ─────────────────────┐
-//   ├─ Z2 TabNavigation L3 (Visao geral · Evolucao · Detalhes) ──────────────┤
-//   ├─ Z3 FilterBar sticky (FilterSearch + FilterChip ativos + Mais filtros) ┤
-//   ├─ Z4 Conteudo da aba ─────────────────┬─ AI Panel (drawer in-layout) ──┤
-//   │   • InsightBar (3 insights violeta) │  • Context chip                 │
-//   │   • KpiStrip (5 KPIs c/ sparkline)  │  • Insights expansiveis         │
-//   │   • Grid 60/40 (hero + secundario)  │  • Chat com historico           │
-//   │   • Grid 3 cols (charts auxiliares) │                                 │
-//   │   • DataTable (cessoes + StatusPill)│                                 │
-//   ├─ Z5 ProvenanceFooter (mock) ────────┴───────────────────────────────── ┤
+//   ┌─ Title row (70px) ───────────────────────────────────────────────────┐
+//   │  PageHeader (titulo + info + subtitle visivel) | Actions             │
+//   ├─ Toolbar unificada (44px sticky, top:0, border-b) ───────────────────┤
+//   │  Tabs ········· | divider | FilterSearch + Chips + + sync status     │
+//   ├─ InsightStrip (38px violeta, dismiss-localStorage) ──────────────────┤
+//   ├─ Conteudo ────────────────────────┬─ AI Panel (drawer in-layout) ────┤
+//   │   • KpiStrip (5 KPIs c/ sparkline)│  • Context chip                   │
+//   │   • Tab content (charts + table)  │  • Insights expansiveis           │
+//   │                                   │  • Chat com historico             │
+//   ├─ ProvenanceFooter (mock) ─────────┴───────────────────────────────────┤
+//
+// MUDANCAS vs A1 (2026-04-26):
+//   - Z2 (TabNavigation isolado) + Z3 (FilterBar isolado) viraram a toolbar
+//     unificada de 44px. Anatomy diferente: banda branca unica sticky, sem
+//     Card aninhado da FilterBar canonica.
+//   - InsightBar (panel violeta com bullets) virou InsightStrip (slim 38px,
+//     primeiro insight inline + popover "+N analises", dismiss-localStorage).
+//   - PageHeader passa subtitle visivel (antes era so info tooltip).
+//   - h-[calc(100vh-3.5rem)] alinha com app shell de 56px (handoff bi-padrao).
 //
 // HOW TO ADAPT:
 //   1. Substitua MOCK_CESSOES por useQuery real (manter shape do row).
@@ -59,13 +68,12 @@ import {
 } from "@/design-system/components/KpiStrip"
 import { EChartsCard } from "@/design-system/components/EChartsCard"
 import {
-  FilterBar,
   FilterChip,
   FilterSearch,
   MoreFiltersButton,
   RemovableChip,
 } from "@/design-system/components/FilterBar"
-import { Insight, InsightBar } from "@/design-system/components/Insight"
+import { InsightStrip } from "@/design-system/components/InsightStrip"
 import {
   DataTable,
   CurrencyCell,
@@ -80,6 +88,7 @@ import {
   type AIInsight,
 } from "@/design-system/components/AIPanel"
 import { tokens, type StatusKey } from "@/design-system/tokens"
+import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 
 // ───────────────────────────────────────────────────────────────────────────
 // Mocks — substituir por queries reais
@@ -268,12 +277,7 @@ function VisaoGeralTab({ onRowClick }: { onRowClick: (row: CessaoRow) => void })
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Insight bar */}
-      <InsightBar>
-        {MOCK_INSIGHTS.map((ins, i) => (
-          <Insight key={i} tone="violet" text={ins.text} />
-        ))}
-      </InsightBar>
+      {/* InsightBar removido — A1b move insights pra InsightStrip (slim, acima do KpiStrip). */}
 
       {/* Hero 60/40: PL evolucao + Inadimplencia aging */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
@@ -446,7 +450,7 @@ export type DashboardBiPadraoProps = {
    */
   sendMessage?: (text: string, context: { page: string; period?: string; filters?: string }) => Promise<string>
   /**
-   * Insights automaticos para a InsightBar (Z4) e o AIPanel.
+   * Insights automaticos para a InsightStrip e o AIPanel.
    * Quando omitido, usa MOCK_INSIGHTS.
    */
   insights?: AIInsight[]
@@ -513,16 +517,27 @@ export function DashboardBiPadrao(props: DashboardBiPadraoProps = {}) {
     toast.info("Exportar — em breve")
   }, [])
 
+  const insightStripItems = React.useMemo(
+    () => effectiveInsights.map((ins, idx) => ({ id: String(idx), text: ins.text })),
+    [effectiveInsights],
+  )
+
+  // Sombra canonica na toolbar quando o conteudo (Z4) esta scrollado.
+  // A classe `.scroll-shadow` (em globals.css) usa !important para vencer
+  // o shadow-stack do Tailwind v4. Aplicada condicionalmente via React.
+  const [scrollRef, scrolled] = useScrollShadow<HTMLDivElement>()
+
   return (
-    <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
+    <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
       {/* Coluna principal */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
 
-        {/* Z1 — PageHeader */}
-        <div className="shrink-0 px-6 pt-5 pb-3">
+        {/* Title row (70px) — banda branca unificada com a toolbar abaixo. */}
+        <div className="shrink-0 bg-white px-6 pt-3.5 pb-3 dark:bg-gray-950">
           <PageHeader
             title="BI · Pagina padrao"
             info="Template canonico de dashboard BI: KPIs + insights IA + grid 60/40 + tabela + drill-down."
+            subtitle="Visao consolidada do FIDC com KPIs, evolucao e detalhes operacionais."
             actions={
               <div className="flex items-center gap-2">
                 {quotaSlot}
@@ -536,29 +551,40 @@ export function DashboardBiPadrao(props: DashboardBiPadraoProps = {}) {
           />
         </div>
 
-        {/* Z2 — TabNavigation L3 */}
-        <div className="shrink-0 px-6">
-          <TabNavigation>
-            {TABS.map((t, i) => (
-              <TabNavigationLink
-                key={t.key}
-                href="#"
-                active={activeTab === t.key}
-                onClick={(e) => {
-                  e.preventDefault()
-                  setActiveTab(t.key)
-                }}
-                title={`Cmd/Ctrl + ${i + 1}`}
-              >
-                {t.label}
-              </TabNavigationLink>
-            ))}
-          </TabNavigation>
-        </div>
+        {/* Toolbar unificada (44px) — tabs L3 a esquerda + filtros a direita.
+            Sombra canonica no scroll via `.scroll-shadow` (globals.css com
+            !important — Tailwind v4 zera box-shadow no border-b stack). */}
+        <div
+          className={cx(
+            "shrink-0 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
+            scrolled && "scroll-shadow",
+          )}
+        >
+          {/* h-[52px] (44 do handoff +8 de respiro) — feedback 2026-05-02:
+              tabs+chips ficavam muito juntas do limite inferior do card. */}
+          <div className="flex h-[52px] items-center gap-2 px-6">
+            {/* Tabs (esquerda) */}
+            <TabNavigation className="border-0">
+              {TABS.map((t, i) => (
+                <TabNavigationLink
+                  key={t.key}
+                  href="#"
+                  active={activeTab === t.key}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    setActiveTab(t.key)
+                  }}
+                  title={`Cmd/Ctrl + ${i + 1}`}
+                >
+                  {t.label}
+                </TabNavigationLink>
+              ))}
+            </TabNavigation>
 
-        {/* Z3 — FilterBar sticky */}
-        <div className="shrink-0 px-6">
-          <FilterBar>
+            {/* Divider vertical */}
+            <div aria-hidden="true" className="mx-1 h-5 w-px bg-gray-200 dark:bg-gray-800" />
+
+            {/* Filtros */}
             <FilterSearch
               placeholder="Buscar cessoes..."
               value={search}
@@ -651,11 +677,21 @@ export function DashboardBiPadrao(props: DashboardBiPadraoProps = {}) {
             )}
 
             <MoreFiltersButton />
-          </FilterBar>
+
+            {/* Sync status (canto direito) */}
+            <span className="ml-auto shrink-0 text-[11px] text-gray-500 dark:text-gray-400">
+              Atualizado ha 12 min
+            </span>
+          </div>
         </div>
 
-        {/* Z4 — Conteudo da aba */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        {/* InsightStrip (38px) — primeiro insight inline + popover "+N analises" */}
+        <div className="shrink-0 px-6 pt-3">
+          <InsightStrip insights={insightStripItems} />
+        </div>
+
+        {/* Conteudo da aba — scroll container observado por useScrollShadow. */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4">
           <div className="flex flex-col gap-4">
             {/* KpiStrip — 5 KPIs (canonico) */}
             <KpiStrip cols={5}>

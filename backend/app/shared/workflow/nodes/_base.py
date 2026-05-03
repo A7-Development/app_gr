@@ -15,6 +15,24 @@ It returns a `NodeOutput`:
   node called a LLM
 
 Errors are raised — the engine catches them and persists with status FAILED.
+
+Semantic typing (Fase 2 — 2026-05-02):
+
+Each node type also declares its data contract via two methods:
+
+- `produces() -> dict[str, VarType]`: the typed variables this node EXPOSES
+  in `output.data` after a successful execution. Downstream nodes can refer
+  to them via `{{node.<this_id>.output.<key>}}`.
+
+- `requires() -> list[Requirement]`: the typed variables this node CONSUMES.
+  The graph validator inspects each `Requirement.expr` (e.g.
+  `{{node.human_input_x.output.cnpj}}`) and confirms that some upstream node
+  produces a compatible type at that path.
+
+The same node TYPE can produce/require different variables depending on its
+config — `bureau_query[serasa_pj]` requires `cnpj` (or `cpf`), but a future
+`bureau_query[boa_vista_pf]` would require `cpf` only. So `produces` and
+`requires` read `self.config` and return per-instance contracts.
 """
 
 from __future__ import annotations
@@ -22,10 +40,55 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from decimal import Decimal
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+class VarType(StrEnum):
+    """Semantic types of variables that flow between nodes.
+
+    Used by `BaseNode.produces()` / `requires()` and the graph validator.
+    Compatibility is per-name match for the MVP — i.e. a `Requirement(name=
+    'cnpj', type=CNPJ)` is satisfied by any upstream `produces()` entry
+    where the value is `VarType.CNPJ`. Future iterations may add subtype
+    coercions (e.g. STRING accepts CNPJ).
+    """
+
+    STRING = "string"          # generic free text
+    CPF = "cpf"                # 11 digits, doc PF
+    CNPJ = "cnpj"              # 14 digits, doc PJ
+    EMAIL = "email"
+    PHONE = "phone"
+    DATE = "date"              # ISO YYYY-MM-DD
+    DATETIME = "datetime"      # ISO 8601
+    NUMBER = "number"          # any numeric (int or float)
+    MONEY_BRL = "money_brl"    # decimal monetary in BRL
+    SCORE = "score"            # 0..1000 typically
+    BOOLEAN = "boolean"
+    URL = "url"
+    UUID_T = "uuid"            # UUID string (collides with stdlib UUID — suffix _T)
+    FILE = "file"              # filesystem ref / binary blob descriptor
+    OBJECT = "object"          # nested dict, escape hatch
+    LIST = "list"              # list of values, escape hatch
+
+
+@dataclass(slots=True, frozen=True)
+class Requirement:
+    """One typed variable a node needs in order to execute.
+
+    `expr` is the dotted path the node reads from at runtime (matches the
+    template syntax used in `config` resolution — e.g. `trigger.cnpj` or
+    `node.human_input_f0ugxb.output.cnpj`). `optional=True` means absent
+    upstream is a warning, not an error.
+    """
+
+    name: str             # human-readable label (shown in error msg)
+    type: VarType         # expected semantic type
+    expr: str             # dotted path the runtime resolves
+    optional: bool = False
 
 
 @dataclass(slots=True)
@@ -77,6 +140,28 @@ class BaseNode(ABC):
         Default: no-op. Subclasses that have required keys should override.
         Raise `ValueError` on invalid config.
         """
+
+    def produces(self) -> dict[str, VarType]:
+        """Return the typed variables this node exposes in `output.data`.
+
+        Keys correspond to fields in the dict returned by `execute().data`,
+        accessible downstream as `{{node.<this_id>.output.<key>}}`.
+        Default: nothing — most nodes that have outputs override.
+        """
+        return {}
+
+    def requires(self) -> list[Requirement]:
+        """Return the typed variables this node consumes from upstream.
+
+        Each requirement has an `expr` (dotted path, e.g. `trigger.cnpj`
+        or `node.<id>.output.<field>`) that the runtime resolver reads.
+        The graph validator checks the path resolves to an upstream
+        producer of the matching type.
+
+        Default: nothing — pure-config nodes (`trigger`, `notification`)
+        usually don't consume upstream data.
+        """
+        return []
 
     @abstractmethod
     async def execute(self, ctx: NodeContext, db: AsyncSession) -> NodeOutput:

@@ -20,7 +20,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   addEdge,
   Background,
+  ConnectionMode,
   Controls,
+  MarkerType,
+  MiniMap,
   type Connection,
   type Edge,
   type EdgeMouseHandler,
@@ -44,6 +47,7 @@ import {
   RiErrorWarningLine,
   RiFilePdf2Line,
   RiFileSearchLine,
+  RiFlashlightLine,
   RiGitBranchLine,
   RiGlobalLine,
   RiNotification3Line,
@@ -74,6 +78,8 @@ import {
   type StrataNodeData,
   type ValidationStatus,
 } from "./_components/StrataNode"
+import { TestRunDrawer } from "./_components/TestRunDrawer"
+import { VariablesPill } from "./_components/VariablesPill"
 import { glossary } from "./_lib/glossary"
 import {
   type PaletteEntry,
@@ -135,7 +141,16 @@ function graphToReactFlow(
     id: e.id,
     source: e.source,
     target: e.target,
-    type: "smoothstep",
+    // `default` = curva bezier suave (React Flow default). Mais orgânica
+    // que `smoothstep` (degraus 90° arredondados). markerEnd setado aqui
+    // garante seta direcional em edges CARREGADAS do DB — defaultEdgeOptions
+    // do <ReactFlow> só aplica em edges NOVAS criadas via onConnect.
+    type: "default",
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      width: 16,
+      height: 16,
+    },
     label: e.condition ? `se: ${e.condition.slice(0, 40)}` : undefined,
     data: { condition: e.condition },
     labelStyle: {
@@ -249,6 +264,7 @@ function EditorBody({
   const [edgePopover, setEdgePopover] = React.useState<{ edgeId: string; x: number; y: number } | null>(null)
   const [dirty, setDirty] = React.useState(false)
   const [showValidationDetails, setShowValidationDetails] = React.useState(false)
+  const [testDrawerOpen, setTestDrawerOpen] = React.useState(false)
 
   // Re-sync when workflow changes (after save).
   React.useEffect(() => {
@@ -258,21 +274,68 @@ function EditorBody({
   }, [initialNodes, initialEdges, setNodes, setEdges])
 
   // ── Validacao continua ─────────────────────────────────────────────
-  const validationErrors = React.useMemo<ValidationError[]>(
+  // Etapa 1 (sincrona): regras estruturais + per-tipo (validate.ts).
+  // Etapa 2 (assincrona): validação semântica do backend (Fase 2) —
+  // produces/requires tipados por nó, percorre o grafo e checa fluxo de
+  // dados. Roda quando nodes/edges mudam; React Query desduplica calls.
+  const localValidationErrors = React.useMemo<ValidationError[]>(
     () => validateGraph(nodes, edges, nodeTypes),
     [nodes, edges, nodeTypes],
+  )
+
+  const graphForValidation = React.useMemo(
+    () => reactFlowToGraph(nodes, edges),
+    [nodes, edges],
+  )
+  const graphSignature = React.useMemo(
+    () => JSON.stringify(graphForValidation),
+    [graphForValidation],
+  )
+  const { data: semanticResult } = useQuery({
+    queryKey: ["credito", "workflow-validate", graphSignature],
+    queryFn: () => credito.workflows.validate(graphForValidation),
+    enabled: nodes.length > 0,
+    staleTime: 30_000,
+    retry: false,
+  })
+  const semanticValidationErrors: ValidationError[] = React.useMemo(
+    () =>
+      (semanticResult?.errors ?? []).map((e) => ({
+        level: e.severity === "error" ? "error" : "warning",
+        nodeId: e.node_id,
+        message: e.message,
+      })),
+    [semanticResult],
+  )
+
+  const validationErrors = React.useMemo(
+    () => [...localValidationErrors, ...semanticValidationErrors],
+    [localValidationErrors, semanticValidationErrors],
   )
   const summary = React.useMemo(() => summarize(validationErrors), [validationErrors])
   const nodeStatusMap = React.useMemo(() => statusByNode(validationErrors), [validationErrors])
 
-  // Aplica validationStatus a cada node antes de passar pro ReactFlow.
+  // Mapa de produced vars por node — vem do backend semântico (Fase 3a).
+  const producedByNode = React.useMemo<Record<string, Record<string, string>>>(
+    () => semanticResult?.produced_by_node ?? {},
+    [semanticResult],
+  )
+
+  // Aplica validationStatus + producedVars a cada node antes de passar pro
+  // ReactFlow. StrataNode renderiza chips coloridos no rodapé com o que o
+  // nó publica em runtime.
   const nodesWithStatus = React.useMemo<Node[]>(
     () =>
       nodes.map((n) => {
         const status = nodeStatusMap.get(n.id)
         const data = n.data as unknown as StrataNodeData
         const newStatus: ValidationStatus = status?.status ?? "ok"
-        if (data.validationStatus === newStatus && data.validationMessage === status?.message) {
+        const newProduced = producedByNode[n.id] ?? undefined
+        if (
+          data.validationStatus === newStatus &&
+          data.validationMessage === status?.message &&
+          data.producedVars === newProduced
+        ) {
           return n
         }
         return {
@@ -281,10 +344,11 @@ function EditorBody({
             ...data,
             validationStatus: newStatus,
             validationMessage: status?.message,
+            producedVars: newProduced,
           } satisfies StrataNodeData,
         }
       }),
-    [nodes, nodeStatusMap],
+    [nodes, nodeStatusMap, producedByNode],
   )
 
   const isActiveVersion = activeWorkflow?.id === workflow.id
@@ -551,7 +615,22 @@ function EditorBody({
       queryClient.invalidateQueries({ queryKey: ["credito", "workflow-active"] })
       queryClient.invalidateQueries({ queryKey: ["credito", "workflows"] })
     },
-    onError: (e) => toast.error(`Erro ao publicar: ${(e as Error).message}`),
+    onError: (e) => {
+      // Backend bloqueia ativação com 422 quando há erros semânticos.
+      // ApiError.detail preserva o payload estruturado: { message, validation }.
+      const err = e as Error & { detail?: unknown }
+      let msg = `Erro ao publicar: ${err.message}`
+      if (
+        err.detail &&
+        typeof err.detail === "object" &&
+        "message" in err.detail
+      ) {
+        const detailMsg = (err.detail as { message?: unknown }).message
+        if (typeof detailMsg === "string") msg = detailMsg
+      }
+      toast.error(msg)
+      setShowValidationDetails(true)
+    },
   })
 
   // ─── Selected items for Inspector / popover ──────────────────────────
@@ -623,6 +702,14 @@ function EditorBody({
                   {glossary.statusArchived}
                 </span>
               )}
+              <Button
+                variant="ghost"
+                onClick={() => setTestDrawerOpen(true)}
+                title="Roda o fluxo em modo sandbox sem chamar Serasa nem Anthropic."
+              >
+                <RiFlashlightLine className="size-4" aria-hidden />
+                Testar
+              </Button>
               {!isActiveVersion && workflow.status !== "archived" && (
                 <Button
                   variant="secondary"
@@ -671,6 +758,12 @@ function EditorBody({
               {glossary.unsavedChanges}
             </div>
           )}
+          <VariablesPill
+            selectedNodeId={selectedNodeId}
+            nodes={nodesWithStatus}
+            edges={edges}
+            producedByNode={producedByNode}
+          />
           {showValidationDetails && validationErrors.length > 0 && (
             <ValidationDetailsPanel
               errors={validationErrors}
@@ -689,6 +782,22 @@ function EditorBody({
             onDrop={onDrop}
             onDragOver={onDragOver}
             nodeTypes={NODE_RENDERERS}
+            // Loose: permite ligação entre handles do mesmo tipo (todos os
+            // 4 handles do StrataNode são `source`). Sem isso o usuário só
+            // poderia ligar source→target, e cada nó precisaria de 8 handles
+            // (4 de cada tipo) — overkill visual.
+            connectionMode={ConnectionMode.Loose}
+            // Toda edge nasce com seta apontando o sentido (source→target)
+            // e como curva bezier suave (`default`). Coerente com edges
+            // carregadas do DB (graphToReactFlow seta o mesmo type).
+            defaultEdgeOptions={{
+              type: "default",
+              markerEnd: {
+                type: MarkerType.ArrowClosed,
+                width: 16,
+                height: 16,
+              },
+            }}
             fitView
             proOptions={{ hideAttribution: true }}
           >
@@ -725,11 +834,21 @@ function EditorBody({
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            producedByNode={producedByNode}
             onUpdateConfig={updateNodeConfig}
             onUpdateLabel={updateNodeLabel}
           />
         </aside>
       </div>
+
+      {/* Test drawer (dry-run sandbox) */}
+      <TestRunDrawer
+        open={testDrawerOpen}
+        onOpenChange={setTestDrawerOpen}
+        workflowId={workflow.id}
+        workflowName={`${workflow.name} v${workflow.version}`}
+        hasUnsavedChanges={dirty}
+      />
     </>
   )
 }

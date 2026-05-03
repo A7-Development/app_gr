@@ -40,11 +40,14 @@ function StatusBadge({ status }: { status: DossierListItem["status"] }) {
   )
 }
 
-function CnpjCell({ value }: { value: string }) {
+function CnpjCell({ value }: { value: string | null }) {
+  if (!value) return <span className={tableTokens.cellMuted}>—</span>
   return <span className={tableTokens.cellTextMono}>{value}</span>
 }
 
-function NameCell({ value }: { value: string }) {
+function NameCell({ value }: { value: string | null }) {
+  if (!value)
+    return <span className={tableTokens.cellMuted}>(sem identidade)</span>
   return <span className={tableTokens.cellStrong}>{value}</span>
 }
 

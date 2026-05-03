@@ -12,13 +12,19 @@ from app.core.enums import DossierStatus
 
 
 class DossierCreate(BaseModel):
-    """Input to create a new dossier (wizard step 'Confirma')."""
+    """Input to create a new dossier ('Iniciar análise').
+
+    Identidade da entidade analisada e OPCIONAL: o fluxo coletado pode
+    pedir CNPJ/CPF/nome via human_input e o motor preenche retroativamente
+    via `services.dossier.absorb_identity_from_human_input`. Fluxos sem
+    identidade (simulacao, analise de produto) ficam sem.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    target_cnpj: str = Field(..., min_length=14, max_length=20)
-    target_name: str = Field(..., min_length=1, max_length=255)
     workflow_definition_id: UUID
+    target_cnpj: str | None = Field(None, max_length=20)
+    target_name: str | None = Field(None, max_length=255)
     operation_type: str | None = Field(None, max_length=64)
     requested_amount: Decimal | None = None
     requested_term_days: int | None = Field(None, ge=1)
@@ -44,8 +50,8 @@ class DossierRead(BaseModel):
 
     id: UUID
     tenant_id: UUID
-    target_cnpj: str
-    target_name: str
+    target_cnpj: str | None
+    target_name: str | None
     operation_type: str | None
     requested_amount: Decimal | None
     requested_term_days: int | None
@@ -65,8 +71,8 @@ class DossierListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    target_cnpj: str
-    target_name: str
+    target_cnpj: str | None
+    target_name: str | None
     status: DossierStatus
     operation_type: str | None
     requested_amount: Decimal | None
@@ -87,7 +93,7 @@ class NodeSubmitPayload(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    values: dict[str, "object"]
+    values: dict[str, object]
 
 
 class DossierStateResponse(BaseModel):

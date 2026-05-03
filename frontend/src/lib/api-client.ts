@@ -24,13 +24,35 @@ const TOKEN_STORAGE_KEY = "gr.token"
 
 export class ApiError extends Error {
   status: number
-  detail: string
+  /**
+   * Whatever the backend returned in the `detail` field. FastAPI lets you
+   * raise `HTTPException(detail=<dict>)` to ship structured error payloads
+   * (used by /workflows/_validate to return the full ValidationResult).
+   * Callers can narrow the type at the use site.
+   */
+  detail: unknown
 
-  constructor(status: number, detail: string) {
-    super(`API ${status}: ${detail}`)
+  constructor(status: number, detail: unknown) {
+    super(`API ${status}: ${stringifyDetail(detail)}`)
     this.name = "ApiError"
     this.status = status
     this.detail = detail
+  }
+}
+
+function stringifyDetail(detail: unknown): string {
+  if (detail == null) return ""
+  if (typeof detail === "string") return detail
+  // Common case: backend returns `{ message: "...", ... }` for structured
+  // errors. Surface the message field for the human-readable Error.message.
+  if (typeof detail === "object" && "message" in detail) {
+    const m = (detail as { message?: unknown }).message
+    if (typeof m === "string") return m
+  }
+  try {
+    return JSON.stringify(detail)
+  } catch {
+    return String(detail)
   }
 }
 
@@ -70,10 +92,10 @@ async function request<T>(
   })
 
   if (!res.ok) {
-    let detail = res.statusText
+    let detail: unknown = res.statusText
     try {
-      const err = (await res.json()) as { detail?: string }
-      if (err.detail) detail = err.detail
+      const err = (await res.json()) as { detail?: unknown }
+      if (err.detail !== undefined && err.detail !== null) detail = err.detail
     } catch {
       // nao-JSON, usa statusText
     }
@@ -226,6 +248,16 @@ export const adminAI = {
         context,
       }),
   },
+  agents: {
+    listModels: () =>
+      apiClient.get<AIAgentModelOption[]>("/admin/ai/agents/models"),
+    list: () => apiClient.get<AIAgentConfigRead[]>("/admin/ai/agents"),
+    update: (agentName: string, payload: AIAgentConfigUpdatePayload) =>
+      apiClient.put<AIAgentConfigRead>(
+        `/admin/ai/agents/${encodeURIComponent(agentName)}`,
+        payload,
+      ),
+  },
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -290,6 +322,40 @@ export type AIPromptPreview = {
     role: string
     content: Array<{ type: string; text: string; cache_control?: { type: string } | null }>
   }>
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Admin IA — model override por specialist agent (etapa 1: Anthropic only)
+// Espelha endpoints em backend/app/modules/admin/api/ai_agents.py
+// ───────────────────────────────────────────────────────────────────────────
+
+export type AIAgentModelTier = "opus" | "sonnet" | "haiku"
+
+export type AIAgentModelOption = {
+  id: string
+  label: string
+  tier: AIAgentModelTier
+  description: string
+}
+
+export type AIAgentConfigRead = {
+  agent_name: string
+  description: string
+  prompt_name: string
+  multimodal: boolean
+  section_id: string
+  default_model: string
+  default_fallback_model: string | null
+  model: string
+  fallback_model: string | null
+  source: "db_override" | "catalog_default"
+  updated_at: string | null
+  updated_by_user_id: string | null
+}
+
+export type AIAgentConfigUpdatePayload = {
+  model: string
+  fallback_model?: string | null
 }
 
 /**

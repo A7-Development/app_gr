@@ -13,33 +13,37 @@
 // CONTROLES — altura e tipografia canonica
 // ─────────────────────────────────────────────────────────────────────────────
 // Todos os controles (FilterChip, FilterSearch, RemovableChip, MoreFiltersButton,
-// SavedViewsDropdown) renderizam a `h-[30px] px-2.5 text-[13px]` — mesma altura
-// dos botoes do header (HEADER_BTN_CLASS em DashboardHeaderActions). Esses dois
-// valores sao candidatos a token (tokens.controls.height/text) na varredura
-// final do Modo Iteracao de Design.
+// SavedViewsDropdown) renderizam a `h-[26px] px-2.5 text-[13px]` (handoff A1b
+// 2026-05-02 — antes era 30px). Cabe na toolbar unificada de 44px do
+// DashboardBiPadrao com 9px de respiracao vertical. Candidato a token `--chip-h`
+// na varredura final do Modo Iteracao de Design.
 //
-// PER-ELEMENT COLORING (regra dura)
+// PER-ELEMENT COLORING (regra dura) — A1b
 // ─────────────────────────────────────────────────────────────────────────────
-// Controles compostos (icon + label + valor) NAO usam `text-X` no <button>
-// raiz — cor no raiz se propaga por inheritance e achata a hierarquia visual.
-// Padrao FilterChip:
-//   - Icone:  text-gray-500 (inactive) / text-blue-500 (active)
-//   - Label:  text-[11px] text-gray-500
-//   - Valor:  font-medium text-gray-900 (inactive) / text-blue-700 (active)
+// Controles compostos (dot? + icon + label + valor + chevron) NAO usam `text-X`
+// no <button> raiz. Padrao FilterChip A1b:
+//   - Dot:     5x5 bg-active-indicator (so quando active=true) — sinal funcional
+//              de "filtro aplicado". Cor laranja (--color-active-indicator).
+//   - Icone:   text-gray-500 dark:text-gray-400 (constante; nao muda no active)
+//   - Label:   text-[11px] text-gray-500 dark:text-gray-400
+//   - Divider: bg-gray-200 dark:bg-gray-700
+//   - Valor:   text-gray-900 dark:text-gray-50; font-semibold (active) / font-medium
+//   - Chevron: text-gray-400 dark:text-gray-500 (constante)
+// Fundo NAO muda no active (era bg-blue-50 antes — A1b removeu).
 //
 // Componentes:
 //   FilterBar           Faixa sticky + Card interno (composicao Z3 completa)
-//   FilterSearch        Input de busca (h-[30px], expand-on-focus 56→72)
+//   FilterSearch        Input de busca (h-[26px], expand-on-focus 56→72)
 //   FilterChip          Trigger de filtro categorico (label + valor + chevron)
 //   RemovableChip       Filtro aplicado com botao X
-//   MoreFiltersButton   Botao "Mais filtros" (onClick handler) — nao suporta
-//                       asChild ainda; paginas que precisam Popover trigger
-//                       duplicam anatomy (CLAUDE.md §7.1 antipattern)
+//   MoreFiltersButton   Botao "Mais filtros" — suporta `asChild` (Radix Slot)
+//                       para envolver Popover trigger sem duplicar anatomy.
 //   SavedViewsDropdown  Dropdown de visualizacoes salvas (localStorage)
 
 "use client"
 
 import * as React from "react"
+import { Slot } from "@radix-ui/react-slot"
 import {
   RiCloseLine,
   RiEqualizerLine,
@@ -131,7 +135,7 @@ export function FilterSearch({ className, onClear, ...props }: FilterSearchProps
       <input
         type="search"
         className={cx(
-          "h-[30px] w-56 rounded border pl-7 text-[13px]",
+          "h-[26px] w-56 rounded border pl-7 text-[13px]",
           props.value ? "pr-7" : "pr-2.5",
           "border-gray-200 dark:border-gray-800",
           "bg-white dark:bg-gray-950",
@@ -172,33 +176,43 @@ export function FilterChip({ label, value, active = false, icon: Icon, children,
     <button
       type="button"
       className={cx(
-        "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2.5 text-[13px]",
+        "inline-flex h-[26px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2.5 text-[13px]",
         "transition-colors duration-100",
-        active
-          ? "border-blue-300 bg-blue-50 hover:bg-blue-100 dark:border-blue-500 dark:bg-blue-500/10 dark:hover:bg-blue-500/15"
-          : "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 dark:hover:bg-gray-900",
+        // A1b: estado ativo NAO muda fundo. Sinal e o dot laranja a esquerda + value font-semibold.
+        "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 dark:hover:bg-gray-900",
         focusRing,
         className,
       )}
     >
+      {active && (
+        <span
+          aria-hidden="true"
+          className="size-[5px] shrink-0 rounded-full bg-active-indicator"
+        />
+      )}
       {Icon && (
         <Icon
-          className={cx("size-3.5 shrink-0", active ? "text-blue-500" : "text-gray-500 dark:text-gray-400")}
+          className="size-3.5 shrink-0 text-gray-500 dark:text-gray-400"
           aria-hidden="true"
         />
       )}
-      <span className={cx("text-[11px]", active ? "text-gray-600 dark:text-gray-400" : "text-gray-500 dark:text-gray-400")}>
+      <span className="text-[11px] text-gray-500 dark:text-gray-400">
         {label}
       </span>
       <span
         aria-hidden="true"
-        className={cx("h-3.5 w-px", active ? "bg-blue-300 dark:bg-blue-700" : "bg-gray-200 dark:bg-gray-700")}
+        className="h-3.5 w-px bg-gray-200 dark:bg-gray-700"
       />
-      <span className={cx("font-medium", active ? "text-blue-700 dark:text-blue-300" : "text-gray-900 dark:text-gray-50")}>
+      <span
+        className={cx(
+          active ? "font-semibold" : "font-medium",
+          "text-gray-900 dark:text-gray-50",
+        )}
+      >
         {value}
       </span>
       <RiArrowDownSLine
-        className={cx("size-3.5 shrink-0", active ? "text-blue-500" : "text-gray-400 dark:text-gray-500")}
+        className="size-3.5 shrink-0 text-gray-400 dark:text-gray-500"
         aria-hidden="true"
       />
     </button>
@@ -226,7 +240,7 @@ interface RemovableChipProps {
 export function RemovableChip({ label, value, onRemove, className }: RemovableChipProps) {
   return (
     <div className={cx(
-      "inline-flex h-[30px] items-center gap-1.5 rounded-[4px] border px-2.5 text-[13px]",
+      "inline-flex h-[26px] items-center gap-1.5 rounded-[4px] border px-2.5 text-[13px]",
       "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
       className,
     )}>
@@ -248,36 +262,62 @@ interface MoreFiltersButtonProps {
   onClick?:   () => void
   count?:     number
   className?: string
+  /** Quando true, renderiza como Slot (Radix) — usado pra envolver Popover trigger sem duplicar anatomy. */
+  asChild?:   boolean
+  children?:  React.ReactNode
 }
 
-export function MoreFiltersButton({ onClick, count, className }: MoreFiltersButtonProps) {
+export function MoreFiltersButton({
+  onClick,
+  count,
+  className,
+  asChild,
+  children,
+}: MoreFiltersButtonProps) {
   const hasCount = typeof count === "number" && count > 0
+  const Comp     = asChild ? Slot : "button"
   return (
-    <button
-      type="button"
+    <Comp
+      {...(asChild ? {} : { type: "button" as const })}
       onClick={onClick}
       className={cx(
-        "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2.5 text-[13px] transition-colors duration-100",
-        hasCount
-          ? "border-blue-300 bg-blue-50 hover:bg-blue-100 dark:border-blue-500 dark:bg-blue-500/10 dark:hover:bg-blue-500/15"
-          : "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 dark:hover:bg-gray-900",
+        "inline-flex h-[26px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2.5 text-[13px] transition-colors duration-100",
+        // A1b: mesma anatomy de FilterChip — fundo neutro + dot laranja quando count>0.
+        "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 dark:hover:bg-gray-900",
         focusRing,
         className,
       )}
     >
-      <RiEqualizerLine
-        className={cx("size-3.5 shrink-0", hasCount ? "text-blue-500" : "text-gray-500 dark:text-gray-400")}
-        aria-hidden="true"
-      />
-      <span className={cx("font-medium", hasCount ? "text-blue-700 dark:text-blue-300" : "text-gray-900 dark:text-gray-50")}>
-        Mais filtros
-      </span>
-      {hasCount && (
-        <span className="inline-flex min-w-4 items-center justify-center rounded-sm bg-blue-500 px-1 text-[10px] font-semibold text-white">
-          {count}
-        </span>
+      {asChild ? (
+        children
+      ) : (
+        <>
+          {hasCount && (
+            <span
+              aria-hidden="true"
+              className="size-[5px] shrink-0 rounded-full bg-active-indicator"
+            />
+          )}
+          <RiEqualizerLine
+            className="size-3.5 shrink-0 text-gray-500 dark:text-gray-400"
+            aria-hidden="true"
+          />
+          <span
+            className={cx(
+              hasCount ? "font-semibold" : "font-medium",
+              "text-gray-900 dark:text-gray-50",
+            )}
+          >
+            Mais filtros
+          </span>
+          {hasCount && (
+            <span className="inline-flex min-w-4 items-center justify-center rounded-sm bg-gray-900 px-1 text-[10px] font-semibold text-white dark:bg-gray-50 dark:text-gray-900">
+              {count}
+            </span>
+          )}
+        </>
       )}
-    </button>
+    </Comp>
   )
 }
 
@@ -340,7 +380,7 @@ export function SavedViewsDropdown({
     <button
       type="button"
       className={cx(
-        "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded border px-2.5 text-[13px] transition-colors duration-100",
+        "inline-flex h-[26px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded border px-2.5 text-[13px] transition-colors duration-100",
         activeView
           ? "border-blue-400 bg-blue-50 text-blue-700 dark:border-blue-500 dark:bg-blue-500/10 dark:text-blue-300"
           : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300",
