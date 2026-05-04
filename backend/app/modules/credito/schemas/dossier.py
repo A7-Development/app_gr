@@ -4,11 +4,26 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.enums import DossierStatus
+
+# Next-action enum used by the listing to drive UI decisions:
+#   "human_input"        — paused on a human_input node, waiting for the analyst
+#   "agent_running"      — a specialist agent or bureau_query is executing now
+#   "blocked"            — workflow is paused or blocked on an external dep
+#   "ready_to_finalize"  — analysis complete, awaiting human confirmation
+#   "finalized"          — workflow finished successfully
+NextActionKind = Literal[
+    "human_input",
+    "agent_running",
+    "blocked",
+    "ready_to_finalize",
+    "finalized",
+]
 
 
 class DossierCreate(BaseModel):
@@ -66,7 +81,14 @@ class DossierRead(BaseModel):
 
 
 class DossierListItem(BaseModel):
-    """Compact row for the dossier listing page."""
+    """Compact row for the dossier listing page.
+
+    Carries enough state for the listing to render:
+    - Empresa / CNPJ / Status / Operacao / Atualizado columns (existing)
+    - Progresso (X/Y etapas) via `completed_steps` + `total_steps`
+    - Proxima acao (badge) via `next_action_kind` + `next_action_label`
+    - Deep-link para retomar do step ativo via `next_node_id`
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -81,6 +103,11 @@ class DossierListItem(BaseModel):
     workflow_run_id: UUID | None
     created_at: datetime
     updated_at: datetime
+    completed_steps: int = 0
+    total_steps: int = 0
+    next_action_kind: NextActionKind = "blocked"
+    next_action_label: str = ""
+    next_node_id: str | None = None
 
 
 class NodeSubmitPayload(BaseModel):

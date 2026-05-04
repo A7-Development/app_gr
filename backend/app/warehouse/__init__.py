@@ -20,6 +20,7 @@ Camadas (CLAUDE.md secao 13.2):
 from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel
 from app.warehouse.cpr_movimento import CprMovimento
 from app.warehouse.dim import DimDreClassificacao, DimMes
+from app.warehouse.dim_dia_util import DimDiaUtil
 from app.warehouse.dre import DreMensal
 from app.warehouse.estoque_recebivel import EstoqueRecebivel
 from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel
@@ -65,6 +66,7 @@ from app.warehouse.titulo_snapshot import TituloSnapshot
 __all__ = [
     "AquisicaoRecebivel",
     "CprMovimento",
+    "DimDiaUtil",
     "DimDreClassificacao",
     "DimMes",
     "DreMensal",

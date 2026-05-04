@@ -599,6 +599,152 @@ function filtersToQueryString(f: BIFilters): string {
   return s ? `?${s}` : ""
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// BI · Operacoes2 (refatoracao 2026-05-03 — KPI Strip + 4 abas)
+// ───────────────────────────────────────────────────────────────────────────
+
+export type Operacoes2KpiCellNumeric = {
+  valor: number
+  unidade: "BRL" | "%" | "dias"
+  delta_pct: number | null
+  sparkline_12m: Point[]
+  // Strip dual (Opcao 4 paradigma 2026-05-03)
+  mes_corrente_valor: number
+  mes_corrente_label: string
+}
+
+export type Operacoes2KpiCellProduto = {
+  sigla: string
+  nome: string | null
+  share_pct: number
+  delta_share_pp: number | null
+  sparkline_share_12m: Point[]
+  // Mes corrente (pode ser produto diferente do top do periodo)
+  mes_corrente_sigla: string
+  mes_corrente_nome: string | null
+  mes_corrente_share_pct: number
+  mes_corrente_label: string
+}
+
+export type Operacoes2KpiStripData = {
+  vop: Operacoes2KpiCellNumeric
+  taxa_media: Operacoes2KpiCellNumeric
+  prazo_medio: Operacoes2KpiCellNumeric
+  produto_top: Operacoes2KpiCellProduto
+  receita_contratada: Operacoes2KpiCellNumeric
+  comparacao_label_pt: string
+}
+
+export type Operacoes2EvolucaoMensalPonto = {
+  periodo: string
+  vop: number
+  n_operacoes: number
+  ticket_medio: number
+  mm_3m: number | null
+}
+
+export type Operacoes2MesDestaque = { periodo: string; vop: number }
+
+export type Operacoes2MesCorrenteVsMedia = {
+  vop_corrente: number
+  media_12m: number
+  pct: number
+}
+
+export type Operacoes2AcumuladoDiarioPonto = {
+  du_index: number
+  corrente: number
+  anterior: number
+}
+
+export type Operacoes2RitmoMesCorrente = {
+  vop_acumulado: number
+  du_corridos: number
+  du_total_mes: number
+  vop_anterior_mesmo_du: number
+  delta_pct: number | null
+  projecao_fim_mes: number
+  acumulado_dia_a_dia: Operacoes2AcumuladoDiarioPonto[]
+}
+
+export type Operacoes2PaceDiario = {
+  vop_du_corrente: number
+  vop_du_anterior: number
+  delta_pct: number | null
+}
+
+export type Operacoes2KpiSecundario = {
+  valor: number
+  delta_pct: number | null
+}
+
+export type Operacoes2KpisSecundariosVolume = {
+  n_operacoes: Operacoes2KpiSecundario
+  ticket_op: Operacoes2KpiSecundario
+  ticket_titulo: Operacoes2KpiSecundario
+  vop_du_medio: Operacoes2KpiSecundario | null
+}
+
+export type Operacoes2QuebraDimensaoLinha = {
+  categoria_id: string
+  categoria: string
+  vop: number
+  pct: number
+  delta_mom_pct: number | null
+  delta_yoy_pct: number | null
+  // Mes corrente (Opcao 4)
+  vop_mes_corrente: number
+  pct_mes_corrente: number
+}
+
+export type Operacoes2EvolucaoPorUaPonto = {
+  periodo: string
+  ua_id: number
+  ua_nome: string
+  vop: number
+}
+
+export type Operacoes2HeatmapPonto = {
+  dow: number
+  semana_do_mes: number
+  vop_medio: number
+  n_ops: number
+}
+
+export type Operacoes2DiaSemanaResumo = {
+  dow: number
+  nome: string
+  vop_medio: number
+  n_ops_medio: number
+  pct_total_semana: number
+}
+
+export type Operacoes2AbaVolumeRitmoData = {
+  evolucao_12m: Operacoes2EvolucaoMensalPonto[]
+  evolucao_12m_por_ua: Operacoes2EvolucaoPorUaPonto[]
+  melhor_mes: Operacoes2MesDestaque | null
+  pior_mes: Operacoes2MesDestaque | null
+  mes_corrente_vs_media: Operacoes2MesCorrenteVsMedia | null
+  ritmo: Operacoes2RitmoMesCorrente | null
+  pace_diario: Operacoes2PaceDiario | null
+  kpis_secundarios: Operacoes2KpisSecundariosVolume
+  por_ua: Operacoes2QuebraDimensaoLinha[]
+  por_produto: Operacoes2QuebraDimensaoLinha[]
+  heatmap_dow_semana: Operacoes2HeatmapPonto[]
+  por_dia_semana: Operacoes2DiaSemanaResumo[]
+}
+
+export const biOperacoes2 = {
+  kpiStrip: (f: BIFilters) =>
+    apiClient.get<BIResponse<Operacoes2KpiStripData>>(
+      `/bi/operacoes2/kpi-strip${filtersToQueryString(f)}`,
+    ),
+  abaVolumeRitmo: (f: BIFilters) =>
+    apiClient.get<BIResponse<Operacoes2AbaVolumeRitmoData>>(
+      `/bi/operacoes2/aba1-volume-ritmo${filtersToQueryString(f)}`,
+    ),
+}
+
 export const biOperacoes = {
   resumo: (f: BIFilters) =>
     apiClient.get<BIResponse<OperacoesResumo>>(

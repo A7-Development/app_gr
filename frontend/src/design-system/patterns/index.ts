@@ -12,3 +12,8 @@ export { ListagemComDrilldown } from "./ListagemComDrilldown"
 export { ListagemCrudInline } from "./ListagemCrudInline"
 export { ListagemCrudExpand } from "./ListagemCrudExpand"
 export { ListagemCrudCards, EspacoCard, type EspacoRow } from "./ListagemCrudCards"
+export {
+  WizardMultiStep,
+  AgentLiveStatus, AgentOutputRenderer,
+  type WizardMultiStepProps, type WizardMultiStepStep,
+} from "./WizardMultiStep"

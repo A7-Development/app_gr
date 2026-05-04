@@ -150,6 +150,13 @@ export type DossierStatus =
   | "finalized"
   | "cancelled"
 
+export type NextActionKind =
+  | "human_input"
+  | "agent_running"
+  | "blocked"
+  | "ready_to_finalize"
+  | "finalized"
+
 export type DossierListItem = {
   id: string
   target_cnpj: string | null
@@ -162,6 +169,15 @@ export type DossierListItem = {
   workflow_run_id: string | null
   created_at: string
   updated_at: string
+  /** Number of node_runs em status COMPLETED — popula o ProgressCell. */
+  completed_steps: number
+  /** Total de nodes do workflow_definition.graph. */
+  total_steps: number
+  next_action_kind: NextActionKind
+  /** Pt-BR pronto pra UI (ex.: "Aguardando voce", "Analise IA em curso"). */
+  next_action_label: string
+  /** Para deep-link na listagem (?step=...). */
+  next_node_id: string | null
 }
 
 export type DossierRead = DossierListItem & {
@@ -179,6 +195,66 @@ export type DossierCreatePayload = {
   requested_amount?: string | null
   requested_term_days?: number | null
   notes?: string | null
+}
+
+// ─── Evidence (attachments + step notes + step links) ────────────────────
+
+export type AttachmentRead = {
+  id: string
+  dossier_id: string
+  node_id: string | null
+  filename: string
+  mime_type: string
+  size_bytes: number
+  sha256: string
+  description: string | null
+  uploaded_by: string | null
+  uploaded_at: string
+}
+
+export type NoteRead = {
+  id: string
+  dossier_id: string
+  node_id: string
+  body_md: string
+  pinned: boolean
+  author_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type NoteCreatePayload = {
+  node_id: string
+  body_md: string
+  pinned?: boolean
+}
+
+export type NoteUpdatePayload = {
+  body_md?: string
+  pinned?: boolean
+}
+
+export type LinkRead = {
+  id: string
+  dossier_id: string
+  node_id: string | null
+  url: string
+  title: string | null
+  description: string | null
+  added_by: string | null
+  added_at: string
+}
+
+export type LinkCreatePayload = {
+  node_id?: string | null
+  url: string
+  title?: string | null
+  description?: string | null
+}
+
+export type NodeDraftResponse = {
+  saved_at: string
+  node_id: string
 }
 
 // ─── Workflow run state (read by dossier detail page) ────────────────────
@@ -385,6 +461,41 @@ export type DocumentTemplateUpsertPayload = {
 
 // ─── Endpoints ───────────────────────────────────────────────────────────
 
+/**
+ * Multipart upload helper used by `credito.attachments.upload`.
+ * The shared `apiClient` only does JSON; this falls back to direct fetch.
+ */
+async function _uploadMultipart<T>(
+  path: string,
+  form: FormData,
+): Promise<T> {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1"
+  const tokenKey = "gr.token"
+  const headers: Record<string, string> = {}
+  if (typeof window !== "undefined") {
+    const token = window.localStorage.getItem(tokenKey)
+    if (token) headers["Authorization"] = `Bearer ${token}`
+  }
+  const res = await fetch(`${apiUrl}${path}`, {
+    method: "POST",
+    headers,
+    body: form,
+    cache: "no-store",
+  })
+  if (!res.ok) {
+    let detail: unknown = res.statusText
+    try {
+      const err = (await res.json()) as { detail?: unknown }
+      if (err.detail !== undefined && err.detail !== null) detail = err.detail
+    } catch {
+      // non-JSON response, fallback to statusText
+    }
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail))
+  }
+  if (res.status === 204) return undefined as T
+  return (await res.json()) as T
+}
+
 export const credito = {
   dossies: {
     list: (params?: { status?: DossierStatus; limit?: number; offset?: number }) => {
@@ -400,6 +511,8 @@ export const credito = {
       apiClient.post<DossierRead>("/credito/dossies", payload),
     update: (id: string, payload: Partial<DossierCreatePayload>) =>
       apiClient.patch<DossierRead>(`/credito/dossies/${id}`, payload),
+    remove: (id: string) =>
+      apiClient.delete<void>(`/credito/dossies/${id}`),
     getState: (id: string) =>
       apiClient.get<DossierStateResponse>(`/credito/dossies/${id}/state`),
     submitNodeInput: (id: string, nodeId: string, values: Record<string, unknown>) =>
@@ -407,6 +520,73 @@ export const credito = {
         `/credito/dossies/${id}/nodes/${nodeId}/submit`,
         { values } satisfies NodeSubmitPayload,
       ),
+    /** Auto-save de form values num node WAITING_INPUT — nao avanca o run. */
+    saveNodeDraft: (id: string, nodeId: string, values: Record<string, unknown>) =>
+      apiClient.patch<NodeDraftResponse>(
+        `/credito/dossies/${id}/nodes/${nodeId}/draft`,
+        { values },
+      ),
+  },
+  attachments: {
+    list: (dossierId: string, nodeId?: string | null) => {
+      const qs = nodeId ? `?node_id=${encodeURIComponent(nodeId)}` : ""
+      return apiClient.get<AttachmentRead[]>(
+        `/credito/dossies/${dossierId}/attachments${qs}`,
+      )
+    },
+    upload: (
+      dossierId: string,
+      file: File,
+      opts?: { node_id?: string | null; description?: string | null },
+    ) => {
+      const form = new FormData()
+      form.append("file", file)
+      if (opts?.node_id) form.append("node_id", opts.node_id)
+      if (opts?.description) form.append("description", opts.description)
+      return _uploadMultipart<AttachmentRead>(
+        `/credito/dossies/${dossierId}/attachments`,
+        form,
+      )
+    },
+    remove: (dossierId: string, attachmentId: string) =>
+      apiClient.delete<void>(
+        `/credito/dossies/${dossierId}/attachments/${attachmentId}`,
+      ),
+    /** URL absoluta para `<a href>` — passa Bearer token via cookie nao. */
+    downloadUrl: (dossierId: string, attachmentId: string) => {
+      const apiUrl =
+        process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1"
+      return `${apiUrl}/credito/dossies/${dossierId}/attachments/${attachmentId}/download`
+    },
+  },
+  notes: {
+    list: (dossierId: string, nodeId?: string | null) => {
+      const qs = nodeId ? `?node_id=${encodeURIComponent(nodeId)}` : ""
+      return apiClient.get<NoteRead[]>(
+        `/credito/dossies/${dossierId}/notes${qs}`,
+      )
+    },
+    create: (dossierId: string, payload: NoteCreatePayload) =>
+      apiClient.post<NoteRead>(`/credito/dossies/${dossierId}/notes`, payload),
+    update: (dossierId: string, noteId: string, payload: NoteUpdatePayload) =>
+      apiClient.patch<NoteRead>(
+        `/credito/dossies/${dossierId}/notes/${noteId}`,
+        payload,
+      ),
+    remove: (dossierId: string, noteId: string) =>
+      apiClient.delete<void>(`/credito/dossies/${dossierId}/notes/${noteId}`),
+  },
+  links: {
+    list: (dossierId: string, nodeId?: string | null) => {
+      const qs = nodeId ? `?node_id=${encodeURIComponent(nodeId)}` : ""
+      return apiClient.get<LinkRead[]>(
+        `/credito/dossies/${dossierId}/links${qs}`,
+      )
+    },
+    create: (dossierId: string, payload: LinkCreatePayload) =>
+      apiClient.post<LinkRead>(`/credito/dossies/${dossierId}/links`, payload),
+    remove: (dossierId: string, linkId: string) =>
+      apiClient.delete<void>(`/credito/dossies/${dossierId}/links/${linkId}`),
   },
   workflows: {
     list: () => apiClient.get<WorkflowDefinitionRead[]>("/credito/workflows"),

@@ -47,7 +47,13 @@ async def list_dossies(
         limit=limit,
         offset=offset,
     )
-    return [DossierListItem.model_validate(r) for r in rows]
+    progress = await dossier_svc.compute_progress_map(db, dossiers=rows)
+    items: list[DossierListItem] = []
+    for r in rows:
+        base = DossierListItem.model_validate(r).model_dump()
+        base.update(progress.get(r.id, {}))
+        items.append(DossierListItem(**base))
+    return items
 
 
 @router.post("/dossies", response_model=DossierRead, status_code=status.HTTP_201_CREATED)
@@ -107,6 +113,32 @@ async def update_dossie(
 
     await db.commit()
     return DossierRead.model_validate(dossier)
+
+
+@router.delete(
+    "/dossies/{dossier_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_dossie(
+    dossier_id: UUID,
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = Depends(require_module(Module.CREDITO, Permission.ADMIN)),
+) -> None:
+    """Hard-delete a dossier (admin-only).
+
+    Cascades to every `credit_dossier_*` child table (analyses, attachments,
+    notes, links, etc.) and the bound `workflow_run` (which cascades to
+    `workflow_node_run`). Operacao destrutiva — gate de Permission.ADMIN
+    impede analyst comum de remover dossie alheio. Frontend so expoe a acao
+    quando `user_permissions.credito === 'admin'`; backend valida sempre.
+    """
+    deleted = await dossier_svc.delete_dossier(
+        db, tenant_id=principal.tenant_id, dossier_id=dossier_id
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Dossie nao encontrado.")
+    await db.commit()
 
 
 # ─── Workflow state + submission ──────────────────────────────────────────

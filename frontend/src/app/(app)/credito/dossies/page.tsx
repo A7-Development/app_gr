@@ -5,21 +5,48 @@
 // Card + FilterSearch + SegmentSwitch + counter + DataTable.
 //
 // Click numa row navega para /credito/dossies/{id} (tela do dossie real).
+//
+// Gate de admin: a coluna de acoes (DropdownMenu com Excluir) so renderiza
+// quando `user_permissions.credito === "admin"`. Backend valida sempre via
+// `require_module(Module.CREDITO, Permission.ADMIN)` no DELETE — defense in depth.
 
 "use client"
 
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
-import { RiAddLine, RiHandCoinLine } from "@remixicon/react"
+import {
+  RiAddLine,
+  RiDeleteBinLine,
+  RiHandCoinLine,
+  RiMoreLine,
+} from "@remixicon/react"
+import { toast } from "sonner"
 
 import { Button } from "@/components/tremor/Button"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/tremor/Dialog"
+import { Divider } from "@/components/tremor/Divider"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/tremor/DropdownMenu"
+import {
   DataTableShell,
   DateCell,
+  NextActionCell,
   PageHeader,
+  StepProgressCell,
 } from "@/design-system/components"
 import {
   credito,
@@ -27,6 +54,7 @@ import {
   DOSSIER_STATUS_TONE,
   type DossierListItem,
 } from "@/lib/credito-client"
+import { fetchMe } from "@/lib/api-client"
 import { tableTokens } from "@/design-system/tokens/table"
 import { cx } from "@/lib/utils"
 
@@ -62,6 +90,16 @@ const col = createColumnHelper<DossierListItem>()
 
 export default function DossiesPage() {
   const router = useRouter()
+  const queryClient = useQueryClient()
+
+  // Gate de admin: /auth/me ja foi chamado pelo AuthGuard, aqui so reusamos
+  // a query (staleTime alto). Backend continua sendo a fonte da verdade.
+  const meQuery = useQuery({
+    queryKey: ["me"],
+    queryFn: fetchMe,
+    staleTime: 5 * 60 * 1000,
+  })
+  const isAdmin = meQuery.data?.user_permissions?.credito === "admin"
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["credito", "dossies"],
@@ -71,37 +109,138 @@ export default function DossiesPage() {
   const [search, setSearch] = React.useState("")
   const [segment, setSegment] = React.useState<string>("todos")
 
+  // Confirmacao de delete: dossier inteiro em estado local (precisamos do
+  // nome / cnpj pra exibir no Dialog). Fora da URL — operacao efemera.
+  const [pendingDelete, setPendingDelete] =
+    React.useState<DossierListItem | null>(null)
+
+  const deleteMut = useMutation({
+    mutationFn: (dossierId: string) => credito.dossies.remove(dossierId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["credito", "dossies"] })
+    },
+  })
+
+  const handleDelete = React.useCallback(async () => {
+    if (!pendingDelete) return
+    const label = pendingDelete.target_name || pendingDelete.target_cnpj || "dossie"
+    try {
+      await deleteMut.mutateAsync(pendingDelete.id)
+      toast.success(`Dossie '${label}' excluido.`)
+      setPendingDelete(null)
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Falha ao excluir dossie.",
+      )
+    }
+  }, [deleteMut, pendingDelete])
+
   const rows = data ?? []
 
   const columns = React.useMemo<ColumnDef<DossierListItem, unknown>[]>(
-    () => [
-      col.accessor("target_name", {
-        header: "Empresa",
-        size: 280,
-        cell: (info) => <NameCell value={info.getValue()} />,
-      }) as ColumnDef<DossierListItem, unknown>,
-      col.accessor("target_cnpj", {
-        header: "CNPJ",
-        size: 180,
-        cell: (info) => <CnpjCell value={info.getValue()} />,
-      }) as ColumnDef<DossierListItem, unknown>,
-      col.accessor("status", {
-        header: "Status",
-        size: 130,
-        cell: (info) => <StatusBadge status={info.getValue()} />,
-      }) as ColumnDef<DossierListItem, unknown>,
-      col.accessor("operation_type", {
-        header: "Operacao",
-        size: 140,
-        cell: (info) => <NullableCell value={info.getValue()} />,
-      }) as ColumnDef<DossierListItem, unknown>,
-      col.accessor("updated_at", {
-        header: "Atualizado",
-        size: 130,
-        cell: (info) => <DateCell value={info.getValue()} />,
-      }) as ColumnDef<DossierListItem, unknown>,
-    ],
-    [],
+    () => {
+      const base: ColumnDef<DossierListItem, unknown>[] = [
+        col.accessor("target_name", {
+          header: "Empresa",
+          size: 240,
+          cell: (info) => <NameCell value={info.getValue()} />,
+        }) as ColumnDef<DossierListItem, unknown>,
+        col.accessor("target_cnpj", {
+          header: "CNPJ",
+          size: 160,
+          cell: (info) => <CnpjCell value={info.getValue()} />,
+        }) as ColumnDef<DossierListItem, unknown>,
+        col.accessor("status", {
+          header: "Status",
+          size: 120,
+          cell: (info) => <StatusBadge status={info.getValue()} />,
+        }) as ColumnDef<DossierListItem, unknown>,
+        col.display({
+          id: "progresso",
+          header: "Progresso",
+          size: 140,
+          cell: (info) => {
+            const r = info.row.original
+            const state =
+              r.status === "finalized"
+                ? "finalized"
+                : r.status === "draft"
+                  ? "draft"
+                  : "in_progress"
+            return (
+              <StepProgressCell
+                completed={r.completed_steps}
+                total={r.total_steps}
+                state={state}
+                tooltip={r.next_action_label}
+              />
+            )
+          },
+        }) as ColumnDef<DossierListItem, unknown>,
+        col.display({
+          id: "proxima_acao",
+          header: "Proxima acao",
+          size: 180,
+          cell: (info) => {
+            const r = info.row.original
+            return (
+              <NextActionCell
+                kind={r.next_action_kind}
+                label={r.next_action_label}
+              />
+            )
+          },
+        }) as ColumnDef<DossierListItem, unknown>,
+        col.accessor("operation_type", {
+          header: "Operacao",
+          size: 130,
+          cell: (info) => <NullableCell value={info.getValue()} />,
+        }) as ColumnDef<DossierListItem, unknown>,
+        col.accessor("updated_at", {
+          header: "Atualizado",
+          size: 120,
+          cell: (info) => <DateCell value={info.getValue()} />,
+        }) as ColumnDef<DossierListItem, unknown>,
+      ]
+
+      if (isAdmin) {
+        base.push(
+          col.display({
+            id: "actions",
+            header: "",
+            size: 56,
+            cell: ({ row }) => (
+              <div className="flex justify-end">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="size-7 p-0"
+                      aria-label={`Acoes do dossie ${row.original.target_name ?? row.original.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <RiMoreLine className="size-4" aria-hidden />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" sideOffset={4}>
+                    <DropdownMenuItem
+                      onSelect={() => setPendingDelete(row.original)}
+                      className="text-red-600 focus:text-red-700 dark:text-red-400 dark:focus:text-red-300"
+                    >
+                      <RiDeleteBinLine className="mr-2 size-4" aria-hidden />
+                      Excluir
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            ),
+          }) as ColumnDef<DossierListItem, unknown>,
+        )
+      }
+
+      return base
+    },
+    [isAdmin],
   )
 
   return (
@@ -135,6 +274,11 @@ export default function DossiesPage() {
           onChange: setSegment,
           options: [
             { value: "todos", label: "Todos", filter: () => true },
+            {
+              value: "aguardando_voce",
+              label: "Aguardando voce",
+              filter: (r) => r.next_action_kind === "human_input",
+            },
             { value: "draft", label: "Rascunho", filter: (r) => r.status === "draft" },
             { value: "collecting", label: "Coletando", filter: (r) => r.status === "collecting" },
             { value: "analyzing", label: "Analisando", filter: (r) => r.status === "analyzing" },
@@ -143,7 +287,14 @@ export default function DossiesPage() {
           ],
         }}
         itemNoun={{ singular: "dossie", plural: "dossies" }}
-        onRowClick={(row) => router.push(`/credito/dossies/${row.id}`)}
+        onRowClick={(row) => {
+          // Deep-link no proximo step actionable quando ha um — usuario retoma do
+          // ponto exato em que parou. Sem next_node_id, abre o topo do dossie.
+          const target = row.next_node_id
+            ? `/credito/dossies/${row.id}?step=${encodeURIComponent(row.next_node_id)}`
+            : `/credito/dossies/${row.id}`
+          router.push(target)
+        }}
         emptyState={{
           icon: RiHandCoinLine,
           title: "Nenhum dossie ainda",
@@ -159,6 +310,49 @@ export default function DossiesPage() {
           ),
         }}
       />
+
+      {/* Confirmacao destrutiva — admin only */}
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && !deleteMut.isPending && setPendingDelete(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir dossie</DialogTitle>
+            <DialogDescription>
+              Esta acao remove permanentemente o dossie{" "}
+              <span className="font-medium text-gray-900 dark:text-gray-50">
+                {pendingDelete?.target_name ||
+                  pendingDelete?.target_cnpj ||
+                  pendingDelete?.id}
+              </span>
+              , junto com todos os anexos, notas, consultas a bureaus,
+              analises e historico de execucao do workflow. Nao pode ser
+              desfeito.
+            </DialogDescription>
+          </DialogHeader>
+
+          <Divider />
+
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              onClick={() => setPendingDelete(null)}
+              disabled={deleteMut.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteMut.isPending}
+            >
+              <RiDeleteBinLine className="mr-1.5 size-4" aria-hidden />
+              Excluir dossie
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

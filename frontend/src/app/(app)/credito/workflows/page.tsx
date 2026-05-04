@@ -26,8 +26,12 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   RiAddLine,
+  RiCheckboxCircleFill,
   RiDeleteBinLine,
+  RiDraftLine,
+  RiErrorWarningLine,
   RiFlowChart,
+  RiInboxArchiveLine,
   RiMoreLine,
   RiPencilLine,
   RiShieldStarLine,
@@ -273,6 +277,65 @@ export default function WorkflowsPage() {
 // classes serao promovidas a tokens em design-system/tokens/.
 // ───────────────────────────────────────────────────────────────────────────
 
+// Status visual por workflow.status. Em modo Iteracao de Design (CLAUDE.md
+// banner), cores semanticas (emerald/amber/slate) sao aceitaveis ate a
+// varredura final que vai promover pra tokens nomeados.
+type WorkflowStatusValue = WorkflowDefinitionRead["status"]
+
+const STATUS_META: Record<
+  WorkflowStatusValue,
+  {
+    label: string
+    icon: typeof RiCheckboxCircleFill
+    badgeClass: string
+  }
+> = {
+  active: {
+    label: "Ativo",
+    icon: RiCheckboxCircleFill,
+    badgeClass:
+      "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300",
+  },
+  draft: {
+    label: "Rascunho",
+    icon: RiDraftLine,
+    badgeClass:
+      "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+  },
+  archived: {
+    label: "Arquivado",
+    icon: RiInboxArchiveLine,
+    badgeClass:
+      "bg-gray-50 text-gray-500 dark:bg-gray-900 dark:text-gray-500",
+  },
+}
+
+/** Heuristica client-side de "workflow obviamente quebrado".
+ *  Detecta: (a) zero ou 1 node — workflow nao roda, (b) zero edges com 2+ nodes
+ *  — nodes desconectados, (c) presenca de nodes com label vazio.
+ *  Validacao semantica server-side (via /workflows/_validate) fica como backlog
+ *  — exigiria chamada por card no list. */
+function detectWorkflowIssues(wf: WorkflowDefinitionRead): {
+  hasIssue: boolean
+  message: string | null
+} {
+  const nodeCount = wf.graph.nodes?.length ?? 0
+  const edgeCount = wf.graph.edges?.length ?? 0
+  if (nodeCount === 0) {
+    return { hasIssue: true, message: "Workflow vazio — sem nos" }
+  }
+  if (nodeCount === 1) {
+    return { hasIssue: true, message: "Workflow incompleto — apenas 1 no" }
+  }
+  if (edgeCount === 0) {
+    return {
+      hasIssue: true,
+      message: "Nos desconectados — sem arestas entre eles",
+    }
+  }
+  return { hasIssue: false, message: null }
+}
+
 function WorkflowCard({
   workflow,
   onOpen,
@@ -282,6 +345,9 @@ function WorkflowCard({
 }) {
   const isStrata = workflow.tenant_id === null
   const nodeCount = workflow.graph.nodes.length
+  const statusMeta = STATUS_META[workflow.status]
+  const StatusIcon = statusMeta.icon
+  const issues = detectWorkflowIssues(workflow)
 
   return (
     <Card
@@ -289,15 +355,36 @@ function WorkflowCard({
       className={cx(
         "cursor-pointer transition-all hover:border-blue-500 hover:shadow-sm",
         "dark:hover:border-blue-500",
+        // Borda esquerda colorida quando ha problema — atrai atencao sem ser destrutivo
+        issues.hasIssue && "border-l-2 border-l-red-500",
       )}
     >
       <div className={cx(cardTokens.body, "space-y-3")}>
-        {/* Linha 1: avatar + badge Strata + dropdown */}
+        {/* Linha 1: avatar + badges (Strata, status, issue) + dropdown */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400">
             <RiFlowChart className="size-5" aria-hidden />
           </div>
           <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+            <span
+              className={cx(tableTokens.badge, statusMeta.badgeClass)}
+              title={`Status: ${statusMeta.label}`}
+            >
+              <StatusIcon className="mr-1 inline size-3" aria-hidden />
+              {statusMeta.label}
+            </span>
+            {issues.hasIssue && (
+              <span
+                className={cx(
+                  tableTokens.badge,
+                  "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300",
+                )}
+                title={issues.message ?? "Workflow com problema estrutural"}
+              >
+                <RiErrorWarningLine className="mr-1 inline size-3" aria-hidden />
+                {issues.message ?? "Com erro"}
+              </span>
+            )}
             {isStrata && (
               <span
                 className={cx(
@@ -357,7 +444,7 @@ function WorkflowCard({
           </p>
         </div>
 
-        {/* Linha 3: metadados */}
+        {/* Linha 3: metadados — sem o status (subiu pra badge na linha 1) */}
         <div className={cx(tableTokens.cellSecondary, "flex items-center gap-3")}>
           <span>v{workflow.version}</span>
           <span aria-hidden>·</span>
@@ -365,7 +452,10 @@ function WorkflowCard({
             {nodeCount} {nodeCount === 1 ? "no" : "nos"}
           </span>
           <span aria-hidden>·</span>
-          <span className="capitalize">{workflow.status}</span>
+          <span>
+            {workflow.graph.edges?.length ?? 0}{" "}
+            {(workflow.graph.edges?.length ?? 0) === 1 ? "aresta" : "arestas"}
+          </span>
         </div>
       </div>
     </Card>

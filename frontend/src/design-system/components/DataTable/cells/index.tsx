@@ -287,3 +287,136 @@ export function ProgressCell({
     </div>
   )
 }
+
+/**
+ * Cell renderer "X de Y etapas" para listagens de processos multi-step
+ * (ex.: dossie de credito). Mostra barra fina + texto "4/8" + tooltip com
+ * legenda da proxima acao. Cor adapta ao status agregado:
+ *   - "draft" / "blocked" -> cinza
+ *   - "in_progress"       -> blue (atencao)
+ *   - "finalized"         -> emerald
+ *   - "failed"            -> red
+ */
+export function StepProgressCell({
+  completed,
+  total,
+  state = "in_progress",
+  tooltip,
+}: {
+  completed: number
+  total:     number
+  state?:    "draft" | "in_progress" | "finalized" | "failed"
+  tooltip?:  string
+}) {
+  const safeTotal = Math.max(0, total)
+  const safeCompleted = Math.max(0, Math.min(completed, safeTotal))
+  const pct =
+    safeTotal === 0 ? 0 : Math.round((safeCompleted / safeTotal) * 100)
+
+  const fillClass =
+    state === "finalized"
+      ? "bg-emerald-500"
+      : state === "failed"
+        ? "bg-red-500"
+        : state === "draft"
+          ? "bg-gray-300 dark:bg-gray-700"
+          : "bg-blue-500"
+
+  const inner = (
+    <div className="flex items-center gap-2">
+      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+        <div
+          className={cx("h-full rounded-full transition-[width] duration-300", fillClass)}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className={cx(tableTokens.cellNumberSecondary, "shrink-0")}>
+        {safeCompleted}/{safeTotal}
+      </span>
+    </div>
+  )
+
+  if (!tooltip) return inner
+
+  return (
+    <TooltipPrimitive.Provider delayDuration={300}>
+      <TooltipPrimitive.Root>
+        <TooltipPrimitive.Trigger asChild>
+          <div className="cursor-help">{inner}</div>
+        </TooltipPrimitive.Trigger>
+        <TooltipPrimitive.Portal>
+          <TooltipPrimitive.Content
+            side="top"
+            sideOffset={6}
+            className={cx(
+              "z-50 max-w-[260px] rounded border px-2.5 py-1.5 text-xs shadow-lg",
+              "border-gray-200 bg-white text-gray-900",
+              "dark:border-gray-800 dark:bg-[#090E1A] dark:text-gray-50",
+            )}
+          >
+            {tooltip}
+            <TooltipPrimitive.Arrow className="fill-gray-200 dark:fill-gray-800" />
+          </TooltipPrimitive.Content>
+        </TooltipPrimitive.Portal>
+      </TooltipPrimitive.Root>
+    </TooltipPrimitive.Provider>
+  )
+}
+
+/**
+ * Cell renderer "Proxima acao" para listagens de processos multi-step.
+ * Compacto: pequeno ponto colorido + label pt-BR.
+ *
+ * Cores espelham os 5 estados de NextActionKind do backend:
+ *   - human_input        -> amber  (precisa de voce)
+ *   - agent_running      -> blue   (IA trabalhando)
+ *   - blocked            -> slate  (aguardando dependencia)
+ *   - ready_to_finalize  -> emerald (pronto)
+ *   - finalized          -> gray   (concluido)
+ */
+export type NextActionKind =
+  | "human_input"
+  | "agent_running"
+  | "blocked"
+  | "ready_to_finalize"
+  | "finalized"
+
+const NEXT_ACTION_DOT: Record<NextActionKind, string> = {
+  human_input: "bg-amber-500",
+  agent_running: "bg-blue-500",
+  blocked: "bg-slate-400 dark:bg-slate-500",
+  ready_to_finalize: "bg-emerald-500",
+  finalized: "bg-gray-300 dark:bg-gray-600",
+}
+
+const NEXT_ACTION_TEXT: Record<NextActionKind, string> = {
+  human_input: "text-amber-700 dark:text-amber-300",
+  agent_running: "text-blue-700 dark:text-blue-300",
+  blocked: "text-gray-600 dark:text-gray-400",
+  ready_to_finalize: "text-emerald-700 dark:text-emerald-400",
+  finalized: "text-gray-500 dark:text-gray-500",
+}
+
+export function NextActionCell({
+  kind,
+  label,
+}: {
+  kind:  NextActionKind
+  label: string
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span
+        aria-hidden
+        className={cx(
+          "size-2 shrink-0 rounded-full",
+          NEXT_ACTION_DOT[kind],
+          kind === "agent_running" && "animate-pulse",
+        )}
+      />
+      <span className={cx(tableTokens.cellText, NEXT_ACTION_TEXT[kind])}>
+        {label}
+      </span>
+    </div>
+  )
+}

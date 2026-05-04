@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.enums import DossierStatus, NodeRunStatus, WorkflowRunStatus
 from app.modules.credito.models.analysis import CreditDossierAnalysis
 from app.modules.credito.models.dossier import CreditDossier
-from app.shared.workflow.models.run import WorkflowRun
+from app.shared.workflow.models.definition import WorkflowDefinition
+from app.shared.workflow.models.run import WorkflowNodeRun, WorkflowRun
 from app.shared.workflow.services import engine as workflow_engine
 
 
@@ -101,6 +102,43 @@ async def get_dossier(
             )
         )
     ).scalar_one_or_none()
+
+
+async def delete_dossier(
+    db: AsyncSession, *, tenant_id: UUID, dossier_id: UUID
+) -> bool:
+    """Hard-delete a dossier and its bound workflow run.
+
+    Cascades:
+    - All `credit_dossier_*` child tables (analysis, attachments, notes,
+      links, bureau_query, document, financial, opinion, person, pleito,
+      red_flag, check) are FK'd with `ondelete=CASCADE` and disappear.
+    - The bound `workflow_run` is deleted explicitly here (not FK'd back
+      from dossier->run with cascade); its `workflow_node_run` children
+      cascade off the run delete.
+
+    Returns True if a dossier was deleted, False if not found (404 in API).
+    """
+    dossier = await get_dossier(db, tenant_id=tenant_id, dossier_id=dossier_id)
+    if dossier is None:
+        return False
+
+    workflow_run_id = dossier.workflow_run_id
+
+    await db.delete(dossier)
+    await db.flush()
+
+    if workflow_run_id is not None:
+        run = (
+            await db.execute(
+                select(WorkflowRun).where(WorkflowRun.id == workflow_run_id)
+            )
+        ).scalar_one_or_none()
+        if run is not None:
+            await db.delete(run)
+            await db.flush()
+
+    return True
 
 
 async def list_dossiers(
@@ -278,11 +316,147 @@ def _status_from_run(run: WorkflowRun) -> DossierStatus:
     return DossierStatus.DRAFT
 
 
+# ─── Listing progress enrichment ────────────────────────────────────────────
+
+
+_RUNNING_NODE_TYPES = {"specialist_agent", "bureau_query", "document_extractor", "http_request"}
+
+
+def _next_action_for_dossier(
+    *,
+    dossier: CreditDossier,
+    run: WorkflowRun | None,
+    node_runs: list[WorkflowNodeRun],
+) -> tuple[str, str, str | None]:
+    """Compute (kind, label, next_node_id) for the dossier listing.
+
+    See `NextActionKind` in schemas.dossier for the kind taxonomy.
+    """
+    if dossier.status == DossierStatus.FINALIZED:
+        return ("finalized", "Finalizado", None)
+
+    # Find a node currently waiting for human input.
+    waiting = next(
+        (nr for nr in node_runs if nr.status == NodeRunStatus.WAITING_INPUT),
+        None,
+    )
+    if waiting is not None:
+        return ("human_input", "Aguardando voce", waiting.node_id)
+
+    # Find a node currently running.
+    running = next(
+        (nr for nr in node_runs if nr.status == NodeRunStatus.RUNNING),
+        None,
+    )
+    if running is not None:
+        if running.node_type in _RUNNING_NODE_TYPES:
+            return ("agent_running", "Analise IA em curso", running.node_id)
+        return ("agent_running", "Em execucao", running.node_id)
+
+    # Run is paused/blocked but no waiting_input — likely transitioning.
+    if run is not None and run.status == WorkflowRunStatus.PAUSED:
+        return ("blocked", "Bloqueado", None)
+
+    # All nodes completed but dossier still not finalized — needs analyst review.
+    if run is not None and run.status == WorkflowRunStatus.COMPLETED:
+        return ("ready_to_finalize", "Pronto para finalizar", None)
+
+    if run is None or run.status == WorkflowRunStatus.PENDING:
+        return ("blocked", "Aguardando inicio", None)
+
+    if run.status == WorkflowRunStatus.FAILED:
+        return ("blocked", "Falha — revisar", None)
+
+    return ("blocked", "Bloqueado", None)
+
+
+async def compute_progress_map(
+    db: AsyncSession,
+    *,
+    dossiers: list[CreditDossier],
+) -> dict[UUID, dict[str, Any]]:
+    """Bulk-compute (completed_steps, total_steps, next_action) for many dossiers.
+
+    Two queries regardless of N:
+    - One SELECT on workflow_definition for the unique definition ids
+    - One SELECT on workflow_run + workflow_node_run for the unique run ids
+
+    Returns a dict keyed by dossier.id with the progress fields ready to be
+    spread into DossierListItem.
+    """
+    if not dossiers:
+        return {}
+
+    def_ids = {d.workflow_definition_id for d in dossiers}
+    run_ids = {d.workflow_run_id for d in dossiers if d.workflow_run_id is not None}
+
+    # Bulk-fetch definitions (for total_steps).
+    defs_by_id: dict[UUID, WorkflowDefinition] = {}
+    if def_ids:
+        defs_rows = (
+            await db.execute(
+                select(WorkflowDefinition).where(WorkflowDefinition.id.in_(def_ids))
+            )
+        ).scalars().all()
+        defs_by_id = {d.id: d for d in defs_rows}
+
+    # Bulk-fetch runs.
+    runs_by_id: dict[UUID, WorkflowRun] = {}
+    if run_ids:
+        runs_rows = (
+            await db.execute(
+                select(WorkflowRun).where(WorkflowRun.id.in_(run_ids))
+            )
+        ).scalars().all()
+        runs_by_id = {r.id: r for r in runs_rows}
+
+    # Bulk-fetch node_runs grouped by run_id.
+    node_runs_by_run: dict[UUID, list[WorkflowNodeRun]] = {}
+    if run_ids:
+        nr_rows = (
+            await db.execute(
+                select(WorkflowNodeRun)
+                .where(WorkflowNodeRun.run_id.in_(run_ids))
+                .order_by(WorkflowNodeRun.started_at.asc().nulls_last())
+            )
+        ).scalars().all()
+        for nr in nr_rows:
+            node_runs_by_run.setdefault(nr.run_id, []).append(nr)
+
+    # Compute progress per dossier.
+    out: dict[UUID, dict[str, Any]] = {}
+    for d in dossiers:
+        wf_def = defs_by_id.get(d.workflow_definition_id)
+        total_steps = 0
+        if wf_def is not None and isinstance(wf_def.graph, dict):
+            nodes = wf_def.graph.get("nodes") or []
+            total_steps = len(nodes)
+
+        run = runs_by_id.get(d.workflow_run_id) if d.workflow_run_id else None
+        nrs = node_runs_by_run.get(d.workflow_run_id, []) if d.workflow_run_id else []
+        completed_steps = sum(1 for nr in nrs if nr.status == NodeRunStatus.COMPLETED)
+
+        kind, label, next_node = _next_action_for_dossier(
+            dossier=d, run=run, node_runs=nrs
+        )
+
+        out[d.id] = {
+            "completed_steps": completed_steps,
+            "total_steps": total_steps,
+            "next_action_kind": kind,
+            "next_action_label": label,
+            "next_node_id": next_node,
+        }
+    return out
+
+
 __all__ = [
     "DossierServiceError",
     "NodeRunStatus",
     "absorb_identity_from_human_input",
+    "compute_progress_map",
     "create_dossier",
+    "delete_dossier",
     "get_dossier",
     "list_dossiers",
     "save_bureau_analysis",

@@ -73,13 +73,15 @@ export default function LoginPage() {
         <HeroSplitAuth.Brand wordmark="Strata" eyebrow="FIDC Analytics" />
         <HeroSplitAuth.HeroSpacer />
         <HeroSplitAuth.Headline>
-          Inteligência de dados
+          Pessoas e Agentes de IA
           <br />
-          para FIDC
+          no mesmo time.
         </HeroSplitAuth.Headline>
         <HeroSplitAuth.Lede>
-          A plataforma de analytics para gestores de FIDC que operam com
-          precisão institucional.
+          A plataforma{" "}
+          <HeroSplitAuth.Highlight>agentic</HeroSplitAuth.Highlight>{" "}
+          para concessão de crédito e gestão de risco que exigem eficiência
+          e precisão.
         </HeroSplitAuth.Lede>
         <HeroSplitAuth.HeroSpacer />
         <HeroSplitAuth.TrustSignals items={STRATA_TRUST_SIGNALS} />

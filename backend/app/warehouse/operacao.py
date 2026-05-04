@@ -62,6 +62,13 @@ class Operacao(Auditable, Base):
     conta_operacional_id: Mapped[int] = mapped_column(Integer, nullable=False)
     unidade_administrativa_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
 
+    # Cedente (desnormalizado da cadeia Bitfin: ContaOperacional → Cliente → Empresa).
+    # Nullable porque o re-mapeamento que popula esses campos roda fora de banda
+    # (mapper bitfin estendido). Linhas existentes ficam NULL ate o ETL rodar.
+    # Quando NULL, agregacoes por cedente devem fazer fallback ou exibir "(n/d)".
+    cedente_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    cedente_nome: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
     # OperacaoResultado — metricas consolidadas
     prazo_medio_real: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False, default=0)
     prazo_medio_cobrado: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False, default=0)

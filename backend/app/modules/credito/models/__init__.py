@@ -7,6 +7,9 @@ from app.modules.credito.models.company import CreditDossierCompany
 from app.modules.credito.models.document import CreditDossierDocument
 from app.modules.credito.models.document_template import CreditDocumentTemplate
 from app.modules.credito.models.dossier import CreditDossier
+from app.modules.credito.models.dossier_attachment import DossierAttachment
+from app.modules.credito.models.dossier_step_link import DossierStepLink
+from app.modules.credito.models.dossier_step_note import DossierStepNote
 from app.modules.credito.models.financial import CreditDossierFinancial
 from app.modules.credito.models.opinion import CreditDossierOpinion
 from app.modules.credito.models.person import CreditDossierPerson
@@ -27,4 +30,7 @@ __all__ = [
     "CreditDossierPerson",
     "CreditDossierPleito",
     "CreditDossierRedFlag",
+    "DossierAttachment",
+    "DossierStepLink",
+    "DossierStepNote",
 ]

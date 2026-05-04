@@ -19,7 +19,9 @@ export {
   DataTable,
   CurrencyCell, PercentageCell, DateCell, StatusCell,
   IdCell, CpfCnpjCell, RelationshipCell, SparklineCell, ProgressCell,
+  StepProgressCell, NextActionCell,
   type DataTableProps,
+  type NextActionKind as NextActionCellKind,
 } from "./DataTable"
 export {
   DataTableShell,
@@ -54,6 +56,60 @@ export {
   AIPanel, AIToggleButton, useAIPanel, AI_PANEL_STORAGE_KEY,
   type AIPanelProps, type AIContext, type AIInsight, type AIMessage, type SendMessageFn,
 } from "./AIPanel"
+export {
+  SaveIndicator,
+  type SaveIndicatorProps, type SaveIndicatorState,
+} from "./SaveIndicator"
+export {
+  WizardTopRail,
+  type WizardTopRailProps, type WizardTopRailMeta, type WizardStepLite,
+} from "./WizardTopRail"
+export {
+  WizardSideMicro,
+  type WizardSideMicroProps, type WizardSideMicroStep, type WizardSideMicroStepState,
+} from "./WizardSideMicro"
+export {
+  WizardWorkspace,
+  WaitingInputView, AgentRunningView, AgentCompletedView, FailedView, BlockedView,
+  type WizardWorkspaceProps, type WizardWorkspaceStep, type WizardWorkspaceStepState,
+} from "./WizardWorkspace"
+export {
+  AgentLiveStatus,
+  type AgentLiveStatusProps, type AgentToolLogEntry,
+} from "./AgentLiveStatus"
+export {
+  AgentOutputRenderer,
+  OpinionView, IndebtednessView, FinancialView, LegalView, PartnerView,
+  CrossReferenceView, DocumentExtractorView, JsonView,
+  type AgentOutputRendererProps, type Recommendation, type RedFlag,
+  type OpinionDraft, type IndebtednessAnalysis,
+} from "./AgentOutputRenderer"
+export {
+  FileUploadZone,
+  type FileUploadZoneProps, type FileUploadStatus,
+} from "./FileUploadZone"
+export {
+  FileList,
+  type FileListProps, type FileListItem,
+} from "./FileList"
+export {
+  StepNoteEditor, StepNoteList,
+  type StepNoteEditorProps, type StepNoteEditorMode,
+  type StepNoteListProps, type StepNoteListItem,
+} from "./StepNoteEditor"
+export {
+  LinkInput, LinkList,
+  type LinkInputProps, type LinkInputValues,
+  type LinkListProps, type LinkListItem,
+} from "./LinkInput"
+export {
+  InconsistencyList,
+  type InconsistencyListProps, type InconsistencyItem, type InconsistencySeverity,
+} from "./InconsistencyList"
+export {
+  EvidencePanel,
+  type EvidencePanelProps, type EvidenceFilterScope,
+} from "./EvidencePanel"
 
 // ── A7 Credit domain composites (migrated from components/app/) ──────────────
 export { AdapterStatusBadge } from "./AdapterStatusBadge"

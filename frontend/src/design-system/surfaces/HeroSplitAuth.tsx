@@ -143,7 +143,7 @@ function Headline({ children }: CopyProps) {
   return (
     <h1
       className="relative z-10 mb-6 px-20 text-white"
-      style={{ ...hero.display, maxWidth: 720 }}
+      style={{ ...hero.display, maxWidth: 760 }}
     >
       {children}
     </h1>
@@ -162,6 +162,20 @@ function Lede({ children }: CopyProps) {
     >
       {children}
     </p>
+  )
+}
+
+// Inline accent for keywords inside Headline/Lede. Uses brand.orange so brand
+// tokens stay encapsulated in this surface — pages consume via the compound API.
+type HighlightProps = {
+  children: React.ReactNode
+}
+
+function Highlight({ children }: HighlightProps) {
+  return (
+    <span style={{ color: brand.orange, fontWeight: 500 }}>
+      {children}
+    </span>
   )
 }
 
@@ -301,6 +315,7 @@ export const HeroSplitAuth = Object.assign(HeroSplitAuthRoot, {
   Brand,
   Headline,
   Lede,
+  Highlight,
   TrustSignals,
   FormPanel,
 })
