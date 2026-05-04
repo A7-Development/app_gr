@@ -53,6 +53,14 @@ export {
   type EChartsCardProps, type SparkChartProps,
 } from "./EChartsCard"
 export {
+  EditorialChartCard,
+  buildEditorialAreaOption,
+  editorialChartColors,
+  type EditorialChartCardProps,
+  type EditorialAreaOptions,
+  type EditorialAreaSeries,
+} from "./EditorialChartCard"
+export {
   AIPanel, AIToggleButton, useAIPanel, AI_PANEL_STORAGE_KEY,
   type AIPanelProps, type AIContext, type AIInsight, type AIMessage, type SendMessageFn,
 } from "./AIPanel"

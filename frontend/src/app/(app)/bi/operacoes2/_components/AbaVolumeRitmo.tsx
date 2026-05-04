@@ -39,6 +39,11 @@ import type { EChartsOption } from "echarts"
 
 import { Card } from "@/components/tremor/Card"
 import { EChartsCard } from "@/design-system/components/EChartsCard"
+import {
+  EditorialChartCard,
+  buildEditorialAreaOption,
+  editorialChartColors,
+} from "@/design-system/components/EditorialChartCard"
 import { FilterChip } from "@/design-system/components/FilterBar"
 import { VizParam } from "@/design-system/components/VizParam"
 import { biOperacoes2 } from "@/lib/api-client"
@@ -107,6 +112,18 @@ export function AbaVolumeRitmo() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/*
+        Linha 0 (PROVA DE CONCEITO — paradigma editorial Goldman/FT 2026-05-04):
+        chart hero "naked" (sem Card), tipografia editorial, source row pinned
+        com watermark Strata. Mesmos dados de `evolucao_12m` que a Linha 1 usa
+        — coexistem propositalmente para comparativo lado a lado:
+          - Linha 0: editorial layered area (VOP + MM3M) — manchete
+          - Linha 1: combo bar+line dentro de Card — widget denso
+        Proxima decisao depois da revisao visual: manter o paradigma editorial
+        para chart hero (e remover Linha 1 redundante) ou voltar pro padrao
+        atual.
+      */}
+      <Linha0HeroEditorial evolucao={data.evolucao_12m} />
       <Linha1HeroComUa
         evolucao={data.evolucao_12m}
         evolucaoPorUa={data.evolucao_12m_por_ua}
@@ -130,6 +147,13 @@ export function AbaVolumeRitmo() {
 function AbaSkeleton() {
   return (
     <div className="flex flex-col gap-6">
+      {/* Linha 0 (editorial — sem borda, mais alto) */}
+      <div className="px-1 py-2">
+        <div className="h-5 w-40 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+        <div className="mt-2 h-7 w-72 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+        <div className="mt-2 h-4 w-[420px] max-w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+        <div className="mt-5 h-[360px] animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+      </div>
       <div className="h-72 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900" />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         <div className="h-48 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 lg:col-span-6" />
@@ -139,6 +163,62 @@ function AbaSkeleton() {
     </div>
   )
 }
+
+// ─── Linha 0 (PROVA DE CONCEITO) — Editorial chart hero ────────────────────
+//
+// Mesma serie temporal da Linha 1, renderizada com `EditorialChartCard`
+// (sem Card, tipografia editorial). VOP e MM 3M como areas layered (nao
+// stacked), endLabel inline na ponta direita, source row + watermark.
+// Comparar visualmente contra `Linha1HeroComUa` logo abaixo.
+
+function Linha0HeroEditorial({
+  evolucao,
+}: {
+  evolucao: Operacoes2EvolucaoMensalPonto[]
+}) {
+  const option = React.useMemo(() => {
+    const xAxis = evolucao.map((p) => fmtMonthShort(p.periodo))
+    const vop = evolucao.map((p) => p.vop)
+    const mm3 = evolucao.map((p) => (p.mm_3m == null ? null : p.mm_3m))
+    return buildEditorialAreaOption({
+      xAxis,
+      series: [
+        {
+          name: "VOP mensal",
+          endLabel: "VOP",
+          data: vop,
+          color: editorialChartColors[0], // slate
+        },
+        {
+          name: "Média móvel 3M",
+          endLabel: "MM 3M",
+          data: mm3,
+          color: editorialChartColors[1], // sky
+        },
+      ],
+      yFormatter: (v) => fmtBRL.format(v),
+      tooltipValueFormatter: (v) => (v == null ? "—" : fmtBRLFull.format(v)),
+    })
+  }, [evolucao])
+
+  const ultimoMes = evolucao.length > 0 ? evolucao[evolucao.length - 1] : null
+  const sourceLine = ultimoMes
+    ? `Bitfin · última competência ${fmtMonthShort(ultimoMes.periodo)}`
+    : "Bitfin"
+
+  return (
+    <EditorialChartCard
+      eyebrow="BI · Operação"
+      title="Evolução do VOP"
+      subtitle="Volume mensal de operações confrontado com a média móvel de 3 meses — uma leitura rápida para enxergar se o ritmo recente está acima ou abaixo da tendência."
+      source={sourceLine}
+      updatedAt="Série apurada mensalmente"
+      option={option}
+      height={360}
+    />
+  )
+}
+
 
 // ─── Linha 1 (Padrao C) — Hero combo (6) + VOP por UA (6) ──────────────────
 
