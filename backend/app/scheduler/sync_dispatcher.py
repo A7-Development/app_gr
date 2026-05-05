@@ -43,9 +43,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from app.core.database import AsyncSessionLocal
-from app.core.enums import Environment
+from app.core.enums import Environment, SourceType
 from app.modules.integracoes.public import (
     list_enabled_configs,
     rule_name_for,
@@ -64,6 +65,18 @@ INTERVAL_MINUTES: int = 1
 # evitar GC prematuro (ruff RUF006). Cada task remove a si mesma via
 # done_callback quando finaliza.
 _RUNNING_TASKS: set[asyncio.Task] = set()
+
+# Lock in-flight por (tenant_id, source_type, ua_id). Antes de criar uma task
+# nova, conferimos que essa chave nao esta rodando — sem isso, sync que
+# demorava mais que `sync_frequency_minutes` causava reentrada (entry SYNC do
+# `decision_log` so chega no fim, entao o tick subsequente "via" o timestamp
+# antigo e disparava nova task). Combinado com o carimbo de
+# `tenant_source_config.last_sync_started_at` (escrito no inicio em
+# `sync_runner._mark_sync_started`), fecha as duas portas: o lock cobre
+# concorrencia neste processo, started_at cobre operadores externos via API
+# admin disparando sync sob demanda.
+SyncKey = tuple[UUID, SourceType, UUID | None]
+_INFLIGHT_KEYS: set[SyncKey] = set()
 
 # Ambientes que o dispatcher cobre. Sandbox so roda quando operador dispara
 # manualmente via /integracoes/sources/<src>/sync — automacao de sandbox
@@ -96,6 +109,7 @@ async def run() -> dict[str, int]:
         "dispatched": 0,
         "skipped_not_due": 0,
         "skipped_no_rule": 0,
+        "skipped_in_flight": 0,
     }
 
     async with AsyncSessionLocal() as db:
@@ -113,28 +127,58 @@ async def run() -> dict[str, int]:
                         # null = sob demanda, dispatcher nao toca.
                         continue
 
+                    key: SyncKey = (
+                        cfg.tenant_id,
+                        source_type,
+                        cfg.unidade_administrativa_id,
+                    )
+                    if key in _INFLIGHT_KEYS:
+                        # Sync anterior desta chave ainda nao terminou neste
+                        # processo. Lock previne reentrada — espera proximo tick.
+                        summary["skipped_in_flight"] += 1
+                        logger.warning(
+                            "skip in-flight: tenant=%s source=%s env=%s ua=%s",
+                            cfg.tenant_id,
+                            source_type.value,
+                            env.value,
+                            cfg.unidade_administrativa_id,
+                        )
+                        continue
+
                     last_attempt = await last_sync_attempt_at(
                         db, cfg.tenant_id, rule_or_model=rule
                     )
+                    # Considera tambem `last_sync_started_at` da config — fica
+                    # carimbado em `sync_runner._mark_sync_started` ANTES de
+                    # `adapter.sync`, enquanto `last_sync_attempt_at` so e
+                    # gravado no FIM (decision_log). Sem isso, restart entre
+                    # processos via admin API podia dispatch um cycle ja em
+                    # andamento iniciado por outro processo.
+                    candidates = [
+                        ts for ts in (last_attempt, cfg.last_sync_started_at) if ts is not None
+                    ]
+                    last_event = max(candidates) if candidates else None
                     threshold = timedelta(minutes=cfg.sync_frequency_minutes)
                     if (
-                        last_attempt is not None
-                        and (started_at - last_attempt) < threshold
+                        last_event is not None
+                        and (started_at - last_event) < threshold
                     ):
                         summary["skipped_not_due"] += 1
                         continue
 
                     logger.info(
                         "dispatch: tenant=%s source=%s env=%s ua=%s "
-                        "freq_min=%s last_attempt=%s",
+                        "freq_min=%s last_attempt=%s last_started=%s",
                         cfg.tenant_id,
                         source_type.value,
                         env.value,
                         cfg.unidade_administrativa_id,
                         cfg.sync_frequency_minutes,
                         last_attempt,
+                        cfg.last_sync_started_at,
                     )
                     summary["dispatched"] += 1
+                    _INFLIGHT_KEYS.add(key)
                     task = asyncio.create_task(
                         _run_one_safe(
                             tenant_id=cfg.tenant_id,
@@ -145,6 +189,9 @@ async def run() -> dict[str, int]:
                     )
                     _RUNNING_TASKS.add(task)
                     task.add_done_callback(_RUNNING_TASKS.discard)
+                    task.add_done_callback(
+                        lambda _t, k=key: _INFLIGHT_KEYS.discard(k)
+                    )
 
     return summary
 

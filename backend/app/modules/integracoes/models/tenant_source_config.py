@@ -86,6 +86,18 @@ class TenantSourceConfig(Base):
     config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     sync_frequency_minutes: Mapped[int | None] = mapped_column(nullable=True)
 
+    # Timestamp em que a sync MAIS RECENTE foi iniciada (UPDATE em
+    # `sync_runner.run_sync_one`/`run_sync_cycle` antes de chamar `adapter.sync`).
+    # O dispatcher considera este valor junto com `last_sync_attempt_at` (lido
+    # do `decision_log` no fim da sync) para decidir se ja passou o intervalo —
+    # evita reentrada quando uma sync demora mais que o `sync_frequency_minutes`
+    # (entry no decision_log so chega no fim, entao um tick subsequente
+    # disparava uma segunda sync em paralelo). Nullable porque configs antigas
+    # nunca rodaram; trata-se como "nunca iniciou" no dispatcher.
+    last_sync_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

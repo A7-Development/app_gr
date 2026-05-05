@@ -21,9 +21,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
+
+from sqlalchemy import update
 
 from app.core.database import AsyncSessionLocal
 from app.core.enums import Environment, SourceType
@@ -45,6 +47,7 @@ from app.modules.integracoes.adapters.erp.bitfin.adapter import (
 from app.modules.integracoes.adapters.erp.bitfin.adapter import (
     adapter_sync as bitfin_sync,
 )
+from app.modules.integracoes.models.tenant_source_config import TenantSourceConfig
 from app.modules.integracoes.services.eligibility import list_enabled_configs
 from app.modules.integracoes.services.source_config import (
     decrypt_config,
@@ -98,6 +101,38 @@ def get_adapter(source_type: SourceType) -> AdapterEntry:
     return adapter
 
 
+async def _mark_sync_started(
+    tenant_id: UUID,
+    source_type: SourceType,
+    environment: Environment,
+    unidade_administrativa_id: UUID | None,
+) -> None:
+    """Carimba `tenant_source_config.last_sync_started_at = now()`.
+
+    Chamado ANTES de `adapter.sync` (em `run_sync_one`/`run_sync_cycle`) para
+    que o dispatcher veja "sync em andamento" mesmo enquanto a entry SYNC do
+    `decision_log` ainda nao foi escrita (ela so chega no fim do ciclo).
+    Combinado com o lock in-flight do dispatcher, fecha as duas portas para
+    reentrada — lock cobre concorrencia no mesmo processo, started_at cobre
+    restart entre processos / outros operadores via API.
+    """
+    stmt = update(TenantSourceConfig).where(
+        TenantSourceConfig.tenant_id == tenant_id,
+        TenantSourceConfig.source_type == source_type,
+        TenantSourceConfig.environment == environment,
+    )
+    if unidade_administrativa_id is None:
+        stmt = stmt.where(TenantSourceConfig.unidade_administrativa_id.is_(None))
+    else:
+        stmt = stmt.where(
+            TenantSourceConfig.unidade_administrativa_id == unidade_administrativa_id
+        )
+    stmt = stmt.values(last_sync_started_at=datetime.now(UTC))
+    async with AsyncSessionLocal() as db:
+        await db.execute(stmt)
+        await db.commit()
+
+
 def rule_name_for(source_type: SourceType) -> str | None:
     """Devolve o `rule_or_model` do adapter, ou None se nao registrado."""
     return RULE_NAME_BY_SOURCE.get(source_type)
@@ -140,6 +175,12 @@ async def run_sync_cycle(
         )
         try:
             plain = decrypt_config(cfg.config)
+            await _mark_sync_started(
+                cfg.tenant_id,
+                source_type,
+                environment,
+                cfg.unidade_administrativa_id,
+            )
             summary = await adapter.sync(
                 cfg.tenant_id,
                 plain,
@@ -199,6 +240,9 @@ async def run_sync_one(
             f"{source_type.value}/{environment.value}/ua={unidade_administrativa_id}"
         )
     plain = decrypt_config(row.config)
+    await _mark_sync_started(
+        tenant_id, source_type, environment, row.unidade_administrativa_id
+    )
     return await adapter.sync(
         tenant_id,
         plain,

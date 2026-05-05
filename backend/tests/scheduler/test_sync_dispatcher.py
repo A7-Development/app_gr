@@ -25,12 +25,14 @@ def _make_cfg(
     sync_frequency_minutes: int | None,
     tenant_id=None,
     ua_id=None,
+    last_sync_started_at=None,
 ):
     """Mock de TenantSourceConfig com so os campos que o dispatcher usa."""
     return SimpleNamespace(
         tenant_id=tenant_id or uuid4(),
         unidade_administrativa_id=ua_id,
         sync_frequency_minutes=sync_frequency_minutes,
+        last_sync_started_at=last_sync_started_at,
     )
 
 
@@ -40,6 +42,14 @@ def _isolate_known_sources_cache():
     sync_dispatcher._KNOWN_SOURCES_CACHE = None
     yield
     sync_dispatcher._KNOWN_SOURCES_CACHE = None
+
+
+@pytest.fixture(autouse=True)
+def _isolate_inflight_keys():
+    """Reset do lock in-flight entre testes — set global no modulo."""
+    sync_dispatcher._INFLIGHT_KEYS.clear()
+    yield
+    sync_dispatcher._INFLIGHT_KEYS.clear()
 
 
 async def _gather_pending_tasks() -> None:
@@ -235,3 +245,111 @@ async def test_falha_de_uma_nao_quebra_outras() -> None:
 
     # Ambos foram disparados. A falha de cfg_a foi capturada por _run_one_safe.
     assert summary["dispatched"] == 2
+
+
+@pytest.mark.asyncio
+async def test_skip_quando_chave_em_flight() -> None:
+    """Lock previne reentrada: se (tenant, source, ua) ja esta rodando,
+    o tick subsequente nao dispara — espera proximo tick.
+
+    Cenario: sync demora mais que o `sync_frequency_minutes`. Sem lock, o
+    tick subsequente disparava paralela e saturava o thread pool. Esta era
+    a causa raiz do deadlock no shutdown do uvicorn (worker zumbi 2026-05-05).
+    """
+    cfg = _make_cfg(sync_frequency_minutes=30)
+
+    async def fake_list_enabled(db, source_type, env):
+        return [cfg] if source_type == SourceType.ERP_BITFIN else []
+
+    # Pre-popula a chave como "em voo" — simula sync anterior ainda rodando.
+    sync_dispatcher._INFLIGHT_KEYS.add(
+        (cfg.tenant_id, SourceType.ERP_BITFIN, cfg.unidade_administrativa_id)
+    )
+
+    with (
+        patch.object(
+            sync_dispatcher, "list_enabled_configs", side_effect=fake_list_enabled
+        ),
+        patch.object(
+            sync_dispatcher, "last_sync_attempt_at", new=AsyncMock(return_value=None)
+        ),
+        patch.object(
+            sync_dispatcher, "run_sync_one", new=AsyncMock()
+        ) as mock_run,
+        patch.object(sync_dispatcher, "AsyncSessionLocal"),
+    ):
+        summary = await sync_dispatcher.run()
+        await _gather_pending_tasks()
+
+    assert summary["dispatched"] == 0
+    assert summary["skipped_in_flight"] == 1
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_skip_quando_started_at_recente_mesmo_sem_attempt() -> None:
+    """`last_sync_started_at` na config bloqueia mesmo se decision_log estiver
+    vazio (entry SYNC so e gravada no FIM, mas started_at e carimbado no inicio).
+
+    Cobre o caso de operador admin disparando sync sob demanda em outro processo
+    (API /integracoes/sources/{source}/sync) — `_mark_sync_started` no
+    `sync_runner` carimba a config; tick do dispatcher neste processo deve
+    respeitar.
+    """
+    recent_started = datetime.now(UTC) - timedelta(minutes=5)
+    cfg = _make_cfg(
+        sync_frequency_minutes=30, last_sync_started_at=recent_started
+    )
+
+    async def fake_list_enabled(db, source_type, env):
+        return [cfg] if source_type == SourceType.ERP_BITFIN else []
+
+    with (
+        patch.object(
+            sync_dispatcher, "list_enabled_configs", side_effect=fake_list_enabled
+        ),
+        patch.object(
+            sync_dispatcher, "last_sync_attempt_at", new=AsyncMock(return_value=None)
+        ),
+        patch.object(
+            sync_dispatcher, "run_sync_one", new=AsyncMock()
+        ) as mock_run,
+        patch.object(sync_dispatcher, "AsyncSessionLocal"),
+    ):
+        summary = await sync_dispatcher.run()
+        await _gather_pending_tasks()
+
+    assert summary["dispatched"] == 0
+    assert summary["skipped_not_due"] == 1
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_libera_inflight_apos_task_terminar() -> None:
+    """done_callback remove a chave do lock — proximo tick consegue dispatch."""
+    cfg = _make_cfg(sync_frequency_minutes=30)
+
+    async def fake_list_enabled(db, source_type, env):
+        return [cfg] if source_type == SourceType.ERP_BITFIN else []
+
+    with (
+        patch.object(
+            sync_dispatcher, "list_enabled_configs", side_effect=fake_list_enabled
+        ),
+        patch.object(
+            sync_dispatcher, "last_sync_attempt_at", new=AsyncMock(return_value=None)
+        ),
+        patch.object(
+            sync_dispatcher, "run_sync_one", new=AsyncMock()
+        ),
+        patch.object(sync_dispatcher, "AsyncSessionLocal"),
+    ):
+        summary = await sync_dispatcher.run()
+        # No momento em que `run()` retorna, a task pode estar em flight ainda.
+        assert summary["dispatched"] == 1
+        key = (cfg.tenant_id, SourceType.ERP_BITFIN, cfg.unidade_administrativa_id)
+        assert key in sync_dispatcher._INFLIGHT_KEYS
+
+        # Espera task acabar -> done_callback dispara -> chave sai do set.
+        await _gather_pending_tasks()
+        assert key not in sync_dispatcher._INFLIGHT_KEYS
