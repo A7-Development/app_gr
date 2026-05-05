@@ -47,6 +47,13 @@ from app.shared.ai.models import (  # noqa: F401
     UserAIPermission,
 )
 from app.shared.audit_log.decision_log import DecisionLog  # noqa: F401
+from app.shared.data_providers.models import (  # noqa: F401
+    DataProvider,
+    DataProviderCatalogSyncRun,
+    DataProviderCredential,
+    DataProviderDataset,
+    DataProviderDatasetPriceHistory,
+)
 from app.shared.audit_log.premise_set import PremiseSet  # noqa: F401
 from app.shared.catalog.source_catalog import SourceCatalog  # noqa: F401
 from app.shared.identity.subscription import TenantModuleSubscription  # noqa: F401
