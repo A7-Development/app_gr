@@ -46,3 +46,27 @@ async def last_sync_at(
     )
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
+
+
+async def last_sync_attempt_at(
+    db: AsyncSession,
+    tenant_id: UUID,
+    *,
+    rule_or_model: str,
+) -> datetime | None:
+    """Return `occurred_at` of the most recent SYNC attempt — success OR failure.
+
+    Used by the scheduler dispatcher to enforce backoff between attempts. If
+    a sync is failing, we still want to wait `sync_frequency_minutes` between
+    retries instead of hammering the upstream every tick.
+
+    Differs from `last_sync_at` (which filters `explanation='OK'`) — for UI
+    "last fresh data" use that; for "when did we last hit the API" use this.
+    """
+    stmt = select(func.max(DecisionLog.occurred_at)).where(
+        DecisionLog.tenant_id == tenant_id,
+        DecisionLog.decision_type == DecisionType.SYNC,
+        DecisionLog.rule_or_model == rule_or_model,
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()

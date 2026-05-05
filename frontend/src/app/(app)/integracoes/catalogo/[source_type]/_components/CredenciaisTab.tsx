@@ -251,6 +251,34 @@ export function CredenciaisTab({
         }
       />
 
+      <FrequenciaCard
+        detail={detail}
+        submitting={updateMut.isPending}
+        onSubmit={(syncFrequencyMinutes) =>
+          updateMut.mutate(
+            {
+              environment: detail.environment,
+              sync_frequency_minutes: syncFrequencyMinutes,
+              unidade_administrativa_id: detail.unidade_administrativa_id,
+            },
+            {
+              onSuccess: () =>
+                toast.success(
+                  syncFrequencyMinutes === null
+                    ? "Sincronizacao automatica desligada (sob demanda)."
+                    : `Sincronizacao agendada a cada ${syncFrequencyMinutes} min.`,
+                ),
+              onError: (err: unknown) =>
+                toast.error(
+                  err instanceof Error
+                    ? err.message
+                    : "Falha ao salvar frequencia.",
+                ),
+            },
+          )
+        }
+      />
+
       <CredenciaisForm
         detail={detail}
         fields={fields}
@@ -291,7 +319,7 @@ function EnabledToggle({
           </Label>
           <span className="text-sm text-gray-500 dark:text-gray-400">
             Quando ligada, a fonte entra no scheduler e roda conforme a
-            frequencia configurada.
+            frequencia configurada abaixo.
             {!detail.configured && (
               <> Salve as credenciais antes de habilitar.</>
             )}
@@ -303,6 +331,126 @@ function EnabledToggle({
           onCheckedChange={onToggle}
           disabled={disabled}
         />
+      </div>
+    </Card>
+  )
+}
+
+//
+// Card de frequencia de sincronizacao.
+//
+// Persiste em tenant_source_config.sync_frequency_minutes. Range valido
+// 15..1440 (CHECK constraint no banco, validacao Pydantic no router).
+// Vazio = "sob demanda" (null) — fonte nao entra no scheduler dispatcher.
+//
+// Disabled quando a fonte nao esta enabled — agendar sem habilitar nao
+// produz efeito. Operador habilita primeiro, depois define a cadencia.
+//
+function FrequenciaCard({
+  detail,
+  submitting,
+  onSubmit,
+}: {
+  detail: SourceDetail
+  submitting: boolean
+  onSubmit: (syncFrequencyMinutes: number | null) => void
+}) {
+  const initial =
+    detail.sync_frequency_minutes !== null &&
+    detail.sync_frequency_minutes !== undefined
+      ? String(detail.sync_frequency_minutes)
+      : ""
+
+  const [value, setValue] = React.useState<string>(initial)
+  const [error, setError] = React.useState<string | null>(null)
+
+  // Reset quando o detail muda (apos salvar, ou troca de UA recarrega o detail).
+  React.useEffect(() => {
+    setValue(initial)
+    setError(null)
+  }, [initial])
+
+  const dirty = value.trim() !== initial
+  const disabled = !detail.enabled || submitting
+
+  function handleSave() {
+    const trimmed = value.trim()
+    if (trimmed === "") {
+      onSubmit(null)
+      return
+    }
+    const n = Number(trimmed)
+    if (!Number.isInteger(n)) {
+      setError("Informe um numero inteiro de minutos.")
+      return
+    }
+    if (n < 15 || n > 1440) {
+      setError("Valor permitido: entre 15 e 1440 minutos.")
+      return
+    }
+    setError(null)
+    onSubmit(n)
+  }
+
+  return (
+    <Card>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-0.5">
+          <Label htmlFor="freq-input" className="text-sm font-medium">
+            Frequencia de sincronizacao
+          </Label>
+          <span className="text-sm text-gray-500 dark:text-gray-400">
+            {detail.enabled
+              ? "Em quantos minutos o scheduler dispara um novo ciclo. Deixe em branco para rodar apenas sob demanda."
+              : "Habilite a fonte primeiro para ativar o agendamento."}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Input
+              id="freq-input"
+              type="number"
+              min={15}
+              max={1440}
+              step={5}
+              inputMode="numeric"
+              placeholder="ex.: 30"
+              className="w-40"
+              value={value}
+              onChange={(e) => {
+                setValue(e.target.value)
+                if (error) setError(null)
+              }}
+              disabled={disabled}
+              hasError={Boolean(error)}
+            />
+            {error ? (
+              <span className="text-xs text-red-600 dark:text-red-500">
+                {error}
+              </span>
+            ) : (
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                Minimo 15 min, maximo 1440 (24h).
+              </span>
+            )}
+          </div>
+
+          <Button
+            type="button"
+            variant="primary"
+            onClick={handleSave}
+            disabled={disabled || !dirty}
+          >
+            {submitting && (
+              <RiLoader4Line
+                className="mr-1.5 size-4 animate-spin"
+                aria-hidden
+              />
+            )}
+            Salvar frequencia
+          </Button>
+        </div>
       </div>
     </Card>
   )

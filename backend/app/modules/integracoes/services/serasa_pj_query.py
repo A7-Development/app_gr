@@ -132,9 +132,9 @@ async def remap_from_raw(
             "participacoes": 0,
             "enderecos": 0,
             "pagamento_buckets": 0,
-            "inquiries_anteriores": 0,
+            "consultas_listadas_detalhe": 0,
             "predecessores": 0,
-            "inquiries_mensais": 0,
+            "consultas_total_12m": 0,
             "business_references": 0,
             "pagamento_evolucao_mensal": 0,
             "atraso_medio_mensal": 0,
@@ -187,9 +187,9 @@ async def remap_from_raw(
             "participacoes": len(rows.participacoes),
             "enderecos": len(rows.enderecos),
             "pagamento_buckets": len(rows.pagamento_buckets),
-            "inquiries_anteriores": len(rows.inquiries_anteriores),
+            "consultas_listadas_detalhe": len(rows.inquiries_anteriores),
             "predecessores": len(rows.predecessores),
-            "inquiries_mensais": len(rows.inquiries_mensais),
+            "consultas_total_12m": _sum_occurrences(rows.inquiries_mensais),
             "business_references": len(rows.business_references),
             "pagamento_evolucao_mensal": len(
                 rows.pagamento_evolucao_mensal
@@ -253,9 +253,9 @@ async def execute_pj_query(
             "participacoes": 0,
             "enderecos": 0,
             "pagamento_buckets": 0,
-            "inquiries_anteriores": 0,
+            "consultas_listadas_detalhe": 0,
             "predecessores": 0,
-            "inquiries_mensais": 0,
+            "consultas_total_12m": 0,
             "business_references": 0,
             "pagamento_evolucao_mensal": 0,
             "atraso_medio_mensal": 0,
@@ -404,9 +404,9 @@ async def execute_pj_query(
             "participacoes": len(rows.participacoes),
             "enderecos": len(rows.enderecos),
             "pagamento_buckets": len(rows.pagamento_buckets),
-            "inquiries_anteriores": len(rows.inquiries_anteriores),
+            "consultas_listadas_detalhe": len(rows.inquiries_anteriores),
             "predecessores": len(rows.predecessores),
-            "inquiries_mensais": len(rows.inquiries_mensais),
+            "consultas_total_12m": _sum_occurrences(rows.inquiries_mensais),
             "business_references": len(rows.business_references),
             "pagamento_evolucao_mensal": len(
                 rows.pagamento_evolucao_mensal
@@ -761,6 +761,16 @@ def _strip_non_digits(value: Any) -> str:
     if value is None:
         return ""
     return "".join(ch for ch in str(value) if ch.isdigit())
+
+
+def _sum_occurrences(rows: list[dict[str, Any]]) -> int:
+    """Soma `occurrences` de linhas mensais de inquiry — total real de consultas.
+
+    `len(rows)` aqui sempre devolve ~13 (1 bucket por mes do historico Serasa,
+    incluindo meses sem consulta), entao len NAO conta consultas. So esta soma e
+    o numero real.
+    """
+    return sum(int(r.get("occurrences") or 0) for r in rows)
 
 
 def _consulted_at_from_raw():

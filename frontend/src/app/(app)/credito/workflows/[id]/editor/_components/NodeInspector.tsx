@@ -51,7 +51,7 @@ import { ConditionBuilder } from "./ConditionBuilder"
 import { DocumentsBuilder } from "./DocumentsBuilder"
 import { FieldsBuilder, type FieldDef } from "./FieldsBuilder"
 import type { StrataNodeData } from "./StrataNode"
-import { VariablePicker } from "./VariablePicker"
+import { RefField } from "./RefField"
 
 // ─── Props ──────────────────────────────────────────────────────────────
 
@@ -535,30 +535,23 @@ function BureauInspector({
           {expectedType === "cpf" ? "CPF" : "CNPJ"} a consultar{" "}
           <span className="ml-0.5 text-red-600">*</span>
         </Label>
-        <div className="flex items-stretch gap-1">
-          <Input
-            id="bureau-entity"
-            value={entityRef}
-            onChange={(e) => onUpdateConfig({ ...config, entity_ref: e.target.value })}
-            placeholder={`{{trigger.${expectedType ?? "cnpj"}}}`}
-            className="font-mono text-xs"
-          />
-          <VariablePicker
-            selectedNodeId={nodeId}
-            nodes={nodes}
-            edges={edges}
-            producedByNode={producedByNode}
-            filterType={expectedType}
-            onPick={(template) =>
-              onUpdateConfig({ ...config, entity_ref: template })
-            }
-          />
-        </div>
+        <RefField
+          selectedNodeId={nodeId}
+          nodes={nodes}
+          edges={edges}
+          producedByNode={producedByNode}
+          filterType={expectedType}
+          value={entityRef}
+          onChange={(next) => onUpdateConfig({ ...config, entity_ref: next })}
+          placeholder={
+            expectedType === "cpf" ? "000.000.000-00" : "00.000.000/0000-00"
+          }
+          expectedTypeLabel={expectedType === "cpf" ? "CPF" : "CNPJ"}
+        />
         <p className={cx(tableTokens.cellSecondary, "mt-1")}>
-          Use o botão{" "}
-          <span className="font-mono">{"{ }"}</span> pra inserir uma variável
-          de uma etapa anterior — só aparecem variáveis do tipo{" "}
-          <span className="font-mono">{expectedType ?? "cnpj"}</span>.
+          Escolha uma variavel ja produzida por uma etapa anterior (ex.: o
+          CNPJ que o analista preencheu no formulario) ou digite o valor
+          direto.
         </p>
       </div>
 

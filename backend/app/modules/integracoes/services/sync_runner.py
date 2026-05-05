@@ -10,8 +10,10 @@ Multi-UA (CLAUDE.md secao 13, 2026-04-25): cada linha de `tenant_source_config`
 representa uma credencial — pode haver N por tenant na mesma fonte/ambiente,
 uma por UA. O ciclo de sync itera por linha, nao por tenant.
 
-O scheduler ([app/scheduler/jobs/bitfin_sync.py]) chama `run_sync_cycle`;
-o endpoint admin ([routers/sources.py]) usa `run_sync_one` + `run_ping`.
+O scheduler ([app/scheduler/sync_dispatcher.py]) chama `run_sync_one` por
+linha (cadencia em `tenant_source_config.sync_frequency_minutes`); o endpoint
+admin ([routers/sources.py]) usa `run_sync_one` + `run_ping` para acoes
+sob demanda.
 """
 
 from __future__ import annotations
@@ -77,6 +79,16 @@ _ADAPTER_REGISTRY: dict[SourceType, AdapterEntry] = {
     ),
 }
 
+# Nome usado pelo adapter ao gravar `decision_log.rule_or_model`.
+# Compartilhado entre router (`/runs`, `/last_sync_at`) e dispatcher
+# (calcula proxima execucao a partir da ultima entry SYNC). Manter
+# alinhado com `<adapter>.adapter_sync` (ex.: bitfin/etl.py:sync_all).
+RULE_NAME_BY_SOURCE: dict[SourceType, str] = {
+    SourceType.ERP_BITFIN: "bitfin_adapter",
+    SourceType.ADMIN_QITECH: "qitech_adapter",
+    SourceType.BUREAU_SERASA_PJ: "serasa_pj_adapter",
+}
+
 
 def get_adapter(source_type: SourceType) -> AdapterEntry:
     """Resolve the adapter for `source_type`. Raises ValueError if absent."""
@@ -84,6 +96,11 @@ def get_adapter(source_type: SourceType) -> AdapterEntry:
     if adapter is None:
         raise ValueError(f"Nenhum adapter registrado para source_type={source_type.value}")
     return adapter
+
+
+def rule_name_for(source_type: SourceType) -> str | None:
+    """Devolve o `rule_or_model` do adapter, ou None se nao registrado."""
+    return RULE_NAME_BY_SOURCE.get(source_type)
 
 
 async def run_sync_cycle(

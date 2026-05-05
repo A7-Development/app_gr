@@ -70,13 +70,13 @@ async def main() -> int:
         f"{counts.get('pagamento_buckets', 0)}"
     )
     print(
-        f"  inquiries_anteriores:    "
-        f"{counts.get('inquiries_anteriores', 0)}"
+        f"  consultas_listadas:      "
+        f"{counts.get('consultas_listadas_detalhe', 0)}"
     )
     print(f"  predecessores:           {counts.get('predecessores', 0)}")
     print(
-        f"  inquiries_mensais:       "
-        f"{counts.get('inquiries_mensais', 0)}"
+        f"  consultas_total_12m:     "
+        f"{counts.get('consultas_total_12m', 0)}"
     )
     print(
         f"  business_references:     "

@@ -61,6 +61,17 @@ export {
   type EditorialAreaSeries,
 } from "./EditorialChartCard"
 export {
+  EvolucaoMensalCard, EvolucaoMensalDestaquesView,
+  type EvolucaoMensalCardProps,
+  type EvolucaoMensalPonto,
+  type EvolucaoMensalVariant,
+  type EvolucaoMensalDimensionConfig,
+  type EvolucaoMensalDimensionOption,
+  type EvolucaoMensalMesDestaque,
+  type EvolucaoMensalVsMedia,
+  type EvolucaoMensalDestaques,
+} from "./EvolucaoMensalCard"
+export {
   AIPanel, AIToggleButton, useAIPanel, AI_PANEL_STORAGE_KEY,
   type AIPanelProps, type AIContext, type AIInsight, type AIMessage, type SendMessageFn,
 } from "./AIPanel"

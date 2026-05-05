@@ -182,6 +182,7 @@ export default function SyncPage() {
                       <TableHeaderCell>Fonte</TableHeaderCell>
                       <TableHeaderCell>Categoria</TableHeaderCell>
                       <TableHeaderCell>Status</TableHeaderCell>
+                      <TableHeaderCell>Frequencia</TableHeaderCell>
                       <TableHeaderCell>Ultimo sync</TableHeaderCell>
                       <TableHeaderCell className="w-48 text-right">
                         Acoes
@@ -192,7 +193,7 @@ export default function SyncPage() {
                     {isLoading &&
                       Array.from({ length: 3 }).map((_, i) => (
                         <TableRow key={`skeleton-${i}`}>
-                          <TableCell colSpan={5}>
+                          <TableCell colSpan={6}>
                             <div className="h-6 w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
                           </TableCell>
                         </TableRow>
@@ -262,7 +263,13 @@ function SyncRow({
         <AdapterStatusBadge status={statusFrom(row.configured, row.enabled)} />
       </TableCell>
       <TableCell>
-        <LastSyncCell iso={row.last_sync_at} />
+        <FrequencyCell minutes={row.sync_frequency_minutes} />
+      </TableCell>
+      <TableCell>
+        <LastSyncCell
+          iso={row.last_sync_at}
+          freqMinutes={row.sync_frequency_minutes}
+        />
       </TableCell>
       <TableCell className="text-right">
         <div className="flex items-center justify-end gap-2">
@@ -290,5 +297,23 @@ function SyncRow({
         </div>
       </TableCell>
     </TableRow>
+  )
+}
+
+// Mostra cadencia agendada da fonte. null = sob demanda (ex.: bureau Serasa
+// que so consulta sob acionamento do workflow). Numero = scheduler dispara
+// um ciclo a cada N minutos.
+function FrequencyCell({ minutes }: { minutes: number | null }) {
+  if (minutes === null || minutes === undefined) {
+    return (
+      <span className="text-sm text-gray-500 dark:text-gray-400">
+        Sob demanda
+      </span>
+    )
+  }
+  return (
+    <span className="text-sm text-gray-900 dark:text-gray-50">
+      {minutes} min
+    </span>
   )
 }

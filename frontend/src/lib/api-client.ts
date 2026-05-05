@@ -435,11 +435,29 @@ export type Provenance = {
   row_count: number
 }
 
+export type SyncHealthStatus =
+  | "ok"
+  | "delayed"
+  | "stale"
+  | "on_demand"
+  | "disabled"
+
 export type SyncHealthEntry = {
+  source_type: string
+  label: string
+  enabled: boolean
+  /** null = sob demanda. */
+  sync_frequency_minutes: number | null
+  /** ISO8601. Ultimo sync com `explanation='OK'`. */
   last_sync_at: string | null
-  adapter_version: string | null
+  /** ISO8601. Ultima tentativa de sync — independe do resultado. */
+  last_attempt_at: string | null
+  /** ISO8601. Quando o dispatcher deve disparar o proximo ciclo. */
+  expected_next_at: string | null
+  status: SyncHealthStatus
+  unidade_administrativa_id: string | null
 }
-export type SyncHealth = Record<string, SyncHealthEntry>
+export type SyncHealth = SyncHealthEntry[]
 
 export type BIResponse<T> = {
   data: T
@@ -1320,6 +1338,8 @@ export type SourceListItem = {
   enabled: boolean
   environment: Environment | null
   last_sync_at: string | null
+  /** null = sob demanda. Numero = cadencia ativa do scheduler em minutos. */
+  sync_frequency_minutes: number | null
   /** Multi-UA: para fontes admin (QiTech), pode haver N entradas, uma por UA. */
   unidade_administrativa_id: string | null
 }

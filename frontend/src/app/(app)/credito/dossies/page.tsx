@@ -19,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 import {
   RiAddLine,
+  RiArticleLine,
   RiDeleteBinLine,
   RiHandCoinLine,
   RiMoreLine,
@@ -202,6 +203,35 @@ export default function DossiesPage() {
           cell: (info) => <DateCell value={info.getValue()} />,
         }) as ColumnDef<DossierListItem, unknown>,
       ]
+
+      base.push(
+        col.display({
+          id: "ver_parecer",
+          header: "",
+          size: 44,
+          cell: ({ row }) => {
+            if (row.original.status !== "finalized") return null
+            const label =
+              row.original.target_name ?? row.original.target_cnpj ?? row.original.id
+            return (
+              <div className="flex justify-end">
+                <Button
+                  variant="ghost"
+                  className="size-7 p-0"
+                  aria-label={`Ver parecer de ${label}`}
+                  title="Ver parecer"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    router.push(`/credito/dossies/${row.original.id}`)
+                  }}
+                >
+                  <RiArticleLine className="size-4" aria-hidden />
+                </Button>
+              </div>
+            )
+          },
+        }) as ColumnDef<DossierListItem, unknown>,
+      )
 
       if (isAdmin) {
         base.push(

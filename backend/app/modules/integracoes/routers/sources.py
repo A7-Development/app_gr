@@ -34,6 +34,7 @@ from app.modules.integracoes.services.source_config import (
     merge_config,
     set_enabled,
 )
+from app.modules.integracoes.services.sync_runner import rule_name_for
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 from app.shared.catalog.source_catalog import SourceCatalog
 
@@ -58,13 +59,6 @@ _SOURCE_SECRET_FIELDS: dict[SourceType, frozenset[str]] = {
     # precisa ver pra confirmar config; revelar nao da acesso a nada.
     SourceType.BUREAU_SERASA_PJ: frozenset({"client_id", "client_secret"}),
 }
-
-_SOURCE_RULE_NAME: dict[SourceType, str] = {
-    SourceType.ERP_BITFIN: "bitfin_adapter",
-    SourceType.ADMIN_QITECH: "qitech_adapter",
-    SourceType.BUREAU_SERASA_PJ: "serasa_pj_adapter",
-}
-
 
 def _mask_secrets(source_type: SourceType, config: dict) -> dict:
     """Retorna copia de `config` com valores de campos sensiveis trocados por `***SET***`."""
@@ -95,6 +89,8 @@ class SourceListItem(BaseModel):
     enabled: bool
     environment: Environment | None
     last_sync_at: datetime | None
+    # null = sob demanda; numero = cadencia ativa do scheduler
+    sync_frequency_minutes: int | None = None
     unidade_administrativa_id: UUID | None = None
 
 
@@ -121,7 +117,10 @@ class ConfigUpdate(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
     environment: Environment = Environment.PRODUCTION
     enabled: bool | None = None
-    sync_frequency_minutes: int | None = None
+    # null = sob demanda (sem agendamento). Range 15..1440 espelha a CHECK
+    # do banco (alembic 0011_sync_frequency_check) — falha em UI antes de
+    # bater no Postgres.
+    sync_frequency_minutes: int | None = Field(default=None, ge=15, le=1440)
     unidade_administrativa_id: UUID | None = None
 
 
@@ -187,7 +186,7 @@ async def _last_sync_at(
     db: AsyncSession, tenant_id: UUID, source_type: SourceType
 ) -> datetime | None:
     """Ultimo occurred_at no decision_log para o adapter daquele source_type."""
-    rule = _SOURCE_RULE_NAME.get(source_type)
+    rule = rule_name_for(source_type)
     if rule is None:
         return None
     stmt = (
@@ -276,6 +275,7 @@ async def list_sources(
                     enabled=False,
                     environment=None,
                     last_sync_at=last_sync,
+                    sync_frequency_minutes=None,
                     unidade_administrativa_id=None,
                 )
             )
@@ -292,6 +292,7 @@ async def list_sources(
                     enabled=row.enabled,
                     environment=row.environment,
                     last_sync_at=last_sync,
+                    sync_frequency_minutes=row.sync_frequency_minutes,
                     unidade_administrativa_id=row.unidade_administrativa_id,
                 )
             )
@@ -447,7 +448,7 @@ async def list_runs(
     _: None = _Guard,
 ) -> list[RunEntry]:
     """Historico das ultimas execucoes (decision_log filtrado pelo adapter)."""
-    rule = _SOURCE_RULE_NAME.get(source_type)
+    rule = rule_name_for(source_type)
     if rule is None:
         return []
     stmt = (

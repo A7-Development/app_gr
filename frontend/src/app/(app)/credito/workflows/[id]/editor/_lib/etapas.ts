@@ -42,6 +42,18 @@ export const JOURNEY_HINT: Record<JourneyCategory, string> = {
   notificar: "Notificar pessoas e gerar saidas finais.",
 }
 
+// Defaults injetados em `initialConfig` por nodeType — quando o backend
+// exige config minima pra `validate_config` passar, palette ja nasce com
+// valor sensato pra que graph_validator consiga instanciar e expor o
+// produces() das variaveis upstream desde o primeiro instante.
+//
+// human_input: form_id e obrigatorio. Default "form" funciona out-of-the-box
+// e o usuario renomeia se quiser. Sem isso, validate_config falha, e o
+// RefField downstream nao acha as variaveis dos `fields`.
+const TYPE_INITIAL_CONFIG: Record<string, Record<string, unknown>> = {
+  human_input: { form_id: "form" },
+}
+
 // Mapa de categoria tecnica do backend → categoria-jornada visivel.
 const TECH_TO_JOURNEY: Record<string, JourneyCategory> = {
   triggers: "inicio",
@@ -138,7 +150,7 @@ export const DATA_PRODUCT_PALETTE: Array<{
     available: true,
     config: {
       adapter: "serasa_pj",
-      entity_ref: "{{trigger.cnpj}}",
+      entity_ref: "",
       environment: "production",
     },
   },
@@ -149,7 +161,7 @@ export const DATA_PRODUCT_PALETTE: Array<{
     available: false,
     config: {
       data_product: "dados_basicos_rfb",
-      entity_ref: "{{trigger.cnpj}}",
+      entity_ref: "",
       environment: "production",
     },
   },
@@ -160,7 +172,7 @@ export const DATA_PRODUCT_PALETTE: Array<{
     available: false,
     config: {
       data_product: "processos_detalhado",
-      entity_ref: "{{trigger.cnpj}}",
+      entity_ref: "",
       environment: "production",
     },
   },
@@ -171,7 +183,7 @@ export const DATA_PRODUCT_PALETTE: Array<{
     available: false,
     config: {
       data_product: "protestos_detalhado",
-      entity_ref: "{{trigger.cnpj}}",
+      entity_ref: "",
       environment: "production",
     },
   },
@@ -182,7 +194,7 @@ export const DATA_PRODUCT_PALETTE: Array<{
     available: false,
     config: {
       data_product: "relacionamento_pj",
-      entity_ref: "{{trigger.cnpj}}",
+      entity_ref: "",
       environment: "production",
     },
   },
@@ -235,7 +247,7 @@ export function buildPaletteEntries(nodeTypes: NodeTypeMeta[]): PaletteEntry[] {
     entries.push({
       paletteId: meta.type,
       nodeType: meta.type,
-      initialConfig: {},
+      initialConfig: { ...(TYPE_INITIAL_CONFIG[meta.type] ?? {}) },
       label: ETAPA_LABEL[meta.type] ?? meta.label,
       description: meta.description,
       icon: meta.icon,

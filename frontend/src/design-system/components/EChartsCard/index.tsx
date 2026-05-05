@@ -101,6 +101,11 @@ export function EChartsCard({
         ...(themeOption.axisPointer as object),
         ...((option.axisPointer as object) ?? {}),
       },
+      // O tema (echarts-theme.ts) define `visualMap.inRange.color: [...]` como
+      // style default, mas o spread acima trata como visualMap real e o ECharts
+      // renderiza uma barra de gradient roxa colada no eixo Y. Suprimimos por
+      // default; chart que precisar de visualMap explicito sobrescreve.
+      visualMap: option.visualMap ?? { show: false },
     } as EChartsOption
   }, [option, theme])
 

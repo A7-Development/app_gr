@@ -110,17 +110,37 @@ def _topological_order(graph: WorkflowGraph) -> list[NodeSpec]:
 
 
 def _instantiate(node: NodeSpec) -> Any | None:
-    """Try to instantiate the node. Returns None if its `validate_config`
-    raises — the structural validator will report that separately.
+    """Try to instantiate the node for semantic introspection.
+
+    Two-stage fallback so produces()/requires() permanecem inspecionaveis
+    enquanto o usuario ainda esta configurando o no no editor:
+
+    1. Caminho normal: `cls(config)` — chama validate_config, exige
+       config completa.
+    2. Fallback de introspeccao: `cls.__new__(cls)` + atribui config
+       direto, sem rodar validate_config. Permite que produces() leia
+       `self.config.get('fields', [])` mesmo quando outros campos
+       obrigatorios (ex.: `form_id` no human_input) ainda estao em
+       branco.
+
+    Em ambos os casos a struct validation reporta separadamente que
+    `form_id` esta faltando — mas o downstream RefField ja consegue
+    listar `cnpj` como variavel disponivel a partir de `fields`.
     """
     try:
         cls = get_node_class(node.type)
     except KeyError:
         return None
+    config = node.config or {}
     try:
-        return cls(node.config or {})
+        return cls(config)
     except (ValueError, TypeError, KeyError):
-        return None
+        try:
+            instance = cls.__new__(cls)
+            instance.config = config
+            return instance
+        except Exception:
+            return None
 
 
 def _types_compatible(expected: VarType, found: VarType) -> bool:

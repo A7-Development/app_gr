@@ -538,6 +538,11 @@ function pickFocusStep(steps: WizardMultiStepStep[]): WizardMultiStepStep | null
     steps.find((s) => s.state === "waiting_input") ??
     steps.find((s) => s.state === "failed") ??
     steps.find((s) => s.state === "running") ??
+    steps.find(
+      (s) =>
+        s.state === "completed" &&
+        (s.input as { agent?: string } | undefined)?.agent === "opinion_writer",
+    ) ??
     [...steps].reverse().find((s) => s.state === "completed") ??
     steps[0] ??
     null

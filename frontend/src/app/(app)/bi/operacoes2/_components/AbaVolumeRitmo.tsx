@@ -2,50 +2,46 @@
 //
 // Aba 1 da pagina /bi/operacoes2 — Volume & Ritmo.
 //
-// Estrutura segue os 4 padroes de linha (CLAUDE.md §7 — Operacoes2):
-//   Linha 1 (Padrao C)  · Hero combo evolucao mensal (6) + Donut VOP por UA (6).
-//                          Hero NUNCA full-width — feedback usuario 2026-05-03.
-//                          Hero tem seletor LOCAL de UA (filtragem client-side
-//                          a partir de `evolucao_12m_por_ua` — sem nova ida ao
-//                          backend). Donut UA cabe pq tipicamente FIDCs tem 2-5
-//                          UAs (regra "donut com ate 3 fatias" do brief —
-//                          `QuebraDonut` agrega top 3 + Outros quando >3).
+// Estrutura (refatorada 2026-05-04 — Linha 1 absorveu Produto):
+//   Linha 1  · 3 colunas: Hero combo Evolucao Mensal + Donut VOP por UA +
+//              Lista VOP por Produto. Hero tem seletor LOCAL de UA
+//              (filtragem client-side a partir de `evolucao_12m_por_ua` —
+//              sem nova ida ao backend).
 //   Linha 2 (Padrao B)  · Ritmo do mes corrente + Projecao + Pace
 //                          (degraded mode quando wh_dim_dia_util esta vazia)
 //   Linha 3 (Padrao A)  · 4 KPIs secundarios de volume
-//   Linha 4 (Padrao D)  · VOP por Produto (full-width — barra horizontal).
-//                          Produto tem ate 10 categorias — barra ordenada e
-//                          a forma certa (regra do brief: >3 fatias → barra).
-//   Linha 5 (Padrao C)  · Heatmap dow x semana + Por dia da semana
+//   Linha 4 (Padrao C)  · Heatmap dow x semana + Por dia da semana
 //
 // Strip dual em quebras (Opcao 4 paradigma 2026-05-03):
-//   - QuebraCard (Produto na L4): toggle "Periodo | Mes | Ambos" + "Volume |
-//     Δ MoM | Δ YoY". "Ambos" sobrepoe as duas barras (clara=periodo /
-//     saturada=mes corrente).
-//   - QuebraDonut (UA na L1): toggle simplificado "Periodo | Mes" + "Volume".
-//     Donut nao representa MoM/YoY bem; "Ambos" precisaria 2 donuts
-//     concentricos — preferimos toggle simples e legivel.
+//   - QuebraCard (Produto na L1 col 3): toggle "Periodo | Mes | Ambos" +
+//     "Volume | Δ MoM | Δ YoY". "Ambos" sobrepoe as duas barras
+//     (clara=periodo / saturada=mes corrente).
+//   - QuebraDonut (UA na L1 col 2): toggle simplificado "Periodo | Mes" +
+//     "Volume". Donut nao representa MoM/YoY bem; "Ambos" precisaria 2
+//     donuts concentricos — preferimos toggle simples e legivel.
 
 "use client"
 
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
+  RiArrowDownLine,
+  RiArrowUpLine,
   RiBuilding2Line,
   RiCalendarEventLine,
-  RiCheckLine,
+  RiSubtractLine,
 } from "@remixicon/react"
 import type { EChartsOption } from "echarts"
 
 import { Card } from "@/components/tremor/Card"
+import { cardTokens } from "@/design-system/tokens/card"
 import { EChartsCard } from "@/design-system/components/EChartsCard"
 import {
-  EditorialChartCard,
-  buildEditorialAreaOption,
-  editorialChartColors,
-} from "@/design-system/components/EditorialChartCard"
-import { FilterChip } from "@/design-system/components/FilterBar"
+  EvolucaoMensalCard,
+  type EvolucaoMensalPonto,
+} from "@/design-system/components/EvolucaoMensalCard"
 import { VizParam } from "@/design-system/components/VizParam"
+import { tableTokens } from "@/design-system/tokens/table"
 import { biOperacoes2 } from "@/lib/api-client"
 import type {
   Operacoes2DiaSemanaResumo,
@@ -87,6 +83,36 @@ function fmtMonthShort(iso: string): string {
     .replace(".", "")
 }
 
+/**
+ * Linha de tendencia por regressao linear (minimos quadrados).
+ * Devolve um array do mesmo tamanho de `values`, onde cada posicao i
+ * contem o valor predito pela reta y = a + b*i.
+ * Para n < 2 ou variancia zero em x, devolve uma linha horizontal na media.
+ */
+function computeLinearTrend(values: number[]): number[] {
+  const n = values.length
+  if (n === 0) return []
+  if (n === 1) return [values[0]]
+  let sumX = 0,
+    sumY = 0,
+    sumXY = 0,
+    sumX2 = 0
+  for (let i = 0; i < n; i++) {
+    sumX += i
+    sumY += values[i]
+    sumXY += i * values[i]
+    sumX2 += i * i
+  }
+  const denom = n * sumX2 - sumX * sumX
+  if (denom === 0) {
+    const mean = sumY / n
+    return values.map(() => mean)
+  }
+  const slope = (n * sumXY - sumX * sumY) / denom
+  const intercept = (sumY - slope * sumX) / n
+  return values.map((_, i) => intercept + slope * i)
+}
+
 const PRESET_TO_LABEL: Record<PresetKey, string> = {
   ytd: "Ano até hoje",
   "3m": "Últimos 3 meses",
@@ -112,18 +138,6 @@ export function AbaVolumeRitmo() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/*
-        Linha 0 (PROVA DE CONCEITO — paradigma editorial Goldman/FT 2026-05-04):
-        chart hero "naked" (sem Card), tipografia editorial, source row pinned
-        com watermark Strata. Mesmos dados de `evolucao_12m` que a Linha 1 usa
-        — coexistem propositalmente para comparativo lado a lado:
-          - Linha 0: editorial layered area (VOP + MM3M) — manchete
-          - Linha 1: combo bar+line dentro de Card — widget denso
-        Proxima decisao depois da revisao visual: manter o paradigma editorial
-        para chart hero (e remover Linha 1 redundante) ou voltar pro padrao
-        atual.
-      */}
-      <Linha0HeroEditorial evolucao={data.evolucao_12m} />
       <Linha1HeroComUa
         evolucao={data.evolucao_12m}
         evolucaoPorUa={data.evolucao_12m_por_ua}
@@ -131,11 +145,11 @@ export function AbaVolumeRitmo() {
         piorMes={data.pior_mes}
         mesVsMedia={data.mes_corrente_vs_media}
         porUa={data.por_ua}
+        porProduto={data.por_produto}
         presetLabel={preset ? PRESET_TO_LABEL[preset] : "Personalizado"}
       />
       <Linha2Ritmo ritmo={data.ritmo} pace={data.pace_diario} />
       <Linha3Kpis kpis={data.kpis_secundarios} />
-      <Linha4Produto porProduto={data.por_produto} />
       <Linha5Sazonalidade
         heatmap={data.heatmap_dow_semana}
         porDia={data.por_dia_semana}
@@ -147,80 +161,20 @@ export function AbaVolumeRitmo() {
 function AbaSkeleton() {
   return (
     <div className="flex flex-col gap-6">
-      {/* Linha 0 (editorial — sem borda, mais alto) */}
-      <div className="px-1 py-2">
-        <div className="h-5 w-40 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
-        <div className="mt-2 h-7 w-72 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
-        <div className="mt-2 h-4 w-[420px] max-w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
-        <div className="mt-5 h-[360px] animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+      {/* Linha 1: Hero 50% + Donut UA 25% + Lista Produto 25% */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+        <div className="h-64 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 lg:col-span-2" />
+        <div className="h-64 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900" />
+        <div className="h-64 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900" />
       </div>
-      <div className="h-72 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900" />
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        <div className="h-48 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 lg:col-span-6" />
-        <div className="h-48 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 lg:col-span-3" />
-        <div className="h-48 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 lg:col-span-3" />
-      </div>
+      {/* Demais linhas */}
+      <div className="h-48 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900" />
+      <div className="h-32 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900" />
     </div>
   )
 }
 
-// ─── Linha 0 (PROVA DE CONCEITO) — Editorial chart hero ────────────────────
-//
-// Mesma serie temporal da Linha 1, renderizada com `EditorialChartCard`
-// (sem Card, tipografia editorial). VOP e MM 3M como areas layered (nao
-// stacked), endLabel inline na ponta direita, source row + watermark.
-// Comparar visualmente contra `Linha1HeroComUa` logo abaixo.
-
-function Linha0HeroEditorial({
-  evolucao,
-}: {
-  evolucao: Operacoes2EvolucaoMensalPonto[]
-}) {
-  const option = React.useMemo(() => {
-    const xAxis = evolucao.map((p) => fmtMonthShort(p.periodo))
-    const vop = evolucao.map((p) => p.vop)
-    const mm3 = evolucao.map((p) => (p.mm_3m == null ? null : p.mm_3m))
-    return buildEditorialAreaOption({
-      xAxis,
-      series: [
-        {
-          name: "VOP mensal",
-          endLabel: "VOP",
-          data: vop,
-          color: editorialChartColors[0], // slate
-        },
-        {
-          name: "Média móvel 3M",
-          endLabel: "MM 3M",
-          data: mm3,
-          color: editorialChartColors[1], // sky
-        },
-      ],
-      yFormatter: (v) => fmtBRL.format(v),
-      tooltipValueFormatter: (v) => (v == null ? "—" : fmtBRLFull.format(v)),
-    })
-  }, [evolucao])
-
-  const ultimoMes = evolucao.length > 0 ? evolucao[evolucao.length - 1] : null
-  const sourceLine = ultimoMes
-    ? `Bitfin · última competência ${fmtMonthShort(ultimoMes.periodo)}`
-    : "Bitfin"
-
-  return (
-    <EditorialChartCard
-      eyebrow="BI · Operação"
-      title="Evolução do VOP"
-      subtitle="Volume mensal de operações confrontado com a média móvel de 3 meses — uma leitura rápida para enxergar se o ritmo recente está acima ou abaixo da tendência."
-      source={sourceLine}
-      updatedAt="Série apurada mensalmente"
-      option={option}
-      height={360}
-    />
-  )
-}
-
-
-// ─── Linha 1 (Padrao C) — Hero combo (6) + VOP por UA (6) ──────────────────
+// ─── Linha 1 — 3 colunas: Hero Evolucao + Donut UA + Lista Produto ────────
 
 function Linha1HeroComUa({
   evolucao,
@@ -229,6 +183,7 @@ function Linha1HeroComUa({
   piorMes,
   mesVsMedia,
   porUa,
+  porProduto,
   presetLabel,
 }: {
   evolucao: Operacoes2EvolucaoMensalPonto[]
@@ -237,22 +192,26 @@ function Linha1HeroComUa({
   piorMes: Operacoes2MesDestaque | null
   mesVsMedia: Operacoes2MesCorrenteVsMedia | null
   porUa: Operacoes2QuebraDimensaoLinha[]
+  porProduto: Operacoes2QuebraDimensaoLinha[]
   presetLabel: string
 }) {
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <HeroEvolucao
-        evolucao={evolucao}
-        evolucaoPorUa={evolucaoPorUa}
-        melhorMes={melhorMes}
-        piorMes={piorMes}
-        mesVsMedia={mesVsMedia}
-        presetLabel={presetLabel}
-      />
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+      <div className="lg:col-span-2">
+        <HeroEvolucao
+          evolucao={evolucao}
+          evolucaoPorUa={evolucaoPorUa}
+          melhorMes={melhorMes}
+          piorMes={piorMes}
+          mesVsMedia={mesVsMedia}
+          presetLabel={presetLabel}
+        />
+      </div>
       <QuebraDonut
         title="VOP por Unidade Administrativa"
         rows={porUa}
       />
+      <QuebraCard title="VOP por Produto" rows={porProduto} topN={10} />
     </div>
   )
 }
@@ -288,172 +247,70 @@ function HeroEvolucao({
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
   }, [evolucaoPorUa])
 
-  // Slice — quando UA selecionada, deriva serie filtrada com mesma estrutura
-  // de EvolucaoMensalPonto (n_operacoes/ticket_medio nao temos por UA, ficam 0).
-  const slice = React.useMemo<Operacoes2EvolucaoMensalPonto[]>(() => {
-    if (selectedUaId === null) return evolucao
-    const filtered = evolucaoPorUa.filter((p) => p.ua_id === selectedUaId)
-    // Reconstruir como EvolucaoMensalPonto (sem n_ops/ticket por UA por enquanto).
-    return filtered.map((p) => ({
+  // Adapta a serie de dominio para o ponto canonico do EvolucaoMensalCard.
+  // `comparativo` recebe a linha de tendencia (regressao linear sobre o VOP),
+  // substituindo a antiga MM 3M.
+  // Quando UA selecionada, n_operacoes/ticket_medio nao sao apurados por UA
+  // hoje — entao tooltipExtras e omitido nesse caso.
+  const data = React.useMemo<EvolucaoMensalPonto[]>(() => {
+    const base =
+      selectedUaId === null
+        ? evolucao.map((p) => ({
+            periodo: p.periodo,
+            vop: p.vop,
+            tooltipExtras: [
+              { label: "Operações", value: fmtInt.format(p.n_operacoes) },
+              { label: "Ticket médio", value: fmtBRLFull.format(p.ticket_medio) },
+            ] as Array<{ label: string; value: string }>,
+          }))
+        : evolucaoPorUa
+            .filter((p) => p.ua_id === selectedUaId)
+            .map((p) => ({
+              periodo: p.periodo,
+              vop: p.vop,
+              tooltipExtras: undefined as
+                | Array<{ label: string; value: string }>
+                | undefined,
+            }))
+
+    const trend = computeLinearTrend(base.map((p) => p.vop))
+    return base.map((p, i) => ({
       periodo: p.periodo,
-      vop: p.vop,
-      n_operacoes: 0,
-      ticket_medio: 0,
-      mm_3m: null,
+      valor: p.vop,
+      comparativo: trend[i],
+      tooltipExtras: p.tooltipExtras,
     }))
   }, [evolucao, evolucaoPorUa, selectedUaId])
 
-  const option: EChartsOption = React.useMemo(() => {
-    const labels = slice.map((p) => fmtMonthShort(p.periodo))
-    const vops = slice.map((p) => p.vop)
-    const mm3 = slice.map((p) => (p.mm_3m == null ? null : p.mm_3m))
-    // Marker no ultimo ponto (mes corrente).
-    const lastIdx = slice.length - 1
-    return {
-      grid: { top: 16, right: 12, bottom: 28, left: 64 },
-      tooltip: {
-        trigger: "axis",
-        axisPointer: { type: "shadow" },
-        formatter: (params: unknown) => {
-          const arr = params as Array<{
-            name: string
-            seriesName?: string
-            value: number
-            dataIndex: number
-          }>
-          if (!Array.isArray(arr) || arr.length === 0) return ""
-          const idx = arr[0].dataIndex
-          const p = slice[idx]
-          const vop = fmtBRLFull.format(p.vop)
-          const ops = fmtInt.format(p.n_operacoes)
-          const ticket = fmtBRLFull.format(p.ticket_medio)
-          const mm = p.mm_3m == null ? "—" : fmtBRLFull.format(p.mm_3m)
-          return [
-            `<strong>${arr[0].name}</strong>`,
-            `VOP: ${vop}`,
-            `MM 3M: ${mm}`,
-            `Operações: ${ops}`,
-            `Ticket médio: ${ticket}`,
-          ].join("<br/>")
-        },
-      },
-      xAxis: {
-        type: "category",
-        data: labels,
-        axisTick: { show: false },
-      },
-      yAxis: {
-        type: "value",
-        axisLabel: {
-          formatter: (v: number) => fmtBRL.format(v),
-        },
-      },
-      series: [
-        {
-          name: "VOP",
-          type: "bar",
-          barMaxWidth: 32,
-          label: {
-            show: true,
-            position: "top",
-            color: "#374151",
-            fontSize: 10,
-            fontWeight: 500,
-            formatter: (p) => fmtBRL.format((p as { value: number }).value),
-          },
-          data: vops.map((v, i) => ({
-            value: v,
-            itemStyle: {
-              color: i === lastIdx ? "#0EA5E9" : "#2A4D7A",
-              borderRadius: [3, 3, 0, 0],
-            },
-          })),
-        },
-        {
-          name: "MM 3M",
-          type: "line",
-          smooth: true,
-          symbol: "none",
-          data: mm3,
-          lineStyle: { color: "#9CA3AF", width: 1.5, type: "dashed" },
-        },
-      ],
-    }
-  }, [slice])
-
-  const uaSelectedNome =
-    selectedUaId === null
-      ? "Todas as UAs"
-      : (uaOptions.find((u) => u.id === selectedUaId)?.nome ?? "(n/d)")
-
   return (
-    <EChartsCard
+    <EvolucaoMensalCard
       title="Evolução do VOP"
-      caption={`${uaSelectedNome} · ${presetLabel} · barra clara = mês corrente · linha tracejada = MM 3M`}
-      option={option}
-      height={240}
-      actions={
-        <FilterChip
-          label="UA"
-          value={uaSelectedNome}
-          active={selectedUaId !== null}
-          icon={RiBuilding2Line}
-        >
-          <div className="py-1">
-            <UaPickerItem
-              label="Todas as UAs"
-              selected={selectedUaId === null}
-              onSelect={() => setSelectedUaId(null)}
-            />
-            {uaOptions.map((u) => (
-              <UaPickerItem
-                key={u.id}
-                label={u.nome}
-                selected={selectedUaId === u.id}
-                onSelect={() => setSelectedUaId(u.id)}
-              />
-            ))}
-          </div>
-        </FilterChip>
+      presetLabel={presetLabel}
+      data={data}
+      dimension={{
+        label: "UA",
+        icon: RiBuilding2Line,
+        options: uaOptions,
+        value: selectedUaId,
+        onChange: (v) => setSelectedUaId(v as number | null),
+        allLabel: "Todas as UAs",
+      }}
+      comparativoLabel="Tendência"
+      destaques={{
+        melhor: melhorMes
+          ? { periodo: melhorMes.periodo, valor: melhorMes.vop }
+          : null,
+        pior: piorMes
+          ? { periodo: piorMes.periodo, valor: piorMes.vop }
+          : null,
+        vsMedia: mesVsMedia ? { pct: mesVsMedia.pct } : null,
+      }}
+      valueFormatter={(v) => fmtBRLFull.format(v)}
+      axisFormatter={(v) => fmtBRL.format(v)}
+      dataLabelFormatter={(v) =>
+        (v / 1_000_000).toFixed(1).replace(".", ",")
       }
-      footer={
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-1 pt-2 text-[11px] text-gray-500 dark:text-gray-400">
-          {melhorMes && (
-            <span>
-              Melhor mês:{" "}
-              <strong className="text-gray-900 dark:text-gray-50">
-                {fmtMonthShort(melhorMes.periodo)}
-              </strong>{" "}
-              ({fmtBRL.format(melhorMes.vop)})
-            </span>
-          )}
-          {piorMes && (
-            <span>
-              Pior mês:{" "}
-              <strong className="text-gray-900 dark:text-gray-50">
-                {fmtMonthShort(piorMes.periodo)}
-              </strong>{" "}
-              ({fmtBRL.format(piorMes.vop)})
-            </span>
-          )}
-          {mesVsMedia && (
-            <span>
-              Mês corrente vs média 12M:{" "}
-              <strong
-                className={cx(
-                  "font-semibold",
-                  mesVsMedia.pct >= 0
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-red-600 dark:text-red-400",
-                )}
-              >
-                {mesVsMedia.pct >= 0 ? "+" : ""}
-                {fmtPct1(mesVsMedia.pct)}
-              </strong>
-            </span>
-          )}
-        </div>
-      }
+      height={248}
     />
   )
 }
@@ -530,11 +387,21 @@ function QuebraDonut({
       series: [
         {
           type: "pie",
-          radius: ["55%", "80%"],
+          radius: ["45%", "65%"],
           center: ["32%", "50%"],
           avoidLabelOverlap: true,
-          label: { show: false },
-          labelLine: { show: false },
+          label: {
+            show: true,
+            position: "outside",
+            // Valor em milhoes, 1 casa decimal, sem R$ (ex.: "12,3 M").
+            formatter: (p) =>
+              `${((p as { value: number }).value / 1_000_000)
+                .toFixed(1)
+                .replace(".", ",")} M`,
+            fontSize: 11,
+            color: "#374151",
+          },
+          labelLine: { show: true, length: 6, length2: 8 },
           data: fatias.map((f, i) => ({
             ...f,
             itemStyle: {
@@ -558,7 +425,7 @@ function QuebraDonut({
           : "Período do filtro · top 3 + Outros"
       }
       option={option}
-      height={260}
+      height={270}
       actions={
         <VizParam
           options={DONUT_ESCOPO_TOGGLES}
@@ -567,39 +434,6 @@ function QuebraDonut({
         />
       }
     />
-  )
-}
-
-/**
- * Item do picker de UA dentro do FilterChip do Hero. Espelha o padrao
- * canonico dos popovers de filtro (page.tsx — lista de presets de Periodo).
- * Mantido aqui (vs no DS) porque e composicao especifica do hero.
- */
-function UaPickerItem({
-  label,
-  selected,
-  onSelect,
-}: {
-  label: string
-  selected: boolean
-  onSelect: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={cx(
-        "flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors",
-        selected
-          ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
-          : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800",
-      )}
-    >
-      <span className="flex-1 truncate text-left">{label}</span>
-      {selected && (
-        <RiCheckLine className="size-3.5 shrink-0 text-blue-500" />
-      )}
-    </button>
   )
 }
 
@@ -884,25 +718,34 @@ function DeltaTextRow({
   )
 }
 
-// ─── Linha 4 (Padrao D) — VOP por Produto (full-width) ────────────────────
+// ─── QuebraCard — Lista vitrine de VOP por Produto ────────────────────────
+//
+// Lista estilizada (grid 5 cols) num <Card>, NAO uma tabela. CLAUDE.md §6
+// proibe Tremor <Table> cru em pagina; e este caso (vitrine top-N estatica
+// numa coluna de 25%) nao se encaixa em nenhum dos 4 buckets canonicos
+// (DataTableShell / DataTable / CompactSeriesTable / hierarquica) — todos
+// trazem peso de UI (filtros, sort, virtualizacao) excessivo. Optamos por
+// lista de divs alinhados por grid: respeita §6 e mantem alinhamento
+// vertical das colunas como uma tabela faria.
+//
+// Colunas: # | Produto | %Período | %Mês | Δpp
+//   - %Período = r.pct (participacao % do produto no periodo do filtro)
+//   - %Mês     = r.pct_mes_corrente (participacao % no mes corrente)
+//   - Δpp      = r.pct_mes_corrente - r.pct (variacao em pontos percentuais)
+//
+// Decisao 2026-05-04: exibir % (e nao volume R$ absoluto). Quando o fundo
+// cresce em VOP, todas as categorias tendem a crescer em valor — a leitura
+// de VOLUME nao revela mudanca de mix. Ja a participacao % e a metrica que
+// expoe ganho/perda de share entre produtos.
+//
+// Sinalizacao do Δpp por sinal: > +1pp = crescendo (emerald), < -1pp =
+// reduzindo (red), entre = estavel (gray). Threshold de 1pp escolhido para
+// nao reagir a flutuacao trivial de mes.
 
-const QUEBRA_TOGGLES = ["Volume", "Δ MoM", "Δ YoY"] as const
-type QuebraToggle = (typeof QUEBRA_TOGGLES)[number]
+const PARTICIPACAO_THRESHOLD_PP = 1.0
 
-// Strip dual (Opcao 4 paradigma 2026-05-03): toggle visualizacao
-// "Periodo" (default) | "Mes" (so mes corrente) | "Ambos" (sobreposicao).
-const ESCOPO_TOGGLES = ["Período", "Mês", "Ambos"] as const
-type EscopoToggle = (typeof ESCOPO_TOGGLES)[number]
-
-function Linha4Produto({
-  porProduto,
-}: {
-  porProduto: Operacoes2QuebraDimensaoLinha[]
-}) {
-  return (
-    <QuebraCard title="VOP por Produto" rows={porProduto} topN={10} />
-  )
-}
+const ROW_GRID =
+  "grid grid-cols-[20px_minmax(0,1fr)_auto_auto_auto] items-center gap-x-3"
 
 function QuebraCard({
   title,
@@ -913,161 +756,101 @@ function QuebraCard({
   rows: Operacoes2QuebraDimensaoLinha[]
   topN: number
 }) {
-  const [toggle, setToggle] = React.useState<QuebraToggle>("Volume")
-  const [escopo, setEscopo] = React.useState<EscopoToggle>("Período")
-
-  // Ordenacao usa o "Volume" do escopo selecionado (Periodo: vop; Mes: vop_mes_corrente).
-  // Quando escopo=Ambos, ordena pelo periodo (referencia historica).
-  const vopFor = React.useCallback(
-    (r: Operacoes2QuebraDimensaoLinha) =>
-      escopo === "Mês" ? r.vop_mes_corrente : r.vop,
-    [escopo],
+  const sorted = React.useMemo(
+    () => [...rows].sort((a, b) => b.pct - a.pct).slice(0, topN),
+    [rows, topN],
   )
 
-  const sorted = React.useMemo(() => {
-    const copy = [...rows]
-    if (toggle === "Volume") copy.sort((a, b) => vopFor(b) - vopFor(a))
-    else if (toggle === "Δ MoM")
-      copy.sort((a, b) => (b.delta_mom_pct ?? -Infinity) - (a.delta_mom_pct ?? -Infinity))
-    else
-      copy.sort((a, b) => (b.delta_yoy_pct ?? -Infinity) - (a.delta_yoy_pct ?? -Infinity))
-    return copy.slice(0, topN)
-  }, [rows, toggle, topN, vopFor])
-
-  // Max para a barra — depende do escopo (em Ambos, considera o maior dos 2).
-  const maxVop = React.useMemo(() => {
-    if (escopo === "Ambos") {
-      return Math.max(1, ...sorted.flatMap((r) => [r.vop, r.vop_mes_corrente]))
-    }
-    return Math.max(1, ...sorted.map((r) => vopFor(r)))
-  }, [sorted, escopo, vopFor])
+  if (sorted.length === 0) {
+    return (
+      <Card className="flex flex-col p-0">
+        <div className={cardTokens.header}>
+          <h3 className={cardTokens.headerTitle}>{title}</h3>
+        </div>
+        <div className={cardTokens.body}>
+          <p className="py-6 text-center text-xs text-gray-400 dark:text-gray-600">
+            Sem dados no período.
+          </p>
+        </div>
+      </Card>
+    )
+  }
 
   return (
-    <Card className="flex flex-col gap-3 p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
-          {title}
-        </h3>
-        <div className="flex items-center gap-2">
-          <VizParam
-            options={ESCOPO_TOGGLES}
-            value={escopo}
-            onChange={setEscopo}
-            ariaLabel="Escopo do periodo"
-          />
-          <VizParam
-            options={QUEBRA_TOGGLES}
-            value={toggle}
-            onChange={setToggle}
-            ariaLabel="Metrica exibida"
-          />
-        </div>
-      </div>
-      {sorted.length === 0 ? (
-        <p className="py-6 text-center text-xs text-gray-400 dark:text-gray-600">
-          Sem dados no período.
+    <Card className="flex flex-col p-0">
+      <div className={cardTokens.header}>
+        <h3 className={cardTokens.headerTitle}>{title}</h3>
+        <p className={cx(cardTokens.headerSubtitle, "mt-0.5")}>
+          Top {sorted.length} · participação % e variação (pp)
         </p>
-      ) : (
-        <ul className="flex flex-col gap-1.5">
-          {sorted.map((r) => (
-            <QuebraRow
-              key={r.categoria_id}
-              row={r}
-              maxVop={maxVop}
-              toggle={toggle}
-              escopo={escopo}
-            />
-          ))}
-        </ul>
-      )}
-    </Card>
-  )
-}
+      </div>
 
-function QuebraRow({
-  row,
-  maxVop,
-  toggle,
-  escopo,
-}: {
-  row: Operacoes2QuebraDimensaoLinha
-  maxVop: number
-  toggle: QuebraToggle
-  escopo: EscopoToggle
-}) {
-  const vopAtivo = escopo === "Mês" ? row.vop_mes_corrente : row.vop
-  const pctAtivo = escopo === "Mês" ? row.pct_mes_corrente : row.pct
-  const widthPctPeriodo = Math.max(1, (row.vop / maxVop) * 100)
-  const widthPctMes = Math.max(1, (row.vop_mes_corrente / maxVop) * 100)
-  const widthPctAtivo = Math.max(1, (vopAtivo / maxVop) * 100)
-
-  const rightLabel = (() => {
-    if (toggle === "Δ MoM") {
-      return row.delta_mom_pct == null
-        ? "—"
-        : `${row.delta_mom_pct >= 0 ? "+" : ""}${fmtPct1(row.delta_mom_pct)}`
-    }
-    if (toggle === "Δ YoY") {
-      return row.delta_yoy_pct == null
-        ? "—"
-        : `${row.delta_yoy_pct >= 0 ? "+" : ""}${fmtPct1(row.delta_yoy_pct)}`
-    }
-    // Volume — depende do escopo
-    if (escopo === "Ambos") {
-      return `${fmtBRL.format(row.vop)} · mês ${fmtBRL.format(row.vop_mes_corrente)}`
-    }
-    return `${fmtBRL.format(vopAtivo)} · ${fmtPct1(pctAtivo)}`
-  })()
-
-  const rightColorClass =
-    toggle === "Volume"
-      ? "text-gray-600 dark:text-gray-400"
-      : (toggle === "Δ MoM" ? row.delta_mom_pct : row.delta_yoy_pct) == null
-        ? "text-gray-400 dark:text-gray-600"
-        : ((toggle === "Δ MoM" ? row.delta_mom_pct : row.delta_yoy_pct) ?? 0) >= 0
-          ? "text-emerald-600 dark:text-emerald-400"
-          : "text-red-600 dark:text-red-400"
-
-  return (
-    <li className="grid grid-cols-[1fr_auto] items-center gap-2 text-[12px]">
-      <div className="flex items-center gap-2">
-        <span
-          className="truncate text-gray-900 dark:text-gray-50"
-          title={row.categoria}
-        >
-          {row.categoria}
-        </span>
-        <div className="relative h-1 flex-1 rounded-full bg-gray-100 dark:bg-gray-800">
-          {escopo === "Ambos" ? (
-            <>
-              {/* Periodo (claro) */}
-              <div
-                className="absolute inset-y-0 left-0 rounded-full bg-blue-200 dark:bg-blue-500/30"
-                style={{ width: `${widthPctPeriodo}%` }}
-                aria-label={`Período: ${fmtBRL.format(row.vop)}`}
-              />
-              {/* Mes corrente (saturado, sobre) */}
-              <div
-                className="absolute inset-y-0 left-0 rounded-full bg-blue-600 dark:bg-blue-400"
-                style={{ width: `${widthPctMes}%` }}
-                aria-label={`Mês: ${fmtBRL.format(row.vop_mes_corrente)}`}
-              />
-            </>
-          ) : (
-            <div
-              className="absolute inset-y-0 left-0 rounded-full bg-blue-500"
-              style={{ width: `${widthPctAtivo}%` }}
-              aria-hidden="true"
-            />
+      <div className={cx(cardTokens.body, "flex flex-col gap-2")}>
+        {/* Header row */}
+        <div
+          className={cx(
+            ROW_GRID,
+            "border-b border-gray-100 pb-1.5 text-gray-500 dark:border-gray-900 dark:text-gray-400",
+            tableTokens.header,
           )}
+        >
+          <span className="text-right">#</span>
+          <span>Produto</span>
+          <span className="text-right">%Per.</span>
+          <span className="text-right">%Mês</span>
+          <span className="text-right">Δpp</span>
+        </div>
+
+        {/* Data rows */}
+        <div className="flex flex-col gap-1">
+          {sorted.map((r, i) => {
+            const deltaPp = r.pct_mes_corrente - r.pct
+            const isUp = deltaPp > PARTICIPACAO_THRESHOLD_PP
+            const isDown = deltaPp < -PARTICIPACAO_THRESHOLD_PP
+            const SignalIcon = isUp
+              ? RiArrowUpLine
+              : isDown
+                ? RiArrowDownLine
+                : RiSubtractLine
+            const signalClass = isUp
+              ? "text-emerald-600 dark:text-emerald-400"
+              : isDown
+                ? "text-red-600 dark:text-red-400"
+                : "text-gray-400 dark:text-gray-600"
+            const deltaTxt = `${deltaPp >= 0 ? "+" : ""}${deltaPp.toFixed(1).replace(".", ",")}`
+            const tooltip = `Participação ${fmtPct1(r.pct)} → ${fmtPct1(r.pct_mes_corrente)} (${deltaTxt} pp)`
+            return (
+              <div key={r.categoria} className={cx(ROW_GRID, "py-1")}>
+                <span
+                  className={cx(tableTokens.cellNumberSecondary, "text-right")}
+                >
+                  {i + 1}
+                </span>
+                <span className={cx(tableTokens.cellText, "truncate")}>
+                  {r.categoria}
+                </span>
+                <span className={cx(tableTokens.cellNumber, "text-right")}>
+                  {fmtPct1(r.pct)}
+                </span>
+                <span className={cx(tableTokens.cellNumber, "text-right")}>
+                  {fmtPct1(r.pct_mes_corrente)}
+                </span>
+                <span
+                  className={cx(
+                    "inline-flex items-center justify-end gap-0.5 tabular-nums text-xs",
+                    signalClass,
+                  )}
+                  title={tooltip}
+                >
+                  <SignalIcon className="size-3.5" aria-hidden="true" />
+                  <span aria-label={tooltip}>{deltaTxt}</span>
+                </span>
+              </div>
+            )
+          })}
         </div>
       </div>
-      <span
-        className={cx("shrink-0 text-right tabular-nums font-medium", rightColorClass)}
-      >
-        {rightLabel}
-      </span>
-    </li>
+    </Card>
   )
 }
 

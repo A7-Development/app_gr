@@ -85,7 +85,7 @@ async def test_serasa_pj_happy_path_returns_consulta_id() -> None:
             "participacoes": 0,
             "enderecos": 1,
             "pagamento_buckets": 6,
-            "inquiries_anteriores": 3,
+            "consultas_listadas_detalhe": 3,
         },
         "errors": [],
     }
