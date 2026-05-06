@@ -20,6 +20,39 @@
 > 3. **Inline styles `style={{...}}` sao permitidos** em qualquer camada quando o handoff exigir efeito que Tailwind nao resolve bem (gradientes complexos, positioning especifico, transformacoes pontuais).
 > 4. **Cores Tailwind fora das categorias da §4 sao permitidas** (`orange-*`, `purple-*`, `yellow-*`, `stone-*`, `zinc-*`, `neutral-*`) quando vierem do handoff. Continuam como cor de DADOS apenas em chart series.
 >
+> **Liberdade explicita durante este modo (4 niveis de customizacao do Tremor):**
+>
+> Para nao haver duvida, durante a janela de iteracao voce TEM liberdade total para:
+>
+> 1. **Aplicar classes Tailwind ad-hoc na callsite** (qualquer pagina/componente):
+>    valores arbitrarios (`h-[42px]`, `text-[13px]`, `p-[7px]`), hex literals
+>    (`bg-[#0F1A2C]`), `style={{...}}`, e cores Tailwind fora da paleta canonica
+>    (`orange-*`, `purple-*`, etc) — quando o handoff exigir. Coberto pelos
+>    bullets 1-4 acima.
+> 2. **Editar tokens em `frontend/src/design-system/tokens/*.ts`** (`colors`,
+>    `spacing`, `radius`, `motion`, `card`, `table`, `typography`, etc).
+>    Mudancas propagam para tudo que consome o token. **Esta e a forma
+>    preferida** de mudanca sistemica de "cards padrao", "altura de header",
+>    "raio default", "tipografia de cell", "duration de animacao".
+> 3. **Editar `frontend/src/app/globals.css` `@theme`** para criar/alterar CSS
+>    vars que viram utilities Tailwind v4 (`--color-brand-secondary`,
+>    `--header-h`, novos keyframes, etc). Mudanca de paleta global e nova
+>    utility nascem aqui.
+> 4. **Criar wrappers customizados em `frontend/src/design-system/components/`**
+>    embrulhando primitivos `tremor/*` ou `charts/*` com defaults proprios
+>    (ex.: `<HeroCard>` = `<Card>` + gradiente + padding diferente; `<DenseDataTable>`
+>    = `<DataTable>` com row height menor por padrao). Esta e exatamente a
+>    camada de composicao do design system — feita pra isso.
+>
+> **O que continua bloqueado mesmo neste modo:**
+>
+> Editar diretamente `frontend/src/components/tremor/*.tsx` ou
+> `frontend/src/components/charts/*.tsx` (camadas verbatim — fork do
+> primitivo). Para customizacao de primitivo, **componha um wrapper na camada
+> `design-system/components/`** (nivel 4 acima). Se voce ESTRITAMENTE precisa
+> mexer no primitivo, pare e discuta antes — fork muda a relacao com o
+> upstream Tremor (toda atualizacao Tremor passa a ser merge manual).
+>
 > **Regras que CONTINUAM em vigor (nao sao suspensas):**
 >
 > - §2 **stack obrigatoria** — sem novas libs sem autorizacao explicita do usuario.
