@@ -105,7 +105,7 @@ def _pick_valor(item: dict[str, Any]) -> Decimal | None:
         if key in item and item[key] is not None:
             try:
                 return to_decimal(item[key])
-            except Exception:  # noqa: BLE001
+            except Exception:
                 continue
     return None
 

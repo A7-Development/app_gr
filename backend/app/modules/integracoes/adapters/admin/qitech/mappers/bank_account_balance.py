@@ -41,7 +41,7 @@ def _pick_saldo(payload: dict[str, Any]) -> Decimal | None:
         if key in payload and payload[key] is not None:
             try:
                 return to_decimal(payload[key])
-            except Exception:  # noqa: BLE001 -- payload malformado nao derruba ETL
+            except Exception:
                 continue
     return None
 

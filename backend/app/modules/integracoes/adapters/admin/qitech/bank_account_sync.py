@@ -243,7 +243,7 @@ async def sync_balance(
                 step["canonical_rows_upserted"] = count
 
             await db.commit()
-    except Exception as e:  # noqa: BLE001 -- erro do mapper/DB nao deve derrubar runner
+    except Exception as e:
         step["errors"].append(f"persist: {type(e).__name__}: {e}")
         step["elapsed_seconds"] = round(time.monotonic() - t0, 2)
         return step
@@ -350,7 +350,7 @@ async def sync_statement(
                 step["canonical_rows_upserted"] = count
 
             await db.commit()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         step["errors"].append(f"persist: {type(e).__name__}: {e}")
         step["elapsed_seconds"] = round(time.monotonic() - t0, 2)
         return step
