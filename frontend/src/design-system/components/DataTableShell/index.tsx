@@ -22,15 +22,18 @@ import * as React from "react"
 import type { ColumnDef, VisibilityState } from "@tanstack/react-table"
 import type { RemixiconComponentType } from "@remixicon/react"
 
+import { cx } from "@/lib/utils"
 import { Button } from "@/components/tremor/Button"
 import { Card } from "@/components/tremor/Card"
 import { DataTable } from "@/design-system/components/DataTable"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 import { FilterSearch } from "@/design-system/components/FilterBar"
+import { OriginDot } from "@/design-system/components/OriginDot"
 import { SegmentSwitch } from "@/design-system/components/SegmentSwitch"
 import type { DensityMode } from "@/design-system/tokens/spacing"
 import { tableTokens } from "@/design-system/tokens/table"
+import type { Provenance } from "@/design-system/types/provenance"
 
 // ───────────────────────────────────────────────────────────────────────────
 // Configs
@@ -102,6 +105,15 @@ export type DataTableShellProps<T> = {
   rowClassName?: (row: T) => string
   initialColumnVisibility?: VisibilityState
   virtualize?: boolean
+
+  // ── Proveniencia (CLAUDE.md §14.1) ────────────────────────────────────
+  /**
+   * Proveniencia canonica dos dados da tabela.
+   * Renderiza dot pequeno no rodape direito do card com tooltip de
+   * fonte + adapter@versao + sincronizacao + trust level.
+   * Mock = `undefined | null` (dot some).
+   */
+  provenance?: Provenance | null
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -127,6 +139,7 @@ export function DataTableShell<T>({
   rowClassName,
   initialColumnVisibility,
   virtualize,
+  provenance,
 }: DataTableShellProps<T>) {
   // ── Counts agregados (segment ANTES, search depois via globalFilter) ─
   const totalCount = data.length
@@ -210,7 +223,7 @@ export function DataTableShell<T>({
     : null
 
   return (
-    <Card className={tableTokens.cardWrapper}>
+    <Card className={cx(tableTokens.cardWrapper, "relative")}>
       {hasFilterBar && (
         <div className={tableTokens.filterBar}>
           {search && (
@@ -270,6 +283,10 @@ export function DataTableShell<T>({
           )
         }
       />
+
+      {/* Proveniencia (CLAUDE.md §14.1) — dot pinned no rodape direito do Card.
+          Mock (provenance undefined) = nada renderiza. */}
+      {provenance && <OriginDot provenance={provenance} variant="pinned" />}
     </Card>
   )
 }

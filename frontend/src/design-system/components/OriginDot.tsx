@@ -4,32 +4,61 @@ import * as React from "react"
 
 import { cx } from "@/lib/utils"
 import { Tooltip } from "@/components/tremor/Tooltip"
+import {
+  type Provenance,
+  TRUST_DOT_COLOR,
+  formatAdapterId,
+  formatProvenanceTooltip,
+  formatSourceLabel,
+} from "@/design-system/types/provenance"
 
 //
-// OriginDot -- proveniencia em KpiCard / VizCard.
+// OriginDot -- proveniencia em KpiCard / VizCard / EChartsCard / DataTableShell.
 //
-// Tres modos:
+// Aceita duas APIs:
+//
+//   1) Canonica (preferida):
+//      <OriginDot provenance={p} variant="dot" />
+//      Recebe um Provenance (CLAUDE.md §14.1). Cor do dot pelo trustLevel
+//      (high=emerald, medium=amber, low=red). Tooltip mostra fonte + adapter@v
+//      + sincronizado + confianca. Mock = `provenance={undefined|null}` ->
+//      nada renderiza.
+//
+//   2) Legacy:
+//      <OriginDot source="Bitfin" updatedAtISO="..." variant="inline" />
+//      Continua funcionando para chamadas antigas que ainda nao migraram.
+//      Sem trustLevel — dot sempre verde, como era antes.
+//
+// 3 variants:
 //   - `inline` (default): label visivel "🟢 Fonte · ha N min" no flow do
 //     card. Alinhado com handoff bi-padrao 2026-04-26 (KpiCard.source).
 //   - `pinned`: dot 12x12 absolute bottom-right (positioning interno). Usado
-//     em VizCard onde o footer ja carrega a fonte e o ponto e marcador
-//     redundante. Variante legada do handoff COMPONENTS.md §11.
+//     em VizCard / EChartsCard / DataTableShell — caller marca o
+//     container parent como `relative`. Variante do handoff COMPONENTS.md §11.
 //   - `dot`: dot 6x6 SEM positioning interno (caller wrappa). Usado em
 //     KpiCard para colar a proveniencia no canto superior direito sem
 //     forcar 18-20px de altura extra (handoff pos-iteracao 2026-04-30).
 //
 
-type OriginDotProps = {
-  source: string
-  updatedAtISO?: string | null
-  /**
-   * "inline" (default) — label visivel no flow.
-   * "pinned"          — dot 12x12 absolute bottom-right (positioning interno).
-   * "dot"             — dot 6x6 sem positioning (caller decide onde colar).
-   */
-  variant?: "inline" | "pinned" | "dot"
+type OriginDotVariant = "inline" | "pinned" | "dot"
+
+type CanonicalProps = {
+  provenance: Provenance | null | undefined
+  source?: never
+  updatedAtISO?: never
+  variant?: OriginDotVariant
   className?: string
 }
+
+type LegacyProps = {
+  provenance?: never
+  source: string
+  updatedAtISO?: string | null
+  variant?: OriginDotVariant
+  className?: string
+}
+
+type OriginDotProps = CanonicalProps | LegacyProps
 
 function formatRelative(iso: string): string {
   const ts = new Date(iso).getTime()
@@ -44,12 +73,90 @@ function formatRelative(iso: string): string {
   return `ha ${diffD} d`
 }
 
-export function OriginDot({
-  source,
-  updatedAtISO,
-  variant = "inline",
-  className,
-}: OriginDotProps) {
+const LEGACY_DOT_COLOR =
+  "bg-emerald-500 hover:bg-emerald-600 dark:bg-emerald-500 dark:hover:bg-emerald-400"
+
+export function OriginDot(props: OriginDotProps) {
+  // ── Canonica: provenance ─────────────────────────────────────────────
+  if ("provenance" in props && props.provenance != null) {
+    const p = props.provenance
+    const variant = props.variant ?? "inline"
+    const tooltipText = formatProvenanceTooltip(p)
+    const dotColor = TRUST_DOT_COLOR[p.trustLevel]
+    const sourceLabel = formatSourceLabel(p)
+    const adapterId = formatAdapterId(p)
+    const relative = formatRelative(p.ingestedAt)
+
+    if (variant === "inline") {
+      return (
+        <span
+          aria-label={tooltipText}
+          title={tooltipText}
+          className={cx(
+            "mt-0.5 inline-flex items-center gap-1.5 text-[10px] leading-none",
+            "text-gray-500 dark:text-gray-400",
+            props.className,
+          )}
+        >
+          <span
+            aria-hidden="true"
+            className={cx("inline-block size-1.5 shrink-0 rounded-full", dotColor)}
+          />
+          <span>
+            <span className="font-medium text-gray-900 dark:text-gray-50">
+              {sourceLabel}
+            </span>
+            {" · "}
+            {adapterId}
+            {" · "}
+            {relative}
+          </span>
+        </span>
+      )
+    }
+
+    if (variant === "dot") {
+      return (
+        <Tooltip content={tooltipText} side="top">
+          <span
+            aria-label={tooltipText}
+            className={cx(
+              "inline-block size-1.5 shrink-0 rounded-full",
+              dotColor,
+              "transition-colors duration-100",
+              "cursor-help",
+              props.className,
+            )}
+          />
+        </Tooltip>
+      )
+    }
+
+    // variant === "pinned"
+    return (
+      <Tooltip content={tooltipText} side="top">
+        <span
+          aria-label={tooltipText}
+          className={cx(
+            "absolute bottom-1.5 right-2 inline-flex size-2 items-center justify-center rounded-full",
+            dotColor,
+            "ring-2 ring-white dark:ring-[#090E1A]",
+            "transition-colors duration-100",
+            "cursor-help",
+            props.className,
+          )}
+        />
+      </Tooltip>
+    )
+  }
+
+  // ── Mock (provenance explicitamente null/undefined sem source) ───────
+  if (!("source" in props) || props.source == null) {
+    return null
+  }
+
+  // ── Legacy: source + updatedAtISO ────────────────────────────────────
+  const { source, updatedAtISO, variant = "inline", className } = props
   const relative = updatedAtISO ? formatRelative(updatedAtISO) : null
   const tooltipText = relative
     ? `Fonte: ${source} -- atualizado ${relative}`
@@ -67,7 +174,7 @@ export function OriginDot({
       >
         <span
           aria-hidden="true"
-          className="inline-block size-1.5 shrink-0 rounded-full bg-emerald-500"
+          className={cx("inline-block size-1.5 shrink-0 rounded-full", LEGACY_DOT_COLOR)}
         />
         <span>
           <span className="font-medium text-gray-900 dark:text-gray-50">{source}</span>
@@ -78,19 +185,14 @@ export function OriginDot({
   }
 
   if (variant === "dot") {
-    // Dot-only sem positioning. O caller wrappa com `absolute top-X right-X`
-    // OU usa em flow inline. Mantem visual minimo + tooltip nativo do
-    // Tremor pra revelar a fonte completa no hover.
     return (
       <Tooltip content={tooltipText} side="top">
         <span
           aria-label={tooltipText}
           className={cx(
             "inline-block size-1.5 shrink-0 rounded-full",
-            "bg-emerald-500 hover:bg-emerald-600",
-            "dark:bg-emerald-500 dark:hover:bg-emerald-400",
+            LEGACY_DOT_COLOR,
             "transition-colors duration-100",
-            // cursor-help sinaliza hover-revealable info pro usuario
             "cursor-help",
             className,
           )}
@@ -99,7 +201,7 @@ export function OriginDot({
     )
   }
 
-  // variant === "pinned" (legacy, VizCard)
+  // variant === "pinned" (legacy)
   return (
     <Tooltip content={tooltipText} side="top">
       <span

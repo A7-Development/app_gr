@@ -1,25 +1,45 @@
 // src/design-system/components/KpiStrip/index.tsx
 //
-// KpiCard canonico do projeto (Strata Design System / iteracao 2026-04-29).
+// KpiCard canonico do projeto — Strata DS, iteracao 2026-05-05.
 //
-// Layout default: side-by-side — texto na esquerda (label, value, delta),
-// chart lateral compacto na direita, OriginDot ancorado no rodape esquerdo.
-// Inspiracao: handoff "Total Revenue" + escolha de densidade 4-col do
-// usuario (ver preview/kpicard-v2 para historico de iteracao).
+// ── Diagramacao canonica (3 linhas) ───────────────────────────────────────
+//   L1: label uppercase pequeno + OriginDot (opcional) + AlertBadge (opcional)
+//   L2: value sozinho — grande, bold, tabular-nums, leading-none
+//   L3: sub + delta (↑ X%) + deltaSub — inline na mesma linha, items-baseline.
+//       Ex.: "R$ 3,7 mi no mês  ↑ 4,2%  MTD"
 //
-// 3 variantes: compact (18px / 70x36) · default (20px / 100x44) · hero (30px / 130x56)
-// 2 layouts:   side (default) · stacked (chart abaixo do conteudo)
+// Esta e a forma DEFAULT do KpiCard. O sub fica na linha do delta (nao
+// junto do value como no handoff original). Diagramacao escolhida por dar
+// mais peso editorial ao value e leitura coesa do "sub + comparacao" como
+// uma narrativa unica do mes corrente.
 //
-// Features:
-//   - intensity bars opcionais ao lado do value
-//   - alert badge (warn / critical) ao lado do label quando threshold cruzado
-//   - callout pill no pico do sparkline (para destacar magnitude do delta)
-//   - endpoint dot opcional
-//   - source + updatedAtISO via OriginDot
+// ── Variants de tamanho ───────────────────────────────────────────────────
+//   compact · value 18px · gap-1   (Metricas Complementares)
+//   default · value 20px · gap-1.5 (KPIs Principais — strip de 5)
+//   hero    · value 30px · gap-2   (KPIs unicos, telas executivas)
 //
-// Compat: a `Sparkline` exportada e mantida (full-width, 80x28) porque
-// `DataTable/cells/SparklineCell` depende dela. O sparkline novo
-// (side-mounted com callout) e o `KpiSparkline` interno deste modulo.
+// ── Sparkline (opcional) ──────────────────────────────────────────────────
+// Default = sem chart. Quando o consumidor passa `sparkData`, o sparkline
+// aparece a direita (`layout="side"`, default) ou abaixo (`layout="stacked"`).
+// Sem `sparkData` o card e puramente textual.
+//
+// ── Features adicionais ──────────────────────────────────────────────────
+//   - intensity bars (KpiIntensity) opcionais ao lado do value
+//   - alert badge (warn / critical) na L1 quando threshold cruzado
+//   - callout pill no pico do sparkline (so com sparkData)
+//   - endpoint dot opcional (so com sparkData)
+//   - provenance canonica (§14.1) ou source legacy via OriginDot
+//
+// ── Divergencia do handoff Strata original ───────────────────────────────
+// O handoff Strata v1 tinha `value+sub` na mesma linha e sparkline lateral
+// como parte do default. Esta versao move `sub` para baixo (junto do
+// delta) e torna o sparkline opcional. Ver feedback_kpicard_variants.md
+// para historico da decisao.
+//
+// ── Compat ────────────────────────────────────────────────────────────────
+// A `Sparkline` exportada (full-width, 80x28) e mantida porque
+// `DataTable/cells/SparklineCell` depende dela. O sparkline interno do
+// KpiCard (side-mounted, com callout) e o `KpiSparkline`.
 
 "use client"
 
@@ -32,6 +52,7 @@ import {
 } from "@remixicon/react"
 import { cx } from "@/lib/utils"
 import { OriginDot } from "@/design-system/components/OriginDot"
+import type { Provenance } from "@/design-system/types/provenance"
 
 // ════════════════════════════════════════════════════════════════════════
 // IntensityBars
@@ -449,9 +470,15 @@ export interface KpiCardProps {
   alertThreshold?: AlertThreshold
   /** Valor numerico atual (usado pelo intensity + alert). */
   currentValue?: number
-  /** Fonte do dado (renderiza OriginDot no rodape). */
+  /**
+   * Proveniencia canonica (preferida — CLAUDE.md §14.1).
+   * Renderiza OriginDot inline ao lado do label com cor pelo trust level.
+   * Mock = nao passar (dot some).
+   */
+  provenance?: Provenance | null
+  /** Fonte do dado (LEGACY — use `provenance` em vez disso). */
   source?: string
-  /** Timestamp ISO da ultima atualizacao (tooltip do OriginDot). */
+  /** Timestamp ISO da ultima atualizacao (LEGACY — use `provenance` em vez disso). */
   updatedAtISO?: string | null
   /** Tamanho do card. Default: "default". */
   variant?: KpiVariant
@@ -477,6 +504,7 @@ export function KpiCard({
   sparkColor = "#10B981",
   alertThreshold,
   currentValue,
+  provenance,
   source,
   updatedAtISO,
   variant = "default",
@@ -519,14 +547,14 @@ export function KpiCard({
         </span>
         {showAlert && alertThreshold && <AlertBadge threshold={alertThreshold} />}
         {/* OriginDot inline ao lado do label — metadata visual sem competir
-            com o sparkline (ver wrapper para historico do design). */}
-        {source && (
-          <OriginDot
-            source={source}
-            updatedAtISO={updatedAtISO}
-            variant="dot"
-          />
-        )}
+            com o sparkline (ver wrapper para historico do design).
+            Prefere `provenance` canonico (§14.1); cai em `source` legacy
+            quando provenance nao foi passada. Mock (nada passado) = nao renderiza. */}
+        {provenance ? (
+          <OriginDot provenance={provenance} variant="dot" />
+        ) : source ? (
+          <OriginDot source={source} updatedAtISO={updatedAtISO} variant="dot" />
+        ) : null}
       </div>
 
       <div
@@ -544,53 +572,45 @@ export function KpiCard({
         >
           {value}
         </span>
-        {sub && (
-          <span
-            className={cx(
-              "tabular-nums text-gray-400 dark:text-gray-500 self-end ml-1",
-              s.subSize,
-            )}
-          >
-            <span
-              aria-hidden="true"
-              className="mr-0.5 text-gray-300 dark:text-gray-600"
-            >
-              —
-            </span>
-            {sub}
-          </span>
-        )}
       </div>
 
-      {delta && (
+      {(sub || delta) && (
         <p
           className={cx(
-            "tabular-nums text-gray-500 dark:text-gray-400",
-            s.deltaSize,
+            "flex flex-wrap items-baseline gap-x-1.5 tabular-nums text-gray-500 dark:text-gray-400",
+            s.subSize,
           )}
         >
-          <span
-            className={cx(
-              "inline-flex items-center gap-0.5 font-medium",
-              deltaColor,
-            )}
-          >
-            <ArrowIcon
-              className={cx(s.arrowSize, "shrink-0")}
-              aria-hidden="true"
-            />
-            {Math.abs(delta.value).toLocaleString("pt-BR", {
-              maximumFractionDigits: 2,
-            })}
-            {delta.suffix ?? ""}
-          </span>
-          <span
-            aria-hidden="true"
-            className="mx-1.5 text-gray-300 dark:text-gray-700"
-          >
-            ·
-          </span>
-          <span>{deltaSub}</span>
+          {sub && (
+            <span className="text-gray-400 dark:text-gray-500">{sub}</span>
+          )}
+          {delta && (
+            <>
+              <span
+                className={cx(
+                  "whitespace-nowrap font-medium",
+                  deltaColor,
+                )}
+              >
+                {/* Icone como inline (nao inline-flex) para preservar a
+                    baseline do texto no <p items-baseline> parent. O
+                    vertical-align em em-units acompanha a escala da
+                    tipografia (compact/default/hero). */}
+                <ArrowIcon
+                  className={cx(
+                    s.arrowSize,
+                    "mr-0.5 inline shrink-0 align-[-0.125em]",
+                  )}
+                  aria-hidden="true"
+                />
+                {Math.abs(delta.value).toLocaleString("pt-BR", {
+                  maximumFractionDigits: 2,
+                })}
+                {delta.suffix ?? ""}
+              </span>
+              <span>{deltaSub}</span>
+            </>
+          )}
         </p>
       )}
     </div>

@@ -1,6 +1,18 @@
 // src/design-system/components/index.ts
 // Barrel export for all FIDC domain components.
 
+// ── Tipos compartilhados ─────────────────────────────────────────────────────
+export {
+  type Provenance,
+  type ProvenanceSourceType,
+  type TrustLevel,
+  TRUST_DOT_COLOR,
+  formatAdapterId,
+  formatSourceLabel,
+  formatProvenanceTooltip,
+  dedupeProvenances,
+} from "@/design-system/types/provenance"
+
 // ── Strata canonical components ───────────────────────────────────────────────
 export { StatusPill, STATUS_CONFIG, type StatusPillProps, type StatusKey } from "./StatusPill"
 export { ApprovalQueueBadge, type ApprovalQueueBadgeProps } from "./ApprovalQueueBadge"

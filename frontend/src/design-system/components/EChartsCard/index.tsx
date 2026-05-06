@@ -11,6 +11,8 @@ import type { EChartsOption } from "echarts"
 import { RiErrorWarningLine, RiRefreshLine } from "@remixicon/react"
 import { cx } from "@/lib/utils"
 import { useEChartsTheme } from "@/design-system/tokens/echarts-theme"
+import { OriginDot } from "@/design-system/components/OriginDot"
+import type { Provenance } from "@/design-system/types/provenance"
 
 export { useEChartsTheme }
 
@@ -54,6 +56,13 @@ export interface EChartsCardProps {
   caption?:      string
   actions?:      React.ReactNode
   footer?:       React.ReactNode
+  /**
+   * Proveniencia canonica dos dados do chart (CLAUDE.md §14.1).
+   * Renderiza dot pequeno no rodape direito do card com tooltip de
+   * fonte + adapter@versao + sincronizacao + trust level.
+   * Mock = `undefined | null` (dot some).
+   */
+  provenance?:   Provenance | null
   className?:    string
   echartsProps?: Omit<React.ComponentProps<typeof ReactECharts>, "option" | "style">
 }
@@ -68,6 +77,7 @@ export function EChartsCard({
   caption,
   actions,
   footer,
+  provenance,
   className,
   echartsProps,
 }: EChartsCardProps) {
@@ -158,6 +168,10 @@ export function EChartsCard({
           {footer}
         </div>
       )}
+
+      {/* Proveniencia (CLAUDE.md §14.1) — dot pinned no rodape direito.
+          Mock (provenance undefined) = nada renderiza. */}
+      {provenance && <OriginDot provenance={provenance} variant="pinned" />}
     </div>
   )
 }
