@@ -33,6 +33,7 @@ import {
 } from "@/components/tremor/Select"
 import { Textarea } from "@/components/tremor/Textarea"
 import {
+  type AgentMeta,
   type NodeConfigField,
   type NodeTypeMeta,
 } from "@/lib/credito-client"
@@ -47,7 +48,12 @@ import {
 } from "../_lib/glossary"
 import { DATA_PRODUCT_PALETTE } from "../_lib/etapas"
 
+import { AgentInputBindingsField } from "./AgentInputBindingsField"
 import { ConditionBuilder } from "./ConditionBuilder"
+import {
+  ConsolidatorBuilder,
+  type ConsolidatorOutputField,
+} from "./ConsolidatorBuilder"
 import { DocumentsBuilder } from "./DocumentsBuilder"
 import { FieldsBuilder, type FieldDef } from "./FieldsBuilder"
 import type { StrataNodeData } from "./StrataNode"
@@ -60,12 +66,21 @@ type Props = {
   nodes: Node[]
   edges: Edge[]
   nodeTypes: NodeTypeMeta[]
+  /** Catalogo per-agent vindo de GET /credito/agent-catalog.
+   *  Quando o node selecionado e specialist_agent e o agente declara
+   *  inputs[], o inspector renderiza AgentInputBindingsField para o user
+   *  ligar cada slot a uma variavel upstream. */
+  agentCatalog: AgentMeta[]
   /** Map { nodeId: { varName: vartype } } vindo do /workflows/_validate.
    *  Usado pelo VariablePicker pra listar variáveis upstream tipadas
    *  ao usuário no entity_ref do bureau, expression do branch, etc. */
   producedByNode: Record<string, Record<string, string>>
   onUpdateConfig: (nodeId: string, config: Record<string, unknown>) => void
   onUpdateLabel: (nodeId: string, label: string) => void
+  /** Atualiza a semantica de fan-in do node ("all" = espera todas;
+   *  "any" = qualquer parent dispara). Field so aparece quando o node
+   *  tem 2+ incoming edges. */
+  onUpdateJoinMode: (nodeId: string, joinMode: "any" | "all") => void
 }
 
 // ─── Main ───────────────────────────────────────────────────────────────
@@ -75,15 +90,33 @@ export function NodeInspector({
   nodes,
   edges,
   nodeTypes,
+  agentCatalog,
   producedByNode,
   onUpdateConfig,
   onUpdateLabel,
+  onUpdateJoinMode,
 }: Props) {
   if (!selectedNode) return <EmptyInspector />
 
   const data = selectedNode.data as unknown as StrataNodeData
   const meta = nodeTypes.find((nt) => nt.type === data.nodeType)
   const etapaLabel = getEtapaLabel(data.nodeType, data.config ?? {})
+
+  // Fan-in: se o node selecionado tem 2+ incoming edges, mostra o campo
+  // de semantica de junção (all/any). Com 0 ou 1 parent o campo nao
+  // se aplica.
+  const incomingEdges = edges.filter((e) => e.target === selectedNode.id)
+  const showJoinMode = incomingEdges.length >= 2
+  const parentNodeTypes = incomingEdges.map((e) => {
+    const parent = nodes.find((n) => n.id === e.source)
+    return (parent?.data as StrataNodeData | undefined)?.nodeType
+  })
+  // Hint contextual: se algum parent vem de uma decisao (conditional_branch
+  // ou human_review), o caso e quase sempre "convergencia de decisao", onde
+  // o usuario provavelmente quer "Qualquer". Mostra nota soft, sem auto-flip.
+  const hasDecisionParent = parentNodeTypes.some(
+    (t) => t === "conditional_branch" || t === "human_review",
+  )
 
   return (
     <div className="space-y-4">
@@ -111,15 +144,111 @@ export function NodeInspector({
         />
       </div>
 
+      {showJoinMode && (
+        <JoinModeField
+          value={data.joinMode ?? "all"}
+          onChange={(next) => onUpdateJoinMode(selectedNode.id, next)}
+          incomingCount={incomingEdges.length}
+          hasDecisionParent={hasDecisionParent}
+        />
+      )}
+
       {/* Despacho por tipo de etapa */}
       <NodeConfigDispatcher
         node={selectedNode}
         nodes={nodes}
         edges={edges}
         meta={meta}
+        agentCatalog={agentCatalog}
         producedByNode={producedByNode}
         onUpdateConfig={(cfg) => onUpdateConfig(selectedNode.id, cfg)}
       />
+    </div>
+  )
+}
+
+// ─── JoinMode field ─────────────────────────────────────────────────────
+//
+// Aparece SO quando o node selecionado tem 2+ incoming edges.
+// Default no schema backend e "all" (espera todas). Para o caso "decisao
+// convergindo num passo terminal" (ex.: aprovado/rejeitado -> notificar)
+// o usuario muda para "any" (qualquer uma).
+
+function JoinModeField({
+  value,
+  onChange,
+  incomingCount,
+  hasDecisionParent,
+}: {
+  value: "any" | "all"
+  onChange: (next: "any" | "all") => void
+  incomingCount: number
+  hasDecisionParent: boolean
+}) {
+  return (
+    <div className="space-y-2 rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/50">
+      <div>
+        <p className={tableTokens.header}>
+          Quando rodar esta etapa ({incomingCount} entradas)
+        </p>
+        <p className={cx(tableTokens.cellSecondary, "mt-0.5")}>
+          A etapa tem mais de uma anterior. Quando ela deve executar?
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        <label className="flex cursor-pointer items-start gap-2 rounded-md border border-transparent p-2 hover:bg-white dark:hover:bg-gray-950">
+          <input
+            type="radio"
+            name="join-mode"
+            value="all"
+            checked={value === "all"}
+            onChange={() => onChange("all")}
+            className="mt-0.5"
+          />
+          <span className="flex-1">
+            <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
+              Esperar todas as etapas anteriores
+            </span>
+            <span className="mt-0.5 block text-[11px] text-gray-500 dark:text-gray-400">
+              So executa quando TODAS terminarem com sucesso. Se alguma for
+              pulada por uma decisao, esta tambem e pulada.
+            </span>
+          </span>
+        </label>
+        <label className="flex cursor-pointer items-start gap-2 rounded-md border border-transparent p-2 hover:bg-white dark:hover:bg-gray-950">
+          <input
+            type="radio"
+            name="join-mode"
+            value="any"
+            checked={value === "any"}
+            onChange={() => onChange("any")}
+            className="mt-0.5"
+          />
+          <span className="flex-1">
+            <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
+              Qualquer uma das etapas anteriores
+            </span>
+            <span className="mt-0.5 block text-[11px] text-gray-500 dark:text-gray-400">
+              Executa assim que UMA terminar. Caso classico: convergencia
+              depois de uma decisao (aprovado/rejeitado -&gt; notificar).
+            </span>
+          </span>
+        </label>
+      </div>
+      {hasDecisionParent && value === "all" && (
+        <div className="flex items-start gap-1.5 rounded-md border border-blue-200 bg-blue-50 p-2 text-[11px] text-blue-900 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200">
+          <RiInformationLine
+            className="mt-0.5 size-3.5 shrink-0 text-blue-700 dark:text-blue-400"
+            aria-hidden
+          />
+          <span>
+            Detectamos uma decisao entre as etapas anteriores. Voce
+            provavelmente quer{" "}
+            <strong>&quot;Qualquer uma&quot;</strong> — caso contrario esta
+            etapa sera pulada sempre que uma das ramificacoes for tomada.
+          </span>
+        </div>
+      )}
     </div>
   )
 }
@@ -146,6 +275,7 @@ function NodeConfigDispatcher({
   nodes,
   edges,
   meta,
+  agentCatalog,
   producedByNode,
   onUpdateConfig,
 }: {
@@ -153,6 +283,7 @@ function NodeConfigDispatcher({
   nodes: Node[]
   edges: Edge[]
   meta: NodeTypeMeta | undefined
+  agentCatalog: AgentMeta[]
   producedByNode: Record<string, Record<string, string>>
   onUpdateConfig: (cfg: Record<string, unknown>) => void
 }) {
@@ -176,7 +307,16 @@ function NodeConfigDispatcher({
 
     case "specialist_agent":
     case "document_extractor":
-      return <AgentInspector data={data} onUpdateConfig={onUpdateConfig} />
+      return (
+        <AgentInspector
+          nodeId={node.id}
+          data={data}
+          nodes={nodes}
+          edges={edges}
+          agentCatalog={agentCatalog}
+          onUpdateConfig={onUpdateConfig}
+        />
+      )
 
     case "conditional_branch":
       return (
@@ -197,6 +337,17 @@ function NodeConfigDispatcher({
           nodes={nodes}
           edges={edges}
           producedByNode={producedByNode}
+          onUpdateConfig={onUpdateConfig}
+        />
+      )
+
+    case "consolidator":
+      return (
+        <ConsolidatorInspector
+          nodeId={node.id}
+          config={config}
+          nodes={nodes}
+          edges={edges}
           onUpdateConfig={onUpdateConfig}
         />
       )
@@ -289,16 +440,29 @@ function DocumentRequestInspector({
 // ─── specialist_agent / document_extractor ──────────────────────────────
 
 function AgentInspector({
+  nodeId,
   data,
+  nodes,
+  edges,
+  agentCatalog,
   onUpdateConfig,
 }: {
+  nodeId: string
   data: StrataNodeData
+  nodes: Node[]
+  edges: Edge[]
+  agentCatalog: AgentMeta[]
   onUpdateConfig: (cfg: Record<string, unknown>) => void
 }) {
   const config = data.config ?? {}
   const agent = config.agent as string | undefined
   const sectionId = agent ? AGENT_SECTION_ID[agent] : undefined
   const friendlyLabel = agent ? AGENT_FRIENDLY_LABEL[agent] : undefined
+  // Quando o agente declara inputs[] no catalog (Phase A), renderiza
+  // AgentInputBindingsField. Senao (legacy) mantem so o link de criterios.
+  const agentMeta = agent ? agentCatalog.find((a) => a.name === agent) : undefined
+  const inputBindings =
+    (config.input_bindings as Record<string, string> | undefined) ?? {}
 
   return (
     <div className="space-y-4">
@@ -313,6 +477,19 @@ function AgentInspector({
           </code>
         )}
       </div>
+
+      {agentMeta && agentMeta.inputs.length > 0 && (
+        <AgentInputBindingsField
+          agent={agentMeta}
+          value={inputBindings}
+          onChange={(next) =>
+            onUpdateConfig({ ...config, input_bindings: next })
+          }
+          targetNodeId={nodeId}
+          nodes={nodes}
+          edges={edges}
+        />
+      )}
 
       {agent && sectionId && data.nodeType === "specialist_agent" && (
         <CriteriosLink sectionId={sectionId} agentLabel={friendlyLabel ?? agent} />
@@ -422,6 +599,47 @@ function ConditionalBranchInspector({
         nodes={nodes}
         edges={edges}
         hint="Etapas conectadas apos esta vao receber o resultado da decisao."
+      />
+      <AdvancedJsonToggle config={config} onUpdateConfig={onUpdateConfig} />
+    </div>
+  )
+}
+
+// ─── consolidator ───────────────────────────────────────────────────────
+
+function ConsolidatorInspector({
+  nodeId,
+  config,
+  nodes,
+  edges,
+  onUpdateConfig,
+}: {
+  nodeId: string
+  config: Record<string, unknown>
+  nodes: Node[]
+  edges: Edge[]
+  onUpdateConfig: (cfg: Record<string, unknown>) => void
+}) {
+  const outputFields =
+    (config.output_fields as ConsolidatorOutputField[] | undefined) ?? []
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className={tableTokens.header}>Consolidador</p>
+        <p className={cx(tableTokens.cellSecondary, "mt-1")}>
+          Combina dados das etapas anteriores em saidas estruturadas. Sem IA —
+          regra fixa.
+        </p>
+      </div>
+      <ConsolidatorBuilder
+        value={outputFields}
+        onChange={(next) =>
+          onUpdateConfig({ ...config, output_fields: next })
+        }
+        targetNodeId={nodeId}
+        nodes={nodes}
+        edges={edges}
       />
       <AdvancedJsonToggle config={config} onUpdateConfig={onUpdateConfig} />
     </div>

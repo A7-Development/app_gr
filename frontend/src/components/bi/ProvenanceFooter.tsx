@@ -1,7 +1,5 @@
 "use client"
 
-import { RiDatabase2Line, RiPulseLine, RiShieldCheckLine } from "@remixicon/react"
-
 import type { Provenance } from "@/lib/api-client"
 import { Tooltip } from "@/components/tremor/Tooltip"
 
@@ -37,16 +35,22 @@ const trustCopy: Record<string, string> = {
   low: "Baixa confianca",
 }
 
+const trustDot: Record<string, string> = {
+  high: "bg-emerald-500",
+  medium: "bg-amber-500",
+  low: "bg-red-500",
+}
+
 /**
- * Rodape de proveniencia (CLAUDE.md 14.6).
+ * Rodape de proveniencia (CLAUDE.md §14.5).
  *
- * Exibe DOIS eixos temporais claramente distintos:
- * - **Pipeline** (`last_sync_at`): quando o sistema recebeu dado pela ultima
- *   vez, independente de filtros. Vem do `decision_log` (ou proxy para
- *   fontes publicas). Responde "o pipeline esta vivo?".
- * - **Dados** (`last_source_updated_at`): quando o dado mais recente DENTRO
- *   do set filtrado foi atualizado na origem. Responde "ate quando vai o
- *   que estou olhando?".
+ * Linha unica compacta com dois eixos temporais:
+ * - **sync** (`last_sync_at`): pipeline alive — quando o adapter rodou.
+ * - **dados ate** (`last_source_updated_at`): timestamp max dos registros
+ *   filtrados na origem.
+ *
+ * Detalhes (versao do adapter, datas absolutas) ficam em tooltip para nao
+ * ocupar espaco vertical.
  */
 export function ProvenanceFooter({
   provenance,
@@ -57,55 +61,34 @@ export function ProvenanceFooter({
 }) {
   if (!provenance) return null
   const trust = trustCopy[provenance.trust_level] ?? provenance.trust_level
+  const dot = trustDot[provenance.trust_level] ?? "bg-gray-400"
   const syncRel = formatRelative(provenance.last_sync_at)
+  const syncAbs = formatDateTime(provenance.last_sync_at)
+  const dataAbs = formatDateTime(provenance.last_source_updated_at)
+  const tooltipContent = `Sincronizado em ${syncAbs} · Adapter ${provenance.ingested_by_version}`
 
   return (
-    <div
-      className={`mt-6 flex flex-col gap-1.5 border-t border-gray-200 pt-3 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-500 ${className}`}
-    >
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        <span className="inline-flex items-center gap-1.5">
-          <RiPulseLine className="size-3.5 text-gray-500" aria-hidden="true" />
-          <span className="font-medium text-gray-700 dark:text-gray-300">
-            Pipeline
-          </span>
-          <span>
-            sincronizado em {formatDateTime(provenance.last_sync_at)}
-            {syncRel ? ` (${syncRel})` : ""}
-          </span>
+    <Tooltip content={tooltipContent} side="top">
+      <div
+        className={`mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-gray-200 px-6 pt-2 text-[11px] text-gray-500 dark:border-gray-800 dark:text-gray-500 ${className}`}
+      >
+        <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${dot}`} />
+        <span className="font-medium text-gray-700 dark:text-gray-300">
+          {provenance.source_type}
         </span>
+        <span className="text-gray-300 dark:text-gray-700">·</span>
+        <code className="font-mono text-gray-600 dark:text-gray-400">
+          {provenance.source_ids.join(", ")}
+        </code>
+        <span className="text-gray-300 dark:text-gray-700">·</span>
+        <span>{provenance.row_count.toLocaleString("pt-BR")} linhas</span>
+        <span className="text-gray-300 dark:text-gray-700">·</span>
+        <span>sync {syncRel || syncAbs}</span>
+        <span className="text-gray-300 dark:text-gray-700">·</span>
+        <span>dados ate {dataAbs}</span>
+        <span className="text-gray-300 dark:text-gray-700">·</span>
+        <span>{trust}</span>
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        <span className="inline-flex items-center gap-1.5">
-          <RiDatabase2Line className="size-3.5 text-gray-500" aria-hidden="true" />
-          <span className="font-medium text-gray-700 dark:text-gray-300">
-            Dados
-          </span>
-          <span>
-            {provenance.row_count.toLocaleString("pt-BR")} linhas · mais recente em{" "}
-            {formatDateTime(provenance.last_source_updated_at)}
-          </span>
-        </span>
-      </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-400 dark:text-gray-600">
-        <span>
-          Fonte:{" "}
-          <code className="font-mono">{provenance.source_type}</code>
-          {" · "}
-          <code className="font-mono">
-            {provenance.source_ids.join(", ")}
-          </code>
-        </span>
-        <Tooltip
-          content={`Versao do adapter: ${provenance.ingested_by_version}`}
-          side="top"
-        >
-          <span className="inline-flex items-center gap-1.5">
-            <RiShieldCheckLine className="size-3.5" aria-hidden="true" />
-            {trust}
-          </span>
-        </Tooltip>
-      </div>
-    </div>
+    </Tooltip>
   )
 }

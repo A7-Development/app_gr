@@ -63,6 +63,7 @@ import { useAIChat, useAIInsights, useAIQuota } from "@/lib/hooks/ai"
 import { useBiFilters, type PresetKey } from "@/lib/hooks/useBiFilters"
 import { biMetadata, biOperacoes2 } from "@/lib/api-client"
 
+import { AbaProdutosPricing } from "./_components/AbaProdutosPricing"
 import { AbaVolumeRitmo } from "./_components/AbaVolumeRitmo"
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -403,20 +404,21 @@ export default function Operacoes2Page() {
         {/* Conteudo da aba — scroll container observado por useScrollShadow. */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4">
           <div className="flex flex-col gap-4">
-            {/* KpiStrip canonico — 5 KPIs */}
+            {/* KpiStrip canonico — 5 KPIs (sem sparkline — modo leve).
+                value/sub: value = agregado do PERIODO; sub = mes corrente
+                (1-N onde N = dia atual).
+                delta: MTD same-period (mes corrente 1-N vs mes anterior 1-N). */}
             <KpiStrip cols={5}>
               <KpiCard
                 label="VOP"
                 value={fmtBRLCompact.format(kpiStrip?.vop.valor ?? 0)}
                 sub={`${fmtBRLCompact.format(kpiStrip?.vop.mes_corrente_valor ?? 0)} no mês`}
                 delta={
-                  kpiStrip?.vop.delta_pct == null
+                  kpiStrip?.vop.mes_corrente_delta_pct == null
                     ? undefined
-                    : { value: kpiStrip.vop.delta_pct, suffix: "%" }
+                    : { value: kpiStrip.vop.mes_corrente_delta_pct, suffix: "%" }
                 }
-                deltaSub="MoM"
-                sparkData={kpiStrip?.vop.sparkline_12m.map((p) => p.valor) ?? []}
-                sparkColor="#2563EB"
+                deltaSub="MTD"
                 source="Bitfin"
               />
               <KpiCard
@@ -424,37 +426,34 @@ export default function Operacoes2Page() {
                 value={fmtPct2(kpiStrip?.taxa_media.valor ?? 0)}
                 sub={`${fmtPct2(kpiStrip?.taxa_media.mes_corrente_valor ?? 0)} no mês`}
                 delta={
-                  kpiStrip?.taxa_media.delta_pct == null
+                  kpiStrip?.taxa_media.mes_corrente_delta_pct == null
                     ? undefined
-                    : { value: kpiStrip.taxa_media.delta_pct, suffix: "%" }
+                    : {
+                        value: kpiStrip.taxa_media.mes_corrente_delta_pct,
+                        suffix: "%",
+                      }
                 }
-                deltaSub="MoM"
-                sparkData={
-                  kpiStrip?.taxa_media.sparkline_12m.map((p) => p.valor) ?? []
-                }
-                sparkColor="#3B82F6"
+                deltaSub="MTD"
               />
               <KpiCard
                 label="Prazo médio"
                 value={fmtDays(kpiStrip?.prazo_medio.valor ?? 0)}
                 sub={`${fmtDays(kpiStrip?.prazo_medio.mes_corrente_valor ?? 0)} no mês`}
                 delta={
-                  kpiStrip?.prazo_medio.delta_pct == null
+                  kpiStrip?.prazo_medio.mes_corrente_delta_pct == null
                     ? undefined
                     : {
-                        value: kpiStrip.prazo_medio.delta_pct,
+                        value: kpiStrip.prazo_medio.mes_corrente_delta_pct,
                         suffix: "%",
                         // Prazo subindo NAO e bom — inverte o "good" do delta.
                         direction:
-                          kpiStrip.prazo_medio.delta_pct >= 0 ? "up" : "down",
-                        good: kpiStrip.prazo_medio.delta_pct < 0,
+                          kpiStrip.prazo_medio.mes_corrente_delta_pct >= 0
+                            ? "up"
+                            : "down",
+                        good: kpiStrip.prazo_medio.mes_corrente_delta_pct < 0,
                       }
                 }
-                deltaSub="MoM"
-                sparkData={
-                  kpiStrip?.prazo_medio.sparkline_12m.map((p) => p.valor) ?? []
-                }
-                sparkColor="#9CA3AF"
+                deltaSub="MTD"
               />
               <KpiCard
                 label="Produto top"
@@ -463,19 +462,15 @@ export default function Operacoes2Page() {
                 }
                 sub={produtoTopSub(kpiStrip?.produto_top)}
                 delta={
-                  kpiStrip?.produto_top.delta_share_pp == null
+                  kpiStrip?.produto_top.mes_corrente_delta_share_pp == null
                     ? undefined
                     : {
-                        value: kpiStrip.produto_top.delta_share_pp,
+                        value:
+                          kpiStrip.produto_top.mes_corrente_delta_share_pp,
                         suffix: "pp",
                       }
                 }
-                deltaSub="MoM (fatia)"
-                sparkData={
-                  kpiStrip?.produto_top.sparkline_share_12m.map((p) => p.valor) ??
-                  []
-                }
-                sparkColor="#0EA5E9"
+                deltaSub="MTD (fatia)"
               />
               <KpiCard
                 label="Receita contratada"
@@ -486,24 +481,21 @@ export default function Operacoes2Page() {
                   kpiStrip?.receita_contratada.mes_corrente_valor ?? 0,
                 )} no mês`}
                 delta={
-                  kpiStrip?.receita_contratada.delta_pct == null
+                  kpiStrip?.receita_contratada.mes_corrente_delta_pct == null
                     ? undefined
-                    : { value: kpiStrip.receita_contratada.delta_pct, suffix: "%" }
+                    : {
+                        value:
+                          kpiStrip.receita_contratada.mes_corrente_delta_pct,
+                        suffix: "%",
+                      }
                 }
-                deltaSub="MoM"
-                sparkData={
-                  kpiStrip?.receita_contratada.sparkline_12m.map((p) => p.valor) ??
-                  []
-                }
-                sparkColor="#059669"
+                deltaSub="MTD"
               />
             </KpiStrip>
 
             {/* Tab content — area util da pagina */}
             {activeTab === "volume-ritmo" && <AbaVolumeRitmo />}
-            {activeTab === "produtos-pricing" && (
-              <PlaceholderTab label="Produtos & Pricing" />
-            )}
+            {activeTab === "produtos-pricing" && <AbaProdutosPricing />}
             {activeTab === "receita" && <PlaceholderTab label="Receita" />}
             {activeTab === "cedentes-concentracao" && (
               <PlaceholderTab label="Cedentes & Concentração" />

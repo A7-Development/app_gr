@@ -669,16 +669,17 @@ export type Operacoes2EvolucaoMensalPonto = {
 
 export type Operacoes2MesDestaque = { periodo: string; vop: number }
 
-export type Operacoes2MesCorrenteVsMedia = {
-  vop_corrente: number
-  media_12m: number
-  pct: number
-}
-
 export type Operacoes2AcumuladoDiarioPonto = {
   du_index: number
   corrente: number
   anterior: number
+}
+
+export type Operacoes2RitmoUaItem = {
+  ua_id: number
+  ua_nome: string
+  vop_corrente: number
+  delta_pct: number | null
 }
 
 export type Operacoes2RitmoMesCorrente = {
@@ -689,6 +690,9 @@ export type Operacoes2RitmoMesCorrente = {
   delta_pct: number | null
   projecao_fim_mes: number
   acumulado_dia_a_dia: Operacoes2AcumuladoDiarioPonto[]
+  // Quebra textual por UA — VOP MTD da UA + delta MoM same-period DU.
+  // Renderizado como lista no rodape do card Hero do Ritmo.
+  ritmo_por_ua: Operacoes2RitmoUaItem[]
 }
 
 export type Operacoes2PaceDiario = {
@@ -700,6 +704,11 @@ export type Operacoes2PaceDiario = {
 export type Operacoes2KpiSecundario = {
   valor: number
   delta_pct: number | null
+  // Sparkline 12M fechados (M-12 a M-1) do indicador. Usado pela tabela
+  // condensada de indicadores secundarios. Slope deve ser interpretado
+  // em modo relativo (% sobre a media da serie) — escalas variam por KPI
+  // (count, BRL, BRL/titulo, BRL/DU).
+  sparkline_12m: Point[]
 }
 
 export type Operacoes2KpisSecundariosVolume = {
@@ -719,6 +728,14 @@ export type Operacoes2QuebraDimensaoLinha = {
   // Mes corrente (Opcao 4)
   vop_mes_corrente: number
   pct_mes_corrente: number
+  // Sparkline 12M de share% (Point.valor em escala 0-100). Usado pela tabela
+  // trend em modo "share" — detecta drift de mix entre categorias.
+  sparkline_share_12m: Point[]
+  // Sparkline 12M de VOP absoluto da categoria (Point.valor em BRL). Usado
+  // pela tabela trend em modo "absolute" — leitura "categoria vs ela mesma
+  // no passado", apropriada quando dimensoes tem trajetoria propria de
+  // crescimento (ex.: UA, onde share% conduz a falso negativo).
+  sparkline_vop_12m: Point[]
 }
 
 export type Operacoes2EvolucaoPorUaPonto = {
@@ -728,34 +745,89 @@ export type Operacoes2EvolucaoPorUaPonto = {
   vop: number
 }
 
-export type Operacoes2HeatmapPonto = {
-  dow: number
-  semana_do_mes: number
-  vop_medio: number
-  n_ops: number
-}
-
-export type Operacoes2DiaSemanaResumo = {
-  dow: number
-  nome: string
-  vop_medio: number
-  n_ops_medio: number
-  pct_total_semana: number
-}
-
 export type Operacoes2AbaVolumeRitmoData = {
   evolucao_12m: Operacoes2EvolucaoMensalPonto[]
   evolucao_12m_por_ua: Operacoes2EvolucaoPorUaPonto[]
   melhor_mes: Operacoes2MesDestaque | null
   pior_mes: Operacoes2MesDestaque | null
-  mes_corrente_vs_media: Operacoes2MesCorrenteVsMedia | null
   ritmo: Operacoes2RitmoMesCorrente | null
   pace_diario: Operacoes2PaceDiario | null
   kpis_secundarios: Operacoes2KpisSecundariosVolume
   por_ua: Operacoes2QuebraDimensaoLinha[]
   por_produto: Operacoes2QuebraDimensaoLinha[]
-  heatmap_dow_semana: Operacoes2HeatmapPonto[]
-  por_dia_semana: Operacoes2DiaSemanaResumo[]
+}
+
+// ─── Aba 2: Produtos & Pricing ──────────────────────────────────────────────
+
+export type Operacoes2MixTemporalProdutoPonto = {
+  periodo: string
+  produto_sigla: string
+  vop: number
+  n_operacoes: number
+  taxa_media: number
+  prazo_medio: number
+}
+
+export type Operacoes2RankingProdutoLinha = {
+  sigla: string
+  nome: string | null
+  vop: number
+  pct: number
+  delta_mom_pp: number | null
+  taxa_media: number
+  prazo_medio: number
+  spread_medio: number
+  n_operacoes: number
+  vop_mes_corrente: number
+  taxa_media_mes_corrente: number
+}
+
+export type Operacoes2ScatterProdutoPonto = {
+  sigla: string
+  nome: string | null
+  prazo_medio: number
+  taxa_media: number
+  vop: number
+  prazo_medio_mes_corrente: number
+  taxa_media_mes_corrente: number
+  vop_mes_corrente: number
+}
+
+export type Operacoes2HistogramaProdutoBucket = {
+  produto_sigla: string
+  bucket_label: string
+  bucket_lower: number
+  bucket_upper: number
+  count: number
+  vop: number
+}
+
+export type Operacoes2HistogramaTaxasResumo = {
+  buckets: Operacoes2HistogramaProdutoBucket[]
+  media_ponderada: number
+  mediana: number
+  bucket_size_pp: number
+}
+
+export type Operacoes2HistogramaPrazosResumo = {
+  buckets: Operacoes2HistogramaProdutoBucket[]
+}
+
+export type Operacoes2ProdutoDestaque = {
+  sigla: string
+  nome: string | null
+  valor: number
+}
+
+export type Operacoes2AbaProdutosPricingData = {
+  mix_temporal_12m: Operacoes2MixTemporalProdutoPonto[]
+  lider_periodo: Operacoes2ProdutoDestaque | null
+  maior_alta_mom: Operacoes2ProdutoDestaque | null
+  maior_queda_mom: Operacoes2ProdutoDestaque | null
+  ranking: Operacoes2RankingProdutoLinha[]
+  scatter_produtos: Operacoes2ScatterProdutoPonto[]
+  histograma_taxas: Operacoes2HistogramaTaxasResumo
+  histograma_prazos: Operacoes2HistogramaPrazosResumo
 }
 
 export const biOperacoes2 = {
@@ -766,6 +838,10 @@ export const biOperacoes2 = {
   abaVolumeRitmo: (f: BIFilters) =>
     apiClient.get<BIResponse<Operacoes2AbaVolumeRitmoData>>(
       `/bi/operacoes2/aba1-volume-ritmo${filtersToQueryString(f)}`,
+    ),
+  abaProdutosPricing: (f: BIFilters) =>
+    apiClient.get<BIResponse<Operacoes2AbaProdutosPricingData>>(
+      `/bi/operacoes2/aba2-produtos-pricing${filtersToQueryString(f)}`,
     ),
 }
 

@@ -30,7 +30,7 @@
 //       allLabel: "Todas as UAs",
 //     }}
 //     comparativoLabel="MM 3M"
-//     destaques={{ melhor, pior, vsMedia }}
+//     destaques={{ melhor, pior, vsMesAnterior }}
 //     valueFormatter={fmtBRLFull.format}
 //     axisFormatter={fmtBRL.format}
 //   />
@@ -93,15 +93,20 @@ export type EvolucaoMensalMesDestaque = {
   valor: number
 }
 
-export type EvolucaoMensalVsMedia = {
-  /** Variacao percentual do mes corrente vs media (ex.: 12.3 = +12,3%). */
+export type EvolucaoMensalVsMesAnterior = {
+  /**
+   * Variacao percentual MTD same-period: VOP do mes corrente nos primeiros N
+   * dias uteis vs VOP do mes anterior nos mesmos N DUs (apples-to-apples).
+   * Ex.: 12.3 = +12,3% a frente; -8.5 = -8,5% atras. `null` quando nao ha
+   * base de comparacao (sem dados no MTD do mes anterior).
+   */
   pct: number
 }
 
 export type EvolucaoMensalDestaques = {
   melhor?: EvolucaoMensalMesDestaque | null
   pior?: EvolucaoMensalMesDestaque | null
-  vsMedia?: EvolucaoMensalVsMedia | null
+  vsMesAnterior?: EvolucaoMensalVsMesAnterior | null
 }
 
 export type EvolucaoMensalCardProps = {
@@ -287,19 +292,19 @@ export function EvolucaoMensalDestaquesView({
           ({valueFormatter(destaques.pior.valor)})
         </span>
       )}
-      {destaques.vsMedia && (
-        <span>
-          Mês corrente vs média:{" "}
+      {destaques.vsMesAnterior && (
+        <span title="VOP MTD do mês corrente vs VOP MTD do mês anterior nos mesmos N dias úteis (apples-to-apples)">
+          MTD vs mês anterior:{" "}
           <strong
             className={cx(
               "font-semibold",
-              destaques.vsMedia.pct >= 0
+              destaques.vsMesAnterior.pct >= 0
                 ? "text-emerald-600 dark:text-emerald-400"
                 : "text-red-600 dark:text-red-400",
             )}
           >
-            {destaques.vsMedia.pct >= 0 ? "+" : ""}
-            {fmtPct1(destaques.vsMedia.pct)}
+            {destaques.vsMesAnterior.pct >= 0 ? "+" : ""}
+            {fmtPct1(destaques.vsMesAnterior.pct)}
           </strong>
         </span>
       )}
@@ -378,12 +383,20 @@ function buildOption({
     axisPointer: { label: { show: false } },
   }
 
+  // Sem `legend` nativa — a caption do card ja descreve as series ("barra
+  // clara = mes corrente · linha tracejada = MM 3M"). Adicionar a legenda do
+  // ECharts no topo redundaria a informacao e espremeria ~30px do canvas.
+  // `show: false` e EXPLICITO porque o tema (echarts-theme.ts) define
+  // `legend: { icon, itemWidth, ... }` como style default — sem este override,
+  // o spread do tema reativa a legenda no rodape.
   const grid: EChartsOption["grid"] = {
     top: 16,
     right: 12,
     bottom: 28,
     left: 64,
   }
+
+  const legend: EChartsOption["legend"] = { show: false }
 
   const comparativoSeries =
     comparativoLabel != null
@@ -406,6 +419,7 @@ function buildOption({
   if (variant === "bar+line") {
     return {
       grid,
+      legend,
       tooltip,
       xAxis,
       yAxis,
@@ -441,6 +455,7 @@ function buildOption({
   if (variant === "line") {
     return {
       grid,
+      legend,
       tooltip,
       xAxis,
       yAxis,
@@ -461,6 +476,7 @@ function buildOption({
   // variant === "area"
   return {
     grid,
+    legend,
     tooltip,
     xAxis,
     yAxis,

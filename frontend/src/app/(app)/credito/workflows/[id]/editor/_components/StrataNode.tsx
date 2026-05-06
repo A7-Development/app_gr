@@ -16,7 +16,13 @@
 "use client"
 
 import * as React from "react"
-import { Handle, Position, type NodeProps } from "@xyflow/react"
+import {
+  Handle,
+  Position,
+  useEdges,
+  useNodeId,
+  type NodeProps,
+} from "@xyflow/react"
 import {
   RiAlertLine,
   RiCheckboxCircleLine,
@@ -67,6 +73,11 @@ export type StrataNodeData = {
    *  Vem de SemanticValidationResult.produced_by_node (Fase 2/3a).
    *  Renderizado como chips coloridos no rodapé do nó. */
   producedVars?: Record<string, string>
+  /** Fan-in semantics quando o node tem 2+ incoming edges.
+   *  "all" = espera todas as etapas anteriores; "any" = qualquer uma dispara.
+   *  Default backend: "all". Renderizado como badge no header so quando
+   *  o node de fato tem 2+ incoming (caso contrario o campo nao se aplica). */
+  joinMode?: "any" | "all"
 }
 
 export function StrataNode({ data, selected }: NodeProps) {
@@ -79,6 +90,17 @@ export function StrataNode({ data, selected }: NodeProps) {
   const friendlyTypeLabel = ETAPA_LABEL[d.nodeType] ?? meta?.label ?? d.nodeType
   const subtitle = pickSubtitle(d)
   const status = d.validationStatus ?? "ok"
+
+  // Fan-in: conta incoming edges para decidir se mostra badge AND/OR.
+  // Badge so faz sentido quando ha 2+ parents (com 1 parent, join_mode e moot).
+  const nodeId = useNodeId()
+  const edges = useEdges()
+  const incomingCount = React.useMemo(
+    () => (nodeId ? edges.filter((e) => e.target === nodeId).length : 0),
+    [edges, nodeId],
+  )
+  const showJoinBadge = incomingCount >= 2
+  const joinMode = d.joinMode ?? "all"
 
   return (
     <div
@@ -141,6 +163,23 @@ export function StrataNode({ data, selected }: NodeProps) {
         <span className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">
           {friendlyTypeLabel}
         </span>
+        {showJoinBadge && (
+          <span
+            className={cx(
+              "ml-auto rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider",
+              joinMode === "all"
+                ? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                : "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+            )}
+            title={
+              joinMode === "all"
+                ? "Espera TODAS as etapas anteriores antes de executar"
+                : "Executa quando QUALQUER UMA das etapas anteriores terminar"
+            }
+          >
+            {joinMode === "all" ? "Todas" : "Qualquer"}
+          </span>
+        )}
       </div>
       <div className="px-3 py-2">
         <p className="text-xs font-semibold text-gray-900 dark:text-gray-100">

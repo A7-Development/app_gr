@@ -12,12 +12,14 @@ schema, validated by the engine when instantiating the node implementation
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.enums import WorkflowStatus
+
+JoinMode = Literal["any", "all"]
 
 
 class NodeSpec(BaseModel):
@@ -35,6 +37,18 @@ class NodeSpec(BaseModel):
     # Position on the visual canvas (x, y in pixels). Optional — engine
     # ignores it; only the editor uses it.
     position: dict[str, float] | None = None
+
+    # Fan-in semantics when the node has 2+ incoming edges.
+    # "all" (default): node executes only if EVERY incoming edge is
+    #   satisfied (all parents completed AND each condition passes / has
+    #   no condition). If any parent was skipped or its condition failed,
+    #   the node skips. Right default for parallel-work convergence — the
+    #   common case in this domain.
+    # "any": node executes if at least one incoming edge is satisfied.
+    #   Use this for the "decision → divergent branches → convergence at
+    #   a terminal step" pattern, where exactly one parent runs per execution
+    #   (the others are skipped by mirror conditions on a conditional_branch).
+    join_mode: JoinMode = "all"
 
 
 class EdgeSpec(BaseModel):

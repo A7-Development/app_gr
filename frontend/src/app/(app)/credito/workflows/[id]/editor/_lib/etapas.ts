@@ -21,16 +21,18 @@ export type JourneyCategory =
   | "coletar"
   | "enriquecer"
   | "ia"
+  | "transformar"
   | "decisao"
   | "notificar"
 
 export const JOURNEY_LABEL: Record<JourneyCategory, string> = {
-  inicio: "Inicio",
+  inicio: "Inicio (gatilhos)",
   coletar: "Coletar do analista",
   enriquecer: "Enriquecer com dados externos",
   ia: "Processar com IA",
-  decisao: "Decisoes & Fluxo",
-  notificar: "Notificar / Entregar",
+  transformar: "Transformar dados",
+  decisao: "Decisoes e roteamento",
+  notificar: "Saidas e notificacoes",
 }
 
 export const JOURNEY_HINT: Record<JourneyCategory, string> = {
@@ -38,6 +40,7 @@ export const JOURNEY_HINT: Record<JourneyCategory, string> = {
   coletar: "Pedir dados/documentos para o analista preencher.",
   enriquecer: "Buscar dados externos (bureaus, integracoes).",
   ia: "Acionar agentes IA para analise automatizada.",
+  transformar: "Combinar e reformatar dados sem IA — regra fixa.",
   decisao: "Sincronizar e ramificar o fluxo.",
   notificar: "Notificar pessoas e gerar saidas finais.",
 }
@@ -61,6 +64,7 @@ const TECH_TO_JOURNEY: Record<string, JourneyCategory> = {
   coleta: "coletar",       // document_request
   integracao: "enriquecer", // bureau_query, http_request
   agentes: "ia",
+  transformar: "transformar", // consolidator (deterministico, sem IA)
   logica: "decisao",        // conditional_branch, parallel
   output: "notificar",      // output_generator, notification
 }
@@ -101,26 +105,34 @@ export type PaletteEntry = {
   available: boolean
   /** Categoria-jornada na palette. */
   journey: JourneyCategory
+  /** Marca entries para aparecerem tambem no grupo virtual "Destaques" no
+   *  topo da palette. Curado a mao (sem tracking) — flag em entries que
+   *  o time decide promover (uso frequente, centrais ao caso de credito). */
+  featured?: boolean
 }
 
 // Catalogo de specialist agents que viram entries proprios na palette.
 // (Nao confundir com backend/app/shared/agents/catalog.py — aqui so
 // listamos quais agentes APARECEM como entry na palette.)
+//
+// `icon` substitui o RiRobot2Line generico do tipo specialist_agent. Cada
+// agente ganha icone proprio sinalizando seu dominio — variedade visual
+// comunica a riqueza do catalogo.
 export const SPECIALIST_AGENT_PALETTE: Array<{
   agent: string
   description: string
   icon?: string
 }> = [
-  { agent: "document_extractor",       description: "IA extrai dados estruturados de PDFs e imagens (multimodal)." },
-  { agent: "social_contract_analyst",  description: "IA avalia QSA, poderes, restricoes do contrato social." },
-  { agent: "financial_analyst",        description: "IA avalia DRE/Balanco/Faturamento — indicadores e tendencias." },
-  { agent: "indebtedness_analyst",     description: "IA estima capacidade de pagamento via SCR + dividas." },
-  { agent: "legal_analyst",            description: "IA classifica risco de processos judiciais e protestos." },
-  { agent: "partner_analyst",          description: "IA cruza socios com bureaus e processos." },
-  { agent: "commercial_visit_analyst", description: "IA confronta visita comercial com declaracoes da empresa." },
-  { agent: "cross_reference_analyst",  description: "IA detecta inconsistencias entre todas as analises." },
-  { agent: "opinion_writer",           description: "IA escreve parecer consolidado com recomendacao final." },
-  { agent: "pleito_extractor",         description: "IA extrai produto/volume/taxa/prazo de email/texto livre." },
+  { agent: "document_extractor",       description: "IA extrai dados estruturados de PDFs e imagens (multimodal).",   icon: "RiFileSearchLine" },
+  { agent: "social_contract_analyst",  description: "IA avalia QSA, poderes, restricoes do contrato social.",         icon: "RiFileList3Line" },
+  { agent: "financial_analyst",        description: "IA avalia DRE/Balanco/Faturamento — indicadores e tendencias.",  icon: "RiBarChart2Line" },
+  { agent: "indebtedness_analyst",     description: "IA estima capacidade de pagamento via SCR + dividas.",           icon: "RiBankLine" },
+  { agent: "legal_analyst",            description: "IA classifica risco de processos judiciais e protestos.",        icon: "RiScales3Line" },
+  { agent: "partner_analyst",          description: "IA cruza socios com bureaus e processos.",                       icon: "RiTeamLine" },
+  { agent: "commercial_visit_analyst", description: "IA confronta visita comercial com declaracoes da empresa.",      icon: "RiMapPin2Line" },
+  { agent: "cross_reference_analyst",  description: "IA detecta inconsistencias entre todas as analises.",            icon: "RiNodeTree" },
+  { agent: "opinion_writer",           description: "IA escreve parecer consolidado com recomendacao final.",         icon: "RiQuillPenLine" },
+  { agent: "pleito_extractor",         description: "IA extrai produto/volume/taxa/prazo de email/texto livre.",      icon: "RiPriceTag3Line" },
 ]
 
 // Catalogo de CONSULTAS DE BUREAU que aparecem na palette.
@@ -205,6 +217,18 @@ export const DATA_PRODUCT_PALETTE: Array<{
 // Pega o `nodeTypes[]` que vem do backend e gera a lista de entries para
 // a palette, ja agrupada por categoria-jornada.
 
+// Set de paletteIds curados como "Destaques" — aparecem no topo da palette
+// num grupo virtual quando o filtro esta vazio. Lista hand-curated; sem
+// tracking de uso. Promover/despromover edita esta linha.
+const FEATURED_PALETTE_IDS = new Set<string>([
+  "bureau_query:serasa_pj",
+  "specialist_agent:financial_analyst",
+  "specialist_agent:document_extractor",
+  "specialist_agent:opinion_writer",
+  "conditional_branch",
+])
+
+
 export function buildPaletteEntries(nodeTypes: NodeTypeMeta[]): PaletteEntry[] {
   const entries: PaletteEntry[] = []
 
@@ -212,15 +236,17 @@ export function buildPaletteEntries(nodeTypes: NodeTypeMeta[]): PaletteEntry[] {
     if (meta.type === "specialist_agent") {
       // Expandir um entry por agente do catalogo.
       for (const ag of SPECIALIST_AGENT_PALETTE) {
+        const paletteId = `specialist_agent:${ag.agent}`
         entries.push({
-          paletteId: `specialist_agent:${ag.agent}`,
+          paletteId,
           nodeType: "specialist_agent",
           initialConfig: { agent: ag.agent },
           label: AGENT_FRIENDLY_LABEL[ag.agent] ?? ag.agent,
           description: ag.description,
-          icon: meta.icon,
+          icon: ag.icon ?? meta.icon,
           available: meta.available,
           journey: "ia",
+          featured: FEATURED_PALETTE_IDS.has(paletteId),
         })
       }
       continue
@@ -230,8 +256,9 @@ export function buildPaletteEntries(nodeTypes: NodeTypeMeta[]): PaletteEntry[] {
       // Expandir cada consulta como entry proprio. Serasa PJ e o unico
       // wired hoje; os outros 4 produtos sao placeholders "em breve".
       for (const p of DATA_PRODUCT_PALETTE) {
+        const paletteId = `bureau_query:${p.key}`
         entries.push({
-          paletteId: `bureau_query:${p.key}`,
+          paletteId,
           nodeType: "bureau_query",
           initialConfig: { ...p.config },
           label: p.label,
@@ -239,6 +266,7 @@ export function buildPaletteEntries(nodeTypes: NodeTypeMeta[]): PaletteEntry[] {
           icon: meta.icon,
           available: meta.available && p.available,
           journey: "enriquecer",
+          featured: FEATURED_PALETTE_IDS.has(paletteId),
         })
       }
       continue
@@ -253,6 +281,7 @@ export function buildPaletteEntries(nodeTypes: NodeTypeMeta[]): PaletteEntry[] {
       icon: meta.icon,
       available: meta.available,
       journey: categoryToJourney(meta),
+      featured: FEATURED_PALETTE_IDS.has(meta.type),
     })
   }
 
@@ -267,6 +296,7 @@ export function groupByJourney(
     coletar: [],
     enriquecer: [],
     ia: [],
+    transformar: [],
     decisao: [],
     notificar: [],
   }
@@ -279,6 +309,7 @@ export const JOURNEY_ORDER: JourneyCategory[] = [
   "coletar",
   "enriquecer",
   "ia",
+  "transformar",
   "decisao",
   "notificar",
 ]

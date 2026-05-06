@@ -80,7 +80,7 @@ export {
   type EvolucaoMensalDimensionConfig,
   type EvolucaoMensalDimensionOption,
   type EvolucaoMensalMesDestaque,
-  type EvolucaoMensalVsMedia,
+  type EvolucaoMensalVsMesAnterior,
   type EvolucaoMensalDestaques,
 } from "./EvolucaoMensalCard"
 export {

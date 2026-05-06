@@ -104,6 +104,12 @@ class NodeContext:
     previous_outputs: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Free-form trigger payload (e.g. dossier_id, user-provided input).
     trigger_data: dict[str, Any] = field(default_factory=dict)
+    # Resolved config of THIS node (templates already substituted by the
+    # engine). Carried in the context so callees that need to read
+    # config-level metadata (e.g. specialist_agent reading
+    # `config.input_bindings`) can do so without round-tripping through
+    # the graph. Filled by `_execute_node` in the engine.
+    node_config: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

@@ -61,6 +61,13 @@ const TRIGGER_FIELDS: AvailableField[] = [
 ]
 
 /** Outputs por agente especialista (espelha output_schemas.py). */
+/** Public lookup: campos do output schema de um specialist agent.
+ *  Reutilizado pelo AgentHoverCard (palette tooltip) para mostrar o que
+ *  cada agente produz. Retorna [] quando o agente nao tem mapping. */
+export function getAgentOutputFields(agentName: string): AvailableField[] {
+  return AGENT_OUTPUT_FIELDS[agentName] ?? []
+}
+
 const AGENT_OUTPUT_FIELDS: Record<string, AvailableField[]> = {
   social_contract_analyst: [
     { key: "summary",                              label: "Resumo executivo",              type: "string"  },

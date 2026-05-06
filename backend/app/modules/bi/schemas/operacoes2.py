@@ -5,7 +5,7 @@ Receita Contratada) expostos num KPI Strip global, e 4 abas que sao lentes de
 aprofundamento:
 
 - Aba 1: Volume & Ritmo
-- Aba 2: Produtos & Pricing      (futuro)
+- Aba 2: Produtos & Pricing
 - Aba 3: Receita                 (futuro)
 - Aba 4: Cedentes & Concentracao (futuro — depende de cedente_id em wh_operacao)
 
@@ -15,15 +15,14 @@ Decisao de design (2026-05-03):
 - 1 delta por KPI, label "MoM" forcado (vs periodo imediatamente anterior de
   mesmo tamanho — o backend reutiliza `_shift_period_back`).
 - Sparklines sao SEMPRE 12M corridos terminando em `periodo_fim` (ou hoje).
-- Campos que dependem de `wh_dim_dia_util` (ritmo do mes, pace diario,
-  heatmap dow x semana) retornam `None` quando a tabela esta vazia (degraded
-  mode). Frontend renderiza placeholder.
+- Campos que dependem de `wh_dim_dia_util` (ritmo do mes, pace diario)
+  retornam `None` quando a tabela esta vazia (degraded mode). Frontend
+  renderiza placeholder.
 """
 
 from pydantic import BaseModel, Field
 
 from app.modules.bi.schemas.common import Point
-
 
 # ─── KPI Strip ──────────────────────────────────────────────────────────────
 
@@ -33,8 +32,15 @@ class KpiCellNumeric(BaseModel):
 
     Strip dual (Opcao 4 paradigma 2026-05-03): cada cell carrega valor do
     PERIODO + valor do MES CORRENTE em paralelo. Frontend renderiza ambos.
-    `delta_pct` compara periodo atual vs periodo imediatamente anterior de
-    mesmo tamanho. Sparkline e sempre 12M.
+    Sparkline e sempre 12M.
+
+    Dois deltas distintos:
+    - `delta_pct`: periodo atual vs periodo imediatamente anterior de mesmo
+      tamanho (P/P, Period-over-Period). Tooltip em `comparacao_label_pt`.
+    - `mes_corrente_delta_pct`: MTD same-period — primeiros N dias do mes
+      corrente vs primeiros N dias do mes anterior (apples-to-apples).
+      N = dia atual; clampa quando dia > ultimo dia do mes anterior.
+      Frontend canonico exibe este como "↑ X% MTD" abaixo do mes_corrente_valor.
     """
 
     valor: float
@@ -44,18 +50,33 @@ class KpiCellNumeric(BaseModel):
     # Mes corrente — agregado limitado a [1o dia mes do periodo_fim, periodo_fim].
     mes_corrente_valor: float
     mes_corrente_label: str = Field(description="Ex.: 'Maio/2026'")
+    mes_corrente_delta_pct: float | None = Field(
+        default=None,
+        description=(
+            "MTD same-period: mes corrente (1-N) vs mes anterior (1-N). "
+            "N = dia atual do mes corrente, clampado ao ultimo dia do "
+            "mes anterior em meses curtos."
+        ),
+    )
 
 
 class KpiCellProduto(BaseModel):
     """Celula especifica do KPI #4 (Produto Top).
 
-    `share_pct` em escala 0-100. `delta_share_pp` e variacao em pontos
-    percentuais da fatia de mercado interna (vs periodo anterior).
-    `sparkline_share_12m` mostra a evolucao do share_pct mes a mes (12M).
+    `share_pct` em escala 0-100. `sparkline_share_12m` mostra a evolucao do
+    share_pct mes a mes (12M).
 
     Strip dual: produto top do MES pode ser diferente do produto top do
     PERIODO (Faturizacao dominou 12M, mas DM virou lider em maio). Frontend
     pode mostrar ambos lado a lado.
+
+    Dois deltas distintos (em pontos percentuais):
+    - `delta_share_pp`: share do produto-top-do-periodo neste periodo vs no
+      periodo imediatamente anterior de mesmo tamanho.
+    - `mes_corrente_delta_share_pp`: MTD same-period — share do
+      produto-top-DO-MES nos primeiros N dias do mes corrente vs share do
+      MESMO produto nos primeiros N dias do mes anterior. Frontend canonico
+      exibe este abaixo do mes_corrente_share_pct.
     """
 
     sigla: str
@@ -68,6 +89,13 @@ class KpiCellProduto(BaseModel):
     mes_corrente_nome: str | None
     mes_corrente_share_pct: float
     mes_corrente_label: str
+    mes_corrente_delta_share_pp: float | None = Field(
+        default=None,
+        description=(
+            "MTD same-period: pp de variacao do share do produto-top-do-mes "
+            "entre o MTD corrente e o MTD do mes anterior."
+        ),
+    )
 
 
 class OperacoesKpiStripData(BaseModel):
@@ -107,14 +135,6 @@ class MesDestaque(BaseModel):
     vop: float
 
 
-class MesCorrenteVsMedia(BaseModel):
-    """Mes corrente vs media 12M (mini-stat #3 do rodape)."""
-
-    vop_corrente: float
-    media_12m: float
-    pct: float = Field(description="(corrente / media_12m - 1) * 100")
-
-
 class RitmoMesCorrente(BaseModel):
     """Linha 2 Card grande — VOP ate hoje vs mesmo nº DUs do mes anterior.
 
@@ -133,12 +153,32 @@ class RitmoMesCorrente(BaseModel):
     # Acumulado dia-a-dia para o mini chart de linha (corrente vs anterior).
     # `du_index` 1..N — eixo X categorico no frontend.
     acumulado_dia_a_dia: list["AcumuladoDiarioPonto"]
+    # Quebra por UA: cada item carrega VOP MTD da UA + delta same-period DU
+    # vs mes anterior. Usado para listagem textual no rodape do card Hero
+    # do Ritmo. Ordenado por vop_corrente DESC (UA com maior VOP no mes
+    # corrente vem primeiro). Vazio quando nao ha UA no resultado filtrado.
+    ritmo_por_ua: list["RitmoUaItem"] = Field(default_factory=list)
 
 
 class AcumuladoDiarioPonto(BaseModel):
     du_index: int
     corrente: float
     anterior: float
+
+
+class RitmoUaItem(BaseModel):
+    """Quebra por UA do ritmo do mes corrente — apenas dados textuais."""
+
+    ua_id: int
+    ua_nome: str
+    vop_corrente: float = Field(description="VOP MTD da UA no mes corrente")
+    delta_pct: float | None = Field(
+        description=(
+            "VOP MTD corrente vs VOP MTD do mes anterior no mesmo nº DUs. "
+            "None quando nao ha base de comparacao (UA sem dados no mes "
+            "anterior MTD)."
+        )
+    )
 
 
 class PaceDiario(BaseModel):
@@ -153,10 +193,18 @@ class PaceDiario(BaseModel):
 
 
 class KpiSecundario(BaseModel):
-    """Linha 3 — KPI scalar com delta MoM (sem sparkline)."""
+    """KPI escalar com delta MoM + sparkline 12M fechados.
+
+    `sparkline_12m` traz a evolucao do indicador mes a mes nos ultimos 12
+    meses fechados (M-12 a M-1, exclui o mes corrente parcial). Como cada
+    KPI tem unidade/escala propria (count, BRL, BRL/titulo, BRL/DU), o slope
+    deve ser interpretado em modo relativo (% sobre a media da propria
+    serie) — analogo ao card "VOP por UA" mode="absolute".
+    """
 
     valor: float
     delta_pct: float | None
+    sparkline_12m: list[Point] = Field(default_factory=list)
 
 
 class KpisSecundariosVolume(BaseModel):
@@ -173,6 +221,23 @@ class QuebraDimensaoLinha(BaseModel):
     Strip dual: cada linha carrega vop+pct do PERIODO e vop+pct do
     MES CORRENTE. Frontend usa toggle "Periodo | Mes | Ambos" para alternar
     a renderizacao.
+
+    Duas sparklines 12M sao expostas, escolhidas pelo frontend conforme a
+    natureza da dimensao:
+
+    - `sparkline_share_12m`: % do total mensal — usado em dimensoes onde a
+      analise de DRIFT DE MIX importa (ex.: Produto, onde o mix de DM vs
+      Faturizacao tem leitura de risco). Sob crescimento agregado, todas
+      as categorias crescem em valor — share expoe ganho/perda relativo.
+
+    - `sparkline_vop_12m`: VOP absoluto da categoria mes a mes — usado em
+      dimensoes onde cada item tem TRAJETORIA propria (ex.: UA, onde
+      RealInvest cresce com o mercado de capitais e A7 fica estavel
+      como securitizadora). Aqui a leitura correta e "essa UA esta
+      fazendo mais/menos que ela mesma no passado", nao share. Slope
+      neste caso deve ser interpretado RELATIVO a media da propria
+      serie (% por mes), nao em unidades absolutas — escala varia muito
+      entre categorias.
     """
 
     categoria_id: str
@@ -185,25 +250,10 @@ class QuebraDimensaoLinha(BaseModel):
     # Mes corrente
     vop_mes_corrente: float
     pct_mes_corrente: float = Field(description="% do total no mes corrente")
-
-
-class HeatmapDowSemanaPonto(BaseModel):
-    """Linha 5 Card A — celula do heatmap dow x semana."""
-
-    dow: int = Field(description="1=Segunda...5=Sexta")
-    semana_do_mes: int = Field(description="1..5")
-    vop_medio: float
-    n_ops: int
-
-
-class DiaSemanaResumo(BaseModel):
-    """Linha 5 Card B — barra simples por dia da semana."""
-
-    dow: int
-    nome: str
-    vop_medio: float
-    n_ops_medio: float
-    pct_total_semana: float
+    # Sparkline 12M de share% (cada Point.valor em escala 0-100).
+    sparkline_share_12m: list[Point] = Field(default_factory=list)
+    # Sparkline 12M de VOP absoluto da categoria (Point.valor em BRL).
+    sparkline_vop_12m: list[Point] = Field(default_factory=list)
 
 
 class EvolucaoPorUaPonto(BaseModel):
@@ -228,7 +278,6 @@ class AbaVolumeRitmoData(BaseModel):
     evolucao_12m_por_ua: list[EvolucaoPorUaPonto]
     melhor_mes: MesDestaque | None
     pior_mes: MesDestaque | None
-    mes_corrente_vs_media: MesCorrenteVsMedia | None
 
     # Linha 2 (degraded quando DU vazio)
     ritmo: RitmoMesCorrente | None
@@ -241,10 +290,137 @@ class AbaVolumeRitmoData(BaseModel):
     por_ua: list[QuebraDimensaoLinha]
     por_produto: list[QuebraDimensaoLinha]
 
-    # Linha 5
-    heatmap_dow_semana: list[HeatmapDowSemanaPonto]  # vazio em degraded
-    por_dia_semana: list[DiaSemanaResumo]
-
 
 # Resolve forward ref de RitmoMesCorrente.acumulado_dia_a_dia
 RitmoMesCorrente.model_rebuild()
+
+
+# ─── Aba 2: Produtos & Pricing ──────────────────────────────────────────────
+
+
+class MixTemporalProdutoPonto(BaseModel):
+    """Ponto da serie 12M segmentada por produto (stacked bar do Hero L1).
+
+    Janela e SEMPRE 12M FECHADOS (M-12 a M-1, exclui mes corrente parcial)
+    via `_sparkline_12m_closed_window` — evita distorcao no inicio do mes.
+    O mes corrente vai como destaque/marker no chart, nao como ponto na serie.
+    """
+
+    periodo: str = Field(description="ISO 'YYYY-MM-DD' (1o dia do mes)")
+    produto_sigla: str
+    vop: float
+    n_operacoes: int
+    taxa_media: float = Field(description="Ponderada por VOP (% a.m.)")
+    prazo_medio: float = Field(description="Ponderado por VOP (dias)")
+
+
+class RankingProdutoLinha(BaseModel):
+    """Linha do ranking de produtos (DataTable da L2 Card A).
+
+    Strip dual: cada linha carrega valores do PERIODO + 2 colunas de mes
+    corrente (VOP + Taxa) na MESMA linha, sem expand/sub-row.
+
+    Taxa, prazo e spread sao MEDIAS PONDERADAS por VOP:
+      SUM(metric * total_bruto) / NULLIF(SUM(total_bruto), 0)
+    """
+
+    sigla: str
+    nome: str | None
+    # Periodo
+    vop: float
+    pct: float = Field(description="% do total no periodo (0-100)")
+    delta_mom_pp: float | None = Field(
+        description=(
+            "Variacao de share em pp: share atual vs share no periodo "
+            "imediatamente anterior de mesmo tamanho. None quando nao ha base."
+        )
+    )
+    taxa_media: float = Field(description="% a.m., ponderada por VOP")
+    prazo_medio: float = Field(description="dias, ponderado por VOP")
+    spread_medio: float = Field(description="pp, ponderado por VOP")
+    n_operacoes: int
+    # Mes corrente (MTD same-period, apples-to-apples)
+    vop_mes_corrente: float
+    taxa_media_mes_corrente: float
+
+
+class ScatterProdutoPonto(BaseModel):
+    """Ponto agregado por produto no scatter Taxa x Prazo (L2 Card B).
+
+    Sempre carrega 2 estados (periodo + mes corrente). Frontend renderiza
+    ponto solido (periodo) + halo discreto (mes corrente) na mesma cor —
+    sem toggle, paradigma "ambos visiveis sempre" da Aba 1.
+    """
+
+    sigla: str
+    nome: str | None
+    # Periodo
+    prazo_medio: float
+    taxa_media: float
+    vop: float
+    # Mes corrente
+    prazo_medio_mes_corrente: float
+    taxa_media_mes_corrente: float
+    vop_mes_corrente: float
+
+
+class HistogramaProdutoBucket(BaseModel):
+    """Bucket de histograma quebrado por produto.
+
+    Backend retorna buckets por produto para que o frontend possa filtrar
+    client-side via chip multi-select sem nova ida ao servidor.
+    """
+
+    produto_sigla: str
+    bucket_label: str = Field(description="Ex.: '0-30 d', '1.5-2.0%'")
+    bucket_lower: float = Field(description="Limite inferior (numerico, p/ ordenacao)")
+    bucket_upper: float = Field(description="Limite superior (exclusivo)")
+    count: int
+    vop: float
+
+
+class HistogramaTaxasResumo(BaseModel):
+    """Histograma de taxas + estatisticas ponderadas.
+
+    `bucket_size_pp` e dinamico: 0.25 pp quando range observado <= 5 pp,
+    0.5 pp quando > 5 pp; clampa em ~30 buckets max.
+    """
+
+    buckets: list[HistogramaProdutoBucket]
+    media_ponderada: float = Field(description="% a.m., Σ(taxa * vop) / Σ vop")
+    mediana: float = Field(description="% a.m., mediana ponderada por VOP")
+    bucket_size_pp: float
+
+
+class HistogramaPrazosResumo(BaseModel):
+    """Histograma de prazos com buckets fixos: 0-30, 31-60, 61-90, 91-180, 180+."""
+
+    buckets: list[HistogramaProdutoBucket]
+
+
+class ProdutoDestaque(BaseModel):
+    """Mini-stat do rodape do Hero L1 (lider, maior alta, maior queda)."""
+
+    sigla: str
+    nome: str | None
+    valor: float = Field(
+        description="Share % (lider) ou Δ pp de share (maior alta/queda)"
+    )
+
+
+class AbaProdutosPricingData(BaseModel):
+    """Bundle completo da Aba 2 — Produtos & Pricing."""
+
+    # Linha 1 — Hero
+    mix_temporal_12m: list[MixTemporalProdutoPonto]
+    lider_periodo: ProdutoDestaque | None
+    maior_alta_mom: ProdutoDestaque | None
+    maior_queda_mom: ProdutoDestaque | None
+
+    # Linha 2 — Ranking + Scatter agregado
+    ranking: list[RankingProdutoLinha]
+    scatter_produtos: list[ScatterProdutoPonto]
+
+    # Linha 3 — Histogramas
+    histograma_taxas: HistogramaTaxasResumo
+    histograma_prazos: HistogramaPrazosResumo

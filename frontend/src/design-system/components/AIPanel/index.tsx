@@ -323,7 +323,9 @@ export interface AIPanelProps {
    */
   sendMessage?: SendMessageFn
   /**
-   * Largura em px. Default 272 (handoff bi-padrao). Pattern: 272-320.
+   * Largura em px. Default 340 (revisado 2026-05-06 — handoff bi-padrao
+   * original era 272, ajustado para dar mais espaco de digitacao no
+   * textarea de input). Pattern: 320-360.
    */
   width?: number
   className?: string
@@ -335,7 +337,7 @@ export function AIPanel({
   context,
   insights = [],
   sendMessage,
-  width = 272,
+  width = 340,
   className,
 }: AIPanelProps) {
   const [messages, setMessages] = React.useState<AIMessage[]>([])

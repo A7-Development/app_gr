@@ -38,23 +38,38 @@ import {
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 import {
+  RiAiAgentLine,
   RiAlertLine,
+  RiArrowDownSLine,
   RiArrowLeftLine,
+  RiArrowRightSLine,
+  RiBankLine,
+  RiBarChart2Line,
   RiCheckboxCircleLine,
   RiCheckLine,
+  RiCloseLine,
   RiDatabase2Line,
   RiEditLine,
   RiErrorWarningLine,
+  RiFileList3Line,
   RiFilePdf2Line,
   RiFileSearchLine,
   RiFlashlightLine,
   RiGitBranchLine,
   RiGlobalLine,
+  RiMapPin2Line,
+  RiNodeTree,
   RiNotification3Line,
   RiPlayCircleLine,
+  RiPriceTag3Line,
+  RiQuillPenLine,
   RiRobot2Line,
   RiSaveLine,
+  RiScales3Line,
+  RiSearchLine,
   RiShieldStarLine,
+  RiStarSmileLine,
+  RiTeamLine,
   RiUploadCloud2Line,
   type RemixiconComponentType,
 } from "@remixicon/react"
@@ -64,6 +79,7 @@ import { Button } from "@/components/tremor/Button"
 import { PageHeader } from "@/design-system/components"
 import {
   credito,
+  type AgentMeta,
   type NodeTypeMeta,
   type WorkflowDefinitionRead,
   type WorkflowGraph,
@@ -71,6 +87,7 @@ import {
 import { tableTokens } from "@/design-system/tokens/table"
 import { cx } from "@/lib/utils"
 
+import { AgentHoverCard } from "./_components/AgentHoverCard"
 import { EdgeConditionPopover } from "./_components/EdgeConditionPopover"
 import { NodeInspector } from "./_components/NodeInspector"
 import {
@@ -114,6 +131,17 @@ const ICON_MAP: Record<string, RemixiconComponentType> = {
   RiGitBranchLine,
   RiGlobalLine,
   RiNotification3Line,
+  // Per-agent icons (override do RiRobot2Line generico) — variedade visual
+  // sinaliza riqueza do catalogo de specialist agents.
+  RiBarChart2Line,
+  RiBankLine,
+  RiScales3Line,
+  RiTeamLine,
+  RiMapPin2Line,
+  RiNodeTree,
+  RiQuillPenLine,
+  RiFileList3Line,
+  RiPriceTag3Line,
 }
 
 // Drag-and-drop payload key — encoded JSON pra carregar nodeType + initialConfig.
@@ -135,6 +163,7 @@ function graphToReactFlow(
       nodeType: n.type,
       config: n.config,
       meta: metaByType.get(n.type),
+      joinMode: n.join_mode,
     } satisfies StrataNodeData,
   }))
   const edges: Edge[] = graph.edges.map((e) => ({
@@ -171,12 +200,16 @@ function reactFlowToGraph(nodes: Node[], edges: Edge[]): WorkflowGraph {
   return {
     nodes: nodes.map((n) => {
       const d = n.data as unknown as StrataNodeData
+      // join_mode so vai pro payload quando NAO e o default ("all"). Mantem
+      // o JSONB do graph limpo — nodes sem fan-in nao carregam ruido.
+      const joinMode = d.joinMode && d.joinMode !== "all" ? d.joinMode : undefined
       return {
         id: n.id,
         type: d.nodeType,
         label: d.label ?? null,
         config: d.config ?? {},
         position: { x: n.position.x, y: n.position.y },
+        ...(joinMode ? { join_mode: joinMode } : {}),
       }
     }),
     edges: edges.map((e) => ({
@@ -204,6 +237,11 @@ export default function WorkflowEditorPage() {
   const { data: nodeTypes } = useQuery({
     queryKey: ["credito", "node-types"],
     queryFn: () => credito.workflows.nodeTypes(),
+  })
+
+  const { data: agentCatalog } = useQuery({
+    queryKey: ["credito", "agent-catalog"],
+    queryFn: () => credito.workflows.agentCatalog(),
   })
 
   const { data: activeWorkflow } = useQuery({
@@ -237,6 +275,7 @@ export default function WorkflowEditorPage() {
           workflow={workflow}
           activeWorkflow={activeWorkflow ?? null}
           nodeTypes={nodeTypes ?? []}
+          agentCatalog={agentCatalog ?? []}
           onBack={() => router.push("/credito/workflows")}
         />
       </ReactFlowProvider>
@@ -250,11 +289,13 @@ function EditorBody({
   workflow,
   activeWorkflow,
   nodeTypes,
+  agentCatalog,
   onBack,
 }: {
   workflow: WorkflowDefinitionRead
   activeWorkflow: WorkflowDefinitionRead | null
   nodeTypes: NodeTypeMeta[]
+  agentCatalog: AgentMeta[]
   onBack: () => void
 }) {
   const queryClient = useQueryClient()
@@ -406,6 +447,20 @@ function EditorBody({
         nds.map((n) =>
           n.id === nodeId
             ? { ...n, data: { ...(n.data as StrataNodeData), label } }
+            : n,
+        ),
+      )
+      setDirty(true)
+    },
+    [setNodes],
+  )
+
+  const updateNodeJoinMode = React.useCallback(
+    (nodeId: string, joinMode: "any" | "all") => {
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === nodeId
+            ? { ...n, data: { ...(n.data as StrataNodeData), joinMode } }
             : n,
         ),
       )
@@ -757,6 +812,7 @@ function EditorBody({
         <Palette
           entries={paletteEntries}
           canEdit={canEdit}
+          agentCatalog={agentCatalog}
           onAdd={(entry) => addNodeFromEntry(entry)}
         />
 
@@ -843,9 +899,11 @@ function EditorBody({
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            agentCatalog={agentCatalog}
             producedByNode={producedByNode}
             onUpdateConfig={updateNodeConfig}
             onUpdateLabel={updateNodeLabel}
+            onUpdateJoinMode={updateNodeJoinMode}
           />
         </aside>
       </div>
@@ -978,98 +1036,205 @@ function ValidationDetailsPanel({
 function Palette({
   entries,
   canEdit,
+  agentCatalog,
   onAdd,
 }: {
   entries: PaletteEntry[]
   canEdit: boolean
+  /** Catalogo per-agente (vem de /credito/agent-catalog). Usado pelo
+   *  AgentHoverCard para mostrar inputs declarados no tooltip do palette. */
+  agentCatalog: AgentMeta[]
   /** Click no item — adiciona ao centro do canvas. Drag-and-drop ainda
    *  funciona em paralelo (drop handler do canvas processa o evento). */
   onAdd: (entry: PaletteEntry) => void
 }) {
   const grouped = React.useMemo(() => groupByJourney(entries), [entries])
+  const featured = React.useMemo(
+    () => entries.filter((e) => e.featured),
+    [entries],
+  )
+
+  // Filtro com debounce leve. "/" foca o input quando palette esta visivel
+  // e o foco nao esta em outro field; Esc limpa.
+  const [filterRaw, setFilterRaw] = React.useState("")
+  const [filter, setFilter] = React.useState("")
+  React.useEffect(() => {
+    const handle = window.setTimeout(() => setFilter(filterRaw.trim().toLowerCase()), 150)
+    return () => window.clearTimeout(handle)
+  }, [filterRaw])
+
+  const filterRef = React.useRef<HTMLInputElement>(null)
+  React.useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null
+      const isTyping =
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      if (e.key === "/" && !isTyping) {
+        e.preventDefault()
+        filterRef.current?.focus()
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+
+  // Estado de jornadas colapsadas (Set). Default: tudo expandido.
+  const [collapsedJourneys, setCollapsedJourneys] = React.useState<
+    Set<JourneyCategory>
+  >(() => new Set())
+  const toggleJourney = React.useCallback((j: JourneyCategory) => {
+    setCollapsedJourneys((prev) => {
+      const next = new Set(prev)
+      if (next.has(j)) next.delete(j)
+      else next.add(j)
+      return next
+    })
+  }, [])
+
+  const matchesFilter = React.useCallback(
+    (entry: PaletteEntry) => {
+      if (!filter) return true
+      const haystack = `${entry.label} ${entry.description}`.toLowerCase()
+      return haystack.includes(filter)
+    },
+    [filter],
+  )
 
   return (
-    <aside className="w-64 shrink-0 overflow-y-auto border-r border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-950">
-      <p className={cx(tableTokens.header, "mb-1")}>{glossary.nodePlural}</p>
+    <aside className="w-80 shrink-0 overflow-y-auto border-r border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-950">
+      <p className={cx(tableTokens.header, "mb-1")}>Catalogo de etapas</p>
       <p className={cx(tableTokens.cellSecondary, "mb-3")}>
-        Click pra adicionar ou arraste pro canvas
+        Arraste para o canvas ou clique para inserir
       </p>
+
+      {/* Filtro */}
+      <div className="relative mb-4">
+        <RiSearchLine
+          className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-gray-400 dark:text-gray-500"
+          aria-hidden
+        />
+        <input
+          ref={filterRef}
+          type="text"
+          value={filterRaw}
+          onChange={(e) => setFilterRaw(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setFilterRaw("")
+              filterRef.current?.blur()
+            }
+          }}
+          placeholder="Filtrar etapas..."
+          className="w-full rounded-md border border-gray-200 bg-white py-1.5 pl-7 pr-8 text-xs text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500"
+        />
+        {filterRaw ? (
+          <button
+            type="button"
+            onClick={() => {
+              setFilterRaw("")
+              filterRef.current?.focus()
+            }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            aria-label="Limpar filtro"
+          >
+            <RiCloseLine className="size-3.5" aria-hidden />
+          </button>
+        ) : (
+          <kbd className="absolute right-2 top-1/2 -translate-y-1/2 rounded border border-gray-200 bg-gray-50 px-1 py-0.5 font-mono text-[10px] text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
+            /
+          </kbd>
+        )}
+      </div>
+
       <div className="space-y-4">
+        {/* Destaques — so quando o filtro esta vazio. Quando o user filtra,
+         *  a entry aparece no seu grupo natural; nao duplicar. */}
+        {!filter && featured.length > 0 && (
+          <FeaturedGroup
+            entries={featured}
+            canEdit={canEdit}
+            agentCatalog={agentCatalog}
+            onAdd={onAdd}
+          />
+        )}
+
         {JOURNEY_ORDER.map((journey) => {
-          const items = grouped[journey] ?? []
+          const items = (grouped[journey] ?? []).filter(matchesFilter)
           if (items.length === 0) return null
+          const isCollapsed = !filter && collapsedJourneys.has(journey)
           return (
             <div key={journey}>
-              <div className="mb-1.5">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">
-                  {JOURNEY_LABEL[journey]}
-                </p>
-                <p className={cx(tableTokens.cellSecondary, "mt-0.5")}>
-                  {JOURNEY_HINT[journey]}
-                </p>
-              </div>
-              <div className="space-y-1">
-                {items.map((entry) => {
-                  const Icon = ICON_MAP[entry.icon] ?? RiRobot2Line
-                  const enabled = entry.available && canEdit
-                  return (
-                    <button
-                      key={entry.paletteId}
-                      type="button"
-                      draggable={entry.available}
-                      disabled={!enabled}
-                      onClick={() => {
-                        if (!enabled) return
-                        onAdd(entry)
-                      }}
-                      onDragStart={(e) => {
-                        if (!entry.available) {
-                          e.preventDefault()
-                          return
-                        }
-                        e.dataTransfer.setData(DND_KEY, JSON.stringify(entry))
-                        e.dataTransfer.effectAllowed = "move"
-                      }}
-                      className={cx(
-                        "flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors",
-                        enabled
-                          ? "cursor-grab border-gray-200 bg-white hover:border-blue-500 hover:bg-blue-50/40 active:cursor-grabbing dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-500 dark:hover:bg-blue-500/5"
-                          : "cursor-not-allowed border-gray-100 bg-gray-50 opacity-60 dark:border-gray-900 dark:bg-gray-900",
-                      )}
-                      title={entry.description}
-                    >
-                      <Icon
-                        className={cx(
-                          "size-4 shrink-0",
-                          enabled
-                            ? "text-gray-700 dark:text-gray-300"
-                            : "text-gray-400 dark:text-gray-600",
-                        )}
-                        aria-hidden
-                      />
+              <button
+                type="button"
+                onClick={() => toggleJourney(journey)}
+                className="group mb-1.5 flex w-full items-start gap-1.5 text-left"
+              >
+                {isCollapsed ? (
+                  <RiArrowRightSLine
+                    className="mt-0.5 size-3.5 shrink-0 text-gray-500 transition-colors group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-gray-100"
+                    aria-hidden
+                  />
+                ) : (
+                  <RiArrowDownSLine
+                    className="mt-0.5 size-3.5 shrink-0 text-gray-500 transition-colors group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-gray-100"
+                    aria-hidden
+                  />
+                )}
+                <div className="flex-1">
+                  <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+                    <span>{JOURNEY_LABEL[journey]}</span>
+                    <span className="text-gray-400 dark:text-gray-500">
+                      ({items.length})
+                    </span>
+                    {journey === "ia" && (
                       <span
-                        className={cx(
-                          "flex-1 truncate text-xs",
-                          enabled
-                            ? "text-gray-900 dark:text-gray-100"
-                            : "text-gray-500 dark:text-gray-500",
-                        )}
+                        className="inline-flex items-center gap-0.5 rounded bg-gradient-to-r from-blue-100 to-violet-100 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-blue-700 dark:from-blue-500/20 dark:to-violet-500/20 dark:text-blue-300"
+                        title="Etapas baseadas em modelos de IA"
                       >
-                        {entry.label}
+                        <RiAiAgentLine className="size-2.5" aria-hidden />
+                        IA
                       </span>
-                      {!entry.available && (
-                        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-                          em breve
-                        </span>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
+                    )}
+                  </p>
+                  {!isCollapsed && (
+                    <p className={cx(tableTokens.cellSecondary, "mt-0.5")}>
+                      {JOURNEY_HINT[journey]}
+                    </p>
+                  )}
+                </div>
+              </button>
+              {!isCollapsed && (
+                <div className="space-y-1">
+                  {items.map((entry) => (
+                    <PaletteItem
+                      key={entry.paletteId}
+                      entry={entry}
+                      canEdit={canEdit}
+                      agentCatalog={agentCatalog}
+                      onAdd={onAdd}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           )
         })}
+
+        {/* Estado vazio quando filtro nao casa com nada */}
+        {filter &&
+          JOURNEY_ORDER.every(
+            (j) => (grouped[j] ?? []).filter(matchesFilter).length === 0,
+          ) && (
+            <div className="rounded-md border border-dashed border-gray-200 bg-gray-50 p-4 text-center text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+              Nenhuma etapa bate com{" "}
+              <span className="font-mono">"{filterRaw}"</span>.
+            </div>
+          )}
       </div>
+
       <div className="mt-6 rounded-md bg-blue-50 p-3 text-xs text-blue-900 dark:bg-blue-500/10 dark:text-blue-200">
         <p className="font-medium">Dicas</p>
         <ul className="mt-1 list-inside list-disc space-y-0.5">
@@ -1079,9 +1244,165 @@ function Palette({
           <li>Click numa conexao pra editar a condicao</li>
           <li>Selecione + Delete remove etapa/conexao</li>
           <li>Ctrl+scroll pra zoom</li>
+          <li>
+            <kbd className="rounded border border-blue-200 bg-white px-1 py-0.5 font-mono text-[10px] dark:border-blue-500/30 dark:bg-blue-500/5">
+              /
+            </kbd>{" "}
+            foca o filtro
+          </li>
         </ul>
       </div>
     </aside>
   )
+}
+
+// ─── Featured group ──────────────────────────────────────────────────────
+//
+// Grupo virtual no topo da palette com entries marcados `featured: true`
+// no `etapas.ts::buildPaletteEntries`. Curado a mao — sem tracking de uso.
+// So aparece quando filtro vazio (com filtro, entries ja estao nos grupos
+// naturais; duplicar confunde).
+
+function FeaturedGroup({
+  entries,
+  canEdit,
+  agentCatalog,
+  onAdd,
+}: {
+  entries: PaletteEntry[]
+  canEdit: boolean
+  agentCatalog: AgentMeta[]
+  onAdd: (entry: PaletteEntry) => void
+}) {
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <RiStarSmileLine
+          className="size-3.5 shrink-0 text-blue-600 dark:text-blue-400"
+          aria-hidden
+        />
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-800 dark:text-blue-300">
+          Destaques{" "}
+          <span className="text-blue-400 dark:text-blue-500">
+            ({entries.length})
+          </span>
+        </p>
+      </div>
+      <div className="space-y-1">
+        {entries.map((entry) => (
+          <PaletteItem
+            key={`featured-${entry.paletteId}`}
+            entry={entry}
+            canEdit={canEdit}
+            agentCatalog={agentCatalog}
+            onAdd={onAdd}
+            featured
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── PaletteItem ─────────────────────────────────────────────────────────
+
+function PaletteItem({
+  entry,
+  canEdit,
+  agentCatalog,
+  onAdd,
+  featured = false,
+}: {
+  entry: PaletteEntry
+  canEdit: boolean
+  /** Catalogo per-agente — usado pelo AgentHoverCard quando entry e
+   *  specialist_agent. Tupla vazia em entries nao-agente. */
+  agentCatalog: AgentMeta[]
+  onAdd: (entry: PaletteEntry) => void
+  /** Quando renderizado dentro do grupo "Destaques", reforca visualmente
+   *  com border azul mais forte e ring sutil. */
+  featured?: boolean
+}) {
+  const Icon = ICON_MAP[entry.icon] ?? RiRobot2Line
+  const enabled = entry.available && canEdit
+  // Detecta entries de specialist_agent — paletteId no formato
+  // "specialist_agent:<agent_name>". Nesses casos, o button vira trigger
+  // de um AgentHoverCard rico (descricao, inputs declarados, outputs).
+  const isAgent = entry.paletteId.startsWith("specialist_agent:")
+  const agentName = isAgent
+    ? entry.paletteId.slice("specialist_agent:".length)
+    : null
+
+  const button = (
+    <button
+      type="button"
+      draggable={entry.available}
+      disabled={!enabled}
+      onClick={() => {
+        if (!enabled) return
+        onAdd(entry)
+      }}
+      onDragStart={(e) => {
+        if (!entry.available) {
+          e.preventDefault()
+          return
+        }
+        e.dataTransfer.setData(DND_KEY, JSON.stringify(entry))
+        e.dataTransfer.effectAllowed = "move"
+      }}
+      className={cx(
+        "flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors",
+        enabled
+          ? featured
+            ? "cursor-grab border-blue-300 bg-blue-50/30 hover:border-blue-500 hover:bg-blue-50/60 active:cursor-grabbing dark:border-blue-500/40 dark:bg-blue-500/5 dark:hover:border-blue-500 dark:hover:bg-blue-500/10"
+            : "cursor-grab border-gray-200 bg-white hover:border-blue-500 hover:bg-blue-50/40 active:cursor-grabbing dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-500 dark:hover:bg-blue-500/5"
+          : "cursor-not-allowed border-gray-100 bg-gray-50 opacity-60 dark:border-gray-900 dark:bg-gray-900",
+      )}
+      // Quando isAgent, o HoverCard substitui o tooltip nativo.
+      title={isAgent ? undefined : entry.description}
+    >
+      <Icon
+        className={cx(
+          "size-4 shrink-0",
+          enabled
+            ? featured
+              ? "text-blue-700 dark:text-blue-300"
+              : "text-gray-700 dark:text-gray-300"
+            : "text-gray-400 dark:text-gray-600",
+        )}
+        aria-hidden
+      />
+      <span
+        className={cx(
+          "flex-1 truncate text-xs",
+          enabled
+            ? "text-gray-900 dark:text-gray-100"
+            : "text-gray-500 dark:text-gray-500",
+        )}
+      >
+        {entry.label}
+      </span>
+      {!entry.available && (
+        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+          em breve
+        </span>
+      )}
+    </button>
+  )
+
+  if (isAgent && agentName && entry.available) {
+    return (
+      <AgentHoverCard
+        agentName={agentName}
+        agentLabel={entry.label}
+        description={entry.description}
+        agentCatalog={agentCatalog}
+      >
+        {button}
+      </AgentHoverCard>
+    )
+  }
+
+  return button
 }
 

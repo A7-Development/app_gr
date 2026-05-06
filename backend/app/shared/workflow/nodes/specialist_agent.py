@@ -22,6 +22,7 @@ from app.shared.workflow.nodes._base import (
     BaseNode,
     NodeContext,
     NodeOutput,
+    Requirement,
     VarType,
 )
 
@@ -46,6 +47,58 @@ class SpecialistAgentNode(BaseNode):
                 f"specialist_agent: unknown agent '{agent_name}'. "
                 f"Available: {sorted(CATALOG.keys())}"
             )
+
+    def requires(self) -> list[Requirement]:
+        """Return one Requirement per declared input slot, when bindings exist.
+
+        Phase A behavior:
+        - If the agent's spec declares `inputs` AND `config.input_bindings`
+          maps slot name -> ref path, we generate a typed Requirement per
+          slot for the graph validator to check upstream compatibility.
+        - If the agent has no declared `inputs` (legacy path) OR no
+          bindings exist yet, we return [] — the runtime will fall back
+          to the previous_outputs text dump and the validator stays silent.
+
+        Type comes from `AgentInput.type`; `optional` is propagated.
+        """
+        agent_name = self.config.get("agent")
+        if not agent_name:
+            return []
+        try:
+            from app.shared.agents.catalog import CATALOG
+        except ImportError:
+            return []
+        spec = CATALOG.get(agent_name)
+        if spec is None or not spec.inputs:
+            return []
+        bindings = self.config.get("input_bindings") or {}
+        if not isinstance(bindings, dict):
+            return []
+        reqs: list[Requirement] = []
+        for slot in spec.inputs:
+            ref_path = bindings.get(slot.name)
+            if not isinstance(ref_path, str) or not ref_path.strip():
+                # Slot left unbound — for required slots this is a graph
+                # error. Emit a Requirement pointing at an obviously bogus
+                # path so the validator surfaces it as "missing upstream".
+                reqs.append(
+                    Requirement(
+                        name=slot.name,
+                        type=slot.type,
+                        expr=f"{{{{__unbound__.{slot.name}}}}}",
+                        optional=slot.optional,
+                    )
+                )
+                continue
+            reqs.append(
+                Requirement(
+                    name=slot.name,
+                    type=slot.type,
+                    expr="{{" + ref_path + "}}",
+                    optional=slot.optional,
+                )
+            )
+        return reqs
 
     def produces(self) -> dict[str, VarType]:
         """O output do agente é um Pydantic model serializado em dict.

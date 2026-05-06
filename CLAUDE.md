@@ -342,6 +342,35 @@ Se nenhum pattern atual couber, componha direto a partir de `design-system/compo
 
 A rota `/design` (dev-only via `process.env.NODE_ENV !== "production"`) mostra todos os tokens, primitives, components, patterns **e surfaces** ao vivo. Util como referencia rapida.
 
+### 7.2 Filtros globais em paginas BI (regra dura)
+
+**Toda pagina derivada de `DashboardBiPadrao` (e tambem `DashboardOperacional`) tem um conjunto de filtros globais** na FilterBar (Z3) — periodo, UA, produto, focus, etc. **Esses filtros devem ser aplicados a 100% dos agregados da pagina** — KPIs, charts, tabelas, mini-charts dentro de cards, sparklines, breakdowns. Nao existe agregado "fora do escopo do filtro" numa pagina BI.
+
+**Por que e regra dura:** quando dois cards lado-a-lado mostram numeros que representam a "mesma coisa" (ex.: VOP do mes corrente) mas um aplicou o filtro e o outro nao, o usuario perde a confianca em todos os numeros da pagina. Isso e bug funcional, nao polish — equivale a o sistema mentir.
+
+**Como aplicar — frontend:**
+
+1. Use o hook canonico `useBiFilters()` (em `src/lib/hooks/useBiFilters.ts`) que retorna `filtersWithFocus` ja consolidado.
+2. **Toda** chamada `useQuery` da pagina inclui `filtersWithFocus` no `queryKey` E passa para o service no `queryFn`. Padrao:
+
+   ```ts
+   const { filtersWithFocus } = useBiFilters()
+   const q = useQuery({
+     queryKey: ["bi", "<dominio>", "<bundle>", filtersWithFocus],
+     queryFn: () => biService.bundle(filtersWithFocus),
+   })
+   ```
+
+3. Filtros LOCAIS (lentes dentro de um card — ex.: seletor de UA dentro do hero de evolucao) operam **client-side sobre dados ja filtrados** pelos globais. Nao podem "abrir" o escopo. Comentario obrigatorio na callsite explicando que e lente.
+
+**Como aplicar — backend:**
+
+1. **Toda** query de agregado em `app/modules/bi/services/*.py` passa pelo helper `_apply_filters(stmt, tenant_id=..., **filters)` (em `services/operacoes.py`). Sem excecao para "esse aqui e mini chart" / "esse aqui e quebra auxiliar" / "ja filtra por data". `_apply_filters` aplica `tenant_id`, `efetivada=true`, `data_de_efetivacao` IS NOT NULL, `periodo_inicio/fim` E `produto_sigla/ua_id/...`. Pular o helper = pular filtros do usuario.
+2. Quando a janela de tempo do agregado **diverge** do `periodo_inicio/fim` da pagina (ex.: mini chart de mes corrente, sparkline 12M historico fixo, comparacao MTD do mes anterior), monte `*_filters = {**filters, "periodo_inicio": ..., "periodo_fim": ...}` e passe esse dict para `_apply_filters`. As janelas de data do `_apply_filters` aceitam override; os filtros de produto/UA/focus do usuario continuam aplicados.
+3. **Helpers que nao recebem filtros sao bug.** Ja vimos em producao (corrigido em `_acumulado_dia_a_dia` em 2026-05-06): a funcao recebia `filters: dict[str, Any]` mas montava o WHERE manualmente sem usar — resultado: o mini chart "Mes corrente vs Anterior" do card Ritmo somava o VOP total da empresa, enquanto o `vop_acumulado` ao lado refletia o filtro. Numeros lado-a-lado na mesma card divergindo. Toda funcao que toca `Operacao` em service de BI **deve** receber `filters` e aplica-los — mesmo quando aparentemente "ja filtra por outra coisa".
+
+**Em PR:** consumo de `Operacao` (ou warehouse derivado) em service de BI sem `_apply_filters` e bloqueador. Reviewer rejeita.
+
 ---
 
 ## 8. Skills do projeto
@@ -873,6 +902,7 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] Se cria dado no warehouse, aplica mixin `Auditable` com proveniencia completa?
 - [ ] Se e decisao/calculo, registra no `decision_log`?
 - [ ] **Servico/endpoint le APENAS de silver (`wh_<entidade>`), nunca de raw (`wh_<vendor>_raw_*`)?** Ver §13.2.1.
+- [ ] **Se for service de pagina BI: TODA query de agregado (KPI, chart, mini-chart, sparkline, breakdown) passa por `_apply_filters(stmt, tenant_id=..., **filters)` — zero query montando o WHERE a mao?** Ver §7.2.
 - [ ] **Import cruzado entre modulos so passa por `modules/Y/public.py`? Zero import de internals de outro modulo?**
 - [ ] **Se introduziu modulo novo, atualizou enum `Module` + CLAUDE.md secao 11.1?**
 - [ ] Type hints completos? Zero `any`?

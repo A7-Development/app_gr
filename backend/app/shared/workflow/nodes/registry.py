@@ -16,6 +16,7 @@ from app.shared.workflow.nodes._base import BaseNode
 from app.shared.workflow.nodes._placeholder import PlaceholderNode
 from app.shared.workflow.nodes.bureau_query import BureauQueryNode
 from app.shared.workflow.nodes.conditional_branch import ConditionalBranchNode
+from app.shared.workflow.nodes.consolidator import ConsolidatorNode
 from app.shared.workflow.nodes.document_extractor import DocumentExtractorNode
 from app.shared.workflow.nodes.document_request import DocumentRequestNode
 from app.shared.workflow.nodes.http_request import HttpRequestNode
@@ -196,6 +197,31 @@ NODE_TYPES: dict[str, NodeTypeMeta] = {
         description="Agente IA especialista (contrato social, financeiro, juridico, etc).",
         available=True,
         icon="RiRobot2Line",
+    ),
+    # ─── Transformar (deterministico, sem IA) ───────────────────────────
+    "consolidator": NodeTypeMeta(
+        type="consolidator",
+        cls=ConsolidatorNode,
+        label="Consolidador",
+        category="transformar",
+        description=(
+            "Combina dados de varias etapas anteriores em um unico conjunto "
+            "de saida — sem IA, regra fixa. Use quando a logica e simples "
+            "(pegar valor, min, max, somar, media, concatenar, primeiro "
+            "nao-nulo, tamanho). Para sintese subjetiva, use Agente "
+            "Especialista. Nomes com ponto (ex.: 'cabecalho.cnpj') geram "
+            "objetos aninhados na saida."
+        ),
+        available=True,
+        icon="RiMergeCellsHorizontal",
+        config_schema=(
+            {
+                "key": "output_fields",
+                "type": "json",
+                "label": "Campos de saida (lista de objetos com name/type/op/args)",
+                "required": True,
+            },
+        ),
     ),
     # ─── Logica (n8n-style) ──────────────────────────────────────────────
     "conditional_branch": NodeTypeMeta(

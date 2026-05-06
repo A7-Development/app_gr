@@ -424,14 +424,58 @@ async def get_node_types_catalog(
     return list_node_types_for_editor()
 
 
+@router.get("/agent-catalog")
+async def get_agent_catalog(
+    _: None = Depends(require_module(Module.CREDITO, Permission.READ)),
+) -> list[dict]:
+    """Return per-agent metadata for the editor's input-binding UI.
+
+    The `/node-types` endpoint exposes node TYPES (one entry for
+    `specialist_agent`); this endpoint exposes the AGENTS that live behind
+    that single node type — each with its declared input contract
+    (`inputs: [{name, type, description, optional}]`) so the frontend can
+    render the slot-binding UI.
+
+    Source of truth: `app.shared.agents.catalog.CATALOG`.
+    """
+    from app.shared.agents.catalog import CATALOG
+
+    return [
+        {
+            "name": spec.name,
+            "description": spec.description,
+            "section_id": spec.section_id,
+            "multimodal": spec.multimodal,
+            "inputs": [
+                {
+                    "name": slot.name,
+                    "type": slot.type.value,
+                    "description": slot.description,
+                    "optional": slot.optional,
+                }
+                for slot in spec.inputs
+            ],
+        }
+        for spec in CATALOG.values()
+    ]
+
+
 # ─── Semantic validation ──────────────────────────────────────────────────
 
 
 def _validation_to_response(result: ValidationResult) -> dict:
-    """Serialize ValidationResult (dataclasses) for JSON response."""
+    """Serialize ValidationResult (dataclasses) for JSON response.
+
+    `produced_by_node` is REQUIRED by the editor frontend's RefField
+    (variable picker) — it lists what each upstream node publishes so the
+    user can pick a typed variable. Drop it and the picker silently shows
+    "nenhuma variavel disponivel" mesmo quando o human_input upstream tem
+    fields declarados.
+    """
     return {
         "has_errors": result.has_errors,
         "errors": [asdict(e) for e in result.errors],
+        "produced_by_node": result.produced_by_node,
     }
 
 
@@ -450,7 +494,10 @@ async def validate_workflow_graph(
             "errors": [
                 {"node_id": str, "severity": "error|warning",
                  "code": str, "message": str (pt-BR), ...}
-            ]
+            ],
+            "produced_by_node": {
+                "<node_id>": {"<var_name>": "<vartype_str>", ...}
+            }
         }
     """
     result = validate_graph(graph)

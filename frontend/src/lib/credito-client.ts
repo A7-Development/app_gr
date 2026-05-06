@@ -32,6 +32,9 @@ export type NodeSpec = {
   label: string | null
   config: Record<string, unknown>
   position?: { x: number; y: number } | null
+  /** Fan-in semantics quando o node tem 2+ incoming edges.
+   * "all" = espera todas; "any" = qualquer uma dispara. Default backend: "all". */
+  join_mode?: "any" | "all"
 }
 
 export type EdgeSpec = {
@@ -98,6 +101,29 @@ export type NodeTypeMeta = {
   available: boolean
   icon: string
   config_schema?: NodeConfigField[]
+}
+
+/** One declared input slot for a specialist agent (Phase A migration).
+ *  Fed by `node.config.input_bindings = { [name]: "<ref-path>" }`.
+ *  When `inputs` is empty, the agent is on the legacy text-dump path. */
+export type AgentInputMeta = {
+  name: string
+  /** VarType value as string (e.g. "cnpj", "score", "money_brl"). */
+  type: string
+  description: string
+  optional: boolean
+}
+
+/** Per-agent metadata exposed by GET /credito/agent-catalog.
+ *  Used by the editor to render the input-binding UI for specialist_agent
+ *  nodes and to decide whether the agent is on the structured-context path
+ *  (`inputs.length > 0`) or the legacy fallback path (`inputs.length === 0`). */
+export type AgentMeta = {
+  name: string
+  description: string
+  section_id: string
+  multimodal: boolean
+  inputs: AgentInputMeta[]
 }
 
 // ─── Semantic validation (Fase 2) ────────────────────────────────────────
@@ -592,6 +618,7 @@ export const credito = {
     list: () => apiClient.get<WorkflowDefinitionRead[]>("/credito/workflows"),
     get: (id: string) => apiClient.get<WorkflowDefinitionRead>(`/credito/workflows/${id}`),
     nodeTypes: () => apiClient.get<NodeTypeMeta[]>("/credito/node-types"),
+    agentCatalog: () => apiClient.get<AgentMeta[]>("/credito/agent-catalog"),
     create: (payload: WorkflowCreatePayload) =>
       apiClient.post<WorkflowDefinitionRead>("/credito/workflows", payload),
     update: (id: string, payload: WorkflowUpdatePayload) =>

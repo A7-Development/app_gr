@@ -2,23 +2,28 @@
 //
 // Aba 1 da pagina /bi/operacoes2 — Volume & Ritmo.
 //
-// Estrutura (refatorada 2026-05-04 — Linha 1 absorveu Produto):
-//   Linha 1  · 3 colunas: Hero combo Evolucao Mensal + Donut VOP por UA +
-//              Lista VOP por Produto. Hero tem seletor LOCAL de UA
-//              (filtragem client-side a partir de `evolucao_12m_por_ua` —
-//              sem nova ida ao backend).
-//   Linha 2 (Padrao B)  · Ritmo do mes corrente + Projecao + Pace
-//                          (degraded mode quando wh_dim_dia_util esta vazia)
-//   Linha 3 (Padrao A)  · 4 KPIs secundarios de volume
-//   Linha 4 (Padrao C)  · Heatmap dow x semana + Por dia da semana
+// Estrutura (refatorada 2026-05-06):
+//   Linha 1  · 3 colunas: Hero combo Evolucao Mensal (50%) +
+//              QuebraTrendCard "VOP por UA" (25%) +
+//              QuebraTrendCard "VOP por Produto" (25%). Hero tem seletor
+//              LOCAL de UA (filtragem client-side a partir de
+//              `evolucao_12m_por_ua` — sem nova ida ao backend).
+//   Linha 2  · Hero Ritmo do mes corrente (50%) com lista textual de UAs
+//              + card unificado "Projecao fim do mes" (25%) com Pace por
+//              DU embutido na dl + KpisSecundariosTrendCard "Indicadores
+//              secundarios" (25%): 4 KPIs (Nº ops, Ticket op., Ticket tit.,
+//              VOP/DU) condensados em tabela densa com Δ MoM + sparkline
+//              12M fechados. (degraded quando wh_dim_dia_util vazia)
 //
-// Strip dual em quebras (Opcao 4 paradigma 2026-05-03):
-//   - QuebraCard (Produto na L1 col 3): toggle "Periodo | Mes | Ambos" +
-//     "Volume | Δ MoM | Δ YoY". "Ambos" sobrepoe as duas barras
-//     (clara=periodo / saturada=mes corrente).
-//   - QuebraDonut (UA na L1 col 2): toggle simplificado "Periodo | Mes" +
-//     "Volume". Donut nao representa MoM/YoY bem; "Ambos" precisaria 2
-//     donuts concentricos — preferimos toggle simples e legivel.
+// QuebraTrendCard / KpisSecundariosTrendCard: tabela densa com sparkline
+// 12M FECHADOS (M-12 a M-1, exclui mes corrente parcial pra evitar queda
+// brusca no ultimo ponto) + seta de tendencia. Modos:
+//   - "share":   Produto — slope absoluto (pp/mes), threshold 0.3 pp/mes.
+//                Detecta drift de mix entre categorias.
+//   - "absolute": UA + KPIs secundarios — slope relativo (% sobre a media
+//                 da propria serie), threshold 0.5%/mes. Apropriado quando
+//                 categorias tem trajetoria propria de crescimento (UA) ou
+//                 escalas heterogeneas (count vs BRL vs BRL/DU).
 
 "use client"
 
@@ -29,6 +34,7 @@ import {
   RiArrowUpLine,
   RiBuilding2Line,
   RiCalendarEventLine,
+  RiInformationLine,
   RiSubtractLine,
 } from "@remixicon/react"
 import type { EChartsOption } from "echarts"
@@ -40,21 +46,18 @@ import {
   EvolucaoMensalCard,
   type EvolucaoMensalPonto,
 } from "@/design-system/components/EvolucaoMensalCard"
-import { VizParam } from "@/design-system/components/VizParam"
 import { tableTokens } from "@/design-system/tokens/table"
 import { biOperacoes2 } from "@/lib/api-client"
 import type {
-  Operacoes2DiaSemanaResumo,
   Operacoes2EvolucaoMensalPonto,
   Operacoes2EvolucaoPorUaPonto,
-  Operacoes2HeatmapPonto,
   Operacoes2KpiSecundario,
   Operacoes2KpisSecundariosVolume,
   Operacoes2MesDestaque,
-  Operacoes2MesCorrenteVsMedia,
   Operacoes2PaceDiario,
   Operacoes2QuebraDimensaoLinha,
   Operacoes2RitmoMesCorrente,
+  Operacoes2RitmoUaItem,
 } from "@/lib/api-client"
 import { useBiFilters, type PresetKey } from "@/lib/hooks/useBiFilters"
 import { cx } from "@/lib/utils"
@@ -67,6 +70,16 @@ const fmtBRL = new Intl.NumberFormat("pt-BR", {
   notation: "compact",
   maximumFractionDigits: 2,
 })
+// Variante compact com 2 casas FORCADAS — usado no Pace diario do card
+// "Projecao fim do mes" para evitar arredondamento enganoso (R$ 1,5 mi vs
+// R$ 1,55 mi sao 50 mil de diferenca por DU).
+const fmtBRL2 = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  notation: "compact",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
 const fmtBRLFull = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
@@ -75,6 +88,12 @@ const fmtBRLFull = new Intl.NumberFormat("pt-BR", {
 const fmtInt = new Intl.NumberFormat("pt-BR")
 const fmtPct1 = (v: number) => `${v.toFixed(1).replace(".", ",")}%`
 const fmtBRLNumeric = (v: number) => fmtBRL.format(v)
+// Formatador fixo em milhoes (sempre "X,XX mi") — usado quando a tabela
+// precisa que TODAS as linhas tenham a mesma unidade, mesmo que isso resulte
+// em "0,86 mi" para valores < 1 milhao. `notation: compact` adapta a unidade
+// linha-a-linha ("864 mil" + "4,03 mi") e quebra a comparacao visual.
+const fmtBRLMi = (v: number) =>
+  `R$ ${(v / 1_000_000).toFixed(2).replace(".", ",")} mi`
 
 function fmtMonthShort(iso: string): string {
   const [y, m] = iso.split("-").map(Number)
@@ -143,16 +162,15 @@ export function AbaVolumeRitmo() {
         evolucaoPorUa={data.evolucao_12m_por_ua}
         melhorMes={data.melhor_mes}
         piorMes={data.pior_mes}
-        mesVsMedia={data.mes_corrente_vs_media}
+        ritmoDeltaPct={data.ritmo?.delta_pct ?? null}
         porUa={data.por_ua}
         porProduto={data.por_produto}
         presetLabel={preset ? PRESET_TO_LABEL[preset] : "Personalizado"}
       />
-      <Linha2Ritmo ritmo={data.ritmo} pace={data.pace_diario} />
-      <Linha3Kpis kpis={data.kpis_secundarios} />
-      <Linha5Sazonalidade
-        heatmap={data.heatmap_dow_semana}
-        porDia={data.por_dia_semana}
+      <Linha2Ritmo
+        ritmo={data.ritmo}
+        pace={data.pace_diario}
+        kpis={data.kpis_secundarios}
       />
     </div>
   )
@@ -161,27 +179,30 @@ export function AbaVolumeRitmo() {
 function AbaSkeleton() {
   return (
     <div className="flex flex-col gap-6">
-      {/* Linha 1: Hero 50% + Donut UA 25% + Lista Produto 25% */}
+      {/* Linha 1: Hero Evolucao 50% + Quebra UA 25% + Quebra Produto 25% */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
         <div className="h-64 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 lg:col-span-2" />
         <div className="h-64 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900" />
         <div className="h-64 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900" />
       </div>
-      {/* Demais linhas */}
-      <div className="h-48 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900" />
-      <div className="h-32 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900" />
+      {/* Linha 2: Hero Ritmo 50% + Projecao 25% + Indicadores 25% */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+        <div className="h-72 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 lg:col-span-2" />
+        <div className="h-72 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900" />
+        <div className="h-72 animate-pulse rounded border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900" />
+      </div>
     </div>
   )
 }
 
-// ─── Linha 1 — 3 colunas: Hero Evolucao + Donut UA + Lista Produto ────────
+// ─── Linha 1 — 3 colunas: Hero Evolucao + Quebra UA + Quebra Produto ──────
 
 function Linha1HeroComUa({
   evolucao,
   evolucaoPorUa,
   melhorMes,
   piorMes,
-  mesVsMedia,
+  ritmoDeltaPct,
   porUa,
   porProduto,
   presetLabel,
@@ -190,7 +211,11 @@ function Linha1HeroComUa({
   evolucaoPorUa: Operacoes2EvolucaoPorUaPonto[]
   melhorMes: Operacoes2MesDestaque | null
   piorMes: Operacoes2MesDestaque | null
-  mesVsMedia: Operacoes2MesCorrenteVsMedia | null
+  /**
+   * MTD same-period: mes corrente N DUs vs mes anterior nos mesmos N DUs.
+   * Vem de `ritmo.delta_pct`. `null` = sem base de comparacao.
+   */
+  ritmoDeltaPct: number | null
   porUa: Operacoes2QuebraDimensaoLinha[]
   porProduto: Operacoes2QuebraDimensaoLinha[]
   presetLabel: string
@@ -203,15 +228,22 @@ function Linha1HeroComUa({
           evolucaoPorUa={evolucaoPorUa}
           melhorMes={melhorMes}
           piorMes={piorMes}
-          mesVsMedia={mesVsMedia}
+          ritmoDeltaPct={ritmoDeltaPct}
           presetLabel={presetLabel}
         />
       </div>
-      <QuebraDonut
+      <QuebraTrendCard
         title="VOP por Unidade Administrativa"
         rows={porUa}
+        topN={5}
+        mode="absolute"
       />
-      <QuebraCard title="VOP por Produto" rows={porProduto} topN={10} />
+      <QuebraTrendCard
+        title="VOP por Produto"
+        rows={porProduto}
+        topN={5}
+        mode="share"
+      />
     </div>
   )
 }
@@ -221,14 +253,15 @@ function HeroEvolucao({
   evolucaoPorUa,
   melhorMes,
   piorMes,
-  mesVsMedia,
+  ritmoDeltaPct,
   presetLabel,
 }: {
   evolucao: Operacoes2EvolucaoMensalPonto[]
   evolucaoPorUa: Operacoes2EvolucaoPorUaPonto[]
   melhorMes: Operacoes2MesDestaque | null
   piorMes: Operacoes2MesDestaque | null
-  mesVsMedia: Operacoes2MesCorrenteVsMedia | null
+  /** MTD same-period vs mes anterior. Vem de `ritmo.delta_pct`. */
+  ritmoDeltaPct: number | null
   presetLabel: string
 }) {
   // Seletor LOCAL de UA — nao mexe no filtro global (que ja existe na toolbar).
@@ -303,7 +336,8 @@ function HeroEvolucao({
         pior: piorMes
           ? { periodo: piorMes.periodo, valor: piorMes.vop }
           : null,
-        vsMedia: mesVsMedia ? { pct: mesVsMedia.pct } : null,
+        vsMesAnterior:
+          ritmoDeltaPct != null ? { pct: ritmoDeltaPct } : null,
       }}
       valueFormatter={(v) => fmtBRLFull.format(v)}
       axisFormatter={(v) => fmtBRL.format(v)}
@@ -315,136 +349,16 @@ function HeroEvolucao({
   )
 }
 
-// ─── QuebraDonut — UA via donut ECharts (top 3 + Outros) ──────────────────
-
-// Paleta monocromatica de azul para fatias do donut. Hex inline e excecao
-// canonica do CLAUDE.md §4 (Tailwind nao alcanca canvas ECharts).
-const DONUT_PALETTE = [
-  "#1E3A8A", // blue-900
-  "#2563EB", // blue-600
-  "#60A5FA", // blue-400
-  "#93C5FD", // blue-300 — usado para "Outros"
-] as const
-
-const DONUT_ESCOPO_TOGGLES = ["Período", "Mês"] as const
-type DonutEscopoToggle = (typeof DONUT_ESCOPO_TOGGLES)[number]
-
-function QuebraDonut({
-  title,
-  rows,
-}: {
-  title: string
-  rows: Operacoes2QuebraDimensaoLinha[]
-}) {
-  const [escopo, setEscopo] = React.useState<DonutEscopoToggle>("Período")
-
-  const valFor = React.useCallback(
-    (r: Operacoes2QuebraDimensaoLinha) =>
-      escopo === "Mês" ? r.vop_mes_corrente : r.vop,
-    [escopo],
-  )
-
-  // Top 3 + agregacao em "Outros" (regra do brief: donut com ate 3 fatias).
-  const fatias = React.useMemo(() => {
-    const sorted = [...rows].sort((a, b) => valFor(b) - valFor(a))
-    const top = sorted.slice(0, 3).map((r) => ({
-      name: r.categoria,
-      value: valFor(r),
-    }))
-    const outros = sorted.slice(3)
-    const outrosTotal = outros.reduce((acc, r) => acc + valFor(r), 0)
-    if (outrosTotal > 0) {
-      top.push({ name: "Outros", value: outrosTotal })
-    }
-    return top.filter((f) => f.value > 0)
-  }, [rows, valFor])
-
-  const total = fatias.reduce((acc, f) => acc + f.value, 0)
-
-  const option: EChartsOption = React.useMemo(
-    () => ({
-      tooltip: {
-        trigger: "item",
-        formatter: (params: unknown) => {
-          const p = params as { name: string; value: number; percent: number }
-          return `<strong>${p.name}</strong><br/>${fmtBRLFull.format(p.value)} · ${p.percent.toFixed(1).replace(".", ",")}%`
-        },
-      },
-      legend: {
-        orient: "vertical",
-        right: 8,
-        top: "middle",
-        itemWidth: 8,
-        itemHeight: 8,
-        textStyle: { fontSize: 11 },
-        formatter: (name: string) => {
-          const f = fatias.find((x) => x.name === name)
-          if (!f) return name
-          const pct = total > 0 ? (f.value / total) * 100 : 0
-          return `${name}  ${pct.toFixed(0)}%`
-        },
-      },
-      series: [
-        {
-          type: "pie",
-          radius: ["45%", "65%"],
-          center: ["32%", "50%"],
-          avoidLabelOverlap: true,
-          label: {
-            show: true,
-            position: "outside",
-            // Valor em milhoes, 1 casa decimal, sem R$ (ex.: "12,3 M").
-            formatter: (p) =>
-              `${((p as { value: number }).value / 1_000_000)
-                .toFixed(1)
-                .replace(".", ",")} M`,
-            fontSize: 11,
-            color: "#374151",
-          },
-          labelLine: { show: true, length: 6, length2: 8 },
-          data: fatias.map((f, i) => ({
-            ...f,
-            itemStyle: {
-              color: DONUT_PALETTE[i % DONUT_PALETTE.length],
-              borderColor: "#FFFFFF",
-              borderWidth: 2,
-            },
-          })),
-        },
-      ],
-    }),
-    [fatias, total],
-  )
-
-  return (
-    <EChartsCard
-      title={title}
-      caption={
-        escopo === "Mês"
-          ? "Mês corrente · top 3 + Outros"
-          : "Período do filtro · top 3 + Outros"
-      }
-      option={option}
-      height={270}
-      actions={
-        <VizParam
-          options={DONUT_ESCOPO_TOGGLES}
-          value={escopo}
-          onChange={setEscopo}
-        />
-      }
-    />
-  )
-}
-
 // ─── Linha 2 (Padrao B) — Ritmo + Projecao + Pace ─────────────────────────
 
 function Linha2Ritmo({
   ritmo,
   pace,
+  kpis,
 }: {
   ritmo: Operacoes2RitmoMesCorrente | null
   pace: Operacoes2PaceDiario | null
+  kpis: Operacoes2KpisSecundariosVolume
 }) {
   if (!ritmo) {
     return <Linha2Empty />
@@ -452,8 +366,15 @@ function Linha2Ritmo({
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
       <Linha2HeroRitmo ritmo={ritmo} className="lg:col-span-6" />
-      <Linha2Projecao ritmo={ritmo} className="lg:col-span-3" />
-      <Linha2Pace pace={pace} className="lg:col-span-3" />
+      <Linha2Projecao
+        ritmo={ritmo}
+        pace={pace}
+        className="lg:col-span-3"
+      />
+      <KpisSecundariosTrendCard
+        kpis={kpis}
+        className="lg:col-span-3"
+      />
     </div>
   )
 }
@@ -496,8 +417,14 @@ function Linha2HeroRitmo({
     : "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300"
 
   // Mini chart acumulado dia-a-dia.
+  // `legend: { show: false }` suprime a legenda nativa do ECharts — o tema
+  // default (echarts-theme.ts) injeta um `legend` style que ECharts renderiza
+  // no rodape e duplica os chips abaixo. As labels viram <ChartLegendChip />
+  // acima do canvas, liberando ~30px verticais. Cores aqui DEVEM bater com
+  // os strokes dos chips (#2A4D7A solido + #9CA3AF tracejado).
   const option: EChartsOption = {
     grid: { top: 8, right: 8, bottom: 24, left: 56 },
+    legend: { show: false },
     tooltip: { trigger: "axis" },
     xAxis: {
       type: "category",
@@ -548,25 +475,67 @@ function Linha2HeroRitmo({
         </span>{" "}
         do mês anterior nos mesmos {ritmo.du_corridos} dias úteis.
       </p>
-      <p className="text-[11px] text-gray-500 dark:text-gray-400">
-        {ritmo.du_corridos} DU corridos de {ritmo.du_total_mes} · projeção fim
-        do mês:{" "}
-        <strong className="text-gray-900 dark:text-gray-50">
-          {fmtBRLFull.format(ritmo.projecao_fim_mes)}
-        </strong>
-      </p>
+      {ritmo.ritmo_por_ua.length > 0 && (
+        <p className="text-[11px] text-gray-500 dark:text-gray-400">
+          {ritmo.ritmo_por_ua.map((ua, idx) => (
+            <React.Fragment key={ua.ua_id}>
+              {idx > 0 && (
+                <span className="mx-2 text-gray-300 dark:text-gray-700">
+                  |
+                </span>
+              )}
+              <RitmoUaInline ua={ua} />
+            </React.Fragment>
+          ))}
+        </p>
+      )}
+      <div className="flex items-center gap-3 text-[11px] text-gray-600 dark:text-gray-300">
+        <ChartLegendChip stroke="#2A4D7A" label="Mês corrente" />
+        <ChartLegendChip stroke="#9CA3AF" label="Mês anterior" dashed />
+      </div>
       <div className="-mx-2 mt-1">
-        <EChartsCardInline option={option} height={160} />
+        <EChartsCardInline option={option} height={200} />
       </div>
     </Card>
   )
 }
 
+function RitmoUaInline({ ua }: { ua: Operacoes2RitmoUaItem }) {
+  const hasDelta = ua.delta_pct != null
+  const isUp = hasDelta && ua.delta_pct! >= 0
+  const colorClass = !hasDelta
+    ? "text-gray-400 dark:text-gray-600"
+    : isUp
+      ? "text-emerald-600 dark:text-emerald-400"
+      : "text-red-600 dark:text-red-400"
+  const deltaTxt = !hasDelta
+    ? "sem base de comparação"
+    : `${isUp ? "+" : ""}${fmtPct1(ua.delta_pct!)} ${isUp ? "à frente" : "atrás"}`
+  return (
+    <>
+      <strong className="text-gray-900 dark:text-gray-50">{ua.ua_nome}</strong>
+      :{" "}
+      <strong className="tabular-nums text-gray-900 dark:text-gray-50">
+        {fmtBRLMi(ua.vop_corrente)}
+      </strong>{" "}
+      ·{" "}
+      <span
+        className={cx("tabular-nums font-medium", colorClass)}
+        title={hasDelta ? "vs mesmo nº DUs do mês anterior" : undefined}
+      >
+        {deltaTxt}
+      </span>
+    </>
+  )
+}
+
 function Linha2Projecao({
   ritmo,
+  pace,
   className,
 }: {
   ritmo: Operacoes2RitmoMesCorrente
+  pace: Operacoes2PaceDiario | null
   className?: string
 }) {
   const restantes = Math.max(0, ritmo.du_total_mes - ritmo.du_corridos)
@@ -583,6 +552,30 @@ function Linha2Projecao({
         <dd className="text-right tabular-nums text-gray-900 dark:text-gray-50">
           {fmtBRL.format(ritmo.vop_acumulado)}
         </dd>
+
+        <dt className="text-gray-500 dark:text-gray-400">Pace por DU</dt>
+        <dd
+          className="flex items-baseline justify-end gap-1.5"
+          title={
+            pace
+              ? `Mês anterior: ${fmtBRL2.format(pace.vop_du_anterior)} / DU`
+              : "Indisponível"
+          }
+        >
+          {pace ? (
+            <>
+              <span className="tabular-nums text-gray-900 dark:text-gray-50">
+                {fmtBRL2.format(pace.vop_du_corrente)}
+              </span>
+              <PaceMomBadge value={pace.delta_pct} />
+            </>
+          ) : (
+            <span className="tabular-nums text-gray-400 dark:text-gray-600">
+              —
+            </span>
+          )}
+        </dd>
+
         <dt className="text-gray-500 dark:text-gray-400">DUs corridos</dt>
         <dd className="text-right tabular-nums text-gray-900 dark:text-gray-50">
           {ritmo.du_corridos} / {ritmo.du_total_mes}
@@ -596,98 +589,26 @@ function Linha2Projecao({
   )
 }
 
-function Linha2Pace({
-  pace,
-  className,
-}: {
-  pace: Operacoes2PaceDiario | null
-  className?: string
-}) {
+function PaceMomBadge({ value }: { value: number | null }) {
+  if (value == null) {
+    return (
+      <span className="tabular-nums text-[10px] font-medium text-gray-400 dark:text-gray-600">
+        —
+      </span>
+    )
+  }
+  const isUp = value >= 0
+  const colorClass = isUp
+    ? "text-emerald-600 dark:text-emerald-400"
+    : "text-red-600 dark:text-red-400"
   return (
-    <Card className={cx("flex flex-col gap-3 p-5", className)}>
-      <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-        Pace diário
-      </p>
-      {pace ? (
-        <>
-          <p className="text-[24px] font-semibold leading-none tabular-nums text-gray-900 dark:text-gray-50">
-            {fmtBRL.format(pace.vop_du_corrente)}
-          </p>
-          <DeltaTextRow value={pace.delta_pct} label="vs mês anterior" />
-          <p className="text-[11px] text-gray-500 dark:text-gray-400">
-            Mês anterior:{" "}
-            <strong className="tabular-nums text-gray-900 dark:text-gray-50">
-              {fmtBRL.format(pace.vop_du_anterior)}
-            </strong>{" "}
-            / DU
-          </p>
-        </>
-      ) : (
-        <p className="text-[11px] text-gray-500 dark:text-gray-400">—</p>
-      )}
-    </Card>
-  )
-}
-
-// ─── Linha 3 (Padrao A) — 4 KPIs secundarios ──────────────────────────────
-
-function Linha3Kpis({ kpis }: { kpis: Operacoes2KpisSecundariosVolume }) {
-  return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <KpiSecundarioCard
-        label="Nº de operações"
-        kpi={kpis.n_operacoes}
-        format={(v) => fmtInt.format(v)}
-      />
-      <KpiSecundarioCard
-        label="Ticket médio (op.)"
-        kpi={kpis.ticket_op}
-        format={(v) => fmtBRLFull.format(v)}
-      />
-      <KpiSecundarioCard
-        label="Ticket médio (título)"
-        kpi={kpis.ticket_titulo}
-        format={(v) => fmtBRLFull.format(v)}
-      />
-      <KpiSecundarioCard
-        label="VOP por DU médio"
-        kpi={kpis.vop_du_medio}
-        format={(v) => fmtBRL.format(v)}
-        unavailableHint="Depende de wh_dim_dia_util"
-      />
-    </div>
-  )
-}
-
-function KpiSecundarioCard({
-  label,
-  kpi,
-  format,
-  unavailableHint,
-}: {
-  label: string
-  kpi: Operacoes2KpiSecundario | null
-  format: (v: number) => string
-  unavailableHint?: string
-}) {
-  return (
-    <Card className="flex flex-col gap-2 p-5">
-      <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-        {label}
-      </p>
-      {kpi ? (
-        <>
-          <p className="text-[22px] font-semibold leading-none tabular-nums text-gray-900 dark:text-gray-50">
-            {format(kpi.valor)}
-          </p>
-          <DeltaTextRow value={kpi.delta_pct} label="MoM" />
-        </>
-      ) : (
-        <p className="text-[11px] italic text-gray-400 dark:text-gray-600">
-          {unavailableHint ?? "—"}
-        </p>
-      )}
-    </Card>
+    <span
+      className={cx("tabular-nums text-[10px] font-medium", colorClass)}
+      title="vs mês anterior"
+    >
+      {isUp ? "+" : ""}
+      {fmtPct1(value)}
+    </span>
   )
 }
 
@@ -718,57 +639,101 @@ function DeltaTextRow({
   )
 }
 
-// ─── QuebraCard — Lista vitrine de VOP por Produto ────────────────────────
+// ─── QuebraTrendCard — Tabela trend densa por categoria ──────────────────
 //
-// Lista estilizada (grid 5 cols) num <Card>, NAO uma tabela. CLAUDE.md §6
-// proibe Tremor <Table> cru em pagina; e este caso (vitrine top-N estatica
-// numa coluna de 25%) nao se encaixa em nenhum dos 4 buckets canonicos
-// (DataTableShell / DataTable / CompactSeriesTable / hierarquica) — todos
-// trazem peso de UI (filtros, sort, virtualizacao) excessivo. Optamos por
-// lista de divs alinhados por grid: respeita §6 e mantem alinhamento
-// vertical das colunas como uma tabela faria.
+// Substitui o donut + lista vitrine antigos. Mostra top N categorias do mes
+// corrente com sparkline 12M + seta de tendencia. "Outros" agregado no
+// rodape sem sparkline.
 //
-// Colunas: # | Produto | %Período | %Mês | Δpp
-//   - %Período = r.pct (participacao % do produto no periodo do filtro)
-//   - %Mês     = r.pct_mes_corrente (participacao % no mes corrente)
-//   - Δpp      = r.pct_mes_corrente - r.pct (variacao em pontos percentuais)
+// Dois modos de analise (escolhidos por dimensao):
 //
-// Decisao 2026-05-04: exibir % (e nao volume R$ absoluto). Quando o fundo
-// cresce em VOP, todas as categorias tendem a crescer em valor — a leitura
-// de VOLUME nao revela mudanca de mix. Ja a participacao % e a metrica que
-// expoe ganho/perda de share entre produtos.
+//   mode="share" (Produto): o que importa e o DRIFT DE MIX entre categorias
+//     dentro de uma carteira que cresce no agregado. Coluna "%Mes" mostra
+//     share do mes; sparkline = share% mes a mes (12M); slope absoluto em
+//     pp/mes. Threshold 0.3 pp/mes filtra ruido mensal.
 //
-// Sinalizacao do Δpp por sinal: > +1pp = crescendo (emerald), < -1pp =
-// reduzindo (red), entre = estavel (gray). Threshold de 1pp escolhido para
-// nao reagir a flutuacao trivial de mes.
+//   mode="absolute" (UA): cada categoria tem TRAJETORIA propria — RealInvest
+//     cresce com mercado de capitais, A7 fica estavel como securitizadora.
+//     Share dentro do total da carteira da falso negativo (RealInvest puxa
+//     A7 pra baixo em share mesmo quando A7 mantem VOP). Coluna "VOP Mes"
+//     mostra valor absoluto BRL; sparkline = VOP absoluto mes a mes; slope
+//     RELATIVO a media da propria serie (% sobre a media), permitindo
+//     comparar UAs de escalas muito diferentes. Threshold 0.5%/mes (~6%/ano).
+//
+// Por que nao DataTableShell aqui: aquele componente traz toolbar, filtro
+// global e SegmentSwitch — overhead total para uma vitrine de 5 linhas
+// dentro de coluna de 25%. Mantemos um grid de divs alinhados (mesma
+// abordagem da QuebraCard antiga, justificada na §6 do CLAUDE.md).
 
-const PARTICIPACAO_THRESHOLD_PP = 1.0
+type QuebraTrendMode = "share" | "absolute"
 
-const ROW_GRID =
-  "grid grid-cols-[20px_minmax(0,1fr)_auto_auto_auto] items-center gap-x-3"
+// ECharts nao alcanca o canvas do SVG inline da sparkline (renderizamos a
+// linha em <svg> direto). Os 3 hex sao da paleta canonica do CLAUDE.md
+// §4 (emerald-600, red-600, gray-400) — espelhados aqui pra usar como
+// stroke do <path>, mesma excecao usada nas EChartsOption.
+const TREND_STROKE_UP = "#059669"
+const TREND_STROKE_DOWN = "#DC2626"
+const TREND_STROKE_FLAT = "#9CA3AF"
 
-function QuebraCard({
+// Threshold em unidades absolutas (pp/mes) para slope sobre share%.
+const TREND_THRESHOLD_PP_PER_MONTH = 0.3
+// Threshold em % sobre a media da serie (%/mes) para slope sobre VOP
+// absoluto. ~0.5%/mes corresponde a ~6%/ano linear — abaixo disso considera
+// estavel pra absorver ruido sazonal de carteira.
+const TREND_THRESHOLD_REL_PER_MONTH = 0.5
+
+// Larguras fixas em col 3 (numero) e col 4 (Tend.) para garantir alinhamento
+// vertical entre header e data rows. Header e cada data row sao grids
+// independentes — `auto` deixava as colunas dimensionando ao conteudo da
+// propria row, desalinhando label do header com numero da celula.
+//   - 72px em col 3: cabe "100,0%" e tambem "R$ 100,0 mi" em 12px tabular.
+//   - 72px em col 4: sparkline 48px + gap 4px + seta 14px (size-3.5) = 66px,
+//     com folga pro overflow-visible do SVG.
+const TREND_ROW_GRID =
+  "grid grid-cols-[16px_minmax(0,1fr)_72px_72px] items-center gap-x-2"
+
+function QuebraTrendCard({
   title,
   rows,
   topN,
+  mode,
 }: {
   title: string
   rows: Operacoes2QuebraDimensaoLinha[]
   topN: number
+  mode: QuebraTrendMode
 }) {
-  const sorted = React.useMemo(
-    () => [...rows].sort((a, b) => b.pct - a.pct).slice(0, topN),
-    [rows, topN],
-  )
+  const { top, outros, outrosValor } = React.useMemo(() => {
+    const sortKey: keyof Operacoes2QuebraDimensaoLinha =
+      mode === "share" ? "pct_mes_corrente" : "vop_mes_corrente"
+    const sorted = [...rows].sort(
+      (a, b) => (b[sortKey] as number) - (a[sortKey] as number),
+    )
+    const _top = sorted.slice(0, topN)
+    const _outros = sorted.slice(topN)
+    const _outrosValor = _outros.reduce(
+      (acc, r) => acc + (r[sortKey] as number),
+      0,
+    )
+    return { top: _top, outros: _outros, outrosValor: _outrosValor }
+  }, [rows, topN, mode])
 
-  if (sorted.length === 0) {
+  const headerCol3 = mode === "share" ? "%Mês" : "VOP Mês"
+  const subtitle =
+    mode === "share"
+      ? "participação % · tendência 12M fechados"
+      : "VOP do mês · tendência 12M fechados (vs própria média)"
+  const fmtOutros = (v: number) =>
+    mode === "share" ? fmtPct1(v) : fmtBRLMi(v)
+
+  if (top.length === 0) {
     return (
       <Card className="flex flex-col p-0">
         <div className={cardTokens.header}>
           <h3 className={cardTokens.headerTitle}>{title}</h3>
         </div>
         <div className={cardTokens.body}>
-          <p className="py-6 text-center text-xs text-gray-400 dark:text-gray-600">
+          <p className={cx(tableTokens.cellMuted, "py-6 text-center")}>
             Sem dados no período.
           </p>
         </div>
@@ -781,7 +746,7 @@ function QuebraCard({
       <div className={cardTokens.header}>
         <h3 className={cardTokens.headerTitle}>{title}</h3>
         <p className={cx(cardTokens.headerSubtitle, "mt-0.5")}>
-          Top {sorted.length} · participação % e variação (pp)
+          Top {top.length} · {subtitle}
         </p>
       </div>
 
@@ -789,191 +754,461 @@ function QuebraCard({
         {/* Header row */}
         <div
           className={cx(
-            ROW_GRID,
+            TREND_ROW_GRID,
             "border-b border-gray-100 pb-1.5 text-gray-500 dark:border-gray-900 dark:text-gray-400",
             tableTokens.header,
           )}
         >
           <span className="text-right">#</span>
-          <span>Produto</span>
-          <span className="text-right">%Per.</span>
-          <span className="text-right">%Mês</span>
-          <span className="text-right">Δpp</span>
+          <span>Categoria</span>
+          <span className="text-right">{headerCol3}</span>
+          <span
+            className="flex items-center justify-end gap-0.5"
+            title="Tendência calculada sobre os últimos 12 meses fechados (M-12 a M-1). O mês corrente parcial fica fora do cálculo para evitar distorção em consultas no início do mês — o valor MTD aparece na coluna ao lado."
+          >
+            Tend.
+            <RiInformationLine
+              aria-hidden="true"
+              className="size-3 text-gray-400 dark:text-gray-600"
+            />
+          </span>
         </div>
 
         {/* Data rows */}
         <div className="flex flex-col gap-1">
-          {sorted.map((r, i) => {
-            const deltaPp = r.pct_mes_corrente - r.pct
-            const isUp = deltaPp > PARTICIPACAO_THRESHOLD_PP
-            const isDown = deltaPp < -PARTICIPACAO_THRESHOLD_PP
-            const SignalIcon = isUp
-              ? RiArrowUpLine
-              : isDown
-                ? RiArrowDownLine
-                : RiSubtractLine
-            const signalClass = isUp
-              ? "text-emerald-600 dark:text-emerald-400"
-              : isDown
-                ? "text-red-600 dark:text-red-400"
-                : "text-gray-400 dark:text-gray-600"
-            const deltaTxt = `${deltaPp >= 0 ? "+" : ""}${deltaPp.toFixed(1).replace(".", ",")}`
-            const tooltip = `Participação ${fmtPct1(r.pct)} → ${fmtPct1(r.pct_mes_corrente)} (${deltaTxt} pp)`
-            return (
-              <div key={r.categoria} className={cx(ROW_GRID, "py-1")}>
-                <span
-                  className={cx(tableTokens.cellNumberSecondary, "text-right")}
-                >
-                  {i + 1}
-                </span>
-                <span className={cx(tableTokens.cellText, "truncate")}>
-                  {r.categoria}
-                </span>
-                <span className={cx(tableTokens.cellNumber, "text-right")}>
-                  {fmtPct1(r.pct)}
-                </span>
-                <span className={cx(tableTokens.cellNumber, "text-right")}>
-                  {fmtPct1(r.pct_mes_corrente)}
-                </span>
-                <span
-                  className={cx(
-                    "inline-flex items-center justify-end gap-0.5 tabular-nums text-xs",
-                    signalClass,
-                  )}
-                  title={tooltip}
-                >
-                  <SignalIcon className="size-3.5" aria-hidden="true" />
-                  <span aria-label={tooltip}>{deltaTxt}</span>
-                </span>
-              </div>
-            )
-          })}
+          {top.map((r, i) => (
+            <TrendRow key={r.categoria_id} row={r} rank={i + 1} mode={mode} />
+          ))}
+          {outros.length > 0 && outrosValor > 0 && (
+            <div
+              className={cx(
+                TREND_ROW_GRID,
+                "border-t-gray-100 dark:border-t-gray-900 border-t pt-1.5",
+              )}
+            >
+              <span aria-hidden="true" />
+              <span className={cx(tableTokens.cellSecondary, "truncate")}>
+                Outros ({outros.length})
+              </span>
+              <span
+                className={cx(tableTokens.cellNumberSecondary, "text-right")}
+              >
+                {fmtOutros(outrosValor)}
+              </span>
+              <span aria-hidden="true" />
+            </div>
+          )}
         </div>
       </div>
     </Card>
   )
 }
 
-// ─── Linha 5 (Padrao C) — Heatmap dow x semana + Por dia da semana ────────
-
-function Linha5Sazonalidade({
-  heatmap,
-  porDia,
+function TrendRow({
+  row,
+  rank,
+  mode,
 }: {
-  heatmap: Operacoes2HeatmapPonto[]
-  porDia: Operacoes2DiaSemanaResumo[]
+  row: Operacoes2QuebraDimensaoLinha
+  rank: number
+  mode: QuebraTrendMode
 }) {
+  const values =
+    mode === "share"
+      ? row.sparkline_share_12m.map((p) => p.valor)
+      : row.sparkline_vop_12m.map((p) => p.valor)
+  const trend = computeTrendDirection(
+    values,
+    mode === "share"
+      ? TREND_THRESHOLD_PP_PER_MONTH
+      : TREND_THRESHOLD_REL_PER_MONTH,
+    mode === "share" ? "absolute" : "relative",
+  )
+  const stroke =
+    trend.direction === "up"
+      ? TREND_STROKE_UP
+      : trend.direction === "down"
+        ? TREND_STROKE_DOWN
+        : TREND_STROKE_FLAT
+  const trendTextClass =
+    trend.direction === "up"
+      ? "text-emerald-600 dark:text-emerald-400"
+      : trend.direction === "down"
+        ? "text-red-600 dark:text-red-400"
+        : "text-gray-400 dark:text-gray-600"
+  const ArrowIcon =
+    trend.direction === "up"
+      ? RiArrowUpLine
+      : trend.direction === "down"
+        ? RiArrowDownLine
+        : RiSubtractLine
+  const slopeTxt =
+    mode === "share"
+      ? `${trend.measure >= 0 ? "+" : ""}${trend.measure.toFixed(2).replace(".", ",")} pp/mês (12M)`
+      : `${trend.measure >= 0 ? "+" : ""}${trend.measure.toFixed(1).replace(".", ",")}% / mês (12M, vs média)`
+  const numberCell =
+    mode === "share"
+      ? fmtPct1(row.pct_mes_corrente)
+      : fmtBRLMi(row.vop_mes_corrente)
+
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <HeatmapDowSemana points={heatmap} />
-      <PorDiaSemana rows={porDia} />
+    <div className={cx(TREND_ROW_GRID, "py-0.5")}>
+      <span className={cx(tableTokens.cellNumberSecondary, "text-right")}>
+        {rank}
+      </span>
+      <span className={cx(tableTokens.cellText, "truncate")} title={row.categoria}>
+        {row.categoria}
+      </span>
+      <span className={cx(tableTokens.cellNumber, "text-right")}>
+        {numberCell}
+      </span>
+      <span
+        className="inline-flex items-center justify-end gap-1"
+        title={slopeTxt}
+      >
+        <MiniSparkline values={values} stroke={stroke} />
+        <ArrowIcon
+          className={cx("size-3.5", trendTextClass)}
+          aria-label={slopeTxt}
+        />
+      </span>
     </div>
   )
 }
 
-function HeatmapDowSemana({ points }: { points: Operacoes2HeatmapPonto[] }) {
-  const option: EChartsOption = React.useMemo(() => {
-    const dows = ["Seg", "Ter", "Qua", "Qui", "Sex"]
-    const semanas = ["S1", "S2", "S3", "S4", "S5"]
-    const data = points.map((p) => [p.dow - 1, p.semana_do_mes - 1, p.vop_medio])
-    const max = Math.max(0, ...points.map((p) => p.vop_medio))
-    return {
-      tooltip: {
-        position: "top",
-        formatter: (params: unknown) => {
-          const p = params as { value: number[] }
-          if (!p?.value) return ""
-          const [dowIdx, semanaIdx, valor] = p.value
-          return `${dows[dowIdx]} · ${semanas[semanaIdx]}: ${fmtBRL.format(valor)}`
-        },
-      },
-      grid: { top: 8, right: 16, bottom: 28, left: 32 },
-      xAxis: {
-        type: "category",
-        data: dows,
-        splitArea: { show: true },
-        axisTick: { show: false },
-      },
-      yAxis: {
-        type: "category",
-        data: semanas,
-        splitArea: { show: true },
-      },
-      visualMap: {
-        min: 0,
-        max: max || 1,
-        show: false,
-        inRange: {
-          color: ["#EFF6FF", "#3B82F6", "#1E3A8A"],
-        },
-      },
-      series: [
-        {
-          name: "VOP médio",
-          type: "heatmap",
-          data,
-          label: { show: false },
-        },
-      ],
-    }
-  }, [points])
-
+function MiniSparkline({
+  values,
+  stroke,
+  width = 48,
+}: {
+  values: number[]
+  stroke: string
+  /** Largura em px do SVG. Default 48 (cabe em coluna trend de 72px). */
+  width?: number
+}) {
+  const height = 16
+  if (values.length < 2) {
+    return (
+      <span className={cx(tableTokens.cellMuted)} aria-hidden="true">
+        —
+      </span>
+    )
+  }
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const range = max - min || 1
+  const stepX = width / (values.length - 1)
+  const path = values
+    .map((v, i) => {
+      const x = i * stepX
+      const y = height - ((v - min) / range) * height
+      return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`
+    })
+    .join(" ")
   return (
-    <EChartsCard
-      title="Sazonalidade · Dia da semana × Semana do mês"
-      caption="VOP médio por célula no período filtrado"
-      option={option}
-      height={240}
-    />
+    <svg
+      width={width}
+      height={height}
+      className="overflow-visible"
+      aria-hidden="true"
+    >
+      <path
+        d={path}
+        fill="none"
+        stroke={stroke}
+        strokeWidth="1.25"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   )
 }
 
-function PorDiaSemana({ rows }: { rows: Operacoes2DiaSemanaResumo[] }) {
-  const option: EChartsOption = React.useMemo(() => {
-    const labels = rows.map((r) => r.nome.slice(0, 3))
-    return {
-      tooltip: {
-        trigger: "axis",
-        axisPointer: { type: "shadow" },
-        formatter: (params: unknown) => {
-          const arr = params as Array<{ dataIndex: number }>
-          if (!Array.isArray(arr) || arr.length === 0) return ""
-          const r = rows[arr[0].dataIndex]
-          if (!r) return ""
-          return [
-            `<strong>${r.nome}</strong>`,
-            `VOP médio: ${fmtBRLFull.format(r.vop_medio)}`,
-            `Operações médias: ${r.n_ops_medio.toFixed(1)}`,
-            `% da semana útil: ${fmtPct1(r.pct_total_semana)}`,
-          ].join("<br/>")
-        },
-      },
-      grid: { top: 8, right: 16, bottom: 28, left: 56 },
-      xAxis: { type: "category", data: labels, axisTick: { show: false } },
-      yAxis: {
-        type: "value",
-        axisLabel: { formatter: (v: number) => fmtBRL.format(v) },
-      },
-      series: [
-        {
-          type: "bar",
-          barMaxWidth: 36,
-          data: rows.map((r) => ({
-            value: r.vop_medio,
-            itemStyle: { color: "#2A4D7A", borderRadius: [3, 3, 0, 0] },
-          })),
-        },
-      ],
-    }
-  }, [rows])
+/**
+ * Slope da regressao linear sobre os valores do sparkline 12M (eixo X =
+ * indice mensal 0..N-1). Usado para classificar tendencia em up/down/flat.
+ *
+ * Dois modos de comparacao com o threshold:
+ * - "absolute": compara o slope direto (em unidades da serie por mes — ex.:
+ *   pp/mes para sparkline de share%). Apropriado quando a serie tem
+ *   unidade comparavel entre categorias (todas sao share%).
+ * - "relative": compara o slope normalizado pela MEDIA da propria serie,
+ *   resultando em "% sobre a media por mes". Apropriado quando categorias
+ *   tem escalas muito diferentes (ex.: VOP absoluto: RealInvest R$ 100M
+ *   vs A7 R$ 20M — slope absoluto de R$ 1M/mes significa coisa muito
+ *   diferente em cada). A comparacao "categoria vs ela mesma" e
+ *   intrinsecamente relativa.
+ *
+ * `measure` no retorno e o valor usado contra o threshold (slope ou
+ * slope normalizado), util pro tooltip mostrar "+0,42 pp/mes" ou
+ * "+1,2% / mes".
+ */
+function computeTrendDirection(
+  values: number[],
+  threshold: number,
+  compareMode: "absolute" | "relative",
+): { direction: "up" | "down" | "flat"; measure: number } {
+  if (values.length < 2) return { direction: "flat", measure: 0 }
+  let sumX = 0,
+    sumY = 0,
+    sumXY = 0,
+    sumX2 = 0
+  for (let i = 0; i < values.length; i++) {
+    sumX += i
+    sumY += values[i]
+    sumXY += i * values[i]
+    sumX2 += i * i
+  }
+  const n = values.length
+  const denom = n * sumX2 - sumX * sumX
+  if (denom === 0) return { direction: "flat", measure: 0 }
+  const slope = (n * sumXY - sumX * sumY) / denom
+  let measure: number
+  if (compareMode === "relative") {
+    const mean = sumY / n
+    if (mean === 0) return { direction: "flat", measure: 0 }
+    measure = (slope / mean) * 100
+  } else {
+    measure = slope
+  }
+  if (measure > threshold) return { direction: "up", measure }
+  if (measure < -threshold) return { direction: "down", measure }
+  return { direction: "flat", measure }
+}
+
+// ─── KpisSecundariosTrendCard — 4 indicadores condensados em tabela ──────
+//
+// Substitui a antiga Linha 3 (4 cards horizontais com valor + Δ MoM).
+// Cabe em coluna de 25% gracas a labels abreviadas + valor/MoM empilhados
+// na mesma celula + sparkline reduzido (36px). Cada item tem `labelLong`
+// no `title=` da row para acessibilidade quando o nome curto nao for obvio.
+//
+// Cada KPI tem unidade/escala diferente (count, BRL, BRL/titulo, BRL/DU),
+// entao o slope da sparkline usa modo "relative" — % sobre a media da
+// propria serie — analogo ao card "VOP por UA" (mode="absolute").
+//
+// `vop_du_medio` pode ser null em degraded mode (wh_dim_dia_util vazia) —
+// row mostra hint inline cobrindo as 2 colunas finais.
+
+// Grid de 5 colunas dimensionado para coluna de 25% (~210-260px uteis):
+//   - 14px: rank
+//   - flex: label abreviada (truncate em viewports apertados)
+//   - 72px: valor (cabe "R$ 142.973" em fmtBRLFull com folga)
+//   - 44px: Δ MoM (cabe "+41,1%" em ~42px tabular)
+//   - 56px: sparkline (36px) + seta (14px) + gap 4px = 54px
+//   - gap-x-2 (8px) entre colunas para respiro visivel
+// Total fixo: 14+72+44+56 + 4*8 = 218px → sobra ~0-50px para label flex.
+// Em viewport <=1280px, label pode truncar — alternativa e migrar Linha 5
+// para `lg:grid-cols-3` (card em 33%) liberando ~50px adicionais.
+const TREND_KPI_ROW_GRID =
+  "grid grid-cols-[14px_minmax(0,1fr)_72px_44px_56px] items-center gap-x-2"
+const TREND_KPI_SPARKLINE_W = 36
+
+type KpiSecundarioItem = {
+  id: string
+  label: string
+  labelLong: string
+  kpi: Operacoes2KpiSecundario | null
+  format: (v: number) => string
+  unavailableHint?: string
+}
+
+function KpisSecundariosTrendCard({
+  kpis,
+  className,
+}: {
+  kpis: Operacoes2KpisSecundariosVolume
+  className?: string
+}) {
+  const items: KpiSecundarioItem[] = [
+    {
+      id: "n-ops",
+      label: "Nº Op.",
+      labelLong: "Nº de operações",
+      kpi: kpis.n_operacoes,
+      format: (v) => fmtInt.format(v),
+    },
+    {
+      id: "ticket-op",
+      label: "TM Op.",
+      labelLong: "Ticket médio (op.)",
+      kpi: kpis.ticket_op,
+      format: (v) => fmtBRLFull.format(v),
+    },
+    {
+      id: "ticket-titulo",
+      label: "TM Tit.",
+      labelLong: "Ticket médio (título)",
+      kpi: kpis.ticket_titulo,
+      format: (v) => fmtBRLFull.format(v),
+    },
+    {
+      id: "vop-du",
+      label: "VOP DU",
+      labelLong: "VOP por DU médio",
+      kpi: kpis.vop_du_medio,
+      format: (v) => fmtBRL.format(v),
+      unavailableHint: "Depende de wh_dim_dia_util",
+    },
+  ]
 
   return (
-    <EChartsCard
-      title="VOP médio por dia da semana"
-      caption="Apenas dias úteis (Segunda–Sexta)"
-      option={option}
-      height={240}
-    />
+    <Card className={cx("flex flex-col p-0", className)}>
+      <div className={cardTokens.header}>
+        <h3 className={cardTokens.headerTitle}>Indicadores secundários</h3>
+        <p className={cx(cardTokens.headerSubtitle, "mt-0.5")}>
+          valor · Δ MoM · tendência 12M fech.
+        </p>
+      </div>
+
+      <div className={cx(cardTokens.body, "flex flex-col gap-2")}>
+        {/* Header row */}
+        <div
+          className={cx(
+            TREND_KPI_ROW_GRID,
+            "border-b border-gray-100 pb-1.5 text-gray-500 dark:border-gray-900 dark:text-gray-400",
+            tableTokens.header,
+          )}
+        >
+          <span className="text-right">#</span>
+          <span>Indicador</span>
+          <span className="text-right">Valor</span>
+          <span className="text-right">MoM</span>
+          <span
+            className="flex items-center justify-end gap-0.5"
+            title="Tendência calculada sobre os últimos 12 meses fechados (M-12 a M-1). O mês corrente parcial fica fora do cálculo. Slope relativo à média da própria série (cada KPI tem escala diferente)."
+          >
+            Tend.
+            <RiInformationLine
+              aria-hidden="true"
+              className="size-3 text-gray-400 dark:text-gray-600"
+            />
+          </span>
+        </div>
+
+        {/* Data rows */}
+        <div className="flex flex-col gap-1">
+          {items.map((it, i) => (
+            <KpiSecundarioRow key={it.id} item={it} rank={i + 1} />
+          ))}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+function KpiSecundarioRow({
+  item,
+  rank,
+}: {
+  item: KpiSecundarioItem
+  rank: number
+}) {
+  if (!item.kpi) {
+    return (
+      <div className={cx(TREND_KPI_ROW_GRID, "py-0.5")}>
+        <span className={cx(tableTokens.cellNumberSecondary, "text-right")}>
+          {rank}
+        </span>
+        <span
+          className={cx(tableTokens.cellText, "truncate")}
+          title={item.labelLong}
+        >
+          {item.label}
+        </span>
+        <span
+          className={cx(
+            tableTokens.cellMuted,
+            "col-span-3 text-right italic truncate",
+          )}
+          title={item.unavailableHint ?? "—"}
+        >
+          {item.unavailableHint ?? "—"}
+        </span>
+      </div>
+    )
+  }
+
+  const values = item.kpi.sparkline_12m.map((p) => p.valor)
+  const trend = computeTrendDirection(
+    values,
+    TREND_THRESHOLD_REL_PER_MONTH,
+    "relative",
+  )
+  const stroke =
+    trend.direction === "up"
+      ? TREND_STROKE_UP
+      : trend.direction === "down"
+        ? TREND_STROKE_DOWN
+        : TREND_STROKE_FLAT
+  const trendTextClass =
+    trend.direction === "up"
+      ? "text-emerald-600 dark:text-emerald-400"
+      : trend.direction === "down"
+        ? "text-red-600 dark:text-red-400"
+        : "text-gray-400 dark:text-gray-600"
+  const ArrowIcon =
+    trend.direction === "up"
+      ? RiArrowUpLine
+      : trend.direction === "down"
+        ? RiArrowDownLine
+        : RiSubtractLine
+  const slopeTxt = `${trend.measure >= 0 ? "+" : ""}${trend.measure.toFixed(1).replace(".", ",")}% / mês (12M, vs média)`
+
+  const deltaPct = item.kpi.delta_pct
+  const momTxt =
+    deltaPct == null
+      ? "—"
+      : `${deltaPct >= 0 ? "+" : ""}${fmtPct1(deltaPct)}`
+  const momClass =
+    deltaPct == null
+      ? "text-gray-400 dark:text-gray-600"
+      : deltaPct >= 0
+        ? "text-emerald-600 dark:text-emerald-400"
+        : "text-red-600 dark:text-red-400"
+  const valueMomTitle = `${item.labelLong} — Δ MoM ${momTxt}`
+
+  return (
+    <div className={cx(TREND_KPI_ROW_GRID, "py-0.5")}>
+      <span className={cx(tableTokens.cellNumberSecondary, "text-right")}>
+        {rank}
+      </span>
+      <span
+        className={cx(tableTokens.cellText, "truncate")}
+        title={item.labelLong}
+      >
+        {item.label}
+      </span>
+      <span
+        className={cx(tableTokens.cellNumber, "text-right truncate")}
+        title={valueMomTitle}
+      >
+        {item.format(item.kpi.valor)}
+      </span>
+      <span
+        className={cx(
+          "text-right tabular-nums text-xs font-medium truncate",
+          momClass,
+        )}
+        title={`Δ MoM ${momTxt}`}
+      >
+        {momTxt}
+      </span>
+      <span
+        className="inline-flex items-center justify-end gap-1"
+        title={slopeTxt}
+      >
+        <MiniSparkline
+          values={values}
+          stroke={stroke}
+          width={TREND_KPI_SPARKLINE_W}
+        />
+        <ArrowIcon
+          className={cx("size-3.5", trendTextClass)}
+          aria-label={slopeTxt}
+        />
+      </span>
+    </div>
   )
 }
 
@@ -986,5 +1221,45 @@ function EChartsCardInline({
   option: EChartsOption
   height: number
 }) {
-  return <EChartsCard option={option} height={height} className="border-0 p-0" />
+  return (
+    <EChartsCard
+      option={option}
+      height={height}
+      className="border-0 bg-transparent p-0 shadow-none"
+    />
+  )
+}
+
+// ─── ChartLegendChip — label de serie fora do canvas ECharts ─────────────
+//
+// Substitui a `legend` nativa quando o card e estreito e a legenda nativa
+// rouba area do grafico. SVG line reflete o stroke real da serie (cor +
+// dashing) — o usuario associa visualmente. Hex literal e exceção §4 porque
+// e a MESMA cor literal usada dentro do EChartsOption (chart canvas nao
+// alcanca Tailwind), entao tokenizar na classe Tailwind quebraria a paridade.
+function ChartLegendChip({
+  stroke,
+  label,
+  dashed = false,
+}: {
+  stroke: string
+  label: string
+  dashed?: boolean
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <svg width="14" height="2" viewBox="0 0 14 2" aria-hidden="true">
+        <line
+          x1="0"
+          y1="1"
+          x2="14"
+          y2="1"
+          stroke={stroke}
+          strokeWidth={dashed ? 1.5 : 2}
+          strokeDasharray={dashed ? "3 2" : undefined}
+        />
+      </svg>
+      {label}
+    </span>
+  )
 }

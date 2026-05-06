@@ -72,6 +72,7 @@ export const ETAPA_LABEL: Record<string, string> = {
   cross_reference: "Cruzar dados",
   human_review: "Revisao do analista",
   conditional_branch: "Decisao automatica",
+  consolidator: "Consolidador",
   notification: "Notificar",
   output_generator: "Gerar saida",
   parallel: "Esperar etapas paralelas",

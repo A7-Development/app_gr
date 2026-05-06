@@ -38,7 +38,7 @@ from app.shared.workflow.models.definition import WorkflowDefinition
 from app.shared.workflow.models.run import WorkflowNodeRun, WorkflowRun
 from app.shared.workflow.nodes._base import NodeContext, NodeOutput
 from app.shared.workflow.nodes.registry import NODE_TYPES, get_node_class
-from app.shared.workflow.schemas.definition import WorkflowGraph
+from app.shared.workflow.schemas.definition import EdgeSpec, NodeSpec, WorkflowGraph
 from app.shared.workflow.services.resolver import (
     evaluate_edge_condition,
     resolve_templates,
@@ -97,6 +97,63 @@ def _node_by_id(graph: WorkflowGraph, node_id: str) -> Any:
         if n.id == node_id:
             return n
     raise WorkflowEngineError(f"Node id '{node_id}' not found in graph.")
+
+
+def should_skip_node(
+    spec: NodeSpec,
+    incoming: list[EdgeSpec],
+    *,
+    settled_ids: set[str],
+    skipped_ids: set[str],
+    eval_context: dict[str, Any],
+) -> bool:
+    """Decide whether a node should be SKIPPED based on incoming edges.
+
+    Honors `spec.join_mode`:
+    - "all" (default): execute only if EVERY incoming edge is satisfied
+      (parent completed AND condition passes / no condition). Skip when
+      any parent was skipped or any condition failed. Right semantic for
+      parallel-work convergence (the common case).
+    - "any": execute if at least one incoming edge is satisfied. Skip only
+      when every incoming edge is blocked. Right for decision-then-converge
+      patterns (one branch always skipped by mirror conditions).
+
+    `incoming` is the list of edges with `target == spec.id`. Empty list
+    means a root node — never skipped on this basis.
+    """
+    if not incoming:
+        return False
+
+    # Every incoming source skipped → node skipped, regardless of join_mode.
+    if all(e.source in skipped_ids for e in incoming):
+        return True
+
+    if spec.join_mode == "all":
+        for e in incoming:
+            if e.source in skipped_ids:
+                return True
+            if e.source not in settled_ids:
+                # Defensive: with topological execution by levels, parents
+                # are always settled before the child is evaluated. If we
+                # see an unsettled parent here, treat as not satisfied.
+                return True
+            if e.condition and not evaluate_edge_condition(e.condition, eval_context):
+                return True
+        return False
+
+    # join_mode == "any": reachable if any single edge passes. Used for
+    # decision-then-converge patterns where exactly one parent runs per
+    # execution.
+    for e in incoming:
+        if e.source in skipped_ids:
+            continue
+        if e.source not in settled_ids:
+            continue
+        if not e.condition:
+            return False
+        if evaluate_edge_condition(e.condition, eval_context):
+            return False
+    return True
 
 
 # ─── Run lifecycle ─────────────────────────────────────────────────────────
@@ -193,9 +250,11 @@ async def _execute_run(
     """Walk the graph and execute nodes until completion or pause.
 
     Edge conditions are evaluated against the run context after each level.
-    A node is SKIPPED when ALL its incoming edges are blocked (condition
-    false). This implements n8n-style branching: a `conditional_branch` node
-    typically has two outgoing edges with mirror conditions; only the
+    Whether a node executes or is SKIPPED is decided by `should_skip_node`,
+    which honors the node's `join_mode` ("any" = execute when at least one
+    incoming edge passes; "all" = execute only when every incoming edge
+    passes). This implements n8n-style branching: a `conditional_branch`
+    node typically has two outgoing edges with mirror conditions; only the
     matching branch's downstream nodes execute, the other branch is skipped.
     """
     graph = WorkflowGraph.model_validate(definition.graph)
@@ -237,32 +296,14 @@ async def _execute_run(
         skip_set: set[str] = set()
         for nid in pending_in_level:
             incoming = [e for e in graph.edges if e.target == nid]
-            if not incoming:
-                continue  # root node — no conditions apply
-
-            # If all incoming sources are skipped, this node is also skipped.
-            if all(e.source in skipped_ids for e in incoming):
-                skip_set.add(nid)
-                continue
-
-            # If any incoming edge passes (no condition or condition true),
-            # the node is reachable. Otherwise skip.
-            reachable = False
-            for e in incoming:
-                if e.source in skipped_ids:
-                    continue
-                if e.source not in settled_ids:
-                    # Source hasn't run yet — not actually a current edge to
-                    # evaluate (shouldn't happen with topological order, but
-                    # safe fallback: assume not reachable yet).
-                    continue
-                if not e.condition:
-                    reachable = True
-                    break
-                if evaluate_edge_condition(e.condition, ctx_for_eval):
-                    reachable = True
-                    break
-            if not reachable:
+            spec = _node_by_id(graph, nid)
+            if should_skip_node(
+                spec,
+                incoming,
+                settled_ids=settled_ids,
+                skipped_ids=skipped_ids,
+                eval_context=ctx_for_eval,
+            ):
                 skip_set.add(nid)
 
         # Apply skips first (no execution, just persist + record).
@@ -389,6 +430,7 @@ async def _execute_node(
         initiated_by=run.initiated_by,
         previous_outputs=run.context_data or {},
         trigger_data=run.trigger_data or {},
+        node_config=resolved_config,
     )
 
     try:

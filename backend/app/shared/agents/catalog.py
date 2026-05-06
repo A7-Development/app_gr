@@ -20,7 +20,7 @@ parsing logic. The prompt itself is editable via DB (no deploy needed).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from app.shared.agents.output_schemas import (
@@ -35,9 +35,32 @@ from app.shared.agents.output_schemas import (
     PleitoExtraction,
     SocialContractAnalysis,
 )
+from app.shared.workflow.nodes._base import VarType
 
 if TYPE_CHECKING:
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class AgentInput:
+    """One typed input slot the agent expects to receive at runtime.
+
+    Each slot is filled at graph construction time via
+    `node.config.input_bindings = {name: "node.X.output.Y"}`. The runtime
+    resolves each ref and packages the values as a NAMED, STRUCTURED JSON
+    object delivered to the LLM — no truncation, no JSON dump of unrelated
+    upstream nodes.
+
+    When `inputs` is empty (default), the agent falls back to the legacy
+    behavior: full `previous_outputs` dumped as text, truncated at 2000
+    chars/node. This back-compat keeps existing graphs working until each
+    agent is migrated.
+    """
+
+    name: str
+    type: VarType
+    description: str = ""
+    optional: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +81,11 @@ class SpecialistAgentSpec:
     # Per-section affinity — used by the UI to associate agent output to
     # a tab in the dossier view. Free-form string keyed to the dossier UI.
     section_id: str = ""
+    # Declared input contract — when non-empty, the runtime delivers a
+    # structured JSON of these slots (resolved via `config.input_bindings`)
+    # to the LLM, instead of dumping all `previous_outputs` as truncated
+    # text. Empty tuple = legacy fallback path (back-compat).
+    inputs: tuple[AgentInput, ...] = field(default_factory=tuple)
 
 
 # ─── Tools available to specialist agents ─────────────────────────────────
@@ -100,6 +128,34 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         output_schema=FinancialAnalysis,
         thinking_budget_tokens=15000,
         section_id="financial",
+        # Primeira migracao para o caminho de contexto estruturado
+        # (ver runtime._render_context_for_prompt). Cada slot e ligado
+        # a um ref upstream em `node.config.input_bindings` no graph.
+        inputs=(
+            AgentInput(
+                name="cnpj",
+                type=VarType.CNPJ,
+                description="CNPJ da empresa analisada.",
+            ),
+            AgentInput(
+                name="score_pj",
+                type=VarType.SCORE,
+                description="Score de credito PJ mais recente (Serasa ou bureau equivalente).",
+                optional=True,
+            ),
+            AgentInput(
+                name="endividamento_total",
+                type=VarType.MONEY_BRL,
+                description="Endividamento bancario consolidado em BRL (de bureau ou SCR).",
+                optional=True,
+            ),
+            AgentInput(
+                name="ebitda",
+                type=VarType.MONEY_BRL,
+                description="EBITDA do ultimo periodo extraido do balanco.",
+                optional=True,
+            ),
+        ),
     ),
     "indebtedness_analyst": SpecialistAgentSpec(
         name="indebtedness_analyst",
@@ -109,6 +165,31 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         output_schema=IndebtednessAnalysis,
         thinking_budget_tokens=10000,
         section_id="indebtedness",
+        inputs=(
+            AgentInput(
+                name="cnpj",
+                type=VarType.CNPJ,
+                description="CNPJ da empresa analisada.",
+            ),
+            AgentInput(
+                name="endividamento_total_brl",
+                type=VarType.MONEY_BRL,
+                description="Endividamento total consolidado em BRL (de bureau ou SCR).",
+                optional=True,
+            ),
+            AgentInput(
+                name="scr_carteira_ativa_brl",
+                type=VarType.MONEY_BRL,
+                description="Carteira ativa no SCR Bacen — operacoes em curso.",
+                optional=True,
+            ),
+            AgentInput(
+                name="qtd_instituicoes_relacionamento",
+                type=VarType.NUMBER,
+                description="Numero de instituicoes financeiras com relacionamento ativo (concentracao).",
+                optional=True,
+            ),
+        ),
     ),
     "legal_analyst": SpecialistAgentSpec(
         name="legal_analyst",
@@ -118,6 +199,31 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         output_schema=LegalAnalysis,
         thinking_budget_tokens=10000,
         section_id="legal",
+        inputs=(
+            AgentInput(
+                name="cnpj",
+                type=VarType.CNPJ,
+                description="CNPJ da empresa analisada.",
+            ),
+            AgentInput(
+                name="processos_total_qtd",
+                type=VarType.NUMBER,
+                description="Quantidade total de processos judiciais (ativos + arquivados).",
+                optional=True,
+            ),
+            AgentInput(
+                name="processos_ativos_valor_brl",
+                type=VarType.MONEY_BRL,
+                description="Valor total em disputa nos processos ativos, em BRL.",
+                optional=True,
+            ),
+            AgentInput(
+                name="protestos_ativos_qtd",
+                type=VarType.NUMBER,
+                description="Quantidade de protestos cartoriais ativos (CENPROT).",
+                optional=True,
+            ),
+        ),
     ),
     "partner_analyst": SpecialistAgentSpec(
         name="partner_analyst",
@@ -145,6 +251,52 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         output_schema=CrossReferenceAnalysis,
         thinking_budget_tokens=20000,
         section_id="cross_reference",
+        # Synthesizer agent — slots sao outputs de outros specialist agents
+        # upstream. Tipicamente ligados a financial_analyst.summary,
+        # legal_analyst.red_flags, etc.
+        inputs=(
+            AgentInput(
+                name="cnpj",
+                type=VarType.CNPJ,
+                description="CNPJ da empresa analisada (ancora a analise).",
+            ),
+            AgentInput(
+                name="financial_summary",
+                type=VarType.STRING,
+                description="Resumo da analise financeira (financial_analyst.output.summary).",
+                optional=True,
+            ),
+            AgentInput(
+                name="financial_red_flags",
+                type=VarType.LIST,
+                description="Red flags financeiros (financial_analyst.output.red_flags).",
+                optional=True,
+            ),
+            AgentInput(
+                name="legal_summary",
+                type=VarType.STRING,
+                description="Resumo da analise juridica (legal_analyst.output.summary).",
+                optional=True,
+            ),
+            AgentInput(
+                name="legal_red_flags",
+                type=VarType.LIST,
+                description="Red flags juridicos (legal_analyst.output.red_flags).",
+                optional=True,
+            ),
+            AgentInput(
+                name="social_contract_red_flags",
+                type=VarType.LIST,
+                description="Red flags do contrato social (social_contract_analyst.output.red_flags).",
+                optional=True,
+            ),
+            AgentInput(
+                name="partner_summary",
+                type=VarType.STRING,
+                description="Resumo da analise de socios (partner_analyst.output.summary).",
+                optional=True,
+            ),
+        ),
     ),
     "opinion_writer": SpecialistAgentSpec(
         name="opinion_writer",

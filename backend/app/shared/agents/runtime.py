@@ -57,6 +57,7 @@ from app.shared.agents.catalog import (
 from app.shared.agents.model_resolver import ResolvedModels, resolve_models_for_agent
 from app.shared.agents.tools._base import AgentTool
 from app.shared.ai.prompts import repository as prompt_repo
+from app.shared.workflow.services.resolver import resolve_templates
 
 if TYPE_CHECKING:
     from app.shared.workflow.nodes._base import NodeContext
@@ -85,11 +86,26 @@ class AgentRunResult:
 # ─── Prompt rendering helpers ─────────────────────────────────────────────
 
 
-def _render_context_for_prompt(ctx: NodeContext) -> str:
-    """Build a text block summarizing previous outputs and trigger data.
+def _render_context_for_prompt(
+    ctx: NodeContext,
+    *,
+    spec: SpecialistAgentSpec | None = None,
+    config: dict[str, Any] | None = None,
+) -> str:
+    """Build the user-prompt context block.
 
-    The agent receives this as part of the user prompt so it knows what
-    other nodes produced. Big outputs are truncated.
+    Two code paths:
+
+    - **Structured path** (used when `spec.inputs` is non-empty AND
+      `config.input_bindings` declares refs for those slots): resolves each
+      slot via the engine's template resolver and emits a clean named JSON
+      block. No truncation, only declared fields. The agent always knows
+      what it is reading.
+
+    - **Legacy path** (fallback when `spec` is None, `spec.inputs` is empty,
+      or no bindings are declared): dumps every `previous_outputs` entry
+      as JSON, truncated at 2000 chars/node. Mid-field truncation is a
+      known issue of this path — the structured path is the migration target.
     """
     lines: list[str] = []
     lines.append("[Contexto do dossie]")
@@ -101,6 +117,19 @@ def _render_context_for_prompt(ctx: NodeContext) -> str:
         lines.append(f"Empresa alvo: {ctx.trigger_data['target_name']}")
 
     lines.append("")
+
+    if spec is not None and spec.inputs:
+        bindings: dict[str, Any] = (
+            (config or {}).get("input_bindings") or {}
+            if isinstance(config, dict)
+            else {}
+        )
+        resolved = _resolve_input_bindings(spec, bindings, ctx)
+        lines.append("[Dados disponiveis para sua analise]")
+        lines.append(json.dumps(resolved, ensure_ascii=False, indent=2))
+        return "\n".join(lines)
+
+    # Legacy fallback: full dump, truncated.
     lines.append("[Outputs de nos anteriores]")
     if not ctx.previous_outputs:
         lines.append("(nenhum)")
@@ -116,6 +145,34 @@ def _render_context_for_prompt(ctx: NodeContext) -> str:
             lines.append(f"--- {nid} ---")
             lines.append(serialized)
     return "\n".join(lines)
+
+
+def _resolve_input_bindings(
+    spec: SpecialistAgentSpec,
+    bindings: dict[str, Any],
+    ctx: NodeContext,
+) -> dict[str, Any]:
+    """Resolve each declared input slot against the run context.
+
+    Returns a dict { input_name: resolved_value } in the order the agent
+    declared its inputs (Python 3.7+ dict insertion order). Unbound
+    OPTIONAL slots resolve to None; unbound REQUIRED slots also resolve
+    to None — the graph validator should have caught the missing binding
+    earlier. Bindings pointing to missing upstream paths resolve to None
+    via the resolver.
+    """
+    resolve_ctx: dict[str, Any] = {
+        "trigger": ctx.trigger_data or {},
+        "node": ctx.previous_outputs or {},
+    }
+    out: dict[str, Any] = {}
+    for slot in spec.inputs:
+        binding = bindings.get(slot.name)
+        if not isinstance(binding, str) or not binding.strip():
+            out[slot.name] = None
+            continue
+        out[slot.name] = resolve_templates("{{" + binding + "}}", resolve_ctx)
+    return out
 
 
 async def _render_checklist_block(
@@ -288,7 +345,12 @@ async def run_specialist_agent(
         section_id=spec.section_id,
     )
 
-    user_parts = [_render_context_for_prompt(ctx)]
+    # Pull the workflow node's config so we can read `input_bindings` when
+    # the agent declares typed `inputs`. When config is unavailable (e.g.
+    # the runtime is invoked outside a workflow node), the structured path
+    # is bypassed and the legacy fallback runs.
+    node_config: dict[str, Any] = getattr(ctx, "node_config", None) or {}
+    user_parts = [_render_context_for_prompt(ctx, spec=spec, config=node_config)]
     if checklist_block:
         user_parts.append(checklist_block)
     user_parts.append(
