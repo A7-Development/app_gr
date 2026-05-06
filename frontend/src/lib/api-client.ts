@@ -624,11 +624,14 @@ function filtersToQueryString(f: BIFilters): string {
 export type Operacoes2KpiCellNumeric = {
   valor: number
   unidade: "BRL" | "%" | "dias"
+  // delta_pct: periodo vs periodo anterior de mesmo tamanho (P/P).
   delta_pct: number | null
   sparkline_12m: Point[]
   // Strip dual (Opcao 4 paradigma 2026-05-03)
   mes_corrente_valor: number
   mes_corrente_label: string
+  // mes_corrente_delta_pct: MoM literal (mes corrente vs mes anterior).
+  mes_corrente_delta_pct: number | null
 }
 
 export type Operacoes2KpiCellProduto = {
@@ -642,6 +645,9 @@ export type Operacoes2KpiCellProduto = {
   mes_corrente_nome: string | null
   mes_corrente_share_pct: number
   mes_corrente_label: string
+  // mes_corrente_delta_share_pp: MoM literal — pp do produto-top-do-mes
+  // entre mes corrente e mes anterior.
+  mes_corrente_delta_share_pp: number | null
 }
 
 export type Operacoes2KpiStripData = {
@@ -1395,6 +1401,62 @@ export type RunEntry = {
   output: Record<string, unknown> | null
 }
 
+/** Cadência por endpoint (CLAUDE.md §13 — refactor 2026-05-05).
+ *
+ * Granularidade fina: cada source pode ter N endpoints, cada um com cadência
+ * própria. `EndpointDetail` é o catálogo + (opcional) override do tenant.
+ * Quando os campos override (`enabled`, `schedule_kind`, etc) vêm `null` é
+ * porque o tenant nunca persistiu — frontend deve cair no `default_*`.
+ */
+
+export type ScheduleKind = "interval" | "daily_at" | "on_demand"
+
+export type EndpointDetail = {
+  // Catálogo (sempre presente)
+  name: string
+  label: string
+  description: string
+  canonical_table: string
+  default_schedule_kind: ScheduleKind
+  default_schedule_value: string | null
+
+  // Override do tenant (null se nunca foi persistida linha em TSEC)
+  enabled: boolean | null
+  schedule_kind: ScheduleKind | null
+  schedule_value: string | null
+  last_sync_started_at: string | null
+  last_sync_finished_at: string | null
+  last_sync_status: "ok" | "erro" | "em_progresso" | null
+  last_sync_error: string | null
+  unidade_administrativa_id: string | null
+}
+
+export type EndpointConfigPayload = {
+  /** null = preserva o atual (não toca enabled). */
+  enabled?: boolean | null
+  schedule_kind: ScheduleKind
+  /**
+   * Formato depende do schedule_kind:
+   *   - interval  → "60" (minutos, 15..1440)
+   *   - daily_at  → "07:30" (HH:MM em America/Sao_Paulo)
+   *   - on_demand → null
+   */
+  schedule_value: string | null
+  environment?: Environment
+  unidade_administrativa_id?: string | null
+}
+
+export type EndpointSyncResult = {
+  ok: boolean
+  adapter_version: string | null
+  endpoint_name: string
+  started_at: string | null
+  elapsed_seconds: number | null
+  rows_ingested: number
+  steps: Array<Record<string, unknown>>
+  errors: string[]
+}
+
 /** Helpers do modulo integracoes.
  * Obs: `source_type` contem `:` (ex.: `erp:bitfin`) — NAO encode, o backend aceita literal.
  *
@@ -1467,6 +1529,61 @@ export const integracoes = {
     apiClient.get<RunEntry[]>(
       `/integracoes/sources/${sourceType}/runs?limit=${limit}`,
     ),
+
+  // Cadência por endpoint (CLAUDE.md §13). encodeURIComponent no endpoint_name
+  // porque pode conter "." (ex.: "market.outros_fundos") — o backend usa
+  // {endpoint_name:path} no Path() e aceita o ponto, mas mantemos o encode
+  // como defesa para casos com chars inesperados.
+  listEndpoints: (
+    sourceType: SourceTypeId,
+    environment: Environment = "production",
+    uaId?: string | null,
+  ) => {
+    const qs = new URLSearchParams({ environment })
+    if (uaId) qs.set("ua", uaId)
+    return apiClient.get<EndpointDetail[]>(
+      `/integracoes/sources/${sourceType}/endpoints?${qs.toString()}`,
+    )
+  },
+  getEndpoint: (
+    sourceType: SourceTypeId,
+    endpointName: string,
+    environment: Environment = "production",
+    uaId?: string | null,
+  ) => {
+    const qs = new URLSearchParams({ environment })
+    if (uaId) qs.set("ua", uaId)
+    return apiClient.get<EndpointDetail>(
+      `/integracoes/sources/${sourceType}/endpoints/${encodeURIComponent(
+        endpointName,
+      )}?${qs.toString()}`,
+    )
+  },
+  updateEndpoint: (
+    sourceType: SourceTypeId,
+    endpointName: string,
+    payload: EndpointConfigPayload,
+  ) =>
+    apiClient.put<EndpointDetail>(
+      `/integracoes/sources/${sourceType}/endpoints/${encodeURIComponent(
+        endpointName,
+      )}`,
+      payload,
+    ),
+  syncEndpoint: (
+    sourceType: SourceTypeId,
+    endpointName: string,
+    environment: Environment = "production",
+    uaId?: string | null,
+  ) => {
+    const qs = new URLSearchParams({ environment })
+    if (uaId) qs.set("ua", uaId)
+    return apiClient.post<EndpointSyncResult>(
+      `/integracoes/sources/${sourceType}/endpoints/${encodeURIComponent(
+        endpointName,
+      )}/sync?${qs.toString()}`,
+    )
+  },
 }
 
 /** Modulo cadastros — entidades primarias do tenant. */

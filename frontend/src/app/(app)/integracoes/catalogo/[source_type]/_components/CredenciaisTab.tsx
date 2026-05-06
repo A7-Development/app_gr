@@ -10,6 +10,7 @@
 //
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Controller, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -251,33 +252,7 @@ export function CredenciaisTab({
         }
       />
 
-      <FrequenciaCard
-        detail={detail}
-        submitting={updateMut.isPending}
-        onSubmit={(syncFrequencyMinutes) =>
-          updateMut.mutate(
-            {
-              environment: detail.environment,
-              sync_frequency_minutes: syncFrequencyMinutes,
-              unidade_administrativa_id: detail.unidade_administrativa_id,
-            },
-            {
-              onSuccess: () =>
-                toast.success(
-                  syncFrequencyMinutes === null
-                    ? "Sincronizacao automatica desligada (sob demanda)."
-                    : `Sincronizacao agendada a cada ${syncFrequencyMinutes} min.`,
-                ),
-              onError: (err: unknown) =>
-                toast.error(
-                  err instanceof Error
-                    ? err.message
-                    : "Falha ao salvar frequencia.",
-                ),
-            },
-          )
-        }
-      />
+      <FrequenciaInfoCard sourceType={sourceType} environment={detail.environment} uaId={detail.unidade_administrativa_id} />
 
       <CredenciaisForm
         detail={detail}
@@ -337,119 +312,62 @@ function EnabledToggle({
 }
 
 //
-// Card de frequencia de sincronizacao.
+// Card informativo apontando para a aba "Endpoints".
 //
-// Persiste em tenant_source_config.sync_frequency_minutes. Range valido
-// 15..1440 (CHECK constraint no banco, validacao Pydantic no router).
-// Vazio = "sob demanda" (null) — fonte nao entra no scheduler dispatcher.
+// Substitui o `FrequenciaCard` (campo unico `sync_frequency_minutes`) que vivia
+// aqui. A cadencia agora e configurada por endpoint (CLAUDE.md §13 — refactor
+// 2026-05-05): cada source tem N endpoints, cada um com sua propria cadencia.
+// O campo legado `tenant_source_config.sync_frequency_minutes` continua no DB
+// para rollback do refactor, mas o operador edita em /endpoints.
 //
-// Disabled quando a fonte nao esta enabled — agendar sem habilitar nao
-// produz efeito. Operador habilita primeiro, depois define a cadencia.
-//
-function FrequenciaCard({
-  detail,
-  submitting,
-  onSubmit,
+function FrequenciaInfoCard({
+  sourceType,
+  environment,
+  uaId,
 }: {
-  detail: SourceDetail
-  submitting: boolean
-  onSubmit: (syncFrequencyMinutes: number | null) => void
+  sourceType: SourceTypeId
+  environment: string
+  uaId: string | null
 }) {
-  const initial =
-    detail.sync_frequency_minutes !== null &&
-    detail.sync_frequency_minutes !== undefined
-      ? String(detail.sync_frequency_minutes)
-      : ""
+  // Sources sem catalogo de endpoints (Serasa, etc) nao mostram o card —
+  // nao tem para onde redirecionar. Manter sincronizado com
+  // SOURCES_WITH_ENDPOINT_CATALOG na page.tsx.
+  const SOURCES_WITH_ENDPOINTS = new Set<SourceTypeId>([
+    "admin:qitech",
+    "erp:bitfin",
+  ])
+  if (!SOURCES_WITH_ENDPOINTS.has(sourceType)) return null
 
-  const [value, setValue] = React.useState<string>(initial)
-  const [error, setError] = React.useState<string | null>(null)
-
-  // Reset quando o detail muda (apos salvar, ou troca de UA recarrega o detail).
-  React.useEffect(() => {
-    setValue(initial)
-    setError(null)
-  }, [initial])
-
-  const dirty = value.trim() !== initial
-  const disabled = !detail.enabled || submitting
-
-  function handleSave() {
-    const trimmed = value.trim()
-    if (trimmed === "") {
-      onSubmit(null)
-      return
-    }
-    const n = Number(trimmed)
-    if (!Number.isInteger(n)) {
-      setError("Informe um numero inteiro de minutos.")
-      return
-    }
-    if (n < 15 || n > 1440) {
-      setError("Valor permitido: entre 15 e 1440 minutos.")
-      return
-    }
-    setError(null)
-    onSubmit(n)
-  }
+  const qs = new URLSearchParams()
+  qs.set("tab", "endpoints")
+  qs.set("environment", environment)
+  if (uaId) qs.set("ua", uaId)
+  const href = `/integracoes/catalogo/${encodeURIComponent(sourceType)}?${qs.toString()}`
 
   return (
     <Card>
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-0.5">
-          <Label htmlFor="freq-input" className="text-sm font-medium">
-            Frequencia de sincronizacao
-          </Label>
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            {detail.enabled
-              ? "Em quantos minutos o scheduler dispara um novo ciclo. Deixe em branco para rodar apenas sob demanda."
-              : "Habilite a fonte primeiro para ativar o agendamento."}
-          </span>
-        </div>
-
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Input
-              id="freq-input"
-              type="number"
-              min={15}
-              max={1440}
-              step={5}
-              inputMode="numeric"
-              placeholder="ex.: 30"
-              className="w-40"
-              value={value}
-              onChange={(e) => {
-                setValue(e.target.value)
-                if (error) setError(null)
-              }}
-              disabled={disabled}
-              hasError={Boolean(error)}
-            />
-            {error ? (
-              <span className="text-xs text-red-600 dark:text-red-500">
-                {error}
-              </span>
-            ) : (
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                Minimo 15 min, maximo 1440 (24h).
-              </span>
-            )}
+      <div className="flex items-start gap-3">
+        <RiInformationLine
+          className="mt-0.5 size-5 text-gray-500 dark:text-gray-400"
+          aria-hidden
+        />
+        <div className="flex flex-col gap-1">
+          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-50">
+            Cadencia por endpoint
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            A cadencia de sincronizacao e configurada por endpoint —
+            cada relatorio tem um botao proprio para definir intervalo,
+            horario diario ou modo sob demanda.
+          </p>
+          <div className="mt-2">
+            <Link
+              href={href}
+              className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+            >
+              Abrir aba Endpoints →
+            </Link>
           </div>
-
-          <Button
-            type="button"
-            variant="primary"
-            onClick={handleSave}
-            disabled={disabled || !dirty}
-          >
-            {submitting && (
-              <RiLoader4Line
-                className="mr-1.5 size-4 animate-spin"
-                aria-hidden
-              />
-            )}
-            Salvar frequencia
-          </Button>
         </div>
       </div>
     </Card>

@@ -15,6 +15,9 @@ from app.modules.integracoes.routers.qitech_bank_account import (
 from app.modules.integracoes.routers.qitech_custodia import (
     router as integracoes_qitech_custodia_router,
 )
+from app.modules.integracoes.routers.endpoints import (
+    router as integracoes_endpoints_router,
+)
 from app.modules.integracoes.routers.qitech_jobs import (
     router as integracoes_qitech_jobs_router,
 )
@@ -47,6 +50,11 @@ api_router.include_router(
 api_router.include_router(credito_router)
 api_router.include_router(
     integracoes_sources_router, prefix="/integracoes", tags=["integracoes"]
+)
+api_router.include_router(
+    integracoes_endpoints_router,
+    prefix="/integracoes",
+    tags=["integracoes:endpoints"],
 )
 api_router.include_router(
     integracoes_webhooks_router, prefix="/integracoes", tags=["integracoes:webhooks"]

@@ -34,6 +34,7 @@ import type { Environment, SourceTypeId } from "@/lib/api-client"
 
 import { CredenciaisTab } from "./_components/CredenciaisTab"
 import { ContasBancariasTab } from "./_components/ContasBancariasTab"
+import { EndpointsTab } from "./_components/EndpointsTab"
 import { TestarTab } from "./_components/TestarTab"
 import { HistoricoTab } from "./_components/HistoricoTab"
 
@@ -43,20 +44,36 @@ import { HistoricoTab } from "./_components/HistoricoTab"
 // do tenant, sem conta separada).
 const SOURCES_WITH_BANK_ACCOUNTS = new Set<SourceTypeId>(["admin:qitech"])
 
+// Source types que tem catalogo de endpoints (cadencia por endpoint —
+// CLAUDE.md §13). Sources sem catalogo (bureaus, etc) nao mostram a aba.
+// Manter sincronizado com `_CATALOG_BY_SOURCE` em backend public.py.
+const SOURCES_WITH_ENDPOINT_CATALOG = new Set<SourceTypeId>([
+  "admin:qitech",
+  "erp:bitfin",
+])
+
 const TABS_BASE = [
   { key: "credenciais", label: "Credenciais" },
+  { key: "endpoints", label: "Endpoints" },
   { key: "testar", label: "Testar" },
   { key: "historico", label: "Historico" },
 ] as const
 const TABS_WITH_BANK_ACCOUNTS = [
   { key: "credenciais", label: "Credenciais" },
+  { key: "endpoints", label: "Endpoints" },
   { key: "contas-bancarias", label: "Contas bancarias" },
+  { key: "testar", label: "Testar" },
+  { key: "historico", label: "Historico" },
+] as const
+const TABS_NO_ENDPOINTS = [
+  { key: "credenciais", label: "Credenciais" },
   { key: "testar", label: "Testar" },
   { key: "historico", label: "Historico" },
 ] as const
 type TabKey =
   | (typeof TABS_BASE)[number]["key"]
   | (typeof TABS_WITH_BANK_ACCOUNTS)[number]["key"]
+  | (typeof TABS_NO_ENDPOINTS)[number]["key"]
 
 function useActiveTab(tabs: ReadonlyArray<{ key: string }>): TabKey {
   const sp = useSearchParams()
@@ -83,9 +100,12 @@ export default function SourceDetailPage() {
   const sourceType = decodeURIComponent(params.source_type) as SourceTypeId
   const sp = useSearchParams()
   const router = useRouter()
-  const tabs = SOURCES_WITH_BANK_ACCOUNTS.has(sourceType)
-    ? TABS_WITH_BANK_ACCOUNTS
-    : TABS_BASE
+  const hasEndpoints = SOURCES_WITH_ENDPOINT_CATALOG.has(sourceType)
+  const tabs = hasEndpoints
+    ? SOURCES_WITH_BANK_ACCOUNTS.has(sourceType)
+      ? TABS_WITH_BANK_ACCOUNTS
+      : TABS_BASE
+    : TABS_NO_ENDPOINTS
   const activeTab = useActiveTab(tabs)
   const environment: Environment =
     sp.get("environment") === "sandbox" ? "sandbox" : "production"
@@ -174,6 +194,13 @@ export default function SourceDetailPage() {
 
           {!isLoading && data && activeTab === "credenciais" && (
             <CredenciaisTab detail={data} sourceType={sourceType} />
+          )}
+          {!isLoading && data && activeTab === "endpoints" && (
+            <EndpointsTab
+              sourceType={sourceType}
+              environment={environment}
+              uaId={uaIdParam}
+            />
           )}
           {!isLoading && data && activeTab === "contas-bancarias" && (
             <ContasBancariasTab detail={data} sourceType={sourceType} />

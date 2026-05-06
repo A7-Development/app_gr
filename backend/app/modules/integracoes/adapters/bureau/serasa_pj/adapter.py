@@ -139,3 +139,33 @@ async def adapter_sync(
         "rows_ingested": 0,
         "steps": [],
     }
+
+
+async def adapter_sync_endpoint(
+    tenant_id: UUID,
+    config_dict: dict,
+    endpoint_name: str,
+    *,
+    since: date | None = None,
+    triggered_by: str = "system:scheduler",
+    environment: Environment = Environment.PRODUCTION,
+    unidade_administrativa_id: UUID | None = None,
+) -> dict[str, Any]:
+    """Stub per-endpoint — Serasa nao tem catalogo de endpoints (consulta
+    sob demanda). Adicionado para manter interface uniforme com QiTech/Bitfin.
+
+    O dispatcher nunca devera chamar esta funcao porque
+    `endpoint_catalog(BUREAU_SERASA_PJ)` retorna lista vazia — sem linha em
+    `tenant_source_endpoint_config` que dispatcher pudesse iterar. Mas se
+    chamado (ex.: API admin manual), retorna o mesmo stub explicativo.
+    """
+    summary = await adapter_sync(
+        tenant_id,
+        config_dict,
+        since=since,
+        triggered_by=triggered_by,
+        environment=environment,
+        unidade_administrativa_id=unidade_administrativa_id,
+    )
+    summary["endpoint_name"] = endpoint_name
+    return summary

@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.enums import Environment, Module, Permission, SourceType
 from app.core.module_guard import require_module
@@ -336,7 +337,26 @@ async def update_source_config(
     passe-o com valor `null`. `unidade_administrativa_id` (multi-UA) escopa
     a linha — admin pode ter N credenciais por (tenant, source, env), uma
     por UA.
+
+    Cadencia (sync_frequency_minutes): quando o agendamento por endpoint esta
+    ligado (`INTEGRACOES_USE_ENDPOINT_SCHEDULING=True`), o campo legado fica
+    deprecated. Se o caller ainda enviar valor != None, retornamos 400
+    redirecionando para a UI de endpoints. Modo legado continua aceitando.
     """
+    if (
+        get_settings().INTEGRACOES_USE_ENDPOINT_SCHEDULING
+        and payload.sync_frequency_minutes is not None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Cadencia agora e configurada por endpoint — use "
+                "PUT /integracoes/sources/{source_type}/endpoints/{endpoint_name}. "
+                "O campo `sync_frequency_minutes` em /config esta deprecated e "
+                "sera removido num release futuro."
+            ),
+        )
+
     await _catalog_row(db, source_type)
     await merge_config(
         db,

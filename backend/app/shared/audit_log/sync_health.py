@@ -26,12 +26,19 @@ async def last_sync_at(
     tenant_id: UUID,
     *,
     rule_or_model: str,
+    endpoint_name: str | None = None,
 ) -> datetime | None:
     """Return the `occurred_at` of the most recent successful SYNC for this adapter.
 
     A sync is considered successful when `explanation == 'OK'` (convention from
     `bitfin.etl.sync_all`). Failed or partial syncs are ignored — the caller
     wants to know "when did fresh data last arrive", not "when did we last try".
+
+    `endpoint_name`:
+        - `None` (default): sem filtro — comportamento legado (entry pode ter
+          endpoint_name preenchido ou nao).
+        - String: filtra por endpoint especifico, util quando o caller quer
+          "ultima sync OK do endpoint X" (ex.: TSEC.last_sync_at na UI).
 
     Returns None when no successful sync exists yet for this tenant/adapter.
     """
@@ -44,6 +51,8 @@ async def last_sync_at(
             DecisionLog.explanation == "OK",
         )
     )
+    if endpoint_name is not None:
+        stmt = stmt.where(DecisionLog.endpoint_name == endpoint_name)
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
 
@@ -53,12 +62,19 @@ async def last_sync_attempt_at(
     tenant_id: UUID,
     *,
     rule_or_model: str,
+    endpoint_name: str | None = None,
 ) -> datetime | None:
     """Return `occurred_at` of the most recent SYNC attempt — success OR failure.
 
     Used by the scheduler dispatcher to enforce backoff between attempts. If
     a sync is failing, we still want to wait `sync_frequency_minutes` between
     retries instead of hammering the upstream every tick.
+
+    `endpoint_name`:
+        - `None` (default): comportamento legado — pega ultima tentativa do
+          adapter inteiro. Usado pelo dispatcher modo legado.
+        - String: filtra por endpoint. Usado pelo dispatcher modo novo +
+          backoff por endpoint.
 
     Differs from `last_sync_at` (which filters `explanation='OK'`) — for UI
     "last fresh data" use that; for "when did we last hit the API" use this.
@@ -68,5 +84,7 @@ async def last_sync_attempt_at(
         DecisionLog.decision_type == DecisionType.SYNC,
         DecisionLog.rule_or_model == rule_or_model,
     )
+    if endpoint_name is not None:
+        stmt = stmt.where(DecisionLog.endpoint_name == endpoint_name)
     result = await db.execute(stmt)
     return result.scalar_one_or_none()

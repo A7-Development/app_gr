@@ -1,5 +1,18 @@
-"""Sync dispatcher — registers `tenant_source_config.sync_frequency_minutes`
-as the source of truth for ETL cadence.
+"""Sync dispatcher — descobre quais syncs disparar a cada tick.
+
+Modo de operacao decidido pela feature flag
+`INTEGRACOES_USE_ENDPOINT_SCHEDULING` (CLAUDE.md §13 + plano refactor
+2026-05-05):
+
+- **Flag False (default, modo legado)**: `tenant_source_config.sync_frequency_minutes`
+  e a fonte da verdade. Dispara `run_sync_one(tenant, source, ...)`.
+- **Flag True (modo novo)**: `tenant_source_endpoint_config` e a fonte da
+  verdade — granularidade fina por endpoint. Dispara
+  `run_sync_endpoint(tenant, source, endpoint_name, ...)`.
+
+Modo legado abaixo (texto original):
+==========================================================================
+Tica como `tenant_source_config.sync_frequency_minutes` ditando cadencia.
 
 Tica a cada minuto. A cada tick:
   1. SELECT em tenant_source_config WHERE enabled=true E
@@ -45,12 +58,17 @@ import logging
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.core.enums import Environment, SourceType
 from app.modules.integracoes.public import (
     list_enabled_configs,
     rule_name_for,
+    run_sync_endpoint,
     run_sync_one,
+)
+from app.modules.integracoes.services.endpoint_scheduling import (
+    list_due_endpoints,
 )
 from app.shared.audit_log.sync_health import last_sync_attempt_at
 
@@ -78,6 +96,13 @@ _RUNNING_TASKS: set[asyncio.Task] = set()
 SyncKey = tuple[UUID, SourceType, UUID | None]
 _INFLIGHT_KEYS: set[SyncKey] = set()
 
+# Lock in-flight para o modo per-endpoint. Chave inclui `endpoint_name` para
+# que multiplos endpoints da mesma fonte/tenant rodem em paralelo (ex.:
+# bank_account.balance + market.outros_fundos do mesmo tenant — recursos
+# diferentes na QiTech, podem rodar simultaneo).
+EndpointSyncKey = tuple[UUID, SourceType, UUID | None, str]
+_INFLIGHT_KEYS_ENDPOINT: set[EndpointSyncKey] = set()
+
 # Ambientes que o dispatcher cobre. Sandbox so roda quando operador dispara
 # manualmente via /integracoes/sources/<src>/sync — automacao de sandbox
 # nao gera valor.
@@ -102,9 +127,21 @@ def _known_sources() -> list:
 
 
 async def run() -> dict[str, int]:
-    """Tick do dispatcher. Returns summary com contadores pra observabilidade."""
+    """Tick do dispatcher. Roteador entre modo legado e modo per-endpoint.
+
+    Modo decidido pela feature flag `INTEGRACOES_USE_ENDPOINT_SCHEDULING`
+    (default False = legado). Veja docstring do modulo.
+    """
+    if get_settings().INTEGRACOES_USE_ENDPOINT_SCHEDULING:
+        return await _run_endpoint_mode()
+    return await _run_legacy_mode()
+
+
+async def _run_legacy_mode() -> dict[str, int]:
+    """Modo legado — itera tenant_source_config por source_type."""
     started_at = datetime.now(UTC)
     summary = {
+        "mode": "legacy",
         "configs_scanned": 0,
         "dispatched": 0,
         "skipped_not_due": 0,
@@ -194,6 +231,100 @@ async def run() -> dict[str, int]:
                     )
 
     return summary
+
+
+async def _run_endpoint_mode() -> dict[str, int]:
+    """Modo per-endpoint — itera tenant_source_endpoint_config.
+
+    Usa `list_due_endpoints` que ja resolve a logica de schedule
+    (interval/daily_at). Para cada linha due, dispara
+    `run_sync_endpoint(tenant, source, endpoint_name, ...)` em background.
+    """
+    started_at = datetime.now(UTC)
+    summary = {
+        "mode": "endpoint",
+        "endpoints_scanned": 0,
+        "dispatched": 0,
+        "skipped_in_flight": 0,
+    }
+
+    async with AsyncSessionLocal() as db:
+        rows = await list_due_endpoints(
+            db, now=started_at, environments=tuple(_ENVIRONMENTS)
+        )
+    summary["endpoints_scanned"] = len(rows)
+
+    for row in rows:
+        key: EndpointSyncKey = (
+            row.tenant_id,
+            row.source_type,
+            row.unidade_administrativa_id,
+            row.endpoint_name,
+        )
+        if key in _INFLIGHT_KEYS_ENDPOINT:
+            summary["skipped_in_flight"] += 1
+            logger.warning(
+                "skip in-flight (endpoint): tenant=%s source=%s ua=%s endpoint=%s",
+                row.tenant_id,
+                row.source_type.value,
+                row.unidade_administrativa_id,
+                row.endpoint_name,
+            )
+            continue
+
+        logger.info(
+            "dispatch (endpoint): tenant=%s source=%s ua=%s endpoint=%s "
+            "kind=%s value=%s last_started=%s",
+            row.tenant_id,
+            row.source_type.value,
+            row.unidade_administrativa_id,
+            row.endpoint_name,
+            row.schedule_kind,
+            row.schedule_value,
+            row.last_sync_started_at,
+        )
+        summary["dispatched"] += 1
+        _INFLIGHT_KEYS_ENDPOINT.add(key)
+        task = asyncio.create_task(
+            _run_endpoint_safe(
+                tenant_id=row.tenant_id,
+                source_type=row.source_type,
+                environment=row.environment,
+                ua_id=row.unidade_administrativa_id,
+                endpoint_name=row.endpoint_name,
+            )
+        )
+        _RUNNING_TASKS.add(task)
+        task.add_done_callback(_RUNNING_TASKS.discard)
+        task.add_done_callback(
+            lambda _t, k=key: _INFLIGHT_KEYS_ENDPOINT.discard(k)
+        )
+
+    return summary
+
+
+async def _run_endpoint_safe(
+    *, tenant_id, source_type, environment, ua_id, endpoint_name
+) -> None:
+    """Wrapper que isola exceptions — falha de um endpoint nao quebra o tick."""
+    try:
+        await run_sync_endpoint(
+            tenant_id,
+            source_type,
+            endpoint_name,
+            environment=environment,
+            triggered_by="system:scheduler",
+            unidade_administrativa_id=ua_id,
+        )
+    except Exception:
+        logger.exception(
+            "sync_dispatcher (endpoint): run_sync_endpoint falhou "
+            "tenant=%s source=%s ua=%s endpoint=%s",
+            tenant_id,
+            source_type.value,
+            ua_id,
+            endpoint_name,
+        )
 
 
 async def _run_one_safe(*, tenant_id, source_type, environment, ua_id) -> None:

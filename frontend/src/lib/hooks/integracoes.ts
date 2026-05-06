@@ -15,6 +15,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   integracoes,
   type ConfigUpdatePayload,
+  type EndpointConfigPayload,
   type Environment,
   type SourceTypeId,
 } from "@/lib/api-client"
@@ -25,6 +26,8 @@ const KEYS = {
     ["integracoes", "source", st, env, ua ?? null] as const,
   runs: (st: SourceTypeId, limit: number) =>
     ["integracoes", "runs", st, limit] as const,
+  endpoints: (st: SourceTypeId, env: Environment, ua?: string | null) =>
+    ["integracoes", "endpoints", st, env, ua ?? null] as const,
 }
 
 export function useSources(environment: Environment = "production") {
@@ -126,5 +129,59 @@ export function useSourceRuns(sourceType: SourceTypeId | null, limit = 50) {
       : ["integracoes", "runs", "none"],
     queryFn: () => integracoes.runs(sourceType!, limit),
     enabled: !!sourceType,
+  })
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Endpoints (cadência fina) — CLAUDE.md §13
+// ───────────────────────────────────────────────────────────────────────────
+
+export function useSourceEndpoints(
+  sourceType: SourceTypeId | null,
+  environment: Environment = "production",
+  uaId?: string | null,
+) {
+  return useQuery({
+    queryKey: sourceType
+      ? KEYS.endpoints(sourceType, environment, uaId)
+      : ["integracoes", "endpoints", "none"],
+    queryFn: () => integracoes.listEndpoints(sourceType!, environment, uaId),
+    enabled: !!sourceType,
+  })
+}
+
+export function useUpdateEndpoint(sourceType: SourceTypeId) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: {
+      endpointName: string
+      payload: EndpointConfigPayload
+    }) => integracoes.updateEndpoint(sourceType, vars.endpointName, vars.payload),
+    onSuccess: () => {
+      // Invalida toda a árvore de endpoints — listagem e detail são
+      // recarregados (last_sync_* pode mudar pra qualquer linha de TSEC).
+      qc.invalidateQueries({ queryKey: ["integracoes", "endpoints", sourceType] })
+    },
+  })
+}
+
+export function useSyncEndpoint(sourceType: SourceTypeId) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: {
+      endpointName: string
+      environment?: Environment
+      uaId?: string | null
+    }) =>
+      integracoes.syncEndpoint(
+        sourceType,
+        vars.endpointName,
+        vars.environment ?? "production",
+        vars.uaId,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["integracoes", "endpoints", sourceType] })
+      qc.invalidateQueries({ queryKey: KEYS.runs(sourceType, 50) })
+    },
   })
 }

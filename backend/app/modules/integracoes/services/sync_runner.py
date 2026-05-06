@@ -35,11 +35,17 @@ from app.modules.integracoes.adapters.admin.qitech.adapter import (
 from app.modules.integracoes.adapters.admin.qitech.adapter import (
     adapter_sync as qitech_sync,
 )
+from app.modules.integracoes.adapters.admin.qitech.adapter import (
+    adapter_sync_endpoint as qitech_sync_endpoint,
+)
 from app.modules.integracoes.adapters.bureau.serasa_pj.adapter import (
     adapter_ping as serasa_pj_ping,
 )
 from app.modules.integracoes.adapters.bureau.serasa_pj.adapter import (
     adapter_sync as serasa_pj_sync,
+)
+from app.modules.integracoes.adapters.bureau.serasa_pj.adapter import (
+    adapter_sync_endpoint as serasa_pj_sync_endpoint,
 )
 from app.modules.integracoes.adapters.erp.bitfin.adapter import (
     adapter_ping as bitfin_ping,
@@ -47,7 +53,13 @@ from app.modules.integracoes.adapters.erp.bitfin.adapter import (
 from app.modules.integracoes.adapters.erp.bitfin.adapter import (
     adapter_sync as bitfin_sync,
 )
+from app.modules.integracoes.adapters.erp.bitfin.adapter import (
+    adapter_sync_endpoint as bitfin_sync_endpoint,
+)
 from app.modules.integracoes.models.tenant_source_config import TenantSourceConfig
+from app.modules.integracoes.models.tenant_source_endpoint_config import (
+    TenantSourceEndpointConfig,
+)
 from app.modules.integracoes.services.eligibility import list_enabled_configs
 from app.modules.integracoes.services.source_config import (
     decrypt_config,
@@ -62,23 +74,42 @@ logger = logging.getLogger("gr.integracoes.sync_runner")
 # declaram `**_` para aceitar sem usar.
 PingFn = Callable[..., Awaitable[dict[str, Any]]]
 SyncFn = Callable[..., Awaitable[dict[str, Any]]]
+SyncEndpointFn = Callable[..., Awaitable[dict[str, Any]]]
 
 
 @dataclass(frozen=True)
 class AdapterEntry:
-    """Registered adapter for a source_type."""
+    """Registered adapter for a source_type.
+
+    `sync`           — interface legada (sincroniza tudo). Usada quando flag
+                       INTEGRACOES_USE_ENDPOINT_SCHEDULING=False (default).
+    `sync_endpoint`  — interface nova per-endpoint. Usada quando flag liga.
+    `ping`           — sanity check de credenciais (sem mudanca).
+    """
 
     sync: SyncFn
+    sync_endpoint: SyncEndpointFn
     ping: PingFn
 
 
 _ADAPTER_REGISTRY: dict[SourceType, AdapterEntry] = {
-    SourceType.ERP_BITFIN: AdapterEntry(sync=bitfin_sync, ping=bitfin_ping),
-    SourceType.ADMIN_QITECH: AdapterEntry(sync=qitech_sync, ping=qitech_ping),
-    # Bureau: ping autentica de verdade; sync e stub explicativo (consultas
-    # sao sob demanda via workflow do credito, nao periodicas).
+    SourceType.ERP_BITFIN: AdapterEntry(
+        sync=bitfin_sync,
+        sync_endpoint=bitfin_sync_endpoint,
+        ping=bitfin_ping,
+    ),
+    SourceType.ADMIN_QITECH: AdapterEntry(
+        sync=qitech_sync,
+        sync_endpoint=qitech_sync_endpoint,
+        ping=qitech_ping,
+    ),
+    # Bureau: ping autentica de verdade; sync* e stub explicativo (consultas
+    # sao sob demanda via workflow do credito, nao periodicas). Catalogo de
+    # endpoint vazio — dispatcher nao chama sync_endpoint para Serasa.
     SourceType.BUREAU_SERASA_PJ: AdapterEntry(
-        sync=serasa_pj_sync, ping=serasa_pj_ping
+        sync=serasa_pj_sync,
+        sync_endpoint=serasa_pj_sync_endpoint,
+        ping=serasa_pj_ping,
     ),
 }
 
@@ -287,3 +318,169 @@ async def run_ping(
         environment=environment,
         unidade_administrativa_id=row.unidade_administrativa_id,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Modo per-endpoint (CLAUDE.md §13 + plano refactor 2026-05-05)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def _mark_endpoint_sync_started(
+    tenant_id: UUID,
+    source_type: SourceType,
+    environment: Environment,
+    endpoint_name: str,
+    unidade_administrativa_id: UUID | None,
+) -> None:
+    """Carimba `tenant_source_endpoint_config.last_sync_started_at = now()`
+    + `last_sync_status = 'em_progresso'`. Chamado ANTES do handler.
+
+    Espelha _mark_sync_started mas para a tabela TSEC. Granularidade fina
+    para que o dispatcher veja "endpoint em andamento" via SQL sem precisar
+    consultar lock in-memory.
+    """
+    stmt = update(TenantSourceEndpointConfig).where(
+        TenantSourceEndpointConfig.tenant_id == tenant_id,
+        TenantSourceEndpointConfig.source_type == source_type,
+        TenantSourceEndpointConfig.environment == environment,
+        TenantSourceEndpointConfig.endpoint_name == endpoint_name,
+    )
+    if unidade_administrativa_id is None:
+        stmt = stmt.where(TenantSourceEndpointConfig.unidade_administrativa_id.is_(None))
+    else:
+        stmt = stmt.where(
+            TenantSourceEndpointConfig.unidade_administrativa_id == unidade_administrativa_id
+        )
+    stmt = stmt.values(
+        last_sync_started_at=datetime.now(UTC),
+        last_sync_status="em_progresso",
+        last_sync_error=None,
+    )
+    async with AsyncSessionLocal() as db:
+        await db.execute(stmt)
+        await db.commit()
+
+
+async def _mark_endpoint_sync_finished(
+    tenant_id: UUID,
+    source_type: SourceType,
+    environment: Environment,
+    endpoint_name: str,
+    unidade_administrativa_id: UUID | None,
+    *,
+    ok: bool,
+    error_msg: str | None = None,
+) -> None:
+    """Carimba conclusao do sync no TSEC. ok=False grava error_msg em
+    `last_sync_error` para mostrar na UI sem fazer JOIN com decision_log."""
+    stmt = update(TenantSourceEndpointConfig).where(
+        TenantSourceEndpointConfig.tenant_id == tenant_id,
+        TenantSourceEndpointConfig.source_type == source_type,
+        TenantSourceEndpointConfig.environment == environment,
+        TenantSourceEndpointConfig.endpoint_name == endpoint_name,
+    )
+    if unidade_administrativa_id is None:
+        stmt = stmt.where(TenantSourceEndpointConfig.unidade_administrativa_id.is_(None))
+    else:
+        stmt = stmt.where(
+            TenantSourceEndpointConfig.unidade_administrativa_id == unidade_administrativa_id
+        )
+    stmt = stmt.values(
+        last_sync_finished_at=datetime.now(UTC),
+        last_sync_status="ok" if ok else "erro",
+        last_sync_error=error_msg if not ok else None,
+    )
+    async with AsyncSessionLocal() as db:
+        await db.execute(stmt)
+        await db.commit()
+
+
+async def run_sync_endpoint(
+    tenant_id: UUID,
+    source_type: SourceType,
+    endpoint_name: str,
+    *,
+    environment: Environment = Environment.PRODUCTION,
+    since: date | None = None,
+    triggered_by: str = "system:scheduler",
+    unidade_administrativa_id: UUID | None = None,
+) -> dict[str, Any]:
+    """Dispara sync para UM endpoint de uma config (tenant + fonte + UA).
+
+    Diferenca de `run_sync_one`:
+        - `run_sync_one`: chama `adapter.sync(...)` que sincroniza tudo da
+          integracao. Usado em modo legado.
+        - `run_sync_endpoint`: chama `adapter.sync_endpoint(name, ...)` que
+          sincroniza UM endpoint. Usado pelo dispatcher modo novo + pela
+          API admin POST /sources/{source}/endpoints/{name}/sync.
+
+    Carimba TSEC.last_sync_* antes/depois. Levanta excecao se o tenant nao
+    tem TSC pra source (sem credenciais nao da pra autenticar) — caller
+    precisa garantir que TSC existe.
+
+    Falhas dentro do adapter sao capturadas no proprio summary
+    (`errors`/`ok`); aqui so reraise excecao se for falha total (ex.:
+    credenciais ausentes, decrypt quebrou).
+    """
+    adapter = get_adapter(source_type)
+    async with AsyncSessionLocal() as db:
+        row = await get_config(
+            db,
+            tenant_id,
+            source_type,
+            environment,
+            unidade_administrativa_id=unidade_administrativa_id,
+        )
+    if row is None:
+        raise ValueError(
+            f"Tenant {tenant_id} nao tem tenant_source_config para "
+            f"{source_type.value}/{environment.value}/ua={unidade_administrativa_id} — "
+            f"nao da pra sincronizar endpoint {endpoint_name!r}"
+        )
+    plain = decrypt_config(row.config)
+
+    await _mark_endpoint_sync_started(
+        tenant_id,
+        source_type,
+        environment,
+        endpoint_name,
+        row.unidade_administrativa_id,
+    )
+
+    summary: dict[str, Any]
+    try:
+        summary = await adapter.sync_endpoint(
+            tenant_id,
+            plain,
+            endpoint_name,
+            since=since,
+            triggered_by=triggered_by,
+            environment=environment,
+            unidade_administrativa_id=row.unidade_administrativa_id,
+        )
+    except Exception as e:
+        # Erro escapou do adapter — carimba TSEC e re-raise pra caller saber.
+        await _mark_endpoint_sync_finished(
+            tenant_id,
+            source_type,
+            environment,
+            endpoint_name,
+            row.unidade_administrativa_id,
+            ok=False,
+            error_msg=f"{type(e).__name__}: {e}",
+        )
+        raise
+
+    ok = bool(summary.get("ok"))
+    errors = summary.get("errors") or []
+    error_msg = None if ok else "; ".join(str(e) for e in errors[:3])
+    await _mark_endpoint_sync_finished(
+        tenant_id,
+        source_type,
+        environment,
+        endpoint_name,
+        row.unidade_administrativa_id,
+        ok=ok,
+        error_msg=error_msg,
+    )
+    return summary
