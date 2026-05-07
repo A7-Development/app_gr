@@ -70,7 +70,7 @@ export default function LoginPage() {
     <HeroSplitAuth>
       {/* ── HERO ZONE (60%) ───────────────────────────────────────── */}
       <HeroSplitAuth.Hero>
-        <HeroSplitAuth.Brand wordmark="Strata" eyebrow="FIDC Analytics" />
+        <HeroSplitAuth.Brand wordmark="Strata" eyebrow="Agentic Solution" />
         <HeroSplitAuth.HeroSpacer />
         <HeroSplitAuth.Headline>
           Sua equipe e agentes de IA

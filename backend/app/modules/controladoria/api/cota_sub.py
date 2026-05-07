@@ -19,6 +19,7 @@ from app.modules.controladoria.schemas.cota_sub import (
 from app.modules.controladoria.services.balanco import compute_balanco
 from app.modules.controladoria.services.cota_sub import compute_variacao_diaria
 from app.modules.controladoria.services.variacoes_dia import compute_variacoes_dia
+from app.modules.integracoes.public import listar_datas_disponiveis_qitech
 
 router = APIRouter(prefix="/cota-sub", tags=["controladoria:cota-sub"])
 
@@ -82,6 +83,30 @@ async def balanco(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/datas-disponiveis", response_model=list[date])
+async def datas_disponiveis(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    _: None = _Guard,
+) -> list[date]:
+    """Lista as datas em que a QiTech publicou snapshot da UA.
+
+    Consumido pelo Calendar do frontend para impedir o usuario de selecionar
+    dias sem dados (fim de semana, feriado, falha de ETL — qualquer buraco e
+    tratado de forma uniforme). Le da `wh_dia_util_qitech` (silver), populada
+    via backfill a partir de `wh_mec_evolucao_cotas` na Fase A; ETL passa a
+    popular nativamente na Fase B.
+
+    Multi-tenant: scope enforced via `principal.tenant_id` no service.
+    """
+    return await listar_datas_disponiveis_qitech(
+        db,
+        tenant_id=principal.tenant_id,
+        ua_id=fundo_id,
+    )
 
 
 @router.get("/variacoes-dia", response_model=VariacoesDiaResponse)

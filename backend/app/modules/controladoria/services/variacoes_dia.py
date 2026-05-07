@@ -40,8 +40,8 @@ from app.modules.controladoria.schemas.cota_sub import (
 from app.modules.controladoria.services.balanco import (
     CPR_COSIF_META,
     _classify_cpr_cosif,
-    _dia_util_anterior,
 )
+from app.modules.integracoes.public import dia_util_anterior_qitech
 from app.warehouse.cpr_movimento import CprMovimento
 from app.warehouse.movimento_caixa import MovimentoCaixa
 
@@ -84,7 +84,10 @@ async def compute_variacoes_dia(
     if ua is None or ua.tenant_id != tenant_id:
         raise ValueError(f"Unidade administrativa {ua_id} nao encontrada para o tenant.")
 
-    d_d1 = data_d1 or _dia_util_anterior(data_d0)
+    # D-1 via fonte de verdade (wh_dia_util_qitech) — mesma do Calendar.
+    d_d1 = data_d1 or await dia_util_anterior_qitech(
+        db, tenant_id=tenant_id, ua_id=ua_id, data_d0=data_d0,
+    )
 
     # ─────────────────────────────────────────────────────────────────────────
     # 1. APROPRIACOES — Δ CPR positivos (provisao cresceu) entre D-1 e D0.

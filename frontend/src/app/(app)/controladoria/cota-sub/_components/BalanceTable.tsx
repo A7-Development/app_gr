@@ -142,19 +142,52 @@ function titleCasePtBR(input: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Lado do balancete — mapeado pelo id top-level e propagado aos subRows
+//
+// Determina o sinal da contribuicao na Cota Subordinada:
+//   • Ativo            → contribuicao = +Δ (cresceu Ativo = +Cota Sub)
+//   • Passivo Contabil → contribuicao = -Δ (cresceu Passivo = -Cota Sub)
+//   • Equity (Mez+Sr)  → contribuicao = -Δ
+// Linhas neutras (pl-total, total) nao tem contribuicao individual.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type LadoBalancete = "ativo" | "passivo" | "neutro"
+
+function buildLadoMap(rows: BalanceRow[]): Map<string, LadoBalancete> {
+  const map = new Map<string, LadoBalancete>()
+  function walk(r: BalanceRow, lado: LadoBalancete) {
+    map.set(r.id, lado)
+    if (r.subRows) for (const sub of r.subRows) walk(sub, lado)
+  }
+  for (const r of rows) {
+    if (r.id === "ativo") walk(r, "ativo")
+    else if (r.id === "passivo-contabil" || r.id === "equity") walk(r, "passivo")
+    else walk(r, "neutro")
+  }
+  return map
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Column factory — dinâmica nos cabeçalhos D-1 / D0 (mostra a data real)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const col = createColumnHelper<BalanceRow>()
 
+type BuildColumnsOpts = {
+  dataAnterior?:     string
+  data?:             string
+  showContribuicao?: boolean
+  ladoMap?:          Map<string, LadoBalancete>
+}
+
 function buildColumns(
-  dataAnterior?: string,
-  data?:         string,
+  opts: BuildColumnsOpts,
 ): ColumnDef<BalanceRow, unknown>[] {
+  const { dataAnterior, data, showContribuicao = false, ladoMap } = opts
   const headerD1 = dataAnterior ? fmtDateShort(dataAnterior) : "D-1"
   const headerD0 = data         ? fmtDateShort(data)         : "D0"
 
-  return [
+  const baseColumns: ColumnDef<BalanceRow, unknown>[] = [
   // Coluna COSIF foi removida (decisao 2026-04-30): a hierarquia visual passou
   // a ser dada por padding-left automatico da DataTable em `expandedColumnId`.
   // O codigo COSIF (quando existe) e exibido como prefixo monoespaçado dentro
@@ -282,7 +315,7 @@ function buildColumns(
   col.accessor("delta", {
     header: "Δ",
     meta:   { align: "right" },
-    size:   140,
+    size:   showContribuicao ? 160 : 140,
     cell:   (info) => {
       const row = info.row.original
       if (row.type === "section") return null
@@ -290,6 +323,10 @@ function buildColumns(
       const isPos = v != null && v > 0
       const isNeg = v != null && v < 0
       const isStrong = row.type === "subtotal" || row.type === "total"
+      // No modo "Eventos do dia" (showContribuicao=true), Δ vira coluna de
+      // destaque visual: font-medium em todas as linhas (em vez de so subtotal/
+      // total). Mantem cor verde/vermelho que ja existia.
+      const emphasizeAll = showContribuicao
       return (
         <div
           style={{ textAlign: "right" }}
@@ -299,7 +336,7 @@ function buildColumns(
               : isNeg
                 ? tableTokens.cellNumberNegative
                 : tableTokens.cellMuted + " tabular-nums",
-            isStrong && "font-semibold",
+            (isStrong || emphasizeAll) && "font-semibold",
           )}
         >
           {formatDelta(v)}
@@ -308,6 +345,93 @@ function buildColumns(
     },
   }) as ColumnDef<BalanceRow, unknown>,
   ]
+
+  if (!showContribuicao || !ladoMap) return baseColumns
+
+  // ─── Modo "Eventos do dia": adiciona coluna Contribuicao + reordena ───────
+  //
+  // Ordem visual canonica neste modo: Linha · Δ · Contribuicao · D-1 · D0
+  // (Δ e Contribuicao ficam no centro destacados; D-1/D0 viram referencia
+  // contabil compacta a direita.)
+
+  const contribuicaoCol = col.accessor(
+    (row) => row.delta,
+    {
+      id:     "contribuicao",
+      header: "Contribuicao",
+      meta:   { align: "right" },
+      size:   160,
+      cell:   (info) => {
+        const row = info.row.original
+        if (row.type === "section") return null
+        const lado = ladoMap.get(row.id) ?? "neutro"
+        if (lado === "neutro") return null
+        const delta = info.getValue<number | null>()
+        if (delta == null) return null
+        const sinal = lado === "ativo" ? 1 : -1
+        const v = sinal * delta
+        const isPos = v > 0
+        const isNeg = v < 0
+        const isStrong = row.type === "subtotal" || row.type === "total"
+        return (
+          <div
+            style={{ textAlign: "right" }}
+            className={cx(
+              isPos
+                ? tableTokens.cellNumberPositive
+                : isNeg
+                  ? tableTokens.cellNumberNegative
+                  : tableTokens.cellMuted + " tabular-nums",
+              "font-semibold",
+              isStrong && "font-bold",
+            )}
+            title={
+              lado === "ativo"
+                ? "Linha do Ativo: contribuicao = +Δ"
+                : "Linha do Passivo/Equity: contribuicao = -Δ"
+            }
+          >
+            {formatDelta(v)}
+          </div>
+        )
+      },
+    },
+  ) as ColumnDef<BalanceRow, unknown>
+
+  // Reordena: Linha · Descricao · Δ · Contribuicao · D-1 · D0 · (Fonte hidden)
+  // baseColumns ordem original: [label, descricao, source, d1, d0, delta]
+  const labelCol     = baseColumns[0]
+  const descricaoCol = baseColumns[1]
+  const sourceCol    = baseColumns[2]
+  const d1Col        = baseColumns[3]
+  const d0Col        = baseColumns[4]
+  const deltaCol     = baseColumns[5]
+  return [labelCol, descricaoCol, sourceCol, deltaCol, contribuicaoCol, d1Col, d0Col]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sort por magnitude do Δ — preserva hierarquia (section/subtotal/total) e
+// reordena APENAS as subRows dentro de cada secao.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function sortRowsByDeltaMagnitude(rows: BalanceRow[]): BalanceRow[] {
+  function sortRecursive(rs: BalanceRow[]): BalanceRow[] {
+    return rs
+      .map((r) => ({
+        ...r,
+        subRows: r.subRows ? sortRecursive(r.subRows) : undefined,
+      }))
+      .sort((a, b) => {
+        // Mantem section/subtotal/total nas suas posicoes naturais. Sort vale
+        // apenas para line/sub.
+        const sortable = (t: BalanceRowType) => t === "line"
+        if (!sortable(a.type) || !sortable(b.type)) return 0
+        const da = Math.abs(a.delta ?? 0)
+        const db = Math.abs(b.delta ?? 0)
+        return db - da
+      })
+  }
+  return sortRecursive(rows)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -338,20 +462,43 @@ const ROW_BG: Record<BalanceRowType, string> = {
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 
+export type BalanceTableProps = {
+  rows:          BalanceRow[]
+  data?:         string  // ISO D0
+  dataAnterior?: string  // ISO D-1
+  emptyMessage?: string
+  /** Adiciona coluna "Contribuicao na Cota Sub" e reordena visual:
+   * Linha · Δ · Contribuicao · D-1 · D0. Default false (modo balancete classico). */
+  showContribuicao?: boolean
+  /** Reordena as line/sub rows dentro de cada secao por |Δ| desc. Mantem
+   * section/subtotal/total em ordem natural. Default false. */
+  sortByDelta?: boolean
+  /** Override do titulo do card. Default "Balancete Diario". */
+  title?: string
+}
+
 export function BalanceTable({
   rows,
   data,
   dataAnterior,
   emptyMessage,
-}: {
-  rows:          BalanceRow[]
-  data?:         string  // ISO D0
-  dataAnterior?: string  // ISO D-1
-  emptyMessage?: string
-}) {
+  showContribuicao = false,
+  sortByDelta      = false,
+  title            = "Balancete Diário",
+}: BalanceTableProps) {
+  const ladoMap = React.useMemo(
+    () => (showContribuicao ? buildLadoMap(rows) : undefined),
+    [rows, showContribuicao],
+  )
+
+  const sortedRows = React.useMemo(
+    () => (sortByDelta ? sortRowsByDeltaMagnitude(rows) : rows),
+    [rows, sortByDelta],
+  )
+
   const columns = React.useMemo(
-    () => buildColumns(dataAnterior, data),
-    [dataAnterior, data],
+    () => buildColumns({ dataAnterior, data, showContribuicao, ladoMap }),
+    [dataAnterior, data, showContribuicao, ladoMap],
   )
 
   return (
@@ -361,11 +508,11 @@ export function BalanceTable({
     <Card className="flex flex-col gap-3 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm text-gray-900 dark:text-gray-50">
-          Balancete Diário
+          {title}
         </h3>
       </div>
       <DataTable
-        data={rows}
+        data={sortedRows}
         columns={columns}
         density="compact"
         showColumnManager={false}

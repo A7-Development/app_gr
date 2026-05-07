@@ -68,7 +68,7 @@ function Hero({ children }: HeroProps) {
       data-hero-anim
       className="relative hidden flex-col justify-between overflow-hidden lg:flex"
       style={{
-        flex: "0 0 60%",
+        flex: "0 0 70%",
         // Layered background — only expressable as inline because it composes
         // a linear gradient + radial overlay + SVG pattern, all using brand tokens.
         background: `linear-gradient(135deg, ${brand.navy} 0%, ${brand.navyDark} 100%)`,
@@ -143,7 +143,7 @@ function Headline({ children }: CopyProps) {
   return (
     <h1
       className="relative z-10 mb-6 px-20 text-white"
-      style={{ ...hero.display, maxWidth: 760 }}
+      style={{ ...hero.display, maxWidth: 880 }}
     >
       {children}
     </h1>
@@ -157,7 +157,7 @@ function Lede({ children }: CopyProps) {
       style={{
         ...hero.lede,
         color: brand.heroBodyText,
-        maxWidth: 440,
+        maxWidth: 560,
       }}
     >
       {children}
@@ -232,9 +232,9 @@ function FormPanel({ title, description, children, footer }: FormPanelProps) {
   return (
     <div
       data-hero-anim
-      className="relative flex w-full flex-col items-center justify-center border-l border-gray-200 bg-white px-10 py-12 dark:border-gray-800 dark:bg-gray-900 lg:w-2/5"
+      className="relative flex w-full flex-col items-center justify-center border-l border-gray-200 bg-white px-10 py-12 dark:border-gray-800 dark:bg-gray-900 lg:w-[30%]"
       style={{
-        flex: "1 1 40%",
+        flex: "1 1 30%",
         animation: "heroFadeSlideRight 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.08s both",
       }}
     >

@@ -19,6 +19,12 @@ from app.modules.integracoes.adapters.admin.qitech.endpoint_catalog import (
 from app.modules.integracoes.adapters.erp.bitfin.endpoint_catalog import (
     BITFIN_ENDPOINTS,
 )
+from app.modules.integracoes.services.dia_util import (
+    dia_util_anterior_qitech,
+)
+from app.modules.integracoes.services.dia_util import (
+    listar_datas_disponiveis as listar_datas_disponiveis_qitech,
+)
 from app.modules.integracoes.services.eligibility import (
     is_source_enabled,
     list_enabled_configs,
@@ -63,12 +69,14 @@ def endpoint_catalog(source_type: SourceType) -> list[EndpointSpec]:
 
 
 __all__ = [
+    "dia_util_anterior_qitech",
     "endpoint_catalog",
     "execute_serasa_pj_query",
     "is_source_enabled",
     "list_due_endpoints",
     "list_enabled_configs",
     "list_endpoint_configs_for_source",
+    "listar_datas_disponiveis_qitech",
     "rule_name_for",
     "run_ping",
     "run_sync_cycle",

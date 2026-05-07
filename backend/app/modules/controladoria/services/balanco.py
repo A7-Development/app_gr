@@ -44,6 +44,7 @@ from app.modules.controladoria.schemas.cota_sub import (
     BalanceRow,
     BalancoResponse,
 )
+from app.modules.integracoes.public import dia_util_anterior_qitech
 from app.warehouse.cpr_movimento import CprMovimento
 from app.warehouse.posicao_compromissada import PosicaoCompromissada
 from app.warehouse.posicao_cota_fundo import PosicaoCotaFundo
@@ -875,7 +876,13 @@ async def compute_balanco(
     if ua is None or ua.tenant_id != tenant_id:
         raise ValueError(f"Unidade administrativa {ua_id} nao encontrada para o tenant.")
 
-    d_d1 = data_d1 or _dia_util_anterior(data_d0)
+    # D-1: prefere a fonte de verdade (wh_dia_util_qitech) — mesma fonte que
+    # o Calendar do frontend. Garante que D-1 = data anterior efetiva com
+    # snapshot publicado, tratando feriados e falhas de ETL uniformemente.
+    # `_dia_util_anterior` (recua so sab/dom) e fallback se override explicito.
+    d_d1 = data_d1 or await dia_util_anterior_qitech(
+        db, tenant_id=tenant_id, ua_id=ua_id, data_d0=data_d0,
+    )
     datas = [d_d1, data_d0]
     cliente_id_principal = (ua.nome or "").upper().strip().split(" ", 1)[0]
 

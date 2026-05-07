@@ -49,6 +49,7 @@ from app.modules.controladoria.schemas.cota_sub import (
     PlCategoria,
     VariacaoDiariaResponse,
 )
+from app.modules.integracoes.public import dia_util_anterior_qitech
 from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel
 from app.warehouse.cpr_movimento import CprMovimento
 from app.warehouse.estoque_recebivel import EstoqueRecebivel
@@ -514,7 +515,12 @@ async def compute_variacao_diaria(
         raise ValueError(f"Unidade Administrativa {ua_id} nao encontrada no tenant")
 
     fundo_doc = ua.cnpj or ""
-    d1 = data_d1 or _dia_util_anterior(data_d0)
+    # D-1: fonte de verdade = wh_dia_util_qitech (mesma do Calendar). Trata
+    # feriados e falhas de ETL uniformemente — `_dia_util_anterior` local
+    # so recua sab/dom, deprecated via essa substituicao.
+    d1 = data_d1 or await dia_util_anterior_qitech(
+        db, tenant_id=tenant_id, ua_id=ua_id, data_d0=data_d0,
+    )
 
     # Categorias D-1 e D0
     compromissada_d1 = await _sum_compromissada(db, tenant_id, ua_id, d1)

@@ -1,21 +1,26 @@
 // src/app/(app)/controladoria/cota-sub/page.tsx
 //
-// Controladoria · Cota Sub — analise da cota subordinada do FIDC.
-// Pagina derivada do pattern `DashboardBiPadrao` (handoff bi-padrao 2026-04-26).
+// Controladoria · Cota Subordinada — analise diaria comparativa (D-1 vs D0).
+// Pagina derivada do pattern `DashboardBiPadrao`, alinhada com o shell canonico
+// consolidado em `bi/operacoes2` (toolbar unificada 52px com TabNavigation +
+// FilterBar lado a lado, scroll-shadow, ProvenanceFooter, AIPanel).
+//
+// Equacao do dia: ΔCota Sub = ΔAtivo − ΔPassivo Contabil − ΔEquity (Mez+Sr)
+//
+// Arquitetura de abas (4):
+//   1. "Eventos do dia"  (default, hero) — KpiStrip + Waterfall + Insights +
+//                                          BalanceTable evoluida (foco no Δ)
+//   2. "Balanco"                         — BalanceTable contabil + Pagamentos
+//   3. "Movimentacoes"                   — tabela movimentacoes + charts
+//   4. "Cotistas"                        — placeholder (futuro)
 //
 // HOW TO ADAPT (mocks → queries reais):
-//   1. Substituir MOCK_MOVIMENTACOES por useQuery contra endpoint
-//      /controladoria/cota-sub/movimentacoes (futuro).
-//   2. Substituir MOCK_INSIGHTS por insights gerados pela IA (server-side LLM).
-//   3. Substituir MOCK_PROVENANCE por status real dos adapters
-//      (Bitfin, QiTech, PDD).
-//   4. Substituir series ECharts por dados de wh_posicao_cota_fundo +
-//      wh_movimentacao_cotista (warehouse silver).
-//   5. Conectar AIPanel.sendMessage no LLM real (api.aiChat).
-//
-// L3 tabs por agora: Diario · Evolucao · Cotistas. Quando outras
-// dimensoes (por classe, por sacado da operacao, por safra) entrarem,
-// basta adicionar entradas em TABS — pagina nao precisa de refactor.
+//   1. MOCK_MOVIMENTACOES → useQuery `/controladoria/cota-sub/movimentacoes`
+//   2. MOCK_PROVENANCE → status real dos adapters (Bitfin, QiTech, PDD)
+//   3. Series ECharts da aba "Movimentacoes" → wh_posicao_cota_fundo +
+//      wh_movimentacao_cotista (silver)
+//   4. AIPanel.sendMessage → LLM real (api.aiChat) — ja preparado em
+//      operacoes2; portar quando ligar IA na Controladoria.
 
 "use client"
 
@@ -48,25 +53,23 @@ import {
 
 import { PageHeader } from "@/design-system/components/PageHeader"
 import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
-import { ProvenanceFooter, type ProvenanceSource } from "@/design-system/components/ProvenanceFooter"
+import {
+  ProvenanceFooter,
+  type ProvenanceSource,
+} from "@/design-system/components/ProvenanceFooter"
 import { VizParam } from "@/design-system/components/VizParam"
 import {
-  KpiCard,
-  KpiStrip,
-} from "@/design-system/components/KpiStrip"
-import { EChartsCard } from "@/design-system/components/EChartsCard"
+  EChartsCard,
+} from "@/design-system/components/EChartsCard"
 import {
-  FilterBar,
   FilterChip,
-  FilterSearch,
   RemovableChip,
   SavedViewsDropdown,
 } from "@/design-system/components/FilterBar"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { Insight, InsightBar } from "@/design-system/components/Insight"
 import { useUAs } from "@/lib/hooks/cadastros"
-import { useBalanco, useVariacoesDia } from "@/lib/hooks/controladoria"
-import type { VariacoesDiaResponse } from "@/lib/api-client"
+import { useBalanco, useDatasDisponiveis, useVariacoesDia } from "@/lib/hooks/controladoria"
 import {
   CurrencyCell,
   DataTable,
@@ -84,7 +87,10 @@ import {
   type AIInsight,
 } from "@/design-system/components/AIPanel"
 import { tokens, type StatusKey } from "@/design-system/tokens"
-import { BalanceTable, type BalanceRow } from "./_components/BalanceTable"
+import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
+
+import { BalanceTable } from "./_components/BalanceTable"
+import { EventosDiaTab } from "./_components/EventosDiaTab"
 import { PagamentosDiaPanel } from "@/components/controladoria/PagamentosDiaPanel"
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -129,9 +135,10 @@ const MOCK_PROVENANCE: ProvenanceSource[] = [
 // ───────────────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { key: "diario",   label: "Diario" },
-  { key: "evolucao", label: "Evolucao" },
-  { key: "cotistas", label: "Cotistas" },
+  { key: "eventos",       label: "Eventos do dia" },
+  { key: "balanco",       label: "Balanço" },
+  { key: "movimentacoes", label: "Movimentações" },
+  { key: "cotistas",      label: "Cotistas" },
 ] as const
 
 type TabKey = (typeof TABS)[number]["key"]
@@ -158,8 +165,7 @@ const DYNAMIC_FILTER_OPTIONS: Record<DynamicFilterKey, readonly string[]> = {
 
 type DynamicFilter = { key: DynamicFilterKey; value: string }
 
-// Filtros inline na DataTable (Status / Cotista) — mesmas opcoes que
-// os dinamicos, mas com escopo limitado a tabela (nao reaplicam a charts).
+// Filtros inline na tabela de movimentacoes (escopo: tabela apenas)
 const TABLE_STATUS_OPTIONS  = DYNAMIC_FILTER_OPTIONS.Status
 const TABLE_COTISTA_OPTIONS = DYNAMIC_FILTER_OPTIONS.Cotista
 
@@ -193,21 +199,6 @@ const plCotaSubOption: EChartsOption = {
   tooltip: { trigger: "axis" },
 }
 
-const distribClasseOption: EChartsOption = {
-  tooltip: { trigger: "item", formatter: "{b}: {d}%" },
-  legend:  { bottom: 0, icon: "circle", itemWidth: 8, itemHeight: 8 },
-  series: [
-    {
-      type: "pie", radius: ["42%", "70%"], center: ["50%", "44%"],
-      label: { show: false },
-      data: [
-        { name: "Mezanino", value: 68, itemStyle: { color: CHART_COLORS[0] } },
-        { name: "Junior",   value: 32, itemStyle: { color: CHART_COLORS[3] } },
-      ],
-    },
-  ],
-}
-
 const subscRescOption: EChartsOption = {
   grid: { top: 8, right: 12, bottom: 28, left: 48 },
   xAxis: { type: "category", data: MONTHS, axisTick: { show: false } },
@@ -229,15 +220,6 @@ const rentabSubOption: EChartsOption = {
       name: "Cota Sub", type: "line", smooth: true, symbol: "none",
       data: [102, 104, 107, 109, 110, 112, 113, 114, 115, 116, 117, 118],
       lineStyle: { color: "#3B82F6", width: 2 },
-      areaStyle: {
-        color: {
-          type: "linear", x: 0, y: 0, x2: 0, y2: 1,
-          colorStops: [
-            { offset: 0, color: "rgba(59,130,246,0.15)" },
-            { offset: 1, color: "rgba(59,130,246,0)" },
-          ],
-        },
-      },
     },
     {
       name: "CDI", type: "line", smooth: true, symbol: "none",
@@ -274,16 +256,6 @@ const topCotistasOption: EChartsOption = {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Sparklines (mock)
-// ───────────────────────────────────────────────────────────────────────────
-
-const SPARK_PL_SUB   = [14.8, 15.2, 15.6, 15.9, 16.2, 16.5, 16.8, 17.1, 17.4, 17.9, 18.3, 18.7]
-const SPARK_SUBORD   = [13.8, 14.0, 14.2, 14.3, 14.4, 14.5, 14.6, 14.7, 14.8, 14.9, 14.9, 15.0]
-const SPARK_RENT_SUB = [102, 104, 107, 109, 110, 112, 113, 114, 115, 116, 117, 118]
-const SPARK_COTISTAS = [9, 9, 10, 10, 10, 11, 11, 11, 11, 12, 12, 12]
-const SPARK_RESGATES = [1, 0, 2, 1, 2, 1, 2, 1, 2, 3, 2, 3]
-
-// ───────────────────────────────────────────────────────────────────────────
 // labelForStatus — mapeia StatusKey canonico para o rotulo do filtro inline
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -302,6 +274,8 @@ function labelForStatus(s: StatusKey): string {
 
 // ───────────────────────────────────────────────────────────────────────────
 // AddFilterMenu — Popover de "Mais filtros" (lista dimensoes disponiveis)
+// MOTIVO: MoreFiltersButton canonico hoje nao aceita asChild para Popover
+// wrapping; trigger custom espelha a anatomy. Followup: estender o canonico.
 // ───────────────────────────────────────────────────────────────────────────
 
 function AddFilterMenu({
@@ -320,7 +294,7 @@ function AddFilterMenu({
         <button
           type="button"
           className={cx(
-            "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2.5 text-[13px] transition-colors duration-100",
+            "inline-flex h-[26px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2.5 text-[13px] transition-colors duration-100",
             "border-gray-200 bg-white hover:bg-gray-50",
             "dark:border-gray-800 dark:bg-gray-950 dark:hover:bg-gray-900",
             focusRing,
@@ -353,58 +327,61 @@ function AddFilterMenu({
   )
 }
 
-// VizParam (chip group de período curto) — agora vem de
-// `@/design-system/components/VizParam`. Mantido import abaixo.
-
 // ───────────────────────────────────────────────────────────────────────────
-// Variacao diaria — componentes da analise
+// Aba "Balanço" — BalanceTable contabil + PagamentosDiaPanel
 // ───────────────────────────────────────────────────────────────────────────
 
-// (Helpers de formatacao migraram para BalanceTable._components quando aplicavel.)
-// (deprecated VariacaoDiariaSection helpers removed — substituido por BalanceTable)
+function BalancoTab(props: {
+  rows:                ReturnType<typeof useBalanco>["data"] extends infer T ? (T extends { rows: infer R } ? R : never) : never
+  data?:               string
+  dataAnterior?:       string
+  emptyMessage?:       string
+  variacoes:           ReturnType<typeof useVariacoesDia>["data"]
+  variacoesLoading:    boolean
+  variacoesError:      Error | null
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      <BalanceTable
+        rows={props.rows}
+        data={props.data}
+        dataAnterior={props.dataAnterior}
+        emptyMessage={props.emptyMessage}
+      />
+      <PagamentosDiaPanel
+        variacoes={props.variacoes}
+        loading={props.variacoesLoading}
+        error={props.variacoesError}
+      />
+    </div>
+  )
+}
 
 // ───────────────────────────────────────────────────────────────────────────
-// Diario
+// Aba "Movimentacoes" — InsightBar (mock) + Charts ECharts + Tabela
 // ───────────────────────────────────────────────────────────────────────────
 
-function DiarioTab({
+function MovimentacoesTab({
   rows,
   tableStatus,
   setTableStatus,
   tableCotista,
   setTableCotista,
   onRowClick,
-  balanceRows,
-  balanceData,
-  balanceDataAnterior,
-  balanceEmptyMessage,
-  variacoes,
-  variacoesLoading,
-  variacoesError,
 }: {
-  rows:                 MovimentacaoRow[]
-  tableStatus:          string
-  setTableStatus:       (v: string) => void
-  tableCotista:         string
-  setTableCotista:      (v: string) => void
-  onRowClick:           (row: MovimentacaoRow) => void
-  balanceRows:          BalanceRow[]
-  balanceData?:         string
-  balanceDataAnterior?: string
-  balanceEmptyMessage?: string
-  variacoes:            VariacoesDiaResponse | undefined
-  variacoesLoading:     boolean
-  variacoesError:       Error | null
+  rows:            MovimentacaoRow[]
+  tableStatus:     string
+  setTableStatus:  (v: string) => void
+  tableCotista:    string
+  setTableCotista: (v: string) => void
+  onRowClick:      (row: MovimentacaoRow) => void
 }) {
   const [plPeriod, setPlPeriod] = React.useState("12M")
   const [subPeriod, setSubPeriod] = React.useState("12M")
-  // Permite ao usuario dispensar o painel de analise IA pra ganhar espaco
-  // visual quando estiver focado nos dados. Reload restaura — sem persistencia.
   const [insightsDismissed, setInsightsDismissed] = React.useState(false)
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Insights IA — alinhado com handoff bi-padrao (acima de tudo na aba) */}
+    <div className="flex flex-col gap-4">
       {!insightsDismissed && (
         <InsightBar onDismiss={() => setInsightsDismissed(true)}>
           {MOCK_INSIGHTS.map((ins, i) => (
@@ -413,22 +390,6 @@ function DiarioTab({
         </InsightBar>
       )}
 
-      {/* Balanço · ótica Sub Jr (data-driven via /controladoria/cota-sub/balanco) */}
-      <BalanceTable
-        rows={balanceRows}
-        data={balanceData}
-        dataAnterior={balanceDataAnterior}
-        emptyMessage={balanceEmptyMessage}
-      />
-
-      {/* Pagamentos do Dia — saidas de caixa em D0 (silver: wh_movimento_caixa) */}
-      <PagamentosDiaPanel
-        variacoes={variacoes}
-        loading={variacoesLoading}
-        error={variacoesError}
-      />
-
-      {/* Hero 2/3 + 1/3 */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <EChartsCard
           title="Evolucao do PL Cota Sub"
@@ -445,40 +406,19 @@ function DiarioTab({
           }
         />
         <EChartsCard
-          title="Distribuicao por classe"
-          caption="Mezanino · Junior · participacao %"
-          option={distribClasseOption}
-          height={100}
-          footer={
-            <div className="flex items-end justify-between pt-2">
-              <div>
-                <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  Mezanino
-                </div>
-                <div className="text-lg font-semibold tabular-nums text-gray-900 dark:text-gray-50">
-                  68%
-                </div>
-              </div>
-              <div>
-                <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  Junior
-                </div>
-                <div className="text-lg font-semibold tabular-nums text-gray-900 dark:text-gray-50">
-                  32%
-                </div>
-              </div>
-            </div>
-          }
+          title="Rentabilidade Sub vs CDI"
+          caption="Base 100 · mai/25"
+          option={rentabSubOption}
+          height={160}
         />
       </div>
 
-      {/* Grid 3 colunas */}
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <EChartsCard
           title="Subscricao vs Resgate"
           caption="Movimentacoes mensais (R$ mi)"
           option={subscRescOption}
-          height={160}
+          height={180}
           actions={
             <VizParam
               options={["12M", "6M", "3M"]}
@@ -488,20 +428,13 @@ function DiarioTab({
           }
         />
         <EChartsCard
-          title="Rentabilidade Sub vs CDI"
-          caption="Base 100 · mai/25"
-          option={rentabSubOption}
-          height={160}
-        />
-        <EChartsCard
           title="Top cotistas subordinados"
           caption="Top 5 + Outros · participacao %"
           option={topCotistasOption}
-          height={160}
+          height={180}
         />
       </div>
 
-      {/* Tabela */}
       <div className="rounded border border-gray-200 dark:border-gray-800 overflow-hidden">
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 px-4 py-2.5 dark:border-gray-800">
           <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
@@ -511,7 +444,6 @@ function DiarioTab({
             {rows.length}
           </span>
 
-          {/* Filtros inline da tabela (Status / Cotista) */}
           <div className="ml-2 flex items-center gap-1.5">
             <FilterChip
               label="Status"
@@ -599,7 +531,7 @@ function PlaceholderTab({ label }: { label: string }) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// DataTable columns
+// DataTable columns (movimentacoes)
 // ───────────────────────────────────────────────────────────────────────────
 
 const col = createColumnHelper<MovimentacaoRow>()
@@ -664,10 +596,10 @@ const MOVIMENTACOES_COLUMNS: ColumnDef<MovimentacaoRow, unknown>[] = [
 
 export default function CotaSubPage() {
   const [search, setSearch] = React.useState("")
-  // Dia: tab "Diario" analisa um unico dia por vez. Default = hoje.
+  // Dia: pagina inteira analisa um unico dia por vez. Default = hoje.
   const today = React.useMemo(() => new Date(), [])
   const [day, setDay] = React.useState<Date>(today)
-  // Fundo: opcoes vem de Cadastros · UAs do tipo FIDC. "Todos" e a opcao implicita default.
+  // Fundo: opcoes vem de Cadastros · UAs do tipo FIDC. "Todos" implica EmptyState.
   const fundosQuery = useUAs({ tipo: "fidc", ativa: true })
   const fundoOptions = React.useMemo(
     () => ["Todos", ...(fundosQuery.data?.map((ua) => ua.nome) ?? [])],
@@ -676,20 +608,19 @@ export default function CotaSubPage() {
   const [fundo,  setFundo]  = React.useState<string>("Todos")
   const [classe, setClasse] = React.useState<ClasseOption>("Todas")
 
-  // Filtros dinamicos (adicionados via "Mais filtros") — array imutavel no
-  // sentido do user: cada chip vira RemovableChip + dropdown FilterChip.
+  // Filtros dinamicos (adicionados via "Mais filtros")
   const [dynamicFilters, setDynamicFilters] = React.useState<DynamicFilter[]>([])
 
   // Filtros inline da DataTable (escopo: tabela apenas, nao charts)
   const [tableStatus,  setTableStatus]  = React.useState<string>("Todos")
   const [tableCotista, setTableCotista] = React.useState<string>("Todos")
 
-  const [activeTab, setActiveTab] = React.useState<TabKey>("diario")
+  const [activeTab, setActiveTab] = React.useState<TabKey>("eventos")
 
-  // Atalhos Cmd/Ctrl + 1..3 para tabs (regra L3 do CLAUDE.md §11.6).
+  // Atalhos Cmd/Ctrl + 1..4 para tabs (CLAUDE.md §11.6)
   React.useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && ["1", "2", "3"].includes(e.key)) {
+      if ((e.metaKey || e.ctrlKey) && ["1", "2", "3", "4"].includes(e.key)) {
         const idx = Number(e.key) - 1
         if (TABS[idx]) {
           e.preventDefault()
@@ -705,17 +636,45 @@ export default function CotaSubPage() {
 
   const [selected, setSelected] = React.useState<MovimentacaoRow | null>(null)
 
-  // Lookup do UUID da UA selecionada (para o endpoint backend que exige fundo_id).
+  // Lookup do UUID da UA selecionada (endpoint backend exige fundo_id).
   const fundoId = React.useMemo(() => {
     if (fundo === "Todos") return null
     return fundosQuery.data?.find((ua) => ua.nome === fundo)?.id ?? null
   }, [fundo, fundosQuery.data])
 
-  const dayIso = React.useMemo(() => format(day, "yyyy-MM-dd"), [day])
+  const dayIso         = React.useMemo(() => format(day, "yyyy-MM-dd"), [day])
   const balanceQuery   = useBalanco(fundoId, dayIso)
   const variacoesQuery = useVariacoesDia(fundoId, dayIso)
-  // Pagina requer fundo selecionado. Sem fundo, Z4 entra em EmptyState.
   const fundoSelecionado = fundoId !== null
+
+  // Datas em que a QiTech publicou snapshot — Calendar bloqueia tudo o que nao
+  // esta nesta lista. Trata fim de semana, feriado e falha de ETL de forma
+  // uniforme (CLAUDE.md §14: explicabilidade > inferencia).
+  const datasDisponiveisQuery = useDatasDisponiveis(fundoId)
+  const datasDisponiveisSet = React.useMemo(
+    () => new Set(datasDisponiveisQuery.data ?? []),
+    [datasDisponiveisQuery.data],
+  )
+
+  // Quando o fundo troca: se o "day" atual nao existe nas datas disponiveis,
+  // recua para a mais recente da lista (data top, ja vem ordenada desc do
+  // backend). Evita estado inconsistente apos trocar de UA.
+  React.useEffect(() => {
+    if (!datasDisponiveisQuery.data) return
+    if (datasDisponiveisQuery.data.length === 0) return
+    if (datasDisponiveisSet.has(dayIso)) return
+    const maisRecente = datasDisponiveisQuery.data[0]
+    const d = new Date(maisRecente)
+    if (!isNaN(d.getTime())) setDay(d)
+  }, [datasDisponiveisQuery.data, datasDisponiveisSet, dayIso])
+
+  // Booleano consumido por EventosDiaTab/BalancoTab/MovimentacoesTab — vazio
+  // = "nao ha dados para esta data" (caso patologico que so deveria ocorrer
+  // se o usuario chegar via deep-link futuro com data invalida).
+  const semDadosNoDia = fundoSelecionado &&
+    !balanceQuery.isLoading &&
+    !balanceQuery.isError &&
+    (balanceQuery.data?.rows?.length ?? 0) === 0
 
   const aiContext = React.useMemo(
     () => ({
@@ -736,7 +695,7 @@ export default function CotaSubPage() {
   }, [])
 
   const handleExport = React.useCallback(() => {
-    // Stub — wire to real export endpoint (CSV/XLSX da pagina inteira).
+    // Stub — wire to real export endpoint (CSV/XLSX).
     // eslint-disable-next-line no-console
     console.log("export pagina cota-sub", { day, fundo, classe, dynamicFilters })
   }, [day, fundo, classe, dynamicFilters])
@@ -789,7 +748,6 @@ export default function CotaSubPage() {
       const d = new Date(p.day)
       if (!isNaN(d.getTime())) setDay(d)
     }
-    // restaura filtros dinamicos
     const restored: DynamicFilter[] = []
     for (const k of Object.keys(DYNAMIC_FILTER_OPTIONS) as DynamicFilterKey[]) {
       if (p[k]) restored.push({ key: k, value: p[k] as string })
@@ -797,16 +755,20 @@ export default function CotaSubPage() {
     setDynamicFilters(restored)
   }, [])
 
+  // Sombra canonica na toolbar quando o conteudo (Z4) esta scrollado.
+  const [scrollRef, scrolled] = useScrollShadow<HTMLDivElement>()
+
   return (
-    <div className="flex h-[calc(100vh-3rem)] overflow-hidden bg-gray-50 dark:bg-gray-950">
+    <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
       {/* Coluna principal */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
 
-        {/* Z1 — PageHeader */}
-        <div className="shrink-0 px-6 pt-5 pb-3">
+        {/* Title row (70px) — banda branca unificada com a toolbar abaixo */}
+        <div className="shrink-0 bg-white px-6 pt-3.5 pb-3 dark:bg-gray-950">
           <PageHeader
-            title="Cota Sub"
-            info="Analise da cota subordinada do FIDC: PL, rentabilidade vs CDI, distribuicao por cotista subordinado e fluxo de subscricao/resgate."
+            title="Cota Subordinada"
+            info="Analise diaria comparativa (D-1 vs D0). ΔCota Sub = ΔAtivo − ΔPassivo Contabil − ΔEquity (Mez+Sr). Foco em explicar visualmente o saldo do dia e os eventos que mais contribuiram."
+            subtitle="Controladoria · Variacao Diaria"
             actions={
               <DashboardHeaderActions
                 ai={{ open: ai.open, onToggle: ai.toggle }}
@@ -817,41 +779,34 @@ export default function CotaSubPage() {
           />
         </div>
 
-        {/* Z2 — TabNavigation L3 */}
-        <div className="shrink-0 px-6">
-          <TabNavigation>
-            {TABS.map((t, i) => (
-              <TabNavigationLink
-                key={t.key}
-                href="#"
-                active={activeTab === t.key}
-                onClick={(e) => {
-                  e.preventDefault()
-                  setActiveTab(t.key)
-                }}
-                title={`Cmd/Ctrl + ${i + 1}`}
-              >
-                {t.label}
-              </TabNavigationLink>
-            ))}
-          </TabNavigation>
-        </div>
+        {/* Toolbar unificada (52px) — tabs L3 + filtros + saved views */}
+        <div
+          className={cx(
+            "shrink-0 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
+            scrolled && "scroll-shadow",
+          )}
+        >
+          <div className="flex h-[52px] items-center gap-2 px-6">
+            <TabNavigation className="border-0">
+              {TABS.map((t, i) => (
+                <TabNavigationLink
+                  key={t.key}
+                  href="#"
+                  active={activeTab === t.key}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    setActiveTab(t.key)
+                  }}
+                  title={`Cmd/Ctrl + ${i + 1}`}
+                >
+                  {t.label}
+                </TabNavigationLink>
+              ))}
+            </TabNavigation>
 
-        {/* Z3 — FilterBar sticky */}
-        <div className="shrink-0 px-6">
-          <FilterBar
-            extraActions={
-              <SavedViewsDropdown
-                currentParams={currentViewParams}
-                onApplyView={handleApplyView}
-              />
-            }
-          >
-            <FilterSearch
-              placeholder="Buscar cotistas..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onClear={() => setSearch("")}
+            <div
+              aria-hidden="true"
+              className="mx-1 h-5 w-px bg-gray-200 dark:bg-gray-800"
             />
 
             <FilterChip
@@ -865,7 +820,17 @@ export default function CotaSubPage() {
                 selected={day}
                 onSelect={(d) => d && setDay(d)}
                 locale={ptBR}
-                disabled={{ after: today }}
+                // Bloqueia: (1) datas futuras, (2) datas sem snapshot QiTech.
+                // Lista vem da `wh_dia_util_qitech` — cobre fim de semana,
+                // feriado e falha de ETL de forma uniforme. Quando o fundo
+                // ainda nao tem datas carregadas (loading/erro), so bloqueia
+                // futuras pra nao travar o Calendar inteiro.
+                disabled={(date) => {
+                  if (date > today) return true
+                  if (datasDisponiveisQuery.data === undefined) return false
+                  const iso = format(date, "yyyy-MM-dd")
+                  return !datasDisponiveisSet.has(iso)
+                }}
                 initialFocus
               />
             </FilterChip>
@@ -935,7 +900,7 @@ export default function CotaSubPage() {
               </div>
             </FilterChip>
 
-            {/* Filtros dinamicos — adicionados via "Mais filtros" */}
+            {/* Filtros dinamicos */}
             {dynamicFilters.map((f) => (
               <FilterChip
                 key={f.key}
@@ -986,79 +951,54 @@ export default function CotaSubPage() {
               available={availableDynamicKeys}
               onAdd={addDynamicFilter}
             />
-          </FilterBar>
+
+            <div className="ml-auto flex items-center gap-2">
+              <SavedViewsDropdown
+                currentParams={currentViewParams}
+                onApplyView={handleApplyView}
+              />
+              <span className="shrink-0 text-[11px] text-gray-500 dark:text-gray-400">
+                {balanceQuery.isFetching ? "Atualizando…" : "Atualizado"}
+              </span>
+            </div>
+          </div>
         </div>
 
-        {/* Z4 — Conteudo da aba */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        {/* Conteudo da aba — scroll container observado por useScrollShadow */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4">
           {!fundoSelecionado ? (
             <EmptyState
               icon={RiFundsLine}
               title="Selecione um fundo para comecar"
-              description='A pagina Cota Sub analisa um FIDC por vez. Escolha o fundo no filtro "Fundo" acima para carregar PL, rentabilidade, decomposicao da variacao diaria e movimentacoes.'
+              description='A pagina Cota Sub analisa um FIDC por vez. Escolha o fundo no filtro "Fundo" acima para carregar a decomposicao do dia, balanco e movimentacoes.'
               className="mt-4"
             />
           ) : (
-            <div className="flex flex-col gap-4">
-              <KpiStrip>
-                <KpiCard
-                  label="PL da Cota Sub"
-                  deltaSub="vs mes anterior"
-                  value="R$ 18,7M"
-                  delta={{ value: 1.8, suffix: "%" }}
-                  sparkData={SPARK_PL_SUB}
-                  sparkColor="#059669"
-                  source="Bitfin"
+            <>
+              {activeTab === "eventos" && (
+                <EventosDiaTab
+                  rows={balanceQuery.data?.rows ?? []}
+                  data={balanceQuery.data?.data}
+                  dataAnterior={balanceQuery.data?.data_anterior}
+                  loading={balanceQuery.isLoading}
+                  errorMessage={
+                    balanceQuery.isError
+                      ? `Erro: ${(balanceQuery.error as Error)?.message ?? "desconhecido"}`
+                      : undefined
+                  }
+                  emptyMessage={
+                    balanceQuery.isLoading
+                      ? "Carregando..."
+                      : undefined
+                  }
                 />
-                <KpiCard
-                  label="Subordinacao efetiva"
-                  deltaSub="vs mes anterior"
-                  value="15,0%"
-                  delta={{ value: 0.3, suffix: "pp" }}
-                  sparkData={SPARK_SUBORD}
-                  sparkColor="#3B82F6"
-                />
-                <KpiCard
-                  label="Rentab. Sub vs CDI"
-                  deltaSub="vs benchmark"
-                  value="118,2%"
-                  delta={{ value: 4.1, suffix: "pp" }}
-                  sparkData={SPARK_RENT_SUB}
-                  sparkColor="#3B82F6"
-                />
-                <KpiCard
-                  label="Cotistas subordinados"
-                  deltaSub="vs mes anterior"
-                  value="12"
-                  delta={{ value: 1, suffix: "" }}
-                  sparkData={SPARK_COTISTAS}
-                  sparkColor="#6B7280"
-                />
-                <KpiCard
-                  label="Resgates"
-                  deltaSub="vs semana anterior"
-                  value="3"
-                  currentValue={3}
-                  delta={{ value: 1, suffix: "", direction: "up", good: false }}
-                  alertThreshold={{ value: 2, severity: "warn" }}
-                  sparkData={SPARK_RESGATES}
-                  sparkColor="#F59E0B"
-                  intensity={{ tone: "neg", level: "mid" }}
-                />
-              </KpiStrip>
-
-              {activeTab === "diario" && (
-                <DiarioTab
-                  rows={filteredRows}
-                  tableStatus={tableStatus}
-                  setTableStatus={setTableStatus}
-                  tableCotista={tableCotista}
-                  setTableCotista={setTableCotista}
-                  onRowClick={setSelected}
-                  balanceRows={balanceQuery.data?.rows ?? []}
-                  balanceData={balanceQuery.data?.data}
-                  balanceDataAnterior={balanceQuery.data?.data_anterior}
-                  balanceEmptyMessage={
+              )}
+              {activeTab === "balanco" && (
+                <BalancoTab
+                  rows={balanceQuery.data?.rows ?? []}
+                  data={balanceQuery.data?.data}
+                  dataAnterior={balanceQuery.data?.data_anterior}
+                  emptyMessage={
                     balanceQuery.isLoading
                       ? "Carregando..."
                       : balanceQuery.isError
@@ -1070,17 +1010,26 @@ export default function CotaSubPage() {
                   variacoesError={variacoesQuery.error as Error | null}
                 />
               )}
-              {activeTab === "evolucao" && <PlaceholderTab label="Evolucao" />}
+              {activeTab === "movimentacoes" && (
+                <MovimentacoesTab
+                  rows={filteredRows}
+                  tableStatus={tableStatus}
+                  setTableStatus={setTableStatus}
+                  tableCotista={tableCotista}
+                  setTableCotista={setTableCotista}
+                  onRowClick={setSelected}
+                />
+              )}
               {activeTab === "cotistas" && <PlaceholderTab label="Cotistas" />}
-            </div>
+            </>
           )}
         </div>
 
-        {/* Z5 — ProvenanceFooter (mock) */}
+        {/* ProvenanceFooter (mock — substituir por status real dos adapters) */}
         <ProvenanceFooter sources={MOCK_PROVENANCE} />
       </div>
 
-      {/* AI Panel */}
+      {/* AI Panel — drawer in-layout */}
       <AIPanel
         open={ai.open}
         onClose={() => ai.setOpen(false)}
@@ -1088,7 +1037,7 @@ export default function CotaSubPage() {
         insights={MOCK_INSIGHTS}
       />
 
-      {/* DrillDown */}
+      {/* DrillDown — movimentacao individual */}
       <DrillDownSheet
         open={selected !== null}
         onClose={() => setSelected(null)}

@@ -16,6 +16,23 @@ const KEYS = {
     ["controladoria", "cota-sub", "balanco", fundoId, data, dataAnterior ?? null] as const,
   variacoesDia: (fundoId: string, data: string, dataAnterior?: string) =>
     ["controladoria", "cota-sub", "variacoes-dia", fundoId, data, dataAnterior ?? null] as const,
+  datasDisponiveis: (fundoId: string) =>
+    ["controladoria", "cota-sub", "datas-disponiveis", fundoId] as const,
+}
+
+export function useDatasDisponiveis(
+  fundoId: string | null | undefined,
+) {
+  // Datas em que a QiTech publicou snapshot da UA. Usado pelo Calendar para
+  // impedir selecao de dias sem dados (fim de semana, feriado, falha ETL).
+  // staleTime longo porque ETL nao roda toda hora.
+  const enabled = !!fundoId
+  return useQuery({
+    queryKey: KEYS.datasDisponiveis(fundoId ?? ""),
+    queryFn: () => controladoria.cotaSubDatasDisponiveis(fundoId!),
+    enabled,
+    staleTime: 60 * 60 * 1000,  // 1 hora
+  })
 }
 
 export function useVariacaoDiaria(

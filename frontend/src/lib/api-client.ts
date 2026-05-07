@@ -1933,6 +1933,18 @@ export const controladoria = {
     return _coerceVariacao(raw)
   },
 
+  cotaSubDatasDisponiveis: async (
+    fundoId: string,
+  ): Promise<string[]> => {
+    // Lista ISO desc de datas em que a QiTech publicou snapshot da UA.
+    // Consumido pelo Calendar para impedir selecao de dias sem dados
+    // (fim de semana, feriado, falha ETL).
+    const params = new URLSearchParams({ fundo_id: fundoId })
+    return apiClient.get<string[]>(
+      `/controladoria/cota-sub/datas-disponiveis?${params.toString()}`,
+    )
+  },
+
   cotaSubBalanco: async (
     fundoId: string,
     data: string,           // YYYY-MM-DD
