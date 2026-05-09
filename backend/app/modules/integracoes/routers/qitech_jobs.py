@@ -27,6 +27,9 @@ from app.core.enums import Environment, Module, Permission, SourceType
 from app.core.module_guard import require_module
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.modules.integracoes.adapters.admin.qitech.config import QiTechConfig
+from app.modules.integracoes.adapters.admin.qitech.custodia import (
+    resolve_ua_id_by_cnpj,
+)
 from app.modules.integracoes.adapters.admin.qitech.errors import (
     QiTechAdapterError,
     QiTechHttpError,
@@ -100,19 +103,35 @@ async def dispatch_fidc_estoque(
     chega minutos depois em /webhooks/qitech/job-callback. Ate la, o status
     fica WAITING ou PROCESSING — UI pode pollar GET /jobs pra atualizar.
     """
-    # 1. Carrega config QiTech do tenant
+    # 1. Resolve UA pelo CNPJ do fundo (multi-UA Phase F).
+    #    Espelha pattern do qitech_custodia.py — sem isso, dispatch so
+    #    encontra config legacy (UA=NULL) e ignora a config por UA.
+    ua_id = await resolve_ua_id_by_cnpj(
+        tenant_id=principal.tenant_id, cnpj_fundo=payload.cnpj_fundo
+    )
+    # 2. Carrega config QiTech do tenant — primeiro pra UA especifica,
+    #    fallback retro pra UA=NULL (config legacy pre-Phase F).
     cfg_row = await get_config(
         db,
         principal.tenant_id,
         SourceType.ADMIN_QITECH,
         payload.environment,
+        unidade_administrativa_id=ua_id,
     )
+    if cfg_row is None and ua_id is not None:
+        cfg_row = await get_config(
+            db,
+            principal.tenant_id,
+            SourceType.ADMIN_QITECH,
+            payload.environment,
+        )
     if cfg_row is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Sem config QiTech para {payload.environment.value}. "
-                f"Configure via PUT /integracoes/sources/admin:qitech/config."
+                f"Sem config QiTech para {payload.environment.value} "
+                f"(ua={ua_id}). Configure via "
+                f"PUT /integracoes/sources/admin:qitech/config."
             ),
         )
     plain = decrypt_config(cfg_row.config)

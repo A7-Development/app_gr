@@ -190,9 +190,14 @@ async def request_fidc_estoque_report(
     #    token vazio (ver historico do bug 2026-04-26).
     local_uuid = uuid4()
     base_url_setting = get_settings().QITECH_WEBHOOK_BASE_URL
-    base_url = base_url_setting or "https://localhost-no-callback-base-configured"
+    if not base_url_setting:
+        raise QiTechAdapterError(
+            "QITECH_WEBHOOK_BASE_URL nao configurada — sem isso o callbackUrl "
+            "enviado a QiTech tem host vazio e o callback nunca chega. "
+            "Setar no .env do gr-api (em prod: https://callback.strataai.com.br)."
+        )
     callback_url_sent = build_callback_url(
-        ref=str(local_uuid), base_url=base_url
+        ref=str(local_uuid), base_url=base_url_setting
     )
     callback_token = compute_callback_token(ref=str(local_uuid))
 

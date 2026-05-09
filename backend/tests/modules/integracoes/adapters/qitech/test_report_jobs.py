@@ -18,6 +18,7 @@ from app.modules.integracoes.adapters.admin.qitech.auth import (
     _clear_cache_for_tests,
 )
 from app.modules.integracoes.adapters.admin.qitech.config import QiTechConfig
+from app.modules.integracoes.adapters.admin.qitech.errors import QiTechAdapterError
 from app.modules.integracoes.adapters.admin.qitech.report_jobs import (
     build_callback_url,
     compute_callback_token,
@@ -186,9 +187,16 @@ async def test_request_fidc_estoque_cria_job(tenant_a: Tenant):
         return httpx.Response(404)
 
     transport = httpx.MockTransport(handler)
-    with patch(
-        "app.modules.integracoes.adapters.admin.qitech.report_jobs.build_async_client",
-    ) as mock_factory:
+    with (
+        patch(
+            "app.modules.integracoes.adapters.admin.qitech.report_jobs.build_async_client",
+        ) as mock_factory,
+        patch(
+            "app.modules.integracoes.adapters.admin.qitech.report_jobs.get_settings"
+        ) as gs,
+    ):
+        gs.return_value.QITECH_WEBHOOK_BASE_URL = "https://callback.strataai.com.br"
+        gs.return_value.QITECH_WEBHOOK_SECRET = ""
         from app.modules.integracoes.adapters.admin.qitech.connection import (
             build_async_client as real_build,
         )
@@ -212,6 +220,31 @@ async def test_request_fidc_estoque_cria_job(tenant_a: Tenant):
     assert job.reference_date == DATA_REF
     assert job.report_type == "fidc-estoque"
     assert job.triggered_by == "user:test"
+
+
+@pytest.mark.asyncio
+async def test_request_fidc_estoque_raises_se_base_url_vazia(tenant_a: Tenant):
+    """QITECH_WEBHOOK_BASE_URL vazia => raise antes de POSTar pra QiTech.
+
+    Sem isso, o callbackUrl tem host vazio e o callback nunca chega
+    (regressao 2026-05-09: troca de fallback silencioso por raise).
+    """
+    with patch(
+        "app.modules.integracoes.adapters.admin.qitech.report_jobs.get_settings"
+    ) as gs:
+        gs.return_value.QITECH_WEBHOOK_BASE_URL = ""
+        gs.return_value.QITECH_WEBHOOK_SECRET = ""
+        async with AsyncSessionLocal() as db:
+            with pytest.raises(QiTechAdapterError, match="QITECH_WEBHOOK_BASE_URL"):
+                await request_fidc_estoque_report(
+                    db=db,
+                    tenant_id=tenant_a.id,
+                    environment=Environment.PRODUCTION,
+                    config=_cfg(),
+                    cnpj_fundo="42449234000160",
+                    reference_date=DATA_REF,
+                    triggered_by="user:test",
+                )
 
 
 # ---- process_fidc_estoque_callback (download + raw + canonical) ----

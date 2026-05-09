@@ -53,7 +53,10 @@ class Settings(BaseSettings):
     QITECH_WEBHOOK_SECRET: str = Field(default="", min_length=0)
 
     # Base public URL onde a QiTech vai bater no callback. Em PROD:
-    # https://callback.a7credit.com.br. Em DEV: ngrok ou webhook.site.
+    # https://callback.strataai.com.br (Caddy → 192.168.100.26:8000).
+    # Em DEV: ngrok ou webhook.site tunelando pro uvicorn local.
+    # Vazia em prod = request_fidc_estoque_report levanta QiTechAdapterError
+    # antes de POSTar pra QiTech (evita callback orfao com host invalido).
     QITECH_WEBHOOK_BASE_URL: str = Field(default="")
 
     # Credenciais de adapters (ex.: Bitfin) vivem em `tenant_source_config` — NAO aqui.
