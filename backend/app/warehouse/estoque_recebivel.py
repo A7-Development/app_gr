@@ -161,9 +161,11 @@ class EstoqueRecebivel(Auditable, Base):
     situacao_recebivel: Mapped[str] = mapped_column(
         String(30), nullable=False, index=True
     )
-    # Taxas decimais (ex.: 0,4692739943 = ~0,47% no sample). 10 decimais.
-    taxa_cessao: Mapped[Decimal] = mapped_column(Numeric(12, 8), nullable=False)
-    taxa_recebivel: Mapped[Decimal] = mapped_column(Numeric(12, 8), nullable=False)
+    # Taxas decimais (ex.: 0,4692739943 = ~0,47% no sample). 10 decimais —
+    # CSV da QiTech entrega exatamente essa precisao em 100% dos titulos.
+    # NUMERIC(14,10) acomoda valores ate 9999.9999999999 com fidelidade total.
+    taxa_cessao: Mapped[Decimal] = mapped_column(Numeric(14, 10), nullable=False)
+    taxa_recebivel: Mapped[Decimal] = mapped_column(Numeric(14, 10), nullable=False)
 
     # Coobrigacao = cedente garante credito? "SIM"/"NAO" no CSV.
     coobrigacao: Mapped[bool] = mapped_column(Boolean, nullable=False)
