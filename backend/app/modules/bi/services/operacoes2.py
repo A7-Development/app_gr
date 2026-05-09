@@ -15,6 +15,7 @@ Decisao 2026-05-03 (Opcao 4 do paradigma de periodos):
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date, timedelta
 from typing import Any
 from uuid import UUID
@@ -23,6 +24,7 @@ from sqlalchemy import (
     ColumnElement,
     Date,
     and_,
+    case,
     cast,
     func,
     select,
@@ -31,9 +33,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.bi.schemas.common import Point, Provenance
 from app.modules.bi.schemas.operacoes2 import (
+    AbaMesCorrenteData,
     AbaProdutosPricingData,
     AbaVolumeRitmoData,
     AcumuladoDiarioPonto,
+    ConcentracaoDeltaData,
+    ConcentracaoMovement,
+    DriverContribution,
+    DumbbellPoint,
+    DumbbellSeriesData,
     EvolucaoMensalPonto,
     EvolucaoPorUaPonto,
     HistogramaPrazosResumo,
@@ -48,17 +56,22 @@ from app.modules.bi.schemas.operacoes2 import (
     OperacoesKpiStripData,
     PaceDiario,
     ProdutoDestaque,
+    ProjectionBridgeData,
+    PvmBridgeData,
     QuebraDimensaoLinha,
     RankingProdutoLinha,
     RitmoMesCorrente,
     RitmoUaItem,
     ScatterProdutoPonto,
+    VarianceBridgeData,
 )
 from app.modules.bi.services.operacoes import (
+    _MES_PT,
     _apply_filters,
     _as_float,
     _build_provenance,
     _fmt_comparacao_label_pt,
+    _fmt_moeda_compacta_pt,
     _produto_expr,
     _produto_sigla_to_nome_map,
     _safe_pct_change,
@@ -1692,3 +1705,902 @@ def _lider_alta_queda(
                 valor=queda_row.delta_mom_pp or 0.0,
             )
     return lider, alta, queda
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Aba 0 — Mes Corrente (variance decomposition)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Decompoe o delta MTD (mes corrente ate periodo_fim) vs DU equivalente do
+# mes anterior em 6 KPIs com tecnicas adequadas:
+#   - VOP / Receita     -> Variance bridge aditiva + projecao linear
+#   - Taxa / Prazo      -> PVM bridge (mix effect + intra effect, Marshall-
+#                          Edgeworth)
+#   - Mix produtos      -> Dumbbell prior_share vs current_share
+#   - Concentracao      -> HHI delta + top movements de share
+#
+# Threshold de surfacing: max(R$500k absoluto, 5%% do |delta_total|).
+# Drivers abaixo rolam em "Outros".
+
+# Threshold para drivers (CLAUDE.md decisao 2026-05-08).
+_DRIVER_THRESHOLD_PCT = 0.05
+_DRIVER_THRESHOLD_BRL = 500_000.0
+
+# Threshold para PVM (em unidade do KPI) — calibrado pro contexto FIDC.
+_PVM_THRESHOLD_TAXA_PP = 0.05  # 0.05 pp
+_PVM_THRESHOLD_PRAZO_DIAS = 0.5  # meio dia
+
+
+def _faixa_ticket_expr() -> ColumnElement[str]:
+    """CASE WHEN classificando operacao em faixa de ticket por total_bruto."""
+    return case(
+        (Operacao.total_bruto < 50_000, "≤ R$ 50k"),
+        (Operacao.total_bruto < 250_000, "R$ 50k-250k"),
+        (Operacao.total_bruto < 1_000_000, "R$ 250k-1M"),
+        (Operacao.total_bruto < 5_000_000, "R$ 1M-5M"),
+        else_="> R$ 5M",
+    )
+
+
+async def _du_position(
+    db: AsyncSession, tenant_id: UUID, today: date
+) -> tuple[bool, int, int]:
+    """Retorna (du_disponivel, du_decorridos, du_totais_mes).
+
+    Quando wh_dim_dia_util esta vazia ou nao cobre o mes corrente, retorna
+    (False, 0, 0) — pagina degrada para paridade de dia corrido.
+    """
+    has_du = await _has_dim_dia_util(db, tenant_id)
+    if not has_du:
+        return False, 0, 0
+
+    mes_inicio = today.replace(day=1)
+
+    decorridos_stmt = select(func.count(DimDiaUtil.id)).where(
+        and_(
+            DimDiaUtil.tenant_id == tenant_id,
+            DimDiaUtil.eh_dia_util.is_(True),
+            DimDiaUtil.data >= mes_inicio,
+            DimDiaUtil.data <= today,
+        )
+    )
+    du_decorridos = int((await db.execute(decorridos_stmt)).scalar_one() or 0)
+
+    total_stmt = (
+        select(DimDiaUtil.total_dias_uteis_no_mes)
+        .where(
+            and_(
+                DimDiaUtil.tenant_id == tenant_id,
+                DimDiaUtil.data == today,
+            )
+        )
+        .limit(1)
+    )
+    total_row = (await db.execute(total_stmt)).scalar_one_or_none()
+    if total_row is None:
+        # `today` fora do calendario carregado — degraded
+        return False, du_decorridos, 0
+    return True, du_decorridos, int(total_row)
+
+
+async def _mes_anterior_paridade_du(
+    db: AsyncSession,
+    tenant_id: UUID,
+    today: date,
+    du_decorridos: int,
+) -> tuple[date, date]:
+    """Janela do mes anterior com mesmo numero de DUs decorridos.
+
+    Ex.: hoje=8 mai, du_decorridos=6 -> retorna (1 abr, data do 6o DU de abr).
+
+    Edge: mes anterior com menos DUs que `du_decorridos` (raro, feriados
+    concentrados) -> clampa para o ultimo DU do mes anterior.
+    """
+    mes_inicio = today.replace(day=1)
+    mes_anterior_ultimo_dia = mes_inicio - timedelta(days=1)
+    mes_anterior_inicio = mes_anterior_ultimo_dia.replace(day=1)
+
+    target_stmt = select(DimDiaUtil.data).where(
+        and_(
+            DimDiaUtil.tenant_id == tenant_id,
+            DimDiaUtil.data >= mes_anterior_inicio,
+            DimDiaUtil.data <= mes_anterior_ultimo_dia,
+            DimDiaUtil.eh_dia_util.is_(True),
+            DimDiaUtil.dia_util_index_no_mes == du_decorridos,
+        )
+    )
+    target = (await db.execute(target_stmt)).scalar_one_or_none()
+    if target is None:
+        # Fallback: ultimo DU do mes anterior
+        last_stmt = (
+            select(DimDiaUtil.data)
+            .where(
+                and_(
+                    DimDiaUtil.tenant_id == tenant_id,
+                    DimDiaUtil.data >= mes_anterior_inicio,
+                    DimDiaUtil.data <= mes_anterior_ultimo_dia,
+                    DimDiaUtil.eh_dia_util.is_(True),
+                )
+            )
+            .order_by(DimDiaUtil.data.desc())
+            .limit(1)
+        )
+        target = (await db.execute(last_stmt)).scalar_one_or_none()
+        if target is None:
+            return mes_anterior_inicio, mes_anterior_ultimo_dia
+    return mes_anterior_inicio, target
+
+
+async def _agg_by_dimension(
+    db: AsyncSession,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+    dimension: str,
+) -> dict[str, dict[str, float]]:
+    """Agrega VOP/Receita/Taxa/Prazo por membro da dimensao.
+
+    Retorna {member_id_str: {vop, receita, taxa, prazo}}. Membros sem
+    volume sao excluidos. Aplica `_apply_filters` (CLAUDE.md §7.2).
+
+    `dimension` aceita "produto" | "ua" | "faixa_ticket".
+    """
+    if dimension == "produto":
+        cat_expr: ColumnElement[Any] = _produto_expr()
+    elif dimension == "ua":
+        cat_expr = Operacao.unidade_administrativa_id
+    elif dimension == "faixa_ticket":
+        cat_expr = _faixa_ticket_expr()
+    else:
+        raise ValueError(f"Dimensao desconhecida: {dimension}")
+
+    stmt = _apply_filters(
+        select(
+            cat_expr.label("member_id"),
+            func.coalesce(func.sum(Operacao.total_bruto), 0).label("vop"),
+            (
+                func.coalesce(func.sum(Operacao.total_de_juros), 0)
+                + func.coalesce(func.sum(Operacao.total_das_consultas_financeiras), 0)
+                + func.coalesce(func.sum(Operacao.total_dos_registros_bancarios), 0)
+                + func.coalesce(func.sum(Operacao.total_das_consultas_fiscais), 0)
+                + func.coalesce(func.sum(Operacao.total_dos_comunicados_de_cessao), 0)
+                + func.coalesce(func.sum(Operacao.total_dos_documentos_digitais), 0)
+            ).label("receita"),
+            _weighted_avg(Operacao.taxa_de_juros, Operacao.total_bruto).label("taxa"),
+            _weighted_avg(Operacao.prazo_medio_real, Operacao.total_bruto).label("prazo"),
+        ).group_by(cat_expr),
+        tenant_id=tenant_id,
+        **filters,
+    )
+    rows = (await db.execute(stmt)).all()
+    out: dict[str, dict[str, float]] = {}
+    for r in rows:
+        member_id = str(r.member_id) if r.member_id is not None else "(n/d)"
+        vop = _as_float(r.vop)
+        if vop <= 0:
+            continue
+        out[member_id] = {
+            "vop": vop,
+            "receita": _as_float(r.receita),
+            "taxa": _as_float(r.taxa) if r.taxa is not None else 0.0,
+            "prazo": _as_float(r.prazo) if r.prazo is not None else 0.0,
+        }
+    return out
+
+
+def _decompose_variance_aditiva(
+    prior_by_member: dict[str, float],
+    current_by_member: dict[str, float],
+    label_resolver: Callable[[str], str],
+    threshold_pct: float = _DRIVER_THRESHOLD_PCT,
+    threshold_brl: float = _DRIVER_THRESHOLD_BRL,
+) -> tuple[list[DriverContribution], DriverContribution | None, float]:
+    """Decompoe delta de metrica aditiva (VOP, Receita) em drivers + outros.
+
+    Retorna (drivers, outros_rollup, delta_total).
+    Threshold absoluto = max(threshold_brl, threshold_pct * |delta|).
+    """
+    all_members = set(prior_by_member.keys()) | set(current_by_member.keys())
+    delta_total = sum(current_by_member.values()) - sum(prior_by_member.values())
+    abs_delta = abs(delta_total)
+    threshold_abs = max(threshold_brl, threshold_pct * abs_delta)
+
+    drivers: list[DriverContribution] = []
+    outros_prior_sum = 0.0
+    outros_current_sum = 0.0
+
+    for member_id in all_members:
+        prior = prior_by_member.get(member_id, 0.0)
+        current = current_by_member.get(member_id, 0.0)
+        contrib = current - prior
+        if abs(contrib) < threshold_abs:
+            outros_prior_sum += prior
+            outros_current_sum += current
+            continue
+        drivers.append(
+            DriverContribution(
+                member_id=member_id,
+                member_label=label_resolver(member_id),
+                contribution_brl=contrib,
+                contribution_pct=(contrib / abs_delta * 100) if abs_delta > 0 else None,
+                prior_value=prior,
+                current_value=current,
+            )
+        )
+
+    drivers.sort(key=lambda d: abs(d.contribution_brl), reverse=True)
+    outros: DriverContribution | None = None
+    outros_contrib = outros_current_sum - outros_prior_sum
+    if outros_prior_sum > 0 or outros_current_sum > 0:
+        outros = DriverContribution(
+            member_id="__outros__",
+            member_label="Outros",
+            contribution_brl=outros_contrib,
+            contribution_pct=(outros_contrib / abs_delta * 100) if abs_delta > 0 else None,
+            prior_value=outros_prior_sum,
+            current_value=outros_current_sum,
+        )
+    return drivers, outros, delta_total
+
+
+def _decompose_pvm(
+    prior_by_member: dict[str, dict[str, float]],
+    current_by_member: dict[str, dict[str, float]],
+    value_key: str,
+    label_resolver: Callable[[str], str],
+    threshold_unit: float,
+) -> tuple[
+    float,
+    float,
+    list[DriverContribution],
+    list[DriverContribution],
+    DriverContribution | None,
+    DriverContribution | None,
+]:
+    """Decompoe delta de media ponderada em mix + intra (Marshall-Edgeworth).
+
+    mix_effect_i   = (current_share_i - prior_share_i) * prior_avg_i
+    intra_effect_i = current_share_i * (current_avg_i - prior_avg_i)
+    delta_total = sum(mix_effect_i) + sum(intra_effect_i) = current_avg - prior_avg
+
+    Threshold em unidade do KPI (pp pra Taxa, dias pra Prazo).
+
+    Retorna (mix_total, intra_total, top_mix, top_intra, outros_mix, outros_intra).
+    """
+    prior_total_vop = sum(d["vop"] for d in prior_by_member.values()) or 1e-9
+    current_total_vop = sum(d["vop"] for d in current_by_member.values()) or 1e-9
+    all_members = set(prior_by_member.keys()) | set(current_by_member.keys())
+
+    mix_contribs: list[tuple[str, float, float, float]] = []
+    intra_contribs: list[tuple[str, float, float, float]] = []
+    mix_total = 0.0
+    intra_total = 0.0
+
+    for member_id in all_members:
+        p = prior_by_member.get(member_id, {"vop": 0.0, value_key: 0.0})
+        c = current_by_member.get(member_id, {"vop": 0.0, value_key: 0.0})
+        prior_share = p["vop"] / prior_total_vop
+        current_share = c["vop"] / current_total_vop
+        prior_avg = p.get(value_key, 0.0)
+        current_avg = c.get(value_key, 0.0)
+        mix_e = (current_share - prior_share) * prior_avg
+        intra_e = current_share * (current_avg - prior_avg)
+        mix_total += mix_e
+        intra_total += intra_e
+        mix_contribs.append((member_id, mix_e, prior_avg, current_avg))
+        intra_contribs.append((member_id, intra_e, prior_avg, current_avg))
+
+    abs_delta_total = abs(mix_total) + abs(intra_total)
+
+    def _filter(
+        items: list[tuple[str, float, float, float]],
+    ) -> tuple[list[DriverContribution], DriverContribution | None]:
+        kept: list[DriverContribution] = []
+        outros_n = 0
+        outros_prior_sum = 0.0
+        outros_curr_sum = 0.0
+        outros_contrib_sum = 0.0
+        for member_id, contrib, prior_avg, current_avg in items:
+            if abs(contrib) < threshold_unit:
+                outros_n += 1
+                outros_prior_sum += prior_avg
+                outros_curr_sum += current_avg
+                outros_contrib_sum += contrib
+                continue
+            kept.append(
+                DriverContribution(
+                    member_id=member_id,
+                    member_label=label_resolver(member_id),
+                    contribution_brl=contrib,
+                    contribution_pct=(
+                        abs(contrib) / abs_delta_total * 100
+                    )
+                    if abs_delta_total > 0
+                    else None,
+                    prior_value=prior_avg,
+                    current_value=current_avg,
+                )
+            )
+        kept.sort(key=lambda d: abs(d.contribution_brl), reverse=True)
+        outros: DriverContribution | None = None
+        if outros_n > 0:
+            outros = DriverContribution(
+                member_id="__outros__",
+                member_label="Outros",
+                contribution_brl=outros_contrib_sum,
+                contribution_pct=None,
+                prior_value=outros_prior_sum / outros_n if outros_n > 0 else 0.0,
+                current_value=outros_curr_sum / outros_n if outros_n > 0 else 0.0,
+            )
+        return kept, outros
+
+    mix_drivers, mix_outros = _filter(mix_contribs)
+    intra_drivers, intra_outros = _filter(intra_contribs)
+    return mix_total, intra_total, mix_drivers, intra_drivers, mix_outros, intra_outros
+
+
+def _build_dumbbell(
+    prior_by_produto: dict[str, dict[str, float]],
+    current_by_produto: dict[str, dict[str, float]],
+    label_resolver: Callable[[str], str],
+    top_n: int = 7,
+) -> list[DumbbellPoint]:
+    """Pontos de dumbbell: prior_share vs current_share por produto.
+
+    Filtra produtos com share < 1%% em ambos os periodos (ruido).
+    Ordena por |delta_share_pp| desc, retorna top N.
+    """
+    prior_total = sum(d["vop"] for d in prior_by_produto.values()) or 1e-9
+    current_total = sum(d["vop"] for d in current_by_produto.values()) or 1e-9
+    all_members = set(prior_by_produto.keys()) | set(current_by_produto.keys())
+
+    points: list[DumbbellPoint] = []
+    for member_id in all_members:
+        p_vop = prior_by_produto.get(member_id, {"vop": 0.0})["vop"]
+        c_vop = current_by_produto.get(member_id, {"vop": 0.0})["vop"]
+        p_share = p_vop / prior_total * 100
+        c_share = c_vop / current_total * 100
+        if p_share < 1.0 and c_share < 1.0:
+            continue
+        points.append(
+            DumbbellPoint(
+                member_id=member_id,
+                member_label=label_resolver(member_id),
+                prior_share_pct=p_share,
+                current_share_pct=c_share,
+                delta_share_pp=c_share - p_share,
+                prior_value=p_vop,
+                current_value=c_vop,
+            )
+        )
+    points.sort(key=lambda p: abs(p.delta_share_pp), reverse=True)
+    return points[:top_n]
+
+
+def _calcular_hhi_e_movements(
+    prior_by_produto: dict[str, dict[str, float]],
+    current_by_produto: dict[str, dict[str, float]],
+    label_resolver: Callable[[str], str],
+    top_n_movements: int = 3,
+) -> tuple[
+    float,
+    float,
+    float,
+    float,
+    list[ConcentracaoMovement],
+    list[ConcentracaoMovement],
+]:
+    """HHI prior + current + top-3 share + top movements de share.
+
+    HHI normalizado em [0, 10000] (shares em escala 0-100).
+    Retorna (hhi_prior, hhi_current, top3_prior, top3_current, gainers, losers).
+    """
+    prior_total = sum(d["vop"] for d in prior_by_produto.values()) or 1e-9
+    current_total = sum(d["vop"] for d in current_by_produto.values()) or 1e-9
+    all_members = set(prior_by_produto.keys()) | set(current_by_produto.keys())
+
+    movs: list[ConcentracaoMovement] = []
+    hhi_prior = 0.0
+    hhi_current = 0.0
+    prior_shares: list[float] = []
+    current_shares: list[float] = []
+    for member_id in all_members:
+        p_vop = prior_by_produto.get(member_id, {"vop": 0.0})["vop"]
+        c_vop = current_by_produto.get(member_id, {"vop": 0.0})["vop"]
+        p_share = p_vop / prior_total * 100
+        c_share = c_vop / current_total * 100
+        hhi_prior += p_share**2
+        hhi_current += c_share**2
+        prior_shares.append(p_share)
+        current_shares.append(c_share)
+        movs.append(
+            ConcentracaoMovement(
+                member_id=member_id,
+                member_label=label_resolver(member_id),
+                prior_share_pct=p_share,
+                current_share_pct=c_share,
+                delta_share_pp=c_share - p_share,
+            )
+        )
+    prior_shares.sort(reverse=True)
+    current_shares.sort(reverse=True)
+    top3_prior = sum(prior_shares[:3])
+    top3_current = sum(current_shares[:3])
+
+    gainers_sorted = sorted(movs, key=lambda m: m.delta_share_pp, reverse=True)
+    gainers = [m for m in gainers_sorted[:top_n_movements] if m.delta_share_pp > 0]
+    losers_sorted = sorted(movs, key=lambda m: m.delta_share_pp)
+    losers = [m for m in losers_sorted[:top_n_movements] if m.delta_share_pp < 0]
+
+    return hhi_prior, hhi_current, top3_prior, top3_current, gainers, losers
+
+
+def _project_close_aditivo(
+    current_by_member: dict[str, float],
+    du_decorridos: int,
+    du_totais: int,
+    label_resolver: Callable[[str], str],
+    threshold_pct: float = _DRIVER_THRESHOLD_PCT,
+    threshold_brl: float = _DRIVER_THRESHOLD_BRL,
+) -> tuple[float, list[DriverContribution], DriverContribution | None]:
+    """Projeta fechamento (linear) e decompoe parcela faltante por driver.
+
+    factor = du_totais / du_decorridos. projected_i = current_i * factor.
+    parcela_faltante_total = sum(projected) - sum(current).
+
+    Drivers representam a contribuicao membro a membro a essa parcela.
+    Retorna (projected_total, drivers, outros).
+    """
+    if du_decorridos <= 0 or du_totais <= 0:
+        return 0.0, [], None
+    factor = du_totais / du_decorridos
+    projected = {m: v * factor for m, v in current_by_member.items()}
+    projected_total = sum(projected.values())
+    falta_total = projected_total - sum(current_by_member.values())
+    abs_falta = abs(falta_total)
+    threshold_abs = max(threshold_brl, threshold_pct * abs_falta)
+
+    drivers: list[DriverContribution] = []
+    outros_curr = 0.0
+    outros_proj = 0.0
+    for member_id, current_value in current_by_member.items():
+        projected_value = projected[member_id]
+        contrib = projected_value - current_value
+        if abs(contrib) < threshold_abs:
+            outros_curr += current_value
+            outros_proj += projected_value
+            continue
+        drivers.append(
+            DriverContribution(
+                member_id=member_id,
+                member_label=label_resolver(member_id),
+                contribution_brl=contrib,
+                contribution_pct=(contrib / abs_falta * 100) if abs_falta > 0 else None,
+                prior_value=current_value,
+                current_value=projected_value,
+            )
+        )
+    drivers.sort(key=lambda d: abs(d.contribution_brl), reverse=True)
+    outros: DriverContribution | None = None
+    outros_contrib = outros_proj - outros_curr
+    if outros_curr > 0 or outros_proj > 0:
+        outros = DriverContribution(
+            member_id="__outros__",
+            member_label="Outros",
+            contribution_brl=outros_contrib,
+            contribution_pct=(outros_contrib / abs_falta * 100) if abs_falta > 0 else None,
+            prior_value=outros_curr,
+            current_value=outros_proj,
+        )
+    return projected_total, drivers, outros
+
+
+def _build_narrative_pt_br(
+    du_decorridos: int,
+    du_totais_mes: int,
+    du_disponivel: bool,
+    vop: VarianceBridgeData,
+    taxa: PvmBridgeData,
+    prazo: PvmBridgeData,
+    concentracao: ConcentracaoDeltaData,
+    mes_anterior_label: str,
+) -> str:
+    """Frase pt-BR multi-KPI gerada server-side (template deterministico).
+
+    Exemplo: "Em DU 8 de 21: VOP R$ 35,2 mi (+12,4%% vs abr/26), Taxa 2,38%%
+    (-0,12pp), Prazo +1,5d, Top-3 +3,0pp. Cartao CDC e UA Sul movimentam mais."
+    """
+    if du_disponivel and du_totais_mes > 0:
+        prefixo = f"Em DU {du_decorridos} de {du_totais_mes}: "
+    else:
+        prefixo = "MTD parcial: "
+
+    # VOP
+    vop_compact = _fmt_moeda_compacta_pt(vop.current_anchor_value)
+    if vop.delta_pct is not None:
+        sinal_v = "+" if vop.delta_pct >= 0 else ""
+        vop_part = (
+            f"VOP {vop_compact} ({sinal_v}{vop.delta_pct:.1f}% vs {mes_anterior_label})"
+        ).replace(".", ",")
+    else:
+        vop_part = f"VOP {vop_compact}"
+
+    # Taxa
+    sinal_t = "+" if taxa.delta >= 0 else ""
+    taxa_part = (
+        f"Taxa {taxa.current_anchor_value:.2f}% ({sinal_t}{taxa.delta:.2f}pp)"
+    ).replace(".", ",")
+
+    # Prazo
+    sinal_p = "+" if prazo.delta >= 0 else ""
+    prazo_part = f"Prazo {sinal_p}{prazo.delta:.1f}d".replace(".", ",")
+
+    parts = [vop_part, taxa_part, prazo_part]
+    if abs(concentracao.delta_top_3_pp) >= 0.5:
+        sinal_c = "+" if concentracao.delta_top_3_pp >= 0 else ""
+        conc_part = (
+            f"Top-3 {sinal_c}{concentracao.delta_top_3_pp:.1f}pp"
+        ).replace(".", ",")
+        parts.append(conc_part)
+
+    base = f"{prefixo}{', '.join(parts)}."
+
+    # Drivers de destaque (top 2 por |contribution_brl|)
+    nomes_destaque: list[str] = []
+    for d in vop.drivers[:2]:
+        if d.member_label and d.member_label != "(n/d)":
+            nomes_destaque.append(d.member_label)
+    if nomes_destaque:
+        if len(nomes_destaque) == 1:
+            base += f" {nomes_destaque[0]} movimenta mais."
+        else:
+            base += f" {' e '.join(nomes_destaque[:2])} movimentam mais."
+
+    return base
+
+
+async def get_aba1_mes_corrente(
+    db: AsyncSession,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+    dimension: str = "produto",
+) -> tuple[AbaMesCorrenteData, Provenance]:
+    """Bundle da Aba 0 — Mes corrente (variance decomposition).
+
+    Decompoe o delta MTD vs DU equivalente do mes anterior em 6 KPIs:
+        - VOP / Receita -> variance bridge aditiva + projecao linear
+        - Taxa / Prazo  -> PVM bridge (Marshall-Edgeworth)
+        - Mix produtos  -> dumbbell (top 7 produtos por |delta_share_pp|)
+        - Concentracao  -> HHI delta + top movements
+
+    `dimension` aplica-se a VOP, Receita, Taxa, Prazo. Mix e Concentracao
+    sempre usam produto (independem do SegmentSwitch da UI).
+    """
+    if dimension not in ("produto", "ua", "faixa_ticket"):
+        raise ValueError(f"Dimensao desconhecida: {dimension}")
+
+    periodo_fim: date | None = filters.get("periodo_fim")
+    today = periodo_fim or date.today()
+
+    # 1. DU position
+    du_disponivel, du_decorridos, du_totais = await _du_position(db, tenant_id, today)
+
+    # 2. Janelas
+    mes_inicio = today.replace(day=1)
+    mes_corrente_filters = {
+        **filters,
+        "periodo_inicio": mes_inicio,
+        "periodo_fim": today,
+    }
+    mes_corrente_label = f"{_MES_PT[today.month - 1]}/{today.year % 100:02d}"
+
+    if du_disponivel and du_decorridos > 0:
+        mes_ant_inicio, mes_ant_fim = await _mes_anterior_paridade_du(
+            db, tenant_id, today, du_decorridos
+        )
+    else:
+        mes_ant_inicio, mes_ant_fim = _mes_anterior_window(today)
+    mes_anterior_label = (
+        f"{_MES_PT[mes_ant_inicio.month - 1]}/{mes_ant_inicio.year % 100:02d}"
+    )
+    mes_anterior_filters = {
+        **filters,
+        "periodo_inicio": mes_ant_inicio,
+        "periodo_fim": mes_ant_fim,
+    }
+
+    # 3. Aggregations por dimensao escolhida
+    current_agg = await _agg_by_dimension(db, tenant_id, mes_corrente_filters, dimension)
+    prior_agg = await _agg_by_dimension(db, tenant_id, mes_anterior_filters, dimension)
+
+    # Mix e Concentracao sempre por produto
+    if dimension == "produto":
+        current_by_produto = current_agg
+        prior_by_produto = prior_agg
+    else:
+        current_by_produto = await _agg_by_dimension(
+            db, tenant_id, mes_corrente_filters, "produto"
+        )
+        prior_by_produto = await _agg_by_dimension(
+            db, tenant_id, mes_anterior_filters, "produto"
+        )
+
+    # 4. Label resolvers
+    if dimension == "produto":
+        prod_nomes = await _produto_sigla_to_nome_map(db, tenant_id)
+
+        def resolver(member_id: str) -> str:
+            return prod_nomes.get(member_id, member_id)
+
+    elif dimension == "ua":
+        ua_nomes = await _ua_id_to_nome_map(db, tenant_id)
+
+        def resolver(member_id: str) -> str:
+            try:
+                return ua_nomes.get(int(member_id), f"UA {member_id}")
+            except (ValueError, TypeError):
+                return f"UA {member_id}"
+
+    else:  # faixa_ticket — member_id ja e label legivel
+
+        def resolver(member_id: str) -> str:
+            return member_id
+
+    prod_nomes_for_mix = await _produto_sigla_to_nome_map(db, tenant_id)
+
+    def produto_resolver(sigla: str) -> str:
+        return prod_nomes_for_mix.get(sigla, sigla)
+
+    # Threshold para "Outros" rollup: zerado para dimensoes low-cardinality
+    # (produto/ua/faixa_ticket raramente passam de ~8 membros — todos cabem
+    # no bridge sem agregar). Cedente (futuro, alta cardinalidade) usa
+    # threshold padrao.
+    _LOW_CARD_DIMS = ("produto", "ua", "faixa_ticket")
+    aditiva_th_pct = 0.0 if dimension in _LOW_CARD_DIMS else _DRIVER_THRESHOLD_PCT
+    aditiva_th_brl = 0.0 if dimension in _LOW_CARD_DIMS else _DRIVER_THRESHOLD_BRL
+
+    # 5. VOP variance bridge
+    vop_prior_total = sum(d["vop"] for d in prior_agg.values())
+    vop_current_total = sum(d["vop"] for d in current_agg.values())
+    vop_drivers, vop_outros, vop_delta = _decompose_variance_aditiva(
+        {k: v["vop"] for k, v in prior_agg.items()},
+        {k: v["vop"] for k, v in current_agg.items()},
+        resolver,
+        threshold_pct=aditiva_th_pct,
+        threshold_brl=aditiva_th_brl,
+    )
+    # Anchor labels nao repetem o nome do KPI — ja vem no titulo do card.
+    vop_data = VarianceBridgeData(
+        prior_anchor_label=mes_anterior_label,
+        prior_anchor_value=vop_prior_total,
+        current_anchor_label=mes_corrente_label,
+        current_anchor_value=vop_current_total,
+        delta_brl=vop_delta,
+        delta_pct=_safe_pct_change(vop_current_total, vop_prior_total)
+        if vop_prior_total > 0
+        else None,
+        drivers=vop_drivers,
+        outros_rollup=vop_outros,
+    )
+
+    # 6. VOP projecao
+    vop_projecao: ProjectionBridgeData | None = None
+    if du_disponivel and du_decorridos > 0 and du_decorridos < du_totais:
+        proj_total, proj_drivers, proj_outros = _project_close_aditivo(
+            {k: v["vop"] for k, v in current_agg.items()},
+            du_decorridos,
+            du_totais,
+            resolver,
+            threshold_pct=aditiva_th_pct,
+            threshold_brl=aditiva_th_brl,
+        )
+        vop_projecao = ProjectionBridgeData(
+            current_anchor_label=f"Atual (DU {du_decorridos})",
+            current_anchor_value=vop_current_total,
+            projected_close_label=f"Projecao {mes_corrente_label}",
+            projected_close_value=proj_total,
+            delta_brl=proj_total - vop_current_total,
+            delta_pct=_safe_pct_change(proj_total, vop_current_total)
+            if vop_current_total > 0
+            else None,
+            drivers=proj_drivers,
+            outros_rollup=proj_outros,
+        )
+
+    # 7. Receita variance bridge
+    receita_prior_total = sum(d["receita"] for d in prior_agg.values())
+    receita_current_total = sum(d["receita"] for d in current_agg.values())
+    receita_drivers, receita_outros, receita_delta = _decompose_variance_aditiva(
+        {k: v["receita"] for k, v in prior_agg.items()},
+        {k: v["receita"] for k, v in current_agg.items()},
+        resolver,
+        threshold_pct=aditiva_th_pct,
+        threshold_brl=aditiva_th_brl,
+    )
+    receita_data = VarianceBridgeData(
+        prior_anchor_label=mes_anterior_label,
+        prior_anchor_value=receita_prior_total,
+        current_anchor_label=mes_corrente_label,
+        current_anchor_value=receita_current_total,
+        delta_brl=receita_delta,
+        delta_pct=_safe_pct_change(receita_current_total, receita_prior_total)
+        if receita_prior_total > 0
+        else None,
+        drivers=receita_drivers,
+        outros_rollup=receita_outros,
+    )
+
+    # 8. Receita projecao
+    receita_projecao: ProjectionBridgeData | None = None
+    if du_disponivel and du_decorridos > 0 and du_decorridos < du_totais:
+        proj_total, proj_drivers, proj_outros = _project_close_aditivo(
+            {k: v["receita"] for k, v in current_agg.items()},
+            du_decorridos,
+            du_totais,
+            resolver,
+            threshold_pct=aditiva_th_pct,
+            threshold_brl=aditiva_th_brl,
+        )
+        receita_projecao = ProjectionBridgeData(
+            current_anchor_label=f"Atual (DU {du_decorridos})",
+            current_anchor_value=receita_current_total,
+            projected_close_label=f"Projecao {mes_corrente_label}",
+            projected_close_value=proj_total,
+            delta_brl=proj_total - receita_current_total,
+            delta_pct=_safe_pct_change(proj_total, receita_current_total)
+            if receita_current_total > 0
+            else None,
+            drivers=proj_drivers,
+            outros_rollup=proj_outros,
+        )
+
+    # 9. Taxa PVM
+    taxa_prior_avg = (
+        sum(d["taxa"] * d["vop"] for d in prior_agg.values())
+        / (sum(d["vop"] for d in prior_agg.values()) or 1e-9)
+    )
+    taxa_current_avg = (
+        sum(d["taxa"] * d["vop"] for d in current_agg.values())
+        / (sum(d["vop"] for d in current_agg.values()) or 1e-9)
+    )
+    (
+        taxa_mix,
+        taxa_intra,
+        taxa_top_mix,
+        taxa_top_intra,
+        taxa_outros_mix,
+        taxa_outros_intra,
+    ) = _decompose_pvm(
+        prior_agg,
+        current_agg,
+        "taxa",
+        resolver,
+        threshold_unit=_PVM_THRESHOLD_TAXA_PP,
+    )
+    taxa_data = PvmBridgeData(
+        prior_anchor_label=mes_anterior_label,
+        prior_anchor_value=taxa_prior_avg,
+        current_anchor_label=mes_corrente_label,
+        current_anchor_value=taxa_current_avg,
+        delta=taxa_current_avg - taxa_prior_avg,
+        delta_unidade="pp",
+        mix_effect=taxa_mix,
+        intra_effect=taxa_intra,
+        top_mix_contributors=taxa_top_mix,
+        top_intra_contributors=taxa_top_intra,
+        outros_mix_rollup=taxa_outros_mix,
+        outros_intra_rollup=taxa_outros_intra,
+    )
+
+    # 10. Prazo PVM
+    prazo_prior_avg = (
+        sum(d["prazo"] * d["vop"] for d in prior_agg.values())
+        / (sum(d["vop"] for d in prior_agg.values()) or 1e-9)
+    )
+    prazo_current_avg = (
+        sum(d["prazo"] * d["vop"] for d in current_agg.values())
+        / (sum(d["vop"] for d in current_agg.values()) or 1e-9)
+    )
+    (
+        prazo_mix,
+        prazo_intra,
+        prazo_top_mix,
+        prazo_top_intra,
+        prazo_outros_mix,
+        prazo_outros_intra,
+    ) = _decompose_pvm(
+        prior_agg,
+        current_agg,
+        "prazo",
+        resolver,
+        threshold_unit=_PVM_THRESHOLD_PRAZO_DIAS,
+    )
+    prazo_data = PvmBridgeData(
+        prior_anchor_label=mes_anterior_label,
+        prior_anchor_value=prazo_prior_avg,
+        current_anchor_label=mes_corrente_label,
+        current_anchor_value=prazo_current_avg,
+        delta=prazo_current_avg - prazo_prior_avg,
+        delta_unidade="dias",
+        mix_effect=prazo_mix,
+        intra_effect=prazo_intra,
+        top_mix_contributors=prazo_top_mix,
+        top_intra_contributors=prazo_top_intra,
+        outros_mix_rollup=prazo_outros_mix,
+        outros_intra_rollup=prazo_outros_intra,
+    )
+
+    # 11. Mix dumbbell
+    mix_points = _build_dumbbell(
+        prior_by_produto, current_by_produto, produto_resolver, top_n=7
+    )
+    mix_data = DumbbellSeriesData(
+        prior_anchor_label=mes_anterior_label,
+        current_anchor_label=mes_corrente_label,
+        points=mix_points,
+    )
+
+    # 12. Concentracao HHI
+    (
+        hhi_prior,
+        hhi_current,
+        top3_prior,
+        top3_current,
+        gainers,
+        losers,
+    ) = _calcular_hhi_e_movements(
+        prior_by_produto, current_by_produto, produto_resolver
+    )
+    concentracao_data = ConcentracaoDeltaData(
+        dimension_label="Produto",
+        prior_anchor_label=mes_anterior_label,
+        current_anchor_label=mes_corrente_label,
+        hhi_prior=hhi_prior,
+        hhi_current=hhi_current,
+        delta_hhi=hhi_current - hhi_prior,
+        top_3_share_prior=top3_prior,
+        top_3_share_current=top3_current,
+        delta_top_3_pp=top3_current - top3_prior,
+        movements_gainers=gainers,
+        movements_losers=losers,
+    )
+
+    # 13. Narrative + comparacao label
+    if du_disponivel and du_totais > 0:
+        comparacao_label = (
+            f"comparado a {mes_anterior_label} ate DU {du_decorridos} "
+            f"(de {du_totais})"
+        )
+    else:
+        comparacao_label = (
+            f"comparado a {mes_anterior_label} (paridade de dia corrido)"
+        )
+
+    narrative = _build_narrative_pt_br(
+        du_decorridos=du_decorridos,
+        du_totais_mes=du_totais,
+        du_disponivel=du_disponivel,
+        vop=vop_data,
+        taxa=taxa_data,
+        prazo=prazo_data,
+        concentracao=concentracao_data,
+        mes_anterior_label=mes_anterior_label,
+    )
+
+    data = AbaMesCorrenteData(
+        narrative_sentence=narrative,
+        comparacao_label_pt=comparacao_label,
+        du_decorridos=du_decorridos,
+        du_totais_mes=du_totais,
+        du_disponivel=du_disponivel,
+        vop=vop_data,
+        vop_projecao=vop_projecao,
+        receita=receita_data,
+        receita_projecao=receita_projecao,
+        taxa=taxa_data,
+        prazo=prazo_data,
+        mix=mix_data,
+        concentracao=concentracao_data,
+        dimension_active=dimension,
+    )
+    prov = await _build_provenance(db, tenant_id, filters)
+    return data, prov

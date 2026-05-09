@@ -1,18 +1,19 @@
 """BI — endpoints da L2 Operacoes2 (refatoracao 2026-05-03).
 
-3 endpoints novos sob `/bi/operacoes2/*`:
+4 endpoints novos sob `/bi/operacoes2/*`:
 
 - GET `/kpi-strip`              — 5 indicadores-chave + sparklines 12M
-- GET `/aba1-volume-ritmo`      — bundle completo da Aba 1
-- GET `/aba2-produtos-pricing`  — bundle completo da Aba 2
+- GET `/aba1-mes-corrente`      — variance decomposition do mes corrente
+- GET `/aba1-volume-ritmo`      — bundle completo da Aba 'Volume & Ritmo'
+- GET `/aba2-produtos-pricing`  — bundle completo da Aba 'Produtos & Pricing'
 
 Convivem com o router legado `operacoes.py` (rota `/bi/operacoes/*`) — a
 nova UX vive em rota separada para nao quebrar a pagina existente.
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -22,6 +23,7 @@ from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.modules.bi.api.deps import bi_filters
 from app.modules.bi.schemas.common import BIFilters, BIResponse
 from app.modules.bi.schemas.operacoes2 import (
+    AbaMesCorrenteData,
     AbaProdutosPricingData,
     AbaVolumeRitmoData,
     OperacoesKpiStripData,
@@ -87,5 +89,33 @@ async def aba2_produtos_pricing(
     """
     data, prov = await svc.get_aba2_produtos_pricing(
         db, principal.tenant_id, _filter_dict(filters)
+    )
+    return BIResponse(data=data, provenance=prov)
+
+
+@router.get("/aba1-mes-corrente", response_model=BIResponse[AbaMesCorrenteData])
+async def aba1_mes_corrente(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    filters: Annotated[BIFilters, Depends(bi_filters)],
+    dimension: Annotated[
+        Literal["produto", "ua", "faixa_ticket"],
+        Query(description="Dimensao para decomposicao das bridges (VOP/Receita/Taxa/Prazo)"),
+    ] = "produto",
+    _: None = _Guard,
+) -> BIResponse[AbaMesCorrenteData]:
+    """Aba 0 — Mes corrente (variance decomposition).
+
+    Decompoe o delta MTD vs DU equivalente do mes anterior em 6 KPIs:
+    VOP/Receita (variance bridge aditiva + projecao), Taxa/Prazo (PVM
+    bridge), Mix produtos (dumbbell) e Concentracao (HHI + movements).
+
+    `dimension` aplica-se a VOP, Receita, Taxa, Prazo. Mix e Concentracao
+    sempre usam produto. TODA query passa por `_apply_filters` (regra dura
+    sec 7.2). Quando `wh_dim_dia_util` esta vazia, projecoes retornam null
+    (degraded mode).
+    """
+    data, prov = await svc.get_aba1_mes_corrente(
+        db, principal.tenant_id, _filter_dict(filters), dimension
     )
     return BIResponse(data=data, provenance=prov)

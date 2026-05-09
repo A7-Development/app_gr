@@ -1,9 +1,10 @@
 """Schemas da L2 Operacoes2 (refatoracao 2026-05-03).
 
 A pagina gira em torno de 5 indicadores-chave (VOP, Taxa, Prazo, Produto Top,
-Receita Contratada) expostos num KPI Strip global, e 4 abas que sao lentes de
+Receita Contratada) expostos num KPI Strip global, e 5 abas que sao lentes de
 aprofundamento:
 
+- Aba 0: Mes corrente            (default — variance decomposition por DU)
 - Aba 1: Volume & Ritmo
 - Aba 2: Produtos & Pricing
 - Aba 3: Receita                 (futuro)
@@ -18,7 +19,25 @@ Decisao de design (2026-05-03):
 - Campos que dependem de `wh_dim_dia_util` (ritmo do mes, pace diario)
   retornam `None` quando a tabela esta vazia (degraded mode). Frontend
   renderiza placeholder.
+
+Decisao de design (2026-05-08, Aba 0 Mes corrente):
+- Aba 0 responde "como esta indo o mes" via decomposicao de variancia em 6
+  KPIs (VOP, Receita, Taxa, Prazo, Mix, Concentracao). Cada KPI tem tecnica
+  adequada ao seu tipo:
+    * Aditivos (VOP, Receita)   -> Variance bridge (drivers somam ao delta)
+    * Medias ponderadas (Taxa, Prazo) -> PVM bridge (mix effect + intra effect)
+    * Composicao (Mix)          -> Dumbbell (prior_share vs current_share)
+    * Razao (Concentracao)      -> HHI delta + top movements de share
+- Comparacao base: mesmo numero de DUs do mes anterior (paridade DU).
+- Threshold de surfacing de drivers: ≥5%% do |delta_total| AND ≥R$ 500k abs.
+  Drivers abaixo do threshold rolam pra "Outros".
+- Projecao de fechamento: linear simples (current * du_totais / du_decorridos).
+  So aplicada a aditivos (VOP, Receita).
+- Dimensoes disponiveis: produto, ua, faixa_ticket. Cedente fica pra fase 2
+  (depende de cedente_id em wh_operacao).
 """
+
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -424,3 +443,250 @@ class AbaProdutosPricingData(BaseModel):
     # Linha 3 — Histogramas
     histograma_taxas: HistogramaTaxasResumo
     histograma_prazos: HistogramaPrazosResumo
+
+
+# ─── Aba 0: Mes corrente (variance decomposition) ───────────────────────────
+#
+# Aba que responde "como esta indo o mes" via decomposicao do delta MTD vs
+# mes anterior até mesmo numero de DUs. 6 cards com tecnicas diferentes:
+#
+#   - VOP / Receita         -> Variance bridge (aditivo)
+#   - Taxa / Prazo          -> PVM bridge (mix effect + intra effect)
+#   - Mix produtos          -> Dumbbell prior_share vs current_share
+#   - Concentracao (HHI)    -> Delta HHI + top movements de share
+#
+# Threshold de surfacing de drivers: ≥5%% do |delta_total| AND ≥R$ 500k abs.
+# Drivers abaixo rolam pra "Outros".
+
+
+Dimension = Literal["produto", "ua", "faixa_ticket"]
+
+
+class DriverContribution(BaseModel):
+    """Contribuicao de um driver (membro de uma dimensao) ao delta de um KPI.
+
+    Para metricas aditivas (VOP, Receita): `contribution_brl` SOMA ao delta.
+    Para PVM (Taxa, Prazo): `contribution_brl` representa o efeito do membro
+    em uma das duas componentes (mix ou intra) — ja na unidade do KPI (pp ou
+    dias). O frontend rotula adequadamente.
+    """
+
+    member_id: str = Field(description="ID estavel da categoria (sigla, uuid str, label de bucket)")
+    member_label: str = Field(description="Label amigavel exibido na barra do bridge")
+    contribution_brl: float = Field(
+        description=(
+            "Contribuicao ao delta. Aditiva nas variance bridges (VOP/Receita) "
+            "ou unidade do KPI (pp em Taxa, dias em Prazo) nas PVM bridges. "
+            "Sinalizada: positivo puxa pra cima, negativo pra baixo."
+        )
+    )
+    contribution_pct: float | None = Field(
+        default=None,
+        description=(
+            "Percentual da contribuicao sobre o |delta total|. Util pro frontend "
+            "ordenar/destacar drivers. None quando delta total = 0."
+        ),
+    )
+    prior_value: float
+    current_value: float
+
+
+class VarianceBridgeData(BaseModel):
+    """Decomposicao para metricas ADITIVAS (VOP, Receita).
+
+    Bridge horizontal: prior_anchor → +driver1 → +driver2 → -driverN → current_anchor.
+    Drivers sao ordenados por |contribution_brl| desc. Drivers abaixo do
+    threshold (5%% do |delta_total| AND R$ 500k abs) rolam para `outros_rollup`.
+
+    Anchor labels exemplo:
+      prior_anchor_label   = "VOP abr/2026 ate DU 8"
+      current_anchor_label = "VOP atual ate DU 8"
+    """
+
+    prior_anchor_label: str
+    prior_anchor_value: float
+    current_anchor_label: str
+    current_anchor_value: float
+    delta_brl: float = Field(description="current_anchor_value - prior_anchor_value")
+    delta_pct: float | None = Field(
+        description="(delta_brl / prior_anchor_value) * 100, None quando prior = 0"
+    )
+    drivers: list[DriverContribution] = Field(
+        description="Drivers acima do threshold, ordenados por |contribution_brl| desc"
+    )
+    outros_rollup: DriverContribution | None = Field(
+        default=None,
+        description="Soma dos drivers abaixo do threshold. None quando todos estao acima.",
+    )
+    unidade: Literal["BRL"] = "BRL"
+
+
+class ProjectionBridgeData(BaseModel):
+    """Projecao linear de fechamento para metrica aditiva.
+
+    Modelo: current_anchor_value * (du_totais_mes / du_decorridos), aplicado
+    membro a membro. So faz sentido em metricas aditivas. Disponivel apenas
+    quando wh_dim_dia_util esta populado.
+
+    Bridge horizontal: current_anchor → +projecao_driver1 → ... → projected_close.
+    Drivers extrapolados sao a parcela "ainda a vir" (projetado - current).
+    """
+
+    current_anchor_label: str
+    current_anchor_value: float
+    projected_close_label: str = Field(description="Ex.: 'Projecao mai/2026'")
+    projected_close_value: float
+    delta_brl: float = Field(description="projected_close - current (parcela faltante)")
+    delta_pct: float | None
+    drivers: list[DriverContribution] = Field(
+        description="Drivers da parcela faltante, mesmas regras de threshold/rollup"
+    )
+    outros_rollup: DriverContribution | None = None
+    unidade: Literal["BRL"] = "BRL"
+
+
+class PvmBridgeData(BaseModel):
+    """Decomposicao PVM para MEDIAS PONDERADAS (Taxa, Prazo).
+
+    Bridge de 4 colunas: prior_avg → +mix_effect → +intra_effect → current_avg.
+
+    Mix effect e intra effect somam exatamente ao delta total (Marshall-Edgeworth):
+
+      mix_effect   = Σ (current_share_i - prior_share_i) * prior_avg_i
+      intra_effect = Σ current_share_i * (current_avg_i - prior_avg_i)
+      delta_total  = mix_effect + intra_effect
+
+    Onde share_i e o share de volume da categoria i (somam 1.0 em cada periodo)
+    e avg_i e o valor da metrica naquela categoria.
+
+    Top contributors sao listados separadamente para cada efeito — `top_mix_*`
+    contem os membros com maior contribuicao individual ao mix effect, idem
+    para intra. Mesmas regras de threshold/rollup.
+    """
+
+    prior_anchor_label: str
+    prior_anchor_value: float
+    current_anchor_label: str
+    current_anchor_value: float
+    delta: float = Field(description="current - prior (na unidade do KPI)")
+    delta_unidade: Literal["pp", "dias"]
+    mix_effect: float = Field(description="Σ (current_share - prior_share) * prior_avg_i")
+    intra_effect: float = Field(description="Σ current_share * (current_avg - prior_avg_i)")
+    top_mix_contributors: list[DriverContribution] = Field(
+        description="Top membros pelo |contribuicao| ao mix_effect"
+    )
+    top_intra_contributors: list[DriverContribution] = Field(
+        description="Top membros pelo |contribuicao| ao intra_effect"
+    )
+    outros_mix_rollup: DriverContribution | None = None
+    outros_intra_rollup: DriverContribution | None = None
+
+
+class DumbbellPoint(BaseModel):
+    """Um ponto do dumbbell (uma categoria com prior + current share)."""
+
+    member_id: str
+    member_label: str
+    prior_share_pct: float = Field(description="0-100")
+    current_share_pct: float = Field(description="0-100")
+    delta_share_pp: float = Field(description="current - prior, em pontos percentuais")
+    prior_value: float = Field(description="VOP absoluto da categoria no prior")
+    current_value: float = Field(description="VOP absoluto da categoria no current")
+
+
+class DumbbellSeriesData(BaseModel):
+    """Mix de produtos: shift de share entre prior e current.
+
+    Pontos ordenados por |delta_share_pp| desc, top 7 categorias retornadas.
+    Categorias com share < 1%% em ambos os periodos sao filtradas out.
+    """
+
+    prior_anchor_label: str
+    current_anchor_label: str
+    points: list[DumbbellPoint]
+
+
+class ConcentracaoMovement(BaseModel):
+    """Categoria que ganhou ou perdeu share entre prior e current."""
+
+    member_id: str
+    member_label: str
+    prior_share_pct: float
+    current_share_pct: float
+    delta_share_pp: float
+
+
+class ConcentracaoDeltaData(BaseModel):
+    """HHI (Herfindahl-Hirschman) + top movements de share.
+
+    HHI normalizado em [0, 10000]: HHI = Σ (share_pct_i)² onde share_pct_i e
+    o share da categoria i em escala 0-100 e a soma do quadrado vai de 0
+    (perfeitamente diluido) a 10000 (monopolio).
+
+    Calculado sobre a dimensao escolhida (default: produto). Top-3 share
+    captura concentracao mais facil de ler ("os 3 maiores produtos sao X%%
+    do volume").
+
+    Movimentos: top 3 ganhadores de share + top 3 perdedores (separados pra
+    leitura simetrica no card).
+    """
+
+    dimension_label: str = Field(description="Label legivel da dimensao avaliada")
+    prior_anchor_label: str
+    current_anchor_label: str
+    hhi_prior: float = Field(description="HHI no periodo anterior (0-10000)")
+    hhi_current: float = Field(description="HHI no periodo atual (0-10000)")
+    delta_hhi: float = Field(description="hhi_current - hhi_prior")
+    top_3_share_prior: float = Field(description="Share % dos top 3 do PERIODO ANTERIOR")
+    top_3_share_current: float = Field(description="Share % dos top 3 do PERIODO ATUAL")
+    delta_top_3_pp: float
+    movements_gainers: list[ConcentracaoMovement] = Field(
+        description="Top 3 ganhadores de share (sorted by delta_share_pp desc)"
+    )
+    movements_losers: list[ConcentracaoMovement] = Field(
+        description="Top 3 perdedores de share (sorted by delta_share_pp asc)"
+    )
+
+
+class AbaMesCorrenteData(BaseModel):
+    """Bundle da Aba 0 — Mes corrente (variance decomposition).
+
+    Estrutura:
+      - 1 narrative_sentence (template determinístico server-side)
+      - 6 decomposicoes (uma por KPI), cada uma com tecnica adequada
+      - Metadata de paridade DU (du_decorridos, du_totais_mes, comparacao_label_pt)
+      - Dimensao ativa para variance/PVM (produto | ua | faixa_ticket)
+
+    Quando wh_dim_dia_util esta vazia, a paridade DU degrada para paridade
+    de dia corrido (`du_disponivel = false`). Projecoes ficam None nesse caso.
+    """
+
+    narrative_sentence: str = Field(
+        description="Frase pt-BR multi-KPI gerada server-side (template deterministico)"
+    )
+    comparacao_label_pt: str = Field(
+        description="Ex.: 'comparado a abr/2026 ate DU 8 (de 21)'"
+    )
+    du_decorridos: int = Field(
+        description="Numero de DUs decorridos no mes corrente (ate periodo_fim/hoje)"
+    )
+    du_totais_mes: int = Field(description="Total de DUs do mes corrente (calendario ANBIMA)")
+    du_disponivel: bool = Field(
+        description="False quando wh_dim_dia_util esta vazia (degraded para dia corrido)"
+    )
+
+    # Decomposicoes
+    vop: VarianceBridgeData
+    vop_projecao: ProjectionBridgeData | None
+    receita: VarianceBridgeData
+    receita_projecao: ProjectionBridgeData | None
+    taxa: PvmBridgeData
+    prazo: PvmBridgeData
+    mix: DumbbellSeriesData
+    concentracao: ConcentracaoDeltaData
+
+    # Dimensao ativa para a decomposicao das bridges (VOP, Receita, Taxa, Prazo)
+    dimension_active: Dimension
+    dimensions_disponiveis: list[Dimension] = Field(
+        default_factory=lambda: ["produto", "ua", "faixa_ticket"]
+    )

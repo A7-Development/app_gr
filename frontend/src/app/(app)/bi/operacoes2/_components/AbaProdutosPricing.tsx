@@ -94,6 +94,32 @@ function fmtMonthShort(iso: string): string {
     .replace(".", "")
 }
 
+// ─── EmptyChartArea ────────────────────────────────────────────────────────
+//
+// Placeholder no lugar do canvas ECharts quando nao ha dados. Evita o bug
+// "Cannot read properties of undefined (reading 'getRawIndex')" que dispara
+// quando o handler de mousemove tenta dispatchar para uma serie sem data
+// (ECharts nao guarda graceful em mousemove sobre option vazia, especialmente
+// em stacked bar com axisPointer="shadow" + notMerge=true).
+
+function EmptyChartArea({
+  message = "Sem dados no período.",
+  height = 240,
+}: {
+  message?: string
+  height?: number
+}) {
+  return (
+    <div
+      role="status"
+      className="flex items-center justify-center text-sm text-gray-400 dark:text-gray-600"
+      style={{ height }}
+    >
+      {message}
+    </div>
+  )
+}
+
 // ─── Componente principal ──────────────────────────────────────────────────
 
 export function AbaProdutosPricing() {
@@ -293,16 +319,20 @@ function MixTemporalCard({
       </div>
 
       <div className="px-2 pb-2">
-        <EChartsCard
-          option={option}
-          height={260}
-          className="border-0 bg-transparent p-0 shadow-none"
-          // notMerge=true: replace option full a cada render. Default do
-          // EChartsCard e merge (notMerge=false), o que em stacked bar com
-          // itemStyle.color por serie + mudanca de set de produtos causava
-          // ECharts pintar todas as series com a mesma cor da paleta.
-          echartsProps={{ notMerge: true }}
-        />
+        {produtos.length === 0 ? (
+          <EmptyChartArea height={260} />
+        ) : (
+          <EChartsCard
+            option={option}
+            height={260}
+            className="border-0 bg-transparent p-0 shadow-none"
+            // notMerge=true: replace option full a cada render. Default do
+            // EChartsCard e merge (notMerge=false), o que em stacked bar com
+            // itemStyle.color por serie + mudanca de set de produtos causava
+            // ECharts pintar todas as series com a mesma cor da paleta.
+            echartsProps={{ notMerge: true }}
+          />
+        )}
       </div>
 
       <div
@@ -650,7 +680,11 @@ function ScatterProdutosCard({
         ))}
       </div>
       <div className="px-2 pb-2">
-        <EChartsCard option={option} height={300} className="border-0 bg-transparent p-0 shadow-none" />
+        {sortedByVop.length === 0 ? (
+          <EmptyChartArea height={300} />
+        ) : (
+          <EChartsCard option={option} height={300} className="border-0 bg-transparent p-0 shadow-none" />
+        )}
       </div>
     </Card>
   )
@@ -878,7 +912,11 @@ function HistogramaCard({
           onChange={onSelectedChange}
         />
         <div className="-mx-2">
-          <EChartsCard option={option} height={220} className="border-0 bg-transparent p-0 shadow-none" />
+          {agg.length === 0 ? (
+            <EmptyChartArea height={220} />
+          ) : (
+            <EChartsCard option={option} height={220} className="border-0 bg-transparent p-0 shadow-none" />
+          )}
         </div>
       </div>
     </Card>

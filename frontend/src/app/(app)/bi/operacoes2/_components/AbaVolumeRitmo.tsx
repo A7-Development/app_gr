@@ -315,11 +315,29 @@ function HeroEvolucao({
     }))
   }, [evolucao, evolucaoPorUa, selectedUaId])
 
+  // headerKpi: VOP do mes corrente (ultimo ponto da serie filtrada) +
+  // delta MTD same-period. Delta vem de `ritmoDeltaPct` (global) — quando uma
+  // UA esta selecionada, o delta nao se aplica (ritmo e calculado no
+  // agregado), entao suprimimos para nao mostrar numero enganoso.
+  const headerKpi = React.useMemo(() => {
+    const last = data[data.length - 1]
+    if (!last || last.valor == null) return undefined
+    return {
+      value: fmtBRLFull.format(last.valor),
+      delta:
+        selectedUaId === null && ritmoDeltaPct != null
+          ? { value: ritmoDeltaPct, suffix: "%" }
+          : undefined,
+      deltaSub: selectedUaId === null && ritmoDeltaPct != null ? "MTD" : undefined,
+    }
+  }, [data, ritmoDeltaPct, selectedUaId])
+
   return (
     <EvolucaoMensalCard
       title="Evolução do VOP"
       presetLabel={presetLabel}
       data={data}
+      headerKpi={headerKpi}
       dimension={{
         label: "UA",
         icon: RiBuilding2Line,

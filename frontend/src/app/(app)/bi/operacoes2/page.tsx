@@ -1,11 +1,11 @@
 // src/app/(app)/bi/operacoes2/page.tsx
 //
-// BI · Operacoes — pagina espelhando RIGOROSAMENTE o pattern canonico
-// `DashboardBiPadrao` (`design-system/patterns/DashboardBiPadrao.tsx`).
+// BI · Operacoes — pagina derivada do pattern canonico `DashboardBiPadrao`
+// (`design-system/patterns/DashboardBiPadrao.tsx`) com divergencias
+// documentadas abaixo.
 //
-// Este arquivo e copy-paste-adapt do pattern canonico — chrome (title row,
-// toolbar 52px com tabs+filtros, InsightStrip, KpiStrip canonico,
-// ProvenanceFooter, AIPanel, DrillDownSheet) preservado idealmente.
+// Chrome preservado: title row, toolbar 52px com tabs+filtros, InsightStrip,
+// ProvenanceFooter, AIPanel, DrillDownSheet.
 //
 // AJUSTES vs `DashboardBiPadrao`:
 //   1. Dados dos KPIs: 5 indicadores reais de Operacoes (VOP, Taxa, Prazo,
@@ -15,9 +15,12 @@
 //      `useBiFilters` (substituem o mock fundo/tipo).
 //   4. ProvenanceFooter: do `components/bi/` (carrega `Provenance` real do
 //      backend) em vez do mock do DS — mesma anatomia visual.
-//
-// Nada mais e diferente do canonico. Estrutura de DOM, alturas, bordas e
-// posicionamento sticky preservados.
+//   5. KpiStrip page-level removido em 2026-05-09 — diagnostico em
+//      `docs/bi-patterns-presentacao-dados.md` §1.2: 4 dos 5 tiles
+//      duplicavam KPIs decompostos pelos cards das abas. Numeros migram para
+//      o `headerKpi` de cada chart-card das abas (refactor em sequencia).
+//      Query `kpiStripQuery` continua viva — alimenta o LLM via `kpisBlock`
+//      e o ProvenanceFooter via `provenance`.
 
 "use client"
 
@@ -40,10 +43,6 @@ import {
 import { PageHeader } from "@/design-system/components/PageHeader"
 import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
 import {
-  KpiCard,
-  KpiStrip,
-} from "@/design-system/components/KpiStrip"
-import {
   FilterChip,
   MoreFiltersButton,
 } from "@/design-system/components/FilterBar"
@@ -63,14 +62,20 @@ import { useAIChat, useAIInsights, useAIQuota } from "@/lib/hooks/ai"
 import { useBiFilters, type PresetKey } from "@/lib/hooks/useBiFilters"
 import { biMetadata, biOperacoes2 } from "@/lib/api-client"
 
+import { AbaMesCorrente } from "./_components/AbaMesCorrente"
 import { AbaProdutosPricing } from "./_components/AbaProdutosPricing"
 import { AbaVolumeRitmo } from "./_components/AbaVolumeRitmo"
 
 // ───────────────────────────────────────────────────────────────────────────
 // Tabs L3 (CLAUDE.md §11.6)
 // ───────────────────────────────────────────────────────────────────────────
+//
+// Aba "Mes corrente" e a primeira (default) — responde "como esta indo o
+// mes" via variance decomposition em 6 KPIs (VOP, Receita, Taxa-PVM,
+// Prazo-PVM, Mix-Dumbbell, Concentracao-HHI). Decisao 2026-05-08.
 
 const TABS = [
+  { key: "mes-corrente", label: "Mês corrente" },
   { key: "volume-ritmo", label: "Volume & Ritmo" },
   { key: "produtos-pricing", label: "Produtos & Pricing" },
   { key: "receita", label: "Receita" },
@@ -117,7 +122,7 @@ const fmtSharePct = (v: number) => `${v.toFixed(1).replace(".", ",")}%`
 
 export default function Operacoes2Page() {
   // ─── Estado local: tab + AI conversa + drill-down + busca ────────────────
-  const [activeTab, setActiveTab] = React.useState<TabKey>("volume-ritmo")
+  const [activeTab, setActiveTab] = React.useState<TabKey>("mes-corrente")
   const [conversationId, setConversationId] = React.useState<string | null>(null)
   const [selected, setSelected] = React.useState<unknown>(null)
 
@@ -210,10 +215,10 @@ export default function Operacoes2Page() {
   // ─── AI Panel + atalhos ──────────────────────────────────────────────────
   const ai = useAIPanel()
 
-  // Atalhos Cmd/Ctrl + 1..4 para tabs (CLAUDE.md §11.6)
+  // Atalhos Cmd/Ctrl + 1..5 para tabs (CLAUDE.md §11.6)
   React.useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && ["1", "2", "3", "4"].includes(e.key)) {
+      if ((e.metaKey || e.ctrlKey) && ["1", "2", "3", "4", "5"].includes(e.key)) {
         const idx = Number(e.key) - 1
         if (TABS[idx]) {
           e.preventDefault()
@@ -404,96 +409,16 @@ export default function Operacoes2Page() {
         {/* Conteudo da aba — scroll container observado por useScrollShadow. */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4">
           <div className="flex flex-col gap-4">
-            {/* KpiStrip canonico — 5 KPIs (sem sparkline — modo leve).
-                value/sub: value = agregado do PERIODO; sub = mes corrente
-                (1-N onde N = dia atual).
-                delta: MTD same-period (mes corrente 1-N vs mes anterior 1-N). */}
-            <KpiStrip cols={5}>
-              <KpiCard
-                label="VOP"
-                value={fmtBRLCompact.format(kpiStrip?.vop.valor ?? 0)}
-                sub={`${fmtBRLCompact.format(kpiStrip?.vop.mes_corrente_valor ?? 0)} no mês`}
-                delta={
-                  kpiStrip?.vop.mes_corrente_delta_pct == null
-                    ? undefined
-                    : { value: kpiStrip.vop.mes_corrente_delta_pct, suffix: "%" }
-                }
-                deltaSub="MTD"
-                source="Bitfin"
-              />
-              <KpiCard
-                label="Taxa média"
-                value={fmtPct2(kpiStrip?.taxa_media.valor ?? 0)}
-                sub={`${fmtPct2(kpiStrip?.taxa_media.mes_corrente_valor ?? 0)} no mês`}
-                delta={
-                  kpiStrip?.taxa_media.mes_corrente_delta_pct == null
-                    ? undefined
-                    : {
-                        value: kpiStrip.taxa_media.mes_corrente_delta_pct,
-                        suffix: "%",
-                      }
-                }
-                deltaSub="MTD"
-              />
-              <KpiCard
-                label="Prazo médio"
-                value={fmtDays(kpiStrip?.prazo_medio.valor ?? 0)}
-                sub={`${fmtDays(kpiStrip?.prazo_medio.mes_corrente_valor ?? 0)} no mês`}
-                delta={
-                  kpiStrip?.prazo_medio.mes_corrente_delta_pct == null
-                    ? undefined
-                    : {
-                        value: kpiStrip.prazo_medio.mes_corrente_delta_pct,
-                        suffix: "%",
-                        // Prazo subindo NAO e bom — inverte o "good" do delta.
-                        direction:
-                          kpiStrip.prazo_medio.mes_corrente_delta_pct >= 0
-                            ? "up"
-                            : "down",
-                        good: kpiStrip.prazo_medio.mes_corrente_delta_pct < 0,
-                      }
-                }
-                deltaSub="MTD"
-              />
-              <KpiCard
-                label="Produto top"
-                value={
-                  kpiStrip?.produto_top.nome ?? kpiStrip?.produto_top.sigla ?? "—"
-                }
-                sub={produtoTopSub(kpiStrip?.produto_top)}
-                delta={
-                  kpiStrip?.produto_top.mes_corrente_delta_share_pp == null
-                    ? undefined
-                    : {
-                        value:
-                          kpiStrip.produto_top.mes_corrente_delta_share_pp,
-                        suffix: "pp",
-                      }
-                }
-                deltaSub="MTD (fatia)"
-              />
-              <KpiCard
-                label="Receita contratada"
-                value={fmtBRLCompact.format(
-                  kpiStrip?.receita_contratada.valor ?? 0,
-                )}
-                sub={`${fmtBRLCompact.format(
-                  kpiStrip?.receita_contratada.mes_corrente_valor ?? 0,
-                )} no mês`}
-                delta={
-                  kpiStrip?.receita_contratada.mes_corrente_delta_pct == null
-                    ? undefined
-                    : {
-                        value:
-                          kpiStrip.receita_contratada.mes_corrente_delta_pct,
-                        suffix: "%",
-                      }
-                }
-                deltaSub="MTD"
-              />
-            </KpiStrip>
+            {/* MOTIVO: KpiStrip page-level removido em 2026-05-09 — diagnostico
+                em docs/bi-patterns-presentacao-dados.md §1.2: 4 dos 5 tiles
+                duplicavam KPIs decompostos pelos cards das abas (VOP/Taxa/Prazo/
+                Receita). Numeros migraram para o headerKpi de cada chart-card.
+                Query `kpiStripQuery` continua viva — alimenta o LLM via
+                `kpisBlock`. ProvenanceFooter idem (consome `provenance` da
+                mesma query). */}
 
             {/* Tab content — area util da pagina */}
+            {activeTab === "mes-corrente" && <AbaMesCorrente />}
             {activeTab === "volume-ritmo" && <AbaVolumeRitmo />}
             {activeTab === "produtos-pricing" && <AbaProdutosPricing />}
             {activeTab === "receita" && <PlaceholderTab label="Receita" />}
@@ -593,30 +518,6 @@ function multiLabel(
   }
   if (options.length > 0 && selected.length === options.length) return "Todos"
   return `${selected.length} selecionados`
-}
-
-/** Sub-texto do KpiCard "Produto top": valor do mes corrente + sigla se diferir. */
-function produtoTopSub(
-  produto:
-    | {
-        sigla: string
-        share_pct: number
-        mes_corrente_sigla: string
-        mes_corrente_share_pct: number
-      }
-    | undefined,
-): string {
-  if (!produto) return "—"
-  const sharePctTxt = `${produto.share_pct.toFixed(1).replace(".", ",")}%`
-  const mesShareTxt = `${produto.mes_corrente_share_pct
-    .toFixed(1)
-    .replace(".", ",")}%`
-  // Se mesmo produto top no mes, simplifica: "X% · mês: Y%"
-  if (produto.mes_corrente_sigla === produto.sigla) {
-    return `${sharePctTxt} · ${mesShareTxt} no mês`
-  }
-  // Senao, sinaliza troca de lider: "X% · mês: SIGLA Y%"
-  return `${sharePctTxt} · ${produto.mes_corrente_sigla} ${mesShareTxt} no mês`
 }
 
 /** Indica se ha qualquer filtro nao-default ativo (habilita botao Resetar). */

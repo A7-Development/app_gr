@@ -830,6 +830,125 @@ export type Operacoes2AbaProdutosPricingData = {
   histograma_prazos: Operacoes2HistogramaPrazosResumo
 }
 
+// ── Aba 0: Mes corrente (variance decomposition) ────────────────────────────
+
+export type Operacoes2Dimension = "produto" | "ua" | "faixa_ticket"
+
+export type Operacoes2DriverContribution = {
+  member_id: string
+  member_label: string
+  /** Aditiva pra variance (BRL); na unidade do KPI pra PVM (pp em Taxa, dias em Prazo). */
+  contribution_brl: number
+  /** Pct do |delta total|. Null quando delta total = 0. */
+  contribution_pct: number | null
+  prior_value: number
+  current_value: number
+}
+
+export type Operacoes2VarianceBridgeData = {
+  prior_anchor_label: string
+  prior_anchor_value: number
+  current_anchor_label: string
+  current_anchor_value: number
+  delta_brl: number
+  delta_pct: number | null
+  drivers: Operacoes2DriverContribution[]
+  outros_rollup: Operacoes2DriverContribution | null
+  unidade: "BRL"
+}
+
+export type Operacoes2ProjectionBridgeData = {
+  current_anchor_label: string
+  current_anchor_value: number
+  projected_close_label: string
+  projected_close_value: number
+  delta_brl: number
+  delta_pct: number | null
+  drivers: Operacoes2DriverContribution[]
+  outros_rollup: Operacoes2DriverContribution | null
+  unidade: "BRL"
+}
+
+export type Operacoes2PvmBridgeData = {
+  prior_anchor_label: string
+  prior_anchor_value: number
+  current_anchor_label: string
+  current_anchor_value: number
+  /** current - prior (na unidade do KPI). */
+  delta: number
+  delta_unidade: "pp" | "dias"
+  mix_effect: number
+  intra_effect: number
+  top_mix_contributors: Operacoes2DriverContribution[]
+  top_intra_contributors: Operacoes2DriverContribution[]
+  outros_mix_rollup: Operacoes2DriverContribution | null
+  outros_intra_rollup: Operacoes2DriverContribution | null
+}
+
+export type Operacoes2DumbbellPoint = {
+  member_id: string
+  member_label: string
+  /** Escala 0-100. */
+  prior_share_pct: number
+  current_share_pct: number
+  /** current_share_pct - prior_share_pct, em pontos percentuais. */
+  delta_share_pp: number
+  prior_value: number
+  current_value: number
+}
+
+export type Operacoes2DumbbellSeriesData = {
+  prior_anchor_label: string
+  current_anchor_label: string
+  /** Top N por |delta_share_pp|, sem categorias com share < 1%% em ambos. */
+  points: Operacoes2DumbbellPoint[]
+}
+
+export type Operacoes2ConcentracaoMovement = {
+  member_id: string
+  member_label: string
+  prior_share_pct: number
+  current_share_pct: number
+  delta_share_pp: number
+}
+
+export type Operacoes2ConcentracaoDeltaData = {
+  dimension_label: string
+  prior_anchor_label: string
+  current_anchor_label: string
+  /** HHI normalizado em [0, 10000]. */
+  hhi_prior: number
+  hhi_current: number
+  delta_hhi: number
+  /** Share % dos top 3 do periodo. */
+  top_3_share_prior: number
+  top_3_share_current: number
+  delta_top_3_pp: number
+  movements_gainers: Operacoes2ConcentracaoMovement[]
+  movements_losers: Operacoes2ConcentracaoMovement[]
+}
+
+export type Operacoes2AbaMesCorrenteData = {
+  /** Frase pt-BR multi-KPI gerada server-side (template deterministico). */
+  narrative_sentence: string
+  comparacao_label_pt: string
+  du_decorridos: number
+  du_totais_mes: number
+  /** False quando wh_dim_dia_util esta vazia (degraded para dia corrido). */
+  du_disponivel: boolean
+  vop: Operacoes2VarianceBridgeData
+  /** Null em degraded mode (du_disponivel=false ou du_decorridos=du_totais). */
+  vop_projecao: Operacoes2ProjectionBridgeData | null
+  receita: Operacoes2VarianceBridgeData
+  receita_projecao: Operacoes2ProjectionBridgeData | null
+  taxa: Operacoes2PvmBridgeData
+  prazo: Operacoes2PvmBridgeData
+  mix: Operacoes2DumbbellSeriesData
+  concentracao: Operacoes2ConcentracaoDeltaData
+  dimension_active: Operacoes2Dimension
+  dimensions_disponiveis: Operacoes2Dimension[]
+}
+
 export const biOperacoes2 = {
   kpiStrip: (f: BIFilters) =>
     apiClient.get<BIResponse<Operacoes2KpiStripData>>(
@@ -843,6 +962,16 @@ export const biOperacoes2 = {
     apiClient.get<BIResponse<Operacoes2AbaProdutosPricingData>>(
       `/bi/operacoes2/aba2-produtos-pricing${filtersToQueryString(f)}`,
     ),
+  abaMesCorrente: (
+    f: BIFilters,
+    dimension: Operacoes2Dimension = "produto",
+  ) => {
+    const baseQs = filtersToQueryString(f)
+    const sep = baseQs ? "&" : "?"
+    return apiClient.get<BIResponse<Operacoes2AbaMesCorrenteData>>(
+      `/bi/operacoes2/aba1-mes-corrente${baseQs}${sep}dimension=${dimension}`,
+    )
+  },
 }
 
 export const biOperacoes = {

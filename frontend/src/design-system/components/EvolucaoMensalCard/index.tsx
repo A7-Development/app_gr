@@ -49,7 +49,7 @@ import * as React from "react"
 import type { EChartsOption } from "echarts"
 import { RiCheckLine, type RemixiconComponentType } from "@remixicon/react"
 
-import { EChartsCard } from "../EChartsCard"
+import { EChartsCard, type EChartsCardHeaderKpi } from "../EChartsCard"
 import { FilterChip } from "../FilterBar"
 import { cx } from "@/lib/utils"
 
@@ -126,6 +126,11 @@ export type EvolucaoMensalCardProps = {
   highlightLast?: boolean
   /** Footer com melhor/pior/vs media. Quando setado, renderiza no slot `footer`. */
   destaques?: EvolucaoMensalDestaques
+  /**
+   * KPI editorial no header — title vira eyebrow, KPI ocupa o lead.
+   * Ver `EChartsCardHeaderKpi` (docs/bi-patterns-presentacao-dados.md §4.3).
+   */
+  headerKpi?: EChartsCardHeaderKpi
   /** Formatador para tooltips e destaques (ex.: BRL completo). */
   valueFormatter: (v: number) => string
   /** Formatador do eixo Y. Default: igual a valueFormatter. */
@@ -173,6 +178,7 @@ export function EvolucaoMensalCard({
   comparativoLabel,
   highlightLast = true,
   destaques,
+  headerKpi,
   valueFormatter,
   axisFormatter,
   dataLabelFormatter,
@@ -252,6 +258,7 @@ export function EvolucaoMensalCard({
     <EChartsCard
       title={title}
       caption={caption}
+      headerKpi={headerKpi}
       option={option}
       height={height}
       actions={actions}

@@ -182,3 +182,16 @@ export { Stepper } from "./Stepper"
 export { UserProfile } from "./UserProfile"
 export { VizCard } from "./VizCard"
 export { VizParam } from "./VizParam"
+
+// ── Aba Mes Corrente (variance decomposition, BI · Operacoes2) ───────────────
+export {
+  VarianceBridgeCard,
+  type VarianceBridgeCardProps,
+} from "./VarianceBridgeCard"
+export { PvmBridgeCard, type PvmBridgeCardProps } from "./PvmBridgeCard"
+export { DumbbellCard, type DumbbellCardProps } from "./DumbbellCard"
+export { MixDeltaBarCard, type MixDeltaBarCardProps } from "./MixDeltaBarCard"
+export {
+  ConcentracaoDeltaCard,
+  type ConcentracaoDeltaCardProps,
+} from "./ConcentracaoDeltaCard"

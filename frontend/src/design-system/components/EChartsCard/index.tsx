@@ -8,13 +8,99 @@
 import * as React from "react"
 import ReactECharts from "echarts-for-react"
 import type { EChartsOption } from "echarts"
-import { RiErrorWarningLine, RiRefreshLine } from "@remixicon/react"
+import {
+  RiArrowDownLine,
+  RiArrowUpLine,
+  RiErrorWarningLine,
+  RiRefreshLine,
+} from "@remixicon/react"
 import { cx } from "@/lib/utils"
 import { useEChartsTheme } from "@/design-system/tokens/echarts-theme"
 import { OriginDot } from "@/design-system/components/OriginDot"
 import type { Provenance } from "@/design-system/types/provenance"
 
 export { useEChartsTheme }
+
+// ════════════════════════════════════════════════════════════════════════
+// HeaderKpi — KPI editorial no header do card (CLAUDE.md §7,
+// docs/bi-patterns-presentacao-dados.md §4.3 "Hero Chart com KPI no titulo").
+//
+// Quando passado, transforma o header do card em "eyebrow + valor + delta":
+//
+//   ┌─ VOP ────────────────────────── [actions] ┐  ← title vira eyebrow
+//   │ R$ 3,7 mi  ↑ 4,2%  MTD                    │  ← value + delta inline
+//   │ caption opcional abaixo                   │
+//   └───────────────────────────────────────────┘
+//
+// Regra de uso: o `value` representa O numero que aquele card explica. Numero
+// que nao casa com a abertura analitica do card abaixo (ex.: total de soma,
+// nao da pra exibir como inteiro) deve ficar em `caption` ou no proprio chart.
+// ════════════════════════════════════════════════════════════════════════
+
+export type EChartsCardHeaderKpiDelta = {
+  /** Valor numerico do delta. */
+  value: number
+  /** Sufixo (ex.: "%", "pp", "d"). Default: "". */
+  suffix?: string
+  /** Direcao do indicador. Default: infere do sinal. */
+  direction?: "up" | "down"
+  /**
+   * Bom (verde) vs ruim (vermelho). Default: `direction === "up"`.
+   * Para metricas onde subir e ruim (prazo, inadimplencia), passar
+   * `good: false` quando o valor for positivo.
+   */
+  good?: boolean
+}
+
+export type EChartsCardHeaderKpi = {
+  /** Numero principal pre-formatado (ex.: "R$ 3,7 mi", "1,8%", "32 d"). */
+  value: string
+  /** Delta opcional. */
+  delta?: EChartsCardHeaderKpiDelta
+  /** Texto inline pos-delta (ex.: "MTD", "vs mês anterior"). */
+  deltaSub?: string
+}
+
+function HeaderKpiInline({ kpi }: { kpi: EChartsCardHeaderKpi }) {
+  const dir =
+    kpi.delta?.direction ??
+    (kpi.delta && kpi.delta.value >= 0 ? "up" : "down")
+  const good = kpi.delta?.good ?? dir === "up"
+  const ArrowIcon = dir === "up" ? RiArrowUpLine : RiArrowDownLine
+  const deltaColor = good
+    ? "text-emerald-600 dark:text-emerald-400"
+    : "text-red-600 dark:text-red-400"
+
+  return (
+    <p className="mt-1 flex flex-wrap items-baseline gap-x-2 tabular-nums">
+      <span className="text-[20px] font-semibold leading-none tracking-tight text-gray-900 dark:text-gray-50">
+        {kpi.value}
+      </span>
+      {kpi.delta && (
+        <span
+          className={cx(
+            "inline-flex items-baseline whitespace-nowrap text-xs font-medium",
+            deltaColor,
+          )}
+        >
+          <ArrowIcon
+            className="mr-0.5 inline size-3 shrink-0 align-[-0.125em]"
+            aria-hidden="true"
+          />
+          {Math.abs(kpi.delta.value).toLocaleString("pt-BR", {
+            maximumFractionDigits: 2,
+          })}
+          {kpi.delta.suffix ?? ""}
+        </span>
+      )}
+      {kpi.deltaSub && (
+        <span className="text-[11px] text-gray-500 dark:text-gray-400">
+          {kpi.deltaSub}
+        </span>
+      )}
+    </p>
+  )
+}
 
 function ChartSkeleton({ height }: { height: number }) {
   return (
@@ -54,6 +140,14 @@ export interface EChartsCardProps {
   onRetry?:      () => void
   title?:        string
   caption?:      string
+  /**
+   * KPI editorial no header (docs/bi-patterns-presentacao-dados.md §4.3).
+   * Quando presente, o `title` vira eyebrow (uppercase, smaller) e o KPI
+   * `{ value, delta?, deltaSub? }` ocupa o espaco visual de "lead".
+   * Substitui o paradigma de KpiStrip page-level — cada card carrega O
+   * numero que ele decompoe.
+   */
+  headerKpi?:    EChartsCardHeaderKpi
   actions?:      React.ReactNode
   footer?:       React.ReactNode
   /**
@@ -75,6 +169,7 @@ export function EChartsCard({
   onRetry,
   title,
   caption,
+  headerKpi,
   actions,
   footer,
   provenance,
@@ -128,14 +223,33 @@ export function EChartsCard({
         className,
       )}
     >
-      {(title || actions) && (
+      {(title || actions || headerKpi) && (
         <div className="flex items-start justify-between gap-3 border-b border-gray-100 dark:border-gray-900 px-4 py-3">
           <div className="min-w-0">
-            {title && (
-              <h3 className="truncate text-sm font-semibold text-gray-900 dark:text-gray-50">{title}</h3>
-            )}
+            {/* Quando headerKpi esta presente, title vira eyebrow uppercase
+                pequeno (alinhado com Linha2HeroRitmo / Linha2Projecao em
+                bi/operacoes2). Sem headerKpi, mantem o estilo classico
+                (text-sm font-semibold) para nao quebrar callers existentes. */}
+            {title &&
+              (headerKpi ? (
+                <p className="truncate text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  {title}
+                </p>
+              ) : (
+                <h3 className="truncate text-sm font-semibold text-gray-900 dark:text-gray-50">
+                  {title}
+                </h3>
+              ))}
+            {headerKpi && <HeaderKpiInline kpi={headerKpi} />}
             {caption && (
-              <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{caption}</p>
+              <p
+                className={cx(
+                  "text-xs text-gray-500 dark:text-gray-400",
+                  headerKpi ? "mt-1.5" : "mt-0.5",
+                )}
+              >
+                {caption}
+              </p>
             )}
           </div>
           {actions && (
