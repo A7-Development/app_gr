@@ -16,7 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.enums import Environment, SourceType
+from app.core.system_health_guard import require_system_health_token
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
+from app.modules.integracoes.models.tenant_source_endpoint_config import (
+    TenantSourceEndpointConfig,
+)
 from app.modules.integracoes.public import rule_name_for
 from app.modules.integracoes.services.source_config import list_configs
 from app.shared.audit_log.sync_health import last_sync_at, last_sync_attempt_at
@@ -174,3 +178,88 @@ async def sync_health(
             )
 
     return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Endpoint publico de monitoramento (auth por Bearer token de servico)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class EndpointSyncStatusEntry(BaseModel):
+    """Snapshot operacional de uma linha de TSEC.
+
+    Cross-tenant — exposto para monitoramento externo (rotinas /schedule no
+    Anthropic Cloud, uptime monitors). Sem JWT; auth via Bearer token de
+    servico (SYSTEM_HEALTH_TOKEN). Read-only.
+    """
+
+    tenant_id: str
+    source_type: SourceType
+    environment: Environment
+    unidade_administrativa_id: str | None
+    endpoint_name: str
+    enabled: bool
+    schedule_kind: str = Field(description="interval | daily_at | on_demand")
+    schedule_value: str | None
+    last_sync_started_at: datetime | None
+    last_sync_finished_at: datetime | None
+    last_sync_status: str | None = Field(
+        description="ok | erro | em_progresso | null (nunca rodou)"
+    )
+    last_sync_error: str | None
+
+
+@router.get(
+    "/endpoint-sync-status",
+    response_model=list[EndpointSyncStatusEntry],
+    summary="Snapshot operacional de tenant_source_endpoint_config (cross-tenant)",
+)
+async def endpoint_sync_status(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[None, Depends(require_system_health_token)],
+) -> list[EndpointSyncStatusEntry]:
+    """Cross-tenant snapshot da TSEC pra monitoramento externo.
+
+    Auth: Bearer token via header `Authorization: Bearer <SYSTEM_HEALTH_TOKEN>`.
+    Sem JWT. Sem escopo de tenant (excecao explicita ao multi-tenancy de
+    CLAUDE.md §10 — endpoint operacional, nao de dominio).
+
+    Use cases:
+        - Rotinas /schedule cloud validando que daily_at endpoints disparam
+          na janela natural (ex.: amanha 07-09h SP).
+        - Uptime monitors externos (Pingdom, BetterStack) alertando quando
+          last_sync_status='erro' ou last_sync_started_at envelhece.
+        - Dashboard de saude operacional independente do app.
+
+    Retorna **todas** as linhas de TSEC. Caller filtra/agrega como precisar.
+    """
+    from sqlalchemy import select
+
+    stmt = select(TenantSourceEndpointConfig).order_by(
+        TenantSourceEndpointConfig.source_type,
+        TenantSourceEndpointConfig.endpoint_name,
+        TenantSourceEndpointConfig.tenant_id,
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+
+    return [
+        EndpointSyncStatusEntry(
+            tenant_id=str(r.tenant_id),
+            source_type=r.source_type,
+            environment=r.environment,
+            unidade_administrativa_id=(
+                str(r.unidade_administrativa_id)
+                if r.unidade_administrativa_id
+                else None
+            ),
+            endpoint_name=r.endpoint_name,
+            enabled=r.enabled,
+            schedule_kind=r.schedule_kind,
+            schedule_value=r.schedule_value,
+            last_sync_started_at=r.last_sync_started_at,
+            last_sync_finished_at=r.last_sync_finished_at,
+            last_sync_status=r.last_sync_status,
+            last_sync_error=r.last_sync_error,
+        )
+        for r in rows
+    ]

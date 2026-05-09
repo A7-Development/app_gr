@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     # schedule_value proprios. Liga em staging primeiro, depois prod.
     INTEGRACOES_USE_ENDPOINT_SCHEDULING: bool = Field(default=False)
 
+    # ---------- System health: token de servico (opcional) ----------
+    # Bearer token para endpoints publicos de monitoramento (ex.:
+    # /api/v1/system/endpoint-sync-status). Habilita observabilidade externa
+    # (rotinas /schedule no Anthropic Cloud, uptime monitors) sem precisar de
+    # JWT de usuario. None/vazia = endpoint retorna 503 (token nao configurado).
+    # Gerar com: python -c "import secrets; print(secrets.token_hex(32))"
+    SYSTEM_HEALTH_TOKEN: str = Field(default="", min_length=0)
+
     # ---------- Credito: storage de anexos do dossie ----------
     # Diretorio raiz para blobs de anexos. Em dev defaults para um path local;
     # em prod sempre setar via env (caminho absoluto fora do repo).
