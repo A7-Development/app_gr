@@ -31,6 +31,14 @@ class Tenant(Base):
         Boolean, nullable=False, default=True, server_default="true", index=True
     )
 
+    # Marks the single tenant that operates the system (the maintainer).
+    # Constrained to at most one row with `true` via partial unique index.
+    # Required to access global admin endpoints (AI provider credentials, tenant AI tier
+    # management, prompt library) — see core/system_maintainer_guard.py.
+    is_system_maintainer: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

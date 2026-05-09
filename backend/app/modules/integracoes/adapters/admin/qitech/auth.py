@@ -1,4 +1,4 @@
-"""API token lifecycle — fetch + cache por (tenant_id, environment).
+"""API token lifecycle — fetch + cache por (tenant_id, environment, ua_id).
 
 Apesar de `/v2/painel/token/api` emitir algo que parece Bearer-OAuth, o
 token e usado como header `x-api-key` em todas as chamadas subsequentes
@@ -7,9 +7,13 @@ token e usado como header `x-api-key` em todas as chamadas subsequentes
 Responsabilidades:
     1. Chamar `POST {base_url}/v2/painel/token/api` com o payload de
        credenciais do tenant e extrair `apiToken` da resposta.
-    2. Guardar o token em memoria com TTL, chaveado por tenant+environment.
-       Outros tenants nunca veem esse token — e a garantia de isolamento
-       multi-tenant para um modelo stateless.
+    2. Guardar o token em memoria com TTL, chaveado por
+       (tenant_id, environment, unidade_administrativa_id). Tenants/UAs
+       distintos sao isoladas — multi-UA (CLAUDE.md secao 13, 2026-04-25)
+       exige que dois FIDCs do mesmo tenant tenham caches separados, ja que
+       cada UA tem seu proprio par client_id+client_secret na QiTech.
+       UA `None` e a chave usada por configs legacy (pre-Phase-F) — nao
+       conflita com nenhuma UA real.
     3. Renovar antes da expiracao (com `token_refresh_skew_seconds` de folga).
 
 Nao toca em I/O de banco; o estado e um dict em memoria que vive no processo
@@ -48,13 +52,16 @@ class _CachedToken:
     expires_at: float
 
 
-# Chave: (tenant_id, environment). Isolamento multi-tenant: o valor de um
-# tenant nao e visivel nas consultas de outro.
-_TOKEN_CACHE: dict[tuple[UUID, Environment], _CachedToken] = {}
-_LOCKS: dict[tuple[UUID, Environment], asyncio.Lock] = {}
+# Chave: (tenant_id, environment, ua_id). Isolamento multi-tenant: o valor de
+# um tenant nao e visivel nas consultas de outro. Multi-UA: dois FIDCs do
+# mesmo tenant tem credenciais distintas e portanto tokens distintos.
+_CacheKey = tuple[UUID, Environment, UUID | None]
+
+_TOKEN_CACHE: dict[_CacheKey, _CachedToken] = {}
+_LOCKS: dict[_CacheKey, asyncio.Lock] = {}
 
 
-def _get_lock(key: tuple[UUID, Environment]) -> asyncio.Lock:
+def _get_lock(key: _CacheKey) -> asyncio.Lock:
     lock = _LOCKS.get(key)
     if lock is None:
         lock = asyncio.Lock()
@@ -73,23 +80,28 @@ async def get_api_token(
     environment: Environment,
     config: QiTechConfig,
     transport: httpx.AsyncBaseTransport | None = None,
+    unidade_administrativa_id: UUID | None = None,
 ) -> str:
-    """Retorna um token valido para o par (tenant, environment).
+    """Retorna um token valido para a tupla (tenant, environment, ua).
 
     Usa cache em memoria; so chama a QiTech se o cache estiver vazio ou
     expirado (considerando `config.token_refresh_skew_seconds`).
 
     Args:
         tenant_id: UUID do tenant dono do token.
-        environment: sandbox ou production — dois caches separados.
+        environment: sandbox ou production — caches separados por ambiente.
         config: config ja materializada a partir de tenant_source_config.
         transport: override opcional (tests via MockTransport).
+        unidade_administrativa_id: UA dona desta credencial. Multi-UA exige
+            cache separado porque cada UA tem seu proprio par client_id+
+            client_secret na QiTech. None mantem retrocompat com configs
+            legacy pre-Phase-F.
 
     Raises:
         QiTechAuthError: credenciais recusadas ou resposta sem `apiToken`.
         QiTechHttpError: falha de rede / 5xx.
     """
-    key = (tenant_id, environment)
+    key: _CacheKey = (tenant_id, environment, unidade_administrativa_id)
     now = time.time()
 
     cached = _TOKEN_CACHE.get(key)
@@ -116,9 +128,10 @@ async def get_api_token(
         )
         _TOKEN_CACHE[key] = fresh
         logger.info(
-            "qitech.auth: token emitido tenant=%s env=%s ttl=%ss",
+            "qitech.auth: token emitido tenant=%s env=%s ua=%s ttl=%ss",
             tenant_id,
             environment.value,
+            unidade_administrativa_id,
             config.token_ttl_seconds,
         )
         return fresh.token
@@ -144,26 +157,47 @@ async def _request_token(
         )
 
     url = f"{config.base_url}{E_AUTH_TOKEN.path}"
+    # Retry leve em timeout transitorio (ConnectTimeout/ReadTimeout). Singulare
+    # apresenta hiccup esporadico no /painel/token/api (validado 2026-04-27 em
+    # /testar e em loop de repopulacao). Erros HTTP reais (4xx/5xx) NAO entram
+    # aqui — sao tratados depois do request bem-sucedido.
+    last_error: httpx.HTTPError | None = None
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(30.0, connect=10.0),
         transport=transport,
     ) as client:
-        try:
-            resp = await client.request(
-                E_AUTH_TOKEN.method,
-                url,
-                auth=httpx.BasicAuth(config.client_id, config.client_secret),
-            )
-        except httpx.HTTPError as e:
+        for attempt in range(2):
+            try:
+                resp = await client.request(
+                    E_AUTH_TOKEN.method,
+                    url,
+                    auth=httpx.BasicAuth(config.client_id, config.client_secret),
+                )
+                last_error = None
+                break
+            except (httpx.ConnectTimeout, httpx.ReadTimeout) as e:
+                last_error = e
+                if attempt == 0:
+                    logger.warning(
+                        "qitech.auth: timeout transitorio em %s (%s); retry em 1s",
+                        E_AUTH_TOKEN.path,
+                        type(e).__name__,
+                    )
+                    await asyncio.sleep(1.0)
+                    continue
+            except httpx.HTTPError as e:
+                last_error = e
+                break
+        if last_error is not None:
             # {e} de varias httpx exceptions stringifica vazio ("''") — incluir
             # o tipo ajuda a diferenciar ConnectTimeout vs ReadTimeout vs
             # ConnectError sem precisar de traceback.
             raise QiTechHttpError(
                 f"falha de rede ao chamar {E_AUTH_TOKEN.path}: "
-                f"{type(e).__name__}({e!r})",
+                f"{type(last_error).__name__}({last_error!r})",
                 status_code=None,
-                detail=f"{type(e).__name__}: {e!r}",
-            ) from e
+                detail=f"{type(last_error).__name__}: {last_error!r}",
+            ) from last_error
 
     if resp.status_code >= 500:
         raise QiTechHttpError(
@@ -191,9 +225,13 @@ async def _request_token(
     return token
 
 
-def invalidate_token(tenant_id: UUID, environment: Environment) -> None:
+def invalidate_token(
+    tenant_id: UUID,
+    environment: Environment,
+    unidade_administrativa_id: UUID | None = None,
+) -> None:
     """Remove o token do cache — usado pelo connection em 401."""
-    _TOKEN_CACHE.pop((tenant_id, environment), None)
+    _TOKEN_CACHE.pop((tenant_id, environment, unidade_administrativa_id), None)
 
 
 def _clear_cache_for_tests() -> None:

@@ -11,6 +11,26 @@ Verificador automatico de conformidade com `CLAUDE.md`. Roda como revisao estati
 
 Ler `CLAUDE.md` na raiz.
 
+> **🔓 Modo Iteracao de Design ativo** (ver banner em `CLAUDE.md` raiz):
+> Durante este periodo, **rebaixar para `info` (nao reportar como erro/alerta)**:
+>
+> - Categoria 3 — Cores arbitrarias (hex literals, `bg-[rgb(...)]`, `text-[#...]`).
+> - Categoria 8 — Tamanhos/espacamentos magicos (`text-[Npx]`, `p-[Npx]`, `gap-[Npx]`, `rounded-[Npx]`, etc).
+> - Categoria adjacente — Inline styles `style={{...}}` em componentes/surfaces.
+> - Cores Tailwind fora da paleta canonica da §4 (orange/purple/yellow/stone/zinc/neutral) quando vierem do handoff.
+>
+> **Continuar reportando como erro grave / alerta** (nao suspensos):
+>
+> - Categoria 1 — Imports proibidos (lucide-react, shadcn, MUI, Chakra, etc).
+> - Categoria 2 — `cn()` em vez de `cx()`.
+> - Componentes fora das 6 camadas (§3 do CLAUDE.md).
+> - Sidebar com 3+ niveis aninhados (§11.6).
+> - Tabs criadas fora de `TabNavigation` do Tremor.
+> - Strings de UI em ingles (deve ser pt-BR).
+> - Imports cruzados entre modulos sem passar por `public.py` (backend §11.3).
+>
+> Quando o modo for desligado, este bloco vira "voltou a vigorar — agora reporta".
+
 ## Entrada
 
 Caminho(s) de arquivo ou pasta a auditar. Se o usuario nao especificar, peca via `AskUserQuestion`.
@@ -87,8 +107,8 @@ Herdar tokens Tremor ao inves de valores magicos.
 
 ### 9. Componentes fora das camadas (alerta)
 
-- Arquivo em `src/components/app/` importando de `src/components/<dominio>/` (errado; `app/` e dominio-neutro).
-- Arquivo em `src/components/tremor/` importando de `src/components/app/` ou `src/components/<dominio>/` (errado; tremor e camada base).
+- Arquivo em `src/design-system/components/` importando de `src/components/<dominio>/` (errado; `app/` e dominio-neutro).
+- Arquivo em `src/components/tremor/` importando de `src/design-system/components/` ou `src/components/<dominio>/` (errado; tremor e camada base).
 - Arquivo em `src/components/charts/` importando de `src/components/<dominio>/` (errado).
 
 ### 10. `any` em codigo de dominio (alerta)
@@ -101,12 +121,30 @@ Ver CLAUDE.md secao 11.6. Sistema tem exatamente 3 niveis de navegacao: L1 (modu
 
 Violacoes a detectar:
 
-- **Sidebar com aninhamento de 3+ niveis.** Procurar em `src/components/app/AppSidebar.tsx` (ou equivalente) por `SidebarMenuSub` aninhado dentro de outro `SidebarMenuSub`. Se houver, e violacao.
+- **Sidebar com aninhamento de 3+ niveis.** Procurar em `src/design-system/components/AppSidebar.tsx` (ou equivalente) por `SidebarMenuSub` aninhado dentro de outro `SidebarMenuSub`. Se houver, e violacao.
 - **Tabs criadas fora de `TabNavigation` do Tremor.** Em qualquer `src/app/(app)/**/page.tsx`, `<Tabs>` ou `<TabsList>` de `@radix-ui/react-tabs` direto e proibido — deve ser `TabNavigation` do Tremor em todos os casos de navegacao de L3.
 - **Ausencia de `L3` via URL.** Pagina que mostra tabs mas tem estado somente em React state (sem search param) — viola a regra "URL como fonte unica da verdade". Procurar `useState<string>` combinado com tabs ou switch case de conteudo — suspeito de nao-deep-link.
 - **Sidebar sem suporte a active state via `pathname`.** `SidebarSubLink` com `isActive={false}` hard-coded — deveria ser `isActive={pathname === item.href}` ou similar.
 
-### 12. Module guard no backend (erro grave)
+### 12. Pattern canonico nao aplicado (erro)
+
+CLAUDE.md §7 — toda pagina autenticada (`src/app/(app)/*`) **deve preferir** comecar de um pattern em `frontend/src/design-system/patterns/`:
+
+- `DashboardBiPadrao` / `DashboardOperacional` — dashboards
+- `ListagemComDrilldown` — listagem de dados de dominio com drill-down de leitura
+- `ListagemCrudInline` — CRUD admin com identidade tabular (DataTableShell)
+- `ListagemCrudCards` — CRUD admin com identidade visual (grid de EntityCard)
+- `ListagemCrudExpand` — variante de inline com row expand
+
+Heuristica de deteccao:
+- **Pagina invento estrutura propria de listagem** (Card + map manual de items, sem DataTableShell e sem grid no padrao do `ListagemCrudCards`) → erro. Se foi escolha deliberada, deve ter comentario `// MOTIVO:` no header explicando por que pattern X nao serve.
+- **PageHeader sem `info` E sem `subtitle`** numa pagina que tem CTA + listagem → suspeito. Pages canonicas usam ao menos `info` (tooltip "i" novo padrao Tremor) ou `subtitle` (eyebrow "Modulo · Categoria") alem do `title`.
+- **CRUD admin que faz `<Card>` + `<FilterSearch>` + `<DataTable>` manualmente, sem `<DataTableShell>` nem `<EntityCard>`** → pattern nao aplicado. Provavel violacao de CLAUDE.md §6.
+- **Edit que abre Dialog modal em vez de `<DrillDownSheet>` lateral** em CRUD inline → divergencia do canonico (DrillDownSheet eh padrao em ListagemCrudInline e ListagemCrudCards). Aceitar com `// MOTIVO:` so se o form for trivial (1-2 campos).
+
+Pattern conformity nao precisa ser perfeita — divergencia justificada (com `// MOTIVO:`) e aceita. Mas pagina **sem nenhuma referencia a um pattern canonico** e que reinventa estrutura e violacao.
+
+### 13. Module guard no backend (erro grave)
 
 Verificar `src/app/(app)/<modulo>/` — toda rota de modulo no frontend pressupoe que o backend tenha `require_module(Module.X, Permission.READ)` no endpoint correspondente. Auditoria so e relevante no frontend para:
 

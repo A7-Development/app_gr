@@ -5,6 +5,14 @@
 
 @theme {
   --color-gray-925: #050814;
+  --color-active-indicator: #F05A28;
+
+  /* App shell breadcrumb host height. Tailwind v4 nao gera utility para este
+   * nome (fora do namespace --spacing-*), entao o codigo usa `h-12`/`top-12`
+   * (3rem = 48px) por convencao; `var(--header-h)` fica como escape hatch
+   * pra calculos dinamicos quando precisar.
+   * Reduzido de 56 -> 48 em 2026-05-02 para ganhar espaco vertical. */
+  --header-h: 48px;
 
   --animate-hide: hide 150ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-slide-down-and-fade: slideDownAndFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -119,5 +127,56 @@
       opacity: 0;
       transform: translateX(100%);
     }
+  }
+
+}
+
+/* ── Sticky chrome scroll-shadow (canonico A1b — DashboardBiPadrao) ──
+   Convencao: qualquer toolbar/header sticky que precise sinalizar conteudo
+   passando por baixo durante scroll usa essa classe junto com
+   useScrollShadow() (frontend/src/lib/hooks/use-scroll-shadow.ts).
+
+   Implementacao: usa `filter: drop-shadow()` em vez de `box-shadow` porque
+   o Tailwind v4 neste setup popula um shadow-stack `--tw-*-shadow` em
+   utilities comuns (`border-b`, `ring-*`, `shadow-*`) que sobrescreve
+   `box-shadow` mesmo com `!important`. `filter` e uma propriedade
+   separada e nao sofre essa interferencia. */
+.scroll-shadow {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.06));
+  transition: filter 150ms ease-out;
+}
+
+.dark .scroll-shadow {
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
+}
+
+/* ── HeroSplitAuth surface animations (defined OUTSIDE @theme so the
+   browser receives global @keyframes, not Tailwind v4 utility tokens) ── */
+@keyframes heroFadeSlideLeft {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes heroFadeSlideRight {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes heroFadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes heroShake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-5px); }
+  30% { transform: translateX(5px); }
+  45% { transform: translateX(-4px); }
+  60% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+  90% { transform: translateX(2px); }
+}
+
+/* Disable hero animations for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  [data-hero-anim] {
+    animation: none !important;
   }
 }

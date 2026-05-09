@@ -12,8 +12,8 @@ import { AreaChart } from "@/components/charts/AreaChart"
 import { BarChart } from "@/components/charts/BarChart"
 import { BarList } from "@/components/charts/BarList"
 import { DonutChart } from "@/components/charts/DonutChart"
-import { Insight, InsightBar } from "@/components/app/Insight"
-import { KPICard, KPIStrip } from "@/components/app/KPICard"
+import { Insight, InsightBar } from "@/design-system/components/Insight"
+import { KpiCard, KpiStrip } from "@/design-system/components/KpiStrip"
 import { biBenchmark } from "@/lib/api-client"
 
 import { labelCompetencia, moedaCompacta, numero } from "./formatters"
@@ -171,8 +171,8 @@ export function MercadoTab() {
         Visão geral
       </h2>
 
-      <KPIStrip>
-        <KPICard
+      <KpiStrip>
+        <KpiCard
           label="PL total do mercado"
           value={
             plTotalLast ? moedaCompacta.format(plTotalLast.valor) : "--"
@@ -191,7 +191,7 @@ export function MercadoTab() {
           source={adminSource}
           updatedAtISO={kpiUpdatedISO}
         />
-        <KPICard
+        <KpiCard
           label="Fundos reportando"
           value={fundosLast ? numero.format(fundosLast.valor) : "--"}
           sub={fundosLast ? labelCompetencia(fundosLast.periodo) : undefined}
@@ -207,7 +207,7 @@ export function MercadoTab() {
           source={adminSource}
           updatedAtISO={kpiUpdatedISO}
         />
-        <KPICard
+        <KpiCard
           label="PL mediano"
           value={
             plMedianoLast ? moedaCompacta.format(plMedianoLast.valor) : "--"
@@ -217,17 +217,7 @@ export function MercadoTab() {
           source={adminSource}
           updatedAtISO={kpiUpdatedISO}
         />
-        <KPICard
-          label="Administradoras"
-          value={
-            adminsData ? numero.format(adminsData.total_admins) : "--"
-          }
-          sub="distintas no mercado"
-          intensity={{ tone: "info", level: "high" }}
-          source={adminSource}
-          updatedAtISO={kpiUpdatedISO}
-        />
-        <KPICard
+        <KpiCard
           label="% Aberto"
           value={
             condomData ? `${condomData.aberto_pct.toFixed(1)}%` : "--"
@@ -249,7 +239,7 @@ export function MercadoTab() {
           source={adminSource}
           updatedAtISO={kpiUpdatedISO}
         />
-        <KPICard
+        <KpiCard
           label="Maior administrador"
           value={topAdmin?.admin ?? "--"}
           sub={
@@ -259,9 +249,9 @@ export function MercadoTab() {
           source={adminSource}
           updatedAtISO={kpiUpdatedISO}
         />
-      </KPIStrip>
+      </KpiStrip>
 
-      <InsightBar>
+      <InsightBar variant="stacked">
         {plTotalDelta !== undefined && plTotalLast && (
           <Insight
             tone={plTotalDelta >= 0 ? "blue" : "amber"}

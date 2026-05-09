@@ -1,15 +1,25 @@
 ---
 name: create-component
-description: Cria um componente reutilizavel em src/components/app/ (camada de composicao neutra). Use quando for criar PageHeader, EmptyState, ErrorState, Breadcrumb, DataTable, FormLayout ou qualquer composicao que agregue primitivos Tremor.
+description: Cria um componente reutilizavel em src/design-system/components/ (camada de composicao neutra). Use quando for criar PageHeader, EmptyState, ErrorState, Breadcrumb, DataTable, FormLayout ou qualquer composicao que agregue primitivos Tremor.
 ---
 
 # create-component
 
-Use para criar **componentes de composicao** que vivem em `src/components/app/`. Esta camada fica entre os primitivos Tremor e os componentes de dominio.
+Use para criar **componentes de composicao** que vivem em `src/design-system/components/`. Esta camada fica entre os primitivos Tremor e os componentes de dominio.
 
 ## Pre-condicao obrigatoria
 
 Ler `CLAUDE.md` na raiz. Regras nao-negociaveis.
+
+> **🔓 Modo Iteracao de Design ativo** (ver banner em `CLAUDE.md` raiz):
+> Durante este periodo, ao criar componente novo:
+>
+> - Valores arbitrarios de Tailwind sao **aceitaveis** (`text-[13px]`, `rounded-[4px]`, `gap-[3px]`, etc) quando vierem direto do handoff.
+> - Hex literals e `rgba(...)` em codigo do componente sao **aceitaveis** alem do que ja vive em `tokens/`.
+> - Inline styles `style={{...}}` para efeitos que Tailwind nao expressa bem (gradientes complexos, transformacoes pontuais) sao **aceitaveis**.
+> - **Continuam invioaveis**: stack obrigatoria (sem libs novas), 6 camadas, primitivos Tremor (nao reimplementar), ícones Remix, fonte Geist, idioma pt-BR.
+>
+> Lock-down volta no fim da iteracao com promocao a tokens nomeados.
 
 ## Quando usar esta skill
 
@@ -34,7 +44,7 @@ Ler `CLAUDE.md` na raiz. Regras nao-negociaveis.
 ## Estrutura a produzir
 
 ```
-src/components/app/<NomeComponente>.tsx
+src/design-system/components/<NomeComponente>.tsx
 ```
 
 Um unico arquivo. Se precisar de sub-componentes, exportar todos a partir do mesmo arquivo (como o Tremor faz com Card/CardHeader/CardContent).

@@ -19,7 +19,9 @@ Camadas (CLAUDE.md secao 13.2):
 
 from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel
 from app.warehouse.cpr_movimento import CprMovimento
+from app.warehouse.dia_util_qitech import DiaUtilQitech
 from app.warehouse.dim import DimDreClassificacao, DimMes
+from app.warehouse.dim_dia_util import DimDiaUtil
 from app.warehouse.dre import DreMensal
 from app.warehouse.estoque_recebivel import EstoqueRecebivel
 from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel
@@ -36,12 +38,37 @@ from app.warehouse.qitech_raw_relatorio import QiTechRawRelatorio
 from app.warehouse.rentabilidade_fundo import RentabilidadeFundo
 from app.warehouse.saldo_conta_corrente import SaldoContaCorrente
 from app.warehouse.saldo_tesouraria import SaldoTesouraria
+from app.warehouse.serasa_pj_atraso_medio_mensal import (
+    SerasaPjAtrasoMedioMensal,
+)
+from app.warehouse.serasa_pj_business_reference import (
+    SerasaPjBusinessReference,
+)
+from app.warehouse.serasa_pj_consulta import SerasaPjConsulta
+from app.warehouse.serasa_pj_endereco import SerasaPjEndereco
+from app.warehouse.serasa_pj_inquiry_anterior import SerasaPjInquiryAnterior
+from app.warehouse.serasa_pj_inquiry_mensal import SerasaPjInquiryMensal
+from app.warehouse.serasa_pj_pagamento_bucket import SerasaPjPagamentoBucket
+from app.warehouse.serasa_pj_pagamento_evolucao_mensal import (
+    SerasaPjPagamentoEvolucaoMensal,
+)
+from app.warehouse.serasa_pj_participacao import SerasaPjParticipacao
+from app.warehouse.serasa_pj_payment_comparative import (
+    SerasaPjPaymentComparative,
+)
+from app.warehouse.serasa_pj_predecessor import SerasaPjPredecessor
+from app.warehouse.serasa_pj_raw_relatorio import SerasaPjRawRelatorio
+from app.warehouse.serasa_pj_restricao import SerasaPjRestricao
+from app.warehouse.serasa_pj_restricao_summary import SerasaPjRestricaoSummary
+from app.warehouse.serasa_pj_socio import SerasaPjSocio
 from app.warehouse.titulo import Titulo
 from app.warehouse.titulo_snapshot import TituloSnapshot
 
 __all__ = [
     "AquisicaoRecebivel",
     "CprMovimento",
+    "DiaUtilQitech",
+    "DimDiaUtil",
     "DimDreClassificacao",
     "DimMes",
     "DreMensal",
@@ -61,6 +88,21 @@ __all__ = [
     "RentabilidadeFundo",
     "SaldoContaCorrente",
     "SaldoTesouraria",
+    "SerasaPjAtrasoMedioMensal",
+    "SerasaPjBusinessReference",
+    "SerasaPjConsulta",
+    "SerasaPjEndereco",
+    "SerasaPjInquiryAnterior",
+    "SerasaPjInquiryMensal",
+    "SerasaPjPagamentoBucket",
+    "SerasaPjPagamentoEvolucaoMensal",
+    "SerasaPjParticipacao",
+    "SerasaPjPaymentComparative",
+    "SerasaPjPredecessor",
+    "SerasaPjRawRelatorio",
+    "SerasaPjRestricao",
+    "SerasaPjRestricaoSummary",
+    "SerasaPjSocio",
     "Titulo",
     "TituloSnapshot",
 ]

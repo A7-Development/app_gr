@@ -17,7 +17,7 @@ import { Badge } from "@/components/tremor/Badge"
 import { Button } from "@/components/tremor/Button"
 import { Card } from "@/components/tremor/Card"
 import { Divider } from "@/components/tremor/Divider"
-import { JsonPreview } from "@/components/app/JsonPreview"
+import { JsonPreview } from "@/design-system/components/JsonPreview"
 import { useSyncSource, useTestSource } from "@/lib/hooks/integracoes"
 import type { SourceDetail, SourceTypeId } from "@/lib/api-client"
 
@@ -59,7 +59,12 @@ export function TestarTab({
             type="button"
             variant="primary"
             disabled={notConfigured || testMut.isPending}
-            onClick={() => testMut.mutate(detail.environment)}
+            onClick={() =>
+              testMut.mutate({
+                environment: detail.environment,
+                uaId: detail.unidade_administrativa_id,
+              })
+            }
           >
             {testMut.isPending ? (
               <RiLoader4Line className="mr-1.5 size-4 animate-spin" aria-hidden />
@@ -132,7 +137,12 @@ export function TestarTab({
             type="button"
             variant="secondary"
             disabled={notConfigured || syncMut.isPending}
-            onClick={() => syncMut.mutate(detail.environment)}
+            onClick={() =>
+              syncMut.mutate({
+                environment: detail.environment,
+                uaId: detail.unidade_administrativa_id,
+              })
+            }
           >
             {syncMut.isPending ? (
               <RiLoader4Line className="mr-1.5 size-4 animate-spin" aria-hidden />

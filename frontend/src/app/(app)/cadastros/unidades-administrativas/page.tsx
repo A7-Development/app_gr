@@ -1,31 +1,16 @@
 "use client"
 
-//
-// Cadastros · Unidades Administrativas — listagem + criacao/edicao via Dialog.
-//
-// Hierarquia (CLAUDE.md 11.6):
-//   L1 (dropdown): Cadastros
-//     L2 (sidebar): Unidades administrativas → /cadastros/unidades-administrativas
-//       L3 (TabNavigation): n/a — lista unica + dialog inline
-//
-// UA primaria do tenant. Cada UA pode (mas nao precisa) ter integracao
-// QiTech / Bitfin / outra admin. Pode ser FIDC, securitizadora, factoring,
-// gestora, consultoria.
-//
-
 import * as React from "react"
-import { useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { toast } from "sonner"
 import {
   RiAddLine,
   RiBuildingLine,
   RiDeleteBinLine,
-  RiEditLine,
+  RiMoreLine,
 } from "@remixicon/react"
+import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 
-import { EmptyState } from "@/components/app/EmptyState"
-import { ErrorState } from "@/components/app/ErrorState"
-import { PageHeader } from "@/components/app/PageHeader"
-import { Badge } from "@/components/tremor/Badge"
 import { Button } from "@/components/tremor/Button"
 import {
   Dialog,
@@ -35,38 +20,33 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/tremor/Dialog"
-import { Input } from "@/components/tremor/Input"
-import { Label } from "@/components/tremor/Label"
+import { Divider } from "@/components/tremor/Divider"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/tremor/Select"
-import { Switch } from "@/components/tremor/Switch"
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/tremor/DropdownMenu"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRoot,
-  TableRow,
-} from "@/components/tremor/Table"
+  DataTableShell,
+  DateCell,
+  DrillDownSheet,
+  PageHeader,
+} from "@/design-system/components"
+import { tableTokens } from "@/design-system/tokens/table"
+import type { TipoUA, UnidadeAdministrativa } from "@/lib/api-client"
 import {
   useCreateUA,
   useDeleteUA,
   useUAs,
   useUpdateUA,
 } from "@/lib/hooks/cadastros"
-import type {
-  TipoUA,
-  UnidadeAdministrativa,
-} from "@/lib/api-client"
+import { cx } from "@/lib/utils"
 
-const PAGE_INFO =
-  "Unidades administrativas (UAs) sao as entidades operacionais do tenant: FIDCs, securitizadoras, factorings, gestoras, consultorias. Cada UA pode ter ou nao integracao com fontes externas (QiTech, Bitfin, outras)."
+import { UACreateForm, UAEditForm, type UAFormValues } from "./_components/UAForm"
+
+// ─── Cell helpers ────────────────────────────────────────────────────────────
 
 const TIPO_LABELS: Record<TipoUA, string> = {
   fidc: "FIDC",
@@ -76,313 +56,379 @@ const TIPO_LABELS: Record<TipoUA, string> = {
   gestora: "Gestora",
 }
 
-const TIPOS: TipoUA[] = [
-  "fidc",
-  "consultoria",
-  "securitizadora",
-  "factoring",
-  "gestora",
-]
+const TIPO_TONES: Record<TipoUA, { bg: string; fg: string; dot: string }> = {
+  fidc: {
+    bg: "bg-blue-50 dark:bg-blue-500/10",
+    fg: "text-blue-700 dark:text-blue-300",
+    dot: "bg-blue-500",
+  },
+  securitizadora: {
+    bg: "bg-violet-50 dark:bg-violet-500/10",
+    fg: "text-violet-700 dark:text-violet-300",
+    dot: "bg-violet-500",
+  },
+  factoring: {
+    bg: "bg-gray-100 dark:bg-gray-500/10",
+    fg: "text-gray-700 dark:text-gray-300",
+    dot: "bg-gray-500",
+  },
+  gestora: {
+    bg: "bg-gray-100 dark:bg-gray-500/10",
+    fg: "text-gray-700 dark:text-gray-300",
+    dot: "bg-gray-500",
+  },
+  consultoria: {
+    bg: "bg-gray-100 dark:bg-gray-500/10",
+    fg: "text-gray-700 dark:text-gray-300",
+    dot: "bg-gray-500",
+  },
+}
+
+function TipoBadge({ tipo }: { tipo: TipoUA }) {
+  const tone = TIPO_TONES[tipo]
+  return (
+    <span className={cx(tableTokens.badgeWithDot, tone.bg, tone.fg)}>
+      <span aria-hidden className={cx("size-1.5 rounded-full", tone.dot)} />
+      {TIPO_LABELS[tipo]}
+    </span>
+  )
+}
+
+function StatusBadge({ ativa }: { ativa: boolean }) {
+  return (
+    <span
+      className={cx(
+        tableTokens.badge,
+        ativa
+          ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
+          : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
+      )}
+    >
+      {ativa ? "Ativa" : "Inativa"}
+    </span>
+  )
+}
 
 function formatCnpj(cnpj: string | null): string {
-  if (!cnpj) return "—"
+  if (!cnpj) return ""
   if (cnpj.length !== 14) return cnpj
   return `${cnpj.slice(0, 2)}.${cnpj.slice(2, 5)}.${cnpj.slice(5, 8)}/${cnpj.slice(8, 12)}-${cnpj.slice(12)}`
 }
 
-type FormState = {
-  nome: string
-  cnpj: string
-  tipo: TipoUA
-  ativa: boolean
-}
+// ─── Page ────────────────────────────────────────────────────────────────────
 
-const EMPTY_FORM: FormState = {
-  nome: "",
-  cnpj: "",
-  tipo: "fidc",
-  ativa: true,
-}
+const col = createColumnHelper<UnidadeAdministrativa>()
 
 export default function UnidadesAdministrativasPage() {
-  const { data, isLoading, isError, refetch } = useUAs()
-  const createMutation = useCreateUA()
-  const deleteMutation = useDeleteUA()
+  const router = useRouter()
+  const sp = useSearchParams()
+  const action = sp.get("action")
+  const selectedId = sp.get("selected")
 
-  const [editing, setEditing] = useState<UnidadeAdministrativa | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [form, setForm] = useState<FormState>(EMPTY_FORM)
-  const [submitError, setSubmitError] = useState<string | null>(null)
+  const uasQuery = useUAs()
+  const createMut = useCreateUA()
+  const deleteMut = useDeleteUA()
 
-  const updateMutation = useUpdateUA(editing?.id ?? "")
+  const data = uasQuery.data ?? []
+  const selected = React.useMemo(
+    () => (selectedId ? data.find((u) => u.id === selectedId) ?? null : null),
+    [data, selectedId],
+  )
+  const updateMut = useUpdateUA(selected?.id ?? "")
 
-  function openCreate() {
-    setEditing(null)
-    setForm(EMPTY_FORM)
-    setSubmitError(null)
-    setDialogOpen(true)
-  }
+  const [pendingDelete, setPendingDelete] = React.useState<UnidadeAdministrativa | null>(null)
+  const [search, setSearch] = React.useState("")
+  const [segment, setSegment] = React.useState("todas")
 
-  function openEdit(ua: UnidadeAdministrativa) {
-    setEditing(ua)
-    setForm({
-      nome: ua.nome,
-      cnpj: ua.cnpj ?? "",
-      tipo: ua.tipo,
-      ativa: ua.ativa,
-    })
-    setSubmitError(null)
-    setDialogOpen(true)
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setSubmitError(null)
-    const payload = {
-      nome: form.nome.trim(),
-      cnpj: form.cnpj.trim() || null,
-      tipo: form.tipo,
-      ativa: form.ativa,
-    }
-    try {
-      if (editing) {
-        await updateMutation.mutateAsync(payload)
-      } else {
-        await createMutation.mutateAsync(payload)
+  // ── Navigation ─────────────────────────────────────────────────────────
+  const setQuery = React.useCallback(
+    (next: { action?: string | null; selected?: string | null }) => {
+      const params = new URLSearchParams(sp.toString())
+      if (next.action !== undefined) {
+        if (next.action) params.set("action", next.action)
+        else params.delete("action")
       }
-      setDialogOpen(false)
-    } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Falha ao salvar unidade administrativa."
-      setSubmitError(msg)
-    }
-  }
+      if (next.selected !== undefined) {
+        if (next.selected) params.set("selected", next.selected)
+        else params.delete("selected")
+      }
+      const qs = params.toString()
+      router.push(qs ? `?${qs}` : "?")
+    },
+    [router, sp],
+  )
 
-  async function handleDelete(ua: UnidadeAdministrativa) {
-    const ok = confirm(
-      `Excluir a UA "${ua.nome}"? Esta operacao nao pode ser desfeita.`,
-    )
-    if (!ok) return
+  const openNew = React.useCallback(
+    () => setQuery({ action: "new", selected: null }),
+    [setQuery],
+  )
+  const openEdit = React.useCallback(
+    (ua: UnidadeAdministrativa) => setQuery({ action: null, selected: ua.id }),
+    [setQuery],
+  )
+  const closeSheet = React.useCallback(
+    () => setQuery({ action: null, selected: null }),
+    [setQuery],
+  )
+
+  // ── Handlers ───────────────────────────────────────────────────────────
+  const handleCreate = React.useCallback(
+    async (values: UAFormValues) => {
+      try {
+        await createMut.mutateAsync({
+          nome: values.nome.trim(),
+          cnpj: values.cnpj?.trim() || null,
+          tipo: values.tipo,
+          ativa: values.ativa,
+        })
+        toast.success(`UA "${values.nome}" cadastrada.`)
+        closeSheet()
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Falha ao cadastrar UA.",
+        )
+      }
+    },
+    [createMut, closeSheet],
+  )
+
+  const handleEdit = React.useCallback(
+    async (values: UAFormValues) => {
+      if (!selected) return
+      try {
+        await updateMut.mutateAsync({
+          nome: values.nome.trim(),
+          cnpj: values.cnpj?.trim() || null,
+          tipo: values.tipo,
+          ativa: values.ativa,
+        })
+        toast.success(`UA "${values.nome}" atualizada.`)
+        closeSheet()
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Falha ao atualizar UA.",
+        )
+      }
+    },
+    [updateMut, selected, closeSheet],
+  )
+
+  const handleDelete = React.useCallback(async () => {
+    if (!pendingDelete) return
     try {
-      await deleteMutation.mutateAsync(ua.id)
+      await deleteMut.mutateAsync(pendingDelete.id)
+      toast.success(`UA "${pendingDelete.nome}" excluida.`)
+      setPendingDelete(null)
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Falha ao excluir unidade administrativa."
-      alert(msg)
+      toast.error(
+        err instanceof Error ? err.message : "Falha ao excluir UA.",
+      )
     }
-  }
+  }, [deleteMut, pendingDelete])
 
+  // ── Columns ────────────────────────────────────────────────────────────
+  const columns = React.useMemo<ColumnDef<UnidadeAdministrativa, unknown>[]>(
+    () => [
+      col.accessor("nome", {
+        header: "Nome",
+        size: 240,
+        cell: (info) => (
+          <span className={tableTokens.cellText}>{info.getValue()}</span>
+        ),
+      }) as ColumnDef<UnidadeAdministrativa, unknown>,
+      col.accessor("tipo", {
+        header: "Tipo",
+        size: 150,
+        cell: (info) => <TipoBadge tipo={info.getValue()} />,
+      }) as ColumnDef<UnidadeAdministrativa, unknown>,
+      col.accessor("cnpj", {
+        header: "CNPJ",
+        size: 180,
+        cell: (info) => {
+          const v = info.getValue()
+          if (!v) return <span className={tableTokens.cellMuted}>—</span>
+          return (
+            <span className={tableTokens.cellTextMono}>
+              {formatCnpj(v)}
+            </span>
+          )
+        },
+      }) as ColumnDef<UnidadeAdministrativa, unknown>,
+      col.accessor("ativa", {
+        header: "Status",
+        size: 100,
+        cell: (info) => <StatusBadge ativa={info.getValue()} />,
+      }) as ColumnDef<UnidadeAdministrativa, unknown>,
+      col.accessor("created_at", {
+        header: "Criada em",
+        size: 110,
+        cell: (info) => <DateCell value={info.getValue()} />,
+      }) as ColumnDef<UnidadeAdministrativa, unknown>,
+      col.display({
+        id: "actions",
+        header: "",
+        size: 56,
+        cell: ({ row }) => (
+          <div className="flex justify-end">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="size-7 p-0"
+                  aria-label={`Acoes de ${row.original.nome}`}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <RiMoreLine className="size-4" aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" sideOffset={4}>
+                <DropdownMenuItem onSelect={() => openEdit(row.original)}>
+                  Editar
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={() => setPendingDelete(row.original)}
+                  className="text-red-600 focus:text-red-700 dark:text-red-400 dark:focus:text-red-300"
+                >
+                  <RiDeleteBinLine className="mr-2 size-4" aria-hidden />
+                  Excluir
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ),
+      }) as ColumnDef<UnidadeAdministrativa, unknown>,
+    ],
+    [openEdit],
+  )
+
+  // ── Render ─────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-6 px-12 py-6 pb-28">
+    <div className="flex flex-col gap-6 px-6 pt-5 pb-6">
       <PageHeader
-        title="Cadastros · Unidades administrativas"
-        info={PAGE_INFO}
+        title="Unidades administrativas"
+        info="UAs sao as entidades operacionais do tenant: FIDCs, securitizadoras, factorings, gestoras, consultorias. Cada UA pode ter ou nao integracao com fontes externas."
+        subtitle="Cadastros"
         actions={
-          <Button onClick={openCreate}>
-            <RiAddLine className="mr-2 size-4" aria-hidden />
+          <Button
+            variant="primary"
+            onClick={openNew}
+            disabled={uasQuery.isLoading}
+          >
+            <RiAddLine className="mr-1 size-4" aria-hidden />
             Nova UA
           </Button>
         }
       />
 
-      {isError && (
-        <ErrorState
-          title="Nao foi possivel carregar as UAs"
-          description="Verifique se a API esta no ar e se seu usuario tem permissao admin no modulo Cadastros."
-          action={
-            <Button variant="secondary" onClick={() => refetch()}>
-              Tentar novamente
-            </Button>
-          }
-        />
-      )}
-
-      {!isError && !isLoading && data && data.length === 0 && (
-        <EmptyState
-          icon={RiBuildingLine}
-          title="Nenhuma UA cadastrada"
-          description="Cadastre a primeira unidade administrativa do tenant para comecar a usar integracoes e BI."
-          action={
-            <Button onClick={openCreate}>
-              <RiAddLine className="mr-2 size-4" aria-hidden />
+      <DataTableShell<UnidadeAdministrativa>
+        data={data}
+        columns={columns}
+        loading={uasQuery.isLoading}
+        error={uasQuery.error}
+        onRetry={() => uasQuery.refetch()}
+        search={{
+          value: search,
+          onChange: setSearch,
+          placeholder: "Buscar por nome, CNPJ ou tipo...",
+        }}
+        segments={{
+          value: segment,
+          onChange: setSegment,
+          options: [
+            { value: "todas", label: "Todas", filter: () => true },
+            { value: "ativas", label: "Ativas", filter: (u) => u.ativa },
+            { value: "inativas", label: "Inativas", filter: (u) => !u.ativa },
+            { value: "fidc", label: "FIDC", filter: (u) => u.tipo === "fidc" },
+            { value: "securitizadora", label: "Securitizadora", filter: (u) => u.tipo === "securitizadora" },
+          ],
+        }}
+        itemNoun={{ singular: "unidade", plural: "unidades" }}
+        onRowClick={openEdit}
+        emptyState={{
+          icon: RiBuildingLine,
+          title: "Nenhuma UA cadastrada",
+          description: "Cadastre a primeira unidade administrativa do tenant para comecar a usar integracoes e BI.",
+          action: (
+            <Button variant="primary" onClick={openNew}>
+              <RiAddLine className="mr-1 size-4" aria-hidden />
               Cadastrar primeira UA
             </Button>
-          }
-        />
-      )}
+          ),
+        }}
+      />
 
-      {!isError && (isLoading || (data && data.length > 0)) && (
-        <div className="rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
-          <TableRoot>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableHeaderCell>Nome</TableHeaderCell>
-                  <TableHeaderCell>Tipo</TableHeaderCell>
-                  <TableHeaderCell>CNPJ</TableHeaderCell>
-                  <TableHeaderCell>Status</TableHeaderCell>
-                  <TableHeaderCell className="w-32 text-right">
-                    <span className="sr-only">Acoes</span>
-                  </TableHeaderCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {isLoading &&
-                  Array.from({ length: 3 }).map((_, i) => (
-                    <TableRow key={`sk-${i}`}>
-                      <TableCell colSpan={5}>
-                        <div className="h-6 w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                {!isLoading &&
-                  data?.map((ua) => (
-                    <TableRow key={ua.id}>
-                      <TableCell className="font-medium text-gray-900 dark:text-gray-50">
-                        {ua.nome}
-                      </TableCell>
-                      <TableCell>{TIPO_LABELS[ua.tipo]}</TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {formatCnpj(ua.cnpj)}
-                      </TableCell>
-                      <TableCell>
-                        {ua.ativa ? (
-                          <Badge variant="success">Ativa</Badge>
-                        ) : (
-                          <Badge variant="neutral">Inativa</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            onClick={() => openEdit(ua)}
-                            aria-label={`Editar ${ua.nome}`}
-                          >
-                            <RiEditLine className="size-4" aria-hidden />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            onClick={() => handleDelete(ua)}
-                            aria-label={`Excluir ${ua.nome}`}
-                          >
-                            <RiDeleteBinLine className="size-4" aria-hidden />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-              </TableBody>
-            </Table>
-          </TableRoot>
+      {/* Drawer: Nova UA */}
+      <DrillDownSheet
+        open={action === "new"}
+        onClose={closeSheet}
+        title="Nova unidade administrativa"
+        size="md"
+      >
+        <div className="p-6">
+          <UACreateForm
+            submitting={createMut.isPending}
+            onSubmit={handleCreate}
+            onCancel={closeSheet}
+          />
         </div>
-      )}
+      </DrillDownSheet>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      {/* Drawer: Editar UA */}
+      <DrillDownSheet
+        open={selected !== null}
+        onClose={closeSheet}
+        title={selected ? `Editar · ${selected.nome}` : ""}
+        size="md"
+      >
+        {selected && (
+          <div className="p-6">
+            <UAEditForm
+              initial={selected}
+              submitting={updateMut.isPending}
+              onSubmit={handleEdit}
+              onCancel={closeSheet}
+            />
+          </div>
+        )}
+      </DrillDownSheet>
+
+      {/* Confirmacao destrutiva */}
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+      >
         <DialogContent>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-            <DialogHeader>
-              <DialogTitle>
-                {editing ? "Editar UA" : "Nova UA"}
-              </DialogTitle>
-              <DialogDescription>
-                {editing
-                  ? "Atualize os dados da unidade administrativa. Campos vazios sao opcionais."
-                  : "Cadastre uma nova unidade administrativa do tenant."}
-              </DialogDescription>
-            </DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Excluir unidade administrativa</DialogTitle>
+            <DialogDescription>
+              Esta acao remove permanentemente a UA{" "}
+              <span className="font-semibold text-gray-900 dark:text-gray-50">
+                {pendingDelete?.nome}
+              </span>
+              . Integracoes associadas perderao a referencia.
+            </DialogDescription>
+          </DialogHeader>
 
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="nome">Nome</Label>
-                <Input
-                  id="nome"
-                  required
-                  maxLength={200}
-                  value={form.nome}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, nome: e.target.value }))
-                  }
-                  placeholder="Ex.: REALINVEST FIDC"
-                />
-              </div>
+          <Divider />
 
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="tipo">Tipo</Label>
-                <Select
-                  value={form.tipo}
-                  onValueChange={(v) =>
-                    setForm((f) => ({ ...f, tipo: v as TipoUA }))
-                  }
-                >
-                  <SelectTrigger id="tipo">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TIPOS.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {TIPO_LABELS[t]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="cnpj">
-                  CNPJ <span className="text-xs text-gray-500">(opcional)</span>
-                </Label>
-                <Input
-                  id="cnpj"
-                  value={form.cnpj}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, cnpj: e.target.value }))
-                  }
-                  placeholder="00.000.000/0000-00 ou 14 digitos"
-                  inputMode="numeric"
-                />
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Pode ficar vazio para UAs sem CNPJ proprio (em formacao,
-                  internas).
-                </p>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <Switch
-                  id="ativa"
-                  checked={form.ativa}
-                  onCheckedChange={(c) =>
-                    setForm((f) => ({ ...f, ativa: c }))
-                  }
-                />
-                <Label htmlFor="ativa">UA ativa</Label>
-              </div>
-
-              {submitError && (
-                <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-                  {submitError}
-                </p>
-              )}
-            </div>
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => setDialogOpen(false)}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="submit"
-                isLoading={
-                  createMutation.isPending || updateMutation.isPending
-                }
-              >
-                {editing ? "Salvar alteracoes" : "Cadastrar"}
-              </Button>
-            </DialogFooter>
-          </form>
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              onClick={() => setPendingDelete(null)}
+              disabled={deleteMut.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteMut.isPending}
+            >
+              <RiDeleteBinLine className="mr-1.5 size-4" aria-hidden />
+              Excluir UA
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

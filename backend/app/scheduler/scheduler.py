@@ -7,7 +7,8 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from app.scheduler.jobs import bitfin_sync, qitech_jobs_poll
+from app.scheduler import sync_dispatcher
+from app.scheduler.jobs import qitech_jobs_poll
 
 logger = logging.getLogger("gr.scheduler")
 
@@ -15,20 +16,28 @@ _scheduler: AsyncIOScheduler | None = None
 
 
 def start_scheduler() -> AsyncIOScheduler:
-    """Instancia e inicia o scheduler; chamado no lifespan do app."""
+    """Instancia e inicia o scheduler; chamado no lifespan do app.
+
+    Jobs:
+      - sync_dispatcher (1 min): le `tenant_source_config.sync_frequency_minutes`
+        e dispara `run_sync_one` por linha quando passou o intervalo. Substitui
+        o antigo bitfin_sync hardcoded — agora cadencia e config por tenant.
+      - qitech_jobs_poll (5 min): observabilidade do fluxo assincrono QiTech
+        (callback perdido, jobs orfaos). Ortogonal ao dispatcher.
+    """
     global _scheduler
     if _scheduler is not None:
         return _scheduler
 
     _scheduler = AsyncIOScheduler(timezone="America/Sao_Paulo")
     _scheduler.add_job(
-        bitfin_sync.run,
-        trigger=IntervalTrigger(minutes=bitfin_sync.INTERVAL_MINUTES),
-        id="bitfin_sync",
+        sync_dispatcher.run,
+        trigger=IntervalTrigger(minutes=sync_dispatcher.INTERVAL_MINUTES),
+        id="sync_dispatcher",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
-        misfire_grace_time=300,
+        misfire_grace_time=120,
     )
     _scheduler.add_job(
         qitech_jobs_poll.run,
@@ -41,8 +50,9 @@ def start_scheduler() -> AsyncIOScheduler:
     )
     _scheduler.start()
     logger.info(
-        "scheduler started: bitfin_sync every %s min, qitech_jobs_poll every %s min",
-        bitfin_sync.INTERVAL_MINUTES,
+        "scheduler started: sync_dispatcher every %s min, "
+        "qitech_jobs_poll every %s min",
+        sync_dispatcher.INTERVAL_MINUTES,
         qitech_jobs_poll.INTERVAL_MINUTES,
     )
     return _scheduler

@@ -50,6 +50,27 @@ def to_decimal_or_none(value: Any) -> Decimal | None:
     return Decimal(str(value))
 
 
+def to_decimal_or_none_within(value: Any, *, max_abs: Decimal) -> Decimal | None:
+    """Como `to_decimal_or_none`, mas vira None quando `|value| > max_abs`.
+
+    Why: QiTech as vezes devolve lixo numerico (~1e18) em campos percentuais
+    quando o denominador da carteira e zero — float divide-by-near-zero do
+    lado deles. Validado em 2026-04-26 com REALINVEST (saldo conta-corrente
+    liquido = 0): pct chegou como -6.234.570.403.704.996.000 enquanto o
+    schema canonico (`NUMERIC(8,4)`) so aceita ate 9999.9999.
+
+    How to apply: passe `max_abs` igual ao limite real do schema. Lixo da
+    fonte vira None — quem consumir o warehouse recalcula a partir do
+    `valor_total` se precisar. Melhor None que corromper canonico.
+    """
+    if value is None:
+        return None
+    d = value if isinstance(value, Decimal) else Decimal(str(value))
+    if abs(d) > max_abs:
+        return None
+    return d
+
+
 def normalize_str_or_none(value: Any) -> str | None:
     """Canoniza string vazia / whitespace / None em None.
 

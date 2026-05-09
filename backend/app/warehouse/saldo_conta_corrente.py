@@ -75,6 +75,18 @@ class SaldoContaCorrente(Auditable, Base):
         nullable=False,
         index=True,
     )
+    # UA dona da credencial que produziu esta linha (multi-UA, Phase F).
+    # Nullable apenas para retrocompat com linhas legacy ingeridas antes
+    # da introducao de multi-UA. Toda nova linha gravada pelo adapter
+    # informa explicitamente.
+    unidade_administrativa_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(
+            "cadastros_unidade_administrativa.id", ondelete="RESTRICT"
+        ),
+        nullable=True,
+        index=True,
+    )
 
     # -- Quando --
     data_posicao: Mapped[date] = mapped_column(Date, nullable=False, index=True)
@@ -99,10 +111,12 @@ class SaldoContaCorrente(Auditable, Base):
     # Saldo pode ser negativo (creditos a conciliar, sobrescritos contabeis).
     valor_total: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     # Percentuais sempre em % (175.64 = 175.64%). Pode passar de 100 quando
-    # tem alavancagem ou ajuste contabil — nao clampar.
-    percentual_sobre_conta_corrente: Mapped[Decimal] = mapped_column(
-        Numeric(8, 4), nullable=False
+    # tem alavancagem ou ajuste contabil. Nullable porque QiTech as vezes
+    # devolve lixo (~1e18) quando o saldo liquido da carteira e zero (float
+    # divide-by-near-zero do lado deles); nesse caso o mapper grava None.
+    percentual_sobre_conta_corrente: Mapped[Decimal | None] = mapped_column(
+        Numeric(8, 4), nullable=True
     )
-    percentual_sobre_total: Mapped[Decimal] = mapped_column(
-        Numeric(8, 4), nullable=False
+    percentual_sobre_total: Mapped[Decimal | None] = mapped_column(
+        Numeric(8, 4), nullable=True
     )

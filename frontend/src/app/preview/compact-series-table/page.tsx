@@ -4,7 +4,7 @@
 import {
   CompactSeriesTable,
   type CompactSeriesRow,
-} from "@/components/app/CompactSeriesTable"
+} from "@/design-system/components/CompactSeriesTable"
 
 // Dados ficticios estilo Austin (Puma FIDC, % do PL, 12 meses)
 const MONTHS_12 = [

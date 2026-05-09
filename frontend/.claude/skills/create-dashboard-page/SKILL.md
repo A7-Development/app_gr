@@ -11,6 +11,16 @@ Pagina orientada a **analise**: KPIs, charts, filtros temporais, tabelas resumo.
 
 Ler `CLAUDE.md` na raiz. Regras nao-negociaveis.
 
+> **🔓 Modo Iteracao de Design ativo** (ver banner em `CLAUDE.md` raiz):
+> Durante este periodo, ao criar dashboard novo:
+> - Valores arbitrarios de Tailwind aceitaveis (`text-[Npx]`, `rounded-[Npx]`, `gap-[Npx]`).
+> - Hex literals e `rgba(...)` aceitaveis em codigo de componente/surface.
+> - Inline styles `style={{...}}` aceitaveis para efeitos especificos do handoff.
+> - Cores Tailwind fora da paleta canonica §4 aceitaveis quando do handoff.
+> - **Continuam invioaveis**: §2 stack, §3 6 camadas, §11.6 hierarquia 3 niveis, idioma pt-BR.
+> - Header de dashboard usa `<DashboardHeaderActions>` no slot `actions` do `<PageHeader>` (CLAUDE.md §7).
+> Lock-down volta com promocao a tokens nomeados.
+
 ## Informacoes a coletar
 
 1. **Contexto do dashboard** — qual area/dominio?

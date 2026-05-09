@@ -35,3 +35,35 @@ E_REPORT_MARKET = Endpoint(
     method="GET",
     path="/v2/netreport/report/market/{tipo_de_mercado}/{data}",
 )
+
+# Bank account — Saldo (snapshot de fechamento do dia).
+# Path template:
+#   agencia: codigo da agencia da Singulare zero-padded a 4 digitos (ex.: "0001").
+#            String literal — viaja exatamente como cadastrado em
+#            QiTechBankAccount.agencia.
+#   conta:   numero da conta sem digito verificador (ex.: "4532551").
+#   data:    aaaa-mm-dd (date.isoformat()).
+# Retorna saldo da conta-corrente na data.
+#
+# NOTA: balance herdado por simetria do statement (confirmado em 2026-05-01
+# que statement vive sob /v2/conta-corrente/bank-account/...). Validar
+# diretamente em ambiente real antes de iterar em volume.
+E_BANK_ACCOUNT_BALANCE = Endpoint(
+    method="GET",
+    path="/v2/conta-corrente/bank-account/balance/{agencia}/{conta}/{data}",
+)
+
+# Bank account — Extrato (lancamentos do periodo).
+# Path template:
+#   agencia: codigo da agencia zero-padded a 4 digitos (ex.: "0001").
+#   conta:   numero da conta sem digito verificador (ex.: "4532551").
+#   inicio:  aaaa-mm-dd (data inicial inclusiva).
+#   fim:     aaaa-mm-dd (data final inclusiva).
+# Retorna lancamentos da conta-corrente no periodo.
+#
+# CONFIRMADO 2026-05-01 em teste real — endereco antigo `/v2/bank-account/...`
+# (sem o prefixo /conta-corrente/) NAO existe.
+E_BANK_ACCOUNT_STATEMENT = Endpoint(
+    method="GET",
+    path="/v2/conta-corrente/bank-account/statement/{agencia}/{conta}/{inicio}/{fim}",
+)

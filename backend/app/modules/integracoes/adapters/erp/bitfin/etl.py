@@ -407,11 +407,17 @@ async def sync_all(
     since: date | None = None,
     *,
     triggered_by: str = "system:scheduler",
+    endpoint_name: str | None = None,
 ) -> dict[str, Any]:
     """Executa todas as syncs em sequencia + registra no decision_log.
 
     `triggered_by` identifica quem disparou o ciclo (scheduler automatico,
     bootstrap CLI, ou usuario via API: "user:<uuid>").
+
+    `endpoint_name`: opcional. Quando o caller e o `adapter_sync_endpoint`
+    novo (per-endpoint), passa "bitfin.full_sync" para que a entry de
+    decision_log carimbe a dimensao endpoint. Caller legacy nao passa,
+    e a entry fica com `endpoint_name=None` (compativel com modo legacy).
     """
     started_at = datetime.now(UTC)
     t0 = time.monotonic()
@@ -444,6 +450,7 @@ async def sync_all(
                 inputs_ref={"since": summary["since"]},
                 rule_or_model="bitfin_adapter",
                 rule_or_model_version=ADAPTER_VERSION,
+                endpoint_name=endpoint_name,
                 output=summary,
                 explanation=("OK" if not errors else f"{len(errors)} erro(s): {errors}"),
                 triggered_by=triggered_by,

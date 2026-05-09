@@ -29,6 +29,7 @@ from app.core.module_guard import require_module
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.modules.integracoes.adapters.admin.qitech.custodia import (
     get_qitech_config_for_tenant,
+    resolve_ua_id_by_cnpj,
     sync_aquisicao_consolidada,
     sync_detalhes_operacoes,
     sync_liquidados_baixados,
@@ -88,17 +89,56 @@ class SyncStep(BaseModel):
 # ---- Helpers --------------------------------------------------------------
 
 
-async def _load_config_or_409(
-    principal: RequestPrincipal, environment: Environment
+async def _resolve_ua_or_409(
+    principal: RequestPrincipal, cnpj_fundo: str
 ):
-    config = await get_qitech_config_for_tenant(
-        tenant_id=principal.tenant_id, environment=environment
+    """Resolve a UA do tenant para o CNPJ informado, ou 409 com guia de cadastro."""
+    ua_id = await resolve_ua_id_by_cnpj(
+        tenant_id=principal.tenant_id, cnpj_fundo=cnpj_fundo
     )
+    if ua_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Nenhuma UA do tenant tem o CNPJ {cnpj_fundo}. "
+                f"Cadastre via /cadastros/unidades-administrativas e tente de novo."
+            ),
+        )
+    return ua_id
+
+
+async def _load_config_or_409(
+    principal: RequestPrincipal,
+    environment: Environment,
+    *,
+    unidade_administrativa_id,
+):
+    """Carrega QiTechConfig pra (tenant, env, UA). 409 se faltar config ou credenciais.
+
+    Multi-UA (Phase F): a credencial QiTech e por UA. Caller resolve UA via
+    `_resolve_ua_or_409` antes — config pertence aquela UA especifica.
+    Fallback retro: se a linha por UA nao existir, tenta a linha legacy
+    (UA=NULL) — permite roll-out gradual sem quebrar tenants que ainda nao
+    re-vincularam config a UA.
+    """
+    config = await get_qitech_config_for_tenant(
+        tenant_id=principal.tenant_id,
+        environment=environment,
+        unidade_administrativa_id=unidade_administrativa_id,
+    )
+    if config is None:
+        # Fallback retrocompat: tenta legacy (UA=NULL) se a linha por UA
+        # ainda nao foi criada.
+        config = await get_qitech_config_for_tenant(
+            tenant_id=principal.tenant_id,
+            environment=environment,
+            unidade_administrativa_id=None,
+        )
     if config is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Sem config QiTech para {environment.value}. "
+                f"Sem config QiTech para {environment.value} (ua={unidade_administrativa_id}). "
                 f"Configure via PUT /integracoes/sources/admin:qitech/config."
             ),
         )
@@ -122,7 +162,10 @@ async def sync_aquisicao_consolidada_endpoint(
 ) -> SyncStep:
     """Dispara sync sincrono de aquisicao-consolidada no periodo."""
     _ = db  # nao usamos a sessao aqui — sync abre a propria
-    config = await _load_config_or_409(principal, payload.environment)
+    ua_id = await _resolve_ua_or_409(principal, payload.cnpj_fundo)
+    config = await _load_config_or_409(
+        principal, payload.environment, unidade_administrativa_id=ua_id
+    )
     step = await sync_aquisicao_consolidada(
         tenant_id=principal.tenant_id,
         environment=payload.environment,
@@ -130,6 +173,7 @@ async def sync_aquisicao_consolidada_endpoint(
         cnpj_fundo=payload.cnpj_fundo,
         data_inicial=payload.data_inicial,
         data_final=payload.data_final,
+        unidade_administrativa_id=ua_id,
     )
     return SyncStep.model_validate(step)
 
@@ -143,7 +187,10 @@ async def sync_liquidados_baixados_endpoint(
 ) -> SyncStep:
     """Dispara sync sincrono de liquidados-baixados/v2 no periodo."""
     _ = db
-    config = await _load_config_or_409(principal, payload.environment)
+    ua_id = await _resolve_ua_or_409(principal, payload.cnpj_fundo)
+    config = await _load_config_or_409(
+        principal, payload.environment, unidade_administrativa_id=ua_id
+    )
     step = await sync_liquidados_baixados(
         tenant_id=principal.tenant_id,
         environment=payload.environment,
@@ -151,6 +198,7 @@ async def sync_liquidados_baixados_endpoint(
         cnpj_fundo=payload.cnpj_fundo,
         data_inicial=payload.data_inicial,
         data_final=payload.data_final,
+        unidade_administrativa_id=ua_id,
     )
     return SyncStep.model_validate(step)
 
@@ -164,13 +212,17 @@ async def sync_detalhes_operacoes_endpoint(
 ) -> SyncStep:
     """Dispara sync sincrono de detalhes-operacoes na data dada."""
     _ = db
-    config = await _load_config_or_409(principal, payload.environment)
+    ua_id = await _resolve_ua_or_409(principal, payload.cnpj_fundo)
+    config = await _load_config_or_409(
+        principal, payload.environment, unidade_administrativa_id=ua_id
+    )
     step = await sync_detalhes_operacoes(
         tenant_id=principal.tenant_id,
         environment=payload.environment,
         config=config,
         cnpj_fundo=payload.cnpj_fundo,
         data_importacao=payload.data_importacao,
+        unidade_administrativa_id=ua_id,
     )
     return SyncStep.model_validate(step)
 
@@ -184,12 +236,16 @@ async def sync_movimento_aberto_endpoint(
 ) -> SyncStep:
     """Dispara sync sincrono de movimento-aberto (snapshot atual)."""
     _ = db
-    config = await _load_config_or_409(principal, payload.environment)
+    ua_id = await _resolve_ua_or_409(principal, payload.cnpj_fundo)
+    config = await _load_config_or_409(
+        principal, payload.environment, unidade_administrativa_id=ua_id
+    )
     step = await sync_movimento_aberto(
         tenant_id=principal.tenant_id,
         environment=payload.environment,
         config=config,
         cnpj_fundo=payload.cnpj_fundo,
         data_referencia=payload.data_referencia,
+        unidade_administrativa_id=ua_id,
     )
     return SyncStep.model_validate(step)

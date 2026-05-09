@@ -4,12 +4,12 @@ import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { Button } from "@/components/tremor/Button"
-import { FilterPill } from "@/components/app/FilterPill"
+import { FilterPill } from "@/design-system/components/FilterPill"
 import {
   MonthRangePicker,
   type MonthRange,
-} from "@/components/app/MonthRangePicker"
-import { PeriodoPresets } from "@/components/app/PeriodoPresets"
+} from "@/design-system/components/MonthRangePicker"
+import { PeriodoPresets } from "@/design-system/components/PeriodoPresets"
 import { cx } from "@/lib/utils"
 import { biMetadata } from "@/lib/api-client"
 import { useBiFilters } from "@/lib/hooks/useBiFilters"

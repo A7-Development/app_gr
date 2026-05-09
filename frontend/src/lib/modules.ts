@@ -3,14 +3,32 @@
 // A ordem canonica aqui e a mesma da sidebar — mexer aqui mexe na UI.
 
 import {
+  RiBarChartGroupedLine,
+  RiBookOpenLine,
   RiBuilding2Line,
+  RiCheckboxCircleLine,
   RiContactsBookLine,
+  RiCpuLine,
+  RiDashboard3Line,
   RiExchangeFundsLine,
+  RiFileChart2Line,
+  RiFileTextLine,
   RiFlaskLine,
+  RiFlowChart,
+  RiFolderUserLine,
+  RiHandCoinLine,
+  RiKey2Line,
+  RiLineChartLine,
+  RiMoneyDollarBoxLine,
+  RiPercentLine,
   RiPieChart2Line,
+  RiRefreshLine,
+  RiRobot2Line,
   RiSettings3Line,
   RiShieldCheckLine,
   RiStackLine,
+  RiUserStarLine,
+  RiWallet3Line,
   type RemixiconComponentType,
 } from "@remixicon/react"
 
@@ -18,6 +36,7 @@ export type ModuleId =
   | "bi"
   | "cadastros"
   | "operacoes"
+  | "credito"
   | "controladoria"
   | "risco"
   | "integracoes"
@@ -28,6 +47,12 @@ export type ModuleSection = {
   name: string
   href: string
   enabled: boolean
+  // Icone proprio da secao. Fallback: icone do modulo (CLAUDE.md §11.6).
+  icon?: RemixiconComponentType
+  // Caption tipografico que agrupa visualmente itens contiguos com o mesmo
+  // valor (ex.: "OPERACAO", "FINANCEIRO"). Nao e grupo colapsavel —
+  // apenas separador visual. Permitido por CLAUDE.md §11.6.
+  groupLabel?: string
 }
 
 // Paleta de avatar de modulo v0.4.0 (handoff A7 Credit v2, 2026-04-24).
@@ -42,6 +67,7 @@ export type ModuleColor =
   | "red"
   | "violet"
   | "slate"
+  | "indigo"
 
 export type ModuleDefinition = {
   id: ModuleId
@@ -72,6 +98,7 @@ export const MODULE_AVATAR_COLORS: Record<ModuleColor, string> = {
   red: "bg-red-600 dark:bg-red-500",
   violet: "bg-violet-500 dark:bg-violet-500",
   slate: "bg-slate-600 dark:bg-slate-500",
+  indigo: "bg-indigo-500 dark:bg-indigo-500",
 }
 
 export const MODULES: ModuleDefinition[] = [
@@ -85,15 +112,18 @@ export const MODULES: ModuleDefinition[] = [
     permission: "admin",
     basePath: "/bi",
     sections: [
-      { name: "Operacoes", href: "/bi/operacoes", enabled: true },
-      { name: "Carteira", href: "/bi/carteira", enabled: false },
-      { name: "Comportamento", href: "/bi/comportamento", enabled: false },
-      { name: "Receitas", href: "/bi/receitas", enabled: false },
-      { name: "Fluxo de caixa", href: "/bi/fluxo-caixa", enabled: false },
-      { name: "DRE", href: "/bi/dre", enabled: false },
+      { name: "Operacoes", href: "/bi/operacoes", enabled: true, icon: RiDashboard3Line, groupLabel: "Visao geral" },
+      { name: "Pagina padrao", href: "/bi/padrao", enabled: true, icon: RiBookOpenLine, groupLabel: "Templates" },
+      { name: "Carteira", href: "/bi/carteira", enabled: false, icon: RiWallet3Line, groupLabel: "Operacao" },
+      { name: "Comportamento", href: "/bi/comportamento", enabled: false, icon: RiUserStarLine, groupLabel: "Operacao" },
+      { name: "Receitas", href: "/bi/receitas", enabled: false, icon: RiMoneyDollarBoxLine, groupLabel: "Financeiro" },
+      { name: "Fluxo de caixa", href: "/bi/fluxo-caixa", enabled: false, icon: RiLineChartLine, groupLabel: "Financeiro" },
+      { name: "DRE", href: "/bi/dre", enabled: false, icon: RiFileChart2Line, groupLabel: "Financeiro" },
       // Benchmark — dados publicos CVM FIDC via postgres_fdw.
       // Ver docs/integracao-cvm-fidc.md e CLAUDE.md §13.1.
-      { name: "Benchmark", href: "/bi/benchmark", enabled: true },
+      { name: "Benchmark", href: "/bi/benchmark", enabled: true, icon: RiBarChartGroupedLine, groupLabel: "Analise" },
+      // Benchmark2 — listagem completa de fundos CVM via <DataTableShell>.
+      { name: "Benchmark2", href: "/bi/benchmark2", enabled: true, icon: RiBarChartGroupedLine, groupLabel: "Analise" },
     ],
   },
   {
@@ -110,6 +140,7 @@ export const MODULES: ModuleDefinition[] = [
         name: "Unidades administrativas",
         href: "/cadastros/unidades-administrativas",
         enabled: true,
+        icon: RiBuilding2Line,
       },
     ],
   },
@@ -125,15 +156,85 @@ export const MODULES: ModuleDefinition[] = [
     sections: [{ name: "Em breve", href: "#", enabled: false }],
   },
   {
+    id: "credito",
+    name: "StrataFlow",
+    initials: "SF",
+    icon: RiHandCoinLine,
+    color: "indigo",
+    // Modulo de credito (id mantido como "credito" pra preservar URLs e
+    // enums backend). Renomeado pra StrataFlow no display em 2026-05-02 —
+    // marca propria do produto de credito do Strata, com fluxos visuais.
+    enabled: true,
+    permission: "admin",
+    basePath: "/credito",
+    sections: [
+      {
+        name: "Análises",
+        href: "/credito/dossies",
+        enabled: true,
+        icon: RiFolderUserLine,
+        groupLabel: "Execucao",
+      },
+      {
+        name: "Nova análise",
+        href: "/credito/dossies/novo",
+        enabled: true,
+        icon: RiHandCoinLine,
+        groupLabel: "Execucao",
+      },
+      {
+        name: "Workflows",
+        href: "/credito/workflows",
+        enabled: true,
+        icon: RiFlowChart,
+        groupLabel: "Configuracao",
+      },
+      {
+        name: "Checklist",
+        href: "/credito/checklist",
+        enabled: true,
+        icon: RiCheckboxCircleLine,
+        groupLabel: "Configuracao",
+      },
+      {
+        name: "Templates",
+        href: "/credito/templates",
+        enabled: true,
+        icon: RiFileTextLine,
+        groupLabel: "Configuracao",
+      },
+      {
+        name: "Agentes",
+        href: "/credito/agentes",
+        enabled: true,
+        icon: RiRobot2Line,
+        groupLabel: "Configuracao",
+      },
+    ],
+  },
+  {
     id: "controladoria",
     name: "Controladoria",
     initials: "CO",
     icon: RiBuilding2Line,
     color: "teal",
-    enabled: false,
-    permission: "none",
+    enabled: true,
+    permission: "admin",
     basePath: "/controladoria",
-    sections: [{ name: "Em breve", href: "#", enabled: false }],
+    sections: [
+      {
+        name: "Cota Sub",
+        href: "/controladoria/cota-sub",
+        enabled: true,
+        icon: RiPercentLine,
+      },
+      {
+        name: "Pagamento Diario",
+        href: "/controladoria/pagamento-diario",
+        enabled: true,
+        icon: RiHandCoinLine,
+      },
+    ],
   },
   {
     id: "risco",
@@ -156,8 +257,8 @@ export const MODULES: ModuleDefinition[] = [
     permission: "admin",
     basePath: "/integracoes",
     sections: [
-      { name: "Catalogo", href: "/integracoes/catalogo", enabled: true },
-      { name: "Sync", href: "/integracoes/sync", enabled: true },
+      { name: "Catalogo", href: "/integracoes/catalogo", enabled: true, icon: RiBookOpenLine },
+      { name: "Sync", href: "/integracoes/sync", enabled: true, icon: RiRefreshLine },
     ],
   },
   {
@@ -177,10 +278,50 @@ export const MODULES: ModuleDefinition[] = [
     initials: "AD",
     icon: RiSettings3Line,
     color: "slate",
-    enabled: false,
-    permission: "none",
+    // MVP: hardcoded enabled+admin para o tenant mantenedor (a7-credit).
+    // TODO Phase 2: derivar dinamicamente do `/auth/me` via campo
+    // `tenant.is_system_maintainer`. Backend ja protege com
+    // `require_system_maintainer` (HTTP 403), entao expor extra na UI nao vaza.
+    enabled: true,
+    permission: "admin",
     basePath: "/admin",
-    sections: [{ name: "Em breve", href: "#", enabled: false }],
+    sections: [
+      {
+        name: "Provedores",
+        href: "/admin/ia/providers",
+        enabled: true,
+        icon: RiKey2Line,
+        groupLabel: "Inteligencia Artificial",
+      },
+      {
+        name: "Assinaturas",
+        href: "/admin/ia/subscriptions",
+        enabled: false,
+        icon: RiHandCoinLine,
+        groupLabel: "Inteligencia Artificial",
+      },
+      {
+        name: "Prompts",
+        href: "/admin/ia/prompts",
+        enabled: true,
+        icon: RiBookOpenLine,
+        groupLabel: "Inteligencia Artificial",
+      },
+      {
+        name: "Agentes",
+        href: "/admin/ia/agents",
+        enabled: true,
+        icon: RiCpuLine,
+        groupLabel: "Inteligencia Artificial",
+      },
+      {
+        name: "Uso",
+        href: "/admin/ia/usage",
+        enabled: false,
+        icon: RiLineChartLine,
+        groupLabel: "Inteligencia Artificial",
+      },
+    ],
   },
 ]
 

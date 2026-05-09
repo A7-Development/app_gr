@@ -63,10 +63,14 @@ async def _fetch_json(
     environment: Environment,
     config: QiTechConfig,
     path: str,
+    unidade_administrativa_id: UUID | None = None,
 ) -> tuple[Any, int]:
     """GET JSON tolerante a status de erro. Retorna (body_or_none, status)."""
     async with build_async_client(
-        tenant_id=tenant_id, environment=environment, config=config
+        tenant_id=tenant_id,
+        environment=environment,
+        config=config,
+        unidade_administrativa_id=unidade_administrativa_id,
     ) as client:
         resp = await client.get(path)
     if resp.status_code >= 400:
@@ -88,6 +92,7 @@ async def _persist_raw(
     data_referencia: date,
     payload: Any,
     http_status: int,
+    unidade_administrativa_id: UUID | None = None,
 ) -> None:
     """Grava raw em wh_qitech_raw_relatorio. Aceita lista ou dict no payload.
 
@@ -108,6 +113,7 @@ async def _persist_raw(
             data_posicao=data_referencia,
             payload=payload_json,
             http_status=http_status,
+            unidade_administrativa_id=unidade_administrativa_id,
         )
         await db.commit()
 
@@ -134,6 +140,7 @@ async def _generic_sync(
     cnpj_fundo: str,
     data_referencia: date,
     mapper_extra_kwargs: dict[str, Any] | None = None,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Pipeline generico: fetch -> raw -> mapper -> canonico canonical."""
     t0 = time.monotonic()
@@ -156,6 +163,7 @@ async def _generic_sync(
             environment=environment,
             config=config,
             path=path,
+            unidade_administrativa_id=unidade_administrativa_id,
         )
         step["raw_http_status"] = status
     except QiTechHttpError as e:
@@ -175,6 +183,7 @@ async def _generic_sync(
             data_referencia=data_referencia,
             payload=payload,
             http_status=status,
+            unidade_administrativa_id=unidade_administrativa_id,
         )
         step["raw_persisted"] = True
     except Exception as e:
@@ -198,7 +207,11 @@ async def _generic_sync(
         try:
             async with AsyncSessionLocal() as db:
                 count = await _bulk_upsert_canonical(
-                    db, model, canonical_rows, ["tenant_id", "source_id"]
+                    db,
+                    model,
+                    canonical_rows,
+                    ["tenant_id", "source_id"],
+                    unidade_administrativa_id=unidade_administrativa_id,
                 )
                 await db.commit()
             step["canonical_rows_upserted"] = count
@@ -220,6 +233,7 @@ async def sync_aquisicao_consolidada(
     cnpj_fundo: str,
     data_inicial: date,
     data_final: date,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """GET aquisicao-consolidada {cnpj}/{di}/{df} -> wh_aquisicao_recebivel."""
     cnpj = _normalize_cnpj(cnpj_fundo)
@@ -238,6 +252,7 @@ async def sync_aquisicao_consolidada(
         model=AquisicaoRecebivel,
         cnpj_fundo=cnpj,
         data_referencia=data_final,
+        unidade_administrativa_id=unidade_administrativa_id,
     )
 
 
@@ -249,6 +264,7 @@ async def sync_liquidados_baixados(
     cnpj_fundo: str,
     data_inicial: date,
     data_final: date,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """GET liquidados-baixados/v2 {cnpj}/{di}/{df} -> wh_liquidacao_recebivel."""
     cnpj = _normalize_cnpj(cnpj_fundo)
@@ -267,6 +283,7 @@ async def sync_liquidados_baixados(
         model=LiquidacaoRecebivel,
         cnpj_fundo=cnpj,
         data_referencia=data_final,
+        unidade_administrativa_id=unidade_administrativa_id,
     )
 
 
@@ -277,6 +294,7 @@ async def sync_detalhes_operacoes(
     config: QiTechConfig,
     cnpj_fundo: str,
     data_importacao: date,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """GET fundo/{cnpj}/data/{data} -> wh_operacao_remessa.
 
@@ -298,6 +316,7 @@ async def sync_detalhes_operacoes(
         model=OperacaoRemessa,
         cnpj_fundo=cnpj,
         data_referencia=data_importacao,
+        unidade_administrativa_id=unidade_administrativa_id,
     )
 
 
@@ -308,6 +327,7 @@ async def sync_movimento_aberto(
     config: QiTechConfig,
     cnpj_fundo: str,
     data_referencia: date | None = None,
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
     """GET movimento-aberto/{cnpj}/ -> wh_movimento_aberto.
 
@@ -336,6 +356,7 @@ async def sync_movimento_aberto(
         cnpj_fundo=cnpj,
         data_referencia=data_referencia,
         mapper_extra_kwargs={"data_referencia": data_referencia},
+        unidade_administrativa_id=unidade_administrativa_id,
     )
 
 
@@ -343,12 +364,15 @@ async def sync_movimento_aberto(
 
 
 async def get_qitech_config_for_tenant(
-    *, tenant_id: UUID, environment: Environment
+    *,
+    tenant_id: UUID,
+    environment: Environment,
+    unidade_administrativa_id: UUID | None = None,
 ) -> QiTechConfig | None:
-    """Carrega + decifra config QiTech do tenant.
+    """Carrega + decifra config QiTech do tenant + UA.
 
-    Retorna None se nao houver config persistida (tenant ainda nao
-    configurou QiTech).
+    Retorna None se nao houver config persistida (tenant/UA ainda nao
+    configurou QiTech). Multi-UA: cada UA tem sua propria credencial.
     """
     from app.core.enums import SourceType
     from app.modules.integracoes.services.source_config import (
@@ -358,13 +382,52 @@ async def get_qitech_config_for_tenant(
 
     async with AsyncSessionLocal() as db:
         cfg_row = await get_config(
-            db, tenant_id, SourceType.ADMIN_QITECH, environment
+            db,
+            tenant_id,
+            SourceType.ADMIN_QITECH,
+            environment,
+            unidade_administrativa_id=unidade_administrativa_id,
         )
         if cfg_row is None:
             return None
         plain = decrypt_config(cfg_row.config)
 
     return QiTechConfig.from_dict(plain)
+
+
+async def resolve_ua_id_by_cnpj(
+    *, tenant_id: UUID, cnpj_fundo: str
+) -> UUID | None:
+    """Resolve a UA do tenant correspondente a um CNPJ de fundo.
+
+    Usado pelos endpoints REST /qitech/custodia/* que recebem cnpj_fundo
+    no payload e precisam saber qual credencial QiTech usar (cada UA tem
+    a sua). Match por CNPJ normalizado em
+    `cadastros_unidade_administrativa.cnpj`.
+
+    Retorna None se nenhuma UA do tenant tem este CNPJ — caller deve
+    devolver 409 sugerindo cadastrar a UA primeiro.
+    """
+    from sqlalchemy import select
+
+    from app.modules.cadastros.models.unidade_administrativa import (
+        UnidadeAdministrativa,
+    )
+
+    cnpj_norm = _normalize_cnpj(cnpj_fundo)
+    if not cnpj_norm:
+        return None
+
+    async with AsyncSessionLocal() as db:
+        stmt = (
+            select(UnidadeAdministrativa.id)
+            .where(
+                UnidadeAdministrativa.tenant_id == tenant_id,
+                UnidadeAdministrativa.cnpj == cnpj_norm,
+            )
+            .limit(1)
+        )
+        return (await db.execute(stmt)).scalar_one_or_none()
 
 
 # Helper pra eliminar import ciclico no router REST (que tambem importa

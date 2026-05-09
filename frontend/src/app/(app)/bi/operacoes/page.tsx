@@ -7,7 +7,7 @@ import * as React from "react"
 
 import { RiLinkM } from "@remixicon/react"
 
-import { PageHeader } from "@/components/app/PageHeader"
+import { PageHeader } from "@/design-system/components/PageHeader"
 import { Button } from "@/components/tremor/Button"
 import {
   TabNavigation,

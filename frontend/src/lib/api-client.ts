@@ -24,13 +24,35 @@ const TOKEN_STORAGE_KEY = "gr.token"
 
 export class ApiError extends Error {
   status: number
-  detail: string
+  /**
+   * Whatever the backend returned in the `detail` field. FastAPI lets you
+   * raise `HTTPException(detail=<dict>)` to ship structured error payloads
+   * (used by /workflows/_validate to return the full ValidationResult).
+   * Callers can narrow the type at the use site.
+   */
+  detail: unknown
 
-  constructor(status: number, detail: string) {
-    super(`API ${status}: ${detail}`)
+  constructor(status: number, detail: unknown) {
+    super(`API ${status}: ${stringifyDetail(detail)}`)
     this.name = "ApiError"
     this.status = status
     this.detail = detail
+  }
+}
+
+function stringifyDetail(detail: unknown): string {
+  if (detail == null) return ""
+  if (typeof detail === "string") return detail
+  // Common case: backend returns `{ message: "...", ... }` for structured
+  // errors. Surface the message field for the human-readable Error.message.
+  if (typeof detail === "object" && "message" in detail) {
+    const m = (detail as { message?: unknown }).message
+    if (typeof m === "string") return m
+  }
+  try {
+    return JSON.stringify(detail)
+  } catch {
+    return String(detail)
   }
 }
 
@@ -70,10 +92,10 @@ async function request<T>(
   })
 
   if (!res.ok) {
-    let detail = res.statusText
+    let detail: unknown = res.statusText
     try {
-      const err = (await res.json()) as { detail?: string }
-      if (err.detail) detail = err.detail
+      const err = (await res.json()) as { detail?: unknown }
+      if (err.detail !== undefined && err.detail !== null) detail = err.detail
     } catch {
       // nao-JSON, usa statusText
     }
@@ -108,11 +130,260 @@ export type LoginResponse = {
   expires_in_minutes: number
 }
 
+export type Permission = "none" | "read" | "write" | "admin"
+
 export type MeResponse = {
   user: { id: string; email: string; name: string }
-  tenant: { id: string; slug: string; name: string }
+  tenant: { id: string; slug: string; name: string; is_system_maintainer: boolean }
   enabled_modules: string[]
-  user_permissions: Record<string, "none" | "read" | "write" | "admin">
+  user_permissions: Record<string, Permission>
+  ai_enabled: boolean
+  ai_permission: Permission
+}
+
+//
+// Tipos do modulo IA (transversal — ver CLAUDE.md sec 19)
+//
+
+export type AIQuota = {
+  granted: number
+  consumed: number
+  carryover: number
+  topup: number
+  remaining: number
+  exhausted: boolean
+  period_yyyymm: string
+}
+
+export type AIConversationListItem = {
+  id: string
+  title: string | null
+  page_context: string | null
+  last_msg_at: string
+  turn_count: number
+}
+
+export type AIConversationMessage = {
+  id: string
+  turn_index: number
+  role: "user" | "ai"
+  text: string
+  occurred_at: string
+}
+
+export type AIInsightsResponse = {
+  insights: { text: string }[]
+  generated_at: string
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Admin IA — gestao de credenciais de provedores LLM (system maintainer)
+// Espelha endpoints em backend/app/modules/admin/api/ai_provider_credentials.py
+// ───────────────────────────────────────────────────────────────────────────
+
+export type AIProvider = "openai" | "anthropic"
+
+export type AIProviderCredentialRead = {
+  id: string
+  provider: AIProvider
+  alias: string
+  zdr_enabled: boolean
+  active: boolean
+  rotated_at: string | null
+  notes: string | null
+  created_at: string
+}
+
+export type AIProviderCredentialCreatePayload = {
+  provider: AIProvider
+  alias: string
+  api_key: string
+  org_id?: string | null
+  zdr_enabled: boolean
+  notes?: string | null
+}
+
+export type AIProviderCredentialUpdatePayload = {
+  api_key?: string
+  org_id?: string | null
+  zdr_enabled?: boolean
+  active?: boolean
+  notes?: string | null
+}
+
+export const adminAI = {
+  providers: {
+    list: () =>
+      apiClient.get<AIProviderCredentialRead[]>("/admin/ai/providers"),
+    create: (payload: AIProviderCredentialCreatePayload) =>
+      apiClient.post<AIProviderCredentialRead>("/admin/ai/providers", payload),
+    update: (id: string, payload: AIProviderCredentialUpdatePayload) =>
+      apiClient.put<AIProviderCredentialRead>(
+        `/admin/ai/providers/${id}`,
+        payload,
+      ),
+    remove: (id: string) =>
+      apiClient.delete<void>(`/admin/ai/providers/${id}`),
+  },
+  prompts: {
+    list: (includeArchived = false) =>
+      apiClient.get<AIPromptVersionInfo[]>(
+        `/admin/ai/prompts${includeArchived ? "?include_archived=true" : ""}`,
+      ),
+    get: (id: string) =>
+      apiClient.get<AIPromptDetail>(`/admin/ai/prompts/${id}`),
+    create: (payload: AIPromptCreatePayload) =>
+      apiClient.post<AIPromptDetail>("/admin/ai/prompts", payload),
+    update: (id: string, payload: AIPromptUpdatePayload) =>
+      apiClient.put<AIPromptDetail>(`/admin/ai/prompts/${id}`, payload),
+    activate: (name: string, versionId: string) =>
+      apiClient.put<AIPromptVersionInfo>(
+        `/admin/ai/prompts/${encodeURIComponent(name)}/active`,
+        { version_id: versionId },
+      ),
+    archive: (id: string) =>
+      apiClient.post<AIPromptDetail>(`/admin/ai/prompts/${id}/archive`),
+    preview: (id: string, context: Record<string, string>) =>
+      apiClient.post<AIPromptPreview>(`/admin/ai/prompts/${id}/preview`, {
+        context,
+      }),
+  },
+  agents: {
+    listModels: () =>
+      apiClient.get<AIAgentModelOption[]>("/admin/ai/agents/models"),
+    list: () => apiClient.get<AIAgentConfigRead[]>("/admin/ai/agents"),
+    update: (agentName: string, payload: AIAgentConfigUpdatePayload) =>
+      apiClient.put<AIAgentConfigRead>(
+        `/admin/ai/agents/${encodeURIComponent(agentName)}`,
+        payload,
+      ),
+  },
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Tipos do admin de prompts
+// ───────────────────────────────────────────────────────────────────────────
+
+export type AIPromptVersionInfo = {
+  id: string
+  name: string
+  version: string
+  is_active: boolean
+  model: string
+  fallback_model: string | null
+  temperature: number
+  max_tokens: number
+  description: string | null
+  created_at: string
+  archived_at: string | null
+}
+
+export type AIPromptDetail = {
+  id: string
+  name: string
+  version: string
+  is_active: boolean
+  system_text: string
+  user_context_template: string | null
+  assistant_prime: string | null
+  model: string
+  fallback_model: string | null
+  temperature: number
+  max_tokens: number
+  cache_strategy: "none" | "after_system"
+  description: string | null
+  created_at: string
+  updated_at: string
+  archived_at: string | null
+}
+
+export type AIPromptCreatePayload = {
+  name: string
+  system_text: string
+  user_context_template?: string
+  assistant_prime?: string
+  model: string
+  fallback_model?: string
+  temperature?: number
+  max_tokens?: number
+  cache_strategy?: "none" | "after_system"
+  description?: string
+}
+
+export type AIPromptUpdatePayload = Partial<Omit<AIPromptCreatePayload, "name">>
+
+export type AIPromptPreview = {
+  name: string
+  version: string
+  model: string
+  temperature: number
+  max_tokens: number
+  messages: Array<{
+    role: string
+    content: Array<{ type: string; text: string; cache_control?: { type: string } | null }>
+  }>
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Admin IA — model override por specialist agent (etapa 1: Anthropic only)
+// Espelha endpoints em backend/app/modules/admin/api/ai_agents.py
+// ───────────────────────────────────────────────────────────────────────────
+
+export type AIAgentModelTier = "opus" | "sonnet" | "haiku"
+
+export type AIAgentModelOption = {
+  id: string
+  label: string
+  tier: AIAgentModelTier
+  description: string
+}
+
+export type AIAgentConfigRead = {
+  agent_name: string
+  description: string
+  prompt_name: string
+  multimodal: boolean
+  section_id: string
+  default_model: string
+  default_fallback_model: string | null
+  model: string
+  fallback_model: string | null
+  source: "db_override" | "catalog_default"
+  updated_at: string | null
+  updated_by_user_id: string | null
+}
+
+export type AIAgentConfigUpdatePayload = {
+  model: string
+  fallback_model?: string | null
+}
+
+/**
+ * Endpoint URL absoluto (precisa para o stream SSE via fetch).
+ * Inclui o Bearer token no header.
+ */
+export function buildAIChatRequest(
+  body: {
+    message: string
+    context: { page: string; period?: string | null; filters?: string | null }
+    conversation_id?: string | null
+  },
+): { url: string; init: RequestInit } {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+  }
+  const token = getToken()
+  if (token) headers.Authorization = `Bearer ${token}`
+  return {
+    url: `${API_URL}/ai/chat`,
+    init: {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      cache: "no-store",
+    },
+  }
 }
 
 //
@@ -164,11 +435,29 @@ export type Provenance = {
   row_count: number
 }
 
+export type SyncHealthStatus =
+  | "ok"
+  | "delayed"
+  | "stale"
+  | "on_demand"
+  | "disabled"
+
 export type SyncHealthEntry = {
+  source_type: string
+  label: string
+  enabled: boolean
+  /** null = sob demanda. */
+  sync_frequency_minutes: number | null
+  /** ISO8601. Ultimo sync com `explanation='OK'`. */
   last_sync_at: string | null
-  adapter_version: string | null
+  /** ISO8601. Ultima tentativa de sync — independe do resultado. */
+  last_attempt_at: string | null
+  /** ISO8601. Quando o dispatcher deve disparar o proximo ciclo. */
+  expected_next_at: string | null
+  status: SyncHealthStatus
+  unidade_administrativa_id: string | null
 }
-export type SyncHealth = Record<string, SyncHealthEntry>
+export type SyncHealth = SyncHealthEntry[]
 
 export type BIResponse<T> = {
   data: T
@@ -326,6 +615,234 @@ function filtersToQueryString(f: BIFilters): string {
   if (f.gerenteDocumento) p.set("gerente_documento", f.gerenteDocumento)
   const s = p.toString()
   return s ? `?${s}` : ""
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// BI · Operacoes2 (refatoracao 2026-05-03 — KPI Strip + 4 abas)
+// ───────────────────────────────────────────────────────────────────────────
+
+export type Operacoes2KpiCellNumeric = {
+  valor: number
+  unidade: "BRL" | "%" | "dias"
+  // delta_pct: periodo vs periodo anterior de mesmo tamanho (P/P).
+  delta_pct: number | null
+  sparkline_12m: Point[]
+  // Strip dual (Opcao 4 paradigma 2026-05-03)
+  mes_corrente_valor: number
+  mes_corrente_label: string
+  // mes_corrente_delta_pct: MoM literal (mes corrente vs mes anterior).
+  mes_corrente_delta_pct: number | null
+}
+
+export type Operacoes2KpiCellProduto = {
+  sigla: string
+  nome: string | null
+  share_pct: number
+  delta_share_pp: number | null
+  sparkline_share_12m: Point[]
+  // Mes corrente (pode ser produto diferente do top do periodo)
+  mes_corrente_sigla: string
+  mes_corrente_nome: string | null
+  mes_corrente_share_pct: number
+  mes_corrente_label: string
+  // mes_corrente_delta_share_pp: MoM literal — pp do produto-top-do-mes
+  // entre mes corrente e mes anterior.
+  mes_corrente_delta_share_pp: number | null
+}
+
+export type Operacoes2KpiStripData = {
+  vop: Operacoes2KpiCellNumeric
+  taxa_media: Operacoes2KpiCellNumeric
+  prazo_medio: Operacoes2KpiCellNumeric
+  produto_top: Operacoes2KpiCellProduto
+  receita_contratada: Operacoes2KpiCellNumeric
+  comparacao_label_pt: string
+}
+
+export type Operacoes2EvolucaoMensalPonto = {
+  periodo: string
+  vop: number
+  n_operacoes: number
+  ticket_medio: number
+  mm_3m: number | null
+}
+
+export type Operacoes2MesDestaque = { periodo: string; vop: number }
+
+export type Operacoes2AcumuladoDiarioPonto = {
+  du_index: number
+  corrente: number
+  anterior: number
+}
+
+export type Operacoes2RitmoUaItem = {
+  ua_id: number
+  ua_nome: string
+  vop_corrente: number
+  delta_pct: number | null
+}
+
+export type Operacoes2RitmoMesCorrente = {
+  vop_acumulado: number
+  du_corridos: number
+  du_total_mes: number
+  vop_anterior_mesmo_du: number
+  delta_pct: number | null
+  projecao_fim_mes: number
+  acumulado_dia_a_dia: Operacoes2AcumuladoDiarioPonto[]
+  // Quebra textual por UA — VOP MTD da UA + delta MoM same-period DU.
+  // Renderizado como lista no rodape do card Hero do Ritmo.
+  ritmo_por_ua: Operacoes2RitmoUaItem[]
+}
+
+export type Operacoes2PaceDiario = {
+  vop_du_corrente: number
+  vop_du_anterior: number
+  delta_pct: number | null
+}
+
+export type Operacoes2KpiSecundario = {
+  valor: number
+  delta_pct: number | null
+  // Sparkline 12M fechados (M-12 a M-1) do indicador. Usado pela tabela
+  // condensada de indicadores secundarios. Slope deve ser interpretado
+  // em modo relativo (% sobre a media da serie) — escalas variam por KPI
+  // (count, BRL, BRL/titulo, BRL/DU).
+  sparkline_12m: Point[]
+}
+
+export type Operacoes2KpisSecundariosVolume = {
+  n_operacoes: Operacoes2KpiSecundario
+  ticket_op: Operacoes2KpiSecundario
+  ticket_titulo: Operacoes2KpiSecundario
+  vop_du_medio: Operacoes2KpiSecundario | null
+}
+
+export type Operacoes2QuebraDimensaoLinha = {
+  categoria_id: string
+  categoria: string
+  vop: number
+  pct: number
+  delta_mom_pct: number | null
+  delta_yoy_pct: number | null
+  // Mes corrente (Opcao 4)
+  vop_mes_corrente: number
+  pct_mes_corrente: number
+  // Sparkline 12M de share% (Point.valor em escala 0-100). Usado pela tabela
+  // trend em modo "share" — detecta drift de mix entre categorias.
+  sparkline_share_12m: Point[]
+  // Sparkline 12M de VOP absoluto da categoria (Point.valor em BRL). Usado
+  // pela tabela trend em modo "absolute" — leitura "categoria vs ela mesma
+  // no passado", apropriada quando dimensoes tem trajetoria propria de
+  // crescimento (ex.: UA, onde share% conduz a falso negativo).
+  sparkline_vop_12m: Point[]
+}
+
+export type Operacoes2EvolucaoPorUaPonto = {
+  periodo: string
+  ua_id: number
+  ua_nome: string
+  vop: number
+}
+
+export type Operacoes2AbaVolumeRitmoData = {
+  evolucao_12m: Operacoes2EvolucaoMensalPonto[]
+  evolucao_12m_por_ua: Operacoes2EvolucaoPorUaPonto[]
+  melhor_mes: Operacoes2MesDestaque | null
+  pior_mes: Operacoes2MesDestaque | null
+  ritmo: Operacoes2RitmoMesCorrente | null
+  pace_diario: Operacoes2PaceDiario | null
+  kpis_secundarios: Operacoes2KpisSecundariosVolume
+  por_ua: Operacoes2QuebraDimensaoLinha[]
+  por_produto: Operacoes2QuebraDimensaoLinha[]
+}
+
+// ─── Aba 2: Produtos & Pricing ──────────────────────────────────────────────
+
+export type Operacoes2MixTemporalProdutoPonto = {
+  periodo: string
+  produto_sigla: string
+  vop: number
+  n_operacoes: number
+  taxa_media: number
+  prazo_medio: number
+}
+
+export type Operacoes2RankingProdutoLinha = {
+  sigla: string
+  nome: string | null
+  vop: number
+  pct: number
+  delta_mom_pp: number | null
+  taxa_media: number
+  prazo_medio: number
+  spread_medio: number
+  n_operacoes: number
+  vop_mes_corrente: number
+  taxa_media_mes_corrente: number
+}
+
+export type Operacoes2ScatterProdutoPonto = {
+  sigla: string
+  nome: string | null
+  prazo_medio: number
+  taxa_media: number
+  vop: number
+  prazo_medio_mes_corrente: number
+  taxa_media_mes_corrente: number
+  vop_mes_corrente: number
+}
+
+export type Operacoes2HistogramaProdutoBucket = {
+  produto_sigla: string
+  bucket_label: string
+  bucket_lower: number
+  bucket_upper: number
+  count: number
+  vop: number
+}
+
+export type Operacoes2HistogramaTaxasResumo = {
+  buckets: Operacoes2HistogramaProdutoBucket[]
+  media_ponderada: number
+  mediana: number
+  bucket_size_pp: number
+}
+
+export type Operacoes2HistogramaPrazosResumo = {
+  buckets: Operacoes2HistogramaProdutoBucket[]
+}
+
+export type Operacoes2ProdutoDestaque = {
+  sigla: string
+  nome: string | null
+  valor: number
+}
+
+export type Operacoes2AbaProdutosPricingData = {
+  mix_temporal_12m: Operacoes2MixTemporalProdutoPonto[]
+  lider_periodo: Operacoes2ProdutoDestaque | null
+  maior_alta_mom: Operacoes2ProdutoDestaque | null
+  maior_queda_mom: Operacoes2ProdutoDestaque | null
+  ranking: Operacoes2RankingProdutoLinha[]
+  scatter_produtos: Operacoes2ScatterProdutoPonto[]
+  histograma_taxas: Operacoes2HistogramaTaxasResumo
+  histograma_prazos: Operacoes2HistogramaPrazosResumo
+}
+
+export const biOperacoes2 = {
+  kpiStrip: (f: BIFilters) =>
+    apiClient.get<BIResponse<Operacoes2KpiStripData>>(
+      `/bi/operacoes2/kpi-strip${filtersToQueryString(f)}`,
+    ),
+  abaVolumeRitmo: (f: BIFilters) =>
+    apiClient.get<BIResponse<Operacoes2AbaVolumeRitmoData>>(
+      `/bi/operacoes2/aba1-volume-ritmo${filtersToQueryString(f)}`,
+    ),
+  abaProdutosPricing: (f: BIFilters) =>
+    apiClient.get<BIResponse<Operacoes2AbaProdutosPricingData>>(
+      `/bi/operacoes2/aba2-produtos-pricing${filtersToQueryString(f)}`,
+    ),
 }
 
 export const biOperacoes = {
@@ -837,6 +1354,30 @@ export type DataMinimaResponse = {
   data_minima: string | null
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// BI · Benchmark2 (lista completa de fundos CVM via <DataTableShell>)
+// ───────────────────────────────────────────────────────────────────────────
+
+export type Benchmark2FundoRow = {
+  cnpj: string
+  fundo: string
+  condom: "aberto" | "fechado" | null
+  cotistas: number | null
+  pl_medio_3m: number | null
+  pl_ult_mes: number | null
+}
+
+export type Benchmark2FundosLista = {
+  competencia: string
+  fundos: Benchmark2FundoRow[]
+  total: number
+}
+
+export const biBenchmark2 = {
+  fundos: () =>
+    apiClient.get<Benchmark2FundosLista>("/bi/benchmark2/fundos"),
+}
+
 export const biMetadata = {
   uas: () => apiClient.get<UAOption[]>("/bi/metadata/uas"),
   produtos: () => apiClient.get<ProdutoOption[]>("/bi/metadata/produtos"),
@@ -860,8 +1401,8 @@ export type Environment = "sandbox" | "production"
 export type SourceTypeId =
   | "erp:bitfin"
   | "admin:qitech"
-  | "bureau:serasa_refinho"
-  | "bureau:serasa_pfin"
+  | "bureau:serasa_pj"
+  | "bureau:serasa_pf"
   | "bureau:scr_bacen"
   | "document:nfe"
   | "self_declared"
@@ -879,6 +1420,10 @@ export type SourceListItem = {
   enabled: boolean
   environment: Environment | null
   last_sync_at: string | null
+  /** null = sob demanda. Numero = cadencia ativa do scheduler em minutos. */
+  sync_frequency_minutes: number | null
+  /** Multi-UA: para fontes admin (QiTech), pode haver N entradas, uma por UA. */
+  unidade_administrativa_id: string | null
 }
 
 export type SourceDetail = {
@@ -894,6 +1439,7 @@ export type SourceDetail = {
   config: Record<string, unknown>
   sync_frequency_minutes: number | null
   updated_at: string | null
+  unidade_administrativa_id: string | null
 }
 
 export type ConfigUpdatePayload = {
@@ -901,6 +1447,8 @@ export type ConfigUpdatePayload = {
   environment?: Environment
   enabled?: boolean
   sync_frequency_minutes?: number | null
+  /** Multi-UA: vincula esta credencial a uma UA do tenant. */
+  unidade_administrativa_id?: string | null
 }
 
 export type TestResult = {
@@ -929,9 +1477,73 @@ export type RunEntry = {
   output: Record<string, unknown> | null
 }
 
+/** Cadência por endpoint (CLAUDE.md §13 — refactor 2026-05-05).
+ *
+ * Granularidade fina: cada source pode ter N endpoints, cada um com cadência
+ * própria. `EndpointDetail` é o catálogo + (opcional) override do tenant.
+ * Quando os campos override (`enabled`, `schedule_kind`, etc) vêm `null` é
+ * porque o tenant nunca persistiu — frontend deve cair no `default_*`.
+ */
+
+export type ScheduleKind = "interval" | "daily_at" | "on_demand"
+
+export type EndpointDetail = {
+  // Catálogo (sempre presente)
+  name: string
+  label: string
+  description: string
+  canonical_table: string
+  default_schedule_kind: ScheduleKind
+  default_schedule_value: string | null
+
+  // Override do tenant (null se nunca foi persistida linha em TSEC)
+  enabled: boolean | null
+  schedule_kind: ScheduleKind | null
+  schedule_value: string | null
+  last_sync_started_at: string | null
+  last_sync_finished_at: string | null
+  last_sync_status: "ok" | "erro" | "em_progresso" | null
+  last_sync_error: string | null
+  unidade_administrativa_id: string | null
+}
+
+export type EndpointConfigPayload = {
+  /** null = preserva o atual (não toca enabled). */
+  enabled?: boolean | null
+  schedule_kind: ScheduleKind
+  /**
+   * Formato depende do schedule_kind:
+   *   - interval  → "60" (minutos, 15..1440)
+   *   - daily_at  → "07:30" (HH:MM em America/Sao_Paulo)
+   *   - on_demand → null
+   */
+  schedule_value: string | null
+  environment?: Environment
+  unidade_administrativa_id?: string | null
+}
+
+export type EndpointSyncResult = {
+  ok: boolean
+  adapter_version: string | null
+  endpoint_name: string
+  started_at: string | null
+  elapsed_seconds: number | null
+  rows_ingested: number
+  steps: Array<Record<string, unknown>>
+  errors: string[]
+}
+
 /** Helpers do modulo integracoes.
  * Obs: `source_type` contem `:` (ex.: `erp:bitfin`) — NAO encode, o backend aceita literal.
+ *
+ * Multi-UA (Phase F): rotas que escopam credencial admin (QiTech) aceitam
+ * `unidade_administrativa_id` como query param opcional. Sem o param, casa
+ * a linha legacy (UA=NULL) — preserva retrocompat.
  */
+function _appendUa(qs: URLSearchParams, uaId?: string | null) {
+  if (uaId) qs.set("unidade_administrativa_id", uaId)
+}
+
 export const integracoes = {
   listSources: (environment: Environment = "production") =>
     apiClient.get<SourceListItem[]>(
@@ -940,10 +1552,14 @@ export const integracoes = {
   getSource: (
     sourceType: SourceTypeId,
     environment: Environment = "production",
-  ) =>
-    apiClient.get<SourceDetail>(
-      `/integracoes/sources/${sourceType}?environment=${environment}`,
-    ),
+    uaId?: string | null,
+  ) => {
+    const qs = new URLSearchParams({ environment })
+    _appendUa(qs, uaId)
+    return apiClient.get<SourceDetail>(
+      `/integracoes/sources/${sourceType}?${qs.toString()}`,
+    )
+  },
   updateConfig: (sourceType: SourceTypeId, payload: ConfigUpdatePayload) =>
     apiClient.put<SourceDetail>(
       `/integracoes/sources/${sourceType}/config`,
@@ -953,23 +1569,97 @@ export const integracoes = {
     sourceType: SourceTypeId,
     enabled: boolean,
     environment: Environment = "production",
+    uaId?: string | null,
   ) =>
     apiClient.post<SourceDetail>(
       `/integracoes/sources/${sourceType}/enable`,
-      { enabled, environment },
+      {
+        enabled,
+        environment,
+        unidade_administrativa_id: uaId ?? null,
+      },
     ),
-  test: (sourceType: SourceTypeId, environment: Environment = "production") =>
-    apiClient.post<TestResult>(
-      `/integracoes/sources/${sourceType}/test?environment=${environment}`,
-    ),
-  sync: (sourceType: SourceTypeId, environment: Environment = "production") =>
-    apiClient.post<SyncResult>(
-      `/integracoes/sources/${sourceType}/sync?environment=${environment}`,
-    ),
+  test: (
+    sourceType: SourceTypeId,
+    environment: Environment = "production",
+    uaId?: string | null,
+  ) => {
+    const qs = new URLSearchParams({ environment })
+    _appendUa(qs, uaId)
+    return apiClient.post<TestResult>(
+      `/integracoes/sources/${sourceType}/test?${qs.toString()}`,
+    )
+  },
+  sync: (
+    sourceType: SourceTypeId,
+    environment: Environment = "production",
+    uaId?: string | null,
+  ) => {
+    const qs = new URLSearchParams({ environment })
+    _appendUa(qs, uaId)
+    return apiClient.post<SyncResult>(
+      `/integracoes/sources/${sourceType}/sync?${qs.toString()}`,
+    )
+  },
   runs: (sourceType: SourceTypeId, limit = 50) =>
     apiClient.get<RunEntry[]>(
       `/integracoes/sources/${sourceType}/runs?limit=${limit}`,
     ),
+
+  // Cadência por endpoint (CLAUDE.md §13). encodeURIComponent no endpoint_name
+  // porque pode conter "." (ex.: "market.outros_fundos") — o backend usa
+  // {endpoint_name:path} no Path() e aceita o ponto, mas mantemos o encode
+  // como defesa para casos com chars inesperados.
+  listEndpoints: (
+    sourceType: SourceTypeId,
+    environment: Environment = "production",
+    uaId?: string | null,
+  ) => {
+    const qs = new URLSearchParams({ environment })
+    if (uaId) qs.set("ua", uaId)
+    return apiClient.get<EndpointDetail[]>(
+      `/integracoes/sources/${sourceType}/endpoints?${qs.toString()}`,
+    )
+  },
+  getEndpoint: (
+    sourceType: SourceTypeId,
+    endpointName: string,
+    environment: Environment = "production",
+    uaId?: string | null,
+  ) => {
+    const qs = new URLSearchParams({ environment })
+    if (uaId) qs.set("ua", uaId)
+    return apiClient.get<EndpointDetail>(
+      `/integracoes/sources/${sourceType}/endpoints/${encodeURIComponent(
+        endpointName,
+      )}?${qs.toString()}`,
+    )
+  },
+  updateEndpoint: (
+    sourceType: SourceTypeId,
+    endpointName: string,
+    payload: EndpointConfigPayload,
+  ) =>
+    apiClient.put<EndpointDetail>(
+      `/integracoes/sources/${sourceType}/endpoints/${encodeURIComponent(
+        endpointName,
+      )}`,
+      payload,
+    ),
+  syncEndpoint: (
+    sourceType: SourceTypeId,
+    endpointName: string,
+    environment: Environment = "production",
+    uaId?: string | null,
+  ) => {
+    const qs = new URLSearchParams({ environment })
+    if (uaId) qs.set("ua", uaId)
+    return apiClient.post<EndpointSyncResult>(
+      `/integracoes/sources/${sourceType}/endpoints/${encodeURIComponent(
+        endpointName,
+      )}/sync?${qs.toString()}`,
+    )
+  },
 }
 
 /** Modulo cadastros — entidades primarias do tenant. */
@@ -1034,4 +1724,332 @@ export const cadastros = {
     ),
   deleteUA: (id: string) =>
     apiClient.delete<void>(`/cadastros/unidades-administrativas/${id}`),
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Controladoria · Cota Sub
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type PlCategoriaKey =
+  | "compromissada"
+  | "mezanino"
+  | "senior"
+  | "titulos_publicos"
+  | "fundos_di"
+  | "dc"
+  | "op_estruturadas"
+  | "outros_ativos"
+  | "pdd"
+  | "cpr"
+  | "tesouraria"
+
+export type PlCategoria = {
+  key:    PlCategoriaKey
+  label:  string
+  d1:     number
+  d0:     number
+  delta:  number
+  source: string
+}
+
+export type DecomposicaoSinal = "ganho" | "prejuizo" | "neutro"
+
+export type DecomposicaoItem = {
+  key:   string
+  label: string
+  valor: number
+  sinal: DecomposicaoSinal
+}
+
+export type ApropriacaoDcLinha = {
+  estoque_d1:  number
+  aquisicoes:  number
+  liquidados:  number
+  estoque_d0:  number
+  apropriacao: number
+}
+
+export type ApropriacaoDc = {
+  a_vencer: ApropriacaoDcLinha
+  vencidos: ApropriacaoDcLinha
+  total:    number
+}
+
+export type CprMovimentoItem = { descricao: string; valor: number }
+
+export type CprDetalhado = {
+  receber_d1: CprMovimentoItem[]
+  receber_d0: CprMovimentoItem[]
+  pagar_d1:   CprMovimentoItem[]
+  pagar_d0:   CprMovimentoItem[]
+  total_d1:   number
+  total_d0:   number
+  variacao:   number
+}
+
+export type VariacaoDiariaResponse = {
+  fundo_id:           string
+  fundo_nome:         string
+  data:               string  // ISO date
+  data_anterior:      string  // ISO date
+  pl_d1:              number
+  pl_d0:              number
+  pl_delta:           number
+  pl_delta_pct:       number
+  categorias:         PlCategoria[]
+  decomposicao:       DecomposicaoItem[]
+  decomposicao_total: number
+  divergencia:        number
+  apropriacao_dc:     ApropriacaoDc
+  cpr_detalhado:      CprDetalhado
+}
+
+// Pydantic v2 serializa Decimal como string. Convertemos para number aqui pra
+// manter os tipos do frontend numericos. Precisao suficiente para displays;
+// se algum calculo critico precisar Decimal, troca para `decimal.js`.
+function _coerceCategoria(c: PlCategoria): PlCategoria {
+  return { ...c, d1: Number(c.d1), d0: Number(c.d0), delta: Number(c.delta) }
+}
+function _coerceDecomp(d: DecomposicaoItem): DecomposicaoItem {
+  return { ...d, valor: Number(d.valor) }
+}
+function _coerceLinha(l: ApropriacaoDcLinha): ApropriacaoDcLinha {
+  return {
+    estoque_d1:  Number(l.estoque_d1),
+    aquisicoes:  Number(l.aquisicoes),
+    liquidados:  Number(l.liquidados),
+    estoque_d0:  Number(l.estoque_d0),
+    apropriacao: Number(l.apropriacao),
+  }
+}
+function _coerceCprItem(i: CprMovimentoItem): CprMovimentoItem {
+  return { ...i, valor: Number(i.valor) }
+}
+function _coerceVariacao(r: VariacaoDiariaResponse): VariacaoDiariaResponse {
+  return {
+    ...r,
+    pl_d1:              Number(r.pl_d1),
+    pl_d0:              Number(r.pl_d0),
+    pl_delta:           Number(r.pl_delta),
+    pl_delta_pct:       Number(r.pl_delta_pct),
+    decomposicao_total: Number(r.decomposicao_total),
+    divergencia:        Number(r.divergencia),
+    categorias:         r.categorias.map(_coerceCategoria),
+    decomposicao:       r.decomposicao.map(_coerceDecomp),
+    apropriacao_dc: {
+      a_vencer: _coerceLinha(r.apropriacao_dc.a_vencer),
+      vencidos: _coerceLinha(r.apropriacao_dc.vencidos),
+      total:    Number(r.apropriacao_dc.total),
+    },
+    cpr_detalhado: {
+      receber_d1: r.cpr_detalhado.receber_d1.map(_coerceCprItem),
+      receber_d0: r.cpr_detalhado.receber_d0.map(_coerceCprItem),
+      pagar_d1:   r.cpr_detalhado.pagar_d1.map(_coerceCprItem),
+      pagar_d0:   r.cpr_detalhado.pagar_d0.map(_coerceCprItem),
+      total_d1:   Number(r.cpr_detalhado.total_d1),
+      total_d0:   Number(r.cpr_detalhado.total_d0),
+      variacao:   Number(r.cpr_detalhado.variacao),
+    },
+  }
+}
+
+// ── Balanco diario · otica Sub Jr ──────────────────────────────────────────
+
+export type BalanceRowType = "section" | "line" | "subtotal" | "total"
+
+export type BalanceRowDTO = {
+  id:         string
+  type:       BalanceRowType
+  label:      string
+  cosif?:     string | null
+  descricao?: string | null
+  source?:    string | null
+  d1?:        number | string | null  // Pydantic Decimal -> string; coerce abaixo
+  d0?:        number | string | null
+  delta?:     number | string | null
+  subRows?:   BalanceRowDTO[] | null
+}
+
+export type BalanceRow = {
+  id:         string
+  type:       BalanceRowType
+  label:      string
+  cosif?:     string | null
+  descricao?: string | null
+  source?:    string | null
+  d1:         number | null
+  d0:         number | null
+  delta:      number | null
+  subRows?:   BalanceRow[]
+}
+
+export type BalancoResponse = {
+  fundo_id:      string
+  fundo_nome:    string
+  data:          string  // ISO date
+  data_anterior: string  // ISO date
+  rows:          BalanceRow[]
+}
+
+type BalancoResponseRaw = {
+  fundo_id:      string
+  fundo_nome:    string
+  data:          string
+  data_anterior: string
+  rows:          BalanceRowDTO[]
+}
+
+function _coerceBalanceVal(v: number | string | null | undefined): number | null {
+  if (v === null || v === undefined) return null
+  return Number(v)
+}
+
+function _coerceBalanceRow(r: BalanceRowDTO): BalanceRow {
+  return {
+    id:        r.id,
+    type:      r.type,
+    label:     r.label,
+    cosif:     r.cosif ?? null,
+    descricao: r.descricao ?? null,
+    source:    r.source ?? null,
+    d1:        _coerceBalanceVal(r.d1),
+    d0:        _coerceBalanceVal(r.d0),
+    delta:     _coerceBalanceVal(r.delta),
+    subRows:   r.subRows ? r.subRows.map(_coerceBalanceRow) : undefined,
+  }
+}
+
+export const controladoria = {
+  cotaSubVariacaoDiaria: async (
+    fundoId: string,
+    data: string,           // YYYY-MM-DD
+    dataAnterior?: string,  // YYYY-MM-DD opcional (override de D-1)
+  ): Promise<VariacaoDiariaResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    const raw = await apiClient.get<VariacaoDiariaResponse>(
+      `/controladoria/cota-sub/variacao-diaria?${params.toString()}`,
+    )
+    return _coerceVariacao(raw)
+  },
+
+  cotaSubDatasDisponiveis: async (
+    fundoId: string,
+  ): Promise<string[]> => {
+    // Lista ISO desc de datas em que a QiTech publicou snapshot da UA.
+    // Consumido pelo Calendar para impedir selecao de dias sem dados
+    // (fim de semana, feriado, falha ETL).
+    const params = new URLSearchParams({ fundo_id: fundoId })
+    return apiClient.get<string[]>(
+      `/controladoria/cota-sub/datas-disponiveis?${params.toString()}`,
+    )
+  },
+
+  cotaSubBalanco: async (
+    fundoId: string,
+    data: string,           // YYYY-MM-DD
+    dataAnterior?: string,  // YYYY-MM-DD opcional (override de D-1)
+  ): Promise<BalancoResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    const raw = await apiClient.get<BalancoResponseRaw>(
+      `/controladoria/cota-sub/balanco?${params.toString()}`,
+    )
+    return {
+      ...raw,
+      rows: raw.rows.map(_coerceBalanceRow),
+    }
+  },
+
+  cotaSubVariacoesDia: async (
+    fundoId: string,
+    data: string,
+    dataAnterior?: string,
+  ): Promise<VariacoesDiaResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    const raw = await apiClient.get<VariacoesDiaResponseRaw>(
+      `/controladoria/cota-sub/variacoes-dia?${params.toString()}`,
+    )
+    return {
+      ...raw,
+      apropriacoes:       raw.apropriacoes.map(_coerceVariacaoItem),
+      apropriacoes_total: Number(raw.apropriacoes_total),
+      pagamentos:         raw.pagamentos.map(_coerceVariacaoItem),
+      pagamentos_total:   Number(raw.pagamentos_total),
+      anomalias:          raw.anomalias.map(_coerceVariacaoItem),
+      conferencia: {
+        delta_passivo_contabil: Number(raw.conferencia.delta_passivo_contabil),
+        soma_apropriacoes:      Number(raw.conferencia.soma_apropriacoes),
+        divergencia:            Number(raw.conferencia.divergencia),
+        ok:                     raw.conferencia.ok,
+      },
+    }
+  },
+}
+
+// ── Variacoes do Dia (auditoria de movimentos) ─────────────────────────────
+
+export type VariacaoItem = {
+  cosif:     string | null
+  label:     string
+  historico: string | null
+  descricao: string | null
+  valor:     number
+}
+
+type VariacaoItemRaw = {
+  cosif:     string | null
+  label:     string
+  historico: string | null
+  descricao: string | null
+  valor:     number | string
+}
+
+export type ConferenciaVariacao = {
+  delta_passivo_contabil: number
+  soma_apropriacoes:      number
+  divergencia:            number
+  ok:                     boolean
+}
+
+type ConferenciaVariacaoRaw = {
+  delta_passivo_contabil: number | string
+  soma_apropriacoes:      number | string
+  divergencia:            number | string
+  ok:                     boolean
+}
+
+export type VariacoesDiaResponse = {
+  fundo_id:           string
+  data:               string
+  data_anterior:      string
+  apropriacoes:       VariacaoItem[]
+  apropriacoes_total: number
+  pagamentos:         VariacaoItem[]
+  pagamentos_total:   number
+  anomalias:          VariacaoItem[]
+  conferencia:        ConferenciaVariacao
+}
+
+type VariacoesDiaResponseRaw = {
+  fundo_id:           string
+  data:               string
+  data_anterior:      string
+  apropriacoes:       VariacaoItemRaw[]
+  apropriacoes_total: number | string
+  pagamentos:         VariacaoItemRaw[]
+  pagamentos_total:   number | string
+  anomalias:          VariacaoItemRaw[]
+  conferencia:        ConferenciaVariacaoRaw
+}
+
+function _coerceVariacaoItem(r: VariacaoItemRaw): VariacaoItem {
+  return {
+    cosif:     r.cosif ?? null,
+    label:     r.label,
+    historico: r.historico ?? null,
+    descricao: r.descricao ?? null,
+    valor:     Number(r.valor),
+  }
 }

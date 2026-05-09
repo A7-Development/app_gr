@@ -11,6 +11,15 @@ Pagina read-only (ou com acoes pontuais) que mostra **um registro unico** em pro
 
 Ler `CLAUDE.md` na raiz. Regras nao-negociaveis.
 
+> **🔓 Modo Iteracao de Design ativo** (ver banner em `CLAUDE.md` raiz):
+> Durante este periodo, ao criar pagina nova:
+> - Valores arbitrarios de Tailwind aceitaveis (`text-[Npx]`, `rounded-[Npx]`, `gap-[Npx]`).
+> - Hex literals e `rgba(...)` aceitaveis em codigo de componente/surface.
+> - Inline styles `style={{...}}` aceitaveis para efeitos especificos do handoff.
+> - Cores Tailwind fora da paleta canonica §4 aceitaveis quando do handoff.
+> - **Continuam invioaveis**: §2 stack, §3 6 camadas, §11.6 hierarquia 3 niveis, idioma pt-BR.
+> Lock-down volta com promocao a tokens nomeados.
+
 ## Informacoes a coletar
 
 1. **Dominio** e o identificador da rota (`[id]`, `[slug]`).
@@ -34,7 +43,7 @@ src/lib/services/<dominio>-service.ts           <- adicionar getById
 ### Header
 
 `PageHeader` com:
-- Breadcrumb opcional (via `<Breadcrumb />` de `@/components/app/` — criar se nao existir).
+- Breadcrumb opcional (via `<Breadcrumb />` de `@/design-system/components/` — criar se nao existir).
 - Titulo (nome do registro).
 - Badge de status ao lado do titulo, se aplicavel.
 - Acoes secundarias/primarias: sempre via `Button` ou `DropdownMenu` do Tremor.
@@ -58,7 +67,7 @@ Excluir / arquivar / cancelar sempre abrem `Dialog` do Tremor como confirmacao. 
 ### Estado de loading / erro
 
 - Loading: skeleton baseado em `animate-pulse` com cores Tremor.
-- 404: componente `<NotFoundState />` de `@/components/app/` com icone Ri*, titulo e link de volta.
+- 404: componente `<NotFoundState />` de `@/design-system/components/` com icone Ri*, titulo e link de volta.
 - Erro: `<ErrorState />` com `RiErrorWarningLine` e retry.
 
 ## Proibicoes duras

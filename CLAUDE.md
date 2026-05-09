@@ -6,20 +6,96 @@
 
 ---
 
+## 🔓 STATUS — MODO ITERACAO DE DESIGN ATIVO (2026-04-27 → ?)
+
+> Sistema em alinhamento com handoffs Strata (bi-padrao, hero-split-auth, futuros). Durante este periodo as regras visuais abaixo estao **temporariamente suspensas** para liberar fidelidade pixel ao handoff sem brigar com tokens.
+>
+> **Regras suspensas:**
+>
+> 1. **Valores arbitrarios de Tailwind sao permitidos** em qualquer camada (`tremor/`, `charts/`, `design-system/*`, `app/<dominio>/*`, `surfaces/`):
+>    - `text-[13px]`, `text-[18px]`, `p-[7px]`, `gap-[3px]`, `w-[180px]`, `h-[42px]`, etc.
+>    - `rounded-[4px]`, `rounded-[2px]` fora da escala Tremor.
+>    - Espacamentos e larguras especificas do handoff.
+> 2. **Hex literals e `rgba(...)` em componentes / surfaces sao permitidos** alem dos que ja vivem em `tokens/`. Cor solta em codigo de UI nao reprova PR neste periodo.
+> 3. **Inline styles `style={{...}}` sao permitidos** em qualquer camada quando o handoff exigir efeito que Tailwind nao resolve bem (gradientes complexos, positioning especifico, transformacoes pontuais).
+> 4. **Cores Tailwind fora das categorias da §4 sao permitidas** (`orange-*`, `purple-*`, `yellow-*`, `stone-*`, `zinc-*`, `neutral-*`) quando vierem do handoff. Continuam como cor de DADOS apenas em chart series.
+>
+> **Liberdade explicita durante este modo (4 niveis de customizacao do Tremor):**
+>
+> Para nao haver duvida, durante a janela de iteracao voce TEM liberdade total para:
+>
+> 1. **Aplicar classes Tailwind ad-hoc na callsite** (qualquer pagina/componente):
+>    valores arbitrarios (`h-[42px]`, `text-[13px]`, `p-[7px]`), hex literals
+>    (`bg-[#0F1A2C]`), `style={{...}}`, e cores Tailwind fora da paleta canonica
+>    (`orange-*`, `purple-*`, etc) — quando o handoff exigir. Coberto pelos
+>    bullets 1-4 acima.
+> 2. **Editar tokens em `frontend/src/design-system/tokens/*.ts`** (`colors`,
+>    `spacing`, `radius`, `motion`, `card`, `table`, `typography`, etc).
+>    Mudancas propagam para tudo que consome o token. **Esta e a forma
+>    preferida** de mudanca sistemica de "cards padrao", "altura de header",
+>    "raio default", "tipografia de cell", "duration de animacao".
+> 3. **Editar `frontend/src/app/globals.css` `@theme`** para criar/alterar CSS
+>    vars que viram utilities Tailwind v4 (`--color-brand-secondary`,
+>    `--header-h`, novos keyframes, etc). Mudanca de paleta global e nova
+>    utility nascem aqui.
+> 4. **Criar wrappers customizados em `frontend/src/design-system/components/`**
+>    embrulhando primitivos `tremor/*` ou `charts/*` com defaults proprios
+>    (ex.: `<HeroCard>` = `<Card>` + gradiente + padding diferente; `<DenseDataTable>`
+>    = `<DataTable>` com row height menor por padrao). Esta e exatamente a
+>    camada de composicao do design system — feita pra isso.
+>
+> **O que continua bloqueado mesmo neste modo:**
+>
+> Editar diretamente `frontend/src/components/tremor/*.tsx` ou
+> `frontend/src/components/charts/*.tsx` (camadas verbatim — fork do
+> primitivo). Para customizacao de primitivo, **componha um wrapper na camada
+> `design-system/components/`** (nivel 4 acima). Se voce ESTRITAMENTE precisa
+> mexer no primitivo, pare e discuta antes — fork muda a relacao com o
+> upstream Tremor (toda atualizacao Tremor passa a ser merge manual).
+>
+> **Regras que CONTINUAM em vigor (nao sao suspensas):**
+>
+> - §2 **stack obrigatoria** — sem novas libs sem autorizacao explicita do usuario.
+> - §3 **arquitetura em 6 camadas** — `tremor/` continua nao-editavel, `surfaces/` continua sem importar de `components/dashboard`, etc.
+> - §11.1 **enum de modulos fechado** — sem modulo novo sem autorizacao.
+> - §11.3 **bounded contexts (backend)** — cross-import entre modulos so via `public.py`.
+> - §11.6 **hierarquia 3 niveis** de navegacao (L1/L2/L3) — sidebar nao aninha, max 3 niveis.
+> - §10 **multi-tenant absoluto** (backend) — toda tabela tem `tenant_id`, toda query escopada.
+> - §13 **adapter pattern** (backend).
+> - §14 **proveniencia + auditabilidade** (DNA do sistema).
+> - Idioma da UI em pt-BR, alias `@/*` nos imports, `cx()` em vez de `cn()`, icones Remix, fonte Geist.
+>
+> **Quando este modo se desliga:**
+>
+> Quando os handoffs principais (bi-padrao, listagens, formularios, surfaces de marca) tiverem suas implementacoes estabilizadas e visualmente aprovadas. No fim desta janela:
+>
+> 1. Auditoria automatica varre o codigo coletando todos os valores arbitrarios usados (`text-[Npx]`, `rounded-[Npx]`, hex literals, espacamentos especificos).
+> 2. Valores recorrentes sao **promovidos a tokens nomeados** em `frontend/src/design-system/tokens/` + escala Tailwind config.
+> 3. Codigo e refatorado para usar os tokens.
+> 4. **Regras §4 e §5 voltam a vigorar com forca total**: zero magic numbers em codigo novo, zero hex solto fora de tokens.
+> 5. Este banner e removido. CLAUDE.md volta ao estado restritivo, mas agora com vocabulario expandido.
+>
+> **Para Claude Code (qualquer sessao):** durante este modo, NAO bloqueie iteracao visual citando §4 ou §5. NAO sugira "promover a token agora" toda vez que vir uma classe arbitraria — isso vai ser feito em batch no fim. Foque em fidelidade ao handoff. As outras regras (especialmente §2, §3, §10-§14) continuam invioiaveis.
+
+---
+
+---
+
 ## 1. Palavra de ordem: **padrao e consistencia visual**
 
 O sistema usa **Tremor Raw** como **ponto de partida** de design system. Ele cobre ~90% dos casos; quando cobrir, use verbatim.
 
-> **Nada que nao esteja em `frontend/src/components/tremor/`, `frontend/src/components/charts/` ou `frontend/src/components/app/` pode aparecer na UI.**
+> **Nada que nao esteja em `frontend/src/components/tremor/`, `frontend/src/components/charts/` ou `frontend/src/design-system/` pode aparecer na UI.**
 
 Ordem de escolha quando for montar uma tela:
 
 1. Existe em `tremor/` ou `charts/`? Use direto.
 2. Existe no Tremor Raw upstream mas ainda nao foi copiado? Copie verbatim de https://tremor.so/docs e use.
-3. Nao existe no Tremor? **Componha em `src/components/app/`** a partir de primitivos Tremor + Radix. Um componente novo e aceito se:
+3. Existe em `src/design-system/components/`? Use direto via barrel `@/design-system/components`.
+4. Nao existe ainda? **Componha em `src/design-system/components/`** a partir de primitivos Tremor + Radix. Um componente novo e aceito se:
    - **(a)** Usa apenas tokens desta secao §4 (cores, tipografia, spacing, radius). Zero valor arbitrario.
    - **(b)** Reutiliza Radix UI quando houver equivalente (Dialog, Popover, Dropdown, Tooltip, etc) — nunca reimplementar a mecanica de acessibilidade.
-   - **(c)** E documentado em `frontend/src/components/app/README.md` com proposito + exemplo + quando usar/nao usar, antes de ir pra producao.
+   - **(c)** E documentado na rota `/design` (dev-only) com proposito + exemplo + quando usar/nao usar, antes de ir pra producao.
 4. Se a proposta quebrar uma das 3 regras acima OU introduzir uma primitiva que o Tremor ja oferece com outro nome, **pare e discuta antes de escrever codigo.**
 
 Tremor Raw e referencia, nao cela. Quando "fazer como o Tremor faz" conflitar com "resolver melhor o problema do usuario", vence o segundo — desde que (a), (b) e (c) sejam respeitados. Design system e vivo.
@@ -47,35 +123,74 @@ Tremor Raw e referencia, nao cela. Quando "fazer como o Tremor faz" conflitar co
 | Virtualizacao | `@tanstack/react-virtual` quando lista > ~100 itens | react-window, react-virtualized |
 | Command palette | `cmdk` | reimplementacao manual de command menu |
 | Primitivos Radix | `@radix-ui/react-avatar` e outros sem equivalente no Tremor | Radix cru para o que o Tremor ja cobre |
+| Markdown (output IA) | `react-markdown` + `remark-gfm` — uso restrito a `<AIPanel />` e telas de auditoria de IA | uso de markdown em tabelas/forms regulares; renderizacao manual ad-hoc de markdown |
+| LLM gateway (backend) | adapter proprio em `app/modules/integracoes/adapters/llm/<provider>/`; LiteLLM aceito por baixo se virar multi-provider real | chamadas diretas ao SDK do provider em codigo de dominio que NAO seja o adapter |
+| PII redaction (backend) | regex CPF/CNPJ com check digit (MVP) → `presidio-analyzer` + `presidio-anonymizer` na Fase 2 | enviar payload bruto a LLM externo |
+| Cache + rate limit (backend) | em-processo no MVP; Redis em Phase 2 (tenant token bucket multi-dim TPM/RPM/BRL/dia) | `threading.Timer`, sleeps, locks ad-hoc |
+| Specialist agents (backend) | `anthropic >= 0.71` (SDK oficial Anthropic Messages API com tool use + prompt caching nativos). Usado em `app/shared/agents/runtime.py` para invocar agentes especialistas via HTTP direto. | reimplementar tool loop a mao com httpx; usar subprocess do Claude Code CLI (quebra em `SelectorEventLoop` no Windows) |
+| Workflow visual editor (frontend) | `@xyflow/react` (React Flow v12+) — autorizado 2026-04-30 para editor de workflow do modulo credito | reimplementar canvas drag-and-drop manualmente; libs alternativas (rete, dagre standalone) |
 
 Instalar qualquer biblioteca fora desta tabela exige autorizacao explicita do usuario no chat.
 
 ---
 
-## 3. Arquitetura em 4 camadas
+## 3. Arquitetura em 6 camadas (Strata Design System)
 
 ```
-src/components/tremor/      <- Primitivos Tremor Raw (verbatim da doc).
-                                Nao editar. Substitua apenas ao atualizar a versao upstream.
+src/components/tremor/             <- Primitivos Tremor Raw (verbatim da doc).
+                                       Nao editar. Substitua apenas ao atualizar a versao upstream.
 
-src/components/charts/      <- Charts do Tremor (verbatim). Mesma regra.
+src/components/charts/             <- Charts do Tremor (verbatim). Mesma regra.
 
-src/components/app/         <- Composicoes reutilizaveis de dominio neutro
-                                (ex.: PageHeader, DataTable, FormLayout, EmptyState).
-                                USA apenas tremor/ e charts/, nunca Tailwind bruto
-                                de cor / Radix cru.
+src/design-system/tokens/          <- Tokens TS espelhando CSS vars do globals.css.
+                                       (colors, fonts, spacing, radius, motion, echarts-theme).
+                                       Inclui paleta de marca Strata (navy, navy-dark, orange)
+                                       e escala tipografica hero — uso restrito a surfaces/.
 
-src/components/<dominio>/   <- Componentes amarrados a um dominio especifico
-                                (ex.: "contratos", "fornecedores", "dashboards").
-                                Compostos de app/ + tremor/ + charts/.
+src/design-system/primitives/      <- Barrel re-exporta `tremor/*` + Sheet (right-side drawer).
+                                       Ponto de entrada unico para primitivas.
+
+src/design-system/components/      <- Componentes do Strata Design System (FIDC-domain).
+                                       Strata canonicos: StatusPill, KpiStrip, FilterBar,
+                                       DataTable, DataTableShell, DrillDownSheet,
+                                       CommandPalette, EChartsCard, ApprovalQueueBadge, Sidebar,
+                                       SegmentSwitch.
+                                       A7 Credit composites: PageHeader, EmptyState, ErrorState,
+                                       OriginDot, CompactSeriesTable, etc.
+                                       USA apenas tremor/ + charts/ + tokens/, nunca Tailwind
+                                       bruto de cor / Radix cru.
+
+src/design-system/patterns/        <- Composicoes copy-paste-edit (DashboardOperacional,
+                                       ListagemComDrilldown). Templates de pagina autenticada.
+
+src/design-system/surfaces/        <- Superficies de marca (NAO sao dashboards).
+                                       Login, splash, 404/500, marketing/landing publica.
+                                       Templates: HeroSplitAuth (e futuros).
+                                       Unica camada com permissao de usar paleta Strata
+                                       (navy/navy-dark/orange), gradientes de marca, e
+                                       inline styles para efeitos nao-expressaveis em Tailwind
+                                       (radial-gradient multi-stop, SVG pattern fills) —
+                                       sempre referenciando tokens, zero hex literal solto.
+
+src/components/<dominio>/          <- Componentes amarrados a um dominio especifico
+                                       (ex.: "bi", "contratos", "fornecedores").
+                                       Compostos de design-system/ + tremor/ + charts/.
 ```
+
+**Catalogo completo de componentes:** ver [`frontend/src/design-system/components/README.md`](frontend/src/design-system/components/README.md) — registro vivo dos 37 componentes (9 canonicos do handoff Strata + 28 A7 Credit composites como `PageHeader`, `ModuleSwitcher`, `AuthGuard`, `Breadcrumbs`, `OriginDot`, `FilterPill`, `CardMenu`, `CompactSeriesTable`, etc.). Antes de criar componente novo, consulte este catalogo — provavelmente ja existe.
 
 **Imports permitidos por camada:**
 
 - `tremor/` importa: `@/lib/utils`, `@/lib/chartUtils`, `@remixicon/react`, `tailwind-variants`, Radix UI (interno), Recharts (interno).
 - `charts/` importa: o mesmo que `tremor/` + `react`.
-- `app/` importa: `@/components/tremor/*`, `@/components/charts/*`, `@/lib/*`, `@remixicon/react`, primitivos Radix **sem equivalente no Tremor** (ex.: `@radix-ui/react-avatar`), `cmdk`. **Proibido**: Radix para o que o Tremor ja cobre, Recharts direto, classes de cor Tailwind ad-hoc.
-- `<dominio>/` importa: `@/components/app/*`, `@/components/tremor/*`, `@/components/charts/*`, hooks de dominio, types de dominio.
+- `design-system/tokens/` importa: nada externo (apenas `react` para hooks).
+- `design-system/primitives/` importa: `@/components/tremor/*` + nova `Sheet.tsx`.
+- `design-system/components/` importa: `@/components/tremor/*`, `@/components/charts/*`, `@/design-system/tokens/*`, `@/design-system/primitives/*`, `@/lib/*`, `@remixicon/react`, primitivos Radix **sem equivalente no Tremor** (ex.: `@radix-ui/react-avatar`, `@radix-ui/react-hover-card`), `cmdk`, `echarts-for-react`. **Proibido**: Radix para o que o Tremor ja cobre, Recharts direto, classes de cor Tailwind ad-hoc.
+- `design-system/patterns/` importa: `@/design-system/components/*` + `@/design-system/tokens/*` + `@/components/tremor/*`. **Sao templates copiaveis** — escopo: composicao + dados de exemplo.
+- `design-system/surfaces/` importa: `@/components/tremor/*` + `@/design-system/primitives/*` + `@/design-system/tokens/*` (incluindo `tokens.colors.brand` e `tokens.typography.hero`) + `@remixicon/react` + assets de marca (logo SVG). **Proibido**: importar de `@/design-system/components/*` (componentes de dashboard nao pertencem a superficie de marca), importar de `<dominio>/*`, hex literal solto fora de `tokens/`.
+- `<dominio>/` importa: `@/design-system/*`, `@/components/tremor/*`, `@/components/charts/*`, hooks de dominio, types de dominio. **Nunca importa de outro dominio.**
+
+**Barrel oficial:** `import { ... } from "@/design-system/components"` re-exporta tudo.
 
 ---
 
@@ -91,19 +206,53 @@ src/components/<dominio>/   <- Componentes amarrados a um dominio especifico
 | **Dados (chart)** — paleta A7 Credit | cores de `chartColors` em `@/lib/chartUtils`, na ordem canonica: `slate` → `sky` → `teal` → `emerald` → `amber` → `rose` → `violet` → `indigo`. `blue`/`gray`/`cyan`/`pink`/`lime`/`fuchsia` existem no dicionario mas **nao iteram no default** — use por override explicito. | **apenas em `src/components/charts/`** ou quando a cor vier dinamicamente de `getColorClassName()`. `slate` (1a serie) escolhido por ser azul-acinzentado de baixa saturacao — nao cansa durante horas de analise. |
 
 **Proibido:**
-- Valores arbitrarios de cor: `text-[#123abc]`, `bg-[rgb(...)]`, `border-[hsl(...)]`.
+- Valores arbitrarios de cor em **classes Tailwind**: `text-[#123abc]`, `bg-[rgb(...)]`, `border-[hsl(...)]`.
 - **`slate-*` como cor de atencao/selecao** — use `blue-*`. `slate` e exclusivamente para dados de chart + neutros raros.
 - **`blue-*` como cor de serie default em chart** — a 1a cor iteravel da paleta A7 e `slate`, nao `blue`. `blue` so como override explicito `<Chart colors={["blue"]}>`.
 - Cores Tailwind fora das categorias acima: `orange-*`, `purple-*`, `yellow-*`, `stone-*`, `zinc-*`, `neutral-*`. (`teal`, `sky`, `rose`, `indigo`, `violet` estao liberadas **somente para series de chart**, via `chartUtils`.)
 - Usar cores de dados (`emerald`, `teal`, `rose`, etc) como cor semantica geral fora de charts (ex.: `bg-emerald-500` em badge de "ativo" — use `Badge variant="success"` do Tremor).
 - Gradientes manuais (`bg-gradient-to-*` com cores arbitrarias).
 
-**Excecao oficial -- botao "Perguntar a IA" (`AIButton`):**
-Unico ponto do sistema que usa `violet` fora de chart series ou avatar de Laboratorio. Combinacao fixa: `bg-gray-900 text-white` + icone (`RiSparklingLine` ou `RiMagicLine`) em `text-violet-400`/`text-violet-500`. Vive em `src/components/app/AIButton.tsx`. Aparece no header de toda pagina de BI (Zona Z2 -- ver secao 19). Qualquer outro uso de violeta em botao/badge/texto e proibido.
+**Excecao explicita — ECharts option objects:** hex literals (`#3B82F6`, `#F59E0B`, `#10B981`, etc.) sao **permitidos** dentro de `EChartsOption` (em `series[].itemStyle.color`, `lineStyle.color`, `areaStyle.color.colorStops`, gradientes de eixo, etc.) porque Tailwind nao alcanca o renderer do canvas. Preferir, quando viavel, valores de `tokens.colors.chart` ou nomes Tremor mapeados — hex inline e aceitavel quando o tipo da `EChartsOption` exige string de cor.
 
 **Dark mode:** sempre suportar. Usar as mesmas classes que o Tremor usa (`dark:bg-gray-950`, `dark:text-gray-50`, `dark:border-gray-800`). O `<html>` ja tem `dark:bg-gray-950` em `layout.tsx`.
 
 **Espacamento, tipografia, radius:** herdar do Tremor. Sem classes magicas (`text-[13px]`, `p-[7px]`). Se precisar de um tamanho que o Tremor nao cobre, pare e discuta.
+
+### 4.1 Tokens de marca Strata (escopo restrito a `surfaces/`)
+
+A paleta institucional da marca (navy + laranja Strata) e **separada** da paleta de produto (gray/blue/red + chart). Ela vive em `tokens.colors.brand`:
+
+| Token | Hex | Uso |
+|---|---|---|
+| `tokens.colors.brand.navy` | `#1B2B4B` | Hero zone (background base) |
+| `tokens.colors.brand.navyDark` | `#050814` | Hero zone (gradient stop final) |
+| `tokens.colors.brand.orange` | `#F05A28` | Logo Strata (StrataIcon), eyebrow de marca, glow do hero |
+| `tokens.colors.brand.orangeLight` | `#FF7A4D` | Highlight de marca (hover/destaque) |
+| `tokens.colors.brand.blue` | `#3B82F6` | CTA primario em superficie de marca (alinhado com `blue-500` do produto) |
+| `tokens.colors.brand.blueHover` | `#2563EB` | Hover do CTA |
+
+**Regras duras:**
+
+1. **Brand tokens sao permitidos APENAS em `src/design-system/surfaces/*`** (login, splash, 404/500, marketing). Pagina autenticada (`src/app/(app)/*`) **nao pode** importar `tokens.colors.brand` — la vale a paleta da §4 acima.
+2. **StrataIcon (logo SVG com hexagono laranja)** e a unica excecao: pode aparecer em qualquer superficie como elemento de marca (ex.: header sticky do app), porque suas cores ja vem hardcoded no SVG e nao se propagam pra Tailwind.
+3. **Gradientes de marca permitidos** em `surfaces/` quando todos os stops sao `tokens.colors.brand.*` ou `gray-*`. Exemplos validos: `linear-gradient(135deg, brand.navy 0%, brand.navyDark 100%)`, `radial-gradient(... brand.orange/.18 ...)`. Continua proibido gradiente com `purple-*`, `orange-500` Tailwind ou hex solto.
+4. **`brand.orange` e identidade, nao status.** Nao reutilize laranja Strata para significar "alerta", "pendente", "atrasado-60" — para isso use `tokens.colors.status.atrasado-60` ou `Badge variant="warning"`.
+
+### 4.2 Tipografia hero (escopo restrito a `surfaces/`)
+
+Escala separada da escala Tremor padrao, registrada em `tokens.typography.hero`:
+
+| Token | Tamanho / peso / line-height / tracking | Uso |
+|---|---|---|
+| `hero.display` | 52px / 600 / 1.08 / -0.025em | Headline principal do hero (ex.: "Inteligencia de fundos creditorios.") |
+| `hero.lede` | 17px / 400 / 1.65 / 0 | Subhead descritivo abaixo da headline |
+| `hero.eyebrow` | 12px / 500 / 1 / 0.08em uppercase | Caption sob o wordmark ("FIDC ANALYTICS") |
+| `hero.formTitle` | 26px / 700 / 1.2 / -0.02em | Titulo do form ("Acesse sua conta") |
+| `hero.trust` | 11px / 500 / 1 / 0.02em | Selos de compliance ("CVM compliant", "ISO 27001") |
+| `hero.wordmark` | 30px / 700 / 1 / -0.03em | Wordmark "Strata" no lockup |
+
+Uso de `hero.*` fora de `surfaces/` e bloqueador de PR. Pagina autenticada continua na escala Tremor (`text-sm`, `text-base`, `text-xl`, etc).
 
 ---
 
@@ -114,7 +263,10 @@ Unico ponto do sistema que usa `violet` fora de chart series ou avatar de Labora
 - **Componentes:** `function Component() { return (...) }` exportado. Props tipadas com `type`, nao `interface`, a menos que precise de extends.
 - **`use client`** so quando necessario (interatividade, hooks de browser). Por padrao, Server Components.
 - **Nenhum `any`** em codigo de dominio. Em codigo verbatim do Tremor, preservar com `// eslint-disable-next-line @typescript-eslint/no-explicit-any`.
-- **Nada de inline styles** (`style={{...}}`) exceto quando o Tremor exige (ex.: `style={{ color }}` em cores dinamicas via paleta).
+- **Nada de inline styles** (`style={{...}}`) exceto quando:
+  - O Tremor exige (ex.: `style={{ color }}` em cores dinamicas via paleta).
+  - Codigo em `src/design-system/surfaces/*` precisa expressar efeito **nao representavel em Tailwind** (radial-gradient multi-stop, SVG pattern fills, layered backgrounds com positioning especifico). Mesmo nesse caso, **todo valor referencia tokens** — proibido hex literal solto. Ex.: `background: \`linear-gradient(135deg, ${tokens.colors.brand.navy}, ${tokens.colors.brand.navyDark})\``.
+  - Cores, gradientes e tipografia dentro de `EChartsOption` (series, axis, tooltip). Tailwind nao chega no canvas do ECharts. Preferir `tokens.colors.chart`; hex inline aceitavel quando o tipo exige.
 
 ---
 
@@ -123,24 +275,101 @@ Unico ponto do sistema que usa `violet` fora de chart series ou avatar de Labora
 **Formularios** sempre compoem apenas primitivos `tremor/`: `Input`, `Select`, `Textarea`, `Checkbox`, `Switch`, `RadioGroup`, `Label`, `DatePicker`, `NumberInput` (via Input com `type="number"`).
 
 - Validacao: `react-hook-form` + `zod`.
-- Layout: `src/components/app/FormLayout` (a criar como template).
+- Layout: a definir em `src/design-system/patterns/` quando surgir necessidade.
 - Botoes: sempre `Button` do Tremor, nunca `<button>` cru.
 
-**Tabelas** sempre com `Table` do Tremor. Para tabelas com sort/filter/paginacao, usar `@tanstack/react-table` por baixo + componentes Tremor no render. Nunca AG Grid, nunca data grid externo.
+**Tabelas:**
+- **Listagens CRUD/admin** (Provedores, Usuarios, Etiquetas, Templates — pequenas a medias, ~5-200 rows) — usar **`<DataTableShell>`** em `src/design-system/components/DataTableShell/`. Encapsula `Card + FilterSearch + SegmentSwitch + counter + DataTable` num so componente. Garante layout/gap/ordem identicos entre paginas. Demo isolada: `/preview/data-table-shell`.
+- **Transacionais grandes** (cessoes, cedentes, sacados — milhares de rows com filtros complexos) — usar `<DataTable>` direta em `src/design-system/components/DataTable/`. Virtualization automatica se rows > 100.
+- **Series temporais FIDC** (PL, cotas, rentabilidade mes a mes) — usar `<CompactSeriesTable>` (Austin-style, density compact default).
+- **Tabelas hierarquicas** (BalanceTable, etc — multi-nivel com expand) — `<DataTable>` direta + `enableExpanding`/`getSubRows`/`expandedColumnId`. Nao cabe no `<DataTableShell>`.
+- **Tipografia + cores em CELL renderers**: SEMPRE via **`tableTokens.*`** de `@/design-system/tokens/table` — NUNCA `text-xs`, `text-sm`, `text-[Npx]`, `text-gray-XXX` literais inline. Excecao com `// MOTIVO:` no proprio cell. Tokens disponiveis: `cellText` (12px texto), `cellTextMono` (12px mono), `cellSecondary` (12px gray-500), `cellMuted` (12px placeholder), `cellStrong` (12px semibold), `cellNumber`/`cellNumberSecondary`/`cellNumberPositive`/`cellNumberNegative` (tabular-nums), `badge`/`badgeWithDot` (11px), `header` (10px eyebrow). Tudo 12px de base — cabe em row de density compact (h-8). **Texto principal em dark = `gray-100`, NAO `gray-50`.**
+- **Bordas em `rowClassName` da DataTable**: use sempre `border-t-{color}` / `border-b-{color}` / `border-y-{color}` (forma com lado explicito) — NUNCA o shorthand `border-{color}`. O shorthand seta `border-color` nos 4 lados, sobrescrevendo a `border-bottom-color: gray-100` default que a DataTable aplica em todo `<tr>`. Resultado visual: linhas com `border-t border-gray-200` ficam parecendo "boxed" (borda tambem embaixo, na cor errada). Mesma regra para `subtotal`, `total`, `section` em tabelas hierarquicas.
+- Nunca AG Grid, nunca data grid externo, nunca `Table` do Tremor cru em pagina (Tremor `Table` so como primitivo dentro de DataTable/CompactSeriesTable).
 
 ---
 
-## 7. Paginas e rotas
+## 7. Paginas e rotas — Patterns canonicos e Surfaces
 
-Toda pagina nasce de um dos 5 templates canonicos (quando existirem em `src/templates/`):
+Toda **pagina autenticada** (`src/app/(app)/*`) **deve preferir** comecar de um dos patterns canonicos em `src/design-system/patterns/`:
 
-- **ListTemplate** — tela de listagem com busca/filtro/tabela.
-- **FormTemplate** — criar/editar recurso.
-- **DetailTemplate** — visualizacao de recurso.
-- **DashboardTemplate** — KPIs + charts.
-- **WizardTemplate** — fluxo multi-step.
+- **DashboardBiPadrao** — Pagina canonica do BI (handoff bi-padrao 2026-04-26). 5 zonas: Z1 PageHeader (titulo + IA + acoes) · Z2 TabNavigation L3 · Z3 FilterBar sticky **(Card branco em faixa cinza-50 — anatomy igual `/credito/workflows`, ver §7.1)** · Z4 conteudo (InsightBar + KpiStrip 5 KPIs + grid 2/3+1/3 + grid 3-col + DataTable) · Z5 ProvenanceFooter. Lateral: AIPanel violeta in-layout + DrillDownSheet. Use para qualquer dashboard analitico (BI, Controladoria, Risco) que envolva KPIs + charts + tabela com drill-down.
+- **DashboardOperacional** — PageHeader + FilterBar + KpiStrip (4 KPIs) + Grid 2×2 EChartsCards + DataTable de atividade recente. Use para dashboards mais simples sem AI panel (`/bi/operacoes` legado, telas operacionais).
+- **ListagemComDrilldown** — PageHeader + FilterBar + DataTable + DrillDownSheet (URL-synced via `?selected=ID`). Use para listagem de **dados de dominio** (gerados pelo sistema): Cessoes, Cedentes, Sacados, Cobranca, Reconciliacao, Eventos. Drill-down abre painel rico (PropertyList + Tabs + Timeline + LinkedObjects).
+- **ListagemCrudInline** — PageHeader (com botao "+ Novo") + Card { `<FilterSearch>` + `<SegmentSwitch>` + contador `X de Y` + DataTable } + DrillDownSheet de criar (`?action=new`) + DrillDownSheet de editar (`?selected=<id>`) + Dialog destrutivo (state local). Use para **gestao administrativa** de cadastros pequenos a medios (~5-200 rows) onde **cada entidade tem identidade tabular** (compara linha-a-linha) e criar/editar/excluir acontecem inline: credenciais de provedor LLM, usuarios do tenant, etiquetas, templates de regra, fornecedores. Filtros sao **client-side** ate ~200 rows (busca via `globalFilter` do TanStack + segments locais); acima disso, copy-paste-edit + adicione `<FilterChip>` por coluna; acima de 2000 rows, migre para server-side (paginacao + busca debounced). Primeira instancia em producao: [`/admin/ia/providers`](frontend/src/app/(app)/admin/ia/providers/page.tsx).
+- **ListagemCrudCards** — PageHeader (`title` + `info` tooltip + `subtitle` eyebrow + botao "+ Novo") + Card { `<FilterSearch>` + `<SegmentSwitch>` + contador `X de Y` } + grid responsivo `1/2/3` colunas de `EntityCard` + DrillDownSheet de criar (`?action=new`) + (opcional) DrillDownSheet de editar (`?selected=<id>`, omita se edit redireciona pra outra rota) + Dialog destrutivo. Use para **gestao administrativa** onde **cada entidade tem identidade visual** (icone + titulo + descricao + metadata heterogeneo + badges + acoes) e cabe melhor em CARD do que em linha de tabela: workflows, agentes IA, dashboards salvos, conexoes externas, templates de extracao. Volume tipico < ~50 cards (~3 paginas de scroll); acima de 200 items considere migrar pra `ListagemCrudInline`. **EntityCard canonico**: `<Card>` com `<div className={cardTokens.body}>`, hover `border-blue-500`, layout em 3 linhas (avatar+badges+dropdown / titulo+descricao / metadata com `·`), DropdownMenu de acoes com `e.stopPropagation()` no trigger. Cor do avatar via tokens nomeados (ex.: `nodeCategoryTokens`) — proibido `bg-X-N` solto. Primeira instancia em producao: [`/credito/workflows`](frontend/src/app/(app)/credito/workflows/page.tsx).
 
-Antes de escrever uma `page.tsx` nova, pergunte: "qual template aplica?". Se nenhum, e sinal de que precisa de discussao, nao de uma excecao.
+Toda **pagina nao-autenticada / superficie de marca** (`src/app/(auth)/*`, `src/app/error.tsx`, `not-found.tsx`, futuras paginas publicas) nasce de um template em `src/design-system/surfaces/`:
+
+- **HeroSplitAuth** — Layout 60/40 com hero zone (gradiente navy + glow laranja + pattern de linhas + logo + headline + trust signals) a esquerda e zona de form a direita. Use para `/login`, `/recover-password`, `/onboarding/welcome`.
+- (futuros) `SplashScreen`, `ErrorPage404`, `ErrorPage500`, `MarketingHero`.
+
+Patterns e surfaces sao **copy-paste-edit** — nao componentes black-box. Copie o pattern para a pasta da pagina, adapte titulo/copy/mocks/charts ao dominio. Os comentarios `HOW TO ADAPT:` no topo de cada arquivo guiam a customizacao. Pages que copiam um pattern e divergem do template sao esperadas, nao excecao.
+
+**Header de dashboard — set canonico de acoes (handoff bi-padrao 2026-04-26):** toda pagina derivada de `DashboardBiPadrao` usa `<DashboardHeaderActions>` no slot `actions` do `<PageHeader>`. O composite renderiza, em ordem fixa: `[DarkToggle, Compartilhar, Exportar, Mais, IA]`. DarkToggle e IA sao sempre presentes; Share/Export/More sao omitidos quando o callback nao e passado. Substituir por `<Button>` solto ou conjunto custom de botoes e regressao — fecha a porta para que cada pagina invente seu proprio header. Para acoes secundarias (Copiar link, Duplicar, Imprimir, etc.), use o slot `more={[...]}`.
+
+### 7.1 FilterBar (Z3) — anatomy canonica + controles
+
+**Estrutura visual** (refinamento 2026-05-01): a Z3 do `DashboardBiPadrao` (e tambem usada em `DashboardOperacional` e `ListagemComDrilldown`) renderiza como **Card branco dentro de uma faixa sticky cinza-50** — mesma anatomy de `/credito/workflows` (`ListagemCrudCards`):
+
+- Faixa externa: `sticky top-0 z-10 -mx-6 px-6 pt-2 pb-3 bg-gray-50 dark:bg-gray-950` + `shadow-xs` quando scrolled. E ela quem mascara conteudo passando por baixo durante scroll.
+- Card interno: `flex flex-wrap items-center gap-2 rounded border p-3 border-gray-200 bg-white dark:border-gray-900 dark:bg-[#090E1A]` (mesmas classes do `<Card>` Tremor canonico).
+
+Implementacao oficial em [`src/design-system/components/FilterBar/index.tsx`](frontend/src/design-system/components/FilterBar/index.tsx). Nenhuma pagina deve recriar essa estrutura inline — composer com `<FilterBar>` + filhos canonicos.
+
+**Altura canonica dos controles** = ~30px (alinhada com `HEADER_BTN_CLASS` do `DashboardHeaderActions`). Todos os controles do FilterBar (FilterChip, FilterSearch, RemovableChip, MoreFiltersButton, SavedViewsDropdown) usam `h-[30px] px-2.5 text-[13px]` explicito. Botoes do header tambem chegam em ~30px via `py-1 text-[13px]`. Esses dois valores (`h-[30px]`, `text-[13px]`) sao candidatos a token (`tokens.controls.height`/`text`) na varredura final do Modo Iteracao de Design — por enquanto continuam como arbitrary values padronizados.
+
+**Per-element coloring em controles compostos** (regra dura): em controles com multiplos elementos visuais (ícone + label + valor + chevron, etc), aplique cor **por elemento**, nunca via `text-X` no `<button>`/`<div>` raiz. Razao: cor no elemento raiz se propaga por inheritance e achata a hierarquia visual (label e valor ficam mesma cor). Padrao canonico do FilterChip:
+
+- Ícone inactive: `text-gray-500 dark:text-gray-400`; active: `text-blue-500`
+- Label `text-[11px]`: `text-gray-500 dark:text-gray-400`
+- Valor `font-medium`: `text-gray-900 dark:text-gray-50`; active: `text-blue-700 dark:text-blue-300`
+
+Botoes que parecem chip (ex.: `MoreFiltersButton`, qualquer Popover trigger custom) tambem seguem essa anatomy — texto principal em `gray-900` (nao `gray-600`/`700`) para nao parecerem "menores" que os chips reais.
+
+**Antipattern: button cru duplicando MoreFiltersButton.** Quando uma pagina precisa de um trigger "Mais filtros" wrapped num Popover (lista de dimensoes para adicionar), e tentador escrever um `<button>` cru — o `MoreFiltersButton` canonico hoje nao aceita `asChild` para Popover wrapping. Se for inevitavel duplicar, **espelhe a anatomy completa** (mesmas classes, mesmas cores per-element). Followup: estender `MoreFiltersButton` com suporte a `asChild` para fechar essa porta.
+
+Antes de escrever uma `page.tsx` nova, pergunte:
+- E pagina autenticada? Qual **pattern** aplica?
+  - Dashboard com KPIs + IA → `DashboardBiPadrao`
+  - Dashboard simples sem IA → `DashboardOperacional`
+  - Listagem de dados de dominio (drill-down de leitura) → `ListagemComDrilldown`
+  - Gestao administrativa CRUD com identidade tabular (linha-a-linha) → `ListagemCrudInline`
+  - Gestao administrativa CRUD com identidade visual (icone + descricao rica) → `ListagemCrudCards`
+- E pagina nao-autenticada / pagina de erro / landing? Qual **surface** aplica?
+
+Se nenhum pattern atual couber, componha direto a partir de `design-system/components/` + `tremor/`. Se a estrutura for util a outras telas, **promova-a a pattern** (novo arquivo em `patterns/`) — patterns nascem de pages reais, nao de especulacao.
+
+A rota `/design` (dev-only via `process.env.NODE_ENV !== "production"`) mostra todos os tokens, primitives, components, patterns **e surfaces** ao vivo. Util como referencia rapida.
+
+### 7.2 Filtros globais em paginas BI (regra dura)
+
+**Toda pagina derivada de `DashboardBiPadrao` (e tambem `DashboardOperacional`) tem um conjunto de filtros globais** na FilterBar (Z3) — periodo, UA, produto, focus, etc. **Esses filtros devem ser aplicados a 100% dos agregados da pagina** — KPIs, charts, tabelas, mini-charts dentro de cards, sparklines, breakdowns. Nao existe agregado "fora do escopo do filtro" numa pagina BI.
+
+**Por que e regra dura:** quando dois cards lado-a-lado mostram numeros que representam a "mesma coisa" (ex.: VOP do mes corrente) mas um aplicou o filtro e o outro nao, o usuario perde a confianca em todos os numeros da pagina. Isso e bug funcional, nao polish — equivale a o sistema mentir.
+
+**Como aplicar — frontend:**
+
+1. Use o hook canonico `useBiFilters()` (em `src/lib/hooks/useBiFilters.ts`) que retorna `filtersWithFocus` ja consolidado.
+2. **Toda** chamada `useQuery` da pagina inclui `filtersWithFocus` no `queryKey` E passa para o service no `queryFn`. Padrao:
+
+   ```ts
+   const { filtersWithFocus } = useBiFilters()
+   const q = useQuery({
+     queryKey: ["bi", "<dominio>", "<bundle>", filtersWithFocus],
+     queryFn: () => biService.bundle(filtersWithFocus),
+   })
+   ```
+
+3. Filtros LOCAIS (lentes dentro de um card — ex.: seletor de UA dentro do hero de evolucao) operam **client-side sobre dados ja filtrados** pelos globais. Nao podem "abrir" o escopo. Comentario obrigatorio na callsite explicando que e lente.
+
+**Como aplicar — backend:**
+
+1. **Toda** query de agregado em `app/modules/bi/services/*.py` passa pelo helper `_apply_filters(stmt, tenant_id=..., **filters)` (em `services/operacoes.py`). Sem excecao para "esse aqui e mini chart" / "esse aqui e quebra auxiliar" / "ja filtra por data". `_apply_filters` aplica `tenant_id`, `efetivada=true`, `data_de_efetivacao` IS NOT NULL, `periodo_inicio/fim` E `produto_sigla/ua_id/...`. Pular o helper = pular filtros do usuario.
+2. Quando a janela de tempo do agregado **diverge** do `periodo_inicio/fim` da pagina (ex.: mini chart de mes corrente, sparkline 12M historico fixo, comparacao MTD do mes anterior), monte `*_filters = {**filters, "periodo_inicio": ..., "periodo_fim": ...}` e passe esse dict para `_apply_filters`. As janelas de data do `_apply_filters` aceitam override; os filtros de produto/UA/focus do usuario continuam aplicados.
+3. **Helpers que nao recebem filtros sao bug.** Ja vimos em producao (corrigido em `_acumulado_dia_a_dia` em 2026-05-06): a funcao recebia `filters: dict[str, Any]` mas montava o WHERE manualmente sem usar — resultado: o mini chart "Mes corrente vs Anterior" do card Ritmo somava o VOP total da empresa, enquanto o `vop_acumulado` ao lado refletia o filtro. Numeros lado-a-lado na mesma card divergindo. Toda funcao que toca `Operacao` em service de BI **deve** receber `filters` e aplica-los — mesmo quando aparentemente "ja filtra por outra coisa".
+
+**Em PR:** consumo de `Operacao` (ou warehouse derivado) em service de BI sem `_apply_filters` e bloqueador. Reviewer rejeita.
 
 ---
 
@@ -152,7 +381,7 @@ Em `frontend/.claude/skills/` vivem skills que automatizam o nascimento de novo 
 - `create-form-page` — nova pagina de formulario
 - `create-detail-page` — nova pagina de detalhe
 - `create-dashboard-page` — novo dashboard
-- `create-component` — novo componente reutilizavel em `components/app/`
+- `create-component` — novo componente reutilizavel em `design-system/components/`
 - `audit-page-consistency` — verificar se uma pagina segue as regras acima
 
 Quando o usuario pedir "cria uma pagina de X" ou "audita a tela Y", prefira invocar a skill ao inves de escrever do zero.
@@ -207,20 +436,21 @@ O GR e **multi-tenant desde o dia 1**, mesmo rodando com 1 tenant real no MVP.
 
 O GR e **modular** em 4 dimensoes simultaneas (UI, codigo, permissao, licenciamento). Modularizacao e **estrutural**, aplicada desde o Sprint 1. Retrofit e caro.
 
-### 11.1 Os 8 modulos oficiais (enum fechado)
+### 11.1 Os 9 modulos oficiais (enum fechado)
 
 | Modulo | Proposito |
 |---|---|
 | `bi` | Dashboards, analises, cruzamentos (MVP) |
 | `cadastros` | Empresas, pessoas, cedentes, sacados |
 | `operacoes` | Contratos, titulos, pagamentos, recebimentos |
+| `credito` | Analise de credito, politicas, limites de cessao |
 | `controladoria` | Contabilidade, plano de contas, DRE, balancete |
 | `risco` | Scoring, limites, PDD, stress, concentracao |
 | `integracoes` | Adapters, catalogo de fontes, sync, reconciliacao |
 | `laboratorio` | Teses de dados, correlacoes, experimentos |
 | `admin` | Tenants, users, roles, subscriptions, config sistemica |
 
-Adicionar um nono modulo exige **autorizacao explicita** + atualizacao deste documento + atualizacao do enum `Module` em `app/core/enums.py`.
+Adicionar um decimo modulo exige **autorizacao explicita** + atualizacao deste documento + atualizacao do enum `Module` em `app/core/enums.py`.
 
 ### 11.2 Estrutura fisica (bounded contexts)
 
@@ -240,6 +470,7 @@ app/
 │   │   └── api/
 │   ├── cadastros/
 │   ├── operacoes/
+│   ├── credito/
 │   ├── controladoria/
 │   ├── risco/
 │   ├── integracoes/
@@ -262,28 +493,51 @@ app/
 ### 11.4 Estrutura de rotas do frontend
 
 ```
-src/app/(app)/
-├── page.tsx              # home global (atalhos por modulo)
-├── bi/...
-├── cadastros/...
-├── operacoes/...
-├── controladoria/...
-├── risco/...
-├── integracoes/...
-├── laboratorio/...
-├── admin/...
-└── templates/            # dev-only, fora de modulos
+src/app/
+├── layout.tsx                # root layout (html, ThemeProvider, QueryProvider, Toaster)
+├── globals.css               # tokens CSS vars + Tailwind directives
+│
+├── (app)/                    # route group AUTENTICADO — envolvido por <AuthGuard>
+│   ├── layout.tsx            # AuthGuard + SidebarProvider + AppSidebar + header sticky
+│   ├── page.tsx              # home global (atalhos por modulo)
+│   ├── bi/...                # rota /bi (operacoes, benchmark, ...)
+│   ├── cadastros/...         # rota /cadastros
+│   ├── operacoes/...         # rota /operacoes (futuro)
+│   ├── credito/...           # rota /credito (futuro)
+│   ├── controladoria/...     # rota /controladoria (futuro)
+│   ├── risco/...             # rota /risco (futuro)
+│   ├── integracoes/...       # rota /integracoes (catalogo, sync)
+│   ├── laboratorio/...       # rota /laboratorio (futuro)
+│   └── admin/...             # rota /admin (futuro)
+│
+├── (auth)/                   # route group PUBLICO — sem AuthGuard
+│   ├── layout.tsx            # layout minimo (centra o card de login)
+│   └── login/page.tsx        # rota /login
+│
+├── design/                   # rota /design — Strata Design System ao vivo (dev-only via NODE_ENV)
+└── preview/                  # rota /preview/* — paginas de preview/QA (gated em layout)
 ```
+
+**Sobre route groups (`(app)`, `(auth)`):** convencao do Next 14 — diretorios entre parenteses **nao entram na URL**. `src/app/(auth)/login/page.tsx` serve a rota `/login`, nao `/(auth)/login`. Servem para agrupar rotas que compartilham layout (no caso, `(app)` envolve com `<AuthGuard>` + sidebar; `(auth)` deixa rotas publicas sem auth).
+
+**Onde achar coisas comuns** (atalho para skills/agents):
+- Login: [`src/app/(auth)/login/page.tsx`](frontend/src/app/(auth)/login/page.tsx)
+- Sidebar: [`src/design-system/components/Sidebar/index.tsx`](frontend/src/design-system/components/Sidebar/index.tsx) — `<AppSidebar />` self-wired (le `usePathname` + `getActiveModule`)
+- Module switcher: [`src/design-system/components/ModuleSwitcher.tsx`](frontend/src/design-system/components/ModuleSwitcher.tsx)
+- Registro de modulos: [`src/lib/modules.ts`](frontend/src/lib/modules.ts) — `MODULES[]`, `MODULE_AVATAR_COLORS`, `getActiveModule()`, `getVisibleModules()`
+- Breadcrumbs do header: [`src/design-system/components/Breadcrumbs.tsx`](frontend/src/design-system/components/Breadcrumbs.tsx) — `<HeaderBreadcrumbs />`, auto-gerado do `pathname`
+- Auth guard: [`src/design-system/components/AuthGuard.tsx`](frontend/src/design-system/components/AuthGuard.tsx)
+- Catalogo de componentes: [`src/design-system/components/README.md`](frontend/src/design-system/components/README.md)
 
 Cada modulo pode ter seu proprio `layout.tsx` interno e submenus proprios.
 
 ### 11.5 Regras do frontend
 
 - Sidebar: um modulo ativo por vez (selecionado via `ModuleSwitcher`), lista plana das secoes L2 abaixo.
-- Um modulo desabilitado (subscription `enabled=false`) **nao aparece** no `ModuleSwitcher` nem e acessivel.
-- Um modulo sem permissao de usuario (`permission=none`) **nao aparece** no `ModuleSwitcher`.
+- Um modulo desabilitado (subscription `enabled=false`) ou sem permissao do usuario (`permission=none`) **nao aparece na lista principal** do `ModuleSwitcher` e **nao e acessivel** por rota direta.
+- Pode aparecer numa secao secundaria "Em breve" do `ModuleSwitcher` (estado disabled, item nao clicavel) — opcional, usado para sinalizar roadmap ao usuario sem dar acesso. Coerente com §11.6 regra 4.
 - Breadcrumbs hierarquicos: `Modulo > Funcionalidade > Recurso`.
-- Pagina do modulo X nunca importa componentes especificos de modulo Y. Componentes compartilhados ficam em `src/components/app/`.
+- Pagina do modulo X nunca importa componentes especificos de modulo Y. Componentes compartilhados ficam em `src/design-system/components/`.
 
 ### 11.6 Navegacao — hierarquia de 3 niveis (regra oficial)
 
@@ -309,7 +563,8 @@ L1 (dropdown no topo): [BI ▾]
 **Regras duras:**
 
 1. **Maximo 3 niveis.** Se surgir L4, o modulo precisa ser dividido OU aquilo vira filtro/modal/drawer — nunca 4o nivel de navegacao.
-2. **Sidebar nao aninha.** Sidebar mostra SO as secoes L2 do modulo ativo, como lista plana. Sem grupos colapsaveis, sem arvore. L3 sempre e `TabNavigation` na pagina.
+2. **Sidebar nao aninha.** Sidebar mostra SO as secoes L2 do modulo ativo, como lista plana — sem grupos colapsaveis, sem arvore clicavel, sem expand/collapse. L3 sempre e `TabNavigation` na pagina.
+   - **Captions tipograficos sao permitidos:** se `ModuleSection.groupLabel` for definido, a sidebar renderiza o texto como separador visual antes do primeiro item do grupo (ex.: "OPERACAO", "FINANCEIRO"). Captions sao **apenas labels textuais nao clicaveis** — nao introduzem hierarquia, nao expandem/colapsam, nao alteram a contagem de niveis. Servem para densificar listas longas dentro de um modulo (ex.: BI agrupa "Visao geral / Operacao / Financeiro / Analise").
 3. **URL e a fonte unica da verdade.** Modulo, secao, tab e filtros sao todos deep-linkaveis (ex.: `/bi/carteira?tab=por-produto&periodo=30d`). O modulo ativo e inferido do pathname.
 4. **Troca entre modulos (L1) e SEMPRE pelo `ModuleSwitcher`** (dropdown no topo da sidebar). O switcher lista os modulos com subscription + permissao; demais ficam em "Em breve" (disabled). Sem icon rail, sem module picker separado do header, sem tabs de modulo.
 5. **Breadcrumbs sticky no header** mostram o path: `Modulo > Secao > Pagina` (L1 > L2 > L3).
@@ -327,6 +582,7 @@ L1 (dropdown no topo): [BI ▾]
 | BI | `gray` | `bg-gray-800` | `#1F2937` |
 | Cadastros | `blue` | `bg-blue-500` | `#3B82F6` |
 | Operacoes | `emerald` | `bg-emerald-500` | `#10B981` |
+| Credito | `indigo` | `bg-indigo-500` | `#6366F1` |
 | Controladoria | `teal` | `bg-teal-500` | `#14B8A6` |
 | Risco | `amber` | `bg-amber-500` | `#F59E0B` |
 | Integracoes | `red` | `bg-red-600` | `#DC2626` |
@@ -353,7 +609,7 @@ Acesso a cada modulo e controlado em duas camadas independentes:
 ### 12.1 Enums centralizados
 
 `app/core/enums.py`:
-- `Module` — um valor por modulo: `BI`, `CADASTROS`, `OPERACOES`, `CONTROLADORIA`, `RISCO`, `INTEGRACOES`, `LABORATORIO`, `ADMIN`
+- `Module` — um valor por modulo: `BI`, `CADASTROS`, `OPERACOES`, `CREDITO`, `CONTROLADORIA`, `RISCO`, `INTEGRACOES`, `LABORATORIO`, `ADMIN`
 - `Permission` — escala: `NONE`, `READ`, `WRITE`, `ADMIN` (ordem crescente)
 
 ### 12.2 Tabelas
@@ -436,12 +692,13 @@ app/adapters/<tipo>/<nome>/
 **Exemplos (plano):**
 - `app/adapters/erp/bitfin/` — leitura SQL Server do Bitfin
 - `app/adapters/admin/qitech/` — API QiTech (pos-MVP)
-- `app/adapters/bureau/serasa_refinho/` — Serasa Refinho (pos-MVP)
+- `app/adapters/bureau/serasa_pj/` — Serasa PJ (Business Information Report — endpoint CNPJ)
+- `app/adapters/bureau/serasa_pf/` — Serasa PF (Person Information Report — endpoint CPF)
 - `app/adapters/document/nfe/` — parser XML de NFe (pos-MVP)
 
 **Regras do adapter:**
 
-1. **Um adapter por ENDPOINT/API, nao por provedor.** Refinho e PFIN sao adapters separados mesmo sendo ambos Serasa.
+1. **Um adapter por ENDPOINT/API, nao por provedor.** `serasa_pj` (Business Information Report, CNPJ) e `serasa_pf` (Person Information Report, CPF) sao adapters separados mesmo sendo ambos Serasa — endpoints distintos, schemas distintos.
 2. **Versao embutida no adapter:** constante `ADAPTER_VERSION = "1.0.0"` registrada em toda linha ingerida (`ingested_by_version`).
 3. **Output sempre em modelo canonico.** Adapter conhece a fonte e conhece o canonico; dominio nao conhece fontes.
 4. **Config por tenant:** cada tenant tem seu registro de configuracao (connection string, credenciais, parametros) em tabela `tenant_source_config`. Adapter le config do tenant, nao ha hardcode.
@@ -490,8 +747,35 @@ Nem toda fonte externa que popula o GR vira adapter no bounded context `integrac
 Raw nao usa `Auditable` — carrega proveniencia em colunas proprias (`fetched_at`, `fetched_by_version`, `payload_sha256`). Fluxo ETL, schema minimo e excecoes: ver `docs/WAREHOUSE_LAYERS.md`.
 
 **Convencao de nomes:**
-- Raw inclui o vendor: `wh_qitech_raw_outros_fundos`, `wh_serasa_refinho_raw_consulta`
+- Raw inclui o vendor: `wh_qitech_raw_outros_fundos`, `wh_serasa_pj_raw_pj_analitico`
 - Canonico nao inclui vendor: `wh_posicao_cota_fundo`, `wh_titulo`
+
+### 13.2.1 Regra de consumo — silver-only (REGRA DURA)
+
+**Servicos de dominio, endpoints, jobs analiticos, hooks do frontend e relatorios consomem APENAS da camada silver (canonico).** A camada bronze e fonte para o ETL e para auditoria/replay — nao e API.
+
+**Proibido em codigo de servico/dominio/UI:**
+- `SELECT ... FROM wh_<vendor>_raw_*` em service de modulo
+- `payload->'relatorios'->...` (parsing de JSONB raw fora do mapper) em qualquer camada que nao seja `app/modules/integracoes/adapters/<vendor>/mappers/`
+- Endpoint que retorna estrutura derivada do raw sem passar pelo silver
+
+**Quem pode tocar bronze:**
+- `app/modules/integracoes/adapters/<vendor>/mappers/*.py` — leem raw, gravam silver
+- `app/modules/integracoes/adapters/<vendor>/etl.py` — orquestra a leitura do raw
+- Scripts de auditoria/replay em `backend/scripts/` — leitura ad-hoc, nunca em endpoint
+- Migrations de remapeamento (Alembic) — quando a regra do mapper muda e precisa reprocessar
+
+**Por que:** silver e o **contrato estavel**. Bronze e formato cru do fornecedor, muda quando o vendor muda a API, tem campos com nomes em portugues com acento, valores em cents/string mistos, layout instavel. Acoplar dominio ao raw acopla a feature ao vendor — quebra a abstracao do adapter.
+
+**Quando o silver nao tem o campo necessario:**
+1. **Nao leia do raw direto.** Adicione a coluna no modelo silver canonico.
+2. Atualize o mapper do adapter para popular a nova coluna (a partir do raw).
+3. Re-rode o ETL para repopular o silver historico.
+4. So entao o servico/endpoint le o campo novo.
+
+Re-mapeamento e barato (raw e imutavel, mapper e idempotente). Acoplar dominio ao raw e caro (refactor cascateia).
+
+**Em PR:** consumo de raw fora dos mappers e bloqueador. Reviewer rejeita.
 
 ---
 
@@ -507,7 +791,7 @@ Em mercado financeiro regulado (CVM/ANBIMA/Bacen), **explicabilidade + rastreabi
 
 | Campo | Tipo | Proposito |
 |---|---|---|
-| `source_type` | enum | "erp:bitfin", "admin:qitech", "bureau:serasa_refinho", "self_declared", "peer_declared", "internal_note", "derived" |
+| `source_type` | enum | "erp:bitfin", "admin:qitech", "bureau:serasa_pj", "bureau:serasa_pf", "self_declared", "peer_declared", "internal_note", "derived" |
 | `source_id` | text | ID do registro na fonte original |
 | `source_updated_at` | timestamp | Quando o dado foi atualizado na fonte |
 | `ingested_at` | timestamp | Quando foi lido para o warehouse |
@@ -573,9 +857,11 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 
 ## 18. Checklist antes de commitar
 
-### Frontend (pagina)
+### Frontend (pagina autenticada — `src/app/(app)/*`)
 
-- [ ] Usa apenas componentes de `tremor/`, `charts/`, `app/` ou do proprio dominio?
+- [ ] Usa apenas componentes de `tremor/`, `charts/`, `design-system/components/` ou do proprio dominio?
+- [ ] Zero import de `@/design-system/surfaces/*` (surfaces sao para paginas nao-autenticadas)?
+- [ ] Zero import de `tokens.colors.brand` ou `tokens.typography.hero`?
 - [ ] Zero `import` de `lucide-react`, `shadcn`, `@mui`, etc?
 - [ ] `cx()` e nao `cn()`?
 - [ ] Icones sao `Ri*` de `@remixicon/react`?
@@ -585,9 +871,24 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] **Pagina respeita regra de 3 niveis (L1 sidebar grupo / L2 sidebar sub-item / L3 TabNavigation)?**
 - [ ] **Sidebar nao aninha em 3+ niveis (L3 sempre como tabs na pagina, nunca sub-sub-item)?**
 - [ ] **Estado de navegacao (modulo/secao/tab/filtros) e deep-linkavel via URL?**
-- [ ] **Se e pagina de BI, respeita as 7 zonas do BI Framework (secao 19)?**
-- [ ] **KPI strip sem sparkline? KPIs tem `intensity` (3 barrinhas) e `<OriginDot />`?**
-- [ ] **Pagina de BI termina com `<ProvenanceFooter />` (fonte + timestamp + SLA)?**
+- [ ] **Pagina nasce de um pattern canonico em `src/design-system/patterns/` (DashboardBiPadrao / DashboardOperacional / ListagemComDrilldown / ListagemCrudInline / ListagemCrudExpand / ListagemCrudCards) — divergencia tem `// MOTIVO:` no header do arquivo?**
+- [ ] **Listagem CRUD/admin tabular usa `<DataTableShell>` (nao monta `Card + FilterSearch + DataTable` manual)?**
+- [ ] **Listagem CRUD/admin visual (workflows, agentes, dashboards salvos) segue pattern `ListagemCrudCards` com `<EntityCard>` canonico (avatar via tokens nomeados, hover `border-blue-500`, DropdownMenu com `e.stopPropagation()`)?**
+- [ ] **PageHeader usa `info` (tooltip) + `subtitle` (eyebrow "Modulo · Categoria") + `actions` — nao so `title`?**
+- [ ] **Cells custom (inline ou em `_components/<X>Table.tsx`) usam `tableTokens.*` (nao escrevem `text-xs|sm|[Npx]` ou `text-gray-XXX` literais)?**
+- [ ] **Fuga do `<DataTableShell>`, do pattern, ou de `tableTokens.*` tem comentario `// MOTIVO:` no caller?**
+- [ ] `npx tsc --noEmit` passa?
+- [ ] `npm run build` passa?
+
+### Frontend (superficie de marca — `src/app/(auth)/*`, `error.tsx`, `not-found.tsx`)
+
+- [ ] Composta sobre um template de `src/design-system/surfaces/*` (ex.: `HeroSplitAuth`)?
+- [ ] Cores da marca (`brand.navy`, `brand.navyDark`, `brand.orange`) vem de `tokens.colors.brand` — zero hex literal solto?
+- [ ] Tipografia hero (`hero.display`, `hero.lede`, etc) vem de `tokens.typography.hero`?
+- [ ] Inline styles sao usados **apenas** para efeitos nao-expressaveis em Tailwind (radial-gradient multi-stop, SVG pattern fills) e referenciam tokens?
+- [ ] Form usa `react-hook-form` + `zod` e primitivos Tremor (`Input`, `Label`, `Button`, `Checkbox`)?
+- [ ] Animacoes respeitam `prefers-reduced-motion: reduce`?
+- [ ] Dark mode testado?
 - [ ] `npx tsc --noEmit` passa?
 - [ ] `npm run build` passa?
 
@@ -600,6 +901,8 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] **Teste de regressao de permissao de modulo existe (user sem permissao recebe 403)?**
 - [ ] Se cria dado no warehouse, aplica mixin `Auditable` com proveniencia completa?
 - [ ] Se e decisao/calculo, registra no `decision_log`?
+- [ ] **Servico/endpoint le APENAS de silver (`wh_<entidade>`), nunca de raw (`wh_<vendor>_raw_*`)?** Ver §13.2.1.
+- [ ] **Se for service de pagina BI: TODA query de agregado (KPI, chart, mini-chart, sparkline, breakdown) passa por `_apply_filters(stmt, tenant_id=..., **filters)` — zero query montando o WHERE a mao?** Ver §7.2.
 - [ ] **Import cruzado entre modulos so passa por `modules/Y/public.py`? Zero import de internals de outro modulo?**
 - [ ] **Se introduziu modulo novo, atualizou enum `Module` + CLAUDE.md secao 11.1?**
 - [ ] Type hints completos? Zero `any`?
@@ -618,43 +921,89 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] Registro correspondente adicionado em `source_catalog`?
 - [ ] Teste de integracao com fonte (mock ou sandbox) existe?
 
+### Endpoint / feature de IA (§19)
+
+- [ ] Endpoint sob `/api/v1/ai/*` usa `require_ai(AICapability.X)` (NAO `require_module`)?
+- [ ] Endpoint admin global (gestao de keys, tier, prompts) usa **`require_system_maintainer` + `require_module(Module.ADMIN, Permission.ADMIN)`** combinados?
+- [ ] Toda chamada de IA grava em `decision_log` (via `services/audit.py`) e `ai_usage_event` (via `services/metering.py`)?
+- [ ] Mensagem do usuario passa por `services/redaction.py` antes de subir ao LLM (CPF/CNPJ redactados)?
+- [ ] Prompt template usado e versionado (`<categoria>/<nome>_vN.py`) e registra `prompt_template_version` no metering?
+- [ ] Adapter LLM usado tem `ADAPTER_VERSION` e suas credenciais sao lidas de `ai_provider_credential` (cifradas via envelope Fernet)?
+- [ ] Frontend chama via SSE com `fetch` + `ReadableStream` (nao `EventSource` -- nao passa Bearer token)?
+- [ ] Markdown nas respostas IA renderiza via `react-markdown` + `remark-gfm` (nao texto plano)?
+- [ ] Saldo de creditos exibido no frontend e via `<AIQuotaIndicator />` (nunca token-count cru)?
+
 Se qualquer item reprovar, **nao corrija pontualmente** — pare e revise a mudanca inteira.
 
 ---
 
-## 19. BI Framework -- 7 zonas obrigatorias
+## 19. IA -- Capability transversal
 
-Toda pagina de BI segue **exatamente estas 7 zonas, nesta ordem**. Composicao por componente e ordem de criacao em `docs/BI_FRAMEWORK.md`.
+A IA (chat + insights automaticos) e uma **capability transversal**, NAO um decimo modulo. Decisao tomada no plano de 2026-04-30 (`vamos-fazer-uso-de-jiggly-bonbon.md`). Mantem o enum `Module` fechado (§11.1).
 
-```
-Z1 · FILTER BAR      (sticky top, chips canonicos + "Mais filtros")
-Z2 · PAGE HEADER     (titulo + subtitulo | Compartilhar + Exportar + AIButton)
-Z3 · KPI STRIP       (6 cards, com barrinhas de intensidade, OriginDot)
-Z4 · INSIGHTS IA     (faixa horizontal, tons variados, dismissivel)
-Z5 · L3 TABS         (TabNavigation do Tremor, 3-6 abas)
-Z6 · GRID VIZ        (hero 3:2 + painel de leitura + cards com menu triplo-ponto)
-Z7 · PROVENANCE      (fonte + timestamp + SLA, sem borda)
-```
+### 19.1 Estrutura paralela ao modulo
 
-### 19.1 Regras duras
+- **`tenant_ai_subscription`** -- entitlement do tenant (enabled, plan_ref, monthly_credit_quota, hard_cap_brl). Espelha `tenant_module_subscription`.
+- **`user_ai_permission`** -- permissao do user (NONE/READ/WRITE/ADMIN via enum `AICapability`). Espelha `user_module_permission`.
+- **`require_ai(AICapability.X)`** em `app/core/ai_guard.py` -- guarda paralelo ao `require_module`. Aplica em endpoints sob `/api/v1/ai/*`.
+- **`require_system_maintainer()`** em `app/core/system_maintainer_guard.py` -- gating de endpoints globais (gestao de keys + tier de tenants + prompt library). Compoe com `require_module(Module.ADMIN, Permission.ADMIN)`.
 
-- **Z3 sem sparkline.** Sparkline infla o card e quebra a densidade da strip de 6. Para sinalizacao rapida use `intensity` (3 barrinhas, handoff v2) \u2014 carrega interpretacao direta (pos/neu/neg/info) sem poluir o card. Se precisar de tendencia completa, e card de visualizacao em Z6, nao KPI.
-- **Z6 hero nunca ocupa 100% da largura.** Sempre emparelhado 3:2 com painel de leitura a direita (numero grande + delta + notas inline).
-- **Z7 sempre presente.** Falta de ProvenanceFooter = falta de proveniencia = bug de auditabilidade (viola §14.5).
-- **Tabelas em Z6** usam `<CompactSeriesTable />` existente para series temporais FIDC (Austin-style). Para tabelas transacionais genericas, `Table` do Tremor com `@tanstack/react-table`.
-- **AIButton** aparece em TODA pagina de BI (ultimo botao da direita no PageHeader). Abre `<AIDrawer />` (drawer lateral com chat contextualizado).
-- **Raios ≤ 6px** em toda a pagina. Tremor ja respeita.
+### 19.2 Tabela `tenants.is_system_maintainer` (excecao §10)
 
-### 19.2 Checklist de compliance BI (subset do §18)
+Coluna boolean com **partial unique index** garantindo no maximo 1 tenant marcado. Apenas membros desse tenant podem editar credenciais globais (`ai_provider_credential`) e gerir tier dos demais tenants. **Nao** confunda com role admin do proprio tenant.
 
-- [ ] Z1 Filter bar sticky com `<FilterChip />` canonicos (icone + label + pipe + valor + chevron); active=blue quando != default
-- [ ] Z2 PageHeader tem `subtitle` + botoes secundarios (Compartilhar / Exportar) + `<AIButton />` ao final
-- [ ] Z3 exatamente 6 KPIs com `intensity` (tone + level); cada um com `<OriginDot />`
-- [ ] Z4 Insights IA (se houver) com 1 linha + botao fechar + `tone` variado (violet/amber/blue)
-- [ ] Z5 L3 TabNavigation (3-6 abas)
-- [ ] Z6 Hero 3:2 com painel de leitura (nunca chart 100% largura)
-- [ ] Z6 Cards tem menu "⋯" com as 3 secoes (Agrupar / Recorte / Tipo)
-- [ ] Z7 `<ProvenanceFooter />` presente com fonte + timestamp + SLA
-- [ ] Paleta dos KPIs/cards respeita §4 (zero cor arbitraria)
-- [ ] Respeita §11.6 (3 niveis de navegacao)
+### 19.3 Adapter LLM (segue §13)
 
+Provedores externos (Anthropic, OpenAI) sao adapters versionados em `app/modules/integracoes/adapters/llm/<provider>/`, cada um com seu `ADAPTER_VERSION`. **Credenciais sao globais** (tabela `ai_provider_credential`, sem `tenant_id`) e cifradas com envelope Fernet (`app.shared.crypto`). ZDR contratado e exigido em prod (coluna `zdr_enabled` bloqueia chamada quando false em ambiente de producao).
+
+**Dois caminhos de invocacao Anthropic** (escolha por caso de uso):
+
+1. **Cliente HTTP custom** em `adapters/llm/anthropic/` (httpx + SSE puro). Usado em **chat simples** (`AIPanel`, insights) onde streaming linha-a-linha vai pro frontend via SSE proprio. Tem prompt caching via `cache_control` em system blocks.
+2. **SDK oficial `anthropic`** (`anthropic >= 0.71`) usado em `app/shared/agents/runtime.py` para **specialist agents** que precisam de tool use nativo + tool execution loop + prompt caching de system prompts compartilhados entre runs. Migracao decidida em 2026-05-02 — substituiu `claude-agent-sdk` (que era subprocess do Claude Code CLI e quebrava no Windows com `SelectorEventLoop`). Tools sao definidas como `AgentTool` (`app/shared/agents/tools/_base.py`) com JSON schema + handler async; runtime monta `tools=[...]` para o Messages API e roda o loop `tool_use → tool_result` ate `end_turn` (cap em `_MAX_TOOL_ITERATIONS=12`).
+
+Ambos os caminhos usam o **mesmo storage de credencial** (`get_active_anthropic_credential`) e gravam em `decision_log` + `ai_usage_event` com cache_read e cache_creation tokens separados.
+
+### 19.4 Prompt library versionada (DB-backed)
+
+**Decisao 2026-04-30:** prompts saem do codigo e passam a viver em DB para curadoria continua sem deploy. Time de produto/IA pode iterar sem PR; rollback de 1 click.
+
+- **Storage**: tabela `ai_prompt` (id, name, version, system_text, user_context_template, assistant_prime, model, fallback_model, temperature, max_tokens, cache_strategy, description, created_by, created_at, archived_at). Naming: `<categoria>.<nome>` (ex.: `chat.fidc_geral`, `insight.carteira_3bullets`).
+- **Imutabilidade**: `(name, version)` UNIQUE. Toda edicao **cria nova versao** copiando a base + patches. Versao base nunca muda — preserva audit trail.
+- **Versao ativa**: tabela `ai_prompt_active` (uma linha por nome) aponta para a versao em producao. Trocar = 1 UPDATE (rollback de 1 click sem deploy).
+- **Soft-delete**: `archived_at` marca versao como nao-ativavel. Versao ativa nao pode ser arquivada (constraint).
+- **Repository**: `app/shared/ai/prompts/repository.py::resolve(db, name, version="active")` retorna `Prompt` instanciado a partir da row. Servicos chamam APENAS via repository — nunca leem `ai_prompt` direto.
+- **Edicao**: via `/admin/ia/prompts` (system maintainer only — `require_system_maintainer` + `require_module(ADMIN, ADMIN)`). Endpoints: GET (list), GET /{id}, POST (cria nova familia=v1), PUT /{id} (cria nova versao), PUT /{name}/active (ativa versao), POST /{id}/archive (soft-delete), POST /{id}/preview (render sem chamar LLM).
+- **Variaveis**: `user_context_template` e `assistant_prime` aceitam `{nome}` via Python `str.format`. Variaveis ausentes em `context` retornam erro 400 no preview.
+- **Auditoria**: a versao usada vai automaticamente em `decision_log.rule_or_model_version` (`<adapter_version>+<prompt.full_id>`) e em `ai_usage_event.prompt_template_version`.
+
+Migration que seedou os 4 prompts iniciais (`chat.fidc_geral@v1`, `insight.carteira_3bullets@v1`, `system.prompt_injection_detector@v1`, `summary.conversation_compact@v1`): `7c2dffe119a4_ai_prompt_db_managed.py`.
+
+### 19.5 Auditabilidade reusa `decision_log`
+
+Toda chamada de IA grava entrada com:
+- `decision_type = RECOMMENDATION`
+- `rule_or_model = <model_id>` (ex.: `claude-opus-4-7`)
+- `rule_or_model_version = <adapter_version>+<prompt_full_id>` (ex.: `anthropic_adapter_v1.0.0+chat.fidc_geral@v1`)
+- `inputs_ref = {conversation_id, user_message_id, page, period, filters, redacted}`
+- `output = {text_redacted, stop_reason, tokens}`
+
+Sem tabela de audit nova. Tudo encaixa nativamente.
+
+### 19.6 Multi-turn server-side
+
+Historico em `ai_conversation` + `ai_message` (com `text_redacted` + `text_encrypted` para retencao 7 anos). Sumarizacao automatica em `ai_conversation_summary` quando `turn_count` excede o limite (default 20). Cache breakpoint apos `system` block para maximizar prompt caching cross-tenant (Anthropic).
+
+### 19.7 Frontend
+
+- **Single entry point**: `<AIPanel />` em `design-system/components/AIPanel/` (drawer violeta in-layout, atalho Cmd/Ctrl+I, mantido pelo handoff bi-padrao). Markdown nas respostas via `react-markdown` + `remark-gfm`.
+- **Hooks**: `useAIChat`, `useAIInsights`, `useAIQuota`, `useAIConversations` em `src/lib/hooks/ai.ts`. SSE via `fetch` + `ReadableStream` (NAO `EventSource` -- nao passa Bearer token).
+- **Quota**: `<AIQuotaIndicator />` em `design-system/components/AIQuotaIndicator/` (variant `compact` no header da pagina, `strip` dentro do AIPanel). Cor amber em 75%, red em 90%.
+- **Admin**: rotas em `/admin/ia/{providers,subscriptions,prompts,usage,conversations}`. Visiveis somente quando `tenant.is_system_maintainer === true` (campo em `/auth/me`).
+
+### 19.8 Billing (creditos abstraidos)
+
+UI nunca expoe token-count -- expoe **creditos**. 1 chat ~= `tokens_input/1000 + tokens_output/100` creditos; 1 insight = 5 creditos (flat); 1 prompt-injection check = 1 credito. Tier mensal incluso em `monthly_credit_quota`; overage em `topup` (pre-pago avulso). Hard cap diario em BRL via `tenant_ai_subscription.hard_cap_brl`.
+
+### 19.9 LGPD / dados pessoais
+
+PII (CPF, CNPJ, conta-agencia, email) e redactada antes de subir ao LLM via `services/redaction.py` (regex + check digit no MVP, Microsoft Presidio na Fase 2). Mensagens armazenam `text_redacted` + `text_encrypted` (versao com PII original cifrada via envelope Fernet, acesso restrito a auditoria com trilha em `decision_log`).

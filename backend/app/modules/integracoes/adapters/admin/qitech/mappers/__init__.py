@@ -15,6 +15,12 @@ Padrao igual aos `_map_*` do adapter Bitfin (ver etl.py do bitfin).
 from app.modules.integracoes.adapters.admin.qitech.mappers.aquisicao_consolidada import (
     map_aquisicao_consolidada,
 )
+from app.modules.integracoes.adapters.admin.qitech.mappers.bank_account_balance import (
+    map_bank_account_balance,
+)
+from app.modules.integracoes.adapters.admin.qitech.mappers.bank_account_statement import (
+    map_bank_account_statement,
+)
 from app.modules.integracoes.adapters.admin.qitech.mappers.conta_corrente import (
     map_conta_corrente,
 )
@@ -54,6 +60,8 @@ from app.modules.integracoes.adapters.admin.qitech.mappers.tesouraria import (
 
 __all__ = [
     "map_aquisicao_consolidada",
+    "map_bank_account_balance",
+    "map_bank_account_statement",
     "map_conta_corrente",
     "map_cpr",
     "map_demonstrativo_caixa",

@@ -59,6 +59,16 @@ class DecisionLog(Base):
     inputs_ref: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     rule_or_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     rule_or_model_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # Granularidade fina pra entries de SYNC. Quando preenchida, identifica o
+    # endpoint dentro do adapter (ex.: "market.outros_fundos" para entry de
+    # rule_or_model="qitech_adapter"). Nullable porque entries antigas + entries
+    # nao-SYNC (CALCULATION, RECOMMENDATION, etc) nao tem essa dimensao.
+    # Indexada para queries de last_sync_attempt_at por endpoint.
+    endpoint_name: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, index=True
+    )
+
     output: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
 

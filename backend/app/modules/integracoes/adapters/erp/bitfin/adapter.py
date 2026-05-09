@@ -53,7 +53,52 @@ async def adapter_sync(
     since: date | None = None,
     *,
     triggered_by: str = "system:scheduler",
+    unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
-    """Entrypoint unificado de sync. Decifra config, roda pipeline completa."""
+    """Entrypoint unificado de sync. Decifra config, roda pipeline completa.
+
+    `unidade_administrativa_id` aceito por compatibilidade com sync_runner
+    multi-UA, mas o ETL Bitfin atual filtra por CNPJ (no proprio config) e
+    nao consome UA. Quando o adapter Bitfin evoluir pra escopar canonico
+    por UA, passar adiante.
+    """
+    _ = unidade_administrativa_id
     config = BitfinConfig.from_dict(config_dict)
     return await sync_all(tenant_id, config, since=since, triggered_by=triggered_by)
+
+
+async def adapter_sync_endpoint(
+    tenant_id: UUID,
+    config_dict: dict,
+    endpoint_name: str,
+    *,
+    since: date | None = None,
+    triggered_by: str = "system:scheduler",
+    environment: Any = None,  # ignorado — Bitfin nao usa env (production-only)
+    unidade_administrativa_id: UUID | None = None,
+) -> dict[str, Any]:
+    """Sync per-endpoint. Bitfin tem 1 endpoint so (`bitfin.full_sync`),
+    entao basicamente delega para `adapter_sync`. Existe para uniformidade
+    com adapters multi-endpoint (QiTech) — dispatcher chama esta funcao
+    indiscriminadamente quando `INTEGRACOES_USE_ENDPOINT_SCHEDULING=True`.
+
+    Levanta ValueError pra endpoint_name nao reconhecido.
+    """
+    _ = environment
+    if endpoint_name != "bitfin.full_sync":
+        raise ValueError(
+            f"Endpoint desconhecido para Bitfin: {endpoint_name!r}. "
+            f"Conhecido: ['bitfin.full_sync']"
+        )
+
+    _ = unidade_administrativa_id  # Bitfin filtra por CNPJ no config, nao por UA
+    config = BitfinConfig.from_dict(config_dict)
+    summary = await sync_all(
+        tenant_id,
+        config,
+        since=since,
+        triggered_by=triggered_by,
+        endpoint_name=endpoint_name,
+    )
+    summary["endpoint_name"] = endpoint_name
+    return summary

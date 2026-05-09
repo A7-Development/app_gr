@@ -7,8 +7,8 @@ import * as React from "react"
 import {
   CompactSeriesTable,
   type CompactSeriesRow,
-} from "@/components/app/CompactSeriesTable"
-import { EmptyState } from "@/components/app/EmptyState"
+} from "@/design-system/components/CompactSeriesTable"
+import { EmptyState } from "@/design-system/components/EmptyState"
 import { Badge } from "@/components/tremor/Badge"
 import {
   Table,

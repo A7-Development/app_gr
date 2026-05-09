@@ -11,12 +11,12 @@ import { Button } from "@/components/tremor/Button"
 import { Checkbox } from "@/components/tremor/Checkbox"
 import { Label } from "@/components/tremor/Label"
 import { Switch } from "@/components/tremor/Switch"
-import { FilterChip } from "@/components/app/FilterChip"
+import { FilterChip } from "@/design-system/components/FilterBar"
 import {
   MonthRangePicker,
   type MonthRange,
-} from "@/components/app/MonthRangePicker"
-import { PeriodoPresets } from "@/components/app/PeriodoPresets"
+} from "@/design-system/components/MonthRangePicker"
+import { PeriodoPresets } from "@/design-system/components/PeriodoPresets"
 
 import { useBenchmarkFilters } from "../_hooks/useBenchmarkFilters"
 

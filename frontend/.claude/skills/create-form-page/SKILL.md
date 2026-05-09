@@ -11,6 +11,15 @@ Use para qualquer pagina cuja funcao principal e **criar ou editar um registro**
 
 Ler `CLAUDE.md` na raiz do monorepo. Regras nao-negociaveis.
 
+> **🔓 Modo Iteracao de Design ativo** (ver banner em `CLAUDE.md` raiz):
+> Durante este periodo, ao criar pagina nova:
+> - Valores arbitrarios de Tailwind aceitaveis (`text-[Npx]`, `rounded-[Npx]`, `gap-[Npx]`).
+> - Hex literals e `rgba(...)` aceitaveis em codigo de componente/surface.
+> - Inline styles `style={{...}}` aceitaveis para efeitos especificos do handoff.
+> - Cores Tailwind fora da paleta canonica §4 aceitaveis quando do handoff.
+> - **Continuam invioaveis**: §2 stack, §3 6 camadas, §11.6 hierarquia 3 niveis, idioma pt-BR, formulario sempre via `react-hook-form` + `zod`.
+> Lock-down volta com promocao a tokens nomeados.
+
 ## Informacoes a coletar
 
 1. **Dominio** + operacao (criar / editar / ambos via rota dinamica).
@@ -55,7 +64,7 @@ Arquivo dedicado em `src/lib/schemas/`. Usar `z.object({...})`. Tipos inferidos 
 
 ### Layout
 
-Usar `FormLayout` de `@/components/app/FormLayout` (criar se nao existir). Contem:
+Usar `FormLayout` de `@/design-system/components/FormLayout` (criar se nao existir). Contem:
 - `PageHeader` (reutilizado).
 - Agrupamento de campos em secoes semanticas (cada secao com titulo h2 opcional).
 - Rodape fixo com botoes de acao: `<Button variant="secondary">Cancelar</Button> <Button type="submit" variant="primary">Salvar</Button>`.

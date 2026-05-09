@@ -15,9 +15,9 @@ import {
   RiHistoryLine,
 } from "@remixicon/react"
 
-import { EmptyState } from "@/components/app/EmptyState"
-import { ErrorState } from "@/components/app/ErrorState"
-import { JsonPreview } from "@/components/app/JsonPreview"
+import { EmptyState } from "@/design-system/components/EmptyState"
+import { ErrorState } from "@/design-system/components/ErrorState"
+import { JsonPreview } from "@/design-system/components/JsonPreview"
 import { Badge } from "@/components/tremor/Badge"
 import { Button } from "@/components/tremor/Button"
 import {

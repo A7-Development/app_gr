@@ -59,6 +59,21 @@ class Settings(BaseSettings):
     # Credenciais de adapters (ex.: Bitfin) vivem em `tenant_source_config` — NAO aqui.
     # Cada tenant tem seu proprio banco (ver CLAUDE.md §13 regra 4).
 
+    # Feature flag — agendamento por endpoint (refactor 2026-05-05).
+    # False (default): dispatcher itera `tenant_source_config` e dispara sync da
+    # integracao inteira (modo legado).
+    # True: dispatcher itera `tenant_source_endpoint_config` e dispara endpoint a
+    # endpoint, com schedule_kind ('interval'/'daily_at'/'on_demand') e
+    # schedule_value proprios. Liga em staging primeiro, depois prod.
+    INTEGRACOES_USE_ENDPOINT_SCHEDULING: bool = Field(default=False)
+
+    # ---------- Credito: storage de anexos do dossie ----------
+    # Diretorio raiz para blobs de anexos. Em dev defaults para um path local;
+    # em prod sempre setar via env (caminho absoluto fora do repo).
+    DOSSIER_STORAGE_ROOT: str = Field(default="./storage/dossier-attachments")
+    # Tamanho maximo (bytes) por upload. Default 25 MB.
+    DOSSIER_ATTACHMENT_MAX_BYTES: int = Field(default=26214400, ge=1)
+
     @property
     def cors_origins_list(self) -> list[str]:
         """Parse comma-separated CORS origins into a list."""

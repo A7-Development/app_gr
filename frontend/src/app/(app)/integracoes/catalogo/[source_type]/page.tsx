@@ -14,9 +14,9 @@ import * as React from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { RiArrowLeftLine } from "@remixicon/react"
 
-import { PageHeader } from "@/components/app/PageHeader"
-import { AdapterStatusBadge, statusFrom } from "@/components/app/AdapterStatusBadge"
-import { ErrorState } from "@/components/app/ErrorState"
+import { PageHeader } from "@/design-system/components/PageHeader"
+import { AdapterStatusBadge, statusFrom } from "@/design-system/components/AdapterStatusBadge"
+import { ErrorState } from "@/design-system/components/ErrorState"
 import { Button } from "@/components/tremor/Button"
 import {
   Select,
@@ -33,20 +33,52 @@ import { useSource } from "@/lib/hooks/integracoes"
 import type { Environment, SourceTypeId } from "@/lib/api-client"
 
 import { CredenciaisTab } from "./_components/CredenciaisTab"
+import { ContasBancariasTab } from "./_components/ContasBancariasTab"
+import { EndpointsTab } from "./_components/EndpointsTab"
 import { TestarTab } from "./_components/TestarTab"
 import { HistoricoTab } from "./_components/HistoricoTab"
 
-const TABS = [
+// Source types que tem familia de "Contas bancarias" (admin:qitech usa
+// /v2/bank-account/* — saldo + extrato por agencia+conta da UA dona da
+// credencial). Bitfin nao tem analogo (extrato vem por SQL direto da DB
+// do tenant, sem conta separada).
+const SOURCES_WITH_BANK_ACCOUNTS = new Set<SourceTypeId>(["admin:qitech"])
+
+// Source types que tem catalogo de endpoints (cadencia por endpoint —
+// CLAUDE.md §13). Sources sem catalogo (bureaus, etc) nao mostram a aba.
+// Manter sincronizado com `_CATALOG_BY_SOURCE` em backend public.py.
+const SOURCES_WITH_ENDPOINT_CATALOG = new Set<SourceTypeId>([
+  "admin:qitech",
+  "erp:bitfin",
+])
+
+const TABS_BASE = [
+  { key: "credenciais", label: "Credenciais" },
+  { key: "endpoints", label: "Endpoints" },
+  { key: "testar", label: "Testar" },
+  { key: "historico", label: "Historico" },
+] as const
+const TABS_WITH_BANK_ACCOUNTS = [
+  { key: "credenciais", label: "Credenciais" },
+  { key: "endpoints", label: "Endpoints" },
+  { key: "contas-bancarias", label: "Contas bancarias" },
+  { key: "testar", label: "Testar" },
+  { key: "historico", label: "Historico" },
+] as const
+const TABS_NO_ENDPOINTS = [
   { key: "credenciais", label: "Credenciais" },
   { key: "testar", label: "Testar" },
   { key: "historico", label: "Historico" },
 ] as const
-type TabKey = (typeof TABS)[number]["key"]
+type TabKey =
+  | (typeof TABS_BASE)[number]["key"]
+  | (typeof TABS_WITH_BANK_ACCOUNTS)[number]["key"]
+  | (typeof TABS_NO_ENDPOINTS)[number]["key"]
 
-function useActiveTab(): TabKey {
+function useActiveTab(tabs: ReadonlyArray<{ key: string }>): TabKey {
   const sp = useSearchParams()
   const t = sp.get("tab")
-  if (t && TABS.some((x) => x.key === t)) return t as TabKey
+  if (t && tabs.some((x) => x.key === t)) return t as TabKey
   return "credenciais"
 }
 
@@ -54,10 +86,12 @@ function buildHref(
   sourceType: string,
   tab: TabKey,
   environment: Environment,
+  uaId?: string | null,
 ): string {
   const qs = new URLSearchParams()
   qs.set("tab", tab)
   qs.set("environment", environment)
+  if (uaId) qs.set("ua", uaId)
   return `/integracoes/catalogo/${encodeURIComponent(sourceType)}?${qs.toString()}`
 }
 
@@ -66,17 +100,25 @@ export default function SourceDetailPage() {
   const sourceType = decodeURIComponent(params.source_type) as SourceTypeId
   const sp = useSearchParams()
   const router = useRouter()
-  const activeTab = useActiveTab()
+  const hasEndpoints = SOURCES_WITH_ENDPOINT_CATALOG.has(sourceType)
+  const tabs = hasEndpoints
+    ? SOURCES_WITH_BANK_ACCOUNTS.has(sourceType)
+      ? TABS_WITH_BANK_ACCOUNTS
+      : TABS_BASE
+    : TABS_NO_ENDPOINTS
+  const activeTab = useActiveTab(tabs)
   const environment: Environment =
     sp.get("environment") === "sandbox" ? "sandbox" : "production"
+  const uaIdParam = sp.get("ua")
 
   const { data, isLoading, isError, refetch } = useSource(
     sourceType,
     environment,
+    uaIdParam,
   )
 
   function setEnvironment(e: Environment) {
-    router.replace(buildHref(sourceType, activeTab, e))
+    router.replace(buildHref(sourceType, activeTab, e, uaIdParam))
   }
 
   return (
@@ -133,13 +175,13 @@ export default function SourceDetailPage() {
       {!isError && (
         <>
           <TabNavigation>
-            {TABS.map((t) => (
+            {tabs.map((t) => (
               <TabNavigationLink
                 key={t.key}
                 asChild
                 active={activeTab === t.key}
               >
-                <Link href={buildHref(sourceType, t.key, environment)}>
+                <Link href={buildHref(sourceType, t.key, environment, uaIdParam)}>
                   {t.label}
                 </Link>
               </TabNavigationLink>
@@ -152,6 +194,16 @@ export default function SourceDetailPage() {
 
           {!isLoading && data && activeTab === "credenciais" && (
             <CredenciaisTab detail={data} sourceType={sourceType} />
+          )}
+          {!isLoading && data && activeTab === "endpoints" && (
+            <EndpointsTab
+              sourceType={sourceType}
+              environment={environment}
+              uaId={uaIdParam}
+            />
+          )}
+          {!isLoading && data && activeTab === "contas-bancarias" && (
+            <ContasBancariasTab detail={data} sourceType={sourceType} />
           )}
           {!isLoading && data && activeTab === "testar" && (
             <TestarTab detail={data} sourceType={sourceType} />

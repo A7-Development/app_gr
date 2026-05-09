@@ -35,6 +35,7 @@ class TenantInfo(BaseModel):
     id: UUID
     slug: str
     name: str
+    is_system_maintainer: bool = False
 
 
 class UserInfo(BaseModel):
@@ -46,12 +47,19 @@ class UserInfo(BaseModel):
 
 
 class MeResponse(BaseModel):
-    """GET /auth/me response. Frontend uses this to render the sidebar."""
+    """GET /auth/me response. Frontend uses this to render the sidebar.
+
+    AI capability fields (`ai_enabled`, `ai_permission`) are independent of
+    `enabled_modules` / `user_permissions` because AI is a transversal capability,
+    not a module (CLAUDE.md sec 19).
+    """
 
     user: UserInfo
     tenant: TenantInfo
     enabled_modules: list[str]
     user_permissions: dict[str, str]
+    ai_enabled: bool = False
+    ai_permission: str = "none"
 
 
 class AuditPingResponse(BaseModel):

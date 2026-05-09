@@ -6,8 +6,8 @@ import { QueryProvider } from "@/lib/QueryProvider"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "A7 Credit",
-  description: "Sistema de controladoria financeira",
+  title: "Strata",
+  description: "Inteligencia de dados para FIDCs",
 }
 
 export default function RootLayout({
@@ -18,7 +18,7 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
-      className={`${GeistSans.className} antialiased dark:bg-gray-950`}
+      className={`${GeistSans.className} antialiased bg-gray-50 dark:bg-gray-950`}
       suppressHydrationWarning
     >
       <body>

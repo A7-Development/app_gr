@@ -63,11 +63,13 @@ class _ApiKeyAuth(httpx.Auth):
         tenant_id: UUID,
         environment: Environment,
         config: QiTechConfig,
+        unidade_administrativa_id: UUID | None = None,
         token_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._tenant_id = tenant_id
         self._environment = environment
         self._config = config
+        self._ua_id = unidade_administrativa_id
         self._token_transport = token_transport
 
     async def async_auth_flow(
@@ -78,6 +80,7 @@ class _ApiKeyAuth(httpx.Auth):
             environment=self._environment,
             config=self._config,
             transport=self._token_transport,
+            unidade_administrativa_id=self._ua_id,
         )
         request.headers["x-api-key"] = token
         response = yield request
@@ -85,12 +88,13 @@ class _ApiKeyAuth(httpx.Auth):
         # Se o token caducou server-side, invalidamos e tentamos de novo
         # uma vez.
         if response.status_code == 401:
-            invalidate_token(self._tenant_id, self._environment)
+            invalidate_token(self._tenant_id, self._environment, self._ua_id)
             token = await get_api_token(
                 tenant_id=self._tenant_id,
                 environment=self._environment,
                 config=self._config,
                 transport=self._token_transport,
+                unidade_administrativa_id=self._ua_id,
             )
             request.headers["x-api-key"] = token
             yield request
@@ -101,16 +105,19 @@ def build_async_client(
     tenant_id: UUID,
     environment: Environment,
     config: QiTechConfig,
+    unidade_administrativa_id: UUID | None = None,
     timeout: httpx.Timeout | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     token_transport: httpx.AsyncBaseTransport | None = None,
 ) -> httpx.AsyncClient:
-    """Cria um AsyncClient autenticado para o par (tenant, environment).
+    """Cria um AsyncClient autenticado para a tupla (tenant, environment, ua).
 
     Args:
         tenant_id: dono das credenciais — usado na chave do cache de token.
         environment: sandbox ou production.
         config: dataclass ja materializada do tenant_source_config.
+        unidade_administrativa_id: UA dona da credencial (multi-UA). None
+            mantem retrocompat com configs legacy.
         timeout: override opcional do timeout padrao (30s total / 10s connect).
         transport: transport das requests de dominio (MockTransport em tests).
         token_transport: transport das requests de auth (pode ser igual a
@@ -126,6 +133,7 @@ def build_async_client(
             tenant_id=tenant_id,
             environment=environment,
             config=config,
+            unidade_administrativa_id=unidade_administrativa_id,
             token_transport=token_transport or transport,
         ),
         transport=transport,

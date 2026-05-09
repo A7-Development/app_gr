@@ -5,29 +5,33 @@ de validacao da fonte (assinatura, HMAC, IP whitelist, ...).
 
 QiTech /v2/queue/scheduler/report/* (familia FIDC Estoque, Movimentacao, ...):
     - QiTech NAO assina o callback (validado em 2026-04-25).
-    - Defesa = HMAC do jobId no `?token=<hex>` da URL.
-    - Ao criar o job (POST), tambem mandamos `callbackUrl` com o token
-      ja embutido. Quando o callback chega, validamos.
+    - Defesa = HMAC de um UUID local nosso (`ref`) embutido no callbackUrl
+      como `?ref=<uuid>&token=<hmac(uuid)>`.
+    - Ao criar o job (POST), pre-geramos o `id` UUID do `QitechReportJob`,
+      assinamos com `QITECH_WEBHOOK_SECRET` e mandamos a URL ja completa
+      no `callbackUrl`. Quando o callback chega, validamos HMAC e fazemos
+      lookup por `id == ref`.
 
 Schema do callback recebido:
-    POST /api/v1/integracoes/webhooks/qitech/job-callback?token=<hmac>
+    POST /api/v1/integracoes/webhooks/qitech/job-callback?ref=<uuid>&token=<hmac>
     Headers: content-type: application/json (sem auth da QiTech)
     Body: {
       "webhookId": int,
-      "jobId": str,
-      "eventType": str,           # camelCase: "fidcEstoque", ...
+      "jobId": str,             # qitech_job_id, usado pra cross-check
+      "eventType": str,         # camelCase: "fidcEstoque", ...
       "data": {"fileLink": str}
     }
 
 Resposta: 200 OK sempre que processamento for aceito (mesmo que assincrono
-ou idempotente). 401 se token invalido. 404 se jobId nao existir. Em todos
-os outros erros, 500.
+ou idempotente). 401 se token invalido / ref ausente / ref nao-UUID.
+404 se ref desconhecido. Em todos os outros erros, 500.
 """
 
 from __future__ import annotations
 
 import logging
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -93,7 +97,7 @@ _HANDLERS = {
 
 
 async def _dispatch_qitech_callback(
-    db: AsyncSession, body: QitechJobCallbackBody
+    db: AsyncSession, body: QitechJobCallbackBody, local_job_id: UUID
 ) -> dict[str, Any]:
     """Roteia o callback pro processor especifico baseado em event_type."""
     handler = _HANDLERS.get(body.event_type)
@@ -101,14 +105,16 @@ async def _dispatch_qitech_callback(
         # eventType nao conhecido — registramos e devolvemos accepted=true
         # mesmo assim (a QiTech nao precisa saber que ainda nao temos mapper).
         logger.warning(
-            "qitech callback eventType nao mapeado: %s (jobId=%s)",
+            "qitech callback eventType nao mapeado: %s (ref=%s jobId=%s)",
             body.event_type,
+            local_job_id,
             body.job_id,
         )
         return {"ok": True, "idempotent": False, "reason": "unmapped_event_type"}
 
     return await handler(
         db=db,
+        local_job_id=local_job_id,
         qitech_job_id=body.job_id,
         file_link=body.data.file_link or "",
         qitech_webhook_id=body.webhook_id,
@@ -127,24 +133,41 @@ async def qitech_job_callback(
     body: QitechJobCallbackBody,
     background: BackgroundTasks,
     db: Annotated[AsyncSession, Depends(get_db)],
+    ref: Annotated[str, Query()] = "",
     token: Annotated[str, Query()] = "",
 ) -> QitechJobCallbackResponse:
     """Receiver de callbacks dos relatorios assincronos QiTech.
 
     PUBLICO (sem auth de usuario). Validacao por:
-    1. HMAC token na query string contra `QITECH_WEBHOOK_SECRET` + jobId.
-    2. Lookup do jobId no DB (via processor) — se nao existir, 404.
-    3. Idempotencia (processor nao re-baixa se ja processado).
+    1. `ref` precisa ser UUID valido — 401 se ausente ou malformado.
+    2. HMAC token na query string contra `QITECH_WEBHOOK_SECRET` + ref.
+    3. Lookup do `ref` no DB (via processor) — se nao existir, 404.
+    4. Idempotencia (processor nao re-baixa se ja processado).
 
     NAO processa em background no MVP — espera a entrega completar para
     devolver 200/erro. Decisao: download CSV + bulk upsert e o-(N) com N
     pequeno (milhares de linhas). Latencia esperada < 30s, dentro do
     timeout default da QiTech. Se virar problema, mover para BackgroundTasks.
     """
-    # 1. Anti-spoof
-    if not verify_callback_token(qitech_job_id=body.job_id, token=token):
+    # 1. ref deve ser UUID valido (nao queremos cair no DB com input cru)
+    try:
+        local_job_id = UUID(ref)
+    except (ValueError, TypeError):
         logger.warning(
-            "qitech callback token invalido jobId=%s eventType=%s",
+            "qitech callback ref ausente/invalido ref=%r jobId=%s eventType=%s",
+            ref,
+            body.job_id,
+            body.event_type,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="ref invalido"
+        ) from None
+
+    # 2. Anti-spoof: token deve assinar o ref
+    if not verify_callback_token(ref=ref, token=token):
+        logger.warning(
+            "qitech callback token invalido ref=%s jobId=%s eventType=%s",
+            ref,
             body.job_id,
             body.event_type,
         )
@@ -152,14 +175,15 @@ async def qitech_job_callback(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="token invalido"
         )
 
-    # 2. Roteamento + processamento
+    # 3. Roteamento + processamento
     try:
-        result = await _dispatch_qitech_callback(db, body)
+        result = await _dispatch_qitech_callback(db, body, local_job_id)
     except ValueError as e:
-        # jobId desconhecido (orfao ou spoof que passou no token check —
-        # acontece em DEV quando token nao esta configurado).
+        # ref desconhecido (orfao ou spoof que passou no token check —
+        # acontece em DEV quando secret nao esta configurado).
         logger.warning(
-            "qitech callback jobId desconhecido: %s eventType=%s err=%s",
+            "qitech callback ref desconhecido: ref=%s jobId=%s eventType=%s err=%s",
+            ref,
             body.job_id,
             body.event_type,
             e,
@@ -169,7 +193,8 @@ async def qitech_job_callback(
         ) from e
     except Exception as e:
         logger.exception(
-            "qitech callback erro inesperado jobId=%s eventType=%s",
+            "qitech callback erro inesperado ref=%s jobId=%s eventType=%s",
+            ref,
             body.job_id,
             body.event_type,
         )

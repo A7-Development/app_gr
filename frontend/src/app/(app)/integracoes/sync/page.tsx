@@ -3,12 +3,18 @@
 //
 // Integracoes · Sync — agregado cross-source.
 //
-// Tabela com todas as fontes configuradas + ultimo sync + botao rapido
-// "Sincronizar agora". O historico detalhado continua em /catalogo/[source_type].
+// Tabela com todas as fontes configuradas. Cada fonte expande mostrando os
+// endpoints (cadencia individual, ultima sync, botao "Sync agora"). O detalhe
+// completo continua em /catalogo/[source_type].
 //
 // Hierarquia (CLAUDE.md 11.6):
 //   L1 Integracoes > L2 Sync
 //     L3 (TabNavigation): Todas | Configuradas | Habilitadas
+//
+// Granularidade fina (CLAUDE.md §13 — refactor 2026-05-05): a linha do source
+// e o ponto de entrada; a expansion mostra os endpoints daquela fonte com
+// suas cadencias proprias. Mantemos por-source para nao explodir em 100+
+// linhas flat (1 tenant pode ter 12 endpoints da QiTech + 1 do Bitfin).
 //
 
 import Link from "next/link"
@@ -16,20 +22,24 @@ import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import {
+  RiArrowDownSLine,
   RiArrowRightLine,
+  RiArrowRightSLine,
   RiLoader4Line,
+  RiPlayLine,
   RiRefreshLine,
   RiStackLine,
 } from "@remixicon/react"
 
-import { PageHeader } from "@/components/app/PageHeader"
+import { PageHeader } from "@/design-system/components/PageHeader"
 import {
   AdapterStatusBadge,
   statusFrom,
-} from "@/components/app/AdapterStatusBadge"
-import { EmptyState } from "@/components/app/EmptyState"
-import { ErrorState } from "@/components/app/ErrorState"
-import { LastSyncCell } from "@/components/app/LastSyncCell"
+} from "@/design-system/components/AdapterStatusBadge"
+import { EmptyState } from "@/design-system/components/EmptyState"
+import { ErrorState } from "@/design-system/components/ErrorState"
+import { LastSyncCell } from "@/design-system/components/LastSyncCell"
+import { Badge } from "@/components/tremor/Badge"
 import { Button } from "@/components/tremor/Button"
 import {
   Select,
@@ -51,12 +61,24 @@ import {
   TableRoot,
   TableRow,
 } from "@/components/tremor/Table"
-import { useSources } from "@/lib/hooks/integracoes"
+import { tableTokens } from "@/design-system/tokens/table"
+import { cx } from "@/lib/utils"
 import { integracoes } from "@/lib/api-client"
-import type { Environment, SourceListItem } from "@/lib/api-client"
+import {
+  useSources,
+  useSourceEndpoints,
+  useSyncEndpoint,
+} from "@/lib/hooks/integracoes"
+import type {
+  EndpointDetail,
+  Environment,
+  ScheduleKind,
+  SourceListItem,
+  SourceTypeId,
+} from "@/lib/api-client"
 
 const PAGE_INFO =
-  "Visao consolidada de sincronizacoes por fonte. Dispare ciclos manuais ou abra o detalhe para ajustar credenciais."
+  "Visao consolidada de sincronizacoes por fonte. Expanda uma fonte para ver os endpoints e suas cadencias."
 
 const TABS = [
   { key: "todas", label: "Todas" },
@@ -64,6 +86,13 @@ const TABS = [
   { key: "habilitadas", label: "Habilitadas" },
 ] as const
 type TabKey = (typeof TABS)[number]["key"]
+
+// Sources sem catalogo de endpoints — bureaus, parsers de documento, etc.
+// Manter sincronizado com `_CATALOG_BY_SOURCE` em backend public.py.
+const SOURCES_WITH_ENDPOINT_CATALOG = new Set<SourceTypeId>([
+  "admin:qitech",
+  "erp:bitfin",
+])
 
 function filterByTab(rows: SourceListItem[], tab: TabKey): SourceListItem[] {
   if (tab === "configuradas") return rows.filter((r) => r.configured)
@@ -80,6 +109,16 @@ export default function SyncPage() {
     "todas") as TabKey
 
   const { data, isLoading, isError, refetch } = useSources(environment)
+  const [expanded, setExpanded] = React.useState<Set<string>>(new Set())
+
+  function toggleExpanded(sourceType: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(sourceType)) next.delete(sourceType)
+      else next.add(sourceType)
+      return next
+    })
+  }
 
   function setSearch(next: Record<string, string | null>) {
     const qs = new URLSearchParams(sp?.toString() ?? "")
@@ -179,9 +218,11 @@ export default function SyncPage() {
                 <Table>
                   <TableHead>
                     <TableRow>
+                      <TableHeaderCell className="w-10" />
                       <TableHeaderCell>Fonte</TableHeaderCell>
                       <TableHeaderCell>Categoria</TableHeaderCell>
                       <TableHeaderCell>Status</TableHeaderCell>
+                      <TableHeaderCell>Endpoints</TableHeaderCell>
                       <TableHeaderCell>Ultimo sync</TableHeaderCell>
                       <TableHeaderCell className="w-48 text-right">
                         Acoes
@@ -192,19 +233,37 @@ export default function SyncPage() {
                     {isLoading &&
                       Array.from({ length: 3 }).map((_, i) => (
                         <TableRow key={`skeleton-${i}`}>
-                          <TableCell colSpan={5}>
+                          <TableCell colSpan={7}>
                             <div className="h-6 w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
                           </TableCell>
                         </TableRow>
                       ))}
                     {!isLoading &&
                       filtered.map((row) => (
-                        <SyncRow
-                          key={row.source_type}
-                          row={row}
-                          environment={environment}
-                          onRefresh={() => refetch()}
-                        />
+                        <React.Fragment key={`${row.source_type}-${row.unidade_administrativa_id ?? "noua"}`}>
+                          <SyncRow
+                            row={row}
+                            environment={environment}
+                            expanded={expanded.has(row.source_type)}
+                            canExpand={SOURCES_WITH_ENDPOINT_CATALOG.has(
+                              row.source_type,
+                            )}
+                            onToggleExpand={() =>
+                              toggleExpanded(row.source_type)
+                            }
+                            onRefresh={() => refetch()}
+                          />
+                          {expanded.has(row.source_type) &&
+                            SOURCES_WITH_ENDPOINT_CATALOG.has(
+                              row.source_type,
+                            ) && (
+                              <EndpointsExpansion
+                                sourceType={row.source_type}
+                                environment={environment}
+                                uaId={row.unidade_administrativa_id}
+                              />
+                            )}
+                        </React.Fragment>
                       ))}
                   </TableBody>
                 </Table>
@@ -220,10 +279,16 @@ export default function SyncPage() {
 function SyncRow({
   row,
   environment,
+  expanded,
+  canExpand,
+  onToggleExpand,
   onRefresh,
 }: {
   row: SourceListItem
   environment: Environment
+  expanded: boolean
+  canExpand: boolean
+  onToggleExpand: () => void
   onRefresh: () => void
 }) {
   const [running, setRunning] = React.useState(false)
@@ -231,7 +296,11 @@ function SyncRow({
   async function handleSyncNow() {
     setRunning(true)
     try {
-      await integracoes.sync(row.source_type, environment)
+      await integracoes.sync(
+        row.source_type,
+        environment,
+        row.unidade_administrativa_id,
+      )
       toast.success(`Sync de ${row.label} concluido.`)
       onRefresh()
     } catch (err) {
@@ -245,10 +314,31 @@ function SyncRow({
 
   const detailHref = `/integracoes/catalogo/${encodeURIComponent(
     row.source_type,
-  )}?environment=${environment}&tab=historico`
+  )}?environment=${environment}&tab=${canExpand ? "endpoints" : "historico"}${
+    row.unidade_administrativa_id
+      ? `&ua=${row.unidade_administrativa_id}`
+      : ""
+  }`
 
   return (
     <TableRow>
+      <TableCell className="w-10">
+        {canExpand ? (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onToggleExpand}
+            aria-label={expanded ? "Recolher endpoints" : "Expandir endpoints"}
+            aria-expanded={expanded}
+          >
+            {expanded ? (
+              <RiArrowDownSLine className="size-4" aria-hidden />
+            ) : (
+              <RiArrowRightSLine className="size-4" aria-hidden />
+            )}
+          </Button>
+        ) : null}
+      </TableCell>
       <TableCell className="font-medium text-gray-900 dark:text-gray-50">
         <div className="flex flex-col">
           <span>{row.label}</span>
@@ -260,6 +350,15 @@ function SyncRow({
       <TableCell className="capitalize">{row.category}</TableCell>
       <TableCell>
         <AdapterStatusBadge status={statusFrom(row.configured, row.enabled)} />
+      </TableCell>
+      <TableCell>
+        {canExpand ? (
+          <span className={tableTokens.cellSecondary}>
+            Cadencia por endpoint
+          </span>
+        ) : (
+          <span className={tableTokens.cellMuted}>Sob demanda</span>
+        )}
       </TableCell>
       <TableCell>
         <LastSyncCell iso={row.last_sync_at} />
@@ -291,4 +390,184 @@ function SyncRow({
       </TableCell>
     </TableRow>
   )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EndpointsExpansion
+// ─────────────────────────────────────────────────────────────────────────────
+
+function EndpointsExpansion({
+  sourceType,
+  environment,
+  uaId,
+}: {
+  sourceType: SourceTypeId
+  environment: Environment
+  uaId: string | null
+}) {
+  const { data, isLoading, isError } = useSourceEndpoints(
+    sourceType,
+    environment,
+    uaId,
+  )
+
+  if (isLoading) {
+    return (
+      <TableRow className="bg-gray-50 dark:bg-gray-900/40">
+        <TableCell colSpan={7}>
+          <div className="h-6 w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+        </TableCell>
+      </TableRow>
+    )
+  }
+
+  if (isError) {
+    return (
+      <TableRow className="bg-gray-50 dark:bg-gray-900/40">
+        <TableCell colSpan={7}>
+          <span className={tableTokens.cellSecondary}>
+            Falha ao carregar endpoints.
+          </span>
+        </TableCell>
+      </TableRow>
+    )
+  }
+
+  if (!data || data.length === 0) {
+    return (
+      <TableRow className="bg-gray-50 dark:bg-gray-900/40">
+        <TableCell colSpan={7}>
+          <span className={tableTokens.cellSecondary}>
+            Sem endpoints no catalogo desta fonte.
+          </span>
+        </TableCell>
+      </TableRow>
+    )
+  }
+
+  return (
+    <>
+      {data.map((ep) => (
+        <EndpointSubRow
+          key={ep.name}
+          endpoint={ep}
+          sourceType={sourceType}
+          environment={environment}
+          uaId={uaId}
+        />
+      ))}
+    </>
+  )
+}
+
+function EndpointSubRow({
+  endpoint,
+  sourceType,
+  environment,
+  uaId,
+}: {
+  endpoint: EndpointDetail
+  sourceType: SourceTypeId
+  environment: Environment
+  uaId: string | null
+}) {
+  const syncMut = useSyncEndpoint(sourceType)
+
+  const handleSyncNow = async () => {
+    try {
+      const result = await syncMut.mutateAsync({
+        endpointName: endpoint.name,
+        environment,
+        uaId,
+      })
+      if (result.ok) {
+        toast.success(`Sync de "${endpoint.label}" concluido.`)
+      } else {
+        toast.error(
+          `Sync de "${endpoint.label}" falhou: ${result.errors.join("; ") || "erro desconhecido"}`,
+        )
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Falha ao disparar sync.",
+      )
+    }
+  }
+
+  const kind = endpoint.schedule_kind ?? endpoint.default_schedule_kind
+  const value = endpoint.schedule_value ?? endpoint.default_schedule_value
+  const enabled = endpoint.enabled ?? true
+
+  return (
+    <TableRow className="bg-gray-50 dark:bg-gray-900/40">
+      <TableCell className="w-10" />
+      <TableCell>
+        <div className="flex flex-col gap-0.5 pl-4">
+          <span className={tableTokens.cellStrong}>{endpoint.label}</span>
+          <span className={cx(tableTokens.cellSecondary, "font-mono")}>
+            {endpoint.name}
+          </span>
+        </div>
+      </TableCell>
+      <TableCell>
+        <KindBadge kind={kind} />
+      </TableCell>
+      <TableCell>
+        <EndpointStateBadge
+          enabled={enabled}
+          status={endpoint.last_sync_status}
+        />
+      </TableCell>
+      <TableCell>
+        <span className={tableTokens.cellNumber}>
+          {formatScheduleSummary(kind, value)}
+        </span>
+      </TableCell>
+      <TableCell>
+        <LastSyncCell iso={endpoint.last_sync_started_at} />
+      </TableCell>
+      <TableCell className="text-right">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={handleSyncNow}
+          disabled={syncMut.isPending}
+          title="Sincronizar agora"
+          aria-label={`Sincronizar ${endpoint.label} agora`}
+        >
+          <RiPlayLine className="size-4" aria-hidden />
+        </Button>
+      </TableCell>
+    </TableRow>
+  )
+}
+
+function formatScheduleSummary(
+  kind: ScheduleKind,
+  value: string | null,
+): string {
+  if (kind === "interval") return value ? `A cada ${value} min` : "—"
+  if (kind === "daily_at") return value ? `Diario as ${value}` : "—"
+  return "Sob demanda"
+}
+
+function KindBadge({ kind }: { kind: ScheduleKind }) {
+  if (kind === "interval") return <Badge variant="default">Intervalo</Badge>
+  if (kind === "daily_at") return <Badge variant="success">Diario</Badge>
+  return <Badge variant="neutral">Sob demanda</Badge>
+}
+
+function EndpointStateBadge({
+  enabled,
+  status,
+}: {
+  enabled: boolean
+  status: EndpointDetail["last_sync_status"]
+}) {
+  if (!enabled) return <Badge variant="neutral">Desligado</Badge>
+  if (status === "em_progresso")
+    return <Badge variant="warning">Em curso</Badge>
+  if (status === "erro") return <Badge variant="error">Erro</Badge>
+  if (status === "ok") return <Badge variant="success">OK</Badge>
+  return <Badge variant="neutral">Aguardando</Badge>
 }

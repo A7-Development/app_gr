@@ -30,6 +30,11 @@ dependencies = [
     "apscheduler>=3.10.4",
     # SQL Server (for Bitfin adapter)
     "pyodbc>=5.0.0",
+    # Anthropic SDK oficial (CLAUDE.md §2). Messages API direta com tool
+    # use nativo + prompt caching. Usado pelo runtime de Specialist Agents
+    # em `app/shared/agents/runtime.py` e pelo adapter de chat em
+    # `app/modules/integracoes/adapters/llm/anthropic/`.
+    "anthropic>=0.71",
     # Utilities
     "python-multipart>=0.0.17",  # form data support for FastAPI
     "email-validator>=2.2.0",

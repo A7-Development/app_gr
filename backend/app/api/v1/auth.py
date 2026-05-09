@@ -16,8 +16,11 @@ from app.api.v1.schemas import (
 )
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.enums import AICapability
 from app.core.security import create_access_token, verify_password
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
+from app.shared.ai.models.permission import UserAIPermission
+from app.shared.ai.models.subscription import TenantAISubscription
 from app.shared.identity.subscription import TenantModuleSubscription
 from app.shared.identity.tenant import Tenant
 from app.shared.identity.user import User
@@ -99,9 +102,33 @@ async def me(
         p.module.value: p.permission.value for p in (await db.execute(perm_stmt)).scalars().all()
     }
 
+    # AI capability — transversal, lives outside the closed Module enum.
+    ai_sub = (
+        await db.execute(
+            select(TenantAISubscription).where(
+                TenantAISubscription.tenant_id == principal.tenant_id
+            )
+        )
+    ).scalar_one_or_none()
+    ai_enabled = bool(ai_sub and ai_sub.enabled)
+
+    ai_perm = (
+        await db.execute(
+            select(UserAIPermission).where(UserAIPermission.user_id == principal.user_id)
+        )
+    ).scalar_one_or_none()
+    ai_permission = (ai_perm.permission if ai_perm else AICapability.NONE).value
+
     return MeResponse(
         user=UserInfo(id=user.id, email=user.email, name=user.name),
-        tenant=TenantInfo(id=tenant.id, slug=tenant.slug, name=tenant.name),
+        tenant=TenantInfo(
+            id=tenant.id,
+            slug=tenant.slug,
+            name=tenant.name,
+            is_system_maintainer=tenant.is_system_maintainer,
+        ),
         enabled_modules=enabled_modules,
         user_permissions=user_permissions,
+        ai_enabled=ai_enabled,
+        ai_permission=ai_permission,
     )

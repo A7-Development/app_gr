@@ -5,7 +5,7 @@ import { RiArrowDownSLine, RiArrowUpSLine, RiSubtractLine } from "@remixicon/rea
 
 import { DonutChart } from "@/components/charts/DonutChart"
 import { SparkAreaChart } from "@/components/charts/SparkChart"
-import { InfoTooltip } from "@/components/app/InfoTooltip"
+import { InfoTooltip } from "@/design-system/components/InfoTooltip"
 import { cx } from "@/lib/utils"
 import type {
   CategoryValueDelta,

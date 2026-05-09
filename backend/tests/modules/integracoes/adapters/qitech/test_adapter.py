@@ -86,7 +86,15 @@ async def test_sync_auth_ok_delega_para_sync_all() -> None:
     """Apos auth OK, adapter_sync delega pro pipeline de etl.sync_all
     com a config materializada + parametros propagados."""
 
-    async def _fake_sync_all(tenant_id, config, since, *, environment, triggered_by):
+    async def _fake_sync_all(
+        tenant_id,
+        config,
+        since,
+        *,
+        environment,
+        triggered_by,
+        unidade_administrativa_id=None,
+    ):
         return {
             "ok": True,
             "delegated": True,
@@ -94,6 +102,9 @@ async def test_sync_auth_ok_delega_para_sync_all() -> None:
             "since": since.isoformat() if since else None,
             "environment": environment.value,
             "triggered_by": triggered_by,
+            "unidade_administrativa_id": (
+                str(unidade_administrativa_id) if unidade_administrativa_id else None
+            ),
         }
 
     tid = uuid4()
@@ -116,4 +127,5 @@ async def test_sync_auth_ok_delega_para_sync_all() -> None:
         "since": None,
         "environment": "production",
         "triggered_by": "user:t",
+        "unidade_administrativa_id": None,
     }
