@@ -12,12 +12,22 @@ Consumidores atuais:
   habilitada para um tenant (ex.: empty state no BI).
 """
 
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.enums import SourceType
 from app.modules.integracoes.adapters.admin.qitech.endpoint_catalog import (
     QITECH_ENDPOINTS,
 )
 from app.modules.integracoes.adapters.erp.bitfin.endpoint_catalog import (
     BITFIN_ENDPOINTS,
+)
+from app.modules.integracoes.report_catalog import (
+    REPORTS,
+    REPORTS_BY_SLUG,
+    ReportCategory,
+    ReportSpec,
 )
 from app.modules.integracoes.services.dia_util import (
     dia_util_anterior_qitech,
@@ -45,6 +55,13 @@ from app.modules.integracoes.services.sync_runner import (
 )
 from app.shared.endpoint_catalog import EndpointSpec
 
+# Sources that participate in the report catalog. When a new admin (Kanastra,
+# BTG, ...) is integrated, add the SourceType here so its reports are
+# considered when filtering by tenant subscription.
+_ADMIN_SOURCES_IN_REPORT_CATALOG: tuple[SourceType, ...] = (
+    SourceType.ADMIN_QITECH,
+)
+
 # Source -> catalog. Sources without an entry (or with empty tuple) do not
 # participate in per-endpoint scheduling — Serasa PJ/PF e SCR Bacen sao
 # query-on-demand, nao sync periodico.
@@ -68,14 +85,49 @@ def endpoint_catalog(source_type: SourceType) -> list[EndpointSpec]:
     return list(_CATALOG_BY_SOURCE.get(source_type, ()))
 
 
+async def list_reports(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    category: ReportCategory | None = None,
+) -> list[ReportSpec]:
+    """Return reports from the catalog visible to a tenant.
+
+    Visibility = the report's `administradora` has `tenant_source_config.enabled=true`
+    for this tenant (production environment). Tenants that have not connected
+    QiTech do not see QiTech reports.
+
+    Owned by integracoes (the catalog data is sourced from adapters); consumed
+    by `controladoria.api.reports` to render the catalog page.
+    """
+    enabled_admins: set[SourceType] = set()
+    for admin_source in _ADMIN_SOURCES_IN_REPORT_CATALOG:
+        if await is_source_enabled(db, tenant_id, admin_source):
+            enabled_admins.add(admin_source)
+
+    visible = [r for r in REPORTS if r.administradora in enabled_admins]
+    if category is not None:
+        visible = [r for r in visible if r.category == category]
+    return visible
+
+
+def get_report_spec(slug: str) -> ReportSpec | None:
+    """O(1) lookup of a report spec by slug. Returns None if slug unknown."""
+    return REPORTS_BY_SLUG.get(slug)
+
+
 __all__ = [
+    "ReportCategory",
+    "ReportSpec",
     "dia_util_anterior_qitech",
     "endpoint_catalog",
     "execute_serasa_pj_query",
+    "get_report_spec",
     "is_source_enabled",
     "list_due_endpoints",
     "list_enabled_configs",
     "list_endpoint_configs_for_source",
+    "list_reports",
     "listar_datas_disponiveis_qitech",
     "rule_name_for",
     "run_ping",

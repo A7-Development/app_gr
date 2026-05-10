@@ -234,6 +234,12 @@ export const MODULES: ModuleDefinition[] = [
         enabled: true,
         icon: RiHandCoinLine,
       },
+      {
+        name: "Relatorios",
+        href: "/controladoria/relatorios",
+        enabled: true,
+        icon: RiFileChart2Line,
+      },
     ],
   },
   {
