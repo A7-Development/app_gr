@@ -28,6 +28,7 @@ from app.modules.integracoes.adapters.erp.bitfin.hashing import sha256_of_row
 from app.modules.integracoes.adapters.erp.bitfin.queries import analytics, bitfin
 from app.modules.integracoes.adapters.erp.bitfin.version import ADAPTER_VERSION
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
+from app.warehouse.caixa_snapshot import CaixaSnapshot
 from app.warehouse.dim import (
     DimDreClassificacao,
     DimMes,
@@ -210,6 +211,26 @@ def _map_dim_produto(row: dict, tenant_id: UUID) -> dict:
     }
 
 
+def _map_caixa_snapshot(row: dict, tenant_id: UUID, data_snapshot: date) -> dict:
+    """Mapeia ContaBancaria + ContaCorrente + UA + flags -> wh_caixa_snapshot.
+
+    Granularidade silver: 1 linha por (tenant, conta_bancaria, data_snapshot).
+    Ao re-rodar a sync no mesmo dia, UPSERT substitui a row de hoje (saldo
+    atualizado). Historico cresce 1 row por (conta, dia).
+
+    Flags `eh_caucao` / `eh_travada` chegam como int 0/1 do CASE WHEN no
+    MSSQL — convertidos para bool aqui.
+    """
+    return {
+        "tenant_id": tenant_id,
+        "data_snapshot": data_snapshot,
+        **row,
+        "eh_caucao": bool(row.get("eh_caucao")),
+        "eh_travada": bool(row.get("eh_travada")),
+        **_provenance(row["conta_bancaria_id"], row, None),
+    }
+
+
 # ---- Upsert helpers ----
 
 
@@ -386,6 +407,29 @@ async def sync_dim_produto(
     return {"table": "wh_dim_produto", "rows": count}
 
 
+async def sync_caixa_snapshot(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
+    """Snapshot diario do saldo das ContaBancaria-de-UA do tenant.
+
+    `since` ignorado — sempre captura o saldo ATUAL (ContaCorrente.Saldo
+    no momento da execucao) e marca `data_snapshot = today`. Multiple
+    execucoes de sync no mesmo dia upsertam a mesma row.
+
+    Volume: poucas dezenas de linhas por execucao (uma por conta de UA).
+    """
+    today = datetime.now(UTC).date()
+    rows = await asyncio.to_thread(
+        fetch_rows, config, config.database_bitfin, bitfin.SELECT_CAIXA_SNAPSHOT
+    )
+    mapped = [_map_caixa_snapshot(r, tenant_id, today) for r in rows]
+    async with AsyncSessionLocal() as db:
+        count = await _bulk_upsert(
+            db, CaixaSnapshot, mapped, ["tenant_id", "data_snapshot", "source_id"]
+        )
+    return {"table": "wh_caixa_snapshot", "rows": count}
+
+
 # ---- Master orchestrator ----
 
 SYNC_PIPELINE = [
@@ -398,6 +442,7 @@ SYNC_PIPELINE = [
     sync_operacao_item,
     sync_titulo,
     sync_dre_mensal,
+    sync_caixa_snapshot,
 ]
 
 

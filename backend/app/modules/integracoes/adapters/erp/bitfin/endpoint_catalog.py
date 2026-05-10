@@ -36,7 +36,7 @@ BITFIN_ENDPOINTS: tuple[EndpointSpec, ...] = (
         ),
         default_schedule_kind=ScheduleKind.INTERVAL,
         default_schedule_value="30",
-        canonical_table="wh_titulo, wh_operacao, wh_dre",
+        canonical_table="wh_titulo, wh_operacao, wh_dre, wh_caixa_snapshot",
     ),
 )
 

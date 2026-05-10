@@ -110,12 +110,21 @@ WHERE DataDaSituacao > ?
 # Bitfin usa `Alias` como display name (nao tem campo "Nome" propriamente
 # dito). Full refresh sempre — poucas linhas (3 no ambiente atual), mudam
 # raramente. Popula `wh_dim_unidade_administrativa`.
+#
+# Campos estruturais (Tipo + Entidade*) introduzidos em 2026-05-09 para
+# suportar VOP Potencial (filtro por FIDC/Securitizadora) e joins canonicos
+# multi-tenant (Conta-Bancaria.EntidadeId -> UA.EntidadeId).
 SELECT_UNIDADE_ADMINISTRATIVA = """
 SELECT
     UnidadeAdministrativaId AS ua_id,
     Alias AS nome,
     Ativa AS ativa,
-    Classe AS classe
+    Classe AS classe,
+    Tipo AS tipo,
+    EntidadeId AS entidade_id,
+    EntidadeIdAdministradora AS entidade_id_administradora,
+    EntidadeIdGestora AS entidade_id_gestora,
+    EntidadeIdCustodiante AS entidade_id_custodiante
 FROM dbo.UnidadeAdministrativa
 """
 
@@ -132,5 +141,50 @@ SELECT
     TipoDeContrato AS tipo_de_contrato,
     ProdutoDeRisco AS produto_de_risco
 FROM dbo.Produto
+"""
+
+
+# Caixa Snapshot — saldo atual de cada ContaBancaria de UA do fundo.
+# Popula `wh_caixa_snapshot` com 1 linha por (conta_bancaria_id, hoje).
+#
+# Joins:
+#   ContaBancaria cb         -- identidade da conta + flags estruturais
+#   ContaCorrente cc         -- saldo (cb -> cc via cb.ContaCorrenteId)
+#   UnidadeAdministrativa ua -- ownership por EntidadeId direto
+#   ContaBancariaCaucao cau  -- presenca = conta caucionada
+#   ContaBancariaTrava trv   -- presenca = conta travada
+#
+# Filtros: INNER JOIN UA via EntidadeId garante que apenas contas DE UA
+# (nao contas de cedentes ou avalistas) entrem. NAO filtra por `ua.Tipo`
+# aqui -- captura todas as UAs (incl. Tipo NULL "outras" como Onboard) e
+# deixa o BI service filtrar por estrutura quando preciso (saldo medio /
+# eficiencia comercial e valido em qualquer UA; VOP Potencial filtra
+# Tipo IN (1, 2)). Conta com `ContaCorrenteId IS NULL` (raras) sao
+# ignoradas via INNER JOIN ContaCorrente.
+SELECT_CAIXA_SNAPSHOT = """
+SELECT
+    cb.ContaBancariaId AS conta_bancaria_id,
+    cb.ContaCorrenteId AS conta_corrente_id,
+    cb.Numero AS numero,
+    cb.Descricao AS descricao,
+    cb.Tipo AS conta_bancaria_tipo,
+    cb.BancoId AS banco_id,
+    cb.AgenciaId AS agencia_id,
+    ua.UnidadeAdministrativaId AS unidade_administrativa_id,
+    cb.Ativa AS ativa,
+    cb.Escrow AS eh_escrow,
+    CASE WHEN cau.ContaBancariaId IS NOT NULL THEN 1 ELSE 0 END AS eh_caucao,
+    CASE WHEN trv.ContaBancariaId IS NOT NULL THEN 1 ELSE 0 END AS eh_travada,
+    cc.Saldo AS saldo
+FROM dbo.ContaBancaria cb
+INNER JOIN dbo.ContaCorrente cc
+    ON cc.ContaCorrenteId = cb.ContaCorrenteId
+INNER JOIN dbo.UnidadeAdministrativa ua
+    ON ua.EntidadeId = cb.EntidadeId
+LEFT JOIN dbo.ContaBancariaCaucao cau
+    ON cau.ContaBancariaId = cb.ContaBancariaId
+   AND cau.Ativa = 1
+LEFT JOIN dbo.ContaBancariaTrava trv
+    ON trv.ContaBancariaId = cb.ContaBancariaId
 """
 

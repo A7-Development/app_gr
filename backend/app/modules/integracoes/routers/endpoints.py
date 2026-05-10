@@ -37,6 +37,7 @@ from app.modules.integracoes.public import (
     list_endpoint_configs_for_source,
     run_sync_endpoint,
 )
+from app.modules.integracoes.services.source_config import list_configs
 from app.shared.endpoint_catalog import EndpointSpec
 
 router = APIRouter(prefix="/sources", tags=["integracoes:endpoints"])
@@ -326,6 +327,7 @@ async def update_endpoint(
 )
 async def sync_endpoint(
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     source_type: Annotated[SourceType, Path()],
     endpoint_name: Annotated[str, Path()],
     environment: Annotated[Environment, Query()] = Environment.PRODUCTION,
@@ -336,6 +338,13 @@ async def sync_endpoint(
 
     Levanta 404 se endpoint nao esta no catalogo. Levanta 422 se tenant nao
     tem TSC pra source (precisa configurar credenciais primeiro).
+
+    Resolucao de UA quando `?ua` nao e passado (pos 2026-05-10):
+    1. Se ha exatamente UMA TSC para (tenant, source, env) -> usa essa UA
+       (pode ser ua=NULL legacy ou ua=<UUID>). Cobre o caso comum de tenant
+       single-UA chamado pela UI sem seletor de UA.
+    2. Se ha 0 ou 2+ TSCs -> mantem comportamento original (procura ua=NULL,
+       422 se nao achar). Para multi-UA o caller PRECISA passar `?ua=<UUID>`.
     """
     catalog = endpoint_catalog(source_type)
     if not any(ep.name == endpoint_name for ep in catalog):
@@ -346,6 +355,27 @@ async def sync_endpoint(
                 f"{source_type.value}."
             ),
         )
+
+    # Auto-resolve UA quando o caller nao passou explicitamente. Buscar TODAS
+    # as TSCs do (tenant, source, env) e desambiguar:
+    if unidade_administrativa_id is None:
+        configs = await list_configs(db, principal.tenant_id, source_type, environment)
+        if len(configs) == 1:
+            unidade_administrativa_id = configs[0].unidade_administrativa_id
+        elif len(configs) > 1:
+            uas_disponiveis = ", ".join(
+                str(c.unidade_administrativa_id) for c in configs
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Tenant {principal.tenant_id} tem {len(configs)} TSCs "
+                    f"para {source_type.value}/{environment.value}. Passe "
+                    f"`?ua=<UUID>` para escolher. Disponiveis: {uas_disponiveis}"
+                ),
+            )
+        # len == 0: cai pro caminho original (run_sync_endpoint vai retornar
+        # 422 com a mensagem ja existente).
 
     try:
         summary = await run_sync_endpoint(

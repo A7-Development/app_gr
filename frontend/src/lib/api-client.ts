@@ -949,6 +949,38 @@ export type Operacoes2AbaMesCorrenteData = {
   dimensions_disponiveis: Operacoes2Dimension[]
 }
 
+/** Decomposicao por UA do VOP Potencial (FIDC + Securitizadora por default). */
+export type Operacoes2VopPotencialPorUa = {
+  ua_id: number
+  ua_nome: string
+  /** Bitfin.UnidadeAdministrativa.Tipo: 1=FIDC, 2=Securitizadora, null=Outras. */
+  ua_tipo: number | null
+  vop_realizado_mtd: number
+  caixa_disponivel: number
+  liquidacoes_previstas: number
+  vop_potencial: number
+}
+
+/**
+ * VOP Potencial — quanto o fundo "ainda pode" gerar ate o fim do mes.
+ *
+ * `vop_potencial = vop_realizado_mtd + caixa_disponivel + liquidacoes_previstas`
+ *
+ * Janela: mes corrente. `vop_realizado_mtd` cobre [mes_inicio, hoje];
+ * `liquidacoes_previstas` cobre (hoje, mes_fim]; `caixa_disponivel` e
+ * snapshot em hoje. Default: UAs com `tipo IN (1, 2)`.
+ */
+export type Operacoes2VopPotencialData = {
+  mes_inicio: string
+  mes_fim: string
+  hoje: string
+  vop_realizado_mtd: number
+  caixa_disponivel: number
+  liquidacoes_previstas: number
+  vop_potencial: number
+  por_ua: Operacoes2VopPotencialPorUa[]
+}
+
 export const biOperacoes2 = {
   kpiStrip: (f: BIFilters) =>
     apiClient.get<BIResponse<Operacoes2KpiStripData>>(
@@ -972,6 +1004,10 @@ export const biOperacoes2 = {
       `/bi/operacoes2/aba1-mes-corrente${baseQs}${sep}dimension=${dimension}`,
     )
   },
+  vopPotencial: (f: BIFilters) =>
+    apiClient.get<BIResponse<Operacoes2VopPotencialData>>(
+      `/bi/operacoes2/vop-potencial${filtersToQueryString(f)}`,
+    ),
 }
 
 export const biOperacoes = {

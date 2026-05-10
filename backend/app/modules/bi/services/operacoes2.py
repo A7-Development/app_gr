@@ -15,6 +15,7 @@ Decisao 2026-05-03 (Opcao 4 do paradigma de periodos):
 
 from __future__ import annotations
 
+from calendar import monthrange
 from collections.abc import Callable
 from datetime import date, timedelta
 from typing import Any
@@ -64,6 +65,8 @@ from app.modules.bi.schemas.operacoes2 import (
     RitmoUaItem,
     ScatterProdutoPonto,
     VarianceBridgeData,
+    VopPotencialData,
+    VopPotencialPorUa,
 )
 from app.modules.bi.services.operacoes import (
     _MES_PT,
@@ -82,8 +85,11 @@ from app.modules.bi.services.operacoes import (
     _ua_id_to_nome_map,
     _weighted_avg,
 )
+from app.warehouse.caixa_snapshot import CaixaSnapshot
+from app.warehouse.dim import DimUnidadeAdministrativa
 from app.warehouse.dim_dia_util import DimDiaUtil
 from app.warehouse.operacao import Operacao
+from app.warehouse.titulo import Titulo
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Helpers especificos do operacoes2
@@ -2602,5 +2608,246 @@ async def get_aba1_mes_corrente(
         concentracao=concentracao_data,
         dimension_active=dimension,
     )
+    prov = await _build_provenance(db, tenant_id, filters)
+    return data, prov
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# VOP Potencial = vop_realizado_mtd + caixa + liquidacoes_previstas
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Definicao (CLAUDE.md §13, §14, e memoria `project_vop_projecao_cash_bounded`):
+# o VOP que o fundo "ainda pode" gerar ate o fim do mes corrente, limitado
+# pelo caixa disponivel + liquidacoes previstas a entrar.
+#
+# Janela: mes corrente (do dia 1 ate fim do mes calendario).
+# - vop_realizado_mtd: SUM(Operacao.total_bruto) entre mes_inicio e hoje.
+# - caixa: ultima snapshot de saldo livre por (UA, conta) — exclui escrow,
+#   caucao e travada (flags estruturais do Bitfin via wh_caixa_snapshot).
+# - liquidacoes_previstas: SUM(saldo_devedor) de titulos com situacao=0,
+#   saldo>0, NOT sustado, vencimento entre hoje e mes_fim.
+#
+# Filtros do usuario:
+# - `ua_id`: aplica a TUDO. Quando vazio, default e UAs com tipo IN (1, 2)
+#   (FIDC + Securitizadora). Quando setado, respeita selecao explicita.
+# - `produto_sigla`: aplica APENAS a vop_realizado_mtd. Caixa e liquidacoes
+#   nao tem dimensao produto canonica.
+# - `periodo_inicio` / `periodo_fim`: IGNORADOS — VOP Potencial e sempre
+#   sobre o mes corrente. Outros filtros do usuario aplicam.
+
+
+async def _resolve_uas_elegiveis(
+    db: AsyncSession,
+    tenant_id: UUID,
+    ua_id_filter: list[int] | None,
+) -> list[tuple[int, str, int | None]]:
+    """Retorna lista de (ua_id, ua_nome, ua_tipo) elegiveis para VOP Potencial.
+
+    Default (ua_id_filter None ou vazio): UAs com `tipo IN (1, 2)` (FIDC +
+    Securitizadora). Com filtro setado: respeita selecao do usuario AS-IS
+    (incluindo `tipo=NULL` se o usuario quiser).
+    """
+    stmt = select(
+        DimUnidadeAdministrativa.ua_id,
+        DimUnidadeAdministrativa.nome,
+        DimUnidadeAdministrativa.tipo,
+    ).where(DimUnidadeAdministrativa.tenant_id == tenant_id)
+
+    if ua_id_filter:
+        stmt = stmt.where(DimUnidadeAdministrativa.ua_id.in_(ua_id_filter))
+    else:
+        stmt = stmt.where(DimUnidadeAdministrativa.tipo.in_([1, 2]))
+
+    rows = (await db.execute(stmt)).all()
+    return [(r.ua_id, r.nome, r.tipo) for r in rows]
+
+
+async def _vop_realizado_mtd_por_ua(
+    db: AsyncSession,
+    tenant_id: UUID,
+    base_filters: dict[str, Any],
+    mes_inicio: date,
+    hoje: date,
+    ua_id_list: list[int],
+) -> dict[int, float]:
+    """SUM(Operacao.total_bruto) GROUP BY ua. Filtros via `_apply_filters`."""
+    if not ua_id_list:
+        return {}
+    overridden = {
+        **base_filters,
+        "periodo_inicio": mes_inicio,
+        "periodo_fim": hoje,
+        "ua_id": ua_id_list,
+    }
+    stmt = _apply_filters(
+        select(
+            Operacao.unidade_administrativa_id,
+            func.coalesce(func.sum(Operacao.total_bruto), 0),
+        ).group_by(Operacao.unidade_administrativa_id),
+        tenant_id=tenant_id,
+        **overridden,
+    )
+    rows = (await db.execute(stmt)).all()
+    return {int(ua_id): _as_float(total) for ua_id, total in rows}
+
+
+async def _caixa_disponivel_por_ua(
+    db: AsyncSession,
+    tenant_id: UUID,
+    ua_id_list: list[int],
+) -> dict[int, float]:
+    """Soma de saldo livre por UA na ultima snapshot de cada conta.
+
+    Sem filtro de produto (caixa nao tem dimensao produto). Filtro de UA
+    aplicado via `ua_id IN (...)`.
+    """
+    if not ua_id_list:
+        return {}
+    # Subquery: ultima data_snapshot conhecida por conta_bancaria_id.
+    latest_subq = (
+        select(
+            CaixaSnapshot.tenant_id.label("t"),
+            CaixaSnapshot.conta_bancaria_id.label("cb"),
+            func.max(CaixaSnapshot.data_snapshot).label("max_dt"),
+        )
+        .where(CaixaSnapshot.tenant_id == tenant_id)
+        .group_by(CaixaSnapshot.tenant_id, CaixaSnapshot.conta_bancaria_id)
+        .subquery()
+    )
+    stmt = (
+        select(
+            CaixaSnapshot.unidade_administrativa_id,
+            func.coalesce(func.sum(CaixaSnapshot.saldo), 0),
+        )
+        .join(
+            latest_subq,
+            and_(
+                CaixaSnapshot.tenant_id == latest_subq.c.t,
+                CaixaSnapshot.conta_bancaria_id == latest_subq.c.cb,
+                CaixaSnapshot.data_snapshot == latest_subq.c.max_dt,
+            ),
+        )
+        .where(
+            CaixaSnapshot.tenant_id == tenant_id,
+            CaixaSnapshot.unidade_administrativa_id.in_(ua_id_list),
+            CaixaSnapshot.ativa.is_(True),
+            CaixaSnapshot.eh_escrow.is_(False),
+            CaixaSnapshot.eh_caucao.is_(False),
+            CaixaSnapshot.eh_travada.is_(False),
+        )
+        .group_by(CaixaSnapshot.unidade_administrativa_id)
+    )
+    rows = (await db.execute(stmt)).all()
+    return {int(ua_id): _as_float(saldo) for ua_id, saldo in rows}
+
+
+async def _liquidacoes_previstas_por_ua(
+    db: AsyncSession,
+    tenant_id: UUID,
+    ua_id_list: list[int],
+    hoje: date,
+    mes_fim: date,
+) -> dict[int, float]:
+    """SUM(Titulo.saldo_devedor) de titulos abertos vencendo ate fim do mes.
+
+    `data_de_vencimento_efetiva` e DateTime — `cast(..., Date)` garante
+    comparacao por dia. Sem filtro de produto (wh_titulo nao tem mapping
+    canonico para produto sigla nesta versao).
+    """
+    if not ua_id_list:
+        return {}
+    stmt = (
+        select(
+            Titulo.unidade_administrativa_id,
+            func.coalesce(func.sum(Titulo.saldo_devedor), 0),
+        )
+        .where(
+            Titulo.tenant_id == tenant_id,
+            Titulo.unidade_administrativa_id.in_(ua_id_list),
+            Titulo.situacao == 0,
+            Titulo.saldo_devedor > 0,
+            Titulo.sustado_judicialmente.is_(False),
+            cast(Titulo.data_de_vencimento_efetiva, Date) >= hoje,
+            cast(Titulo.data_de_vencimento_efetiva, Date) <= mes_fim,
+        )
+        .group_by(Titulo.unidade_administrativa_id)
+    )
+    rows = (await db.execute(stmt)).all()
+    return {int(ua_id): _as_float(saldo) for ua_id, saldo in rows}
+
+
+async def get_vop_potencial(
+    db: AsyncSession,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+) -> tuple[VopPotencialData, Provenance]:
+    """VOP Potencial -- consolidado e por UA do mes corrente.
+
+    Janela do mes corrente derivada de `periodo_fim` quando setado (permite
+    "viajar no tempo" pra recompor o calculo num mes passado), senao usa hoje.
+    """
+    periodo_fim = filters.get("periodo_fim")
+    hoje = periodo_fim or date.today()
+    mes_inicio = date(hoje.year, hoje.month, 1)
+    last_day = monthrange(hoje.year, hoje.month)[1]
+    mes_fim = date(hoje.year, hoje.month, last_day)
+
+    # 1. Resolve UAs elegiveis
+    ua_filter = filters.get("ua_id") or None
+    uas = await _resolve_uas_elegiveis(db, tenant_id, ua_filter)
+    ua_id_list = [u[0] for u in uas]
+    ua_meta = {u[0]: (u[1], u[2]) for u in uas}
+
+    # 2. Calcula 3 componentes em paralelo logico (sequencial e ok aqui;
+    #    sao 3 queries simples sobre o gr_db local)
+    vop_realizado = await _vop_realizado_mtd_por_ua(
+        db, tenant_id, filters, mes_inicio, hoje, ua_id_list
+    )
+    caixa = await _caixa_disponivel_por_ua(db, tenant_id, ua_id_list)
+    liquidacoes = await _liquidacoes_previstas_por_ua(
+        db, tenant_id, ua_id_list, hoje, mes_fim
+    )
+
+    # 3. Monta linhas por UA (zera componente quando UA nao tem entry)
+    por_ua: list[VopPotencialPorUa] = []
+    total_vop_real = 0.0
+    total_caixa = 0.0
+    total_liq = 0.0
+    for ua_id in ua_id_list:
+        vr = vop_realizado.get(ua_id, 0.0)
+        cx = caixa.get(ua_id, 0.0)
+        lq = liquidacoes.get(ua_id, 0.0)
+        vp = vr + cx + lq
+        nome, tipo = ua_meta[ua_id]
+        por_ua.append(
+            VopPotencialPorUa(
+                ua_id=ua_id,
+                ua_nome=nome,
+                ua_tipo=tipo,
+                vop_realizado_mtd=vr,
+                caixa_disponivel=cx,
+                liquidacoes_previstas=lq,
+                vop_potencial=vp,
+            )
+        )
+        total_vop_real += vr
+        total_caixa += cx
+        total_liq += lq
+
+    # Ordena: maior VOP Potencial primeiro
+    por_ua.sort(key=lambda r: r.vop_potencial, reverse=True)
+
+    data = VopPotencialData(
+        mes_inicio=mes_inicio,
+        mes_fim=mes_fim,
+        hoje=hoje,
+        vop_realizado_mtd=total_vop_real,
+        caixa_disponivel=total_caixa,
+        liquidacoes_previstas=total_liq,
+        vop_potencial=total_vop_real + total_caixa + total_liq,
+        por_ua=por_ua,
+    )
+    # Provenance ancorado em wh_operacao (proveniencia agregada multi-fonte
+    # fica como follow-up; hoje usamos a do bitfin_adapter geral).
     prov = await _build_provenance(db, tenant_id, filters)
     return data, prov

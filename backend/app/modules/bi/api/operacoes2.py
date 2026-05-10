@@ -27,6 +27,7 @@ from app.modules.bi.schemas.operacoes2 import (
     AbaProdutosPricingData,
     AbaVolumeRitmoData,
     OperacoesKpiStripData,
+    VopPotencialData,
 )
 from app.modules.bi.services import operacoes2 as svc
 
@@ -88,6 +89,32 @@ async def aba2_produtos_pricing(
     buckets fixos). TODA query passa por `_apply_filters` (regra dura sec 7.2).
     """
     data, prov = await svc.get_aba2_produtos_pricing(
+        db, principal.tenant_id, _filter_dict(filters)
+    )
+    return BIResponse(data=data, provenance=prov)
+
+
+@router.get("/vop-potencial", response_model=BIResponse[VopPotencialData])
+async def vop_potencial(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    filters: Annotated[BIFilters, Depends(bi_filters)],
+    _: None = _Guard,
+) -> BIResponse[VopPotencialData]:
+    """VOP Potencial -- consolidado e por UA do mes corrente.
+
+    `vop_potencial = vop_realizado_mtd + caixa_disponivel + liquidacoes_previstas`
+
+    - vop_realizado_mtd: SUM(Operacao.total_bruto) entre dia 1 do mes e hoje.
+    - caixa_disponivel: ultima snapshot de saldo livre por (UA, conta) -- exclui
+      escrow / caucao / travada (flags estruturais via wh_caixa_snapshot).
+    - liquidacoes_previstas: SUM(Titulo.saldo_devedor) com situacao=0,
+      saldo>0, NOT sustado, vencimento entre hoje e fim do mes.
+
+    Default: filtra UAs com `tipo IN (1, 2)` (FIDC + Securitizadora). Quando
+    `ua_id` setado nos filtros, respeita a selecao explicita do usuario.
+    """
+    data, prov = await svc.get_vop_potencial(
         db, principal.tenant_id, _filter_dict(filters)
     )
     return BIResponse(data=data, provenance=prov)

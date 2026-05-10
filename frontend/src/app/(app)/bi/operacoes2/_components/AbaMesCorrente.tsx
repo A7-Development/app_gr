@@ -41,6 +41,8 @@ import type {
 import { useBiFilters } from "@/lib/hooks/useBiFilters"
 import { cx } from "@/lib/utils"
 
+import { VopPotencialCard } from "./VopPotencialCard"
+
 // ─── Formatadores ──────────────────────────────────────────────────────────
 
 const fmtBRLCompact = new Intl.NumberFormat("pt-BR", {
@@ -251,6 +253,12 @@ export function AbaMesCorrente() {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Linha 0 — VOP Potencial. Card forward-looking que complementa a
+          variance decomposition: vop_realizado_mtd + caixa + liquidacoes
+          previstas ate fim do mes. Por UA (FIDC + Securitizadora por
+          default). Adicionado em 2026-05-09. */}
+      <VopPotencialCard />
+
       {/* Linha 1 — SegmentSwitch (lente da decomposicao). Sem card.
           Narrative sentence dropada em 2026-05-09: KPIs ja vivem no headerKpi
           de cada chart-card; a frase em prosa duplicava informacao. Ver

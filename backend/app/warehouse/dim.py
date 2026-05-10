@@ -121,10 +121,21 @@ class DimUnidadeAdministrativa(Auditable, Base):
     - Mapear `wh_operacao.unidade_administrativa_id` -> nome amigavel em
       filtros/graficos BI (sem round-trip ao ERP em request-time).
     - Preparar outros L2 (Carteira, Fluxo) que tambem segmentam por UA.
+    - Filtrar agregados de fundo via `tipo` estrutural (1=FIDC, 2=Securitizadora,
+      NULL=Outras) -- usado em VOP Potencial (caixa + liquidacoes previstas).
 
     O campo `ua_id` corresponde ao `UnidadeAdministrativaId` no Bitfin.
     O `nome` vem de `Alias` (o campo display no ERP). `classe` mantido como
     metadado (Bitfin.UnidadeAdministrativa.Classe).
+
+    `tipo` carrega o enum int do Bitfin (`UnidadeAdministrativa.Tipo`):
+    - `1` = FIDC
+    - `2` = Securitizadora
+    - `NULL` = Outras (Onboard / utilitarias)
+
+    Os 4 `entidade_id_*` capturam ownership estrutural (entity dona, adm,
+    gestor, custodiante) -- enable joins multi-tenant com tabelas que carregam
+    `EntidadeId` (ex.: ContaBancaria) sem nome-matching.
     """
 
     __tablename__ = "wh_dim_unidade_administrativa"
@@ -145,3 +156,10 @@ class DimUnidadeAdministrativa(Auditable, Base):
     nome: Mapped[str] = mapped_column(String(200), nullable=False)
     ativa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     classe: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    # Estrutural (Bitfin.UnidadeAdministrativa.Tipo + Entidade*).
+    tipo: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    entidade_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    entidade_id_administradora: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    entidade_id_gestora: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    entidade_id_custodiante: Mapped[int | None] = mapped_column(Integer, nullable=True)

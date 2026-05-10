@@ -1,5 +1,18 @@
 """Schemas da L2 Operacoes2 (refatoracao 2026-05-03).
 
+VOP Potencial (2026-05-09):
+- VOP Potencial = vop_realizado_mtd + caixa_disponivel + liquidacoes_previstas
+- Apurado para o mes corrente, consolidado e por UA.
+- Default: filtra UAs com `tipo IN (1, 2)` (FIDC + Securitizadora). Quando o
+  usuario passa `ua_id` explicito, respeita a selecao (incluindo Onboard tipo
+  NULL se quiser).
+- Caixa: ultima snapshot por (UA, conta) com flags estruturais (`ativa=true`,
+  `eh_escrow=false`, `eh_caucao=false`, `eh_travada=false`).
+- Liquidacoes: titulos com `situacao=0`, `saldo_devedor>0`, `sustado=false`,
+  `data_de_vencimento_efetiva` entre hoje e fim do mes.
+- Filtro `produto_sigla` aplica-se APENAS a `vop_realizado_mtd` (caixa e
+  liquidacoes nao tem dimensao produto canonica).
+
 A pagina gira em torno de 5 indicadores-chave (VOP, Taxa, Prazo, Produto Top,
 Receita Contratada) expostos num KPI Strip global, e 5 abas que sao lentes de
 aprofundamento:
@@ -37,6 +50,7 @@ Decisao de design (2026-05-08, Aba 0 Mes corrente):
   (depende de cedente_id em wh_operacao).
 """
 
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -690,3 +704,48 @@ class AbaMesCorrenteData(BaseModel):
     dimensions_disponiveis: list[Dimension] = Field(
         default_factory=lambda: ["produto", "ua", "faixa_ticket"]
     )
+
+
+# ─── VOP Potencial ───────────────────────────────────────────────────────────
+
+
+class VopPotencialPorUa(BaseModel):
+    """Decomposicao por UA do VOP Potencial."""
+
+    ua_id: int
+    ua_nome: str
+    ua_tipo: int | None = Field(
+        description="Bitfin.UnidadeAdministrativa.Tipo: 1=FIDC, 2=Securitizadora, NULL=Outras"
+    )
+    vop_realizado_mtd: float = Field(description="VOP efetivado entre mes_inicio e hoje, em BRL")
+    caixa_disponivel: float = Field(
+        description="Saldo total das contas livres da UA (sem escrow/caucao/trava), em BRL"
+    )
+    liquidacoes_previstas: float = Field(
+        description="Soma de saldo_devedor de titulos com vencimento entre hoje e mes_fim, em BRL"
+    )
+    vop_potencial: float = Field(description="vop_realizado_mtd + caixa + liquidacoes_previstas")
+
+
+class VopPotencialData(BaseModel):
+    """VOP Potencial -- consolidado e por UA.
+
+    Janela temporal: mes corrente. `vop_realizado_mtd` cobre [mes_inicio, hoje];
+    `liquidacoes_previstas` cobre (hoje, mes_fim]; `caixa_disponivel` e snapshot
+    em `hoje` (ultima posicao conhecida por conta).
+
+    Quando o filtro `ua_id` da pagina e None, default e `tipo IN (1, 2)`.
+    """
+
+    mes_inicio: date
+    mes_fim: date
+    hoje: date
+
+    # Consolidado das UAs incluidas
+    vop_realizado_mtd: float
+    caixa_disponivel: float
+    liquidacoes_previstas: float
+    vop_potencial: float
+
+    # Quebra por UA (sempre presente; lista vazia se nenhuma UA elegivel)
+    por_ua: list[VopPotencialPorUa]
