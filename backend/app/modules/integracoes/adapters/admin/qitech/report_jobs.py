@@ -327,6 +327,27 @@ async def process_fidc_estoque_callback(
             "job_id": str(job.id),
         }
 
+    # 2.5. Validacao defensiva: fileLink precisa ser URL HTTP(S) absoluta.
+    #      Sem essa guarda, callback com fileLink vazio (ou malformado)
+    #      entrava pelo caminho feliz: marcavamos SUCCESS, tentavamos GET,
+    #      httpx levantava UnsupportedProtocolError, e o job acabava em
+    #      ERROR. A janela curta de "SUCCESS com result_file_link=''" no
+    #      DB confunde leitores concorrentes. Aqui rejeitamos antes de
+    #      transicionar status.
+    if not file_link or not file_link.startswith(("http://", "https://")):
+        job.error_message = (
+            f"callback rejeitado: fileLink invalido "
+            f"(esperado URL http(s)://, recebido {file_link!r})"
+        )
+        job.status = QitechJobStatus.ERROR
+        await db.commit()
+        return {
+            "ok": False,
+            "idempotent": False,
+            "error": job.error_message,
+            "job_id": str(job.id),
+        }
+
     # 3. Atualiza job com fileLink e expiry estimado
     job.qitech_webhook_id = qitech_webhook_id
     job.result_file_link = file_link
