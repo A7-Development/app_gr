@@ -58,8 +58,13 @@ class QitechJobStatus(enum.StrEnum):
     """Estados do ciclo de vida de um job QiTech.
 
     Valores QITech: WAITING, PROCESSING, SUCCESS, CANCELED, ERROR.
-    Adicionados por nos: TIMEOUT (job que ficou WAITING > N minutos sem
-    callback — provavelmente perdido na fila).
+    Adicionados por nos:
+    - TIMEOUT: job que ficou WAITING > N minutos sem callback (provavelmente
+      perdido na fila).
+    - EMPTY: callback chegou com fileLink valido mas o CSV baixado tem 0 bytes.
+      Sintoma observado: QiTech responde 200/SUCCESS mas o relatorio vem
+      vazio — caso real em 2026-05-08 (REALINVEST FIDC). Mantemos separado de
+      ERROR pra distinguir "QiTech falhou em gerar" de "download falhou".
     """
 
     WAITING = "WAITING"
@@ -68,6 +73,7 @@ class QitechJobStatus(enum.StrEnum):
     CANCELED = "CANCELED"
     ERROR = "ERROR"
     TIMEOUT = "TIMEOUT"
+    EMPTY = "EMPTY"
 
 
 class QitechReportJob(Base):

@@ -357,8 +357,12 @@ function HeroKpi({
 function StatusBadge({ job }: { job: QitechJob }) {
   if (job.status === "SUCCESS") return <Badge variant="success">Disponivel</Badge>
   if (job.status === "ERROR") return <Badge variant="error">Falhou</Badge>
-  if (job.status === "EXPIRED")
-    return <Badge variant="neutral">Expirado</Badge>
+  if (job.status === "TIMEOUT")
+    return <Badge variant="error">Tempo esgotado</Badge>
+  if (job.status === "EMPTY")
+    return <Badge variant="warning">Sem dados</Badge>
+  if (job.status === "CANCELED")
+    return <Badge variant="neutral">Cancelado</Badge>
   // WAITING / PROCESSING: mostra timer inline pra evidenciar progresso
   const elapsed = formatElapsed(job.created_at)
   const label = job.status === "WAITING" ? "Aguardando" : "Em processamento"
@@ -455,7 +459,12 @@ function makeColumns({
             </div>
           )
         }
-        if (job.status === "ERROR") {
+        if (
+          job.status === "ERROR" ||
+          job.status === "TIMEOUT" ||
+          job.status === "CANCELED" ||
+          job.status === "EMPTY"
+        ) {
           return (
             <div className="flex justify-end">
               <Button

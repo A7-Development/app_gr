@@ -411,6 +411,78 @@ async def test_process_callback_idempotente(tenant_a: Tenant, csv_text: str):
 
 
 @pytest.mark.asyncio
+async def test_process_callback_csv_vazio_marca_empty(tenant_a: Tenant):
+    """Caso real: QiTech responde 200 com fileLink mas CSV baixado tem 0 bytes.
+
+    Cenario observado em 2026-05-08 (REALINVEST FIDC): callback chegou normal,
+    download retornou 200 mas com corpo vazio. Sem o check explicito, o mapper
+    produz 0 linhas e o job vai pra SUCCESS silencioso. Agora marcamos EMPTY
+    com error_message claro pra a UI evidenciar.
+    """
+    qitech_job_id = f"job-empty-{uuid4().hex}"
+
+    async with AsyncSessionLocal() as db:
+        job = QitechReportJob(
+            tenant_id=tenant_a.id,
+            environment=Environment.PRODUCTION,
+            report_type="fidc-estoque",
+            cnpj_fundo="42449234000160",
+            reference_date=DATA_REF,
+            request_body={"x": 1},
+            qitech_job_id=qitech_job_id,
+            callback_url_used="https://test/callback",
+            callback_token="e" * 32,
+            status=QitechJobStatus.WAITING,
+            triggered_by="user:test",
+        )
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+        job_id = job.id
+
+    file_link = "https://fidc-custodia.s3.amazonaws.com/empty.csv?Expires=1778942307"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        # 200 OK mas corpo de 0 bytes — replica o sintoma da QiTech
+        return httpx.Response(200, text="")
+
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    async with AsyncSessionLocal() as db:
+        result = await process_fidc_estoque_callback(
+            db=db,
+            local_job_id=job_id,
+            qitech_job_id=qitech_job_id,
+            file_link=file_link,
+            qitech_webhook_id=1,
+            http_client=mock_client,
+        )
+    await mock_client.aclose()
+
+    assert result["ok"] is False
+    assert result["rows_canonical"] == 0
+    assert "vazio" in result["error"].lower()
+
+    async with AsyncSessionLocal() as db:
+        job_updated = await db.get(QitechReportJob, job_id)
+        assert job_updated is not None
+        assert job_updated.status == QitechJobStatus.EMPTY
+        assert job_updated.error_message is not None
+        assert "0 bytes" in job_updated.error_message
+        assert job_updated.result_downloaded_at is not None
+        assert job_updated.completed_at is not None
+        # Nao deve ter ingerido nada
+        canon = (
+            await db.execute(
+                select(EstoqueRecebivel).where(
+                    EstoqueRecebivel.tenant_id == tenant_a.id
+                )
+            )
+        ).scalars().all()
+        assert len(canon) == 0
+
+
+@pytest.mark.asyncio
 async def test_process_callback_local_job_id_desconhecido_levanta():
     """Callback com local_job_id que nao existe no DB -> ValueError (orphan/spoof)."""
     with pytest.raises(ValueError, match="desconhecido"):

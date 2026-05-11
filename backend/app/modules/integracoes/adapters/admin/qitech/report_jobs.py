@@ -367,13 +367,41 @@ async def process_fidc_estoque_callback(
             "job_id": str(job.id),
         }
 
+    # 4a. Deteccao de relatorio vazio (0 bytes).
+    #     Sintoma observado em 2026-05-08 (REALINVEST FIDC): QiTech respondeu
+    #     200, mandou callback com fileLink valido, mas o CSV baixado tem 0
+    #     bytes — nem header. Sem esse check, o mapper produz 0 linhas e o
+    #     job vai pra SUCCESS silencioso, e a UI exibe "Disponivel" pra um
+    #     snapshot vazio. Marcamos EMPTY pra deixar explicito que foi falha
+    #     do lado da QiTech (distinto de ERROR, que e falha de rede/HTTP).
+    #     Heuristica conservadora: SO 0 bytes. Header presente + 0 linhas
+    #     fica como SUCCESS (pode ser fundo legitimamente sem posicao).
+    csv_bytes = len(csv_text.encode("utf-8"))
+    if csv_bytes == 0:
+        job.error_message = (
+            "QiTech retornou arquivo vazio (0 bytes) — provavel falha na "
+            "geracao do relatorio do lado da QiTech. Re-disparar pode resolver."
+        )
+        job.status = QitechJobStatus.EMPTY
+        job.result_downloaded_at = datetime.now(UTC)
+        job.completed_at = datetime.now(UTC)
+        await db.commit()
+        return {
+            "ok": False,
+            "idempotent": False,
+            "rows_canonical": 0,
+            "error": job.error_message,
+            "job_id": str(job.id),
+            "qitech_job_id": job.qitech_job_id,
+        }
+
     # 5. Salva raw (em wh_qitech_raw_relatorio com payload_text=CSV)
     fetched_at = datetime.now(UTC)
     payload_meta = {
         "format": "csv",
         "delimiter": ";",
         "rows_estimate": csv_text.count("\n"),
-        "bytes": len(csv_text.encode("utf-8")),
+        "bytes": csv_bytes,
         "qitech_webhook_id": qitech_webhook_id,
         "qitech_job_id": job.qitech_job_id,
     }

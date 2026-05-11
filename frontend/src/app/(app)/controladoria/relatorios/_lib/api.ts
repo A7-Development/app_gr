@@ -172,8 +172,10 @@ export type QitechJobStatus =
   | "WAITING"
   | "PROCESSING"
   | "SUCCESS"
+  | "CANCELED"
   | "ERROR"
-  | "EXPIRED"
+  | "TIMEOUT"
+  | "EMPTY"
 
 export type QitechJob = {
   id: string
