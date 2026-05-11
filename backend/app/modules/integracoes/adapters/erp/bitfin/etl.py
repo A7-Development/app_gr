@@ -28,6 +28,11 @@ from app.modules.integracoes.adapters.erp.bitfin.hashing import sha256_of_row
 from app.modules.integracoes.adapters.erp.bitfin.queries import analytics, bitfin
 from app.modules.integracoes.adapters.erp.bitfin.version import ADAPTER_VERSION
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
+from app.warehouse.bitfin_raw_dre import (
+    TIPO_ORIGEM_DEMONSTRATIVO,
+    TIPO_ORIGEM_VW_DRE,
+    BitfinRawDre,
+)
 from app.warehouse.caixa_snapshot import CaixaSnapshot
 from app.warehouse.dim import (
     DimDreClassificacao,
@@ -353,6 +358,136 @@ async def sync_dre_mensal(
     return {"table": "wh_dre_mensal", "rows": count}
 
 
+# ---- Bronze (raw) sync handlers --------------------------------------------
+#
+# Camada raw do DRE Bitfin (CLAUDE.md §13.2). Cada handler agrupa as linhas
+# do fetch por competencia e grava 1 row de bronze por competencia
+# (payload = JSONB array de linhas). UQ (tenant, tipo_origem, competencia,
+# payload_sha256) dedupe fetch identico via ON CONFLICT DO NOTHING — fetch
+# com qualquer alteracao no conteudo gera nova row preservando o historico
+# de snapshots.
+
+
+def _group_rows_by_competencia(
+    rows: list[dict], competencia_key: str = "competencia"
+) -> dict[date, list[dict]]:
+    """Agrupa rows do fetch por competencia (descartando colunas exclusivamente
+    de snapshot, como `snapshot_at` do DemonstrativoDeResultado, que mudam
+    a cada rebuild da fonte e invalidariam o dedup via sha)."""
+    by_comp: dict[date, list[dict]] = {}
+    for row in rows:
+        comp = row[competencia_key]
+        # Conteudo "negocio" — sem snapshot_at (timestamp do rebuild do Bitfin).
+        content = {k: v for k, v in row.items() if k != "snapshot_at"}
+        by_comp.setdefault(comp, []).append(content)
+    return by_comp
+
+
+async def _upsert_bronze_dre(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    tipo_origem: str,
+    competencia: date,
+    payload: list[dict],
+) -> bool:
+    """Grava 1 row de bronze. Retorna True se inseriu, False se ja existia
+    (mesmo conteudo -> mesmo sha -> ON CONFLICT DO NOTHING)."""
+    sha = sha256_of_row({"items": payload})
+    row = {
+        "tenant_id": tenant_id,
+        "tipo_origem": tipo_origem,
+        "competencia": competencia,
+        "payload": payload,
+        "row_count": len(payload),
+        "payload_sha256": sha,
+        "fetched_at": datetime.now(UTC),
+        "fetched_by_version": ADAPTER_VERSION,
+    }
+    stmt = pg_insert(BitfinRawDre.__table__).values(row).on_conflict_do_nothing(
+        constraint="uq_wh_bitfin_raw_dre"
+    )
+    result = await db.execute(stmt)
+    return result.rowcount > 0
+
+
+async def sync_bitfin_raw_dre_demonstrativo(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
+    """Bronze: snapshot granular de `UNLTD_A7CREDIT.dbo.DemonstrativoDeResultado`.
+
+    Fetch full por competencia (>= since). Bitfin rebuilda o snapshot
+    inteiro de cada competencia periodicamente; o dedup via sha garante
+    que rebuild sem mudanca de conteudo seja no-op.
+    """
+    cutoff = since or EPOCH
+    rows = await asyncio.to_thread(
+        fetch_rows,
+        config,
+        config.database_bitfin,
+        bitfin.SELECT_DRE_DEMONSTRATIVO_RAW,
+        (cutoff,),
+    )
+    by_comp = _group_rows_by_competencia(rows)
+    inserted = 0
+    async with AsyncSessionLocal() as db:
+        for comp, payload in by_comp.items():
+            if await _upsert_bronze_dre(
+                db,
+                tenant_id=tenant_id,
+                tipo_origem=TIPO_ORIGEM_DEMONSTRATIVO,
+                competencia=comp,
+                payload=payload,
+            ):
+                inserted += 1
+        await db.commit()
+    return {
+        "table": "wh_bitfin_raw_dre",
+        "tipo_origem": TIPO_ORIGEM_DEMONSTRATIVO,
+        "competencias_processed": len(by_comp),
+        "rows": inserted,
+    }
+
+
+async def sync_bitfin_raw_dre_vw(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
+    """Bronze: snapshot consolidado de `ANALYTICS.dbo.vw_DRE`.
+
+    Mantido como espelho do que o Bitfin reporta como DRE — fonte para
+    reconciliacao "nossa regra vs Bitfin". O silver `wh_dre_mensal` hoje
+    le direto desta view (sync_dre_mensal); PR 3 vai trocar para ler do
+    bronze, eliminando o fetch duplicado.
+    """
+    cutoff = since or EPOCH
+    rows = await asyncio.to_thread(
+        fetch_rows,
+        config,
+        config.database_analytics,
+        analytics.SELECT_DRE_VW_RAW,
+        (cutoff,),
+    )
+    by_comp = _group_rows_by_competencia(rows)
+    inserted = 0
+    async with AsyncSessionLocal() as db:
+        for comp, payload in by_comp.items():
+            if await _upsert_bronze_dre(
+                db,
+                tenant_id=tenant_id,
+                tipo_origem=TIPO_ORIGEM_VW_DRE,
+                competencia=comp,
+                payload=payload,
+            ):
+                inserted += 1
+        await db.commit()
+    return {
+        "table": "wh_bitfin_raw_dre",
+        "tipo_origem": TIPO_ORIGEM_VW_DRE,
+        "competencias_processed": len(by_comp),
+        "rows": inserted,
+    }
+
+
 async def sync_dim_mes(
     tenant_id: UUID, config: BitfinConfig, since: date | None = None
 ) -> dict[str, Any]:
@@ -441,6 +576,10 @@ SYNC_PIPELINE = [
     sync_operacao,
     sync_operacao_item,
     sync_titulo,
+    # Bronze antes do silver: PR 3 vai refatorar sync_dre_mensal pra ler
+    # do bronze, eliminando o fetch duplicado contra vw_DRE.
+    sync_bitfin_raw_dre_demonstrativo,
+    sync_bitfin_raw_dre_vw,
     sync_dre_mensal,
     sync_caixa_snapshot,
 ]

@@ -45,6 +45,23 @@ FROM dbo.vw_DRE
 WHERE Competencia > ?
 """
 
+# Bronze: mesma view, mas inclui a competencia do `since` (>= em vez de >)
+# para que o snapshot bronze daquela competencia seja capturado por inteiro
+# em todo fetch — habilita dedup via payload_sha256 quando conteudo nao mudou.
+SELECT_DRE_VW_RAW = """
+SELECT
+    Ano AS ano, Mes AS mes, Competencia AS competencia,
+    OrdemGrupo AS ordem_grupo, GrupoDRE AS grupo_dre, SubGrupo AS subgrupo, Descricao AS descricao,
+    Receita AS receita, Custo AS custo, Resultado AS resultado, Quantidade AS quantidade,
+    Fornecedor AS fornecedor, FornecedorDocumento AS fornecedor_documento,
+    EntidadeId AS entidade_id, ProdutoId AS produto_id,
+    UnidadeAdministrativaId AS unidade_administrativa_id,
+    Fonte AS fonte
+FROM dbo.vw_DRE
+WHERE Competencia >= ?
+ORDER BY Competencia, OrdemGrupo, GrupoDRE, SubGrupo, Descricao
+"""
+
 SELECT_DIM_MES = """
 SELECT
     MesAno AS mes_ano, Ano AS ano, Mes AS mes,

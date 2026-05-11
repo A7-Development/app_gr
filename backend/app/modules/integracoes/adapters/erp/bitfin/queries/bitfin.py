@@ -1,5 +1,29 @@
 """Queries contra o database UNLTD_A7CREDIT (Bitfin ERP)."""
 
+SELECT_DRE_DEMONSTRATIVO_RAW = """
+SELECT
+    Ano AS ano, Mes AS mes,
+    -- Competencia derivada de (Ano, Mes) — DemonstrativoDeResultado nao tem
+    -- coluna explicita; e o campo natural para agrupar o snapshot na bronze.
+    CAST(DATEFROMPARTS(Ano, Mes, 1) AS DATE) AS competencia,
+    Data AS snapshot_at,
+    Categoria AS categoria, Descricao AS descricao,
+    TotalApurado AS total_apurado,
+    Quantidade AS quantidade,
+    TotalDoCusto AS total_do_custo,
+    Resultado AS resultado,
+    EntidadeId AS entidade_id,
+    ProdutoId AS produto_id,
+    UnidadeAdministrativaId AS unidade_administrativa_id,
+    GerenteId AS gerente_id,
+    SubgerenteId AS subgerente_id,
+    SuperintendenteId AS superintendente_id,
+    DiretorId AS diretor_id
+FROM dbo.DemonstrativoDeResultado
+WHERE DATEFROMPARTS(Ano, Mes, 1) >= ?
+ORDER BY competencia, EntidadeId, Categoria, Descricao
+"""
+
 SELECT_OPERACAO = """
 SELECT
     o.OperacaoId AS operacao_id,
