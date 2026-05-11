@@ -130,14 +130,25 @@ async def dispatch_fidc_estoque(
         )
         existing = (await db.execute(dup_stmt)).scalar_one_or_none()
         if existing is not None:
+            # Payload estruturado pro frontend reconhecer o caso e abrir
+            # confirm dialog "ja existe snapshot, forcar novo?" em vez de
+            # mostrar string crua. Campos viajam em `detail.context`.
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Ja existe snapshot SUCCESS para CNPJ {cnpj_digits} em "
-                    f"{payload.reference_date.isoformat()} (job_id={existing.id}, "
-                    f"criado {existing.created_at.isoformat()}). "
-                    f"Use ?force=true para forcar novo disparo."
-                ),
+                detail={
+                    "code": "DUPLICATE_SUCCESS",
+                    "message": (
+                        f"Ja existe snapshot SUCCESS para CNPJ {cnpj_digits} em "
+                        f"{payload.reference_date.isoformat()}. Use force=true "
+                        f"para forcar novo disparo."
+                    ),
+                    "context": {
+                        "existing_job_id": str(existing.id),
+                        "existing_created_at": existing.created_at.isoformat(),
+                        "cnpj_fundo": cnpj_digits,
+                        "reference_date": payload.reference_date.isoformat(),
+                    },
+                },
             )
 
     # 1. Resolve UA pelo CNPJ do fundo (multi-UA Phase F).

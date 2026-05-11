@@ -61,12 +61,14 @@ import {
 } from "@/design-system/components"
 import { tableTokens } from "@/design-system/tokens/table"
 import { useUAs } from "@/lib/hooks/cadastros"
+import { ApiError } from "@/lib/api-client"
 import { cx } from "@/lib/utils"
 
 import {
   qitechJobs,
   relatorios,
   type DispatchFidcEstoquePayload,
+  type DuplicateSuccessDetail,
   type QitechJob,
   type QitechJobStatus,
 } from "../../../_lib/api"
@@ -110,12 +112,15 @@ export function SnapshotsLanding() {
   })
 
   // Re-disparar — usa o cnpj_fundo + reference_date do job original.
+  // force=true porque clicar Re-disparar e acao deliberada — se houver
+  // SUCCESS recente conflictante, o usuario ja decidiu sobrescrever.
   const redispatchMut = useMutation({
     mutationFn: (job: QitechJob) =>
       qitechJobs.dispatchFidcEstoque({
         cnpj_fundo: job.cnpj_fundo,
         reference_date: job.reference_date,
         environment: job.environment,
+        force: true,
       }),
     onSuccess: (newJob) => {
       toast.success(
@@ -218,6 +223,7 @@ export function SnapshotsLanding() {
         open={dispatchOpen}
         onClose={() => setDispatchOpen(false)}
         fundos={fundos}
+        jobs={jobsQuery.data ?? []}
       />
     </div>
   )
@@ -502,10 +508,12 @@ function DispatchSnapshotDialog({
   open,
   onClose,
   fundos,
+  jobs,
 }: {
   open: boolean
   onClose: () => void
   fundos: UAOption[]
+  jobs: QitechJob[]
 }) {
   const qc = useQueryClient()
 
@@ -528,14 +536,61 @@ function DispatchSnapshotDialog({
   const [fundoId, setFundoId] = React.useState(initialFundoId)
   const [referenceDate, setReferenceDate] = React.useState(yesterdayISO)
   const [error, setError] = React.useState<string | null>(null)
+  // Quando achamos um SUCCESS recente pra (cnpj, data) — seja localmente
+  // antes do POST ou via 409 do backend (race) — guardamos aqui o payload
+  // pendente + o job em conflito. Renderiza o sub-dialog ConfirmForce.
+  const [pendingForce, setPendingForce] = React.useState<{
+    payload: DispatchFidcEstoquePayload
+    existingJob: QitechJob | null
+    serverMessage: string | null
+  } | null>(null)
 
   React.useEffect(() => {
     if (open) {
       setFundoId(initialFundoId)
       setReferenceDate(yesterdayISO)
       setError(null)
+      setPendingForce(null)
     }
   }, [open, initialFundoId, yesterdayISO])
+
+  // Procura SUCCESS recente (< 24h) pra (cnpj, ref_date) na lista local
+  // de jobs — espelha o gate do backend em qitech_jobs.py::dispatch.
+  const findRecentSuccess = React.useCallback(
+    (cnpj: string, refDate: string): QitechJob | null => {
+      const cutoff = Date.now() - 24 * 60 * 60 * 1000
+      return (
+        jobs.find(
+          (j) =>
+            j.cnpj_fundo === cnpj &&
+            j.reference_date === refDate &&
+            j.status === "SUCCESS" &&
+            new Date(j.created_at).getTime() >= cutoff,
+        ) ?? null
+      )
+    },
+    [jobs],
+  )
+
+  // Procura ultima tentativa pra (cnpj, ref_date) que terminou em estado
+  // util de mostrar — error_message recente da QiTech (EMPTY, TIMEOUT,
+  // ERROR). Renderiza como aviso contextual no dialog.
+  const lastFailedAttempt = React.useMemo<QitechJob | null>(() => {
+    const fundo = fundosComCnpj.find((f) => f.id === fundoId)
+    if (!fundo?.cnpj || !/^\d{4}-\d{2}-\d{2}$/.test(referenceDate)) {
+      return null
+    }
+    return (
+      jobs.find(
+        (j) =>
+          j.cnpj_fundo === fundo.cnpj &&
+          j.reference_date === referenceDate &&
+          (j.status === "EMPTY" ||
+            j.status === "TIMEOUT" ||
+            j.status === "ERROR"),
+      ) ?? null
+    )
+  }, [jobs, fundosComCnpj, fundoId, referenceDate])
 
   const dispatchMut = useMutation({
     mutationFn: (payload: DispatchFidcEstoquePayload) =>
@@ -545,13 +600,28 @@ function DispatchSnapshotDialog({
         `Solicitacao enfileirada. JobId ${job.qitech_job_id} — vai aparecer na lista em segundos.`,
         { duration: 6000 },
       )
-      // Invalida a lista pra a nova row aparecer com status WAITING.
-      // Bundle nao precisa invalidar — a row "Disponivel" so aparece quando
-      // o callback chegar e o status flipar via polling.
       qc.invalidateQueries({ queryKey: ["integracoes", "qitech-jobs"] })
       onClose()
     },
-    onError: (err) => {
+    onError: (err, variables) => {
+      // Race condition: cliente nao tinha o job na lista (cache stale,
+      // outro user/tela disparou) mas backend tem. Abre o mesmo sub-dialog
+      // de confirm em vez de jogar string crua no usuario.
+      if (
+        err instanceof ApiError &&
+        err.status === 409 &&
+        typeof err.detail === "object" &&
+        err.detail !== null &&
+        (err.detail as { code?: string }).code === "DUPLICATE_SUCCESS"
+      ) {
+        const detail = err.detail as DuplicateSuccessDetail
+        setPendingForce({
+          payload: variables,
+          existingJob: null,
+          serverMessage: detail.message,
+        })
+        return
+      }
       const msg = err instanceof Error ? err.message : String(err)
       setError(msg)
       toast.error(`Falha ao solicitar: ${msg}`)
@@ -569,11 +639,28 @@ function DispatchSnapshotDialog({
       setError("Data de referencia precisa estar em YYYY-MM-DD.")
       return
     }
-    dispatchMut.mutate({
+    const payload: DispatchFidcEstoquePayload = {
       cnpj_fundo: fundo.cnpj,
       reference_date: referenceDate,
-    })
-  }, [fundoId, fundosComCnpj, referenceDate, dispatchMut])
+    }
+    const existing = findRecentSuccess(fundo.cnpj, referenceDate)
+    if (existing) {
+      setPendingForce({
+        payload,
+        existingJob: existing,
+        serverMessage: null,
+      })
+      return
+    }
+    dispatchMut.mutate(payload)
+  }, [fundoId, fundosComCnpj, referenceDate, dispatchMut, findRecentSuccess])
+
+  const handleConfirmForce = React.useCallback(() => {
+    if (!pendingForce) return
+    const p = pendingForce.payload
+    setPendingForce(null)
+    dispatchMut.mutate({ ...p, force: true })
+  }, [pendingForce, dispatchMut])
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -625,6 +712,23 @@ function DispatchSnapshotDialog({
             </p>
           </div>
 
+          {lastFailedAttempt && (
+            <div className="flex flex-col gap-1 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
+              <div className="flex items-center gap-1.5">
+                <Badge variant="warning">Atencao</Badge>
+                <span className="font-medium text-gray-900 dark:text-gray-50">
+                  Tentativa anterior: {failedLabel(lastFailedAttempt.status)}
+                  {" "}({formatElapsed(lastFailedAttempt.created_at)} atras)
+                </span>
+              </div>
+              {lastFailedAttempt.error_message && (
+                <span className="text-gray-600 dark:text-gray-400">
+                  {lastFailedAttempt.error_message}
+                </span>
+              )}
+            </div>
+          )}
+
           {error && (
             <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-700 dark:bg-red-950 dark:text-red-300">
               {error}
@@ -645,6 +749,67 @@ function DispatchSnapshotDialog({
             disabled={dispatchMut.isPending || fundosComCnpj.length === 0}
           >
             {dispatchMut.isPending ? "Enviando..." : "Solicitar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+
+      <ConfirmForceDialog
+        pending={pendingForce}
+        isPending={dispatchMut.isPending}
+        onCancel={() => setPendingForce(null)}
+        onConfirm={handleConfirmForce}
+      />
+    </Dialog>
+  )
+}
+
+function failedLabel(status: QitechJobStatus): string {
+  if (status === "EMPTY") return "veio vazia (Sem dados)"
+  if (status === "TIMEOUT") return "timeout"
+  if (status === "ERROR") return "erro"
+  return status
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ConfirmForceDialog — sub-dialog "ja existe snapshot, forcar novo?"
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ConfirmForceDialog({
+  pending,
+  isPending,
+  onCancel,
+  onConfirm,
+}: {
+  pending: {
+    payload: DispatchFidcEstoquePayload
+    existingJob: QitechJob | null
+    serverMessage: string | null
+  } | null
+  isPending: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const open = pending !== null
+  const existing = pending?.existingJob
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Ja existe snapshot pra esta data</DialogTitle>
+          <DialogDescription>
+            {existing
+              ? `Snapshot baixado em ${formatDateBR(existing.reference_date)} foi gerado ha ${formatElapsed(existing.created_at)}. Forcar novo disparo vai consumir uma consulta paga na QiTech e sobrescrever os dados canonicos quando o callback voltar.`
+              : pending?.serverMessage ??
+                "Outro disparo recente ja foi feito. Confirmar forca novo disparo."}
+          </DialogDescription>
+        </DialogHeader>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onCancel} disabled={isPending}>
+            Cancelar
+          </Button>
+          <Button onClick={onConfirm} disabled={isPending}>
+            {isPending ? "Enviando..." : "Forcar novo disparo"}
           </Button>
         </DialogFooter>
       </DialogContent>

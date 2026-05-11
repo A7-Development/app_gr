@@ -197,15 +197,34 @@ export type DispatchFidcEstoquePayload = {
   cnpj_fundo: string
   reference_date: string  // YYYY-MM-DD
   environment?: "production" | "sandbox"
+  /** Se true, ignora o gate anti-duplicate do backend (snapshot SUCCESS
+   * recente pra mesma data). Usado quando o usuario confirma "Forcar novo"
+   * no dialog ou quando re-dispara de uma linha existente. */
+  force?: boolean
+}
+
+/** Shape do `detail` quando o backend rejeita por duplicate (HTTP 409).
+ * Espelha `qitech_jobs.py::dispatch_fidc_estoque` quando `code = DUPLICATE_SUCCESS`. */
+export type DuplicateSuccessDetail = {
+  code: "DUPLICATE_SUCCESS"
+  message: string
+  context: {
+    existing_job_id: string
+    existing_created_at: string
+    cnpj_fundo: string
+    reference_date: string
+  }
 }
 
 export const qitechJobs = {
   dispatchFidcEstoque: async (
     payload: DispatchFidcEstoquePayload,
   ): Promise<QitechJob> => {
+    const { force, ...body } = payload
+    const qs = force ? "?force=true" : ""
     return apiClient.post<QitechJob>(
-      "/integracoes/qitech/jobs/fidc-estoque/dispatch",
-      { environment: "production", ...payload },
+      `/integracoes/qitech/jobs/fidc-estoque/dispatch${qs}`,
+      { environment: "production", ...body },
     )
   },
 
