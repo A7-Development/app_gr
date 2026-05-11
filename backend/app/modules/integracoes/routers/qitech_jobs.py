@@ -13,7 +13,8 @@ Auth: require_module(Module.INTEGRACOES, Permission.WRITE/READ).
 
 from __future__ import annotations
 
-from datetime import date
+import re
+from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -95,6 +96,7 @@ async def dispatch_fidc_estoque(
     payload: DispatchFidcEstoquePayload,
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    force: Annotated[bool, Query()] = False,
     _: None = _GuardWrite,
 ) -> JobOut:
     """Dispara POST /v2/queue/scheduler/report/fidc-estoque + cria job no DB.
@@ -102,7 +104,42 @@ async def dispatch_fidc_estoque(
     QiTech responde imediatamente com {jobId, status:WAITING}; o callback
     chega minutos depois em /webhooks/qitech/job-callback. Ate la, o status
     fica WAITING ou PROCESSING — UI pode pollar GET /jobs pra atualizar.
+
+    Anti-duplicate: por default rejeita disparos para (cnpj_fundo,
+    reference_date) que ja tem SUCCESS nas ultimas 24h. O administrador
+    (Singulare/QiTech) costuma marcar duplicata como ERROR silente,
+    queimando uma consulta paga sem retornar nada util. Passe `?force=true`
+    pra ignorar essa guarda (ex.: snapshot anterior corrompido).
     """
+    # 0. Anti-duplicate: existe SUCCESS recente pra mesma (cnpj, ref_date)?
+    cnpj_digits = re.sub(r"\D", "", payload.cnpj_fundo)
+    if not force:
+        recent_cutoff = datetime.now(UTC) - timedelta(hours=24)
+        dup_stmt = (
+            select(QitechReportJob)
+            .where(
+                QitechReportJob.tenant_id == principal.tenant_id,
+                QitechReportJob.report_type == "fidc-estoque",
+                QitechReportJob.cnpj_fundo == cnpj_digits,
+                QitechReportJob.reference_date == payload.reference_date,
+                QitechReportJob.status == QitechJobStatus.SUCCESS,
+                QitechReportJob.created_at >= recent_cutoff,
+            )
+            .order_by(desc(QitechReportJob.created_at))
+            .limit(1)
+        )
+        existing = (await db.execute(dup_stmt)).scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Ja existe snapshot SUCCESS para CNPJ {cnpj_digits} em "
+                    f"{payload.reference_date.isoformat()} (job_id={existing.id}, "
+                    f"criado {existing.created_at.isoformat()}). "
+                    f"Use ?force=true para forcar novo disparo."
+                ),
+            )
+
     # 1. Resolve UA pelo CNPJ do fundo (multi-UA Phase F).
     #    Espelha pattern do qitech_custodia.py — sem isso, dispatch so
     #    encontra config legacy (UA=NULL) e ignora a config por UA.

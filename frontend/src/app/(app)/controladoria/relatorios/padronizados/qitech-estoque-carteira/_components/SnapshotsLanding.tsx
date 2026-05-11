@@ -94,7 +94,8 @@ export function SnapshotsLanding() {
     staleTime: 30_000,
   })
 
-  // Lista de jobs com polling 30s enquanto ha WAITING/PROCESSING.
+  // Lista de jobs com polling: 5s enquanto ha WAITING/PROCESSING (badge
+  // transita rapido pra Disponivel/Falhou), off quando todos terminaram.
   const jobsQuery = useQuery({
     queryKey: ["integracoes", "qitech-jobs", "fidc-estoque"] as const,
     queryFn: () => qitechJobs.list({ report_type: "fidc-estoque", limit: 50 }),
@@ -104,7 +105,7 @@ export function SnapshotsLanding() {
       const hasPending = data.some(
         (j) => j.status === "WAITING" || j.status === "PROCESSING",
       )
-      return hasPending ? 30_000 : false
+      return hasPending ? 5_000 : false
     },
   })
 

@@ -44,7 +44,7 @@ from app.modules.integracoes.models.qitech_report_job import (
 )
 from app.modules.integracoes.services.source_config import (
     decrypt_config,
-    get_config,
+    list_configs,
 )
 
 logger = logging.getLogger("gr.integracoes.qitech.polling")
@@ -166,41 +166,58 @@ async def _process_group(
 
     Retorna (n_status_atualizado, n_timeout).
     """
-    # Carrega config QiTech do tenant
+    # Carrega TODAS as configs QiTech do tenant (uma por UA).
+    # Multi-UA (Phase F): get_config(... unidade_administrativa_id=None) so
+    # casa linha legacy com UA=NULL. Quando o tenant tem config por UA real,
+    # essa chamada retornava None silenciosamente e o poller agia como se
+    # nao tivesse credencial — marcando TIMEOUT com mensagem enganosa
+    # "nao apareceu na lista QiTech". Bug identificado 2026-05-11.
     async with AsyncSessionLocal() as db:
-        cfg_row = await get_config(
+        cfg_rows = await list_configs(
             db, tenant_id, SourceType.ADMIN_QITECH, environment
         )
 
-    config: QiTechConfig | None = None
-    if cfg_row is not None:
+    configs: list[QiTechConfig] = []
+    for cfg_row in cfg_rows:
         plain = decrypt_config(cfg_row.config)
         candidate = QiTechConfig.from_dict(plain)
         if candidate.has_credentials():
-            config = candidate
+            configs.append(candidate)
 
     qitech_status_by_id: dict[str, str] = {}
-    if config is None:
-        # Tenant com jobs pendentes mas sem config valida (ex.: config QiTech
-        # removida por migracao multi-UA). Nao da pra pollar a API; ainda
-        # assim aplicamos timeout por idade, senao WAITING fica pendurado
-        # para sempre e este branch se repete a cada tick.
+    if not configs:
+        # Tenant com jobs pendentes mas sem nenhuma config valida.
+        # Aplicamos apenas timeout por idade pra nao deixar WAITING
+        # pendurado pra sempre.
         logger.debug(
-            "tenant=%s sem config QiTech; aplicando apenas timeout por idade",
+            "tenant=%s sem config QiTech valida; aplicando apenas timeout",
             tenant_id,
         )
     else:
-        qitech_jobs = await _list_qitech_jobs_for_tenant(
-            tenant_id=tenant_id,
-            environment=environment,
-            config=config,
-            report_type=report_type,
-        )
-        for j in qitech_jobs:
-            task_id = j.get("taskId") or j.get("jobId")
-            st = j.get("status")
-            if task_id and st:
-                qitech_status_by_id[str(task_id)] = str(st)
+        # Cada UA pode enxergar apenas seus proprios jobs (auth-scoped).
+        # Iteramos e mesclamos — jobs do nosso DB podem ter vindo de
+        # qualquer uma das credenciais.
+        for cfg in configs:
+            try:
+                qitech_jobs = await _list_qitech_jobs_for_tenant(
+                    tenant_id=tenant_id,
+                    environment=environment,
+                    config=cfg,
+                    report_type=report_type,
+                )
+            except Exception as e:
+                logger.warning(
+                    "tenant=%s falha ao listar fila com 1 das configs: %s: %s",
+                    tenant_id,
+                    type(e).__name__,
+                    e,
+                )
+                continue
+            for j in qitech_jobs:
+                task_id = j.get("taskId") or j.get("jobId")
+                st = j.get("status")
+                if task_id and st:
+                    qitech_status_by_id[str(task_id)] = str(st)
 
     # Atualiza local
     n_updated = 0
@@ -256,6 +273,18 @@ async def _process_group(
                             "nao chegou; fileLink desconhecido"
                         )
                         n_updated += 1
+                elif new_status == QitechJobStatus.ERROR:
+                    # Administrador (Singulare/QiTech) marcou ERROR no proprio
+                    # job. Sem CSV gerado, callback nao sera disparado — a
+                    # ausencia eterna nao e bug nosso. Propaga com mensagem
+                    # clara pra distinguir de TIMEOUT real.
+                    job.status = QitechJobStatus.ERROR
+                    if not job.error_message:
+                        job.error_message = (
+                            "polling: administrador reportou ERROR ao processar; "
+                            "sem fileLink, callback nao sera disparado"
+                        )
+                    n_updated += 1
                 else:
                     job.status = new_status
                     n_updated += 1

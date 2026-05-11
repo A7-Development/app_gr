@@ -16,6 +16,7 @@ import {
   integracoes,
   type ConfigUpdatePayload,
   type EndpointConfigPayload,
+  type EndpointDetail,
   type Environment,
   type SourceTypeId,
 } from "@/lib/api-client"
@@ -147,6 +148,17 @@ export function useSourceEndpoints(
       : ["integracoes", "endpoints", "none"],
     queryFn: () => integracoes.listEndpoints(sourceType!, environment, uaId),
     enabled: !!sourceType,
+    // Polling combinado: 5s enquanto houver sync em curso (badge "Em curso"
+    // transita pra OK/Erro sozinho), 30s caso contrario (captura sync
+    // disparado pelo scheduler sem interacao do usuario). Aba sem foco
+    // nao polla (refetchIntervalInBackground default false).
+    refetchInterval: (query) => {
+      const rows = query.state.data as EndpointDetail[] | undefined
+      const hasInProgress = rows?.some(
+        (e) => e.last_sync_status === "em_progresso",
+      )
+      return hasInProgress ? 5_000 : 30_000
+    },
   })
 }
 
