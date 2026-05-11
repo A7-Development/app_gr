@@ -157,6 +157,12 @@ export interface EChartsCardProps {
    * Mock = `undefined | null` (dot some).
    */
   provenance?:   Provenance | null
+  /**
+   * Quando true, remove a borda + shadow + bg branco do wrapper externo
+   * do card — usar quando o EChartsCard ja esta dentro de outro <Card>
+   * (evita "borda dupla"). Mantem o internal layout do header/footer/canvas.
+   */
+  embedded?:     boolean
   className?:    string
   echartsProps?: Omit<React.ComponentProps<typeof ReactECharts>, "option" | "style">
 }
@@ -173,6 +179,7 @@ export function EChartsCard({
   actions,
   footer,
   provenance,
+  embedded = false,
   className,
   echartsProps,
 }: EChartsCardProps) {
@@ -217,9 +224,12 @@ export function EChartsCard({
   return (
     <div
       className={cx(
-        "relative w-full rounded border shadow-xs",
-        "bg-white dark:bg-[#090E1A]",
-        "border-gray-200 dark:border-gray-900",
+        "relative w-full",
+        // Wrapper visual padrao: card com border + bg + shadow. Quando
+        // `embedded=true`, esses estilos somem porque ja existe outro
+        // <Card> em volta (evita "borda dupla"). Internals (header divider,
+        // footer divider) seguem renderizando normal se forem usados.
+        !embedded && "rounded border shadow-xs bg-white dark:bg-[#090E1A] border-gray-200 dark:border-gray-900",
         className,
       )}
     >

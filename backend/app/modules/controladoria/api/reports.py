@@ -98,7 +98,7 @@ async def rows(
     ] = None,
     page: Annotated[int, Query(ge=1, description="Pagina (1-based).")] = 1,
     page_size: Annotated[
-        int, Query(ge=1, le=500, description="Tamanho da pagina (max 500).")
+        int, Query(ge=1, le=10_000, description="Tamanho da pagina (max 10.000).")
     ] = 50,
     _: None = _Guard,
 ) -> RowsResponse:

@@ -45,6 +45,10 @@ export type ModuleId =
 
 export type ModuleSection = {
   name: string
+  // Rota de destino quando o item e clicado. Quando `children` esta definido,
+  // o parent e expand-only: `href` continua sendo usado APENAS como prefixo
+  // pra detectar quando algum filho esta ativo (auto-expand). Parent nao
+  // navega quando clicado. CLAUDE.md §11.6.
   href: string
   enabled: boolean
   // Icone proprio da secao. Fallback: icone do modulo (CLAUDE.md §11.6).
@@ -53,6 +57,9 @@ export type ModuleSection = {
   // valor (ex.: "OPERACAO", "FINANCEIRO"). Nao e grupo colapsavel —
   // apenas separador visual. Permitido por CLAUDE.md §11.6.
   groupLabel?: string
+  // Filhos aninhados (1 nivel max). Quando definido, item vira parent
+  // expand-only: nao navega, so abre/fecha. Permitido por CLAUDE.md §11.6.
+  children?: ModuleSection[]
 }
 
 // Paleta de avatar de modulo v0.4.0 (handoff A7 Credit v2, 2026-04-24).
@@ -236,9 +243,23 @@ export const MODULES: ModuleDefinition[] = [
       },
       {
         name: "Relatorios",
+        // Parent expand-only (sem destino navegavel — /controladoria/relatorios
+        // e 404). Href usado APENAS como prefixo de active-state propagation.
         href: "/controladoria/relatorios",
         enabled: true,
         icon: RiFileChart2Line,
+        children: [
+          {
+            name: "Padronizados",
+            href: "/controladoria/relatorios/padronizados",
+            enabled: true,
+          },
+          {
+            name: "Espelho Adm",
+            href: "/controladoria/relatorios/espelho",
+            enabled: true,
+          },
+        ],
       },
     ],
   },

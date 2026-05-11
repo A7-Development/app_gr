@@ -59,7 +59,7 @@
 > - §3 **arquitetura em 6 camadas** — `tremor/` continua nao-editavel, `surfaces/` continua sem importar de `components/dashboard`, etc.
 > - §11.1 **enum de modulos fechado** — sem modulo novo sem autorizacao.
 > - §11.3 **bounded contexts (backend)** — cross-import entre modulos so via `public.py`.
-> - §11.6 **hierarquia 3 niveis** de navegacao (L1/L2/L3) — sidebar nao aninha, max 3 niveis.
+> - §11.6 **hierarquia 3 niveis** de navegacao (L1/L2/L3) — sidebar pode aninhar 1 nivel (L2 com children), nunca mais. Max 3 niveis logicos.
 > - §10 **multi-tenant absoluto** (backend) — toda tabela tem `tenant_id`, toda query escopada.
 > - §13 **adapter pattern** (backend).
 > - §14 **proveniencia + auditabilidade** (DNA do sistema).
@@ -545,11 +545,11 @@ Toda navegacao do sistema respeita **3 niveis, nunca 4**. Usa apenas primitivos 
 
 | Nivel | Significado | Onde vive | Primitivo Tremor |
 |---|---|---|---|
-| **L1** | Modulo (um dos 8) | `ModuleSwitcher` no topo da sidebar (dropdown) | `DropdownMenu` |
-| **L2** | Secao/funcionalidade do modulo | Lista plana de links na sidebar (do modulo ativo) | `SidebarLink` |
+| **L1** | Modulo (um dos 9) | `ModuleSwitcher` no topo da sidebar (dropdown) | `DropdownMenu` |
+| **L2** | Secao/funcionalidade do modulo. Pode aninhar **1 nivel** de sub-itens (parent + children) — ver regra 2 abaixo. | Sidebar do modulo ativo | `SidebarLink` + parent expansivel custom |
 | **L3** | Abertura/drill-down/perspectiva | Tabs horizontais no topo da pagina | `TabNavigation` + `TabNavigationLink` |
 
-**Exemplo canonico — modulo BI:**
+**Exemplo canonico — modulo BI (lista plana):**
 
 ```
 L1 (dropdown no topo): [BI ▾]
@@ -560,11 +560,28 @@ L1 (dropdown no topo): [BI ▾]
                                 (dados publicos CVM FIDC — ver docs/integracao-cvm-fidc.md)
 ```
 
+**Exemplo de L2 com aninhamento — modulo Controladoria:**
+
+```
+L1 (dropdown no topo): [Controladoria ▾]
+    L2 (sidebar): Cota Sub          → /controladoria/cota-sub
+                  Pagamento Diario  → /controladoria/pagamento-diario
+                  ▾ Relatorios      ← parent expansivel (clicar so abre/fecha, nao navega)
+                      Padronizados  → /controladoria/relatorios/padronizados  → L3 tabs: ...
+                      Espelho Adm   → /controladoria/relatorios/espelho       → L3 tabs: ...
+```
+
+Sub-itens **sao L2 logicamente** — a numeracao L1/L2/L3 reflete tipos de navegacao, nao profundidade de UI. Aninhamento e sintatico; conceitualmente "Padronizados" e "Espelho Adm" continuam sendo destinos L2 do modulo.
+
 **Regras duras:**
 
 1. **Maximo 3 niveis.** Se surgir L4, o modulo precisa ser dividido OU aquilo vira filtro/modal/drawer — nunca 4o nivel de navegacao.
-2. **Sidebar nao aninha.** Sidebar mostra SO as secoes L2 do modulo ativo, como lista plana — sem grupos colapsaveis, sem arvore clicavel, sem expand/collapse. L3 sempre e `TabNavigation` na pagina.
-   - **Captions tipograficos sao permitidos:** se `ModuleSection.groupLabel` for definido, a sidebar renderiza o texto como separador visual antes do primeiro item do grupo (ex.: "OPERACAO", "FINANCEIRO"). Captions sao **apenas labels textuais nao clicaveis** — nao introduzem hierarquia, nao expandem/colapsam, nao alteram a contagem de niveis. Servem para densificar listas longas dentro de um modulo (ex.: BI agrupa "Visao geral / Operacao / Financeiro / Analise").
+2. **Sidebar pode aninhar 1 nivel (max 2 niveis de UI).** Secao L2 pode ter `children: ModuleSection[]` que renderizam como sub-itens com expand/collapse. Aninhamento de 2+ niveis (filho-de-filho) e **proibido** — vira L3 na pagina (TabNavigation), filtro/drawer, ou divisao de modulo. Sub-itens **sao L2 logicamente** — a numeracao L1/L2/L3 reflete tipos de navegacao, nao profundidade de UI.
+   - **Parent expansivel = expand-only.** Clicar no parent **nao navega** (so abre/fecha). O `href` do parent serve apenas como prefixo de active-state propagation (auto-expand quando filho casa com pathname) — nunca como destino de URL real. Quando nao houver landing util pro parent, a rota correspondente deve 404 (ou nao existir).
+   - **Auto-expand on deep link / navegacao:** quando user entra direto numa URL filha (refresh, link compartilhado, navegacao externa), o parent abre automaticamente via `useEffect` reagindo a mudanca de pathname.
+   - **Collapse manual persiste:** depois do parent ja aberto, user pode recolher mesmo com filho ativo. Auto-expand so re-dispara em mudanca de pathname — nao briga com a vontade do usuario.
+   - **Modo collapsed (56px):** filhos nao aparecem. Parent vira link pro primeiro filho habilitado (fallback de discoverability), tooltip mostra o nome do parent. Esta e a unica situacao em que parent "navega" — divergencia consciente da regra expand-only justificada pela impossibilidade de mostrar filhos em 56px.
+   - **Captions tipograficos sao permitidos:** se `ModuleSection.groupLabel` for definido, a sidebar renderiza o texto como separador visual antes do primeiro item do grupo (ex.: "OPERACAO", "FINANCEIRO"). Captions sao **apenas labels textuais nao clicaveis** — nao introduzem hierarquia, nao expandem/colapsam, nao alteram a contagem de niveis. Servem para densificar listas longas dentro de um modulo (ex.: BI agrupa "Visao geral / Operacao / Financeiro / Analise"). **Aninhamento e captions sao mecanicas complementares**, nao mutuamente exclusivas — escolha por intencao: caption para agrupar itens autonomos; nesting quando o parent representa um escopo natural (ex.: "Relatorios" engloba "Padronizados" e "Espelho Adm").
 3. **URL e a fonte unica da verdade.** Modulo, secao, tab e filtros sao todos deep-linkaveis (ex.: `/bi/carteira?tab=por-produto&periodo=30d`). O modulo ativo e inferido do pathname.
 4. **Troca entre modulos (L1) e SEMPRE pelo `ModuleSwitcher`** (dropdown no topo da sidebar). O switcher lista os modulos com subscription + permissao; demais ficam em "Em breve" (disabled). Sem icon rail, sem module picker separado do header, sem tabs de modulo.
 5. **Breadcrumbs sticky no header** mostram o path: `Modulo > Secao > Pagina` (L1 > L2 > L3).
@@ -573,6 +590,7 @@ L1 (dropdown no topo): [BI ▾]
 
 - L1 ativo: `ModuleSwitcher` exibe o modulo inferido de `getActiveModule(pathname)` (em `src/lib/modules.ts`) com avatar colorido + nome + permissao.
 - L2 ativo: `SidebarLink` com `isActive={pathname.startsWith(section.href)}` — borda/texto azul via `data-active=true`.
+- L2 aninhado: parent expande automaticamente quando algum filho casa com `pathname.startsWith(child.href)`. Estado de expansao em memoria (`expandedMap` em `AppSidebar`) — inicializado via `useState(() => ...)` no mount para evitar flash, re-aplicado via `useEffect` em mudancas de pathname/modulo.
 - L3 ativo: `TabNavigationLink active={pathname includes tab}` ou comparacao com search param.
 
 **Avatars de modulo — cor canonica (handoff v2, 2026-04-24):**
@@ -869,7 +887,7 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] Dark mode testado?
 - [ ] Strings de UI em pt-BR?
 - [ ] **Pagina respeita regra de 3 niveis (L1 sidebar grupo / L2 sidebar sub-item / L3 TabNavigation)?**
-- [ ] **Sidebar nao aninha em 3+ niveis (L3 sempre como tabs na pagina, nunca sub-sub-item)?**
+- [ ] **Sidebar aninha no maximo 1 nivel (parent + children — sem filho-de-filho)? L3 vai pra TabNavigation na pagina, nunca como 2o nivel de nesting na sidebar?**
 - [ ] **Estado de navegacao (modulo/secao/tab/filtros) e deep-linkavel via URL?**
 - [ ] **Pagina nasce de um pattern canonico em `src/design-system/patterns/` (DashboardBiPadrao / DashboardOperacional / ListagemComDrilldown / ListagemCrudInline / ListagemCrudExpand / ListagemCrudCards) — divergencia tem `// MOTIVO:` no header do arquivo?**
 - [ ] **Listagem CRUD/admin tabular usa `<DataTableShell>` (nao monta `Card + FilterSearch + DataTable` manual)?**

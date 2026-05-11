@@ -35,11 +35,11 @@ from app.shared.endpoint_catalog import EndpointSpec, ScheduleKind
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def test_qitech_catalog_has_12_endpoints():
+def test_qitech_catalog_has_13_endpoints():
     """Documenta o tamanho atual do catalogo. Trocar este numero exige
     batalha consciente — adicionar endpoint = atualizar este teste +
     snapshot da migration."""
-    assert len(QITECH_ENDPOINTS) == 12
+    assert len(QITECH_ENDPOINTS) == 13
 
 
 def test_qitech_catalog_names_unique():
@@ -85,6 +85,9 @@ EXPECTED_QITECH_SNAPSHOT = [
     ("market.rentabilidade", "daily_at", "09:00"),
     ("market.rf", "daily_at", "08:00"),
     ("market.rf_compromissadas", "daily_at", "08:00"),
+    # Adicionado em 2026-05-10 — seed via migration `c4b9e8f2a1d3_seed_qitech_fidc_estoque_endpoint.py`.
+    # Snapshot original em `d5bf3669b8a0_endpoint_scheduling.py` ja em prod, nao editar.
+    ("market.fidc_estoque", "on_demand", None),
     ("bank_account.balance", "daily_at", "19:00"),
     ("bank_account.statement", "interval", "60"),
 ]
@@ -188,7 +191,7 @@ def test_endpoint_spec_accepts_on_demand_with_null():
 
 def test_endpoint_catalog_qitech():
     cat = endpoint_catalog(SourceType.ADMIN_QITECH)
-    assert len(cat) == 12
+    assert len(cat) == 13
     assert cat[0].name == "market.outros_fundos"
 
 

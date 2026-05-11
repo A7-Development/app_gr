@@ -11,13 +11,14 @@ import { usePathname } from "next/navigation"
 import * as TooltipPrimitive from "@radix-ui/react-tooltip"
 import * as AvatarPrimitive from "@radix-ui/react-avatar"
 import {
+  RiArrowDownSLine,
   RiHome5Line,
   RiSettings3Line,
   RiLayoutLeftLine,
   RiLayoutRightLine,
 } from "@remixicon/react"
 import { cx, focusRing } from "@/lib/utils"
-import { getActiveModule, MODULE_AVATAR_COLORS } from "@/lib/modules"
+import { getActiveModule, MODULE_AVATAR_COLORS, type ModuleSection } from "@/lib/modules"
 import { Button } from "@/components/tremor/Button"
 import { ApprovalQueueBadge } from "@/design-system/components/ApprovalQueueBadge"
 import { ModuleSwitcher } from "@/design-system/components/ModuleSwitcher"
@@ -206,6 +207,132 @@ function NavLinkCollapsed({
   )
 }
 
+// Parent expansivel — secao L2 com `children: ModuleSection[]`. Clicar no
+// parent so abre/fecha (nao navega), e o `href` do parent serve apenas como
+// prefixo de active-state propagation pra auto-expansao (ver useEffect em
+// AppSidebar). Em modo collapsed (56px) os filhos nao aparecem; o parent vira
+// link pro primeiro filho como fallback de discoverability. CLAUDE.md §11.6.
+function NavParent({
+  section,
+  pathname,
+  expanded,
+  onToggle,
+  collapsed,
+  icon: Icon,
+  badgeCounts,
+}: {
+  section: ModuleSection
+  pathname: string
+  expanded: boolean
+  onToggle: () => void
+  collapsed: boolean
+  icon: React.ElementType
+  badgeCounts: BadgeCounts
+}) {
+  const children = section.children ?? []
+  const childActive = children.some(
+    (c) => c.enabled && pathname.startsWith(c.href),
+  )
+
+  if (collapsed) {
+    // Pela regra do CLAUDE.md §11.6, parent expand-only nao navega em modo
+    // expandido. Em 56px nao da pra mostrar os filhos — entao "primeiro filho
+    // habilitado" e o destino default. Tooltip mostra o nome do parent.
+    const firstEnabledChild = children.find((c) => c.enabled) ?? children[0]
+    return (
+      <NavLinkCollapsed
+        label={section.name}
+        href={firstEnabledChild?.href ?? section.href}
+        icon={Icon}
+        isActive={childActive}
+      />
+    )
+  }
+
+  return (
+    <>
+      {/* <button> cru intencional: este e um trigger de expand/collapse, nao um CTA. Usar <Button>
+          do Tremor implicaria estilos de botao (px-3 py-2, shadow, rounded base) que conflitam
+          com a linguagem visual de NavLink (h-8, rounded, sem shadow). Excecao documentada (CLAUDE.md §6). */}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-controls={`sidebar-children-${section.name}`}
+        className={cx(
+          "relative flex h-8 w-full items-center gap-2.5 rounded px-2 text-sm",
+          "border-l-2 border-l-transparent",
+          "transition-colors duration-100",
+          "text-gray-700 dark:text-gray-400",
+          "hover:bg-gray-100 dark:hover:bg-gray-900 hover:text-gray-900 dark:hover:text-gray-50",
+          focusRing,
+        )}
+      >
+        <Icon className="size-[18px] shrink-0" aria-hidden="true" />
+        <span className="flex-1 truncate text-left">{section.name}</span>
+        <RiArrowDownSLine
+          className={cx(
+            "size-4 shrink-0 text-gray-400 dark:text-gray-500 transition-transform duration-150",
+            !expanded && "-rotate-90",
+          )}
+          aria-hidden="true"
+        />
+      </button>
+
+      {expanded && (
+        <div
+          id={`sidebar-children-${section.name}`}
+          className="flex flex-col gap-0.5"
+        >
+          {children.map((child) => {
+            const isActive = child.enabled && pathname.startsWith(child.href)
+            const className = cx(
+              "relative flex h-8 w-full items-center rounded text-sm",
+              "transition-colors duration-100",
+              isActive
+                ? "border-l-2 border-l-blue-500 pl-[34px]"
+                : "border-l-2 border-l-transparent pl-9",
+              "pr-2",
+              isActive
+                ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                : !child.enabled
+                ? "pointer-events-none text-gray-400 dark:text-gray-600"
+                : "text-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-900 hover:text-gray-900 dark:hover:text-gray-50",
+              focusRing,
+            )
+
+            const inner = (
+              <>
+                <span className="flex-1 truncate">{child.name}</span>
+                <ApprovalQueueBadge count={badgeCounts[child.href] ?? 0} />
+              </>
+            )
+
+            if (!child.enabled) {
+              return (
+                <span key={child.name} className={className} aria-disabled="true">
+                  {inner}
+                </span>
+              )
+            }
+
+            return (
+              <Link
+                key={child.name}
+                href={child.href}
+                aria-current={isActive ? "page" : undefined}
+                className={className}
+              >
+                {inner}
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </>
+  )
+}
+
 export interface AppSidebarProps {
   user?: { name: string; email?: string; imageUrl?: string }
   badgeCounts?: BadgeCounts
@@ -220,6 +347,46 @@ export function AppSidebar({
   const pathname = usePathname()
   const activeModule = React.useMemo(() => getActiveModule(pathname), [pathname])
   const { collapsed, toggle } = useSidebarCollapsed()
+
+  // Estado de expand/collapse por parent com children (CLAUDE.md §11.6).
+  // Inicializa expandido quando algum filho ja casa com o pathname (deep link
+  // / refresh). A partir dai e controle manual do usuario — o useEffect abaixo
+  // so RE-expande quando o pathname muda (navegacao). Manual collapse persiste
+  // entre cliques no chevron mesmo com filho ativo.
+  const [expandedMap, setExpandedMap] = React.useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {}
+    for (const section of activeModule.sections) {
+      if (
+        section.children &&
+        section.children.some((c) => c.enabled && pathname.startsWith(c.href))
+      ) {
+        init[section.name] = true
+      }
+    }
+    return init
+  })
+
+  React.useEffect(() => {
+    setExpandedMap((prev) => {
+      let next = prev
+      for (const section of activeModule.sections) {
+        if (
+          section.children &&
+          section.children.some((c) => c.enabled && pathname.startsWith(c.href))
+        ) {
+          if (!next[section.name]) {
+            if (next === prev) next = { ...prev }
+            next[section.name] = true
+          }
+        }
+      }
+      return next
+    })
+  }, [pathname, activeModule])
+
+  const toggleExpanded = React.useCallback((name: string) => {
+    setExpandedMap((prev) => ({ ...prev, [name]: !prev[name] }))
+  }, [])
 
   const w = collapsed ? "w-[56px]" : "w-[240px]"
 
@@ -306,11 +473,19 @@ export function AppSidebar({
         )}
         <div className={cx("flex flex-col", collapsed ? "items-center gap-0.5" : "gap-0.5")}>
           {activeModule.sections.map((section, idx) => {
+            const hasChildren = !!section.children && section.children.length > 0
+            const childActive =
+              hasChildren &&
+              section.children!.some((c) => c.enabled && pathname.startsWith(c.href))
             const isActive =
               section.enabled &&
               section.href !== "#" &&
-              pathname.startsWith(section.href)
+              (childActive || pathname.startsWith(section.href))
             const Icon = section.icon ?? activeModule.icon
+            // Expansao e puramente controlada por expandedMap. Auto-expand on
+            // pathname change vive no useEffect acima — assim usuario pode
+            // recolher manualmente mesmo com filho ativo.
+            const expanded = !!expandedMap[section.name]
 
             // Renderizar caption tipografico quando groupLabel muda em
             // relacao ao item anterior. Nao e grupo colapsavel — apenas
@@ -334,7 +509,17 @@ export function AppSidebar({
                 {showCollapsedDivider && (
                   <div className="my-1 h-px w-6 bg-gray-200 dark:bg-gray-800" aria-hidden="true" />
                 )}
-                {collapsed ? (
+                {hasChildren ? (
+                  <NavParent
+                    section={section}
+                    pathname={pathname}
+                    expanded={expanded}
+                    onToggle={() => toggleExpanded(section.name)}
+                    collapsed={collapsed}
+                    icon={Icon}
+                    badgeCounts={badgeCounts}
+                  />
+                ) : collapsed ? (
                   <NavLinkCollapsed
                     label={section.name}
                     href={section.enabled ? section.href : "#"}

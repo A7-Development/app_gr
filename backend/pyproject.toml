@@ -38,6 +38,8 @@ dependencies = [
     # Utilities
     "python-multipart>=0.0.17",  # form data support for FastAPI
     "email-validator>=2.2.0",
+    # Excel export (scripts/export_*.py, futuro catalogo de relatorios).
+    "openpyxl>=3.1,<4",
 ]
 
 [project.optional-dependencies]

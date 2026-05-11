@@ -1,30 +1,25 @@
-// src/app/(app)/controladoria/relatorios/page.tsx
+// src/app/(app)/controladoria/relatorios/_components/RelatoriosCatalog.tsx
 //
-// Catalogo unico de relatorios das administradoras (QiTech, ...).
-// Pattern tabular canonico: <DataTableShell> (mesma familia de
-// /admin/ia/providers, /credito/agentes). Density compact por padrao.
+// Catalogo de relatorios — composicao compartilhada entre as duas L2:
+//   - /controladoria/relatorios/padronizados
+//   - /controladoria/relatorios/espelho
 //
-// L1 Controladoria > L2 Relatorios > L3 [Padronizados | Espelho da Administradora]
+// Decisao 2026-05-09 preservada: ambos os segmentos leem o MESMO catalogo
+// (Opcao A — lente operacional). Diferenca entre segmentos e visual:
+//   - Padronizados: foco em entidade canonica (sem coluna Administradora).
+//   - Espelho: foco na administradora (coluna extra + drill-down inclui admin).
 //
-// Decisao 2026-05-09: ambas as tabs leem o MESMO catalogo (Opcao A —
-// lente operacional). Diferenca entre tabs e visual:
-//   - Padronizados: foco em entidade canonica.
-//   - Espelho: foco na administradora (frescor + reprocessar + logs vem na Phase 4).
-//
-// Plano: ~/.claude/plans/shimmering-snuggling-snail.md.
+// Refator 2026-05-10: tab L3 (TabNavigation) substituida por L2 na sidebar
+// (caption 'Relatorios' + 2 itens). Plano: conversa em chat 2026-05-10.
 
 "use client"
 
 import * as React from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 import { RiArrowRightSLine, RiFileChart2Line } from "@remixicon/react"
 
-import {
-  TabNavigation,
-  TabNavigationLink,
-} from "@/components/tremor/TabNavigation"
 import {
   DataTableShell,
   PageHeader,
@@ -37,14 +32,9 @@ import {
 } from "@/design-system/tokens/report-category"
 import { cx } from "@/lib/utils"
 
-import { relatorios, type ReportCard, type ReportRefreshKind } from "./_lib/api"
+import { relatorios, type ReportCard, type ReportRefreshKind } from "../_lib/api"
 
-type TabKey = "padronizados" | "espelho"
-
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "padronizados", label: "Padronizados" },
-  { key: "espelho", label: "Espelho da Administradora" },
-]
+export type RelatoriosSegment = "padronizados" | "espelho"
 
 const REFRESH_KIND_LABEL: Record<ReportRefreshKind, string> = {
   daily: "Diario",
@@ -56,16 +46,49 @@ const ADMIN_LABEL: Record<string, string> = {
   "admin:qitech": "QiTech",
 }
 
+// TEMPORARIO (2026-05-10) — coluna de diagnostico exibindo o endpoint real
+// chamado no vendor para cada relatorio. Espelha:
+//   - backend/app/modules/integracoes/adapters/admin/qitech/endpoints.py
+//   - backend/.../qitech/reports.py::TIPOS_DE_MERCADO_CONHECIDOS
+//   - backend/.../qitech/report_jobs.py (POST async do fidc-estoque)
+// Quando o backend expor `endpoint_path` no ReportCard, remover este mapa.
+const QITECH_ENDPOINT_ADDRESS: Record<string, string> = {
+  "market.outros_fundos":      "GET /v2/netreport/report/market/outros-fundos/{data}",
+  "market.conta_corrente":     "GET /v2/netreport/report/market/conta-corrente/{data}",
+  "market.tesouraria":         "GET /v2/netreport/report/market/tesouraria/{data}",
+  "market.outros_ativos":      "GET /v2/netreport/report/market/outros-ativos/{data}",
+  "market.demonstrativo_caixa":"GET /v2/netreport/report/market/demonstrativo-caixa/{data}",
+  "market.cpr":                "GET /v2/netreport/report/market/cpr/{data}",
+  "market.mec":                "GET /v2/netreport/report/market/mec/{data}",
+  "market.rentabilidade":      "GET /v2/netreport/report/market/rentabilidade/{data}",
+  "market.rf":                 "GET /v2/netreport/report/market/rf/{data}",
+  "market.rf_compromissadas":  "GET /v2/netreport/report/market/rf-compromissadas/{data}",
+  "market.fidc_estoque":       "POST /v2/queue/scheduler/report/fidc-estoque",
+  "bank_account.balance":      "GET /v2/conta-corrente/bank-account/balance/{agencia}/{conta}/{data}",
+  "bank_account.statement":    "GET /v2/conta-corrente/bank-account/statement/{agencia}/{conta}/{inicio}/{fim}",
+}
+
+const SEGMENT_META: Record<
+  RelatoriosSegment,
+  { title: string; info: string; subtitle: string }
+> = {
+  padronizados: {
+    title: "Relatorios Padronizados",
+    info: "Formato A7 canonico — comparavel entre administradoras (QiTech, ...). Use quando voce quer a mesma metrica/visao independente de quem operou o fundo.",
+    subtitle: "Controladoria · Relatorios",
+  },
+  espelho: {
+    title: "Espelho da Administradora",
+    info: "Lente operacional fiel ao formato da administradora (QiTech, ...). Use para reconciliacao, conferencia de extratos e auditoria.",
+    subtitle: "Controladoria · Relatorios",
+  },
+}
+
 const col = createColumnHelper<ReportCard>()
 
-export default function RelatoriosPage() {
+export function RelatoriosCatalog({ segment }: { segment: RelatoriosSegment }) {
   const router = useRouter()
-  const sp = useSearchParams()
-  const tabParam = sp.get("tab")
-  const tab: TabKey =
-    tabParam === "espelho" || tabParam === "padronizados"
-      ? tabParam
-      : "padronizados"
+  const meta = SEGMENT_META[segment]
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["controladoria", "relatorios", "catalog"],
@@ -75,28 +98,19 @@ export default function RelatoriosPage() {
   const reports = data?.reports ?? []
 
   const [search, setSearch] = React.useState("")
-  const [segment, setSegment] = React.useState<"todos" | ReportCategoryId>(
-    "todos",
-  )
-
-  const setTab = React.useCallback(
-    (next: TabKey) => {
-      const params = new URLSearchParams(sp.toString())
-      params.set("tab", next)
-      router.replace(`?${params.toString()}`, { scroll: false })
-    },
-    [router, sp],
-  )
+  const [segmentFilter, setSegmentFilter] = React.useState<
+    "todos" | ReportCategoryId
+  >("todos")
 
   const onRowClick = React.useCallback(
     (row: ReportCard) => {
       const adminSegment =
-        tab === "espelho"
+        segment === "espelho"
           ? `espelho/${row.administradora.split(":")[1] ?? "qitech"}`
           : "padronizados"
       router.push(`/controladoria/relatorios/${adminSegment}/${row.slug}`)
     },
-    [router, tab],
+    [router, segment],
   )
 
   const columns = React.useMemo<ColumnDef<ReportCard, unknown>[]>(
@@ -139,7 +153,7 @@ export default function RelatoriosPage() {
       // "Administradora" so faz sentido em Espelho. Em Padronizados a fonte
       // e abstraida (multi-admin canonicalization e followup — quando 2a admin
       // entrar, Padronizados ganha coluna "Cobertura" agregando admins).
-      ...(tab === "espelho"
+      ...(segment === "espelho"
         ? [
             col.accessor("administradora", {
               header: "Administradora",
@@ -149,6 +163,24 @@ export default function RelatoriosPage() {
                   {ADMIN_LABEL[info.getValue()] ?? info.getValue()}
                 </span>
               ),
+            }) as ColumnDef<ReportCard, unknown>,
+            // TEMPORARIO (2026-05-10) — coluna de diagnostico. Remover quando
+            // o backend expuser `endpoint_path` direto no ReportCard.
+            col.accessor("endpoint_name", {
+              header: "Endpoint",
+              size: 460,
+              cell: (info) => {
+                const name = info.getValue() as string
+                const addr = QITECH_ENDPOINT_ADDRESS[name]
+                return (
+                  <span
+                    className={cx(tableTokens.cellTextMono, "line-clamp-1")}
+                    title={addr ?? name}
+                  >
+                    {addr ?? name}
+                  </span>
+                )
+              },
             }) as ColumnDef<ReportCard, unknown>,
           ]
         : []),
@@ -181,7 +213,7 @@ export default function RelatoriosPage() {
         ),
       }) as ColumnDef<ReportCard, unknown>,
     ],
-    [tab],
+    [segment],
   )
 
   const segmentOptions: {
@@ -202,24 +234,10 @@ export default function RelatoriosPage() {
   return (
     <div className="flex flex-col gap-6 px-6 pt-5 pb-6">
       <PageHeader
-        title="Relatorios"
-        info="Catalogo de relatorios das administradoras (QiTech, ...). Padronizados = formato A7 comparavel; Espelho = lente operacional fiel ao adapter."
-        subtitle="Controladoria · Catalogo"
+        title={meta.title}
+        info={meta.info}
+        subtitle={meta.subtitle}
       />
-
-      <TabNavigation>
-        {TABS.map((t) => (
-          <TabNavigationLink key={t.key} asChild active={tab === t.key}>
-            <button
-              onClick={() => setTab(t.key)}
-              className="cursor-pointer"
-              aria-current={tab === t.key ? "page" : undefined}
-            >
-              {t.label}
-            </button>
-          </TabNavigationLink>
-        ))}
-      </TabNavigation>
 
       <DataTableShell<ReportCard>
         data={reports}
@@ -233,8 +251,8 @@ export default function RelatoriosPage() {
           placeholder: "Buscar por nome ou descricao...",
         }}
         segments={{
-          value: segment,
-          onChange: (v) => setSegment(v as typeof segment),
+          value: segmentFilter,
+          onChange: (v) => setSegmentFilter(v as typeof segmentFilter),
           options: segmentOptions,
         }}
         itemNoun={{ singular: "relatorio", plural: "relatorios" }}

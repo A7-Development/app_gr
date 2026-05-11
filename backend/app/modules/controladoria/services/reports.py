@@ -60,18 +60,26 @@ async def _reflect(db: AsyncSession, table_name: str) -> Table:
 
     Reflection runs against the bound engine of the active session — this
     works for both prod and test fixtures (each has its own engine).
+
+    Bug historico (2026-05-10): a versao anterior fazia `bind = db.get_bind()`
+    + `async with bind.connect() as conn`. Mas `AsyncSession.get_bind()`
+    retorna o **sync** engine; `sync_engine.connect()` devolve `Connection`
+    sync que nao suporta `async with` + `run_sync` no asyncpg, levantando
+    `MissingGreenlet`. Foi mascarado ate hoje porque nenhum slug efetivamente
+    rodava `_reflect` em prod — os 16 slugs do catalogo estavam placeholder.
+    Fix: usar `await db.connection()` que devolve `AsyncConnection` vinculada
+    a sessao (lifecycle gerenciado pelo SQLAlchemy).
     """
     if table_name in _TABLE_CACHE:
         return _TABLE_CACHE[table_name]
 
     metadata = MetaData()
-    bind = db.get_bind()
 
     def _reflect_sync(sync_conn: Any) -> Table:
         return Table(table_name, metadata, autoload_with=sync_conn)
 
-    async with bind.connect() as conn:
-        table = await conn.run_sync(_reflect_sync)
+    conn = await db.connection()
+    table = await conn.run_sync(_reflect_sync)
 
     _TABLE_CACHE[table_name] = table
     return table

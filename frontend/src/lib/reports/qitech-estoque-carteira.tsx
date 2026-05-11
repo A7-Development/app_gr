@@ -115,110 +115,221 @@ function formatDoc(doc: string | null | undefined): string {
   return doc
 }
 
+/**
+ * Prazo atual = dias restantes do recebivel a partir da `data_referencia`
+ * ate o `data_vencimento_ajustada`. Calculado no client porque o QiTech CSV
+ * nao manda esse campo (so envia `prazo` total). Quando o vencimento ja
+ * passou na data do snapshot, retorna numero negativo (dias em atraso).
+ */
+function computePrazoAtual(
+  dataReferencia: string | null | undefined,
+  dataVencimentoAjustada: string | null | undefined,
+): number | null {
+  if (!dataReferencia || !dataVencimentoAjustada) return null
+  const ref = new Date(dataReferencia)
+  const venc = new Date(dataVencimentoAjustada)
+  if (Number.isNaN(ref.getTime()) || Number.isNaN(venc.getTime())) return null
+  // Diff em dias corridos (UTC pra evitar surpresa de DST).
+  const msPerDay = 1000 * 60 * 60 * 24
+  return Math.round((venc.getTime() - ref.getTime()) / msPerDay)
+}
+
 // ─── Column defs ───────────────────────────────────────────────────────
 
 const col = createColumnHelper<EstoqueRecebivelRow>()
 
+// Helpers de cell pra valor monetario / taxa / inteiro — extraidos pra cortar
+// repeticao das 23 colunas. Mantem tudo via tableTokens.* (sem text-[Npx]).
+//
+// Regra dura: NENHUMA cell quebra em 2 linhas. Toda celula usa `block truncate`
+// + `title` no caso de texto livre (para hover mostrar o valor completo).
+// Numeros nao precisam de title — o valor completo ja eh visivel (ou
+// formatado por inteiro).
+
+function MoneyCell({ value }: { value: string | number | null | undefined }) {
+  return (
+    <span className={cx(tableTokens.cellNumber, "block truncate")}>
+      {formatBR(value)}
+    </span>
+  )
+}
+
+function DateCell({ value }: { value: string | null | undefined }) {
+  return (
+    <span className={cx(tableTokens.cellText, "block truncate")}>
+      {formatDateBR(value)}
+    </span>
+  )
+}
+
+function TaxaCell({ value }: { value: string | number | null | undefined }) {
+  const n = typeof value === "number" ? value : Number(value)
+  return (
+    <span className={cx(tableTokens.cellNumber, "block truncate")}>
+      {Number.isNaN(n) ? "—" : `${(n * 100).toFixed(4)}%`}
+    </span>
+  )
+}
+
+function IntCell({ value }: { value: number | null | undefined }) {
+  if (value === null || value === undefined) {
+    return (
+      <span className={cx(tableTokens.cellSecondary, "block truncate")}>—</span>
+    )
+  }
+  return (
+    <span className={cx(tableTokens.cellNumber, "block truncate")}>{value}</span>
+  )
+}
+
+/** Cell de texto que trunca em 1 linha + tooltip com valor completo no hover. */
+function TextCell({
+  value,
+  mono,
+}: {
+  value: string | null | undefined
+  mono?: boolean
+}) {
+  const text = value || "—"
+  return (
+    <span
+      className={cx(
+        mono ? tableTokens.cellTextMono : tableTokens.cellText,
+        "block truncate",
+      )}
+      title={text}
+    >
+      {text}
+    </span>
+  )
+}
+
 export const columns: ColumnDef<EstoqueRecebivelRow, unknown>[] = [
-  col.accessor("data_referencia", {
-    header: "Data ref.",
-    size: 100,
-    cell: (info) => (
-      <span className={tableTokens.cellText}>
-        {formatDateBR(info.getValue())}
-      </span>
-    ),
-  }) as ColumnDef<EstoqueRecebivelRow, unknown>,
   col.accessor("cedente_nome", {
-    header: "Cedente",
+    header: "Nome cedente",
     size: 220,
-    cell: (info) => (
-      <div className="flex flex-col">
-        <span className={cx(tableTokens.cellText, "line-clamp-1")}>
-          {info.getValue() || "—"}
-        </span>
-        <span className={cx(tableTokens.cellSecondary, "tabular-nums")}>
-          {formatDoc(info.row.original.cedente_doc)}
-        </span>
-      </div>
-    ),
+    cell: (info) => <TextCell value={info.getValue<string | null>()} />,
+  }) as ColumnDef<EstoqueRecebivelRow, unknown>,
+  col.accessor("cedente_doc", {
+    header: "Doc cedente",
+    size: 150,
+    cell: (info) => <TextCell value={formatDoc(info.getValue<string | null>())} mono />,
   }) as ColumnDef<EstoqueRecebivelRow, unknown>,
   col.accessor("sacado_nome", {
-    header: "Sacado",
+    header: "Nome sacado",
     size: 220,
-    cell: (info) => (
-      <div className="flex flex-col">
-        <span className={cx(tableTokens.cellText, "line-clamp-1")}>
-          {info.getValue() || "—"}
-        </span>
-        <span className={cx(tableTokens.cellSecondary, "tabular-nums")}>
-          {formatDoc(info.row.original.sacado_doc)}
-        </span>
-      </div>
-    ),
+    cell: (info) => <TextCell value={info.getValue<string | null>()} />,
+  }) as ColumnDef<EstoqueRecebivelRow, unknown>,
+  col.accessor("sacado_doc", {
+    header: "Doc sacado",
+    size: 150,
+    cell: (info) => <TextCell value={formatDoc(info.getValue<string | null>())} mono />,
+  }) as ColumnDef<EstoqueRecebivelRow, unknown>,
+  col.accessor("seu_numero", {
+    header: "Seu numero",
+    size: 120,
+    cell: (info) => <TextCell value={info.getValue<string | null>()} mono />,
   }) as ColumnDef<EstoqueRecebivelRow, unknown>,
   col.accessor("numero_documento", {
-    header: "Documento",
-    size: 130,
-    cell: (info) => (
-      <span className={tableTokens.cellTextMono}>{info.getValue() || "—"}</span>
-    ),
+    header: "Nu. documento",
+    size: 140,
+    cell: (info) => <TextCell value={info.getValue<string | null>()} mono />,
   }) as ColumnDef<EstoqueRecebivelRow, unknown>,
-  col.accessor("data_vencimento_ajustada", {
-    header: "Vencimento",
-    size: 110,
-    cell: (info) => (
-      <span className={tableTokens.cellText}>
-        {formatDateBR(info.getValue())}
-      </span>
-    ),
-  }) as ColumnDef<EstoqueRecebivelRow, unknown>,
-  col.accessor("valor_presente", {
-    header: "Valor presente",
-    size: 130,
-    cell: (info) => (
-      <span className={tableTokens.cellNumber}>{formatBR(info.getValue())}</span>
-    ),
+  col.accessor("tipo_recebivel", {
+    header: "Tipo recebivel",
+    size: 120,
+    cell: (info) => <TextCell value={info.getValue<string | null>()} />,
   }) as ColumnDef<EstoqueRecebivelRow, unknown>,
   col.accessor("valor_nominal", {
     header: "Valor nominal",
-    size: 130,
-    cell: (info) => (
-      <span className={tableTokens.cellNumber}>{formatBR(info.getValue())}</span>
-    ),
+    size: 140,
+    cell: (info) => <MoneyCell value={info.getValue()} />,
   }) as ColumnDef<EstoqueRecebivelRow, unknown>,
-  col.accessor("situacao_recebivel", {
-    header: "Situacao",
-    size: 130,
-    cell: (info) => (
-      <span className={tableTokens.cellText}>{info.getValue() || "—"}</span>
-    ),
+  col.accessor("valor_presente", {
+    header: "Valor presente",
+    size: 140,
+    cell: (info) => <MoneyCell value={info.getValue()} />,
+  }) as ColumnDef<EstoqueRecebivelRow, unknown>,
+  col.accessor("valor_aquisicao", {
+    header: "Valor aquisicao",
+    size: 140,
+    cell: (info) => <MoneyCell value={info.getValue()} />,
   }) as ColumnDef<EstoqueRecebivelRow, unknown>,
   col.accessor("valor_pdd", {
-    header: "PDD",
+    header: "Valor PDD",
+    size: 120,
+    cell: (info) => <MoneyCell value={info.getValue()} />,
+  }) as ColumnDef<EstoqueRecebivelRow, unknown>,
+  col.accessor("faixa_pdd", {
+    header: "Faixa PDD",
+    size: 90,
+    cell: (info) => <TextCell value={info.getValue<string | null>()} />,
+  }) as ColumnDef<EstoqueRecebivelRow, unknown>,
+  col.accessor("data_referencia", {
+    header: "Data ref.",
     size: 110,
-    cell: (info) => (
-      <span className={tableTokens.cellNumber}>{formatBR(info.getValue())}</span>
-    ),
+    cell: (info) => <DateCell value={info.getValue()} />,
+  }) as ColumnDef<EstoqueRecebivelRow, unknown>,
+  col.accessor("data_vencimento_original", {
+    header: "Vcto original",
+    size: 110,
+    cell: (info) => <DateCell value={info.getValue()} />,
+  }) as ColumnDef<EstoqueRecebivelRow, unknown>,
+  col.accessor("data_vencimento_ajustada", {
+    header: "Vcto ajustado",
+    size: 110,
+    cell: (info) => <DateCell value={info.getValue()} />,
+  }) as ColumnDef<EstoqueRecebivelRow, unknown>,
+  col.accessor("data_emissao", {
+    header: "Data emissao",
+    size: 110,
+    cell: (info) => <DateCell value={info.getValue()} />,
+  }) as ColumnDef<EstoqueRecebivelRow, unknown>,
+  col.accessor("data_aquisicao", {
+    header: "Data aquisicao",
+    size: 110,
+    cell: (info) => <DateCell value={info.getValue()} />,
+  }) as ColumnDef<EstoqueRecebivelRow, unknown>,
+  col.accessor("prazo", {
+    header: "Prazo",
+    size: 80,
+    cell: (info) => <IntCell value={info.getValue<number | null>()} />,
+  }) as ColumnDef<EstoqueRecebivelRow, unknown>,
+  // Prazo atual = dias entre data_referencia e data_vencimento_ajustada.
+  // Calculado client-side porque o CSV da QiTech nao manda esse campo.
+  // Acessor de funcao (col.accessor((row) => ...)) pra que sorting funcione.
+  col.accessor(
+    (row) =>
+      computePrazoAtual(row.data_referencia, row.data_vencimento_ajustada),
+    {
+      id: "prazo_atual",
+      header: "Prazo atual",
+      size: 100,
+      cell: (info) => <IntCell value={info.getValue<number | null>()} />,
+    },
+  ) as ColumnDef<EstoqueRecebivelRow, unknown>,
+  col.accessor("situacao_recebivel", {
+    header: "Situacao",
+    size: 120,
+    cell: (info) => <TextCell value={info.getValue<string | null>()} />,
   }) as ColumnDef<EstoqueRecebivelRow, unknown>,
   col.accessor("taxa_cessao", {
     header: "Taxa cessao",
     size: 110,
-    cell: (info) => {
-      const v = info.getValue()
-      const n = typeof v === "number" ? v : Number(v)
-      return (
-        <span className={tableTokens.cellNumber}>
-          {Number.isNaN(n) ? "—" : `${(n * 100).toFixed(4)}%`}
-        </span>
-      )
-    },
+    cell: (info) => <TaxaCell value={info.getValue()} />,
+  }) as ColumnDef<EstoqueRecebivelRow, unknown>,
+  col.accessor("taxa_recebivel", {
+    header: "Tx recebivel",
+    size: 110,
+    cell: (info) => <TaxaCell value={info.getValue()} />,
   }) as ColumnDef<EstoqueRecebivelRow, unknown>,
   col.accessor("coobrigacao", {
-    header: "Coobrig.",
-    size: 90,
+    header: "Coobrigacao",
+    size: 110,
     cell: (info) => (
-      <span className={tableTokens.cellSecondary}>
+      <span
+        className={cx(tableTokens.cellSecondary, "block truncate")}
+      >
         {info.getValue() ? "Sim" : "Nao"}
       </span>
     ),

@@ -112,12 +112,51 @@ async function request<T>(
   return (await res.json()) as T
 }
 
+/** GET de resposta binaria (CSV, XLSX, PDF). Usa o mesmo Bearer token. */
+async function requestBlob(path: string): Promise<Blob> {
+  const headers: Record<string, string> = {}
+  const token = getToken()
+  if (token) headers["Authorization"] = `Bearer ${token}`
+
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "GET",
+    headers,
+    cache: "no-store",
+  })
+
+  if (!res.ok) {
+    let detail: unknown = res.statusText
+    try {
+      const err = (await res.json()) as { detail?: unknown }
+      if (err.detail !== undefined && err.detail !== null) detail = err.detail
+    } catch {
+      // nao-JSON, fica statusText
+    }
+    if (res.status === 401) clearToken()
+    throw new ApiError(res.status, detail)
+  }
+  return await res.blob()
+}
+
+/** Forca download de um Blob no browser. Usado por endpoints CSV/XLSX. */
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 export const apiClient = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body),
   patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body),
   delete: <T>(path: string) => request<T>("DELETE", path),
+  getBlob: (path: string) => requestBlob(path),
 }
 
 //

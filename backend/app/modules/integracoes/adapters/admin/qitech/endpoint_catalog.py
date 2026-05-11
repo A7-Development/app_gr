@@ -1,7 +1,9 @@
 """QiTech adapter — declarative endpoint catalog.
 
-12 endpoints today (2026-05-05):
-    - 10 market reports (`etl.py::_PIPELINE`, soon to be deleted)
+13 endpoints today (2026-05-10):
+    - 10 market reports sincronos (`etl.py::_PIPELINE`, soon to be deleted)
+    - 1 market report assincrono (`fidc_estoque` via job + webhook em
+      `report_jobs.py`; ver `routers/webhooks.py::process_fidc_estoque_callback`)
     - 2 bank-account reports (`bank_account_sync.py`)
 
 Defaults follow the rough operational pattern of QiTech / Singulare:
@@ -112,6 +114,20 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="08:00",
         canonical_table="wh_posicao_compromissada",
+    ),
+    # Estoque do FIDC (carteira de recebiveis cedidos) — fluxo assincrono via
+    # job + webhook callback. POST /v2/queue/scheduler/report/fidc-estoque
+    # devolve jobId; QiTech processa e chama nosso /webhooks/qitech/job-callback.
+    # Ver `report_jobs.py::request_fidc_estoque_report` +
+    # `process_fidc_estoque_callback`. Default ON_DEMAND porque o disparo nao
+    # cabe no scheduler de polling — handler em adapter._HANDLERS pendente.
+    EndpointSpec(
+        name="market.fidc_estoque",
+        label="Mercado · Estoque do FIDC (carteira)",
+        description="Posicao consolidada da carteira de recebiveis do FIDC. Disparo assincrono via job + webhook callback.",
+        default_schedule_kind=ScheduleKind.ON_DEMAND,
+        default_schedule_value=None,
+        canonical_table="wh_estoque_recebivel",
     ),
 )
 
