@@ -1,16 +1,21 @@
 """wh_bitfin_raw_dre -- camada raw (bronze) das fontes DRE do Bitfin.
 
 Padrao raw -> canonico definido no CLAUDE.md secao 13.2. Esta tabela armazena
-o **payload cru** que o Bitfin devolveu para o DRE — em duas variantes
-discriminadas por `tipo_origem`:
+o **payload cru** que o Bitfin devolveu para o DRE — em tres variantes
+discriminadas por `tipo_origem`, todas vivendo em `UNLTD_<cliente>` (o
+caminho critico do DRE NAO depende mais do banco ANALYTICS a partir do
+adapter v2.0.0):
 
-- `demonstrativo_resultado` -- linhas granulares de `UNLTD_A7CREDIT.dbo.
+- `demonstrativo_resultado` -- linhas granulares de `UNLTD_<X>.dbo.
   DemonstrativoDeResultado` (1 linha por evento consolidado dentro de uma
   competencia; o Bitfin re-builda o snapshot inteiro de cada competencia).
-- `vw_dre` -- linhas ja consolidadas de `ANALYTICS.dbo.vw_DRE` (mesma
-  estrutura que o silver `wh_dre_mensal` consome hoje). Mantida como
-  espelho para reconciliacao: "o que o Bitfin diz que e DRE" vs "o que
-  nos calculamos a partir do granular".
+  Mapeia para o bloco 1 do DRE (receitas/custos operacionais).
+- `pagamento_opcao` -- linhas de `UNLTD_<X>.dbo.PagamentoOpcaoDePagamento`
+  com joins LEFT em PagamentoOperacao (para UA) + Fornecedor + Entidade
+  (para nome/documento). Mapeia para bloco 2 (despesas administrativas).
+- `comissao_fechamento` -- linhas de `UNLTD_<X>.dbo.ComissaoComercialFechamento`
+  com LEFT JOIN MembroInterno (para UA). Mapeia para bloco 3 (comissoes
+  comerciais).
 
 Granularidade: 1 row de bronze = 1 fetch de competencia inteira. O
 `payload` e o array JSONB de todas as linhas daquela competencia. UQ por
@@ -46,7 +51,8 @@ from app.core.database import Base
 # migration toda vez que adicionarmos nova fonte DRE no Bitfin. Validacao
 # acontece na camada de aplicacao (`adapter`/`etl`), nao no schema.
 TIPO_ORIGEM_DEMONSTRATIVO = "demonstrativo_resultado"
-TIPO_ORIGEM_VW_DRE = "vw_dre"
+TIPO_ORIGEM_PAGAMENTO = "pagamento_opcao"
+TIPO_ORIGEM_COMISSAO = "comissao_fechamento"
 
 
 class BitfinRawDre(Base):

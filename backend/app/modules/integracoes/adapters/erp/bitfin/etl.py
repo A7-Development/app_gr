@@ -1,4 +1,4 @@
-"""ETL orquestrador: MSSQL (ANALYTICS + UNLTD_A7CREDIT) -> gr_db warehouse.
+"""ETL orquestrador: MSSQL (UNLTD_<cliente>) -> gr_db warehouse.
 
 Desenho:
 - Cada tabela-alvo tem uma funcao `sync_<tabela>(tenant_id, since)`.
@@ -6,6 +6,13 @@ Desenho:
 - Upsert idempotente via `ON CONFLICT DO UPDATE` (Postgres).
 - Cada sync grava uma entrada em `decision_log` (sistema auditavel).
 - Proveniencia completa em cada linha (source_type, source_id, hash_origem, ...).
+
+Adapter v2.0.0 (2026-05-12): o caminho critico do DRE deixou de depender
+do banco ANALYTICS (A7-especifico). Bronze passou a cobrir as 3 fontes do
+DRE direto em UNLTD_<X>; silver `wh_dre_mensal` agora monta DRE a partir
+do bronze + classifier `wh_dre_classification_rule`. Resta apenas
+`sync_titulo_snapshot` (elig_snapshot_titulo em ANALYTICS) -- followup
+separado pra eliminar.
 """
 
 from __future__ import annotations
@@ -17,11 +24,16 @@ from itertools import islice
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
 from app.core.enums import SourceType, TrustLevel
+from app.modules.controladoria.services.dre import (
+    DreClassifier,
+    load_dre_classifier,
+)
 from app.modules.integracoes.adapters.erp.bitfin.config import BitfinConfig
 from app.modules.integracoes.adapters.erp.bitfin.connection import fetch_rows
 from app.modules.integracoes.adapters.erp.bitfin.hashing import sha256_of_row
@@ -29,21 +41,26 @@ from app.modules.integracoes.adapters.erp.bitfin.queries import analytics, bitfi
 from app.modules.integracoes.adapters.erp.bitfin.version import ADAPTER_VERSION
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 from app.warehouse.bitfin_raw_dre import (
+    TIPO_ORIGEM_COMISSAO,
     TIPO_ORIGEM_DEMONSTRATIVO,
-    TIPO_ORIGEM_VW_DRE,
+    TIPO_ORIGEM_PAGAMENTO,
     BitfinRawDre,
 )
 from app.warehouse.caixa_snapshot import CaixaSnapshot
-from app.warehouse.dim import (
-    DimDreClassificacao,
-    DimMes,
-    DimProduto,
-    DimUnidadeAdministrativa,
-)
+from app.warehouse.dim import DimProduto, DimUnidadeAdministrativa
 from app.warehouse.dre import DreMensal
 from app.warehouse.operacao import Operacao, OperacaoItem
 from app.warehouse.titulo import Titulo
 from app.warehouse.titulo_snapshot import TituloSnapshot
+
+# Discriminator -> Fonte da regra de classificacao. Mapeamento explicito
+# entre o `tipo_origem` do bronze (decisao tecnica) e o `fonte` da regra
+# (decisao de dominio).
+_TIPO_TO_FONTE: dict[str, str] = {
+    TIPO_ORIGEM_DEMONSTRATIVO: "DRE_OPERACIONAL",
+    TIPO_ORIGEM_PAGAMENTO: "CONTAS_A_PAGAR",
+    TIPO_ORIGEM_COMISSAO: "COMISSAO",
+}
 
 CHUNK_SIZE = 1000
 MAX_PG_PARAMS = 30000  # margem abaixo do limite asyncpg/Postgres de 32767
@@ -158,35 +175,6 @@ def _map_titulo(row: dict, tenant_id: UUID) -> dict:
     }
 
 
-def _map_dre_mensal(row: dict, tenant_id: UUID) -> dict:
-    # Unique key e compost; source_id sintetico para manter Auditable consistente
-    source_id = (
-        f"{row['competencia']}|{row['grupo_dre']}|{row['subgrupo']}|"
-        f"{row['descricao']}|{row.get('entidade_id')}|{row.get('produto_id')}|{row['fonte']}"
-    )
-    return {
-        "tenant_id": tenant_id,
-        **row,
-        **_provenance(source_id, row, row["competencia"]),
-    }
-
-
-def _map_dim_mes(row: dict, tenant_id: UUID) -> dict:
-    return {
-        "tenant_id": tenant_id,
-        **row,
-        **_provenance(row["mes_ano"], row, row["mes_ano"]),
-    }
-
-
-def _map_dim_dre_classificacao(row: dict, tenant_id: UUID) -> dict:
-    return {
-        "tenant_id": tenant_id,
-        **row,
-        **_provenance(row["classificacao_id"], row, None),
-    }
-
-
 def _map_dim_ua(row: dict, tenant_id: UUID) -> dict:
     """Mapeia Bitfin.UnidadeAdministrativa -> wh_dim_unidade_administrativa.
 
@@ -295,6 +283,15 @@ async def _bulk_upsert(
 async def sync_titulo_snapshot(
     tenant_id: UUID, config: BitfinConfig, since: date | None = None
 ) -> dict[str, Any]:
+    # ANALYTICS opcional (v2.0.0+). Tenant sem ANALYTICS configurado pula
+    # esse sync sem erro -- e o ultimo consumer de ANALYTICS pendente de
+    # eliminacao (followup separado).
+    if not config.database_analytics:
+        return {
+            "table": "wh_titulo_snapshot",
+            "rows": 0,
+            "skipped_reason": "database_analytics_not_configured",
+        }
     cutoff = since or EPOCH
     rows = await asyncio.to_thread(
         fetch_rows, config, config.database_analytics, analytics.SELECT_SNAPSHOT_TITULO, (cutoff,)
@@ -345,17 +342,260 @@ async def sync_titulo(
     return {"table": "wh_titulo", "rows": count}
 
 
+# ---- Silver builder: bronze -> wh_dre_mensal -------------------------------
+#
+# v2.0.0+: o silver `wh_dre_mensal` deixou de fetchar `ANALYTICS.dbo.vw_DRE`
+# e passou a montar DRE a partir das 3 fontes bronze (UNLTD_<X>), aplicando
+# o classifier global de `wh_dre_classification_rule`. Replay barato e
+# multi-tenant viabilizado.
+#
+# Paridade com vw_DRE legacy: bloco 1 mapeia 1:1 com d.TotalApurado/Custo;
+# bloco 2 espelha o `Custo=Valor, Resultado=-Valor`; bloco 3 idem para
+# Comissao. Caveat preservado: bloco 2 ignora coluna `Direcao` (D/C) -- ja
+# era o comportamento da vw_DRE.
+
+
+def _silver_source_id(
+    *,
+    competencia: date | str,
+    grupo_dre: str,
+    subgrupo: str,
+    descricao: str,
+    entidade_id: int | None,
+    produto_id: int | None,
+    fonte: str,
+) -> str:
+    """source_id sintetico para wh_dre_mensal (vide uq_wh_dre_mensal_source).
+    Estavel entre runs com mesma classificacao -> idempotencia do upsert."""
+    return (
+        f"{competencia}|{grupo_dre}|{subgrupo}|{descricao}|"
+        f"{entidade_id}|{produto_id}|{fonte}"
+    )
+
+
+def _bronze_row_to_silver(
+    *,
+    tipo_origem: str,
+    bronze_row: dict[str, Any],
+    classifier: DreClassifier,
+    tenant_id: UUID,
+) -> dict | None:
+    """Converte 1 row do payload bronze em 1 row do silver wh_dre_mensal.
+    Retorna None se a row deve ser descartada (sem classificacao, ativo=False,
+    ou filtro de bloco -- ex.: comissao<=0)."""
+    fonte = _TIPO_TO_FONTE[tipo_origem]
+
+    if tipo_origem == TIPO_ORIGEM_DEMONSTRATIVO:
+        # Bloco 1 -- DemonstrativoDeResultado
+        categoria = bronze_row.get("categoria")
+        if not categoria:
+            return None
+        cls = classifier.classify(fonte, categoria)
+        if cls is None or not cls.ativo:
+            return None
+        descricao = bronze_row.get("descricao") or ""
+        entidade_id = bronze_row.get("entidade_id")
+        produto_id = bronze_row.get("produto_id")
+        ua_id = bronze_row.get("unidade_administrativa_id")
+        return {
+            "ano": bronze_row["ano"],
+            "mes": bronze_row["mes"],
+            "competencia": bronze_row["competencia"],
+            "ordem_grupo": cls.ordem_grupo,
+            "grupo_dre": cls.grupo_dre,
+            "subgrupo": cls.subgrupo,
+            "descricao": descricao,
+            "fornecedor": None,
+            "fornecedor_documento": None,
+            "entidade_id": entidade_id,
+            "produto_id": produto_id,
+            "unidade_administrativa_id": ua_id,
+            "fonte": fonte,
+            "receita": bronze_row.get("total_apurado") or 0,
+            "custo": bronze_row.get("total_do_custo") or 0,
+            "resultado": bronze_row.get("resultado") or 0,
+            "quantidade": bronze_row.get("quantidade") or 0,
+            "_source_id": _silver_source_id(
+                competencia=bronze_row["competencia"],
+                grupo_dre=cls.grupo_dre,
+                subgrupo=cls.subgrupo,
+                descricao=descricao,
+                entidade_id=entidade_id,
+                produto_id=produto_id,
+                fonte=fonte,
+            ),
+        }
+
+    if tipo_origem == TIPO_ORIGEM_PAGAMENTO:
+        # Bloco 2 -- PagamentoOpcaoDePagamento. Espelha vw_DRE block 2:
+        # categoria vira "Descricao", Valor vira Custo, -Valor vira Resultado.
+        # IMPORTANTE: a vw_DRE original ignora `Direcao` (D/C) -- preservamos
+        # o mesmo comportamento para paridade. Se virar bug em audit, fix
+        # separado no mapper (e nao retroceder ao vw_DRE).
+        categoria = bronze_row.get("categoria")
+        if not categoria:
+            return None
+        cls = classifier.classify(fonte, categoria)
+        if cls is None or not cls.ativo:
+            return None
+        valor = bronze_row.get("valor") or 0
+        ua_id = bronze_row.get("unidade_administrativa_id")
+        return {
+            "ano": bronze_row["ano"],
+            "mes": bronze_row["mes"],
+            "competencia": bronze_row["competencia"],
+            "ordem_grupo": cls.ordem_grupo,
+            "grupo_dre": cls.grupo_dre,
+            "subgrupo": cls.subgrupo,
+            "descricao": categoria,
+            "fornecedor": bronze_row.get("fornecedor_nome"),
+            "fornecedor_documento": bronze_row.get("fornecedor_documento"),
+            "entidade_id": None,
+            "produto_id": None,
+            "unidade_administrativa_id": ua_id,
+            "fonte": fonte,
+            "receita": 0,
+            "custo": valor,
+            "resultado": -valor if valor else 0,
+            "quantidade": 1,
+            "_source_id": _silver_source_id(
+                competencia=bronze_row["competencia"],
+                grupo_dre=cls.grupo_dre,
+                subgrupo=cls.subgrupo,
+                descricao=categoria,
+                entidade_id=None,
+                produto_id=None,
+                fonte=fonte,
+            ),
+        }
+
+    if tipo_origem == TIPO_ORIGEM_COMISSAO:
+        # Bloco 3 -- ComissaoComercialFechamento. vw_DRE block 3 filtra
+        # `Comissao > 0` -- preservamos. Categoria e SEMPRE "Comissao de
+        # Consultor" (hardcoded na vw_DRE block 3).
+        comissao = bronze_row.get("comissao") or 0
+        if comissao <= 0:
+            return None
+        categoria = "Comissao de Consultor"
+        cls = classifier.classify(fonte, categoria)
+        if cls is None or not cls.ativo:
+            return None
+        ua_id = bronze_row.get("unidade_administrativa_id")
+        return {
+            "ano": bronze_row["ano"],
+            "mes": bronze_row["mes"],
+            "competencia": bronze_row["competencia"],
+            "ordem_grupo": cls.ordem_grupo,
+            "grupo_dre": cls.grupo_dre,
+            "subgrupo": cls.subgrupo,
+            "descricao": categoria,
+            "fornecedor": None,
+            "fornecedor_documento": None,
+            "entidade_id": None,
+            "produto_id": None,
+            "unidade_administrativa_id": ua_id,
+            "fonte": fonte,
+            "receita": 0,
+            "custo": comissao,
+            "resultado": -comissao,
+            "quantidade": 1,
+            "_source_id": _silver_source_id(
+                competencia=bronze_row["competencia"],
+                grupo_dre=cls.grupo_dre,
+                subgrupo=cls.subgrupo,
+                descricao=categoria,
+                entidade_id=None,
+                produto_id=None,
+                fonte=fonte,
+            ),
+        }
+
+    return None
+
+
+async def _load_latest_bronze_snapshots(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    tipo_origem: str,
+    competencia_cutoff: date | None,
+) -> list[BitfinRawDre]:
+    """Retorna o snapshot mais recente do bronze por competencia >= cutoff.
+    Idempotencia: cada (tenant, tipo_origem, competencia) -> 1 snapshot;
+    o ordering por `fetched_at DESC` + DISTINCT garante "ultimo fetch"."""
+    stmt = (
+        select(BitfinRawDre)
+        .where(
+            BitfinRawDre.tenant_id == tenant_id,
+            BitfinRawDre.tipo_origem == tipo_origem,
+        )
+        .order_by(
+            BitfinRawDre.competencia,
+            BitfinRawDre.fetched_at.desc(),
+        )
+        .distinct(BitfinRawDre.competencia)
+    )
+    if competencia_cutoff is not None:
+        stmt = stmt.where(BitfinRawDre.competencia >= competencia_cutoff)
+    return list((await db.execute(stmt)).scalars().all())
+
+
 async def sync_dre_mensal(
     tenant_id: UUID, config: BitfinConfig, since: date | None = None
 ) -> dict[str, Any]:
-    cutoff = since or EPOCH
-    rows = await asyncio.to_thread(
-        fetch_rows, config, config.database_analytics, analytics.SELECT_DRE, (cutoff,)
-    )
-    mapped = [_map_dre_mensal(r, tenant_id) for r in rows]
+    """Reconstroi `wh_dre_mensal` a partir do bronze (3 fontes) + classifier.
+
+    Sem fetch a MSSQL -- a unica IO externa eh a leitura do bronze e do
+    classifier no proprio gr_db. `since` filtra competencias do bronze
+    (>= since); None = full rebuild.
+    """
+    competencia_cutoff = since if since != EPOCH else None
+    silver_rows: list[dict] = []
+
     async with AsyncSessionLocal() as db:
-        count = await _bulk_upsert(db, DreMensal, mapped, ["tenant_id", "source_id"])
-    return {"table": "wh_dre_mensal", "rows": count}
+        classifier = await load_dre_classifier(db, tenant_id)
+
+        for tipo_origem in (
+            TIPO_ORIGEM_DEMONSTRATIVO,
+            TIPO_ORIGEM_PAGAMENTO,
+            TIPO_ORIGEM_COMISSAO,
+        ):
+            snapshots = await _load_latest_bronze_snapshots(
+                db,
+                tenant_id=tenant_id,
+                tipo_origem=tipo_origem,
+                competencia_cutoff=competencia_cutoff,
+            )
+            for snap in snapshots:
+                for bronze_row in snap.payload:
+                    silver_row = _bronze_row_to_silver(
+                        tipo_origem=tipo_origem,
+                        bronze_row=bronze_row,
+                        classifier=classifier,
+                        tenant_id=tenant_id,
+                    )
+                    if silver_row is None:
+                        continue
+                    source_id = silver_row.pop("_source_id")
+                    silver_rows.append(
+                        {
+                            "tenant_id": tenant_id,
+                            **silver_row,
+                            **_provenance(
+                                source_id, silver_row, silver_row["competencia"]
+                            ),
+                        }
+                    )
+
+        count = await _bulk_upsert(
+            db, DreMensal, silver_rows, ["tenant_id", "source_id"]
+        )
+
+    return {
+        "table": "wh_dre_mensal",
+        "rows": count,
+        "classifier_rules": classifier.rule_count,
+    }
 
 
 # ---- Bronze (raw) sync handlers --------------------------------------------
@@ -449,22 +689,24 @@ async def sync_bitfin_raw_dre_demonstrativo(
     }
 
 
-async def sync_bitfin_raw_dre_vw(
+async def sync_bitfin_raw_dre_pagamento(
     tenant_id: UUID, config: BitfinConfig, since: date | None = None
 ) -> dict[str, Any]:
-    """Bronze: snapshot consolidado de `ANALYTICS.dbo.vw_DRE`.
+    """Bronze: PagamentoOpcaoDePagamento (despesas administrativas, bloco 2
+    do DRE). Joins LEFT em PagamentoOperacao (UA) + Fornecedor + Entidade
+    (nome/documento). Sem filtro de classificacao — silver decide via
+    `wh_dre_classification_rule`.
 
-    Mantido como espelho do que o Bitfin reporta como DRE — fonte para
-    reconciliacao "nossa regra vs Bitfin". O silver `wh_dre_mensal` hoje
-    le direto desta view (sync_dre_mensal); PR 3 vai trocar para ler do
-    bronze, eliminando o fetch duplicado.
+    Volume tipico: 45-156 linhas/competencia. Fetch full por competencia
+    (>= since); dedup via sha do payload garante no-op em re-fetch sem
+    mudanca.
     """
     cutoff = since or EPOCH
     rows = await asyncio.to_thread(
         fetch_rows,
         config,
-        config.database_analytics,
-        analytics.SELECT_DRE_VW_RAW,
+        config.database_bitfin,
+        bitfin.SELECT_DRE_PAGAMENTO_RAW,
         (cutoff,),
     )
     by_comp = _group_rows_by_competencia(rows)
@@ -474,7 +716,7 @@ async def sync_bitfin_raw_dre_vw(
             if await _upsert_bronze_dre(
                 db,
                 tenant_id=tenant_id,
-                tipo_origem=TIPO_ORIGEM_VW_DRE,
+                tipo_origem=TIPO_ORIGEM_PAGAMENTO,
                 competencia=comp,
                 payload=payload,
             ):
@@ -482,34 +724,51 @@ async def sync_bitfin_raw_dre_vw(
         await db.commit()
     return {
         "table": "wh_bitfin_raw_dre",
-        "tipo_origem": TIPO_ORIGEM_VW_DRE,
+        "tipo_origem": TIPO_ORIGEM_PAGAMENTO,
         "competencias_processed": len(by_comp),
         "rows": inserted,
     }
 
 
-async def sync_dim_mes(
+async def sync_bitfin_raw_dre_comissao(
     tenant_id: UUID, config: BitfinConfig, since: date | None = None
 ) -> dict[str, Any]:
-    rows = await asyncio.to_thread(
-        fetch_rows, config, config.database_analytics, analytics.SELECT_DIM_MES, (EPOCH,)
-    )
-    mapped = [_map_dim_mes(r, tenant_id) for r in rows]
-    async with AsyncSessionLocal() as db:
-        count = await _bulk_upsert(db, DimMes, mapped, ["tenant_id", "source_id"])
-    return {"table": "wh_dim_mes", "rows": count}
+    """Bronze: ComissaoComercialFechamento (comissoes comerciais, bloco 3
+    do DRE). 1 row por (MembroInterno, Ano, Mes). LEFT JOIN MembroInterno
+    para UA.
 
+    Vw_DRE original filtra `Comissao > 0`; aqui preservamos todas as rows
+    (filtro aplicado no silver mapper).
 
-async def sync_dim_dre_classificacao(
-    tenant_id: UUID, config: BitfinConfig, since: date | None = None
-) -> dict[str, Any]:
+    Volume: ~3 linhas/competencia.
+    """
+    cutoff = since or EPOCH
     rows = await asyncio.to_thread(
-        fetch_rows, config, config.database_analytics, analytics.SELECT_DIM_DRE_CLASSIFICACAO
+        fetch_rows,
+        config,
+        config.database_bitfin,
+        bitfin.SELECT_DRE_COMISSAO_RAW,
+        (cutoff,),
     )
-    mapped = [_map_dim_dre_classificacao(r, tenant_id) for r in rows]
+    by_comp = _group_rows_by_competencia(rows)
+    inserted = 0
     async with AsyncSessionLocal() as db:
-        count = await _bulk_upsert(db, DimDreClassificacao, mapped, ["tenant_id", "source_id"])
-    return {"table": "wh_dim_dre_classificacao", "rows": count}
+        for comp, payload in by_comp.items():
+            if await _upsert_bronze_dre(
+                db,
+                tenant_id=tenant_id,
+                tipo_origem=TIPO_ORIGEM_COMISSAO,
+                competencia=comp,
+                payload=payload,
+            ):
+                inserted += 1
+        await db.commit()
+    return {
+        "table": "wh_bitfin_raw_dre",
+        "tipo_origem": TIPO_ORIGEM_COMISSAO,
+        "competencias_processed": len(by_comp),
+        "rows": inserted,
+    }
 
 
 async def sync_dim_ua(
@@ -568,18 +827,22 @@ async def sync_caixa_snapshot(
 # ---- Master orchestrator ----
 
 SYNC_PIPELINE = [
-    sync_dim_mes,
-    sync_dim_dre_classificacao,
     sync_dim_ua,
     sync_dim_produto,
+    # `sync_titulo_snapshot` ainda depende de ANALYTICS.dbo.elig_snapshot_titulo
+    # -- followup separado pra eliminar (CLAUDE.md secao 13: multi-tenant
+    # absoluto). Mantemos no pipeline para A7 Credit hoje; quando o tenant
+    # nao tiver ANALYTICS configurado, o sync vai falhar com 'database not
+    # configured' e seguir (sync_all captura por try/except).
     sync_titulo_snapshot,
     sync_operacao,
     sync_operacao_item,
     sync_titulo,
-    # Bronze antes do silver: PR 3 vai refatorar sync_dre_mensal pra ler
-    # do bronze, eliminando o fetch duplicado contra vw_DRE.
+    # DRE: bronze das 3 fontes em UNLTD_<X> -> silver via classifier do gr_db.
+    # Zero dependencia de ANALYTICS aqui (v2.0.0).
     sync_bitfin_raw_dre_demonstrativo,
-    sync_bitfin_raw_dre_vw,
+    sync_bitfin_raw_dre_pagamento,
+    sync_bitfin_raw_dre_comissao,
     sync_dre_mensal,
     sync_caixa_snapshot,
 ]

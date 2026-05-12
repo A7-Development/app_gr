@@ -24,6 +24,7 @@ from app.warehouse.dia_util_qitech import DiaUtilQitech
 from app.warehouse.dim import DimDreClassificacao, DimMes
 from app.warehouse.dim_dia_util import DimDiaUtil
 from app.warehouse.dre import DreMensal
+from app.warehouse.dre_classification_rule import WhDreClassificationRule
 from app.warehouse.estoque_recebivel import EstoqueRecebivel
 from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel
 from app.warehouse.mec_evolucao_cotas import MecEvolucaoCotas
@@ -74,6 +75,7 @@ __all__ = [
     "DimDreClassificacao",
     "DimMes",
     "DreMensal",
+    "WhDreClassificationRule",
     "EstoqueRecebivel",
     "LiquidacaoRecebivel",
     "MecEvolucaoCotas",

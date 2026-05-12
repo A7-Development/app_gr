@@ -1,4 +1,12 @@
-"""Queries contra o database UNLTD_A7CREDIT (Bitfin ERP)."""
+"""Queries contra o database UNLTD_<cliente> (Bitfin ERP).
+
+A partir do adapter v2.0.0 todas as fontes do DRE vivem aqui (mais nenhum
+fetch contra ANALYTICS para o caminho critico do DRE). Tres fontes:
+
+- DemonstrativoDeResultado (bloco 1: receitas/custos operacionais)
+- PagamentoOpcaoDePagamento (bloco 2: despesas administrativas)
+- ComissaoComercialFechamento (bloco 3: comissoes comerciais)
+"""
 
 SELECT_DRE_DEMONSTRATIVO_RAW = """
 SELECT
@@ -23,6 +31,84 @@ FROM dbo.DemonstrativoDeResultado
 WHERE DATEFROMPARTS(Ano, Mes, 1) >= ?
 ORDER BY competencia, EntidadeId, Categoria, Descricao
 """
+
+# Bronze: PagamentoOpcaoDePagamento (despesas administrativas — bloco 2
+# do DRE). Vw_DRE original usa INNER JOIN com DREClassificacao filtrando
+# `Ativo=1`; aqui mantemos LEFT JOIN com Fornecedor/Entidade (preservando
+# linhas sem fornecedor) e SEM filtro de classificacao — o filtro acontece
+# no silver mapper apos consultar `wh_dre_classification_rule`.
+#
+# Competencia derivada de DataDeEmissao (regime de competencia).
+#
+# Volume tipico: 45-156 linhas/competencia (A7 Credit 2025/2026). Payload
+# JSONB cabe num row de bronze sem stress.
+SELECT_DRE_PAGAMENTO_RAW = """
+SELECT
+    p.OpcaoDePagamentoId AS opcao_de_pagamento_id,
+    YEAR(p.DataDeEmissao) AS ano,
+    MONTH(p.DataDeEmissao) AS mes,
+    CAST(DATEFROMPARTS(YEAR(p.DataDeEmissao), MONTH(p.DataDeEmissao), 1) AS DATE) AS competencia,
+    p.Categoria AS categoria,
+    p.Tipo AS tipo,
+    p.Direcao AS direcao,
+    p.Valor AS valor,
+    p.ValorAtualizado AS valor_atualizado,
+    p.DataDeEmissao AS data_de_emissao,
+    p.DataDeVencimento AS data_de_vencimento,
+    p.DataDePagamento AS data_de_pagamento,
+    p.DataParaPagamento AS data_para_pagamento,
+    p.Pago AS pago,
+    p.FornecedorId AS fornecedor_id,
+    p.OperacaoDePagamentosId AS operacao_de_pagamentos_id,
+    po.UnidadeAdministrativaId AS unidade_administrativa_id,
+    e.EntidadeId AS entidade_id_fornecedor,
+    e.Nome AS fornecedor_nome,
+    e.Documento AS fornecedor_documento,
+    p.Observacoes AS observacoes,
+    p.DescricaoDoLancamento AS descricao_do_lancamento
+FROM dbo.PagamentoOpcaoDePagamento p
+LEFT JOIN dbo.PagamentoOperacao po
+    ON p.OperacaoDePagamentosId = po.OperacaoDePagamentosId
+LEFT JOIN dbo.Fornecedor f
+    ON p.FornecedorId = f.FornecedorId
+LEFT JOIN dbo.Entidade e
+    ON f.EntidadeId = e.EntidadeId
+WHERE DATEFROMPARTS(YEAR(p.DataDeEmissao), MONTH(p.DataDeEmissao), 1) >= ?
+ORDER BY competencia, opcao_de_pagamento_id
+"""
+
+
+# Bronze: ComissaoComercialFechamento (comissoes comerciais — bloco 3
+# do DRE). Granularidade fonte: 1 row por (MembroInterno, Ano, Mes).
+# Volume: ~3 linhas/competencia.
+#
+# Vw_DRE original filtra `Comissao > 0`; aqui preservamos todas as rows
+# (zero/negativo pode ser util para auditoria), filtro acontece no silver.
+SELECT_DRE_COMISSAO_RAW = """
+SELECT
+    c.MembroInternoId AS membro_interno_id,
+    c.Ano AS ano,
+    c.Mes AS mes,
+    CAST(DATEFROMPARTS(c.Ano, c.Mes, 1) AS DATE) AS competencia,
+    c.Data AS data_snapshot,
+    c.ResultadoPositivo AS resultado_positivo,
+    c.ResultadoNegativo AS resultado_negativo,
+    c.ResultadoBruto AS resultado_bruto,
+    c.PercentualMedio AS percentual_medio,
+    c.ResultadoFinal AS resultado_final,
+    c.ComissaoGarantidaAplicada AS comissao_garantida_aplicada,
+    c.ValorDaComissaoGarantida AS valor_da_comissao_garantida,
+    c.SaldoDevedor AS saldo_devedor,
+    c.Comissao AS comissao,
+    c.SaldoAnterior AS saldo_anterior,
+    mi.UnidadeAdministrativaId AS unidade_administrativa_id
+FROM dbo.ComissaoComercialFechamento c
+LEFT JOIN dbo.MembroInterno mi
+    ON c.MembroInternoId = mi.MembroInternoId
+WHERE DATEFROMPARTS(c.Ano, c.Mes, 1) >= ?
+ORDER BY competencia, membro_interno_id
+"""
+
 
 SELECT_OPERACAO = """
 SELECT

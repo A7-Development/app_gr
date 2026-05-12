@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import get_settings
+from app.core.json_codec import dumps as _jsonb_dumps
 
 _settings = get_settings()
 
@@ -20,6 +21,7 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
+    json_serializer=_jsonb_dumps,
 )
 
 AsyncSessionLocal = async_sessionmaker(

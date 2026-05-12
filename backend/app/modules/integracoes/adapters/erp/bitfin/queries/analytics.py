@@ -1,8 +1,20 @@
-"""Queries contra o database ANALYTICS.
+"""Queries contra o database ANALYTICS (A7-especifico).
+
+ATENCAO: este database NAO faz parte do que o Bitfin entrega por padrao --
+e construido pela A7 em cima do banco transacional UNLTD_<cliente>. Cliente
+novo do Strata que use Bitfin nao tera um ANALYTICS provisionado.
+
+A partir do adapter v2.0.0 (2026-05-12), o caminho critico do DRE deixou
+de usar este arquivo -- nossa regra de classificacao mora em
+`wh_dre_classification_rule` (gr_db) e o silver `wh_dre_mensal` agora
+nasce do bronze das 3 fontes em UNLTD_<X>.
+
+Resta apenas `elig_snapshot_titulo` aqui -- ainda nao migrado para um
+adapter agnostico. Followup separado pra eliminar (envolve recriar a
+denormalizacao de titulos/operacoes/cedentes/sacados em codigo nosso).
 
 Todas as queries aceitam um parametro `?` representando o corte temporal
-(ex.: `data_ref > ?` ou `Competencia > ?`). Passe `date(1900,1,1)` para
-full refresh.
+(ex.: `data_ref > ?`). Passe `date(1900, 1, 1)` para full refresh.
 """
 
 SELECT_SNAPSHOT_TITULO = """
@@ -30,52 +42,4 @@ SELECT
 FROM dbo.elig_snapshot_titulo
 WHERE data_ref > ?
 ORDER BY data_ref, snapshot_id
-"""
-
-SELECT_DRE = """
-SELECT
-    Ano AS ano, Mes AS mes, Competencia AS competencia,
-    OrdemGrupo AS ordem_grupo, GrupoDRE AS grupo_dre, SubGrupo AS subgrupo, Descricao AS descricao,
-    Receita AS receita, Custo AS custo, Resultado AS resultado, Quantidade AS quantidade,
-    Fornecedor AS fornecedor, FornecedorDocumento AS fornecedor_documento,
-    EntidadeId AS entidade_id, ProdutoId AS produto_id,
-    UnidadeAdministrativaId AS unidade_administrativa_id,
-    Fonte AS fonte
-FROM dbo.vw_DRE
-WHERE Competencia > ?
-"""
-
-# Bronze: mesma view, mas inclui a competencia do `since` (>= em vez de >)
-# para que o snapshot bronze daquela competencia seja capturado por inteiro
-# em todo fetch — habilita dedup via payload_sha256 quando conteudo nao mudou.
-SELECT_DRE_VW_RAW = """
-SELECT
-    Ano AS ano, Mes AS mes, Competencia AS competencia,
-    OrdemGrupo AS ordem_grupo, GrupoDRE AS grupo_dre, SubGrupo AS subgrupo, Descricao AS descricao,
-    Receita AS receita, Custo AS custo, Resultado AS resultado, Quantidade AS quantidade,
-    Fornecedor AS fornecedor, FornecedorDocumento AS fornecedor_documento,
-    EntidadeId AS entidade_id, ProdutoId AS produto_id,
-    UnidadeAdministrativaId AS unidade_administrativa_id,
-    Fonte AS fonte
-FROM dbo.vw_DRE
-WHERE Competencia >= ?
-ORDER BY Competencia, OrdemGrupo, GrupoDRE, SubGrupo, Descricao
-"""
-
-SELECT_DIM_MES = """
-SELECT
-    MesAno AS mes_ano, Ano AS ano, Mes AS mes,
-    Trimestre AS trimestre, Semestre AS semestre,
-    AnoMesTexto AS ano_mes_texto, MesNome AS mes_nome
-FROM dbo.DimMes
-WHERE MesAno > ?
-ORDER BY MesAno
-"""
-
-SELECT_DIM_DRE_CLASSIFICACAO = """
-SELECT
-    Id AS classificacao_id, Fonte AS fonte, Categoria AS categoria,
-    GrupoDRE AS grupo_dre, SubGrupo AS subgrupo,
-    OrdemGrupo AS ordem_grupo, Ativo AS ativo
-FROM dbo.DREClassificacao
 """

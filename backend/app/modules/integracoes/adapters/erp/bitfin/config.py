@@ -19,17 +19,23 @@ class BitfinConfig:
 
     server: str
     database_bitfin: str
-    database_analytics: str
     user: str
     password: str
     driver: str = "ODBC Driver 17 for SQL Server"
+    # ANALYTICS e database A7-especifico (construido pela A7 em cima de UNLTD_A7CREDIT).
+    # Clientes Bitfin novos NAO terao um ANALYTICS provisionado -- so o UNLTD_<X>
+    # que o Bitfin entrega por padrao. A partir do adapter v2.0.0 o caminho critico
+    # do DRE deixou de depender deste banco; resta apenas `sync_titulo_snapshot`
+    # (elig_snapshot_titulo) que ainda le dele -- followup separado pra eliminar.
+    # Quando None, syncs que dependem de ANALYTICS sao skipadas com warning.
+    database_analytics: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> BitfinConfig:
         return cls(
             server=data["server"],
             database_bitfin=data["database_bitfin"],
-            database_analytics=data["database_analytics"],
+            database_analytics=data.get("database_analytics"),
             user=data["user"],
             password=data["password"],
             driver=data.get("driver", "ODBC Driver 17 for SQL Server"),
