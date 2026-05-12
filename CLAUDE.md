@@ -79,9 +79,69 @@
 
 ---
 
+## 🎨 STATUS — MODO DESIGN EXPLORATORIO ATIVO (2026-05-11 → ?)
+
+> Modo paralelo ao "MODO ITERACAO DE DESIGN" acima. O modo de iteracao trata de **polimento visual** (cores arbitrarias, magic numbers, inline styles para casar com handoff). Este trata de **inovacao estrutural** — vem como contrapeso a um efeito colateral percebido pelo Ricardo: o sistema de regras inteiro empurra Claude pra "buscar pattern existente" como reflexo primario, e isso castra propostas mais ousadas onde elas seriam bem-vindas.
+>
+> **Licenca explicita durante este modo:**
+>
+> 1. **Propor 2-3 alternativas de layout/UX/estrutura ANTES de aplicar pattern canonico.** Implementacao espera escolha do Ricardo. ASCII mock, bullets curtos com tradeoffs, referencias a produtos de mercado — tudo valido.
+> 2. **Propor libs fora da §2** (sem implementar — Ricardo aprova ou recusa). Reduz o reflexo de "se nao esta na tabela, nao existe". Pra implementar, continua precisando do OK; pra **propor**, esta liberado.
+> 3. **Propor componentes novos em `design-system/components/`** (nivel 4 da §1) sem precisar passar pela busca exaustiva em `tremor/`/upstream primeiro. Se for util, vira composite estavel; se nao, jogamos fora — mas a proposta nasce sem atrito.
+> 4. **Usar paleta tailwind completa em propostas** (`orange-*`, `purple-*`, `teal-*`, etc) e gradientes/efeitos visuais arrojados em surfaces e hero zones. Promocao a token nomeado acontece pos-aprovacao, junto com a varredura da §4 quando o MODO ITERACAO DE DESIGN se desligar.
+>
+> ### Quando o modo esta ATIVO por default (Claude liga sozinho)
+>
+> - **Greenfield estrutural:** primeira pagina de um modulo novo (Risco, Credito quando comecou, futuro Laboratorio). Nao tem shorthand do dominio ainda — brainstorm e o caminho.
+> - **Pattern canonico encaixa mal:** quando aplicar `ListagemComDrilldown` / `DashboardBiPadrao` forcaria 3+ comentarios `// MOTIVO:` ou esconderia a dimensao mais importante do dado.
+> - **Estrutura de dado incomum:** rede de relacionamentos, sequencia de estados com bifurcacao, matriz NxM, timeline ramificada, dados multi-dimensionais que tabela+chart canonico nao expressam bem.
+> - **Surfaces de marca:** login, splash, 404/500, onboarding, landing. "Voz" importa mais que consistencia transacional — e a §4.1/§4.2 ja libera paleta brand + tipografia hero ali.
+> - **Hero zones de dashboard:** os blocos topo (Z1/Z2 do `DashboardBiPadrao`) sao onde diferenciacao agrega mais. Linha de baixo (KPIs, tabelas, ProvenanceFooter) segue pattern.
+> - **Empty/error states ricos:** quando o vazio comunica algo de dominio (ex.: "fonte ainda nao configurada", "carteira ainda nao recebeu primeira sincronizacao") vs vazio mecanico ("sem resultados pra esse filtro").
+>
+> ### Quando Ricardo ATIVA explicitamente
+>
+> Palavras-trigger no chat: **"ousada"**, **"criativa"**, **"diferente"**, **"alternativa"**, **"outra forma"**, **"ta pobre"**, **"achatado"**, **"sem graca"**, **"me da 2-3 opcoes"**, **"modo exploratorio"**. Reclamacao sobre algo que Claude acabou de produzir tambem ativa ("isso ficou seco demais", "ta achatado").
+>
+> ### Quando o modo NAO esta ativo (segue regras duras §1-§7 normalmente)
+>
+> - Bug fix, refactor mecanico, rename, migration, edicao de copy/label/tooltip.
+> - CRUD admin que e clone visual de outro CRUD admin ja em prod.
+> - Sub-componente de pagina que ja segue pattern (ex.: nova tab dentro de pagina canonica como [`integracoes/catalogo/[source_type]`](frontend/src/app/(app)/integracoes/catalogo/[source_type]/page.tsx)).
+> - Ricardo disse explicitamente "**faz igual a tela Y**" ou "**copia o pattern X**".
+>
+> ### Como Claude sinaliza ativacao
+>
+> Primeira linha da resposta: `**[exploratorio ON]**` + 2-3 alternativas em ASCII mock ou bullets curtos com tradeoffs claros (o que ganha, o que perde, referencia a produto/exemplo de mercado). Espera escolha antes de codar.
+>
+> ### Como Claude desliga
+>
+> Apos escolha do Ricardo, modo OFF na mesma resposta — implementacao volta a respeitar §7 (pattern canonico) e demais regras estruturais. Se a estrutura escolhida ficou util pra outras telas, Claude propoe promover a `design-system/patterns/` como pattern novo.
+>
+> ### O que continua INVIOLAVEL mesmo neste modo
+>
+> - §7 **patterns canonicos** continuam sendo a referencia obrigatoria — mesmo quando proponho alternativa, ela e comparada contra o pattern mais proximo no tradeoff que apresento.
+> - §10 **multi-tenant absoluto** (backend) — toda tabela tem `tenant_id`, toda query escopada.
+> - §11.3 **bounded contexts (backend)** — cross-import entre modulos so via `public.py`.
+> - §13 **adapter pattern** (backend).
+> - §14 **proveniencia + auditabilidade** (DNA do sistema).
+> - Idioma da UI em pt-BR, alias `@/*` nos imports, `cx()` em vez de `cn()`, icones Remix, fonte Geist.
+>
+> ### Hook `audit-page-consistency`
+>
+> Enquanto este modo estiver ativo, o hook automatico `PostToolUse:Edit` que dispara a auditoria em todo edit em `(app)/` e `design-system/components/` esta **desligado**. A skill continua disponivel via invocacao manual (`/audit-page-consistency`) quando Ricardo quiser uma varredura.
+>
+> ### Quando este modo se desliga
+>
+> Quando o catalogo de patterns canonicos cobrir todos os tipos de pagina previstos no roadmap (BI, Controladoria, Risco, Credito, Laboratorio, Admin) e a busca por estrutura nova virar excecao rara. Ate la, **exploration e o default em situacoes greenfield**.
+>
+> **Para Claude Code (qualquer sessao):** durante este modo, NAO se autocensure citando §1/§2/§3/§4 ao propor estrutura. NAO caia direto em "qual pattern aplica?" sem antes considerar se a feature pede brainstorm. As regras estruturais (§7, §10, §11.3, §13, §14) continuam vinculantes — esse modo abre a fase de **proposta**, nao a de implementacao.
+
 ---
 
 ## 1. Palavra de ordem: **padrao e consistencia visual**
+
+> ⚠️ **Modo Design Exploratorio ativo:** as regras desta secao valem na fase de **implementacao**. Na fase de **proposta** (greenfield, dado incomum, hero/surface, ou quando Ricardo sinalizar), Claude tem licenca pra propor 2-3 estruturas alternativas antes de cair na ordem de escolha abaixo. Ver banner no topo.
 
 O sistema usa **Tremor Raw** como **ponto de partida** de design system. Ele cobre ~90% dos casos; quando cobrir, use verbatim.
 
@@ -103,6 +163,8 @@ Tremor Raw e referencia, nao cela. Quando "fazer como o Tremor faz" conflitar co
 ---
 
 ## 2. Stack obrigatoria (sem substituicoes)
+
+> ⚠️ **Modo Design Exploratorio ativo:** Claude pode **propor** libs fora desta tabela quando uma alternativa for genuinamente melhor pro caso de uso. Implementar continua exigindo autorizacao explicita do Ricardo. Ver banner no topo.
 
 | Area | Obrigatorio | Proibido |
 |---|---|---|
@@ -135,6 +197,8 @@ Instalar qualquer biblioteca fora desta tabela exige autorizacao explicita do us
 ---
 
 ## 3. Arquitetura em 6 camadas (Strata Design System)
+
+> ⚠️ **Modo Design Exploratorio ativo:** as camadas e regras de import permanecem vinculantes na **implementacao**. Na **fase de proposta**, Claude pode esbocar componentes novos em `design-system/components/` (nivel 4) sem precisar justificar com `// MOTIVO:` ou exaurir a busca em `tremor/`/upstream antes. Aprovacao final do Ricardo valida onde mora. Ver banner no topo.
 
 ```
 src/components/tremor/             <- Primitivos Tremor Raw (verbatim da doc).
@@ -195,6 +259,10 @@ src/components/<dominio>/          <- Componentes amarrados a um dominio especif
 ---
 
 ## 4. Tokens e cores
+
+> ⚠️ **Modo Design Exploratorio ativo:** em propostas (especialmente hero zones, surfaces de marca, empty states ricos), Claude pode usar a paleta tailwind completa (`orange-*`, `purple-*`, `teal-*`, gradientes arrojados). Promocao a token nomeado acontece pos-aprovacao, em batch junto com a varredura do MODO ITERACAO DE DESIGN. Ver banner no topo.
+>
+> Esta secao continua governando codigo de **listagens/dashboards transacionais** ja estabelecidos — onde mudar cor a esmo confunde o usuario.
 
 **Paleta Tremor — unicas cores brutas aceitas:**
 

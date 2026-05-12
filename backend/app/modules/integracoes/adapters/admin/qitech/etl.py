@@ -61,6 +61,7 @@ from app.modules.integracoes.adapters.admin.qitech.reports import (
 from app.modules.integracoes.adapters.admin.qitech.version import ADAPTER_VERSION
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 from app.warehouse.cpr_movimento import CprMovimento
+from app.warehouse.dia_util_qitech import DiaUtilQitech
 from app.warehouse.mec_evolucao_cotas import MecEvolucaoCotas
 from app.warehouse.movimento_caixa import MovimentoCaixa
 from app.warehouse.posicao_compromissada import PosicaoCompromissada
@@ -583,6 +584,65 @@ _PIPELINE: tuple[
 )
 
 
+async def _mark_dia_util_qitech(
+    *,
+    tenant_id: UUID,
+    unidade_administrativa_id: UUID,
+    data_posicao: date,
+    steps: list[dict[str, Any]],
+) -> bool:
+    """Marca o dia em `wh_dia_util_qitech` quando ha sinal de publicacao QiTech.
+
+    Regra Fase B (mantem o conceito da Fase A — backfill via migration
+    `f9a3c2b1d8e0`): MEC e a tabela-pulse. Se o endpoint `mec` voltou linhas
+    canonicas no sync deste dia, marcamos o dia como `completo`. Sem MEC,
+    nao gravamos — preserva a semantica "ausencia = fim de semana / feriado /
+    falha de ETL / UA recem-cadastrada".
+
+    Metadados (`relatorios_esperados` / `relatorios_recebidos`) sao calculados
+    com base nos steps: esperados = len(_PIPELINE), recebidos = steps com
+    `raw_persisted=True` (raw chegou — independente de o mapper ter sucesso).
+
+    Idempotente via UQ `(tenant_id, ua_id, data_posicao, source_type)`. Re-rodar
+    o mesmo dia atualiza os contadores e `ingested_at`.
+
+    Returns:
+        True se gravou/atualizou; False se nao havia sinal (MEC vazio).
+    """
+    mec_step = next((s for s in steps if s.get("name") == "mec"), None)
+    if not mec_step or int(mec_step.get("canonical_rows_upserted") or 0) <= 0:
+        return False
+
+    esperados = len(_PIPELINE)
+    recebidos = sum(1 for s in steps if s.get("raw_persisted"))
+
+    row = {
+        "tenant_id": tenant_id,
+        "unidade_administrativa_id": unidade_administrativa_id,
+        "data_posicao": data_posicao,
+        "source_type": "admin:qitech",
+        "status": "completo",
+        "relatorios_esperados": esperados,
+        "relatorios_recebidos": recebidos,
+        "ingested_by_version": ADAPTER_VERSION,
+    }
+    stmt = pg_insert(DiaUtilQitech.__table__).values(row)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_wh_dia_util_qitech",
+        set_={
+            "status": stmt.excluded.status,
+            "relatorios_esperados": stmt.excluded.relatorios_esperados,
+            "relatorios_recebidos": stmt.excluded.relatorios_recebidos,
+            "ingested_at": datetime.now(UTC),
+            "ingested_by_version": stmt.excluded.ingested_by_version,
+        },
+    )
+    async with AsyncSessionLocal() as db:
+        await db.execute(stmt)
+        await db.commit()
+    return True
+
+
 def _resolve_data_posicao(since: date | None) -> date:
     """No QiTech, `since` representa **data alvo** do sync, nao "desde quando".
 
@@ -639,6 +699,21 @@ async def sync_all(
         except Exception as e:
             errors.append(f"{nome}: {type(e).__name__}: {e}")
 
+    # Fase B (CLAUDE.md §13.2.1): marcar dia em wh_dia_util_qitech se MEC
+    # publicou. Substitui o backfill manual a partir de wh_mec_evolucao_cotas
+    # que vigorava na Fase A (migration f9a3c2b1d8e0).
+    dia_util_marcado = False
+    if unidade_administrativa_id is not None:
+        try:
+            dia_util_marcado = await _mark_dia_util_qitech(
+                tenant_id=tenant_id,
+                unidade_administrativa_id=unidade_administrativa_id,
+                data_posicao=data_posicao,
+                steps=steps,
+            )
+        except Exception as e:
+            errors.append(f"dia_util_qitech: {type(e).__name__}: {e}")
+
     elapsed = time.monotonic() - t0
     summary: dict[str, Any] = {
         "ok": not errors,
@@ -658,6 +733,7 @@ async def sync_all(
         "errors": errors,
         "since": since.isoformat() if since else None,
         "triggered_by": triggered_by,
+        "dia_util_marcado": dia_util_marcado,
     }
 
     # Append-only audit trail (CLAUDE.md secao 14.2).

@@ -6,10 +6,8 @@
 //
 // Composicao:
 //   1. PageHeader (titulo + voltar ao catalogo)
-//   2. Hero "Snapshot mais recente" — bundle sem filtro (backend devolve
-//      max(data_referencia)). 4 KPIs compactos + CTA "Abrir →".
-//   3. CTA bar "Solicitacoes recentes" + botao "+ Solicitar nova".
-//   4. DataTableShell com jobs (qitech_report_job, filter fidc-estoque).
+//   2. CTA bar "Solicitacoes recentes" + botao "+ Solicitar nova".
+//   3. DataTableShell com jobs (qitech_report_job, filter fidc-estoque).
 //      Status badge + tempo decorrido + acao contextual:
 //        SUCCESS    -> "Abrir →" (link pra ?data=<reference_date>)
 //        WAITING    -> sem acao, timer no badge
@@ -17,7 +15,7 @@
 //        ERROR      -> "Re-disparar"
 //      Polling 30s quando ha WAITING/PROCESSING na lista (para quando
 //      todos terminaram).
-//   5. Dispatch dialog — mesmo do antigo PageHeader, agora vive aqui.
+//   4. Dispatch dialog — mesmo do antigo PageHeader, agora vive aqui.
 
 "use client"
 
@@ -37,7 +35,6 @@ import type { ColumnDef } from "@tanstack/react-table"
 
 import { Badge } from "@/components/tremor/Badge"
 import { Button } from "@/components/tremor/Button"
-import { Card } from "@/components/tremor/Card"
 import {
   Dialog,
   DialogContent,
@@ -66,14 +63,13 @@ import { cx } from "@/lib/utils"
 
 import {
   qitechJobs,
-  relatorios,
   type DispatchFidcEstoquePayload,
   type DuplicateSuccessDetail,
   type QitechJob,
   type QitechJobStatus,
 } from "../../../_lib/api"
 
-import { brl, brlMi, formatDateBR, formatElapsed, pct } from "./format"
+import { formatDateBR, formatElapsed } from "./format"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SnapshotsLanding
@@ -88,13 +84,6 @@ export function SnapshotsLanding() {
 
   const uasQuery = useUAs({ tipo: "fidc", ativa: true })
   const fundos = uasQuery.data ?? []
-
-  // Bundle sem filtro → backend retorna max(data_referencia) do tenant.
-  const heroBundleQuery = useQuery({
-    queryKey: ["controladoria", "qitech-estoque-carteira", "bundle", null, null] as const,
-    queryFn: () => relatorios.qitechEstoqueCarteiraBundle({}),
-    staleTime: 30_000,
-  })
 
   // Lista de jobs com polling: 5s enquanto ha WAITING/PROCESSING (badge
   // transita rapido pra Disponivel/Falhou), off quando todos terminaram.
@@ -139,10 +128,6 @@ export function SnapshotsLanding() {
     router.push("/controladoria/relatorios?tab=padronizados")
   }, [router])
 
-  const heroBundle = heroBundleQuery.data
-  const heroHasData =
-    heroBundle && !heroBundle.is_empty && heroBundle.data_referencia
-
   const columns = React.useMemo<ColumnDef<QitechJob, unknown>[]>(
     () => makeColumns({ pathname, onRedispatch: (job) => redispatchMut.mutate(job), isRedispatching: redispatchMut.isPending }),
     [pathname, redispatchMut],
@@ -168,19 +153,6 @@ export function SnapshotsLanding() {
       {/* Conteudo scrollavel */}
       <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-4 pb-6">
         <div className="flex flex-col gap-4">
-          {/* Hero "Snapshot mais recente" */}
-          <SnapshotMaisRecenteHero
-            bundle={heroBundle}
-            isLoading={heroBundleQuery.isLoading}
-            heroHasData={!!heroHasData}
-            onOpenLatest={() => {
-              if (heroBundle?.data_referencia) {
-                router.push(`${pathname}?data=${heroBundle.data_referencia}`)
-              }
-            }}
-            onRequestNew={() => setDispatchOpen(true)}
-          />
-
           {/* CTA bar + lista de solicitacoes */}
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2">
@@ -225,134 +197,6 @@ export function SnapshotsLanding() {
         fundos={fundos}
         jobs={jobsQuery.data ?? []}
       />
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SnapshotMaisRecenteHero
-// ─────────────────────────────────────────────────────────────────────────────
-
-function SnapshotMaisRecenteHero({
-  bundle,
-  isLoading,
-  heroHasData,
-  onOpenLatest,
-  onRequestNew,
-}: {
-  bundle: ReturnType<typeof relatorios.qitechEstoqueCarteiraBundle> extends Promise<infer T> ? T | undefined : never
-  isLoading: boolean
-  heroHasData: boolean
-  onOpenLatest: () => void
-  onRequestNew: () => void
-}) {
-  if (isLoading) {
-    return (
-      <Card>
-        <div className="flex h-[110px] items-center justify-center">
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            Carregando snapshot mais recente...
-          </span>
-        </div>
-      </Card>
-    )
-  }
-
-  if (!heroHasData || !bundle) {
-    return (
-      <Card>
-        <div className="flex flex-col items-start gap-3 px-1 py-2">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
-              Nenhum snapshot disponivel ainda
-            </h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Nenhuma solicitacao FIDC Estoque foi bem-sucedida pra este
-              tenant. Solicite a primeira pra popular a carteira.
-            </p>
-          </div>
-          <Button onClick={onRequestNew}>
-            <RiDownloadCloud2Line className="mr-1 size-4" aria-hidden />
-            Solicitar primeiro snapshot
-          </Button>
-        </div>
-      </Card>
-    )
-  }
-
-  const kpis = bundle.kpis
-  return (
-    <Card>
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Snapshot mais recente
-            </span>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-50">
-              Carteira de {formatDateBR(bundle.data_referencia)}
-              {bundle.fundo_nome ? (
-                <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
-                  · {bundle.fundo_nome}
-                </span>
-              ) : null}
-            </h2>
-          </div>
-          <Button onClick={onOpenLatest}>
-            Abrir relatorio
-            <RiArrowRightLine className="ml-1 size-4" aria-hidden />
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <HeroKpi
-            label="Valor presente"
-            value={brlMi(kpis.valor_presente_total)}
-            sub={`${kpis.qtd_titulos.toLocaleString("pt-BR")} titulos`}
-          />
-          <HeroKpi
-            label="Valor nominal"
-            value={brlMi(kpis.valor_nominal_total)}
-            sub="A receber"
-          />
-          <HeroKpi
-            label="PDD"
-            value={pct(kpis.pdd_medio_pct, 2)}
-            sub={brl(kpis.valor_pdd_total)}
-          />
-          <HeroKpi
-            label="Vencido"
-            value={pct(kpis.pct_vencido, 2)}
-            sub="% do nominal"
-          />
-        </div>
-      </div>
-    </Card>
-  )
-}
-
-function HeroKpi({
-  label,
-  value,
-  sub,
-}: {
-  label: string
-  value: string
-  sub?: string
-}) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-        {label}
-      </span>
-      <span className="text-lg font-semibold tabular-nums text-gray-900 dark:text-gray-50">
-        {value}
-      </span>
-      {sub ? (
-        <span className="text-[11px] text-gray-500 dark:text-gray-400">
-          {sub}
-        </span>
-      ) : null}
     </div>
   )
 }
@@ -457,10 +301,12 @@ function makeColumns({
         if (job.status === "SUCCESS") {
           return (
             <div className="flex justify-end">
-              <Link href={`${pathname}?data=${job.reference_date}`}>
-                <Button variant="ghost">
-                  Abrir
-                  <RiArrowRightLine className="ml-1 size-3.5" aria-hidden />
+              <Link
+                href={`${pathname}?data=${job.reference_date}`}
+                aria-label={`Abrir relatorio de ${formatDateBR(job.reference_date)}`}
+              >
+                <Button variant="ghost" title="Abrir relatorio">
+                  <RiArrowRightLine className="size-4" aria-hidden />
                 </Button>
               </Link>
             </div>
@@ -475,15 +321,16 @@ function makeColumns({
           return (
             <div className="flex justify-end">
               <Button
-                variant="secondary"
+                variant="ghost"
                 onClick={(e) => {
                   e.stopPropagation()
                   onRedispatch(job)
                 }}
                 disabled={isRedispatching}
+                title="Re-disparar"
+                aria-label={`Re-disparar solicitacao de ${formatDateBR(job.reference_date)}`}
               >
-                <RiRefreshLine className="mr-1 size-3.5" aria-hidden />
-                Re-disparar
+                <RiRefreshLine className="size-4" aria-hidden />
               </Button>
             </div>
           )
