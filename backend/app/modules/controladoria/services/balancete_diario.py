@@ -99,6 +99,30 @@ class Cobertura:
 
 
 @dataclass
+class DataQuality:
+    """Qualidade do snapshot D-1 vs D0 — detecta comparacoes invalidas.
+
+    Anomalia tipica: `wh_dia_util_qitech` marca uma data como `status='completo'`
+    mas alguns dos 7 silvers nao foram ingeridos (ETL parcial). Caso real:
+    REALINVEST 30/04 e 11/05/2026 — apenas `wh_posicao_renda_fixa` populada.
+    Quando o usuario seleciona D0=04/05, o backend infere D-1=30/04 (snapshot
+    parcial), e o ΔPL Cota Sub vira gigante (compara renda_fixa-only com
+    snapshot completo de D0).
+
+    Regra `comparable`: True sse nenhum silver tem sinal divergente — ou seja,
+    para cada silver, ou ambos os dias tem rows ou ambos nao tem. Quando um
+    silver tem dados em D-1 mas nao em D0 (ou inverso), comparacao distorce.
+
+    Ver follow-up [[project_qitech_freshness_followups]].
+    """
+    silvers_d1: dict[str, int]   # silver_origin -> count de rows em D-1
+    silvers_d0: dict[str, int]
+    silvers_divergentes: list[str]  # silvers presentes so em um dos dias
+    comparable: bool
+    reason: str | None = None  # mensagem humano-readable quando !comparable
+
+
+@dataclass
 class CosifRow:
     """Row do silver subjacente a uma conta COSIF.
 
@@ -144,6 +168,7 @@ class BalanceteResponse:
     classe_breakdown_por_cosif: dict[str, list[ClasseSrMezSubBreakdown]]
     reconciliacao: Reconciliacao
     cobertura: Cobertura
+    data_quality: DataQuality
 
     def to_dict(self) -> dict[str, Any]:
         """Serializa para dict adequado a Pydantic (BalanceteResponseSchema)."""
@@ -166,6 +191,7 @@ class BalanceteResponse:
                     for (s, i, v) in self.cobertura.top_pendentes
                 ],
             },
+            "data_quality": asdict(self.data_quality),
         }
 
 
@@ -342,6 +368,11 @@ async def compute_balancete_diario(
     # 8. Cobertura (foco no D0 — relatorio atual)
     cob = _build_cobertura(rows_d0, rules_cache, overrides)
 
+    # 9. Data quality — detecta D-1/D0 com snapshot parcial (ETL incompleto)
+    data_quality = _build_data_quality(
+        rows_d1, rows_d0, data_d_minus_1, data_d_zero
+    )
+
     return BalanceteResponse(
         fundo_id=fundo_id,
         data_d_zero=data_d_zero,
@@ -350,6 +381,7 @@ async def compute_balancete_diario(
         classe_breakdown_por_cosif=classe_breakdown,
         reconciliacao=reconciliacao,
         cobertura=cob,
+        data_quality=data_quality,
     )
 
 
@@ -457,6 +489,84 @@ def _build_cobertura(rows, rules_cache, overrides) -> Cobertura:
         rows_por_source=dict(counts),
         valor_por_source=dict(valor_por_source),
         top_pendentes=pendentes[:10],
+    )
+
+
+# ─── Data quality ────────────────────────────────────────────────────────────
+
+
+_SILVER_HUMAN_LABEL: dict[str, str] = {
+    "wh_saldo_conta_corrente":    "conta corrente",
+    "wh_saldo_tesouraria":        "tesouraria",
+    "wh_posicao_compromissada":   "compromissadas",
+    "wh_posicao_renda_fixa":      "renda fixa",
+    "wh_posicao_cota_fundo":      "cotas de fundo",
+    "wh_posicao_outros_ativos":   "outros ativos (PDD)",
+    "wh_cpr_movimento":           "CPR",
+}
+
+
+def _build_data_quality(
+    rows_d1: list[_SilverRow],
+    rows_d0: list[_SilverRow],
+    data_d_minus_1: date,
+    data_d_zero: date,
+) -> DataQuality:
+    """Detecta snapshot parcial em D-1 ou D0 comparando presenca de silvers.
+
+    Conta rows por silver_origin em ambos os dias. Marca como `divergente`
+    qualquer silver que tem rows em um dia mas nao no outro — sintoma de
+    ETL incompleto.
+
+    `comparable` = True quando NENHUM silver e divergente. Isso e mais
+    robusto do que "todos os 7 populados" pois evita falsos positivos em
+    fundos que naturalmente nao tem `wh_saldo_tesouraria` ou
+    `wh_posicao_compromissada`, por exemplo.
+    """
+    silvers_d1: dict[str, int] = {origin: 0 for origin in _QUERIES}
+    silvers_d0: dict[str, int] = {origin: 0 for origin in _QUERIES}
+    for r in rows_d1:
+        silvers_d1[r.silver_origin] = silvers_d1.get(r.silver_origin, 0) + 1
+    for r in rows_d0:
+        silvers_d0[r.silver_origin] = silvers_d0.get(r.silver_origin, 0) + 1
+
+    divergentes: list[str] = []
+    for origin in _QUERIES:
+        has_d1 = silvers_d1.get(origin, 0) > 0
+        has_d0 = silvers_d0.get(origin, 0) > 0
+        if has_d1 != has_d0:
+            divergentes.append(origin)
+
+    if not divergentes:
+        return DataQuality(
+            silvers_d1=silvers_d1,
+            silvers_d0=silvers_d0,
+            silvers_divergentes=[],
+            comparable=True,
+            reason=None,
+        )
+
+    # Determina qual dia esta parcial — o que tem menos silvers populados.
+    populados_d1 = sum(1 for v in silvers_d1.values() if v > 0)
+    populados_d0 = sum(1 for v in silvers_d0.values() if v > 0)
+    dia_parcial = data_d_minus_1 if populados_d1 < populados_d0 else data_d_zero
+    dia_label = "D-1" if dia_parcial == data_d_minus_1 else "D0"
+
+    silvers_faltando_humanos = [
+        _SILVER_HUMAN_LABEL.get(s, s) for s in divergentes
+    ]
+    reason = (
+        f"{dia_label} ({dia_parcial.strftime('%d/%m/%Y')}) com snapshot parcial — "
+        f"faltam dados de: {', '.join(silvers_faltando_humanos)}. "
+        f"Comparacao pode estar distorcida."
+    )
+
+    return DataQuality(
+        silvers_d1=silvers_d1,
+        silvers_d0=silvers_d0,
+        silvers_divergentes=divergentes,
+        comparable=False,
+        reason=reason,
     )
 
 

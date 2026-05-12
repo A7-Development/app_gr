@@ -16,7 +16,12 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { RiPlayLine, RiSettings3Line, RiInboxLine } from "@remixicon/react"
+import {
+  RiLoader4Line,
+  RiPlayLine,
+  RiSettings3Line,
+  RiInboxLine,
+} from "@remixicon/react"
 import type { ColumnDef } from "@tanstack/react-table"
 
 import { Button } from "@/components/tremor/Button"
@@ -198,7 +203,11 @@ export function EndpointsTab({
       {
         id: "actions",
         header: "",
-        cell: ({ row }) => (
+        cell: ({ row }) => {
+          const isRowSyncing =
+            syncMut.isPending &&
+            syncMut.variables?.endpointName === row.original.name
+          return (
           <div className="flex items-center justify-end gap-2">
             <Button
               variant="ghost"
@@ -207,10 +216,14 @@ export function EndpointsTab({
                 handleSyncNow(row.original)
               }}
               disabled={syncMut.isPending}
-              title="Sincronizar agora"
+              title={isRowSyncing ? "Sincronizando…" : "Sincronizar agora"}
               aria-label={`Sincronizar ${row.original.label} agora`}
             >
-              <RiPlayLine className="size-4" aria-hidden />
+              {isRowSyncing ? (
+                <RiLoader4Line className="size-4 animate-spin text-blue-500" aria-hidden />
+              ) : (
+                <RiPlayLine className="size-4" aria-hidden />
+              )}
             </Button>
             <Button
               variant="ghost"
@@ -224,10 +237,11 @@ export function EndpointsTab({
               <RiSettings3Line className="size-4" aria-hidden />
             </Button>
           </div>
-        ),
+          )
+        },
       },
     ],
-    [handleSyncNow, syncMut.isPending],
+    [handleSyncNow, syncMut.isPending, syncMut.variables?.endpointName],
   )
 
   const rows = endpoints ?? []

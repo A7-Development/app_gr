@@ -16,7 +16,7 @@ Todos exigem `require_module(Module.INTEGRACOES, Permission.ADMIN)`.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -36,6 +36,10 @@ from app.modules.integracoes.public import (
     endpoint_catalog,
     list_endpoint_configs_for_source,
     run_sync_endpoint,
+)
+from app.modules.integracoes.services.coverage import (
+    CoverageStatus,
+    get_source_coverage,
 )
 from app.modules.integracoes.services.source_config import list_configs
 from app.shared.endpoint_catalog import EndpointSpec
@@ -402,4 +406,87 @@ async def sync_endpoint(
         rows_ingested=int(summary.get("rows_ingested") or 0),
         steps=summary.get("steps") or [],
         errors=summary.get("errors") or [],
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Coverage (Fase 1 - aba "Cobertura" da UI)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class CoverageDayOut(BaseModel):
+    data: date
+    status: str = Field(description=", ".join(s.value for s in CoverageStatus))
+    http_status: int | None = None
+
+
+class EndpointCoverageOut(BaseModel):
+    name: str
+    label: str
+    schedule_kind: ScheduleKindStr
+    supported: bool
+    days: list[CoverageDayOut]
+    count_ok: int
+    count_not_published: int
+    count_gap: int
+
+
+class CoverageResponseOut(BaseModel):
+    start_date: date
+    end_date: date
+    endpoints: list[EndpointCoverageOut]
+
+
+@router.get(
+    "/{source_type}/coverage",
+    response_model=CoverageResponseOut,
+)
+async def source_coverage(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    source_type: Annotated[SourceType, Path()],
+    range_days: Annotated[int, Query(ge=7, le=365)] = 90,
+    unidade_administrativa_id: Annotated[UUID | None, Query(alias="ua")] = None,
+    _: None = _Guard,
+) -> CoverageResponseOut:
+    """Cobertura historica por endpoint nos ultimos `range_days` dias.
+
+    Pra cada endpoint daily da source, retorna 1 entrada por dia no range
+    com status (ok / not_published / gap / weekend / holiday / pending /
+    before_first_sync / unsupported). Cruza raw tables com calendario
+    ANBIMA (`wh_dim_dia_util`) pra distinguir furo real de feriado.
+
+    Endpoints sem suporte a coverage diaria (INTERVAL, ON_DEMAND) sao
+    retornados com `supported=False` e `days=[]`.
+    """
+    cov = await get_source_coverage(
+        db,
+        source_type=source_type,
+        tenant_id=principal.tenant_id,
+        unidade_administrativa_id=unidade_administrativa_id,
+        range_days=range_days,
+    )
+    return CoverageResponseOut(
+        start_date=cov.start_date,
+        end_date=cov.end_date,
+        endpoints=[
+            EndpointCoverageOut(
+                name=ep.name,
+                label=ep.label,
+                schedule_kind=ep.schedule_kind,  # type: ignore[arg-type]
+                supported=ep.supported,
+                days=[
+                    CoverageDayOut(
+                        data=d.data,
+                        status=d.status.value,
+                        http_status=d.http_status,
+                    )
+                    for d in ep.days
+                ],
+                count_ok=ep.count_ok,
+                count_not_published=ep.count_not_published,
+                count_gap=ep.count_gap,
+            )
+            for ep in cov.endpoints
+        ],
     )

@@ -258,6 +258,12 @@ export type ReconciliacaoWaterfallCardProps = {
   loading?:       boolean
   error?:         string | null
   onRetry?:       () => void
+  /** Quando false, renderiza overlay "Comparacao nao confiavel" + barras
+   *  com opacity reduzida. Usuario ainda ve os valores mas com sinalizacao
+   *  visual de que a comparacao pode estar distorcida. */
+  comparable?:    boolean
+  /** Mensagem detalhada do motivo (ex.: "D-1 (30/04) com snapshot parcial..."). */
+  unreliableReason?: string | null
 }
 
 export function ReconciliacaoWaterfallCard({
@@ -265,6 +271,8 @@ export function ReconciliacaoWaterfallCard({
   loading,
   error,
   onRetry,
+  comparable = true,
+  unreliableReason,
 }: ReconciliacaoWaterfallCardProps) {
   const steps = React.useMemo(
     () => (reconciliacao ? buildSteps(reconciliacao) : []),
@@ -274,12 +282,45 @@ export function ReconciliacaoWaterfallCard({
 
   const caption = React.useMemo(() => {
     if (!reconciliacao) return "Como o ΔPL Sub se decompoe e reconcilia"
+    if (!comparable) {
+      return "Comparacao nao confiavel — D-1 com snapshot parcial"
+    }
     const sinal = reconciliacao.delta_pl_cota_sub_real >= 0 ? "+" : ""
     const valor = `${sinal}${fmtBRLCompact.format(reconciliacao.delta_pl_cota_sub_real)}`
     const pctSinal = reconciliacao.delta_pct_sobre_d1 >= 0 ? "+" : ""
     const pct = `${pctSinal}${reconciliacao.delta_pct_sobre_d1.toFixed(2).replace(".", ",")}%`
     return `Variacao Cota Sub: ${valor} | ${pct}`
-  }, [reconciliacao])
+  }, [reconciliacao, comparable])
+
+  // Quando comparable=false, renderiza o card normalmente mas com:
+  //   - opacity reduzida nas barras (sinaliza "nao confie")
+  //   - badge no canto superior direito explicando
+  // Solucao via wrapper relativo + ChartCard; EChartsCard nao expoe slot
+  // overlay nativo, entao usamos position absolute.
+  if (!comparable && reconciliacao) {
+    return (
+      <div
+        className="relative"
+        title={unreliableReason ?? "Comparacao nao confiavel"}
+      >
+        <div className="opacity-40 transition-opacity">
+          <EChartsCard
+            title="Reconciliacao da Cota Subordinada"
+            caption={caption}
+            option={option}
+            height={300}
+            loading={loading}
+            error={error}
+            onRetry={onRetry}
+          />
+        </div>
+        <div className="pointer-events-none absolute right-3 top-3 z-10 inline-flex items-center gap-1 rounded-sm bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700 dark:bg-red-500/10 dark:text-red-300">
+          <span aria-hidden="true">⚠</span>
+          Comparacao nao confiavel
+        </div>
+      </div>
+    )
+  }
 
   return (
     <EChartsCard

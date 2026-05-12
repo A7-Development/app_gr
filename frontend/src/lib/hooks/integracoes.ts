@@ -29,6 +29,8 @@ const KEYS = {
     ["integracoes", "runs", st, limit] as const,
   endpoints: (st: SourceTypeId, env: Environment, ua?: string | null) =>
     ["integracoes", "endpoints", st, env, ua ?? null] as const,
+  coverage: (st: SourceTypeId, rangeDays: number, ua?: string | null) =>
+    ["integracoes", "coverage", st, rangeDays, ua ?? null] as const,
 }
 
 export function useSources(environment: Environment = "production") {
@@ -191,9 +193,55 @@ export function useSyncEndpoint(sourceType: SourceTypeId) {
         vars.environment ?? "production",
         vars.uaId,
       ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["integracoes", "endpoints", sourceType] })
+    // Optimistic: pinta a row como "em_progresso" no clique, sem esperar
+    // o backend gravar TSEC + o poll de 30s rebater. Janela cega entre
+    // POST in-flight e proximo poll caia para zero.
+    onMutate: async (vars) => {
+      const env = vars.environment ?? "production"
+      const key = KEYS.endpoints(sourceType, env, vars.uaId)
+      await qc.cancelQueries({ queryKey: key })
+      const previous = qc.getQueryData<EndpointDetail[]>(key)
+      const nowIso = new Date().toISOString()
+      qc.setQueryData<EndpointDetail[]>(key, (old) =>
+        old?.map((e) =>
+          e.name === vars.endpointName
+            ? {
+                ...e,
+                last_sync_status: "em_progresso",
+                last_sync_started_at: nowIso,
+                last_sync_error: null,
+              }
+            : e,
+        ),
+      )
+      return { previous, key }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous && ctx?.key) {
+        qc.setQueryData(ctx.key, ctx.previous)
+      }
+    },
+    onSettled: (_data, _err, vars) => {
+      const env = vars.environment ?? "production"
+      qc.invalidateQueries({
+        queryKey: KEYS.endpoints(sourceType, env, vars.uaId),
+      })
       qc.invalidateQueries({ queryKey: KEYS.runs(sourceType, 50) })
     },
+  })
+}
+
+export function useSourceCoverage(
+  sourceType: SourceTypeId | null,
+  rangeDays: number = 90,
+  uaId?: string | null,
+) {
+  return useQuery({
+    queryKey: sourceType
+      ? KEYS.coverage(sourceType, rangeDays, uaId)
+      : ["integracoes", "coverage", "none"],
+    queryFn: () => integracoes.coverage(sourceType!, { rangeDays, uaId }),
+    enabled: !!sourceType,
+    staleTime: 5 * 60_000, // 5min — cobertura nao muda em segundos
   })
 }

@@ -23,6 +23,11 @@ export {
   type IntensityTone, type IntensityLevel,
 } from "./KpiStrip"
 export {
+  KpiHeadline,
+  type KpiHeadlineProps, type KpiHeadlinePrimary,
+  type KpiHeadlineDiagnostic, type KpiHeadlineTone, type DiagnosticTone,
+} from "./KpiHeadline"
+export {
   FilterBar, FilterSearch, FilterChip, RemovableChip,
   MoreFiltersButton, SavedViewsDropdown,
   type SavedView,
@@ -157,6 +162,7 @@ export {
 export { DropdownUserProfile } from "./DropdownUserProfile"
 export { EmptyState } from "./EmptyState"
 export { ErrorState } from "./ErrorState"
+export { CoverageHeatmap } from "./CoverageHeatmap"
 export { FilterPill, type FilterPillOption } from "./FilterPill"
 export { InfoTooltip } from "./InfoTooltip"
 export {

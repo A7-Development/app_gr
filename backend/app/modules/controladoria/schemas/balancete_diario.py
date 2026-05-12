@@ -76,6 +76,16 @@ class CoberturaSchema(BaseModel):
     top_pendentes: list[PendenteEntrySchema]
 
 
+class DataQualitySchema(BaseModel):
+    """Qualidade do snapshot D-1 vs D0 (detecta ETL parcial)."""
+
+    silvers_d1:           dict[str, int]
+    silvers_d0:           dict[str, int]
+    silvers_divergentes:  list[str]
+    comparable:           bool
+    reason:               str | None = None
+
+
 class BalanceteResponseSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -86,6 +96,7 @@ class BalanceteResponseSchema(BaseModel):
     classe_breakdown_por_cosif: dict[str, list[ClasseSrMezSubBreakdownSchema]]
     reconciliacao: ReconciliacaoSchema
     cobertura: CoberturaSchema
+    data_quality: DataQualitySchema
 
 
 class CosifRowSchema(BaseModel):

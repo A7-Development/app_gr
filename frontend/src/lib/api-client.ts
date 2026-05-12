@@ -1728,6 +1728,40 @@ export type EndpointDetail = {
   unidade_administrativa_id: string | null
 }
 
+/** Coverage — historico de datas cobertas por endpoint (Fase 1 aba Cobertura). */
+export type CoverageStatus =
+  | "ok"
+  | "not_published"
+  | "gap"
+  | "weekend"
+  | "holiday"
+  | "pending"
+  | "before_first_sync"
+  | "unsupported"
+
+export type CoverageDay = {
+  data: string // ISO date
+  status: CoverageStatus
+  http_status: number | null
+}
+
+export type EndpointCoverage = {
+  name: string
+  label: string
+  schedule_kind: ScheduleKind
+  supported: boolean
+  days: CoverageDay[]
+  count_ok: number
+  count_not_published: number
+  count_gap: number
+}
+
+export type CoverageResponse = {
+  start_date: string // ISO date
+  end_date: string // ISO date
+  endpoints: EndpointCoverage[]
+}
+
 export type EndpointConfigPayload = {
   /** null = preserva o atual (não toca enabled). */
   enabled?: boolean | null
@@ -1879,6 +1913,18 @@ export const integracoes = {
       `/integracoes/sources/${sourceType}/endpoints/${encodeURIComponent(
         endpointName,
       )}/sync?${qs.toString()}`,
+    )
+  },
+  coverage: (
+    sourceType: SourceTypeId,
+    options: { rangeDays?: number; uaId?: string | null } = {},
+  ) => {
+    const qs = new URLSearchParams({
+      range_days: String(options.rangeDays ?? 90),
+    })
+    if (options.uaId) qs.set("ua", options.uaId)
+    return apiClient.get<CoverageResponse>(
+      `/integracoes/sources/${sourceType}/coverage?${qs.toString()}`,
     )
   },
 }
@@ -2201,6 +2247,14 @@ export type Cobertura = {
   top_pendentes:    PendenteEntry[]
 }
 
+export type DataQuality = {
+  silvers_d1:           Record<string, number>
+  silvers_d0:           Record<string, number>
+  silvers_divergentes:  string[]
+  comparable:           boolean
+  reason:               string | null
+}
+
 export type BalanceteResponse = {
   fundo_id:                   string
   data_d_zero:                string  // ISO date
@@ -2209,6 +2263,7 @@ export type BalanceteResponse = {
   classe_breakdown_por_cosif: Record<string, ClasseBreakdown[]>
   reconciliacao:              Reconciliacao
   cobertura:                  Cobertura
+  data_quality:               DataQuality
 }
 
 // Raw shapes — Decimal serializado como string pelo Pydantic
@@ -2250,6 +2305,7 @@ type BalanceteResponseRaw = {
   classe_breakdown_por_cosif: Record<string, ClasseBreakdownRaw[]>
   reconciliacao:              ReconciliacaoRaw
   cobertura:                  CoberturaRaw
+  data_quality:               DataQuality  // ja vem como JSON simples (sem Decimal)
 }
 
 function _coerceCosifNode(n: CosifNodeRaw): CosifNode {
@@ -2307,6 +2363,7 @@ function _coerceBalanceteResponse(r: BalanceteResponseRaw): BalanceteResponse {
     classe_breakdown_por_cosif: breakdown,
     reconciliacao:              _coerceReconciliacao(r.reconciliacao),
     cobertura:                  _coerceCobertura(r.cobertura),
+    data_quality:               r.data_quality,
   }
 }
 

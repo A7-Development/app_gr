@@ -146,14 +146,23 @@ const col = createColumnHelper<CosifNodeUI>()
 type BuildColumnsOpts = {
   dataAnterior?: string
   data?:         string
+  /** Quando false, headers de D-1 e Δ ganham asterisco + tooltip avisando
+   *  que a comparacao pode estar distorcida (D-1 com snapshot parcial). */
+  comparable?:   boolean
+  unreliableReason?: string | null
 }
 
 function buildColumns(
   opts: BuildColumnsOpts,
 ): ColumnDef<CosifNodeUI, unknown>[] {
-  const { dataAnterior, data } = opts
-  const headerD1 = dataAnterior ? fmtDateShort(dataAnterior) : "D-1"
+  const { dataAnterior, data, comparable = true, unreliableReason } = opts
+  const asterisco = comparable ? "" : " *"
+  const headerD1 = (dataAnterior ? fmtDateShort(dataAnterior) : "D-1") + asterisco
   const headerD0 = data         ? fmtDateShort(data)         : "D0"
+  const headerDelta = "Δ" + asterisco
+  const headerDeltaPct = "Δ %" + asterisco
+  const unreliableTooltip = unreliableReason
+    ?? "Comparacao pode estar distorcida — D-1 com snapshot parcial"
 
   const labelCol = col.accessor("nome", {
     id:     "label",
@@ -208,7 +217,14 @@ function buildColumns(
 
   const d1Col = col.accessor("d_minus_1", {
     id:     "d_minus_1",
-    header: headerD1,
+    header: () =>
+      comparable ? (
+        headerD1
+      ) : (
+        <span title={unreliableTooltip} className="cursor-help">
+          {headerD1}
+        </span>
+      ),
     meta:   { align: "right" },
     size:   140,
     cell:   (info) => {
@@ -254,7 +270,14 @@ function buildColumns(
 
   const deltaCol = col.accessor("delta", {
     id:     "delta",
-    header: "Δ",
+    header: () =>
+      comparable ? (
+        "Δ"
+      ) : (
+        <span title={unreliableTooltip} className="cursor-help">
+          {headerDelta}
+        </span>
+      ),
     meta:   { align: "right" },
     size:   140,
     cell:   (info) => {
@@ -283,7 +306,14 @@ function buildColumns(
 
   const deltaPctCol = col.accessor("delta_pct", {
     id:     "delta_pct",
-    header: "Δ %",
+    header: () =>
+      comparable ? (
+        "Δ %"
+      ) : (
+        <span title={unreliableTooltip} className="cursor-help">
+          {headerDeltaPct}
+        </span>
+      ),
     meta:   { align: "right" },
     size:   80,
     cell:   (info) => {
@@ -345,6 +375,10 @@ export type BalanceteDiarioTableProps = {
   onSelectNode?: (node: CosifNodeUI) => void
   /** Override do titulo do card. */
   title?: string
+  /** Quando false, headers D-1 / Δ / Δ% ganham asterisco + tooltip avisando. */
+  comparable?:   boolean
+  /** Mensagem detalhada do motivo (entra no tooltip). */
+  unreliableReason?: string | null
 }
 
 export function BalanceteDiarioTable({
@@ -354,6 +388,8 @@ export function BalanceteDiarioTable({
   emptyMessage,
   onSelectNode,
   title = "Balancete patrimonial diario",
+  comparable = true,
+  unreliableReason,
 }: BalanceteDiarioTableProps) {
   const [incluirCompensacao, setIncluirCompensacao] = React.useState(false)
 
@@ -381,8 +417,8 @@ export function BalanceteDiarioTable({
   }, [tree])
 
   const columns = React.useMemo(
-    () => buildColumns({ dataAnterior, data }),
-    [dataAnterior, data],
+    () => buildColumns({ dataAnterior, data, comparable, unreliableReason }),
+    [dataAnterior, data, comparable, unreliableReason],
   )
 
   const handleRowClick = React.useCallback(

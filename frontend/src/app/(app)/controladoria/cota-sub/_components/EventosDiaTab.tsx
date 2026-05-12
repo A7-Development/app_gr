@@ -22,7 +22,10 @@ import * as React from "react"
 import { RiCalendarLine } from "@remixicon/react"
 
 import { Button } from "@/components/tremor/Button"
-import { KpiCard, KpiStrip } from "@/design-system/components/KpiStrip"
+import {
+  KpiHeadline,
+  type KpiHeadlineDiagnostic,
+} from "@/design-system/components/KpiHeadline"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 
@@ -38,15 +41,6 @@ import { ResiduoAlertCard } from "./ResiduoAlertCard"
 const fmtBRLCompact = new Intl.NumberFormat("pt-BR", {
   style: "currency", currency: "BRL",
   notation: "compact", maximumFractionDigits: 2,
-})
-
-const fmtBRL = new Intl.NumberFormat("pt-BR", {
-  style: "currency", currency: "BRL",
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-})
-
-const fmtPct = new Intl.NumberFormat("pt-BR", {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
 })
 
 // ─── Props ───────────────────────────────────────────────────────────────────
@@ -73,18 +67,85 @@ export function EventosDiaTab({
 
   const recon = balancete?.reconciliacao
   const cob = balancete?.cobertura
+  const dq = balancete?.data_quality
   const nodes = balancete?.nodes ?? []
   const classeBreakdown =
     selectedNode?.codigo && balancete
       ? balancete.classe_breakdown_por_cosif[selectedNode.codigo]
       : undefined
 
-  // Cobertura % classificada (override + rule)
-  const coberturaPct = React.useMemo(() => {
-    if (!cob || cob.total_rows === 0) return null
-    const pend = cob.rows_por_source.pendente ?? 0
-    return (1 - pend / cob.total_rows) * 100
-  }, [cob])
+  // ─── Diagnostico do KpiHeadline ─────────────────────────────────────────
+  // Ordem dos chips:
+  //   0. (prioritario) Snapshot parcial — quando data_quality.comparable=false,
+  //      esse chip aparece PRIMEIRO em vermelho e o numero primary vira cinza.
+  //      Comparacao distorcida e o problema mais grave: sem dado consistente,
+  //      os outros diagnosticos perdem sentido.
+  //   1. Reconciliacao: |residuo| / |PL Sub D-1| <= 0,1pp = ok
+  //   2. Cobertura COSIF: 0 rows pendentes = ok
+  //   3. Anomalias adicionais: placeholder ate termos detector dedicado
+  const headlineDiagnostics = React.useMemo<KpiHeadlineDiagnostic[]>(() => {
+    if (!recon || !cob) return []
+    const out: KpiHeadlineDiagnostic[] = []
+
+    // 0. Snapshot parcial — prioritario
+    if (dq && !dq.comparable) {
+      out.push({
+        label: dq.reason ?? "Comparacao nao confiavel (snapshot parcial)",
+        tone:  "error",
+      })
+    }
+
+    // 1. Reconciliacao
+    const residuoPp =
+      recon.pl_cota_sub_d1 !== 0
+        ? Math.abs(recon.residuo) / Math.abs(recon.pl_cota_sub_d1)
+        : 0
+    if (residuoPp <= 0.001) {
+      out.push({ label: "Reconciliada", tone: "ok" })
+    } else if (residuoPp <= 0.01) {
+      out.push({
+        label: `Residuo ${fmtBRLCompact.format(Math.abs(recon.residuo))}`,
+        tone:  "warning",
+      })
+    } else {
+      out.push({
+        label: `Residuo ${fmtBRLCompact.format(Math.abs(recon.residuo))} acima da tolerancia`,
+        tone:  "error",
+      })
+    }
+
+    // 2. Cobertura COSIF
+    const pendentesCount = cob.rows_por_source.pendente ?? 0
+    if (pendentesCount === 0) {
+      out.push({ label: "Cobertura 100%", tone: "ok" })
+    } else {
+      out.push({
+        label: `${pendentesCount} ${pendentesCount === 1 ? "papel sem COSIF" : "papeis sem COSIF"}`,
+        tone:  "warning",
+      })
+    }
+
+    // 3. Anomalias dedicadas — placeholder ate Fase 1.5 (detector heuristico)
+    out.push({ label: "0 anomalias", tone: "ok" })
+
+    return out
+  }, [recon, cob, dq])
+
+  const headlinePrimary = React.useMemo(() => {
+    if (!recon) return { value: "—" }
+    const pct = recon.delta_pct_sobre_d1
+    const sinalPct = pct >= 0 ? "+" : ""
+    const sinalReal = recon.delta_pl_cota_sub_real >= 0 ? "+" : ""
+    // Quando snapshot e parcial, forca tone=neutral (cinza) para evitar que o
+    // usuario interprete um numero distorcido como tendencia real.
+    const tone: "positive" | "negative" | "neutral" | undefined =
+      dq && !dq.comparable ? "neutral" : undefined
+    return {
+      value: `${sinalPct}${pct.toFixed(2).replace(".", ",")}%`,
+      sub:   `${sinalReal}${fmtBRLCompact.format(recon.delta_pl_cota_sub_real)} vs D-1`,
+      tone,
+    }
+  }, [recon, dq])
 
   // Erro: prioriza ErrorState (CLAUDE.md §14 — explicar a falha).
   if (errorMessage && !loading) {
@@ -113,58 +174,37 @@ export function EventosDiaTab({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 1. KpiStrip — 4 KPIs do dia */}
-      <KpiStrip cols={4}>
-        <KpiCard
-          label="PL Cota Sub"
-          value={recon ? fmtBRLCompact.format(recon.pl_cota_sub_d0) : "—"}
-          sub={recon ? `D-1: ${fmtBRLCompact.format(recon.pl_cota_sub_d1)}` : undefined}
-          source="QiTech"
-        />
-        <KpiCard
-          label="Δ PL Cota Sub"
-          value={recon ? fmtBRLCompact.format(recon.delta_pl_cota_sub_real) : "—"}
-          delta={
-            recon && recon.pl_cota_sub_d1 !== 0
-              ? { value: recon.delta_pct_sobre_d1, suffix: "%" }
-              : undefined
-          }
-          deltaSub="vs D-1"
-          source="QiTech"
-        />
-        <KpiCard
-          label="Cobertura COSIF"
-          value={coberturaPct != null ? `${fmtPct.format(coberturaPct)}%` : "—"}
-          sub={cob ? `${cob.total_rows} rows classificadas` : undefined}
-          source="A7 · classifier"
-        />
-        <KpiCard
-          label="Residuo"
-          value={recon ? fmtBRL.format(recon.residuo) : "—"}
-          sub={
-            recon && recon.pl_cota_sub_d1 !== 0
-              ? `${fmtPct.format(Math.abs(recon.residuo) / Math.abs(recon.pl_cota_sub_d1) * 100)} pp do PL Sub`
-              : undefined
-          }
-          source="reconciliacao"
-        />
-      </KpiStrip>
-
-      {/* 2. Hero waterfall — reconciliacao da Cota Sub (Z2) */}
-      <ReconciliacaoWaterfallCard
-        reconciliacao={recon}
-        loading={loading}
-        error={errorMessage ?? null}
-        onRetry={onRetry}
+      {/* 1. KpiHeadline — Z1 canonica para paginas analiticas com pergunta
+          dominante. Substitui a strip de 4 KpiCards (tile syndrome). */}
+      <KpiHeadline
+        statement="Variação do PL"
+        primary={headlinePrimary}
+        diagnostics={headlineDiagnostics}
+        loading={loading && !balancete}
       />
 
-      {/* 3. Balancete patrimonial diario hierarquico (Z3) */}
+      {/* 2. Balancete patrimonial diario hierarquico — tabela COSIF como
+          referencia primaria de leitura (controller le saldos antes do
+          waterfall, que e a sintese do movimento) */}
       <BalanceteDiarioTable
         nodes={nodes}
         data={balancete?.data_d_zero}
         dataAnterior={balancete?.data_d_minus_1}
         emptyMessage={loading ? "Carregando..." : undefined}
         onSelectNode={setSelectedNode}
+        comparable={dq?.comparable ?? true}
+        unreliableReason={dq?.reason}
+      />
+
+      {/* 3. Hero waterfall — reconciliacao da Cota Sub (sintese visual do
+          movimento, complementa a tabela acima) */}
+      <ReconciliacaoWaterfallCard
+        reconciliacao={recon}
+        loading={loading}
+        error={errorMessage ?? null}
+        onRetry={onRetry}
+        comparable={dq?.comparable ?? true}
+        unreliableReason={dq?.reason}
       />
 
       {/* 4. Residuo + cobertura (Z4) */}

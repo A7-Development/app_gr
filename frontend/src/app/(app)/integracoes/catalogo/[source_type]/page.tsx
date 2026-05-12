@@ -34,6 +34,7 @@ import type { Environment, SourceTypeId } from "@/lib/api-client"
 
 import { CredenciaisTab } from "./_components/CredenciaisTab"
 import { ContasBancariasTab } from "./_components/ContasBancariasTab"
+import { CoberturaTab } from "./_components/CoberturaTab"
 import { EndpointsTab } from "./_components/EndpointsTab"
 import { TestarTab } from "./_components/TestarTab"
 import { HistoricoTab } from "./_components/HistoricoTab"
@@ -55,12 +56,14 @@ const SOURCES_WITH_ENDPOINT_CATALOG = new Set<SourceTypeId>([
 const TABS_BASE = [
   { key: "credenciais", label: "Credenciais" },
   { key: "endpoints", label: "Endpoints" },
+  { key: "cobertura", label: "Cobertura" },
   { key: "testar", label: "Testar" },
   { key: "historico", label: "Historico" },
 ] as const
 const TABS_WITH_BANK_ACCOUNTS = [
   { key: "credenciais", label: "Credenciais" },
   { key: "endpoints", label: "Endpoints" },
+  { key: "cobertura", label: "Cobertura" },
   { key: "contas-bancarias", label: "Contas bancarias" },
   { key: "testar", label: "Testar" },
   { key: "historico", label: "Historico" },
@@ -201,6 +204,9 @@ export default function SourceDetailPage() {
               environment={environment}
               uaId={uaIdParam}
             />
+          )}
+          {!isLoading && data && activeTab === "cobertura" && (
+            <CoberturaTab sourceType={sourceType} uaId={uaIdParam} />
           )}
           {!isLoading && data && activeTab === "contas-bancarias" && (
             <ContasBancariasTab detail={data} sourceType={sourceType} />
