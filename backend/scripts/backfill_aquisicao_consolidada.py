@@ -1,21 +1,18 @@
-"""Backfill liquidados-baixados QiTech REALINVEST FIDC — janela arbitraria.
+"""Backfill aquisicao-consolidada QiTech REALINVEST FIDC — janela arbitraria.
 
-Itera em chunks de N dias (default 7) chamando `sync_liquidados_baixados`
-por chunk. Cada chunk e 1 GET ao QiTech com periodo no path; upsert por
-`source_id` em `wh_liquidacao_recebivel` deduplica chunks sobrepostos.
+Clone de `backfill_liquidados_baixados.py` pro endpoint
+`/v2/fidc-custodia/report/aquisicao-consolidada/{cnpj}/{di}/{df}`.
+Mesmos chunks de 7 dias (timeout 30s do httpx). Upsert idempotente por
+`source_id` em `wh_aquisicao_recebivel`.
 
-Por que chunks: o httpx client do adapter tem timeout default de 30s
-(`connection.py::_DEFAULT_TIMEOUT`); janelas de 30 dias estouram. Chunks
-de 7 dias rodam em ~10s cada (medido). Trocar o timeout em prod nao vale
-o risco — chunks resolvem do lado do script.
-
-Origem 2026-05-12: precisamos popular abril/2026 inteiro pra analisar
-forense o ajuste negativo grande de 2026-04-13 (incidente operacional).
+Motivacao 2026-05-12: necessario pra cruzar com `wh_liquidacao_recebivel`
+e detectar mudanca de valor de face entre aquisicao e liquidacao (caso
+da forense do incidente abril/2026).
 
 Uso (de backend/):
-    .venv\\Scripts\\python.exe scripts/backfill_liquidados_baixados.py
-    .venv\\Scripts\\python.exe scripts/backfill_liquidados_baixados.py 2026-04-01 2026-04-30
-    .venv\\Scripts\\python.exe scripts/backfill_liquidados_baixados.py 2026-04-01 2026-04-30 14
+    .venv\\Scripts\\python.exe scripts/backfill_aquisicao_consolidada.py
+    .venv\\Scripts\\python.exe scripts/backfill_aquisicao_consolidada.py 2026-04-01 2026-04-30
+    .venv\\Scripts\\python.exe scripts/backfill_aquisicao_consolidada.py 2026-03-01 2026-04-30 14
 """
 
 from __future__ import annotations
@@ -33,7 +30,7 @@ from app.core.database import AsyncSessionLocal
 from app.core.enums import Environment, SourceType
 from app.modules.integracoes.adapters.admin.qitech.config import QiTechConfig
 from app.modules.integracoes.adapters.admin.qitech.custodia import (
-    sync_liquidados_baixados,
+    sync_aquisicao_consolidada,
 )
 from app.modules.integracoes.services.source_config import (
     decrypt_config,
@@ -127,7 +124,7 @@ async def main() -> int:
 
     for i, (di, df) in enumerate(chunks, start=1):
         try:
-            step = await sync_liquidados_baixados(
+            step = await sync_aquisicao_consolidada(
                 tenant_id=tenant_id,
                 environment=Environment.PRODUCTION,
                 config=config,

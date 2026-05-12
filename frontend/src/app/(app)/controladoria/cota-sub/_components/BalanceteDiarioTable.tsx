@@ -99,6 +99,13 @@ function fmtDateShort(iso?: string): string {
 // - Pendente (codigo=null, nivel=0): tratado como nivel 1 visualmente.
 
 function rowClass(row: CosifNodeUI): string {
+  if (row._isResultRow) {
+    return cx(
+      "!border-l-0 !cursor-default",
+      "bg-gray-100 dark:bg-gray-900",
+      "font-semibold",
+    )
+  }
   if (row.nivel === 0 || row.nivel === 1) {
     return cx(
       "!border-l-0 bg-gray-50 dark:bg-gray-900/60",
@@ -192,6 +199,21 @@ function buildColumns(
       const row = info.row.original
       const nome = info.getValue<string>()
       const baseTrunc = "block max-w-full truncate whitespace-nowrap"
+      // Linha "Resultado do dia": label uppercase tracking, sem codigo.
+      if (row._isResultRow) {
+        return (
+          <span
+            title={row._resultLabel}
+            className={cx(
+              baseTrunc,
+              "text-[11px] uppercase tracking-wide font-semibold",
+              "text-gray-700 dark:text-gray-200",
+            )}
+          >
+            {row._resultLabel}
+          </span>
+        )
+      }
       // Linha de classe sintetica (Sr/Mez/Sub): sem codigo, sem chip.
       // Tipografia mais leve pra diferenciar de conta COSIF real.
       if (row._isClasseRow) {
@@ -272,6 +294,7 @@ function buildColumns(
       const row = info.row.original
       if (row._isClasseRow) return null
       if (row._isPaperRow) return null
+      if (row._isResultRow) return null
       if (row.nivel === 0 || row.nivel === 1) return null
       return (
         <span className={cx(tableTokens.cellSecondary, "font-mono")}>
@@ -480,6 +503,14 @@ export type BalanceteDiarioTableProps = {
   /** Diff papel-a-papel por conta analitica — injetado como folhas terminais
    *  na arvore COSIF. Drill substituiu o sheet lateral. */
   rowsPorCosif?: Record<string, readonly CosifRowDiff[]>
+  /** Quando passado, injeta linha bold no rodape com o resultado do dia. */
+  resultado?: {
+    label?:     string
+    d_minus_1: number
+    d_zero:    number
+    delta:     number
+    delta_pct: number
+  }
   data?:         string  // ISO D0
   dataAnterior?: string  // ISO D-1
   emptyMessage?: string
@@ -498,6 +529,7 @@ export function BalanceteDiarioTable({
   nodes,
   classeBreakdownPorCosif,
   rowsPorCosif,
+  resultado,
   data,
   dataAnterior,
   emptyMessage,
@@ -513,8 +545,9 @@ export function BalanceteDiarioTable({
       incluirCompensacao,
       classeBreakdownPorCosif,
       rowsPorCosif,
+      resultado,
     }),
-    [nodes, incluirCompensacao, classeBreakdownPorCosif, rowsPorCosif],
+    [nodes, incluirCompensacao, classeBreakdownPorCosif, rowsPorCosif, resultado],
   )
 
   // Default expanded: niveis 1-3 com filhos.
@@ -542,9 +575,9 @@ export function BalanceteDiarioTable({
 
   const handleRowClick = React.useCallback(
     (row: CosifNodeUI) => {
-      // Linhas sinteticas (classe Sr/Mez/Sub, papel individual) sao terminais
-      // — sem drill proprio. So conta COSIF abre o sheet de explicacao.
-      if (row._isClasseRow || row._isPaperRow) return
+      // Linhas sinteticas (classe Sr/Mez/Sub, papel individual, resultado)
+      // sao terminais — sem drill proprio. So conta COSIF abre o sheet.
+      if (row._isClasseRow || row._isPaperRow || row._isResultRow) return
       // Click abre drill em folhas analiticas (nivel >= 4) ou contas analiticas
       // que viraram nao-leaf so por causa de subRows sinteticas (classe/papel).
       const realSubRows = (row.subRows ?? []).filter(

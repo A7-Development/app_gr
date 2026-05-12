@@ -296,7 +296,76 @@ async def _fetch_silver(
                 valor=valor,
                 raw=r,
             ))
-    return out
+    return _dedup_cross_silver(out)
+
+
+# Pares conhecidos de duplicacao cross-silver — quando o mesmo papel aparece
+# em DOIS silvers com mesmo (codigo, valor), mantemos apenas o mais especifico
+# (segundo elemento do par). Caso documentado: operacao compromissada de
+# overnight (ex.: C412426 LTNO STNC R$ 31.531,55 em 2026-05-11) aparece em
+# wh_posicao_renda_fixa E wh_posicao_compromissada — adapter QiTech replica.
+# Plano A futuro: corrigir no proprio adapter (ver task #41) e remover este
+# dedupe.
+_KNOWN_DEDUP_PAIRS: list[tuple[str, str]] = [
+    # (drop_this, keep_this)
+    ("wh_posicao_renda_fixa", "wh_posicao_compromissada"),
+]
+
+
+def _dedup_cross_silver(rows: list[_SilverRow]) -> list[_SilverRow]:
+    """Remove papeis duplicados entre silvers (mesmo codigo, mesmo valor).
+
+    Hotfix B (ver CLAUDE.md memoria + tasks #40/#41). Sem isso, PL_Total fica
+    inflado pelo dobro do valor da operacao duplicada e o residuo da
+    reconciliacao Cota Sub deflagra alarme falso.
+
+    Estrategia: para cada (codigo, valor) com codigo NAO null que apareca em
+    mais de um silver_origin, aplica os pares de prioridade em
+    `_KNOWN_DEDUP_PAIRS`. Duplicacoes desconhecidas sao mantidas + log warning
+    (sinal de novo padrao a investigar — nao queremos esconder bug novo).
+    Rows sem codigo (CPR, tesouraria) ficam intactas — duplicatas legitimas
+    em silvers de movimento.
+    """
+    import logging
+    log = logging.getLogger(__name__)
+
+    by_key: dict[tuple[str, Decimal], list[_SilverRow]] = defaultdict(list)
+    for r in rows:
+        codigo = r.raw.get("codigo")
+        if codigo is None:
+            continue
+        by_key[(str(codigo), r.valor)].append(r)
+
+    to_drop: set[int] = set()
+    for (codigo, valor), group in by_key.items():
+        if len(group) < 2:
+            continue
+        origins = {g.silver_origin for g in group}
+        if len(origins) < 2:
+            continue  # mesmo silver com 2 rows (codigo nao unico) — nao mexe
+
+        applied = False
+        for drop_origin, keep_origin in _KNOWN_DEDUP_PAIRS:
+            if {drop_origin, keep_origin}.issubset(origins):
+                for g in group:
+                    if g.silver_origin == drop_origin:
+                        to_drop.add(id(g))
+                applied = True
+                break
+
+        if not applied:
+            log.warning(
+                "balancete_diario: duplicacao cross-silver desconhecida — "
+                "codigo=%s valor=%s origens=%s",
+                codigo, valor, sorted(origins),
+            )
+
+    if to_drop:
+        log.info(
+            "balancete_diario: removidas %d row(s) duplicadas cross-silver "
+            "(par conhecido)", len(to_drop),
+        )
+    return [r for r in rows if id(r) not in to_drop]
 
 
 # Heuristica de identificacao da classe Sub no MEC: o relatorio
@@ -454,7 +523,10 @@ async def compute_balancete_diario(
 
     # 9. Data quality — detecta D-1/D0 com snapshot parcial (ETL incompleto)
     # OU MEC ausente em alguma das datas (impede reconciliacao independente).
-    data_quality = _build_data_quality(
+    # Consulta wh_qitech_raw_relatorio pra distinguir "API confirmou vazio"
+    # (silver opcional, sem operacao no dia) de "sync falhou" (alerta real).
+    data_quality = await _build_data_quality(
+        db, fundo_id,
         rows_d1, rows_d0, data_d_minus_1, data_d_zero,
         mec_sub_d1=mec_sub_d1, mec_sub_d0=mec_sub_d0,
     )
@@ -700,7 +772,82 @@ _SILVER_HUMAN_LABEL: dict[str, str] = {
 }
 
 
-def _build_data_quality(
+# Mapeamento silver canonico → endpoint QiTech (tipo_de_mercado em
+# wh_qitech_raw_relatorio). Usado pra distinguir "API confirmou vazio"
+# de "sync falhou" — ver _is_silver_empty_legitimate.
+_SILVER_TO_QITECH_MARKET: dict[str, str] = {
+    "wh_saldo_conta_corrente":   "conta-corrente",
+    "wh_saldo_tesouraria":       "tesouraria",
+    "wh_posicao_compromissada":  "rf-compromissadas",
+    "wh_posicao_renda_fixa":     "rf",
+    "wh_posicao_cota_fundo":     "outros-fundos",
+    "wh_posicao_outros_ativos":  "outros-ativos",
+    "wh_cpr_movimento":          "cpr",
+}
+
+
+async def _is_silver_empty_legitimate(
+    db: AsyncSession, ua_id: UUID, d: date, silver_origin: str
+) -> bool:
+    """Confirma se silver vazio e legitimo (API retornou empty) vs sync falho.
+
+    Tres sinais aceitos como "vazio legitimo":
+      (a) raw existe com http_status=200 e payload com `relatorios` vazio
+      (b) raw existe com http_status=400 e payload `_links.lastAvailableReport`
+          apontando data ANTERIOR a `d` (anti-padrao QiTech — endpoint
+          retorna 4xx quando nao tem dado mas indica ultimo dia disponivel)
+      (c) silver nao tem endpoint QiTech mapeado (ex.: tabelas internas)
+
+    Retorna False quando: raw nao existe (sync nem rodou), http_status>=500,
+    ou http_status=400 sem `lastAvailableReport` (erro real).
+    """
+    tipo = _SILVER_TO_QITECH_MARKET.get(silver_origin)
+    if tipo is None:
+        return True  # silver sem mapeamento — nao temos como verificar, assume legitimo
+
+    stmt = text(
+        """
+        SELECT http_status, payload
+          FROM wh_qitech_raw_relatorio
+         WHERE unidade_administrativa_id = :ua
+           AND data_posicao              = :d
+           AND tipo_de_mercado           = :tipo
+         LIMIT 1
+        """
+    )
+    result = await db.execute(stmt, {"ua": ua_id, "d": d, "tipo": tipo})
+    row = result.mappings().first()
+    if row is None:
+        return False  # raw nao existe → sync nao rodou (alerta real)
+
+    http_status = row["http_status"]
+    payload = row["payload"] or {}
+
+    # Caso (a): 200 + relatorios vazio
+    if http_status == 200:
+        relatorios = payload.get("relatorios") or payload.get("relatórios") or {}
+        return not relatorios  # dict/list vazio = vazio legitimo
+
+    # Caso (b): 400 com lastAvailableReport apontando dia anterior
+    if http_status == 400:
+        last = payload.get("_links", {}).get("lastAvailableReport", "")
+        # Formato: ".../report/market/<tipo>/<YYYY-MM-DD>" — extrai data do final
+        if isinstance(last, str) and last:
+            try:
+                last_date_str = last.rsplit("/", 1)[-1]
+                last_date = date.fromisoformat(last_date_str)
+                return last_date < d  # ultimo dado e anterior → empty legitimo
+            except (ValueError, IndexError):
+                return False  # payload mal formado — assume sync falho
+        return False
+
+    # Outros status (>= 500, 5xx) → sync falho
+    return False
+
+
+async def _build_data_quality(
+    db: AsyncSession,
+    ua_id: UUID,
     rows_d1: list[_SilverRow],
     rows_d0: list[_SilverRow],
     data_d_minus_1: date,
@@ -713,16 +860,18 @@ def _build_data_quality(
     e MEC ausente em alguma das datas (impede reconciliacao independente).
 
     Conta rows por silver_origin em ambos os dias. Marca como `divergente`
-    qualquer silver que tem rows em um dia mas nao no outro — sintoma de
-    ETL incompleto.
+    qualquer silver que tem rows em um dia mas nao no outro — mas APENAS
+    quando a ausencia NAO e confirmada como legitima pela raw QiTech
+    (ver `_is_silver_empty_legitimate`). Isso silencia falsos positivos de
+    silvers opcionais (compromissada overnight nao operou, tesouraria sem
+    RDB, etc) sem esconder bugs de sync reais.
 
     Tambem checa se `wh_mec_evolucao_cotas` foi publicada para ambos os dias.
     Sem MEC, o `delta_pl_cota_sub_real` cai no fallback derivado do balancete
     (matematicamente identico ao Esperado) e a comparacao perde sentido.
 
-    `comparable` = True quando NENHUM silver e divergente E MEC presente em
-    ambos os dias. Robusto contra fundos que naturalmente nao tem
-    `wh_saldo_tesouraria` ou `wh_posicao_compromissada`, por exemplo.
+    `comparable` = True quando NENHUM silver e divergente nao-legitimo E
+    MEC presente em ambos os dias.
     """
     silvers_d1: dict[str, int] = {origin: 0 for origin in _QUERIES}
     silvers_d0: dict[str, int] = {origin: 0 for origin in _QUERIES}
@@ -735,7 +884,13 @@ def _build_data_quality(
     for origin in _QUERIES:
         has_d1 = silvers_d1.get(origin, 0) > 0
         has_d0 = silvers_d0.get(origin, 0) > 0
-        if has_d1 != has_d0:
+        if has_d1 == has_d0:
+            continue
+        # Divergencia detectada — verifica se o dia VAZIO foi confirmado
+        # como vazio legitimo pela raw QiTech.
+        dia_vazio = data_d_minus_1 if not has_d1 else data_d_zero
+        legitimo = await _is_silver_empty_legitimate(db, ua_id, dia_vazio, origin)
+        if not legitimo:
             divergentes.append(origin)
 
     # MEC ausente vira "divergencia" sintetica — flagrado fora do dict de

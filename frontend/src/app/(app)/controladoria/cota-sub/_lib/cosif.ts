@@ -48,6 +48,10 @@ export type CosifNodeUI = CosifNode & {
   _paperSilverOrigin?: string
   /** Emitente (renda fixa) ou gestor (cota fundo). null nos demais silvers. */
   _paperContraparte?: string | null
+  /** Linha "Resultado do Dia" (Cota Sub) injetada no fim — bold, sem expand,
+   *  sem click. Vem de BalanceteResponse.reconciliacao. */
+  _isResultRow?: boolean
+  _resultLabel?: string
 }
 
 const _CLASSE_LABEL: Record<string, string> = {
@@ -97,6 +101,15 @@ export function buildCosifTree(
     incluirCompensacao?:      boolean
     classeBreakdownPorCosif?: Record<string, readonly ClasseBreakdown[]>
     rowsPorCosif?:            Record<string, readonly CosifRowDiff[]>
+    /** Quando passado, injeta uma linha bold no fim com o resultado do dia
+     *  (Cota Sub). Vem de BalanceteResponse.reconciliacao. */
+    resultado?: {
+      label?:     string  // default "RESULTADO DO DIA — COTA SUBORDINADA"
+      d_minus_1: number
+      d_zero:    number
+      delta:     number
+      delta_pct: number
+    }
   } = {},
 ): CosifNodeUI[] {
   const incluirCompensacao = opts.incluirCompensacao ?? false
@@ -243,7 +256,69 @@ export function buildCosifTree(
     sortByAbsDeltaDesc(root.subRows)
   }
 
+  // Achata niveis intermediarios (>=3) — folhas analiticas viram filhas
+  // diretas do nivel 2 (familia). Mantem 4 niveis estruturais maximo:
+  // grupo (L1) -> familia (L2) -> folha (L3) -> papel/classe (L4 sintetico).
+  for (const root of roots) {
+    _flattenIntermediateLevels(root)
+  }
+
+  // Injeta linha-resultado ao final, se passada.
+  if (opts.resultado) {
+    const r = opts.resultado
+    roots.push({
+      codigo:          null,
+      nome:            r.label ?? "RESULTADO DO DIA — COTA SUBORDINADA",
+      natureza:        "?",
+      nivel:           1,
+      grupo:           -1,  // sentinela — nao casa com nenhum grupo COSIF real
+      parent_codigo:   null,
+      d_minus_1:       r.d_minus_1,
+      d_zero:          r.d_zero,
+      delta:           r.delta,
+      delta_pct:       r.delta_pct,
+      rows_classified: 0,
+      cosif_source:    "rule",
+      _isResultRow:    true,
+      _resultLabel:    r.label ?? "RESULTADO DO DIA — COTA SUBORDINADA",
+    })
+  }
+
   return roots
+}
+
+/**
+ * Achata niveis intermediarios COSIF (>= 3) — promove netos pro avo quando
+ * o filho intermediario tem subRows reais. Repete bottom-up ate so restarem
+ * niveis 1, 2 e folhas (qualquer profundidade COSIF original) + sinteticos
+ * (paper rows, classe rows). Mutacao in-place na arvore.
+ *
+ * Sintetics (`_isClasseRow`, `_isPaperRow`) sao preservados como subRows da
+ * folha. Bucket pendente (codigo=null, nivel=0) tambem nao e tocado.
+ */
+function _flattenIntermediateLevels(parent: CosifNodeUI): void {
+  if (!parent.subRows || parent.subRows.length === 0) return
+  // Bottom-up: processa filhos primeiro
+  for (const child of parent.subRows) {
+    _flattenIntermediateLevels(child)
+  }
+  const flat: CosifNodeUI[] = []
+  for (const child of parent.subRows) {
+    const isReal = !child._isClasseRow && !child._isPaperRow && !child._isResultRow
+    const hasRealSubRows =
+      child.subRows && child.subRows.some(
+        (s) => !s._isClasseRow && !s._isPaperRow,
+      )
+    // Promove netos quando: filho e nivel intermediario (>=3) E tem
+    // sub-arvore real abaixo. Casos preservados: niveis 1/2, folhas (sem
+    // subRows reais), sinteticos.
+    if (isReal && child.nivel >= 3 && hasRealSubRows) {
+      flat.push(...(child.subRows ?? []))
+    } else {
+      flat.push(child)
+    }
+  }
+  parent.subRows = flat
 }
 
 const _GRUPO_ORDER: Record<number, number> = {

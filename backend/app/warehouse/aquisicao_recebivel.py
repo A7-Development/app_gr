@@ -120,4 +120,6 @@ class AquisicaoRecebivel(Auditable, Base):
     valor_compra: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     valor_vencimento: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     prazo_recebivel: Mapped[int] = mapped_column(Integer, nullable=False)
-    taxa_aquisicao: Mapped[Decimal] = mapped_column(Numeric(12, 8), nullable=False)
+    # NUMERIC(18,10) — mesmo widen de wh_liquidacao_recebivel.taxa_aquisicao
+    # pelo mesmo motivo (QiTech entrega txAquisicao absurdo eventualmente).
+    taxa_aquisicao: Mapped[Decimal] = mapped_column(Numeric(18, 10), nullable=False)

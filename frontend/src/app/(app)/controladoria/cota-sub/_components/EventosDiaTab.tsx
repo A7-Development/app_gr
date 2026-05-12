@@ -31,6 +31,7 @@ import { ErrorState } from "@/design-system/components/ErrorState"
 
 import type { BalanceteResponse, CosifNode } from "@/lib/api-client"
 
+import { AnaliseVariacaoCard } from "./AnaliseVariacaoCard"
 import { BalanceteDiarioTable } from "./BalanceteDiarioTable"
 import { CosifDrillSheet } from "./CosifDrillSheet"
 import { ReconciliacaoWaterfallCard } from "./ReconciliacaoWaterfallCard"
@@ -233,6 +234,13 @@ export function EventosDiaTab({
         nodes={nodes}
         classeBreakdownPorCosif={balancete?.classe_breakdown_por_cosif}
         rowsPorCosif={balancete?.rows_por_cosif}
+        resultado={recon ? {
+          label:     "RESULTADO DO DIA — COTA SUBORDINADA",
+          d_minus_1: recon.pl_cota_sub_d1,
+          d_zero:    recon.pl_cota_sub_d0,
+          delta:     recon.delta_pl_cota_sub_real,
+          delta_pct: recon.delta_pct_sobre_d1,
+        } : undefined}
         data={balancete?.data_d_zero}
         dataAnterior={balancete?.data_d_minus_1}
         emptyMessage={loading ? "Carregando..." : undefined}
@@ -241,16 +249,20 @@ export function EventosDiaTab({
         unreliableReason={dq?.reason}
       />
 
-      {/* 3. Hero waterfall — reconciliacao da Cota Sub (sintese visual do
-          movimento, complementa a tabela acima) */}
-      <ReconciliacaoWaterfallCard
-        reconciliacao={recon}
-        loading={loading}
-        error={errorMessage ?? null}
-        onRetry={onRetry}
-        comparable={dq?.comparable ?? true}
-        unreliableReason={dq?.reason}
-      />
+      {/* 3. Grid 2-col — esquerda: waterfall da reconciliacao; direita:
+          shell de analise da variacao (explainers heuristicos virao). */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <ReconciliacaoWaterfallCard
+          reconciliacao={recon}
+          nodes={nodes}
+          loading={loading}
+          error={errorMessage ?? null}
+          onRetry={onRetry}
+          comparable={dq?.comparable ?? true}
+          unreliableReason={dq?.reason}
+        />
+        <AnaliseVariacaoCard balancete={balancete} />
+      </div>
 
       {/* 4. Residuo + cobertura (Z4) — alvo do botao 'Ver pendentes'
           no banner sticky acima. */}

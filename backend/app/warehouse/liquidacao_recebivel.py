@@ -113,7 +113,11 @@ class LiquidacaoRecebivel(Auditable, Base):
     valor_vencimento: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     valor_pago: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     ajuste: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
-    taxa_aquisicao: Mapped[Decimal] = mapped_column(Numeric(12, 8), nullable=False)
+    # NUMERIC(18,10) widen historico (2026-05-12): QiTech eventualmente
+    # entrega `txAquisicao` >9999 (ex.: 201943.10 numa cessao FRICOCK de
+    # 2026-04-10), provavelmente bug deles. (14,10) ja foi tentado e
+    # tambem estourou. Aceitamos no DB e tratamos como outlier no consumer.
+    taxa_aquisicao: Mapped[Decimal] = mapped_column(Numeric(18, 10), nullable=False)
 
     # Estado
     # 'st_recebivel' aceita VENCIDOS / VINCENDOS / etc — string aberto.
