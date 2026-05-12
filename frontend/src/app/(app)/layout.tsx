@@ -1,6 +1,7 @@
 import { AppSidebar } from "@/design-system/components/Sidebar"
 import { AuthGuard } from "@/design-system/components/AuthGuard"
 import { HeaderBreadcrumbs } from "@/design-system/components/Breadcrumbs"
+import { SyncHealthBadge } from "@/design-system/components/SyncHealthBadge"
 import {
   SidebarProvider,
   SidebarTrigger,
@@ -37,6 +38,9 @@ export default function AppShellLayout({
             <SidebarTrigger className="-ml-1" />
             <div className="mr-2 h-4 w-px bg-gray-200 dark:bg-gray-800" />
             <HeaderBreadcrumbs />
+            <div className="ml-auto">
+              <SyncHealthBadge />
+            </div>
           </header>
           {/* overflow-x-hidden no main: barreira final contra qualquer
               vazamento horizontal de pagina interna. overflow-y permanece

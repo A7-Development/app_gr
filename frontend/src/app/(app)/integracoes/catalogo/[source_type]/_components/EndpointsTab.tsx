@@ -187,7 +187,12 @@ export function EndpointsTab({
         id: "last_sync",
         header: "Último sync",
         cell: ({ row }) => (
-          <LastSyncCell iso={row.original.last_sync_started_at} />
+          <LastSyncCell
+            startedAt={row.original.last_sync_started_at}
+            finishedAt={row.original.last_sync_finished_at}
+            status={row.original.last_sync_status}
+            errorMessage={row.original.last_sync_error}
+          />
         ),
       },
       {

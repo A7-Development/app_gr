@@ -69,7 +69,7 @@ import {
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { Insight, InsightBar } from "@/design-system/components/Insight"
 import { useUAs } from "@/lib/hooks/cadastros"
-import { useBalanco, useDatasDisponiveis, useVariacoesDia } from "@/lib/hooks/controladoria"
+import { useBalanceteDiario, useBalanco, useDatasDisponiveis } from "@/lib/hooks/controladoria"
 import {
   CurrencyCell,
   DataTable,
@@ -91,7 +91,6 @@ import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 
 import { BalanceTable } from "./_components/BalanceTable"
 import { EventosDiaTab } from "./_components/EventosDiaTab"
-import { PagamentosDiaPanel } from "@/components/controladoria/PagamentosDiaPanel"
 
 // ───────────────────────────────────────────────────────────────────────────
 // Tipos + Mocks
@@ -328,17 +327,14 @@ function AddFilterMenu({
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Aba "Balanço" — BalanceTable contabil + PagamentosDiaPanel
+// Aba "Balanco" — BalanceTable contabil (PagamentosDiaPanel removido 2026-05-11)
 // ───────────────────────────────────────────────────────────────────────────
 
 function BalancoTab(props: {
-  rows:                ReturnType<typeof useBalanco>["data"] extends infer T ? (T extends { rows: infer R } ? R : never) : never
-  data?:               string
-  dataAnterior?:       string
-  emptyMessage?:       string
-  variacoes:           ReturnType<typeof useVariacoesDia>["data"]
-  variacoesLoading:    boolean
-  variacoesError:      Error | null
+  rows:          ReturnType<typeof useBalanco>["data"] extends infer T ? (T extends { rows: infer R } ? R : never) : never
+  data?:         string
+  dataAnterior?: string
+  emptyMessage?: string
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -347,11 +343,6 @@ function BalancoTab(props: {
         data={props.data}
         dataAnterior={props.dataAnterior}
         emptyMessage={props.emptyMessage}
-      />
-      <PagamentosDiaPanel
-        variacoes={props.variacoes}
-        loading={props.variacoesLoading}
-        error={props.variacoesError}
       />
     </div>
   )
@@ -644,7 +635,7 @@ export default function CotaSubPage() {
 
   const dayIso         = React.useMemo(() => format(day, "yyyy-MM-dd"), [day])
   const balanceQuery   = useBalanco(fundoId, dayIso)
-  const variacoesQuery = useVariacoesDia(fundoId, dayIso)
+  const balanceteQuery = useBalanceteDiario(fundoId, dayIso)
   const fundoSelecionado = fundoId !== null
 
   // Datas em que a QiTech publicou snapshot — Calendar bloqueia tudo o que nao
@@ -667,14 +658,6 @@ export default function CotaSubPage() {
     const d = new Date(maisRecente)
     if (!isNaN(d.getTime())) setDay(d)
   }, [datasDisponiveisQuery.data, datasDisponiveisSet, dayIso])
-
-  // Booleano consumido por EventosDiaTab/BalancoTab/MovimentacoesTab — vazio
-  // = "nao ha dados para esta data" (caso patologico que so deveria ocorrer
-  // se o usuario chegar via deep-link futuro com data invalida).
-  const semDadosNoDia = fundoSelecionado &&
-    !balanceQuery.isLoading &&
-    !balanceQuery.isError &&
-    (balanceQuery.data?.rows?.length ?? 0) === 0
 
   const aiContext = React.useMemo(
     () => ({
@@ -977,20 +960,15 @@ export default function CotaSubPage() {
             <>
               {activeTab === "eventos" && (
                 <EventosDiaTab
-                  rows={balanceQuery.data?.rows ?? []}
-                  data={balanceQuery.data?.data}
-                  dataAnterior={balanceQuery.data?.data_anterior}
-                  loading={balanceQuery.isLoading}
+                  balancete={balanceteQuery.data}
+                  loading={balanceteQuery.isLoading}
                   errorMessage={
-                    balanceQuery.isError
-                      ? `Erro: ${(balanceQuery.error as Error)?.message ?? "desconhecido"}`
+                    balanceteQuery.isError
+                      ? `Erro: ${(balanceteQuery.error as Error)?.message ?? "desconhecido"}`
                       : undefined
                   }
-                  emptyMessage={
-                    balanceQuery.isLoading
-                      ? "Carregando..."
-                      : undefined
-                  }
+                  onRetry={() => balanceteQuery.refetch()}
+                  fundoId={fundoId}
                 />
               )}
               {activeTab === "balanco" && (
@@ -1005,9 +983,6 @@ export default function CotaSubPage() {
                       ? `Erro: ${(balanceQuery.error as Error)?.message ?? "desconhecido"}`
                       : undefined
                   }
-                  variacoes={variacoesQuery.data}
-                  variacoesLoading={variacoesQuery.isLoading}
-                  variacoesError={variacoesQuery.error as Error | null}
                 />
               )}
               {activeTab === "movimentacoes" && (

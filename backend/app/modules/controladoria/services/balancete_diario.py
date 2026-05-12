@@ -99,6 +99,43 @@ class Cobertura:
 
 
 @dataclass
+class CosifRow:
+    """Row do silver subjacente a uma conta COSIF.
+
+    Devolvido por `compute_cosif_rows()` para o drill-down do
+    `CosifDrillSheet` na UI — lista os papeis individuais que sustentam
+    o saldo da conta analitica.
+    """
+    silver_origin: str
+    codigo: str | None  # identificador da row no silver (ex.: codigo do papel)
+    nome: str
+    valor: Decimal
+    quantidade: Decimal | None  # so wh_posicao_renda_fixa
+    indexador: str | None        # so wh_posicao_renda_fixa
+    cosif_source: str            # 'override' | 'rule:<rid>'
+
+
+@dataclass
+class CosifRowsResponse:
+    fundo_id: UUID
+    data_posicao: date
+    cosif_codigo: str
+    cosif_nome: str
+    total_valor: Decimal
+    rows: list[CosifRow]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "fundo_id": self.fundo_id,
+            "data_posicao": self.data_posicao,
+            "cosif_codigo": self.cosif_codigo,
+            "cosif_nome": self.cosif_nome,
+            "total_valor": self.total_valor,
+            "rows": [asdict(r) for r in self.rows],
+        }
+
+
+@dataclass
 class BalanceteResponse:
     fundo_id: UUID
     data_d_zero: date
@@ -420,4 +457,85 @@ def _build_cobertura(rows, rules_cache, overrides) -> Cobertura:
         rows_por_source=dict(counts),
         valor_por_source=dict(valor_por_source),
         top_pendentes=pendentes[:10],
+    )
+
+
+# ─── Drill-down por conta COSIF ─────────────────────────────────────────────
+
+
+async def compute_cosif_rows(
+    db: AsyncSession,
+    tenant_id: UUID,
+    fundo_id: UUID,
+    data_posicao: date,
+    cosif_codigo: str,
+) -> CosifRowsResponse:
+    """Lista as rows do silver que sustentam o saldo de uma conta COSIF.
+
+    Usado pelo `CosifDrillSheet` na UI quando o usuario clica numa conta
+    analitica para ver os papeis individuais (ex.: clicar em
+    `1.3.1.15.30.001` mostra "739704 ITAU SOBERANO REF SI").
+
+    Aceita tanto conta analitica (folha) quanto sintetica (agrega todos
+    os descendentes). Resolve pela cascata override -> rule do classifier
+    em runtime — mesma logica de `compute_balancete_diario`.
+
+    Multi-tenant: query do silver ja filtra por `unidade_administrativa_id`
+    (= fundo_id); tenant_id reservado para futura validacao de subscription.
+    """
+    rules_cache = await load_rules_cache(db)
+    overrides = await load_overrides(db, tenant_id, fundo_id)
+    catalog = await load_catalog_tree(db)
+
+    info = catalog.get(cosif_codigo)
+    if info is None:
+        raise ValueError(
+            f"COSIF '{cosif_codigo}' nao existe no catalogo."
+        )
+
+    # Conjunto de codigos aceitos: o solicitado + todos os descendentes
+    # (para o caso de o usuario clicar numa conta sintetica).
+    accepted: set[str] = {cosif_codigo}
+    for cod, node in catalog.items():
+        cur = node.parent_codigo
+        while cur is not None:
+            if cur == cosif_codigo:
+                accepted.add(cod)
+                break
+            parent = catalog.get(cur)
+            if parent is None:
+                break
+            cur = parent.parent_codigo
+
+    rows = await _fetch_silver(db, fundo_id, data_posicao)
+
+    out: list[CosifRow] = []
+    total = Decimal(0)
+    for r in rows:
+        res = classify(r.silver_origin, r.raw, rules_cache, overrides)
+        if res.cosif not in accepted:
+            continue
+        qtde = r.raw.get("quantidade")
+        indexador = r.raw.get("indexador")
+        out.append(CosifRow(
+            silver_origin=r.silver_origin,
+            codigo=r.raw.get("codigo"),
+            nome=r.nome,
+            valor=r.valor,
+            quantidade=Decimal(str(qtde)) if qtde is not None else None,
+            indexador=indexador,
+            cosif_source=res.source,
+        ))
+        total += r.valor
+
+    # Ordena por |valor| desc — mais material primeiro.
+    out.sort(key=lambda x: abs(x.valor), reverse=True)
+
+    return CosifRowsResponse(
+        fundo_id=fundo_id,
+        data_posicao=data_posicao,
+        cosif_codigo=cosif_codigo,
+        cosif_nome=info.nome,
+        total_valor=total,
+        rows=out,
     )

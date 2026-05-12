@@ -166,6 +166,7 @@ export {
 export { InsightStrip, type InsightStripItem } from "./InsightStrip"
 export { JsonPreview } from "./JsonPreview"
 export { LastSyncCell } from "./LastSyncCell"
+export { SyncHealthBadge } from "./SyncHealthBadge"
 export { Logo } from "./Logo"
 export { DynamicForm } from "./DynamicForm"
 export { ModuleSwitcher } from "./ModuleSwitcher"

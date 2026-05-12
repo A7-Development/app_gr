@@ -45,7 +45,7 @@ from app.modules.bi.schemas.operacoes import (
     TopCedenteItem,
     VolumeResumoDeltas,
 )
-from app.shared.audit_log.sync_health import last_sync_at
+from app.shared.audit_log.sync_health import last_data_update_at
 from app.warehouse.dim import DimProduto, DimUnidadeAdministrativa
 from app.warehouse.operacao import Operacao
 
@@ -123,9 +123,10 @@ async def _build_provenance(
     """Calcula proveniencia agregada para a resposta atual.
 
     - `last_source_updated_at` vem das linhas filtradas (MAX dentro do set).
-    - `last_sync_at` vem do `decision_log` (global, independe do filtro) —
-      responde "o pipeline esta vivo?" mesmo quando o set filtrado nao tem
-      linhas novas.
+    - `last_sync_at` vem de `MAX(wh_operacao.ingested_at)` no tenant inteiro
+      (independe do filtro) — responde "quando dados frescos chegaram nesta
+      tabela". Sobrevive a falhas parciais de outros sub-tasks do mesmo
+      adapter (DRE pode estar quebrado e operacao continuar atualizando).
     """
     base = select(
         func.count(Operacao.id),
@@ -134,7 +135,7 @@ async def _build_provenance(
     stmt = _apply_filters(base, tenant_id=tenant_id, **filters)
     row = (await db.execute(stmt)).one()
     row_count, last_source_updated = row
-    last_sync = await last_sync_at(db, tenant_id, rule_or_model="bitfin_adapter")
+    last_sync = await last_data_update_at(db, tenant_id, Operacao)
     return Provenance(
         source_type="erp:bitfin",
         source_ids=["wh_operacao"],

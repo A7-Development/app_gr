@@ -86,3 +86,26 @@ class BalanceteResponseSchema(BaseModel):
     classe_breakdown_por_cosif: dict[str, list[ClasseSrMezSubBreakdownSchema]]
     reconciliacao: ReconciliacaoSchema
     cobertura: CoberturaSchema
+
+
+class CosifRowSchema(BaseModel):
+    """Row do silver subjacente a uma conta COSIF (drill-down)."""
+
+    silver_origin: str
+    codigo: str | None = Field(description="Identificador no silver (codigo do papel, conta, etc.)")
+    nome: str
+    valor: Decimal
+    quantidade: Decimal | None = None
+    indexador: str | None = None
+    cosif_source: str
+
+
+class CosifRowsResponseSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    fundo_id: UUID
+    data_posicao: date
+    cosif_codigo: str
+    cosif_nome: str
+    total_valor: Decimal
+    rows: list[CosifRowSchema]

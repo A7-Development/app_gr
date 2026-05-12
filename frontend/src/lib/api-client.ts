@@ -498,6 +498,21 @@ export type SyncHealthEntry = {
 }
 export type SyncHealth = SyncHealthEntry[]
 
+export type SyncHealthFailingEndpoint = {
+  source_type: string
+  source_label: string
+  endpoint_name: string
+  endpoint_label: string
+  last_sync_started_at: string | null
+  last_sync_finished_at: string | null
+  last_sync_error: string | null
+}
+
+export type SyncHealthSummary = {
+  failing_count: number
+  failing: SyncHealthFailingEndpoint[]
+}
+
 export type BIResponse<T> = {
   data: T
   provenance: Provenance
@@ -1593,6 +1608,8 @@ export const biMetadata = {
 //
 export const system = {
   syncHealth: () => apiClient.get<SyncHealth>("/system/sync-health"),
+  syncHealthSummary: () =>
+    apiClient.get<SyncHealthSummary>("/system/sync-health-summary"),
 }
 
 //
@@ -2123,6 +2140,236 @@ function _coerceBalanceRow(r: BalanceRowDTO): BalanceRow {
   }
 }
 
+// ── Balancete Patrimonial Diario COSIF (Fase 1 Cota Sub) ───────────────────
+//
+// Modelo agnostico multi-tenant — backend devolve arvore COSIF plana
+// (`nodes`) que o frontend reconstroi via `parent_codigo`. Decimals chegam
+// como string no JSON; coercao para number e feita aqui no client.
+
+export type CosifSource = "override" | "rule" | "mixed" | "pendente" | string
+
+export type CosifNode = {
+  codigo:         string | null  // null = pendente (nao classificado)
+  nome:           string
+  natureza:       "D" | "C" | "?"
+  nivel:          number  // 1-6 na arvore COSIF; 0 quando pendente
+  grupo:          number  // 1=Ativo, 4=Passivo, 6=PL, 8=Despesa; 0 quando pendente
+  parent_codigo:  string | null
+  d_minus_1:      number
+  d_zero:         number
+  delta:          number
+  delta_pct:      number
+  rows_classified: number
+  cosif_source:   CosifSource
+}
+
+export type ClasseBreakdown = {
+  classe:    "senior" | "mezanino" | "subordinado" | "compensacao" | "aporte" | string
+  d_minus_1: number
+  d_zero:    number
+  delta:     number
+}
+
+export type Reconciliacao = {
+  pl_total_d1:                number
+  pl_total_d0:                number
+  delta_pl_total:             number
+  cotas_sr_emitidas_d1:       number  // modulo (positivo)
+  cotas_sr_emitidas_d0:       number
+  delta_cotas_sr:             number
+  cotas_mez_emitidas_d1:      number
+  cotas_mez_emitidas_d0:      number
+  delta_cotas_mez:            number
+  pl_cota_sub_d1:             number
+  pl_cota_sub_d0:             number
+  delta_pl_cota_sub_real:     number
+  delta_pl_cota_sub_esperado: number
+  residuo:                    number  // real - esperado (deve ~0)
+  delta_pct_sobre_d1:         number
+}
+
+export type PendenteEntry = {
+  silver_origin: string
+  identificador: string
+  valor:         number
+}
+
+export type Cobertura = {
+  total_rows:       number
+  rows_por_source:  Record<string, number>
+  valor_por_source: Record<string, number>
+  top_pendentes:    PendenteEntry[]
+}
+
+export type BalanceteResponse = {
+  fundo_id:                   string
+  data_d_zero:                string  // ISO date
+  data_d_minus_1:             string
+  nodes:                      CosifNode[]
+  classe_breakdown_por_cosif: Record<string, ClasseBreakdown[]>
+  reconciliacao:              Reconciliacao
+  cobertura:                  Cobertura
+}
+
+// Raw shapes — Decimal serializado como string pelo Pydantic
+type CosifNodeRaw = Omit<CosifNode, "d_minus_1" | "d_zero" | "delta" | "delta_pct"> & {
+  d_minus_1: number | string
+  d_zero:    number | string
+  delta:     number | string
+  delta_pct: number | string
+}
+
+type ClasseBreakdownRaw = Omit<ClasseBreakdown, "d_minus_1" | "d_zero" | "delta"> & {
+  d_minus_1: number | string
+  d_zero:    number | string
+  delta:     number | string
+}
+
+type ReconciliacaoRaw = {
+  [K in keyof Reconciliacao]: number | string
+}
+
+type PendenteEntryRaw = {
+  silver_origin: string
+  identificador: string
+  valor:         number | string
+}
+
+type CoberturaRaw = {
+  total_rows:       number
+  rows_por_source:  Record<string, number>
+  valor_por_source: Record<string, number | string>
+  top_pendentes:    PendenteEntryRaw[]
+}
+
+type BalanceteResponseRaw = {
+  fundo_id:                   string
+  data_d_zero:                string
+  data_d_minus_1:             string
+  nodes:                      CosifNodeRaw[]
+  classe_breakdown_por_cosif: Record<string, ClasseBreakdownRaw[]>
+  reconciliacao:              ReconciliacaoRaw
+  cobertura:                  CoberturaRaw
+}
+
+function _coerceCosifNode(n: CosifNodeRaw): CosifNode {
+  return {
+    ...n,
+    d_minus_1: Number(n.d_minus_1),
+    d_zero:    Number(n.d_zero),
+    delta:     Number(n.delta),
+    delta_pct: Number(n.delta_pct),
+  }
+}
+
+function _coerceClasseBreakdown(b: ClasseBreakdownRaw): ClasseBreakdown {
+  return {
+    classe:    b.classe,
+    d_minus_1: Number(b.d_minus_1),
+    d_zero:    Number(b.d_zero),
+    delta:     Number(b.delta),
+  }
+}
+
+function _coerceReconciliacao(r: ReconciliacaoRaw): Reconciliacao {
+  const out: Partial<Reconciliacao> = {}
+  for (const k of Object.keys(r) as (keyof Reconciliacao)[]) {
+    out[k] = Number(r[k]) as never
+  }
+  return out as Reconciliacao
+}
+
+function _coerceCobertura(c: CoberturaRaw): Cobertura {
+  const valor: Record<string, number> = {}
+  for (const [k, v] of Object.entries(c.valor_por_source)) valor[k] = Number(v)
+  return {
+    total_rows:       c.total_rows,
+    rows_por_source:  c.rows_por_source,
+    valor_por_source: valor,
+    top_pendentes:    c.top_pendentes.map((p) => ({
+      silver_origin: p.silver_origin,
+      identificador: p.identificador,
+      valor:         Number(p.valor),
+    })),
+  }
+}
+
+function _coerceBalanceteResponse(r: BalanceteResponseRaw): BalanceteResponse {
+  const breakdown: Record<string, ClasseBreakdown[]> = {}
+  for (const [k, v] of Object.entries(r.classe_breakdown_por_cosif)) {
+    breakdown[k] = v.map(_coerceClasseBreakdown)
+  }
+  return {
+    fundo_id:                   r.fundo_id,
+    data_d_zero:                r.data_d_zero,
+    data_d_minus_1:             r.data_d_minus_1,
+    nodes:                      r.nodes.map(_coerceCosifNode),
+    classe_breakdown_por_cosif: breakdown,
+    reconciliacao:              _coerceReconciliacao(r.reconciliacao),
+    cobertura:                  _coerceCobertura(r.cobertura),
+  }
+}
+
+// ── Drill-down de rows silver por conta COSIF ──────────────────────────────
+
+export type CosifRow = {
+  silver_origin: string
+  codigo:        string | null
+  nome:          string
+  valor:         number
+  quantidade:    number | null
+  indexador:     string | null
+  cosif_source:  CosifSource
+}
+
+export type CosifRowsResponse = {
+  fundo_id:     string
+  data_posicao: string  // ISO date
+  cosif_codigo: string
+  cosif_nome:   string
+  total_valor:  number
+  rows:         CosifRow[]
+}
+
+type CosifRowRaw = Omit<CosifRow, "valor" | "quantidade"> & {
+  valor:      number | string
+  quantidade: number | string | null
+}
+
+type CosifRowsResponseRaw = {
+  fundo_id:     string
+  data_posicao: string
+  cosif_codigo: string
+  cosif_nome:   string
+  total_valor:  number | string
+  rows:         CosifRowRaw[]
+}
+
+function _coerceCosifRow(r: CosifRowRaw): CosifRow {
+  return {
+    silver_origin: r.silver_origin,
+    codigo:        r.codigo,
+    nome:          r.nome,
+    valor:         Number(r.valor),
+    quantidade:    r.quantidade === null || r.quantidade === undefined
+                     ? null
+                     : Number(r.quantidade),
+    indexador:     r.indexador,
+    cosif_source:  r.cosif_source,
+  }
+}
+
+function _coerceCosifRowsResponse(r: CosifRowsResponseRaw): CosifRowsResponse {
+  return {
+    fundo_id:     r.fundo_id,
+    data_posicao: r.data_posicao,
+    cosif_codigo: r.cosif_codigo,
+    cosif_nome:   r.cosif_nome,
+    total_valor:  Number(r.total_valor),
+    rows:         r.rows.map(_coerceCosifRow),
+  }
+}
+
 export const controladoria = {
   cotaSubVariacaoDiaria: async (
     fundoId: string,
@@ -2189,6 +2436,31 @@ export const controladoria = {
         ok:                     raw.conferencia.ok,
       },
     }
+  },
+
+  cotaSubBalanceteDiario: async (
+    fundoId: string,
+    data: string,
+    dataAnterior?: string,
+  ): Promise<BalanceteResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    const raw = await apiClient.get<BalanceteResponseRaw>(
+      `/controladoria/cota-sub/balancete-diario?${params.toString()}`,
+    )
+    return _coerceBalanceteResponse(raw)
+  },
+
+  cotaSubBalanceteCosifRows: async (
+    fundoId: string,
+    data: string,
+    cosifCodigo: string,
+  ): Promise<CosifRowsResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    const raw = await apiClient.get<CosifRowsResponseRaw>(
+      `/controladoria/cota-sub/balancete-diario/cosif/${encodeURIComponent(cosifCodigo)}/rows?${params.toString()}`,
+    )
+    return _coerceCosifRowsResponse(raw)
   },
 }
 

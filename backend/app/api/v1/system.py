@@ -21,7 +21,7 @@ from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.modules.integracoes.models.tenant_source_endpoint_config import (
     TenantSourceEndpointConfig,
 )
-from app.modules.integracoes.public import rule_name_for
+from app.modules.integracoes.public import endpoint_catalog, rule_name_for
 from app.modules.integracoes.services.source_config import list_configs
 from app.shared.audit_log.sync_health import last_sync_at, last_sync_attempt_at
 from app.shared.catalog.source_catalog import SourceCatalog
@@ -178,6 +178,84 @@ async def sync_health(
             )
 
     return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Summary leve (per-tenant, per-endpoint) — usado pelo badge no header
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class SyncHealthFailingEndpoint(BaseModel):
+    """Um endpoint com `last_sync_status='erro'` para o tenant atual."""
+
+    source_type: SourceType
+    source_label: str
+    endpoint_name: str
+    endpoint_label: str
+    last_sync_started_at: datetime | None
+    last_sync_finished_at: datetime | None
+    last_sync_error: str | None
+
+
+class SyncHealthSummary(BaseModel):
+    """Snapshot leve pra badge no header — quantos endpoints estao falhando."""
+
+    failing_count: int
+    failing: list[SyncHealthFailingEndpoint]
+
+
+@router.get("/sync-health-summary", response_model=SyncHealthSummary)
+async def sync_health_summary(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    environment: Environment = Environment.PRODUCTION,
+) -> SyncHealthSummary:
+    """Per-endpoint, per-tenant — lista endpoints com last_sync_status='erro'.
+
+    Usado pelo badge "⚠ N syncs falhando" no header sticky do app shell.
+    Roda em poll de 60s no frontend; precisa ser barato (single SELECT na TSEC).
+
+    Difere de `/system/sync-health`:
+        - Aquele agrega por SOURCE (last_sync_at do decision_log)
+        - Este lista por ENDPOINT, lendo direto a coluna last_sync_status da TSEC
+    """
+    from sqlalchemy import select
+
+    stmt = select(TenantSourceEndpointConfig).where(
+        TenantSourceEndpointConfig.tenant_id == principal.tenant_id,
+        TenantSourceEndpointConfig.environment == environment,
+        TenantSourceEndpointConfig.enabled.is_(True),
+        TenantSourceEndpointConfig.last_sync_status == "erro",
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+
+    # Carrega labels do catalogo (source + endpoint) sem N+1.
+    source_labels: dict[SourceType, str] = {}
+    for r in (await db.execute(select(SourceCatalog))).scalars().all():
+        source_labels[r.source_type] = r.label
+
+    catalogs_by_source: dict[SourceType, dict[str, str]] = {}
+
+    def _endpoint_label(st: SourceType, name: str) -> str:
+        if st not in catalogs_by_source:
+            catalogs_by_source[st] = {
+                spec.name: spec.label for spec in endpoint_catalog(st)
+            }
+        return catalogs_by_source[st].get(name, name)
+
+    failing = [
+        SyncHealthFailingEndpoint(
+            source_type=r.source_type,
+            source_label=source_labels.get(r.source_type, r.source_type.value),
+            endpoint_name=r.endpoint_name,
+            endpoint_label=_endpoint_label(r.source_type, r.endpoint_name),
+            last_sync_started_at=r.last_sync_started_at,
+            last_sync_finished_at=r.last_sync_finished_at,
+            last_sync_error=r.last_sync_error,
+        )
+        for r in rows
+    ]
+    return SyncHealthSummary(failing_count=len(failing), failing=failing)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -14,6 +14,10 @@ const KEYS = {
     ["controladoria", "cota-sub", "variacao-diaria", fundoId, data, dataAnterior ?? null] as const,
   balanco: (fundoId: string, data: string, dataAnterior?: string) =>
     ["controladoria", "cota-sub", "balanco", fundoId, data, dataAnterior ?? null] as const,
+  balanceteDiario: (fundoId: string, data: string, dataAnterior?: string) =>
+    ["controladoria", "cota-sub", "balancete-diario", fundoId, data, dataAnterior ?? null] as const,
+  cosifRows: (fundoId: string, data: string, cosifCodigo: string) =>
+    ["controladoria", "cota-sub", "cosif-rows", fundoId, data, cosifCodigo] as const,
   variacoesDia: (fundoId: string, data: string, dataAnterior?: string) =>
     ["controladoria", "cota-sub", "variacoes-dia", fundoId, data, dataAnterior ?? null] as const,
   datasDisponiveis: (fundoId: string) =>
@@ -83,6 +87,44 @@ export function useVariacoesDia(
       fundoId!,
       data!,
       dataAnterior ?? undefined,
+    ),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useBalanceteDiario(
+  fundoId: string | null | undefined,
+  data: string | null | undefined,
+  dataAnterior?: string | null,
+) {
+  const enabled = !!fundoId && !!data
+  return useQuery({
+    queryKey: KEYS.balanceteDiario(fundoId ?? "", data ?? "", dataAnterior ?? undefined),
+    queryFn: () => controladoria.cotaSubBalanceteDiario(
+      fundoId!,
+      data!,
+      dataAnterior ?? undefined,
+    ),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useCosifRows(
+  fundoId: string | null | undefined,
+  data: string | null | undefined,
+  cosifCodigo: string | null | undefined,
+) {
+  // Drill-down do CosifDrillSheet — so dispara quando o user clica numa
+  // conta com codigo. Bucket pendente (codigo=null) nao tem rows endpoint.
+  const enabled = !!fundoId && !!data && !!cosifCodigo
+  return useQuery({
+    queryKey: KEYS.cosifRows(fundoId ?? "", data ?? "", cosifCodigo ?? ""),
+    queryFn: () => controladoria.cotaSubBalanceteCosifRows(
+      fundoId!,
+      data!,
+      cosifCodigo!,
     ),
     enabled,
     staleTime: 5 * 60 * 1000,

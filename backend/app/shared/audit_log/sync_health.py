@@ -13,6 +13,7 @@ Used by:
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -53,6 +54,28 @@ async def last_sync_at(
     )
     if endpoint_name is not None:
         stmt = stmt.where(DecisionLog.endpoint_name == endpoint_name)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def last_data_update_at(
+    db: AsyncSession,
+    tenant_id: UUID,
+    model: Any,
+) -> datetime | None:
+    """Return `MAX(ingested_at)` for a silver table — when did fresh data
+    actually land in this tenant's slice of `<model>`.
+
+    Use this (not `last_sync_at`) when the UI question is "how stale is the
+    data the user is looking at right now". Survives partial sync failures:
+    if 9 of 10 sub-tasks succeeded and one failed, `ingested_at` on the rows
+    that DID update is fresh — `last_sync_at` would still report the previous
+    fully-OK run.
+
+    `model` must have a `tenant_id` column and inherit `Auditable`
+    (so `ingested_at` exists).
+    """
+    stmt = select(func.max(model.ingested_at)).where(model.tenant_id == tenant_id)
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
 

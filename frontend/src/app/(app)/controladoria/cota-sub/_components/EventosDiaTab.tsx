@@ -3,101 +3,109 @@
 /**
  * EventosDiaTab — composicao da Aba "Eventos do dia" da pagina cota-sub.
  *
- * Layout vertical (top → bottom):
- *   1. KpiStrip 5 KPIs (PL Sub D0, ΔPL, %Δ vs CDI, ΔAtivo, ΔPassivo)
- *   2. WaterfallEventosCard — chart hero da decomposicao
- *   3. InsightStrip 38px — insights heuristicos (nao-LLM no PR1)
- *   4. BalanceTable evoluida (showContribuicao + sortByDelta)
+ * Layout vertical (top -> bottom):
+ *   1. KpiStrip 4 KPIs (PL Sub D0, ΔPL R$, %ΔvsD-1, Cobertura, Residuo)
+ *   2. ReconciliacaoWaterfallCard — hero (Z2)
+ *   3. BalanceteDiarioTable — arvore COSIF hierarquica (Z3)
+ *   4. ResiduoAlertCard — alerta de cobertura/residuo (Z4)
  *
- * Recebe o payload do `/balanco`, agrega via agregarBuckets, gera insights
- * heuristicos e propaga para os componentes filhos. Sem fetch direto — pure
- * composition de dados ja prontos.
+ * Consome BalanceteResponse do endpoint /controladoria/cota-sub/balancete-diario.
+ * Classificacao COSIF agnostica multi-tenant (CLAUDE.md §10) — ver
+ * backend/docs/atribuicao-cota-sub-cosif.md.
  *
- * Defensivo: quando `rows` chega vazio (data sem snapshot QiTech — caso
- * patologico que ja deveria ser bloqueado pelo Calendar), renderiza
- * EmptyState explicativo em vez de KPIs/charts/tabela com numeros falsos.
- * CLAUDE.md §14: explicabilidade > sofisticacao em mercado regulado.
+ * Defensivo: quando `balancete` chega vazio ou em erro, renderiza EmptyState
+ * em vez de KPIs/charts/tabela com numeros falsos. CLAUDE.md §14:
+ * explicabilidade > sofisticacao em mercado regulado.
  */
 
 import * as React from "react"
 import { RiCalendarLine } from "@remixicon/react"
 
+import { Button } from "@/components/tremor/Button"
 import { KpiCard, KpiStrip } from "@/design-system/components/KpiStrip"
-import { InsightStrip } from "@/design-system/components/InsightStrip"
 import { EmptyState } from "@/design-system/components/EmptyState"
+import { ErrorState } from "@/design-system/components/ErrorState"
 
-import type { BalanceRow } from "@/lib/api-client"
+import type { BalanceteResponse, CosifNode } from "@/lib/api-client"
 
-import { agregarBuckets, decomposicaoLinhas } from "../_lib/agregacao-buckets"
-import { gerarInsights } from "../_lib/insights-heuristica"
-import { BalanceTable } from "./BalanceTable"
-import { WaterfallEventosCard } from "./WaterfallEventosCard"
+import { BalanceteDiarioTable } from "./BalanceteDiarioTable"
+import { CosifDrillSheet } from "./CosifDrillSheet"
+import { ReconciliacaoWaterfallCard } from "./ReconciliacaoWaterfallCard"
+import { ResiduoAlertCard } from "./ResiduoAlertCard"
 
 // ─── Formatadores ────────────────────────────────────────────────────────────
 
 const fmtBRLCompact = new Intl.NumberFormat("pt-BR", {
-  style:                 "currency",
-  currency:              "BRL",
-  notation:              "compact",
-  maximumFractionDigits: 2,
+  style: "currency", currency: "BRL",
+  notation: "compact", maximumFractionDigits: 2,
+})
+
+const fmtBRL = new Intl.NumberFormat("pt-BR", {
+  style: "currency", currency: "BRL",
+  minimumFractionDigits: 2, maximumFractionDigits: 2,
+})
+
+const fmtPct = new Intl.NumberFormat("pt-BR", {
+  minimumFractionDigits: 2, maximumFractionDigits: 2,
 })
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
 export type EventosDiaTabProps = {
-  rows:               BalanceRow[]
-  data?:              string
-  dataAnterior?:      string
-  loading?:           boolean
-  errorMessage?:      string
-  emptyMessage?:      string
+  balancete?:    BalanceteResponse
+  loading?:      boolean
+  errorMessage?: string
+  onRetry?:      () => void
+  /** Fundo selecionado — necessario para o drill de rows silver. */
+  fundoId?:      string | null
 }
 
 // ─── Componente ──────────────────────────────────────────────────────────────
 
 export function EventosDiaTab({
-  rows,
-  data,
-  dataAnterior,
+  balancete,
   loading       = false,
   errorMessage,
-  emptyMessage,
+  onRetry,
+  fundoId,
 }: EventosDiaTabProps) {
-  const agregacao = React.useMemo(
-    () => (rows.length > 0 ? agregarBuckets(rows) : undefined),
-    [rows],
-  )
+  const [selectedNode, setSelectedNode] = React.useState<CosifNode | null>(null)
 
-  // Decomposicao granular (linha-a-linha) — alimenta o waterfall com 3 grupos
-  // (Ativo | Passivo | Δ). Mantida em paralelo a `agregacao` (que serve KPIs +
-  // insights heuristicos com vocabulario tematico mais legivel).
-  const decomposicao = React.useMemo(
-    () => (rows.length > 0 ? decomposicaoLinhas(rows) : undefined),
-    [rows],
-  )
+  const recon = balancete?.reconciliacao
+  const cob = balancete?.cobertura
+  const nodes = balancete?.nodes ?? []
+  const classeBreakdown =
+    selectedNode?.codigo && balancete
+      ? balancete.classe_breakdown_por_cosif[selectedNode.codigo]
+      : undefined
 
-  const insights = React.useMemo(
-    () => (agregacao ? gerarInsights(agregacao) : []),
-    [agregacao],
-  )
+  // Cobertura % classificada (override + rule)
+  const coberturaPct = React.useMemo(() => {
+    if (!cob || cob.total_rows === 0) return null
+    const pend = cob.rows_por_source.pendente ?? 0
+    return (1 - pend / cob.total_rows) * 100
+  }, [cob])
 
-  // Delta percentual sobre PL Sub D-1 — exibido como sub do KPI principal
-  const deltaPctTexto = React.useMemo(() => {
-    if (!agregacao || agregacao.cota_sub_d1 === 0) return undefined
-    const pct = (agregacao.delta_cota_sub / Math.abs(agregacao.cota_sub_d1)) * 100
-    return `${pct >= 0 ? "+" : ""}${pct.toFixed(2).replace(".", ",")}%`
-  }, [agregacao])
+  // Erro: prioriza ErrorState (CLAUDE.md §14 — explicar a falha).
+  if (errorMessage && !loading) {
+    return (
+      <ErrorState
+        title="Falha ao carregar o balancete"
+        description={errorMessage}
+        action={onRetry ? <Button onClick={onRetry}>Tentar novamente</Button> : undefined}
+        className="mt-4"
+      />
+    )
+  }
 
-  // Defensivo: rows vazio = data sem snapshot QiTech para esta UA. Calendar
-  // ja bloqueia esse caso, mas se o usuario chegar via deep-link ou houver
-  // race condition apos troca de fundo, renderiza EmptyState em vez de
-  // numeros falsos.
-  if (!loading && rows.length === 0) {
+  // Vazio: caso patologico — Calendar normalmente bloqueia. Mantemos
+  // EmptyState defensivo.
+  if (!loading && !balancete) {
     return (
       <EmptyState
         icon={RiCalendarLine}
         title="Sem dados para esta data"
-        description="A QiTech nao publicou snapshot deste fundo no dia selecionado (provavelmente fim de semana, feriado ou pendencia de ETL). Selecione outra data no Calendar."
+        description="A QiTech nao publicou snapshot deste fundo no dia selecionado (fim de semana, feriado ou ETL pendente). Selecione outra data no Calendar."
         className="mt-4"
       />
     )
@@ -105,112 +113,74 @@ export function EventosDiaTab({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 1. KpiStrip — 5 KPIs do dia */}
-      <KpiStrip cols={5}>
+      {/* 1. KpiStrip — 4 KPIs do dia */}
+      <KpiStrip cols={4}>
         <KpiCard
           label="PL Cota Sub"
-          value={agregacao ? fmtBRLCompact.format(agregacao.cota_sub_d0) : "—"}
-          sub={dataAnterior ? `D-1: ${agregacao ? fmtBRLCompact.format(agregacao.cota_sub_d1) : "—"}` : undefined}
+          value={recon ? fmtBRLCompact.format(recon.pl_cota_sub_d0) : "—"}
+          sub={recon ? `D-1: ${fmtBRLCompact.format(recon.pl_cota_sub_d1)}` : undefined}
           source="QiTech"
         />
         <KpiCard
           label="Δ PL Cota Sub"
-          value={agregacao ? fmtBRLCompact.format(agregacao.delta_cota_sub) : "—"}
-          sub={deltaPctTexto ?? "—"}
+          value={recon ? fmtBRLCompact.format(recon.delta_pl_cota_sub_real) : "—"}
           delta={
-            agregacao && agregacao.cota_sub_d1 !== 0
-              ? {
-                  value: (agregacao.delta_cota_sub / Math.abs(agregacao.cota_sub_d1)) * 100,
-                  suffix: "%",
-                }
+            recon && recon.pl_cota_sub_d1 !== 0
+              ? { value: recon.delta_pct_sobre_d1, suffix: "%" }
               : undefined
           }
-          deltaSub="dia"
+          deltaSub="vs D-1"
           source="QiTech"
         />
         <KpiCard
-          label="Δ Ativo"
-          value={agregacao ? fmtBRLCompact.format(agregacao.delta_ativo) : "—"}
-          sub="contribuicao positiva"
-          source="QiTech"
+          label="Cobertura COSIF"
+          value={coberturaPct != null ? `${fmtPct.format(coberturaPct)}%` : "—"}
+          sub={cob ? `${cob.total_rows} rows classificadas` : undefined}
+          source="A7 · classifier"
         />
         <KpiCard
-          label="Δ Passivo + Equity"
-          value={agregacao ? fmtBRLCompact.format(agregacao.delta_passivo) : "—"}
-          sub="contribuicao negativa"
-          source="QiTech"
-        />
-        <KpiCard
-          label="Bucket dominante"
-          value={dominanteLabel(agregacao)}
-          sub={dominanteSubtexto(agregacao)}
-          source="QiTech"
+          label="Residuo"
+          value={recon ? fmtBRL.format(recon.residuo) : "—"}
+          sub={
+            recon && recon.pl_cota_sub_d1 !== 0
+              ? `${fmtPct.format(Math.abs(recon.residuo) / Math.abs(recon.pl_cota_sub_d1) * 100)} pp do PL Sub`
+              : undefined
+          }
+          source="reconciliacao"
         />
       </KpiStrip>
 
-      {/* 2. Hero waterfall — decomposicao da Cota Sub.
-          Card ocupa 50% da largura em viewports >= lg (espaco a direita reservado
-          para apoios complementares no PR2: tabela compacta de buckets, mini
-          chart de evolucao do PL Sub, etc). */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <WaterfallEventosCard
-          decomposicao={decomposicao}
-          loading={loading}
-          error={errorMessage ?? null}
-        />
-      </div>
+      {/* 2. Hero waterfall — reconciliacao da Cota Sub (Z2) */}
+      <ReconciliacaoWaterfallCard
+        reconciliacao={recon}
+        loading={loading}
+        error={errorMessage ?? null}
+        onRetry={onRetry}
+      />
 
-      {/* 3. InsightStrip — heuristica (nao-LLM no PR1) */}
-      {insights.length > 0 && (
-        <InsightStrip
-          insights={insights}
-          storageKey="strata:cota-sub:eventos-dia:insight-strip:dismissed"
-        />
-      )}
+      {/* 3. Balancete patrimonial diario hierarquico (Z3) */}
+      <BalanceteDiarioTable
+        nodes={nodes}
+        data={balancete?.data_d_zero}
+        dataAnterior={balancete?.data_d_minus_1}
+        emptyMessage={loading ? "Carregando..." : undefined}
+        onSelectNode={setSelectedNode}
+      />
 
-      {/* 4. BalanceTable evoluida — foco no Δ + contribuicao na Cota Sub,
-          ordenavel por magnitude do Δ. Mantem hierarquia (section/subtotal/
-          total) intocada — sort vale apenas para line/sub. */}
-      <BalanceTable
-        rows={rows}
-        data={data}
-        dataAnterior={dataAnterior}
-        emptyMessage={emptyMessage}
-        showContribuicao
-        sortByDelta
-        title="Eventos por linha do balancete"
+      {/* 4. Residuo + cobertura (Z4) */}
+      <ResiduoAlertCard
+        reconciliacao={recon}
+        cobertura={cob}
+      />
+
+      {/* Drill-down — abre ao clicar conta analitica no Z3 */}
+      <CosifDrillSheet
+        node={selectedNode}
+        classeBreakdown={classeBreakdown}
+        fundoId={fundoId ?? null}
+        dataPosicao={balancete?.data_d_zero ?? null}
+        onClose={() => setSelectedNode(null)}
       />
     </div>
   )
-}
-
-// ─── Helpers do KpiCard "Bucket dominante" ───────────────────────────────────
-
-function dominanteLabel(
-  agg: ReturnType<typeof agregarBuckets> | undefined,
-): string {
-  if (!agg) return "—"
-  const ranking = [...agg.buckets]
-    .filter((b) => b.contribuicao_cota_sub !== 0)
-    .sort(
-      (a, b) =>
-        Math.abs(b.contribuicao_cota_sub) - Math.abs(a.contribuicao_cota_sub),
-    )
-  return ranking[0]?.label ?? "—"
-}
-
-function dominanteSubtexto(
-  agg: ReturnType<typeof agregarBuckets> | undefined,
-): string {
-  if (!agg) return "—"
-  const ranking = [...agg.buckets]
-    .filter((b) => b.contribuicao_cota_sub !== 0)
-    .sort(
-      (a, b) =>
-        Math.abs(b.contribuicao_cota_sub) - Math.abs(a.contribuicao_cota_sub),
-    )
-  const top = ranking[0]
-  if (!top) return "—"
-  const sinal = top.contribuicao_cota_sub >= 0 ? "+" : ""
-  return `${sinal}${fmtBRLCompact.format(top.contribuicao_cota_sub)}`
 }

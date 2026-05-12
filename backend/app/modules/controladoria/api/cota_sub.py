@@ -13,6 +13,7 @@ from app.core.module_guard import require_module
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.modules.controladoria.schemas.balancete_diario import (
     BalanceteResponseSchema,
+    CosifRowsResponseSchema,
 )
 from app.modules.controladoria.schemas.cota_sub import (
     BalancoResponse,
@@ -22,6 +23,7 @@ from app.modules.controladoria.schemas.cota_sub import (
 from app.modules.controladoria.services.balanco import compute_balanco
 from app.modules.controladoria.services.balancete_diario import (
     compute_balancete_diario,
+    compute_cosif_rows,
 )
 from app.modules.controladoria.services.cota_sub import compute_variacao_diaria
 from app.modules.controladoria.services.variacoes_dia import compute_variacoes_dia
@@ -194,3 +196,41 @@ async def balancete_diario(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
         ) from exc
     return BalanceteResponseSchema.model_validate(result.to_dict())
+
+
+@router.get(
+    "/balancete-diario/cosif/{cosif_codigo}/rows",
+    response_model=CosifRowsResponseSchema,
+)
+async def balancete_diario_cosif_rows(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    cosif_codigo: str,
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Data da posicao (D0).")],
+    _: None = _Guard,
+) -> CosifRowsResponseSchema:
+    """Lista as rows do silver que sustentam o saldo de uma conta COSIF.
+
+    Drill-down do `CosifDrillSheet` — clica numa conta analitica na arvore
+    Z3 (ex.: `1.3.1.15.30.001 COTAS DE FUNDOS RF`) e ve os papeis
+    individuais que la cairam (ex.: `739704 ITAU SOBERANO REF SI`).
+
+    Aceita tanto conta analitica (folha — retorna so as rows que classifier
+    mapeou para ela) quanto sintetica (agrega rows de todos os descendentes).
+
+    Multi-tenant: scope enforced via `principal.tenant_id` no service.
+    """
+    try:
+        result = await compute_cosif_rows(
+            db,
+            tenant_id=principal.tenant_id,
+            fundo_id=fundo_id,
+            data_posicao=data,
+            cosif_codigo=cosif_codigo,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+    return CosifRowsResponseSchema.model_validate(result.to_dict())

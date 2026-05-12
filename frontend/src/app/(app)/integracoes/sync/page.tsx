@@ -524,7 +524,12 @@ function EndpointSubRow({
         </span>
       </TableCell>
       <TableCell>
-        <LastSyncCell iso={endpoint.last_sync_started_at} />
+        <LastSyncCell
+          startedAt={endpoint.last_sync_started_at}
+          finishedAt={endpoint.last_sync_finished_at}
+          status={endpoint.last_sync_status}
+          errorMessage={endpoint.last_sync_error}
+        />
       </TableCell>
       <TableCell className="text-right">
         <Button
