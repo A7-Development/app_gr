@@ -11,15 +11,17 @@ Diferenca para `wh_dim_dia_util`:
   positiva quando ETL coletou snapshot da UA. Cobre fim de semana,
   feriado, falha de ETL e UA recem-cadastrada de forma uniforme.
 
-Fonte (Fase A — backfill): inferida de `wh_mec_evolucao_cotas`. Decisao
-2026-05-07: MEC e a tabela-pulse (PL Sub diario) — sua presenca implica
-"QiTech publicou dado pra esta UA neste dia". Outras tabelas analiticas
-podem ter ausencias legitimas (fundo sem RF, sem compromissada) que
-nao distorcem o conceito de dia util.
+Fonte (Fase A — backfill historico): inferida de `wh_mec_evolucao_cotas`
+via migration `f9a3c2b1d8e0` (2026-05-07). MEC e a tabela-pulse (PL Sub
+diario) — sua presenca implica "QiTech publicou dado pra esta UA neste
+dia". Outras tabelas analiticas podem ter ausencias legitimas (fundo
+sem RF, sem compromissada) que nao distorcem o conceito de dia util.
 
-Fonte (Fase B — futura): adapter QiTech grava aqui no termino de cada
-sync com status real (`completo` | `parcial`) baseado em quantos
-relatorios da carteira foram capturados vs esperados.
+Fonte (Fase B — em vigor desde qitech_adapter_v0.2.0, 2026-05-11):
+`etl.sync_all` chama `_mark_dia_util_qitech` no fim de cada sync. Mantem
+a mesma regra-pulse (MEC com canonical_rows > 0 = dia 'completo') e
+popula adicionalmente `relatorios_esperados` (= len(_PIPELINE)) e
+`relatorios_recebidos` (= steps com raw_persisted=True). Idempotente.
 
 Granularidade: 1 linha por (tenant_id, unidade_administrativa_id,
 data_posicao, source_type).

@@ -8,4 +8,4 @@ Incrementar seguindo semver:
 
 from __future__ import annotations
 
-ADAPTER_VERSION = "qitech_adapter_v0.1.0"
+ADAPTER_VERSION = "qitech_adapter_v0.2.0"

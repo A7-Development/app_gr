@@ -208,14 +208,15 @@ export function EndpointsTab({
               <RiPlayLine className="size-4" aria-hidden />
             </Button>
             <Button
-              variant="secondary"
+              variant="ghost"
               onClick={(e) => {
                 e.stopPropagation()
                 setEditing(row.original)
               }}
+              title="Configurar"
+              aria-label={`Configurar ${row.original.label}`}
             >
-              <RiSettings3Line className="size-4 mr-1.5" aria-hidden />
-              Configurar
+              <RiSettings3Line className="size-4" aria-hidden />
             </Button>
           </div>
         ),
@@ -229,20 +230,6 @@ export function EndpointsTab({
   return (
     <>
       <div className="flex flex-col gap-3">
-        <Card>
-          <div className="flex flex-col gap-1.5">
-            <h3 className="text-sm font-medium text-gray-900 dark:text-gray-50">
-              Cadência por endpoint
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Cada endpoint desta fonte pode ser sincronizado com cadência
-              própria. Modos disponíveis: <strong>intervalo</strong> (a cada N
-              minutos), <strong>diário às HH:MM</strong> (timezone São Paulo)
-              ou <strong>sob demanda</strong> (não entra no scheduler).
-            </p>
-          </div>
-        </Card>
-
         <DataTableShell<EndpointDetail>
           data={rows}
           columns={columns}
