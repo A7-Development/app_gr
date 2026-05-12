@@ -37,6 +37,12 @@ from app.modules.integracoes.public import (
     list_endpoint_configs_for_source,
     run_sync_endpoint,
 )
+from app.modules.integracoes.services.backfill_service import (
+    cancel_backfill_job,
+    create_backfill_job,
+    get_backfill_job,
+    list_active_backfill_jobs,
+)
 from app.modules.integracoes.services.coverage import (
     CoverageStatus,
     get_source_coverage,
@@ -336,9 +342,14 @@ async def sync_endpoint(
     endpoint_name: Annotated[str, Path()],
     environment: Annotated[Environment, Query()] = Environment.PRODUCTION,
     unidade_administrativa_id: Annotated[UUID | None, Query(alias="ua")] = None,
+    date_param: Annotated[date | None, Query(alias="date")] = None,
     _: None = _Guard,
 ) -> EndpointSyncResult:
     """Dispara sync sob demanda de UM endpoint. Sincronia (espera retorno).
+
+    `?date=YYYY-MM-DD` opcional — quando passado, o adapter pede a data
+    especifica em vez do default (D-1 para market reports). Usado pelo
+    backfill manual e backfill_worker. Sem ?date, comportamento legado.
 
     Levanta 404 se endpoint nao esta no catalogo. Levanta 422 se tenant nao
     tem TSC pra source (precisa configurar credenciais primeiro).
@@ -387,6 +398,7 @@ async def sync_endpoint(
             source_type,
             endpoint_name,
             environment=environment,
+            since=date_param,
             triggered_by=f"user:{principal.user_id}",
             unidade_administrativa_id=unidade_administrativa_id,
         )
@@ -407,6 +419,159 @@ async def sync_endpoint(
         steps=summary.get("steps") or [],
         errors=summary.get("errors") or [],
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Backfill (assincrono) — Sub-fase 2A da freshness story (2026-05-12)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class BackfillCreatePayload(BaseModel):
+    """Body do POST /backfill — lista de datas pra enfileirar."""
+
+    dates: list[date] = Field(min_length=1, max_length=2000)
+    environment: Environment = Environment.PRODUCTION
+    unidade_administrativa_id: UUID | None = None
+
+
+class BackfillJobOut(BaseModel):
+    """Snapshot do estado do job. Polled pelo frontend a cada 2s."""
+
+    id: UUID
+    source_type: SourceType
+    environment: Environment
+    unidade_administrativa_id: UUID | None
+    endpoint_name: str
+    status: str
+    dates_pending: list[date]
+    dates_done: list[date]
+    dates_failed: list[dict[str, Any]]
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
+def _job_to_out(job: Any) -> BackfillJobOut:
+    return BackfillJobOut(
+        id=job.id,
+        source_type=SourceType(job.source_type),
+        environment=Environment(job.environment),
+        unidade_administrativa_id=job.unidade_administrativa_id,
+        endpoint_name=job.endpoint_name,
+        status=job.status,
+        dates_pending=list(job.dates_pending),
+        dates_done=list(job.dates_done),
+        dates_failed=list(job.dates_failed),
+        created_by=job.created_by,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+    )
+
+
+@router.post(
+    "/{source_type}/endpoints/{endpoint_name:path}/backfill",
+    response_model=BackfillJobOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_endpoint_backfill(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    source_type: Annotated[SourceType, Path()],
+    endpoint_name: Annotated[str, Path()],
+    payload: BackfillCreatePayload,
+    _: None = _Guard,
+) -> BackfillJobOut:
+    """Cria backfill assincrono de N datas pra UM endpoint.
+
+    Retorna `job_id` em 100ms. O worker (APScheduler tick 5s) pega o job e
+    processa serialmente, atualizando `dates_done` / `dates_failed`.
+    Frontend polla `GET /backfill/{job_id}` a cada 2s pra animar o heatmap.
+    """
+    catalog = endpoint_catalog(source_type)
+    if not any(ep.name == endpoint_name for ep in catalog):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Endpoint '{endpoint_name}' nao existe no catalogo de "
+                f"{source_type.value}."
+            ),
+        )
+
+    job = await create_backfill_job(
+        db,
+        tenant_id=principal.tenant_id,
+        source_type=source_type,
+        environment=payload.environment,
+        unidade_administrativa_id=payload.unidade_administrativa_id,
+        endpoint_name=endpoint_name,
+        dates=payload.dates,
+        created_by=f"user:{principal.user_id}",
+    )
+    return _job_to_out(job)
+
+
+@router.get(
+    "/backfill/{job_id}",
+    response_model=BackfillJobOut,
+)
+async def get_backfill_job_status(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    job_id: Annotated[UUID, Path()],
+    _: None = _Guard,
+) -> BackfillJobOut:
+    job = await get_backfill_job(
+        db, tenant_id=principal.tenant_id, job_id=job_id
+    )
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job nao encontrado.")
+    return _job_to_out(job)
+
+
+@router.delete(
+    "/backfill/{job_id}",
+    response_model=BackfillJobOut,
+)
+async def cancel_backfill_job_endpoint(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    job_id: Annotated[UUID, Path()],
+    _: None = _Guard,
+) -> BackfillJobOut:
+    """Marca job como cancelled. Worker para no proximo loop de data."""
+    job = await cancel_backfill_job(
+        db, tenant_id=principal.tenant_id, job_id=job_id
+    )
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job nao encontrado.")
+    return _job_to_out(job)
+
+
+@router.get(
+    "/{source_type}/backfill/active",
+    response_model=list[BackfillJobOut],
+)
+async def list_active_backfills(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    source_type: Annotated[SourceType, Path()],
+    endpoint_name: Annotated[str | None, Query()] = None,
+    _: None = _Guard,
+) -> list[BackfillJobOut]:
+    """Lista jobs `pending` ou `running` pra (tenant, source [, endpoint]).
+    Frontend chama no mount da aba Cobertura pra recuperar polls em
+    progresso quando voce recarrega a pagina."""
+    jobs = await list_active_backfill_jobs(
+        db,
+        tenant_id=principal.tenant_id,
+        source_type=source_type,
+        endpoint_name=endpoint_name,
+    )
+    return [_job_to_out(j) for j in jobs]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -445,26 +610,26 @@ async def source_coverage(
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
     source_type: Annotated[SourceType, Path()],
-    range_days: Annotated[int, Query(ge=7, le=365)] = 90,
+    range_days: Annotated[int, Query(ge=0, le=730)] = 90,
     unidade_administrativa_id: Annotated[UUID | None, Query(alias="ua")] = None,
     _: None = _Guard,
 ) -> CoverageResponseOut:
     """Cobertura historica por endpoint nos ultimos `range_days` dias.
 
-    Pra cada endpoint daily da source, retorna 1 entrada por dia no range
-    com status (ok / not_published / gap / weekend / holiday / pending /
-    before_first_sync / unsupported). Cruza raw tables com calendario
-    ANBIMA (`wh_dim_dia_util`) pra distinguir furo real de feriado.
+    `range_days=0` significa "todo o periodo desde o primeiro dado
+    coletado" — cap absoluto em 730 dias pra nao estourar o DOM.
 
-    Endpoints sem suporte a coverage diaria (INTERVAL, ON_DEMAND) sao
-    retornados com `supported=False` e `days=[]`.
+    Cruza raw tables com calendario ANBIMA (`wh_dim_dia_util`) pra
+    distinguir furo real de feriado. Endpoints ON_DEMAND/INTERVAL tambem
+    sao cobertos: o conceito de "dia coletado" muda mas a pergunta e a
+    mesma.
     """
     cov = await get_source_coverage(
         db,
         source_type=source_type,
         tenant_id=principal.tenant_id,
         unidade_administrativa_id=unidade_administrativa_id,
-        range_days=range_days,
+        range_days=range_days if range_days > 0 else None,
     )
     return CoverageResponseOut(
         start_date=cov.start_date,

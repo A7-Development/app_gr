@@ -206,7 +206,11 @@ export default function SourceDetailPage() {
             />
           )}
           {!isLoading && data && activeTab === "cobertura" && (
-            <CoberturaTab sourceType={sourceType} uaId={uaIdParam} />
+            <CoberturaTab
+              sourceType={sourceType}
+              uaId={uaIdParam}
+              environment={environment}
+            />
           )}
           {!isLoading && data && activeTab === "contas-bancarias" && (
             <ContasBancariasTab detail={data} sourceType={sourceType} />

@@ -1762,6 +1762,42 @@ export type CoverageResponse = {
   endpoints: EndpointCoverage[]
 }
 
+/** Backfill assincrono — Sub-fase 2A da freshness story (2026-05-12). */
+export type BackfillJobStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "failed"
+  | "cancelled"
+
+export type BackfillJobFailedDate = {
+  date: string
+  error: string
+}
+
+export type BackfillJob = {
+  id: string
+  source_type: string
+  environment: Environment
+  unidade_administrativa_id: string | null
+  endpoint_name: string
+  status: BackfillJobStatus
+  dates_pending: string[]
+  dates_done: string[]
+  dates_failed: BackfillJobFailedDate[]
+  created_by: string
+  created_at: string
+  updated_at: string
+  started_at: string | null
+  completed_at: string | null
+}
+
+export type BackfillCreatePayload = {
+  dates: string[]
+  environment?: Environment
+  unidade_administrativa_id?: string | null
+}
+
 export type EndpointConfigPayload = {
   /** null = preserva o atual (não toca enabled). */
   enabled?: boolean | null
@@ -1925,6 +1961,36 @@ export const integracoes = {
     if (options.uaId) qs.set("ua", options.uaId)
     return apiClient.get<CoverageResponse>(
       `/integracoes/sources/${sourceType}/coverage?${qs.toString()}`,
+    )
+  },
+  createBackfill: (
+    sourceType: SourceTypeId,
+    endpointName: string,
+    payload: BackfillCreatePayload,
+  ) =>
+    apiClient.post<BackfillJob>(
+      `/integracoes/sources/${sourceType}/endpoints/${encodeURIComponent(
+        endpointName,
+      )}/backfill`,
+      payload,
+    ),
+  getBackfillJob: (sourceType: SourceTypeId, jobId: string) =>
+    apiClient.get<BackfillJob>(
+      `/integracoes/sources/${sourceType}/backfill/${jobId}`,
+    ),
+  cancelBackfillJob: (sourceType: SourceTypeId, jobId: string) =>
+    apiClient.delete<BackfillJob>(
+      `/integracoes/sources/${sourceType}/backfill/${jobId}`,
+    ),
+  listActiveBackfills: (
+    sourceType: SourceTypeId,
+    endpointName?: string,
+  ) => {
+    const qs = new URLSearchParams()
+    if (endpointName) qs.set("endpoint_name", endpointName)
+    const suffix = qs.toString() ? `?${qs.toString()}` : ""
+    return apiClient.get<BackfillJob[]>(
+      `/integracoes/sources/${sourceType}/backfill/active${suffix}`,
     )
   },
 }
@@ -2261,6 +2327,7 @@ export type BalanceteResponse = {
   data_d_minus_1:             string
   nodes:                      CosifNode[]
   classe_breakdown_por_cosif: Record<string, ClasseBreakdown[]>
+  rows_por_cosif:             Record<string, CosifRowDiff[]>
   reconciliacao:              Reconciliacao
   cobertura:                  Cobertura
   data_quality:               DataQuality
@@ -2303,6 +2370,7 @@ type BalanceteResponseRaw = {
   data_d_minus_1:             string
   nodes:                      CosifNodeRaw[]
   classe_breakdown_por_cosif: Record<string, ClasseBreakdownRaw[]>
+  rows_por_cosif:             Record<string, CosifRowDiffRaw[]>
   reconciliacao:              ReconciliacaoRaw
   cobertura:                  CoberturaRaw
   data_quality:               DataQuality  // ja vem como JSON simples (sem Decimal)
@@ -2355,75 +2423,111 @@ function _coerceBalanceteResponse(r: BalanceteResponseRaw): BalanceteResponse {
   for (const [k, v] of Object.entries(r.classe_breakdown_por_cosif)) {
     breakdown[k] = v.map(_coerceClasseBreakdown)
   }
+  const rowsPorCosif: Record<string, CosifRowDiff[]> = {}
+  for (const [k, v] of Object.entries(r.rows_por_cosif)) {
+    rowsPorCosif[k] = v.map(_coerceCosifRowDiff)
+  }
   return {
     fundo_id:                   r.fundo_id,
     data_d_zero:                r.data_d_zero,
     data_d_minus_1:             r.data_d_minus_1,
     nodes:                      r.nodes.map(_coerceCosifNode),
     classe_breakdown_por_cosif: breakdown,
+    rows_por_cosif:             rowsPorCosif,
     reconciliacao:              _coerceReconciliacao(r.reconciliacao),
     cobertura:                  _coerceCobertura(r.cobertura),
     data_quality:               r.data_quality,
   }
 }
 
-// ── Drill-down de rows silver por conta COSIF ──────────────────────────────
+// ── Drill-down de rows silver por conta COSIF (diff D-1 vs D0) ─────────────
 
-export type CosifRow = {
-  silver_origin: string
-  codigo:        string | null
-  nome:          string
-  valor:         number
-  quantidade:    number | null
-  indexador:     string | null
-  cosif_source:  CosifSource
+export type CosifRowStatus = "novo" | "removido" | "alterado" | "inalterado"
+
+export type CosifRowDiff = {
+  silver_origin:         string
+  codigo:                string | null
+  nome:                  string
+  valor_d_minus_1:       number
+  valor_d_zero:          number
+  delta:                 number
+  quantidade_d_minus_1:  number | null
+  quantidade_d_zero:     number | null
+  indexador:             string | null
+  cosif_source:          CosifSource
+  status:                CosifRowStatus
+  /** Emitente (renda fixa) ou instituicao gestora (cota fundo). */
+  contraparte:           string | null
 }
 
 export type CosifRowsResponse = {
-  fundo_id:     string
-  data_posicao: string  // ISO date
-  cosif_codigo: string
-  cosif_nome:   string
-  total_valor:  number
-  rows:         CosifRow[]
+  fundo_id:               string
+  data_d_zero:            string  // ISO date
+  data_d_minus_1:         string
+  cosif_codigo:           string
+  cosif_nome:             string
+  total_valor_d_minus_1:  number
+  total_valor_d_zero:     number
+  total_delta:            number
+  rows:                   CosifRowDiff[]
 }
 
-type CosifRowRaw = Omit<CosifRow, "valor" | "quantidade"> & {
-  valor:      number | string
-  quantidade: number | string | null
+type CosifRowDiffRaw = Omit<
+  CosifRowDiff,
+  "valor_d_minus_1" | "valor_d_zero" | "delta" | "quantidade_d_minus_1" | "quantidade_d_zero"
+> & {
+  valor_d_minus_1:      number | string
+  valor_d_zero:         number | string
+  delta:                number | string
+  quantidade_d_minus_1: number | string | null
+  quantidade_d_zero:    number | string | null
 }
 
 type CosifRowsResponseRaw = {
-  fundo_id:     string
-  data_posicao: string
-  cosif_codigo: string
-  cosif_nome:   string
-  total_valor:  number | string
-  rows:         CosifRowRaw[]
+  fundo_id:               string
+  data_d_zero:            string
+  data_d_minus_1:         string
+  cosif_codigo:           string
+  cosif_nome:             string
+  total_valor_d_minus_1:  number | string
+  total_valor_d_zero:     number | string
+  total_delta:            number | string
+  rows:                   CosifRowDiffRaw[]
 }
 
-function _coerceCosifRow(r: CosifRowRaw): CosifRow {
+function _coerceQtde(q: number | string | null | undefined): number | null {
+  if (q === null || q === undefined) return null
+  return Number(q)
+}
+
+function _coerceCosifRowDiff(r: CosifRowDiffRaw): CosifRowDiff {
   return {
-    silver_origin: r.silver_origin,
-    codigo:        r.codigo,
-    nome:          r.nome,
-    valor:         Number(r.valor),
-    quantidade:    r.quantidade === null || r.quantidade === undefined
-                     ? null
-                     : Number(r.quantidade),
-    indexador:     r.indexador,
-    cosif_source:  r.cosif_source,
+    silver_origin:        r.silver_origin,
+    codigo:               r.codigo,
+    nome:                 r.nome,
+    valor_d_minus_1:      Number(r.valor_d_minus_1),
+    valor_d_zero:         Number(r.valor_d_zero),
+    delta:                Number(r.delta),
+    quantidade_d_minus_1: _coerceQtde(r.quantidade_d_minus_1),
+    quantidade_d_zero:    _coerceQtde(r.quantidade_d_zero),
+    indexador:            r.indexador,
+    cosif_source:         r.cosif_source,
+    status:               r.status,
+    contraparte:          r.contraparte,
   }
 }
 
 function _coerceCosifRowsResponse(r: CosifRowsResponseRaw): CosifRowsResponse {
   return {
-    fundo_id:     r.fundo_id,
-    data_posicao: r.data_posicao,
-    cosif_codigo: r.cosif_codigo,
-    cosif_nome:   r.cosif_nome,
-    total_valor:  Number(r.total_valor),
-    rows:         r.rows.map(_coerceCosifRow),
+    fundo_id:               r.fundo_id,
+    data_d_zero:            r.data_d_zero,
+    data_d_minus_1:         r.data_d_minus_1,
+    cosif_codigo:           r.cosif_codigo,
+    cosif_nome:             r.cosif_nome,
+    total_valor_d_minus_1:  Number(r.total_valor_d_minus_1),
+    total_valor_d_zero:     Number(r.total_valor_d_zero),
+    total_delta:            Number(r.total_delta),
+    rows:                   r.rows.map(_coerceCosifRowDiff),
   }
 }
 
@@ -2519,6 +2623,297 @@ export const controladoria = {
     )
     return _coerceCosifRowsResponse(raw)
   },
+
+  // ── DRE — Demonstrativo do Resultado do Exercicio ─────────────────────
+  // Le silver wh_dre_mensal (populado pelo ETL Bitfin v2.0.0 + classifier).
+  // fundo_id e Integer (Bitfin.UnidadeAdministrativa.Id), NAO UUID — nao
+  // confundir com o fundoId UUID da cota-sub (QiTech).
+
+  dreCompetenciasDisponiveis: async (filters: DreBaseFilters = {}): Promise<string[]> => {
+    const params = _dreParams(filters)
+    return apiClient.get<string[]>(
+      `/controladoria/dre/competencias-disponiveis?${params.toString()}`,
+    )
+  },
+
+  drePivot: async (filters: DrePivotFilters): Promise<DrePivotResponse> => {
+    const params = _dreParams(filters)
+    params.set("competencia_de", filters.competenciaDe)
+    params.set("competencia_ate", filters.competenciaAte)
+    const raw = await apiClient.get<DrePivotResponseRaw>(
+      `/controladoria/dre/pivot?${params.toString()}`,
+    )
+    return _coerceDrePivot(raw)
+  },
+
+  dreDrillFornecedores: async (
+    filters: DreDrillFornecedoresFilters,
+  ): Promise<DreFornecedoresResponse> => {
+    const params = _dreParams(filters)
+    params.set("grupo_dre", filters.grupoDre)
+    params.set("competencia_de", filters.competenciaDe)
+    params.set("competencia_ate", filters.competenciaAte)
+    if (filters.subgrupo) params.set("subgrupo", filters.subgrupo)
+    if (filters.descricao) params.set("descricao", filters.descricao)
+    if (filters.top) params.set("top", String(filters.top))
+    const raw = await apiClient.get<DreFornecedoresResponseRaw>(
+      `/controladoria/dre/drill/fornecedores?${params.toString()}`,
+    )
+    return _coerceDreFornecedores(raw)
+  },
+}
+
+// ── DRE — Tipos + helpers ──────────────────────────────────────────────────
+
+export type DreBaseFilters = {
+  fundoId?:   number
+  produtoId?: number
+  fonte?:     string
+}
+
+export type DrePivotFilters = DreBaseFilters & {
+  competenciaDe:  string  // YYYY-MM-DD (1o dia do mes)
+  competenciaAte: string  // YYYY-MM-DD (1o dia do mes)
+}
+
+export type DreDrillFornecedoresFilters = DrePivotFilters & {
+  grupoDre:   string
+  subgrupo?:  string
+  descricao?: string
+  top?:       number
+}
+
+function _dreParams(f: DreBaseFilters): URLSearchParams {
+  const params = new URLSearchParams()
+  if (f.fundoId !== undefined)   params.set("fundo_id", String(f.fundoId))
+  if (f.produtoId !== undefined) params.set("produto_id", String(f.produtoId))
+  if (f.fonte)                   params.set("fonte", f.fonte)
+  return params
+}
+
+// Backend: Pydantic Decimal -> JSON string. Quantidade vem como number int.
+type DreCelulaRaw = {
+  competencia: string
+  receita:     number | string
+  custo:       number | string
+  resultado:   number | string
+  quantidade:  number
+}
+
+export type DreCelula = {
+  competencia: string  // YYYY-MM-DD
+  receita:     number
+  custo:       number
+  resultado:   number
+  quantidade:  number
+}
+
+type DreLinhaTotaisRaw = {
+  receita:    number | string
+  custo:      number | string
+  resultado:  number | string
+  quantidade: number
+}
+
+export type DreLinhaTotais = {
+  receita:    number
+  custo:      number
+  resultado:  number
+  quantidade: number
+}
+
+type DreFornecedorRaw = {
+  fornecedor:           string | null
+  fornecedor_documento: string | null
+  valores:              DreCelulaRaw[]
+  totais:               DreLinhaTotaisRaw
+}
+
+export type DreFornecedorNode = {
+  fornecedor:          string | null
+  fornecedorDocumento: string | null
+  valores:             DreCelula[]
+  totais:              DreLinhaTotais
+}
+
+type DreDescricaoRaw = {
+  descricao:    string
+  fornecedores: DreFornecedorRaw[]
+  valores:      DreCelulaRaw[]
+  totais:       DreLinhaTotaisRaw
+}
+
+export type DreDescricao = {
+  descricao:    string
+  fornecedores: DreFornecedorNode[]
+  valores:      DreCelula[]
+  totais:       DreLinhaTotais
+}
+
+type DreSubgrupoRaw = {
+  ordem_grupo: number
+  subgrupo:    string
+  descricoes:  DreDescricaoRaw[]
+  valores:     DreCelulaRaw[]
+  totais:      DreLinhaTotaisRaw
+}
+
+export type DreSubgrupo = {
+  ordemGrupo: number
+  subgrupo:   string
+  descricoes: DreDescricao[]
+  valores:    DreCelula[]
+  totais:     DreLinhaTotais
+}
+
+type DreGrupoRaw = {
+  grupo_dre:  string
+  subgrupos:  DreSubgrupoRaw[]
+  valores:    DreCelulaRaw[]
+  totais:     DreLinhaTotaisRaw
+}
+
+export type DreGrupo = {
+  grupoDre:  string
+  subgrupos: DreSubgrupo[]
+  valores:   DreCelula[]
+  totais:    DreLinhaTotais
+}
+
+type DrePivotResponseRaw = {
+  competencias:   string[]
+  grupos:         DreGrupoRaw[]
+  valores_total:  DreCelulaRaw[]
+  totais:         DreLinhaTotaisRaw
+}
+
+export type DrePivotResponse = {
+  competencias:  string[]
+  grupos:        DreGrupo[]
+  valoresTotal:  DreCelula[]
+  totais:        DreLinhaTotais
+}
+
+type DreFornecedorRowRaw = {
+  fornecedor:           string | null
+  fornecedor_documento: string | null
+  receita:              number | string
+  custo:                number | string
+  resultado:            number | string
+  quantidade:           number
+}
+
+export type DreFornecedorRow = {
+  fornecedor:          string | null
+  fornecedorDocumento: string | null
+  receita:             number
+  custo:               number
+  resultado:           number
+  quantidade:          number
+}
+
+type DreFornecedoresResponseRaw = {
+  grupo_dre:           string
+  subgrupo:            string | null
+  descricao:           string | null
+  competencia_de:      string
+  competencia_ate:     string
+  fornecedores:        DreFornecedorRowRaw[]
+  total_fornecedores:  number
+}
+
+export type DreFornecedoresResponse = {
+  grupoDre:           string
+  subgrupo:           string | null
+  descricao:          string | null
+  competenciaDe:      string
+  competenciaAte:     string
+  fornecedores:       DreFornecedorRow[]
+  totalFornecedores:  number
+}
+
+function _coerceDreCelula(r: DreCelulaRaw): DreCelula {
+  return {
+    competencia: r.competencia,
+    receita:     Number(r.receita),
+    custo:       Number(r.custo),
+    resultado:   Number(r.resultado),
+    quantidade:  r.quantidade,
+  }
+}
+
+function _coerceDreTotais(r: DreLinhaTotaisRaw): DreLinhaTotais {
+  return {
+    receita:    Number(r.receita),
+    custo:      Number(r.custo),
+    resultado:  Number(r.resultado),
+    quantidade: r.quantidade,
+  }
+}
+
+function _coerceDreFornecedor(r: DreFornecedorRaw): DreFornecedorNode {
+  return {
+    fornecedor:          r.fornecedor,
+    fornecedorDocumento: r.fornecedor_documento,
+    valores:             r.valores.map(_coerceDreCelula),
+    totais:              _coerceDreTotais(r.totais),
+  }
+}
+
+function _coerceDreDescricao(r: DreDescricaoRaw): DreDescricao {
+  return {
+    descricao:    r.descricao,
+    fornecedores: r.fornecedores.map(_coerceDreFornecedor),
+    valores:      r.valores.map(_coerceDreCelula),
+    totais:       _coerceDreTotais(r.totais),
+  }
+}
+
+function _coerceDreSubgrupo(r: DreSubgrupoRaw): DreSubgrupo {
+  return {
+    ordemGrupo: r.ordem_grupo,
+    subgrupo:   r.subgrupo,
+    descricoes: r.descricoes.map(_coerceDreDescricao),
+    valores:    r.valores.map(_coerceDreCelula),
+    totais:     _coerceDreTotais(r.totais),
+  }
+}
+
+function _coerceDreGrupo(r: DreGrupoRaw): DreGrupo {
+  return {
+    grupoDre:  r.grupo_dre,
+    subgrupos: r.subgrupos.map(_coerceDreSubgrupo),
+    valores:   r.valores.map(_coerceDreCelula),
+    totais:    _coerceDreTotais(r.totais),
+  }
+}
+
+function _coerceDrePivot(r: DrePivotResponseRaw): DrePivotResponse {
+  return {
+    competencias: r.competencias,
+    grupos:       r.grupos.map(_coerceDreGrupo),
+    valoresTotal: r.valores_total.map(_coerceDreCelula),
+    totais:       _coerceDreTotais(r.totais),
+  }
+}
+
+function _coerceDreFornecedores(r: DreFornecedoresResponseRaw): DreFornecedoresResponse {
+  return {
+    grupoDre:           r.grupo_dre,
+    subgrupo:           r.subgrupo,
+    descricao:          r.descricao,
+    competenciaDe:      r.competencia_de,
+    competenciaAte:     r.competencia_ate,
+    fornecedores: r.fornecedores.map((f) => ({
+      fornecedor:          f.fornecedor,
+      fornecedorDocumento: f.fornecedor_documento,
+      receita:             Number(f.receita),
+      custo:               Number(f.custo),
+      resultado:           Number(f.resultado),
+      quantidade:          f.quantidade,
+    })),
+    totalFornecedores: r.total_fornecedores,
+  }
 }
 
 // ── Variacoes do Dia (auditoria de movimentos) ─────────────────────────────

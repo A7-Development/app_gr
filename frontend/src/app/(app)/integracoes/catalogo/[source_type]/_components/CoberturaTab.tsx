@@ -4,11 +4,11 @@
 // Aba "Cobertura" — heatmap historico por endpoint (Fase 1 freshness, 2026-05-12).
 //
 // Pergunta que responde: "tenho furos de data no meu sync?"
-// Cruza raw tables (wh_qitech_raw_*) com calendario ANBIMA (wh_dim_dia_util)
-// pra distinguir furo real de feriado/fim-de-semana.
+// Acao: bulk backfill com 1 click — Sub-fase 2A (2026-05-12).
 //
 
 import * as React from "react"
+import { toast } from "sonner"
 
 import { CoverageHeatmap } from "@/design-system/components/CoverageHeatmap"
 import { EmptyState } from "@/design-system/components/EmptyState"
@@ -22,31 +22,90 @@ import {
 } from "@/components/tremor/Select"
 import { RiInboxLine } from "@remixicon/react"
 
-import { useSourceCoverage } from "@/lib/hooks/integracoes"
-import type { SourceTypeId } from "@/lib/api-client"
+import {
+  useActiveBackfills,
+  useCreateBackfill,
+  useSourceCoverage,
+} from "@/lib/hooks/integracoes"
+import type {
+  BackfillJob,
+  Environment,
+  SourceTypeId,
+} from "@/lib/api-client"
 
 const RANGE_OPTIONS = [
   { value: "30", label: "Últimos 30 dias" },
   { value: "60", label: "Últimos 60 dias" },
   { value: "90", label: "Últimos 90 dias" },
   { value: "180", label: "Últimos 180 dias" },
+  { value: "365", label: "Último ano" },
+  { value: "0", label: "Todo o período" },
 ] as const
 
 export function CoberturaTab({
   sourceType,
   uaId,
+  environment = "production",
 }: {
   sourceType: SourceTypeId
   uaId: string | null
+  environment?: Environment
 }) {
   const [rangeDays, setRangeDays] = React.useState<number>(90)
-  const { data, isLoading, isError, refetch } = useSourceCoverage(
-    sourceType,
-    rangeDays,
-    uaId,
+
+  const coverageQ = useSourceCoverage(sourceType, rangeDays, uaId)
+  const activeJobsQ = useActiveBackfills(sourceType)
+  const createBackfillMut = useCreateBackfill(sourceType)
+
+  // Polling dos jobs ativos: cada job rebusca a cada 2s ate terminar.
+  // useActiveBackfills (5s staleTime) cuida da lista; pra o heatmap so
+  // precisamos do snapshot atualizado por endpoint.
+  React.useEffect(() => {
+    if (!activeJobsQ.data?.length) return
+    const interval = setInterval(() => activeJobsQ.refetch(), 2000)
+    return () => clearInterval(interval)
+  }, [activeJobsQ])
+
+  const activeJobByEndpoint = React.useMemo(() => {
+    const map: Record<string, BackfillJob> = {}
+    for (const j of activeJobsQ.data ?? []) {
+      // Mantem o mais recente por endpoint
+      if (
+        !map[j.endpoint_name] ||
+        new Date(j.created_at) > new Date(map[j.endpoint_name].created_at)
+      ) {
+        map[j.endpoint_name] = j
+      }
+    }
+    return map
+  }, [activeJobsQ.data])
+
+  const handleBackfill = React.useCallback(
+    async (endpointName: string, dates: string[]) => {
+      try {
+        const job = await createBackfillMut.mutateAsync({
+          endpointName,
+          payload: {
+            dates,
+            environment,
+            unidade_administrativa_id: uaId,
+          },
+        })
+        toast.success(
+          `Backfill iniciado: ${dates.length} data${dates.length > 1 ? "s" : ""} de "${endpointName}". Worker vai processar em segundos.`,
+        )
+        return job
+      } catch (err) {
+        toast.error(
+          `Falha ao iniciar backfill: ${err instanceof Error ? err.message : String(err)}`,
+        )
+        return null
+      }
+    },
+    [createBackfillMut, environment, uaId],
   )
 
-  if (isError) {
+  if (coverageQ.isError) {
     return (
       <ErrorState
         title="Erro ao carregar cobertura"
@@ -55,7 +114,7 @@ export function CoberturaTab({
           <button
             type="button"
             className="text-sm text-blue-600 hover:underline"
-            onClick={() => refetch()}
+            onClick={() => coverageQ.refetch()}
           >
             Tentar novamente
           </button>
@@ -88,11 +147,11 @@ export function CoberturaTab({
         </Select>
       </div>
 
-      {isLoading && (
+      {coverageQ.isLoading && (
         <div className="h-64 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
       )}
 
-      {!isLoading && data && data.endpoints.length === 0 && (
+      {!coverageQ.isLoading && coverageQ.data && coverageQ.data.endpoints.length === 0 && (
         <EmptyState
           icon={RiInboxLine}
           title="Sem endpoints no catálogo"
@@ -100,11 +159,13 @@ export function CoberturaTab({
         />
       )}
 
-      {!isLoading && data && data.endpoints.length > 0 && (
+      {!coverageQ.isLoading && coverageQ.data && coverageQ.data.endpoints.length > 0 && (
         <CoverageHeatmap
-          endpoints={data.endpoints}
-          startDate={data.start_date}
-          endDate={data.end_date}
+          endpoints={coverageQ.data.endpoints}
+          startDate={coverageQ.data.start_date}
+          endDate={coverageQ.data.end_date}
+          onBackfill={handleBackfill}
+          activeJobByEndpoint={activeJobByEndpoint}
         />
       )}
     </div>

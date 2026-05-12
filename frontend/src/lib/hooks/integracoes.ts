@@ -14,6 +14,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import {
   integracoes,
+  type BackfillCreatePayload,
+  type BackfillJob,
   type ConfigUpdatePayload,
   type EndpointConfigPayload,
   type EndpointDetail,
@@ -31,6 +33,10 @@ const KEYS = {
     ["integracoes", "endpoints", st, env, ua ?? null] as const,
   coverage: (st: SourceTypeId, rangeDays: number, ua?: string | null) =>
     ["integracoes", "coverage", st, rangeDays, ua ?? null] as const,
+  backfillJob: (st: SourceTypeId, jobId: string) =>
+    ["integracoes", "backfill", "job", st, jobId] as const,
+  activeBackfills: (st: SourceTypeId, endpointName?: string) =>
+    ["integracoes", "backfill", "active", st, endpointName ?? null] as const,
 }
 
 export function useSources(environment: Environment = "production") {
@@ -243,5 +249,86 @@ export function useSourceCoverage(
     queryFn: () => integracoes.coverage(sourceType!, { rangeDays, uaId }),
     enabled: !!sourceType,
     staleTime: 5 * 60_000, // 5min — cobertura nao muda em segundos
+  })
+}
+
+// ─── Backfill (Sub-fase 2A) ──────────────────────────────────────────────────
+
+export function useCreateBackfill(sourceType: SourceTypeId) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: {
+      endpointName: string
+      payload: BackfillCreatePayload
+    }) =>
+      integracoes.createBackfill(sourceType, vars.endpointName, vars.payload),
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: ["integracoes", "backfill", "active", sourceType],
+      })
+    },
+  })
+}
+
+/**
+ * Polla o job a cada 2s enquanto status = pending/running. Quando terminal,
+ * para o polling e invalida a query de coverage (pra refetch o heatmap
+ * com os dados novos).
+ */
+export function useBackfillJob(
+  sourceType: SourceTypeId | null,
+  jobId: string | null,
+) {
+  const qc = useQueryClient()
+  return useQuery<BackfillJob>({
+    queryKey:
+      sourceType && jobId
+        ? KEYS.backfillJob(sourceType, jobId)
+        : ["integracoes", "backfill", "job", "none"],
+    queryFn: async () => {
+      const job = await integracoes.getBackfillJob(sourceType!, jobId!)
+      // Quando o job termina, invalida coverage pra UI recarregar
+      if (job.status === "done" || job.status === "failed" || job.status === "cancelled") {
+        qc.invalidateQueries({
+          queryKey: ["integracoes", "coverage", sourceType],
+        })
+      }
+      return job
+    },
+    enabled: !!sourceType && !!jobId,
+    refetchInterval: (q) => {
+      const j = q.state.data as BackfillJob | undefined
+      if (!j) return 2_000
+      return j.status === "pending" || j.status === "running" ? 2_000 : false
+    },
+  })
+}
+
+export function useActiveBackfills(
+  sourceType: SourceTypeId | null,
+  endpointName?: string,
+) {
+  return useQuery<BackfillJob[]>({
+    queryKey: sourceType
+      ? KEYS.activeBackfills(sourceType, endpointName)
+      : ["integracoes", "backfill", "active", "none"],
+    queryFn: () =>
+      integracoes.listActiveBackfills(sourceType!, endpointName),
+    enabled: !!sourceType,
+    staleTime: 5_000,
+  })
+}
+
+export function useCancelBackfill(sourceType: SourceTypeId) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (jobId: string) =>
+      integracoes.cancelBackfillJob(sourceType, jobId),
+    onSuccess: (job) => {
+      qc.invalidateQueries({ queryKey: KEYS.backfillJob(sourceType, job.id) })
+      qc.invalidateQueries({
+        queryKey: ["integracoes", "backfill", "active", sourceType],
+      })
+    },
   })
 }

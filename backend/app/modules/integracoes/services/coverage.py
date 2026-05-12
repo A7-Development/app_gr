@@ -27,6 +27,7 @@ from app.core.enums import SourceType
 from app.modules.integracoes.adapters.admin.qitech.coverage import (
     CoverageRow,
     fetch_qitech_coverage,
+    fetch_qitech_first_data_date,
     qitech_endpoint_supports_coverage,
 )
 from app.modules.integracoes.public import endpoint_catalog
@@ -160,18 +161,60 @@ def _endpoint_supports_coverage(
     return False
 
 
+# Cap absoluto: mesmo "todo o periodo" nao mostra mais que isso, pra
+# evitar DOM gigante no frontend (730 dias x 12 endpoints = ~8.7k celulas).
+MAX_RANGE_DAYS = 730
+
+
+async def _resolve_full_range_start(
+    db: AsyncSession,
+    *,
+    source_type: SourceType,
+    tenant_id: UUID,
+    unidade_administrativa_id: UUID | None,
+    today: date,
+) -> date:
+    """Quando o caller pede 'todo o periodo', busca MIN(data) cross-endpoint
+    e clampa em MAX_RANGE_DAYS. Fallback: 90 dias se nada existe."""
+    first: date | None = None
+    if source_type == SourceType.ADMIN_QITECH:
+        first = await fetch_qitech_first_data_date(
+            db,
+            tenant_id=tenant_id,
+            unidade_administrativa_id=unidade_administrativa_id,
+        )
+    if first is None:
+        return today - timedelta(days=89)
+    earliest_allowed = today - timedelta(days=MAX_RANGE_DAYS - 1)
+    return max(first, earliest_allowed)
+
+
 async def get_source_coverage(
     db: AsyncSession,
     *,
     source_type: SourceType,
     tenant_id: UUID,
     unidade_administrativa_id: UUID | None,
-    range_days: int,
+    range_days: int | None,
 ) -> CoverageResponse:
-    """Monta a cobertura cross-endpoint pra exibir no heatmap."""
+    """Monta a cobertura cross-endpoint pra exibir no heatmap.
+
+    `range_days=None` (ou 0) significa "todo o periodo desde o primeiro
+    dado coletado" — cap em MAX_RANGE_DAYS.
+    """
     today = datetime.now(UTC).date()
     end = today
-    start = today - timedelta(days=range_days - 1)
+    if range_days is None or range_days <= 0:
+        start = await _resolve_full_range_start(
+            db,
+            source_type=source_type,
+            tenant_id=tenant_id,
+            unidade_administrativa_id=unidade_administrativa_id,
+            today=today,
+        )
+    else:
+        clamped = min(range_days, MAX_RANGE_DAYS)
+        start = today - timedelta(days=clamped - 1)
 
     catalog = endpoint_catalog(source_type)
     calendar_map = await _load_calendar(db, tenant_id, start, end)
