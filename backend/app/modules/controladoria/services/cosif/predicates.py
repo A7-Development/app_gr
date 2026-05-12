@@ -10,11 +10,20 @@ Operadores leaf:
     eq             igualdade exata
     ne             diferente
     in             value e lista
-    contains       substring (case-sensitive)
-    contains_ci    substring (case-insensitive)
+    contains       substring (case-sensitive, com acentos)
+    contains_ci    substring (case-insensitive E accent-insensitive)
     starts_with    prefixo (case-sensitive)
-    ends_with      sufixo
+    ends_with      sufixo (case-sensitive)
     qtde_signal    "positive" / "negative" / "zero" — usa Decimal
+
+`contains_ci` foi ajustado em 2026-05-12 para normalizar acentos via
+unicodedata.NFD — antes, "COBRANCA" (predicate) nao casava com
+"Cobranca"/"Cobrança" (silver) porque a comparacao era apenas
+`str.upper() in str.upper()`. Resultado: 4 lancamentos CPR
+(Cobranca, Custodia, Gestao, Administracao) caiam em pendente
+apesar de existirem regras de classificacao para eles. Os operadores
+estritos (`eq`, `starts_with`, `contains`) continuam sensiveis a
+acentos — quem precisar disso usa explicitamente.
 
 Acessor de field: faz `row.get(field)`. Comparacao tolerante a None
 (retorna False para qualquer leaf com value/row None, exceto eq None).
@@ -22,8 +31,19 @@ Acessor de field: faz `row.get(field)`. Comparacao tolerante a None
 
 from __future__ import annotations
 
+import unicodedata
 from decimal import Decimal
 from typing import Any
+
+
+def _strip_accents(s: str) -> str:
+    """Remove diacriticos (acentos, til, cedilha) via Unicode NFD.
+
+    "Cobrança" -> "Cobranca"; "Custódia" -> "Custodia". Mantem todo
+    o resto (numeros, espacos, pontuacao) intacto.
+    """
+    nfd = unicodedata.normalize("NFD", s)
+    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
 
 
 def match(predicate: dict[str, Any], row: dict[str, Any]) -> bool:
@@ -64,7 +84,8 @@ def _match_leaf(predicate: dict[str, Any], row: dict[str, Any]) -> bool:
     if op == "contains":
         return str(value) in str(raw)
     if op == "contains_ci":
-        return str(value).upper() in str(raw).upper()
+        # case-insensitive E accent-insensitive
+        return _strip_accents(str(value)).upper() in _strip_accents(str(raw)).upper()
     if op == "starts_with":
         return str(raw).startswith(str(value))
     if op == "ends_with":

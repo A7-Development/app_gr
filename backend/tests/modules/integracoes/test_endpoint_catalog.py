@@ -35,11 +35,18 @@ from app.shared.endpoint_catalog import EndpointSpec, ScheduleKind
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def test_qitech_catalog_has_13_endpoints():
+def test_qitech_catalog_has_17_endpoints():
     """Documenta o tamanho atual do catalogo. Trocar este numero exige
     batalha consciente — adicionar endpoint = atualizar este teste +
-    snapshot da migration."""
-    assert len(QITECH_ENDPOINTS) == 13
+    snapshot da migration.
+
+    Composicao atual (2026-05-12):
+        - 10 market reports sincronos (`etl.py`)
+        - 1 market report async callback (`market.fidc_estoque`)
+        - 4 custodia reports on-demand (`custodia.py` — fidc-custodia/*)
+        - 2 bank-account reports (`bank_account_sync.py`)
+    """
+    assert len(QITECH_ENDPOINTS) == 17
 
 
 def test_qitech_catalog_names_unique():
@@ -88,6 +95,16 @@ EXPECTED_QITECH_SNAPSHOT = [
     # Adicionado em 2026-05-10 — seed via migration `c4b9e8f2a1d3_seed_qitech_fidc_estoque_endpoint.py`.
     # Snapshot original em `d5bf3669b8a0_endpoint_scheduling.py` ja em prod, nao editar.
     ("market.fidc_estoque", "on_demand", None),
+    # Adicionados em 2026-05-12 — seed via migration `a3c5d1e7b8f2_seed_qitech_custodia_endpoints.py`.
+    # Familia /v2/fidc-custodia/report/* — antes acessivel apenas via REST proprio
+    # (`routers/qitech_custodia.py`), agora centralizada no catalogo.
+    # Promovidos de on_demand para daily_at em 2026-05-12 — migration
+    # `b5e9d3a1f7c4_promote_qitech_custodia_to_daily.py` (cobertura continua,
+    # janelas rolantes naturalmente curtas resolvidas pelo handler).
+    ("custodia.aquisicao_consolidada", "daily_at", "09:30"),
+    ("custodia.liquidados_baixados", "daily_at", "09:45"),
+    ("custodia.movimento_aberto", "daily_at", "10:00"),
+    ("custodia.detalhes_operacoes", "daily_at", "10:00"),
     ("bank_account.balance", "daily_at", "19:00"),
     ("bank_account.statement", "interval", "60"),
 ]
@@ -191,7 +208,7 @@ def test_endpoint_spec_accepts_on_demand_with_null():
 
 def test_endpoint_catalog_qitech():
     cat = endpoint_catalog(SourceType.ADMIN_QITECH)
-    assert len(cat) == 13
+    assert len(cat) == 17
     assert cat[0].name == "market.outros_fundos"
 
 

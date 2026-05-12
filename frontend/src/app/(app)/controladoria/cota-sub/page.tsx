@@ -968,7 +968,6 @@ export default function CotaSubPage() {
                       : undefined
                   }
                   onRetry={() => balanceteQuery.refetch()}
-                  fundoId={fundoId}
                 />
               )}
               {activeTab === "balanco" && (

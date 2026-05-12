@@ -21,23 +21,21 @@ import {
   type ExpandedState,
   createColumnHelper,
 } from "@tanstack/react-table"
+import { RiInformationLine } from "@remixicon/react"
 
 import { cx } from "@/lib/utils"
-import { Badge } from "@/components/tremor/Badge"
 import { Card } from "@/components/tremor/Card"
 import { Switch } from "@/components/tremor/Switch"
 import { DataTable } from "@/design-system/components/DataTable"
 import { tableTokens } from "@/design-system/tokens/table"
 
-import type { CosifSource } from "@/lib/api-client"
 import {
   type CosifNodeUI,
   buildCosifTree,
   defaultExpandedCodigos,
-  sourceBadge,
 } from "../_lib/cosif"
 
-import type { CosifNode } from "@/lib/api-client"
+import type { ClasseBreakdown, CosifNode, CosifRowDiff } from "@/lib/api-client"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Formatters
@@ -86,29 +84,6 @@ function fmtDateShort(iso?: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Source badge — mapping de cosif_source para Tremor Badge variant
-// ─────────────────────────────────────────────────────────────────────────────
-
-function SourceBadgeCell({ source }: { source: CosifSource }) {
-  const { label, tone } = sourceBadge(source)
-  const variant =
-    tone === "blue"
-      ? "default"
-      : tone === "green"
-        ? "success"
-        : tone === "amber"
-          ? "warning"
-          : tone === "red"
-            ? "error"
-            : "neutral"
-  return (
-    <Badge variant={variant} className={cx("px-1.5 py-0.5 text-[10px] ring-0")}>
-      {label}
-    </Badge>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Row styling — section/total visuais por grupo top-level
 // ─────────────────────────────────────────────────────────────────────────────
 //
@@ -135,6 +110,34 @@ function rowClass(row: CosifNodeUI): string {
     return "!border-l-0"
   }
   return ""
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Contraparte chip — paper row badge (emitente / gestor)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Substituiu o chip de status (novo/alterado/removido) que era redundante
+// com os deltas. Agora carrega a CONTRAPARTE — emitente do papel (renda fixa,
+// ex.: SYSTEMPA, SYLVIOSA, METALYSE) ou gestor do fundo (cota fundo, ex.:
+// ITAU). Visual neutro porque e identificacao, nao estado.
+
+const fmtQtde = new Intl.NumberFormat("pt-BR", {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 4,
+})
+
+function ContrapartChip({ label }: { label: string }) {
+  return (
+    <span
+      className={cx(
+        "ml-2 inline-block rounded px-1.5 text-[10px] font-medium",
+        "bg-gray-100 text-gray-600",
+        "dark:bg-gray-800 dark:text-gray-400",
+      )}
+    >
+      {label}
+    </span>
+  )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -166,12 +169,73 @@ function buildColumns(
 
   const labelCol = col.accessor("nome", {
     id:     "label",
-    header: "Conta",
+    header: () => (
+      <span className="inline-flex items-center gap-1">
+        Conta
+        <span
+          title={
+            "Codigo COSIF (BACEN) — primeiro digito agrupa por macrogrupo:\n" +
+            "  1, 2, 3  =  Ativo (3 = compensacao)\n" +
+            "  4, 5, 9  =  Passivo (9 = compensacao)\n" +
+            "  6        =  Patrimonio Liquido\n" +
+            "  7, 8     =  Resultado (receitas / despesas)"
+          }
+          className="inline-flex cursor-help text-gray-400 dark:text-gray-600"
+          aria-label="Significado dos codigos COSIF"
+        >
+          <RiInformationLine className="h-3.5 w-3.5" />
+        </span>
+      </span>
+    ),
     size:   460,
     cell:   (info) => {
       const row = info.row.original
       const nome = info.getValue<string>()
       const baseTrunc = "block max-w-full truncate whitespace-nowrap"
+      // Linha de classe sintetica (Sr/Mez/Sub): sem codigo, sem chip.
+      // Tipografia mais leve pra diferenciar de conta COSIF real.
+      if (row._isClasseRow) {
+        return (
+          <span
+            title={row._classeLabel}
+            className={cx(
+              baseTrunc,
+              tableTokens.cellSecondary,
+              "italic",
+            )}
+          >
+            {row._classeLabel}
+          </span>
+        )
+      }
+      // Papel sintetico (silver row): codigo (se houver) + descricao + chip
+      // de contraparte (emitente / gestor). Codigo em mono pra alinhar com
+      // chip do COSIF analitico; descricao em texto normal.
+      if (row._isPaperRow) {
+        const codigo      = row._paperCodigo
+        const desc        = row._paperNome ?? ""
+        const contraparte = row._paperContraparte
+        const fullTitle = [codigo, desc, contraparte].filter(Boolean).join(" · ")
+        return (
+          <span
+            title={fullTitle}
+            className={cx(baseTrunc, tableTokens.cellText)}
+          >
+            {codigo ? (
+              <span
+                className={cx(
+                  "mr-2 inline-block font-mono text-[10px] tabular-nums",
+                  "text-gray-400 dark:text-gray-600",
+                )}
+              >
+                {codigo}
+              </span>
+            ) : null}
+            {desc}
+            {contraparte ? <ContrapartChip label={contraparte} /> : null}
+          </span>
+        )
+      }
       // Niveis 0/1/2 -> semibold. Restante normal. Codigo COSIF prefixa
       // o nome em monoespacado para os niveis >= 2 (raiz nao precisa).
       const codigoChip =
@@ -206,6 +270,8 @@ function buildColumns(
     cell:   (info) => {
       const v = info.getValue<"D" | "C" | "?">()
       const row = info.row.original
+      if (row._isClasseRow) return null
+      if (row._isPaperRow) return null
       if (row.nivel === 0 || row.nivel === 1) return null
       return (
         <span className={cx(tableTokens.cellSecondary, "font-mono")}>
@@ -214,6 +280,61 @@ function buildColumns(
       )
     },
   }) as ColumnDef<CosifNodeUI, unknown>
+
+  // Qtd — so faz sentido em paper rows. Demais retornam null (vazio).
+  const qtdCol = col.display({
+    id:     "qtd",
+    header: "Qtd",
+    size:   80,
+    meta:   { align: "right" },
+    cell:   (info) => {
+      const row = info.row.original
+      if (!row._isPaperRow) return null
+      const q = row._paperQtdD0 ?? row._paperQtdD1
+      if (q == null) return null
+      return (
+        <div
+          style={{ textAlign: "right" }}
+          className={cx(tableTokens.cellNumberSecondary)}
+        >
+          {fmtQtde.format(q)}
+        </div>
+      )
+    },
+  }) as ColumnDef<CosifNodeUI, unknown>
+
+  // Idx — indexador do papel (CDI+X%, IPCA+Y%, etc).
+  const idxCol = col.display({
+    id:     "idx",
+    header: "Idx",
+    size:   100,
+    cell:   (info) => {
+      const row = info.row.original
+      if (!row._isPaperRow) return null
+      const idx = row._paperIndexador
+      if (!idx) return null
+      return (
+        <span
+          title={idx}
+          className={cx(
+            "block max-w-full truncate whitespace-nowrap",
+            tableTokens.cellSecondary,
+          )}
+        >
+          {idx}
+        </span>
+      )
+    },
+  }) as ColumnDef<CosifNodeUI, unknown>
+
+  // Pivot-table behavior: quando um no sintetico esta expandido, esconde o
+  // saldo dele (os filhos ja totalizam — exibir o agregado seria redundante
+  // e visualmente confuso). Quando colapsado, o saldo volta a aparecer como
+  // "subtotal" do grupo.
+  function hidesAggregate(row: import("@tanstack/react-table").Row<CosifNodeUI>): boolean {
+    if (!row.getCanExpand()) return false
+    return row.getIsExpanded()
+  }
 
   const d1Col = col.accessor("d_minus_1", {
     id:     "d_minus_1",
@@ -228,6 +349,7 @@ function buildColumns(
     meta:   { align: "right" },
     size:   140,
     cell:   (info) => {
+      if (hidesAggregate(info.row)) return null
       const v = info.getValue<number>()
       const row = info.row.original
       const isStrong = row.nivel <= 2
@@ -251,6 +373,7 @@ function buildColumns(
     meta:   { align: "right" },
     size:   140,
     cell:   (info) => {
+      if (hidesAggregate(info.row)) return null
       const v = info.getValue<number>()
       const row = info.row.original
       const isStrong = row.nivel <= 2
@@ -281,6 +404,7 @@ function buildColumns(
     meta:   { align: "right" },
     size:   140,
     cell:   (info) => {
+      if (hidesAggregate(info.row)) return null
       const v = info.getValue<number>()
       const row = info.row.original
       const isPos = v > 0
@@ -317,6 +441,7 @@ function buildColumns(
     meta:   { align: "right" },
     size:   80,
     cell:   (info) => {
+      if (hidesAggregate(info.row)) return null
       const v = info.getValue<number>()
       const row = info.row.original
       const isPos = v > 0
@@ -340,26 +465,7 @@ function buildColumns(
     },
   }) as ColumnDef<CosifNodeUI, unknown>
 
-  const sourceCol = col.accessor("cosif_source", {
-    id:     "cosif_source",
-    header: "Origem",
-    size:   90,
-    meta:   { align: "center" },
-    cell:   (info) => {
-      const row = info.row.original
-      // So renderiza badge em nos analiticos (com saldo proprio). Em nos
-      // sinteticos a origem e agregacao de varios, nao tem sentido.
-      if (row.nivel <= 2) return null
-      if (!row.cosif_source) return null
-      return (
-        <div style={{ textAlign: "center" }}>
-          <SourceBadgeCell source={row.cosif_source} />
-        </div>
-      )
-    },
-  }) as ColumnDef<CosifNodeUI, unknown>
-
-  return [labelCol, naturezaCol, d1Col, d0Col, deltaCol, deltaPctCol, sourceCol]
+  return [labelCol, naturezaCol, qtdCol, idxCol, d1Col, d0Col, deltaCol, deltaPctCol]
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -368,10 +474,17 @@ function buildColumns(
 
 export type BalanceteDiarioTableProps = {
   nodes:         readonly CosifNode[]
+  /** Quebra Sr/Mez/Sub por COSIF — injetada como subRows sinteticas nas
+   *  contas analiticas correspondentes (ex.: 6.1.1.70.30.001 Cotas Emitidas). */
+  classeBreakdownPorCosif?: Record<string, readonly ClasseBreakdown[]>
+  /** Diff papel-a-papel por conta analitica — injetado como folhas terminais
+   *  na arvore COSIF. Drill substituiu o sheet lateral. */
+  rowsPorCosif?: Record<string, readonly CosifRowDiff[]>
   data?:         string  // ISO D0
   dataAnterior?: string  // ISO D-1
   emptyMessage?: string
-  /** Callback ao clicar numa conta analitica — abre o CosifDrillSheet. */
+  /** Callback ao clicar numa conta analitica — abre o CosifDrillSheet
+   *  (so com explicacoes, ja que papeis sao mostrados na propria tabela). */
   onSelectNode?: (node: CosifNodeUI) => void
   /** Override do titulo do card. */
   title?: string
@@ -383,6 +496,8 @@ export type BalanceteDiarioTableProps = {
 
 export function BalanceteDiarioTable({
   nodes,
+  classeBreakdownPorCosif,
+  rowsPorCosif,
   data,
   dataAnterior,
   emptyMessage,
@@ -394,8 +509,12 @@ export function BalanceteDiarioTable({
   const [incluirCompensacao, setIncluirCompensacao] = React.useState(false)
 
   const tree = React.useMemo(
-    () => buildCosifTree(nodes, { incluirCompensacao }),
-    [nodes, incluirCompensacao],
+    () => buildCosifTree(nodes, {
+      incluirCompensacao,
+      classeBreakdownPorCosif,
+      rowsPorCosif,
+    }),
+    [nodes, incluirCompensacao, classeBreakdownPorCosif, rowsPorCosif],
   )
 
   // Default expanded: niveis 1-3 com filhos.
@@ -423,8 +542,15 @@ export function BalanceteDiarioTable({
 
   const handleRowClick = React.useCallback(
     (row: CosifNodeUI) => {
-      // Click abre drill SO em folhas (nivel >= 3 sem children OU nivel >= 4).
-      const isLeaf = !row.subRows || row.subRows.length === 0
+      // Linhas sinteticas (classe Sr/Mez/Sub, papel individual) sao terminais
+      // — sem drill proprio. So conta COSIF abre o sheet de explicacao.
+      if (row._isClasseRow || row._isPaperRow) return
+      // Click abre drill em folhas analiticas (nivel >= 4) ou contas analiticas
+      // que viraram nao-leaf so por causa de subRows sinteticas (classe/papel).
+      const realSubRows = (row.subRows ?? []).filter(
+        (s) => !s._isClasseRow && !s._isPaperRow,
+      )
+      const isLeaf = realSubRows.length === 0
       const isAnalytic = row.nivel >= 4 || (isLeaf && row.nivel >= 2)
       if (!isAnalytic) return
       onSelectNode?.(row)

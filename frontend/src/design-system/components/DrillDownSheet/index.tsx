@@ -26,11 +26,13 @@ import { cx, focusRing } from "@/lib/utils"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/tremor/Tabs"
 import { fmt } from "@/design-system/tokens/typography"
 
-export type SheetSize = "sm" | "md" | "lg"
+export type SheetSize = "sm" | "md" | "lg" | "xl" | "2xl"
 const SIZE_W: Record<SheetSize, string> = {
-  sm: "max-w-[400px]",
-  md: "max-w-[560px]",
-  lg: "max-w-[720px]",
+  sm:   "max-w-[400px]",
+  md:   "max-w-[560px]",
+  lg:   "max-w-[720px]",
+  xl:   "max-w-[880px]",
+  "2xl":"max-w-[1080px]",
 }
 
 interface SheetCtx {
@@ -182,12 +184,43 @@ function Header({ breadcrumb, statusSlot, onPrevious, onNext, extraActions, clas
   )
 }
 
+/** Como formatar o `value` numerico do delta no Hero.
+ *  - `percentage` (default): mostra "12,34%" — para deltas relativos
+ *  - `currency`: mostra "R$ 12.345,67" — para deltas absolutos em moeda
+ *  - `number`: mostra so o numero formatado, sem sufixo */
+export type HeroDeltaFormat = "percentage" | "currency" | "number"
+
 interface HeroProps {
   id?:        string
   title:      string
   value?:     number
-  delta?:     { value: number; label?: string }
+  delta?:     {
+    value:      number
+    label?:     string
+    format?:    HeroDeltaFormat
+    /** Cor do `label`:
+     *  - `muted` (default): cinza neutro, para textos descritivos ("vs mes anterior")
+     *  - `match`: pega a mesma cor do delta principal (verde/vermelho),
+     *    para quando o label contem o valor complementar (ex.: "%" do delta absoluto). */
+    labelTone?: "muted" | "match"
+  }
   className?: string
+}
+
+function _formatHeroDelta(v: number, format: HeroDeltaFormat): string {
+  const abs = Math.abs(v)
+  if (format === "currency") {
+    return new Intl.NumberFormat("pt-BR", {
+      style:                 "currency",
+      currency:              "BRL",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(abs)
+  }
+  if (format === "number") {
+    return abs.toLocaleString("pt-BR", { maximumFractionDigits: 2 })
+  }
+  return `${abs.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`
 }
 
 function Hero({ id, title, value, delta, className }: HeroProps) {
@@ -197,6 +230,7 @@ function Hero({ id, title, value, delta, className }: HeroProps) {
   const deltaColor = good
     ? "text-emerald-600 dark:text-emerald-400"
     : "text-red-600 dark:text-red-400"
+  const deltaFormat: HeroDeltaFormat = delta?.format ?? "percentage"
 
   return (
     <div className={cx(
@@ -221,10 +255,18 @@ function Hero({ id, title, value, delta, className }: HeroProps) {
             <p className="mt-1.5 flex items-center gap-1 text-xs tabular-nums">
               <span className={cx("inline-flex items-center gap-0.5 font-medium", deltaColor)}>
                 <ArrowIcon className="size-3.5 shrink-0" aria-hidden="true" />
-                {Math.abs(delta.value).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%
+                {_formatHeroDelta(delta.value, deltaFormat)}
               </span>
               {delta.label && (
-                <span className="text-gray-500 dark:text-gray-400">{delta.label}</span>
+                <span
+                  className={cx(
+                    (delta.labelTone ?? "muted") === "match"
+                      ? deltaColor
+                      : "text-gray-500 dark:text-gray-400",
+                  )}
+                >
+                  {delta.label}
+                </span>
               )}
             </p>
           )}

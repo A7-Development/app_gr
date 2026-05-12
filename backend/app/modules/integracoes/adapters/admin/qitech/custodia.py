@@ -395,6 +395,39 @@ async def get_qitech_config_for_tenant(
     return QiTechConfig.from_dict(plain)
 
 
+async def resolve_cnpj_by_ua_id(
+    *, tenant_id: UUID, unidade_administrativa_id: UUID
+) -> str | None:
+    """UA -> CNPJ (14 digitos zero-pad). Inverso do `resolve_ua_id_by_cnpj`.
+
+    Usado pelos handlers do `adapter._HANDLERS` para descobrir o CNPJ do fundo
+    quando o dispatcher genérico de endpoints chama `custodia.*` ou
+    `market.fidc_estoque` — esses pedem cnpj_fundo no path/body QiTech mas o
+    dispatcher so passa `unidade_administrativa_id`. Retorna None se UA nao
+    existe ou nao tem CNPJ cadastrado.
+    """
+    from sqlalchemy import select
+
+    from app.modules.cadastros.models.unidade_administrativa import (
+        UnidadeAdministrativa,
+    )
+
+    async with AsyncSessionLocal() as db:
+        stmt = (
+            select(UnidadeAdministrativa.cnpj)
+            .where(
+                UnidadeAdministrativa.tenant_id == tenant_id,
+                UnidadeAdministrativa.id == unidade_administrativa_id,
+            )
+            .limit(1)
+        )
+        cnpj_raw = (await db.execute(stmt)).scalar_one_or_none()
+
+    if not cnpj_raw:
+        return None
+    return _normalize_cnpj(cnpj_raw) or None
+
+
 async def resolve_ua_id_by_cnpj(
     *, tenant_id: UUID, cnpj_fundo: str
 ) -> UUID | None:

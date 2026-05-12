@@ -7,7 +7,12 @@
 
 import { useQuery } from "@tanstack/react-query"
 
-import { controladoria } from "@/lib/api-client"
+import {
+  controladoria,
+  type DreBaseFilters,
+  type DreDrillFornecedoresFilters,
+  type DrePivotFilters,
+} from "@/lib/api-client"
 
 const KEYS = {
   variacaoDiaria: (fundoId: string, data: string, dataAnterior?: string) =>
@@ -22,6 +27,13 @@ const KEYS = {
     ["controladoria", "cota-sub", "variacoes-dia", fundoId, data, dataAnterior ?? null] as const,
   datasDisponiveis: (fundoId: string) =>
     ["controladoria", "cota-sub", "datas-disponiveis", fundoId] as const,
+
+  dreCompetencias: (f: DreBaseFilters) =>
+    ["controladoria", "dre", "competencias", f] as const,
+  drePivot: (f: DrePivotFilters) =>
+    ["controladoria", "dre", "pivot", f] as const,
+  dreFornecedores: (f: DreDrillFornecedoresFilters) =>
+    ["controladoria", "dre", "fornecedores", f] as const,
 }
 
 export function useDatasDisponiveis(
@@ -127,6 +139,38 @@ export function useCosifRows(
       cosifCodigo!,
     ),
     enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+// ── DRE — Demonstrativo do Resultado do Exercicio ──────────────────────────
+// Le silver wh_dre_mensal. fundoId aqui e INT (Bitfin), NAO UUID.
+
+export function useDreCompetencias(filters: DreBaseFilters = {}) {
+  return useQuery({
+    queryKey: KEYS.dreCompetencias(filters),
+    queryFn:  () => controladoria.dreCompetenciasDisponiveis(filters),
+    staleTime: 30 * 60 * 1000,  // ETL Bitfin nao roda toda hora
+  })
+}
+
+export function useDrePivot(filters: DrePivotFilters | null | undefined) {
+  return useQuery({
+    queryKey: KEYS.drePivot(filters ?? ({} as DrePivotFilters)),
+    queryFn:  () => controladoria.drePivot(filters!),
+    enabled:  !!filters?.competenciaDe && !!filters?.competenciaAte,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useDreFornecedores(
+  filters: DreDrillFornecedoresFilters | null | undefined,
+) {
+  return useQuery({
+    queryKey: KEYS.dreFornecedores(filters ?? ({} as DreDrillFornecedoresFilters)),
+    queryFn:  () => controladoria.dreDrillFornecedores(filters!),
+    enabled:
+      !!filters?.grupoDre && !!filters?.competenciaDe && !!filters?.competenciaAte,
     staleTime: 5 * 60 * 1000,
   })
 }

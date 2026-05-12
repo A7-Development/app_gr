@@ -86,6 +86,40 @@ class DataQualitySchema(BaseModel):
     reason:               str | None = None
 
 
+class CosifRowDiffSchema(BaseModel):
+    """Papel individual de uma conta COSIF comparado D-1 vs D0."""
+
+    silver_origin: str
+    codigo: str | None = Field(description="Identificador no silver (codigo do papel, conta, etc.)")
+    nome: str
+    valor_d_minus_1: Decimal
+    valor_d_zero: Decimal
+    delta: Decimal
+    quantidade_d_minus_1: Decimal | None = None
+    quantidade_d_zero: Decimal | None = None
+    indexador: str | None = None
+    cosif_source: str
+    status: str = Field(description="novo|removido|alterado|inalterado")
+    contraparte: str | None = Field(
+        default=None,
+        description="Emitente (renda fixa) ou instituicao gestora (cota fundo). None nos demais silvers.",
+    )
+
+
+class CosifRowsResponseSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    fundo_id: UUID
+    data_d_zero: date
+    data_d_minus_1: date
+    cosif_codigo: str
+    cosif_nome: str
+    total_valor_d_minus_1: Decimal
+    total_valor_d_zero: Decimal
+    total_delta: Decimal
+    rows: list[CosifRowDiffSchema]
+
+
 class BalanceteResponseSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -94,29 +128,7 @@ class BalanceteResponseSchema(BaseModel):
     data_d_minus_1: date
     nodes: list[CosifNodeSchema]
     classe_breakdown_por_cosif: dict[str, list[ClasseSrMezSubBreakdownSchema]]
+    rows_por_cosif: dict[str, list[CosifRowDiffSchema]]
     reconciliacao: ReconciliacaoSchema
     cobertura: CoberturaSchema
     data_quality: DataQualitySchema
-
-
-class CosifRowSchema(BaseModel):
-    """Row do silver subjacente a uma conta COSIF (drill-down)."""
-
-    silver_origin: str
-    codigo: str | None = Field(description="Identificador no silver (codigo do papel, conta, etc.)")
-    nome: str
-    valor: Decimal
-    quantidade: Decimal | None = None
-    indexador: str | None = None
-    cosif_source: str
-
-
-class CosifRowsResponseSchema(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    fundo_id: UUID
-    data_posicao: date
-    cosif_codigo: str
-    cosif_nome: str
-    total_valor: Decimal
-    rows: list[CosifRowSchema]

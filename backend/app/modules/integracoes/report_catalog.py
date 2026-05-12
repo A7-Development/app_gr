@@ -77,11 +77,11 @@ class ReportSpec:
         category: Semantic group for the SegmentSwitch.
         administradora: SourceType this report comes from. Used to filter by
             tenant subscription (`is_source_enabled`).
-        endpoint_name: Identifier of the underlying adapter endpoint. For
-            QiTech sync endpoints, matches `EndpointSpec.name`. For async
-            (callback) reports like `fidc_estoque`, matches the QiTech
-            `eventType` (camelCase elsewhere; we use snake_case here for
-            consistency with our catalog naming).
+        endpoint_name: Identifier of the underlying adapter endpoint.
+            Matches `EndpointSpec.name` in `endpoint_catalog.py` para TODOS
+            os reports (sync_pull, on_demand pull, async callback). Mapping
+            QiTech `eventType` (camelCase) -> handler vive separado em
+            `routers/webhooks.py::_EVENT_TYPE_HANDLERS`.
         canonical_table: Silver table populated by the mapper. Service layer
             queries this table directly (silver-only — §13.2.1).
         refresh_kind: How fresh data arrives.
@@ -273,7 +273,7 @@ _QITECH_ASYNC_REPORTS: tuple[ReportSpec, ...] = (
         description="Snapshot diario dos recebiveis em carteira do FIDC. Disparado via callback (eventType=fidcEstoque).",
         category=ReportCategory.ESTOQUE,
         administradora=SourceType.ADMIN_QITECH,
-        endpoint_name="fidc_estoque",
+        endpoint_name="market.fidc_estoque",
         canonical_table="wh_estoque_recebivel",
         refresh_kind=ReportRefreshKind.ON_DEMAND_ASYNC,
         date_column="data_referencia",
@@ -285,7 +285,7 @@ _QITECH_ASYNC_REPORTS: tuple[ReportSpec, ...] = (
         description="Liquidacoes e baixas de recebiveis no periodo — granularidade por recebivel.",
         category=ReportCategory.MOVIMENTACOES,
         administradora=SourceType.ADMIN_QITECH,
-        endpoint_name="liquidados_baixados",
+        endpoint_name="custodia.liquidados_baixados",
         canonical_table="wh_liquidacao_recebivel",
         refresh_kind=ReportRefreshKind.ON_DEMAND_ASYNC,
         date_column="data_posicao",
@@ -297,7 +297,7 @@ _QITECH_ASYNC_REPORTS: tuple[ReportSpec, ...] = (
         description="Lotes CNAB processados no dia — uma linha por arquivo de remessa.",
         category=ReportCategory.MOVIMENTACOES,
         administradora=SourceType.ADMIN_QITECH,
-        endpoint_name="detalhes_operacoes",
+        endpoint_name="custodia.detalhes_operacoes",
         canonical_table="wh_operacao_remessa",
         refresh_kind=ReportRefreshKind.ON_DEMAND_ASYNC,
         date_column="data_importacao",
@@ -309,7 +309,7 @@ _QITECH_ASYNC_REPORTS: tuple[ReportSpec, ...] = (
         description="Cessoes adquiridas no periodo — granularidade por recebivel.",
         category=ReportCategory.MOVIMENTACOES,
         administradora=SourceType.ADMIN_QITECH,
-        endpoint_name="aquisicao_consolidada",
+        endpoint_name="custodia.aquisicao_consolidada",
         canonical_table="wh_aquisicao_recebivel",
         refresh_kind=ReportRefreshKind.ON_DEMAND_ASYNC,
         date_column="data_aquisicao",
@@ -321,7 +321,7 @@ _QITECH_ASYNC_REPORTS: tuple[ReportSpec, ...] = (
         description="Snapshot diario de cessoes pendentes de liquidacao do FIDC.",
         category=ReportCategory.MOVIMENTACOES,
         administradora=SourceType.ADMIN_QITECH,
-        endpoint_name="movimento_aberto",
+        endpoint_name="custodia.movimento_aberto",
         canonical_table="wh_movimento_aberto",
         refresh_kind=ReportRefreshKind.ON_DEMAND_ASYNC,
         date_column="data_referencia",

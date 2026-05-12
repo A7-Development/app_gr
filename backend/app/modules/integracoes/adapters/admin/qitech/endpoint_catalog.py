@@ -1,10 +1,15 @@
 """QiTech adapter — declarative endpoint catalog.
 
-13 endpoints today (2026-05-10):
+17 endpoints today (2026-05-12):
     - 10 market reports sincronos (`etl.py::_PIPELINE`, soon to be deleted)
     - 1 market report assincrono (`fidc_estoque` via job + webhook em
       `report_jobs.py`; ver `routers/webhooks.py::process_fidc_estoque_callback`)
     - 2 bank-account reports (`bank_account_sync.py`)
+    - 4 custodia reports on-demand (`custodia.py` — familia
+      /v2/fidc-custodia/report/*: aquisicao_consolidada, liquidados_baixados,
+      movimento_aberto, detalhes_operacoes). Disparados via REST proprio
+      (`qitech_custodia.py`) E via endpoints genericos
+      (`/sources/{src}/endpoints/{name}/sync`) — handlers em `adapter._HANDLERS`.
 
 Defaults follow the rough operational pattern of QiTech / Singulare:
     * Market reports for D-1 are published from ~3am-6am SP. We sync mid-morning
@@ -132,6 +137,57 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Custodia endpoints — familia /v2/fidc-custodia/report/*.
+#
+# 3 com periodo (data_inicial..data_final), 1 snapshot (sem data). Daily_at
+# para cobertura continua — handlers em `adapters/admin/qitech/custodia.py`
+# interpretam `since=None` (default do scheduler) como janelas rolantes
+# naturalmente curtas: D-7..D-1 pros de periodo (captura correcoes tardias
+# da QiTech via upsert idempotente), D-1 pro detalhes, snapshot atual pro
+# movimento_aberto. Backfill historico via REST proprio:
+# POST /qitech/custodia/{name}/sync com data_inicial/data_final explicitos.
+#
+# Horarios escalonados (09:30/09:45/10:00) caem 1h depois dos market.* pra
+# nao sobrecarregar o pool de conexao em um pico unico.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_CUSTODIA_ENDPOINTS: tuple[EndpointSpec, ...] = (
+    EndpointSpec(
+        name="custodia.aquisicao_consolidada",
+        label="Custodia · Aquisicoes consolidadas",
+        description="Cessoes adquiridas no periodo — granularidade por recebivel. Janela rolante D-7..D-1.",
+        default_schedule_kind=ScheduleKind.DAILY_AT,
+        default_schedule_value="09:30",
+        canonical_table="wh_aquisicao_recebivel",
+    ),
+    EndpointSpec(
+        name="custodia.liquidados_baixados",
+        label="Custodia · Liquidacoes e baixas",
+        description="Liquidacoes e baixas de recebiveis no periodo — granularidade por recebivel. Janela rolante D-7..D-1.",
+        default_schedule_kind=ScheduleKind.DAILY_AT,
+        default_schedule_value="09:45",
+        canonical_table="wh_liquidacao_recebivel",
+    ),
+    EndpointSpec(
+        name="custodia.movimento_aberto",
+        label="Custodia · Cessoes em aberto (snapshot)",
+        description="Snapshot diario de cessoes pendentes de liquidacao. Sem data no path — cada disparo e foto do estado naquela manha, formando serie temporal.",
+        default_schedule_kind=ScheduleKind.DAILY_AT,
+        default_schedule_value="10:00",
+        canonical_table="wh_movimento_aberto",
+    ),
+    EndpointSpec(
+        name="custodia.detalhes_operacoes",
+        label="Custodia · Detalhes de operacoes (CNAB)",
+        description="Lotes CNAB processados no dia — uma linha por arquivo de remessa. Data alvo D-1.",
+        default_schedule_kind=ScheduleKind.DAILY_AT,
+        default_schedule_value="10:00",
+        canonical_table="wh_operacao_remessa",
+    ),
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Bank-account endpoints (separados do _PIPELINE no etl.py — vivem em
 # `bank_account_sync.py`).
 # ─────────────────────────────────────────────────────────────────────────────
@@ -162,6 +218,7 @@ _BANK_ACCOUNT_ENDPOINTS: tuple[EndpointSpec, ...] = (
 
 QITECH_ENDPOINTS: tuple[EndpointSpec, ...] = (
     *_MARKET_ENDPOINTS,
+    *_CUSTODIA_ENDPOINTS,
     *_BANK_ACCOUNT_ENDPOINTS,
 )
 

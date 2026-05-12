@@ -208,16 +208,20 @@ async def balancete_diario_cosif_rows(
     cosif_codigo: str,
     fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
     data: Annotated[date, Query(description="Data da posicao (D0).")],
+    data_anterior: Annotated[
+        date | None,
+        Query(description="Override opcional para D-1. Default: dia util anterior."),
+    ] = None,
     _: None = _Guard,
 ) -> CosifRowsResponseSchema:
-    """Lista as rows do silver que sustentam o saldo de uma conta COSIF.
+    """Compara papeis de uma conta COSIF entre D-1 e D0.
 
-    Drill-down do `CosifDrillSheet` — clica numa conta analitica na arvore
-    Z3 (ex.: `1.3.1.15.30.001 COTAS DE FUNDOS RF`) e ve os papeis
-    individuais que la cairam (ex.: `739704 ITAU SOBERANO REF SI`).
+    Drill-down do `CosifDrillSheet`. Mescla composicao (foto D0) com
+    analise da variacao (D-1 -> D0): cada papel volta com valor_d_minus_1,
+    valor_d_zero, delta e status (novo|removido|alterado|inalterado).
 
-    Aceita tanto conta analitica (folha — retorna so as rows que classifier
-    mapeou para ela) quanto sintetica (agrega rows de todos os descendentes).
+    Aceita conta analitica (folha) ou sintetica (agrega descendentes). Se
+    `data_anterior` nao for passado, infere D-1 via `dia_util_anterior_qitech`.
 
     Multi-tenant: scope enforced via `principal.tenant_id` no service.
     """
@@ -226,8 +230,9 @@ async def balancete_diario_cosif_rows(
             db,
             tenant_id=principal.tenant_id,
             fundo_id=fundo_id,
-            data_posicao=data,
+            data_d_zero=data,
             cosif_codigo=cosif_codigo,
+            data_d_minus_1=data_anterior,
         )
     except ValueError as exc:
         raise HTTPException(

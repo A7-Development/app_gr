@@ -3,13 +3,21 @@
 Computa o balancete sintetico do fundo em D0 e D-1, classificado em
 arvore COSIF, e calcula a reconciliacao da Cota Subordinada:
 
-    PL Cota Sub = SUM_silver_TOTAL - |Cotas Sr emitidas| - |Cotas Mez emitidas|
+    PL Sub Real (MEC)      = patrimonio da classe Sub em `wh_mec_evolucao_cotas`
+                             (medida direta da administradora QiTech — qtde x cota)
+    PL Sub Esperado (COSIF) = PL_Total - |Sr_emitidas| - |Mez_emitidas|
+                              (derivado do balancete silver, classificacao runtime)
+    Residuo                 = Real - Esperado   (!= 0 em geral; testa fechamento)
 
-    Delta PL Cota Sub = Delta_Total - Delta_Sr - Delta_Mez   (residuo deve ser 0)
+Real e Esperado vem de fontes **independentes**: MEC e o produto qtde x cota
+patrimonial reportado pelo administrador; Esperado e a soma agregada dos silvers
+do balancete menos as cotas Sr/Mez classificadas. Divergencias significativas
+apontam pra classificacao errada, override pendente, evento nao lancado, ou
+divergencia da propria QiTech.
 
-Substitui a `services/balanco.py::compute_balanco` quando o frontend
-migrar para a nova UI. Por enquanto coexistem — a UI atual usa o
-antigo, a Fase 1 da PR3 conecta ao novo.
+Quando o MEC do dia ainda nao foi publicado (sync `daily_at 08:30`), a comparacao
+e marcada como `data_quality.comparable=false` com motivo explicito — a UI ja
+trata isso (overlay "Comparacao nao confiavel" no waterfall).
 
 Origem dos dados — APENAS silver canonico (CLAUDE.md §13.2.1).
 Classificacao em runtime via `services/cosif/classifier.py`.
@@ -123,38 +131,59 @@ class DataQuality:
 
 
 @dataclass
-class CosifRow:
-    """Row do silver subjacente a uma conta COSIF.
+class CosifRowDiff:
+    """Papel individual que sustenta o saldo de uma conta COSIF, comparado
+    entre D-1 e D0.
 
     Devolvido por `compute_cosif_rows()` para o drill-down do
-    `CosifDrillSheet` na UI — lista os papeis individuais que sustentam
-    o saldo da conta analitica.
+    `CosifDrillSheet`. Mescha foto (composicao em D0) com movimento
+    (variacao D-1 -> D0) numa linha so — controller ve em 1 lugar o
+    que tem hoje E o que mudou.
+
+    Status (derivado dos valores):
+      novo        — existia so em D0  (valor_d_minus_1 == 0)
+      removido    — existia so em D-1 (valor_d_zero == 0)
+      alterado    — existia em ambos com delta != 0
+      inalterado  — existia em ambos com delta == 0
     """
     silver_origin: str
-    codigo: str | None  # identificador da row no silver (ex.: codigo do papel)
+    codigo: str | None
     nome: str
-    valor: Decimal
-    quantidade: Decimal | None  # so wh_posicao_renda_fixa
-    indexador: str | None        # so wh_posicao_renda_fixa
-    cosif_source: str            # 'override' | 'rule:<rid>'
+    valor_d_minus_1: Decimal
+    valor_d_zero: Decimal
+    delta: Decimal
+    quantidade_d_minus_1: Decimal | None
+    quantidade_d_zero: Decimal | None
+    indexador: str | None
+    cosif_source: str
+    status: str  # 'novo' | 'removido' | 'alterado' | 'inalterado'
+    # Contraparte: emitente (renda fixa) ou ativo_instituicao (cota fundo).
+    # None nos silvers que nao tem nocao de contraparte (caixa, CPR, etc).
+    contraparte: str | None = None
 
 
 @dataclass
 class CosifRowsResponse:
     fundo_id: UUID
-    data_posicao: date
+    data_d_zero: date
+    data_d_minus_1: date
     cosif_codigo: str
     cosif_nome: str
-    total_valor: Decimal
-    rows: list[CosifRow]
+    total_valor_d_minus_1: Decimal
+    total_valor_d_zero: Decimal
+    total_delta: Decimal
+    rows: list[CosifRowDiff]
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "fundo_id": self.fundo_id,
-            "data_posicao": self.data_posicao,
+            "data_d_zero": self.data_d_zero,
+            "data_d_minus_1": self.data_d_minus_1,
             "cosif_codigo": self.cosif_codigo,
             "cosif_nome": self.cosif_nome,
-            "total_valor": self.total_valor,
+            "total_valor_d_minus_1": self.total_valor_d_minus_1,
+            "total_valor_d_zero": self.total_valor_d_zero,
+            "total_delta": self.total_delta,
             "rows": [asdict(r) for r in self.rows],
         }
 
@@ -166,6 +195,7 @@ class BalanceteResponse:
     data_d_minus_1: date
     nodes: list[CosifNode]  # arvore plana
     classe_breakdown_por_cosif: dict[str, list[ClasseSrMezSubBreakdown]]
+    rows_por_cosif: dict[str, list[CosifRowDiff]]  # papel-a-papel por conta analitica
     reconciliacao: Reconciliacao
     cobertura: Cobertura
     data_quality: DataQuality
@@ -180,6 +210,10 @@ class BalanceteResponse:
             "classe_breakdown_por_cosif": {
                 k: [asdict(b) for b in v]
                 for k, v in self.classe_breakdown_por_cosif.items()
+            },
+            "rows_por_cosif": {
+                k: [asdict(r) for r in v]
+                for k, v in self.rows_por_cosif.items()
             },
             "reconciliacao": asdict(self.reconciliacao),
             "cobertura": {
@@ -209,19 +243,19 @@ _QUERIES: dict[str, str] = {
         WHERE unidade_administrativa_id = :ua AND data_posicao = :d
     """,
     "wh_posicao_compromissada": """
-        SELECT codigo, papel AS nome, valor_bruto AS valor
+        SELECT codigo, papel AS nome, valor_bruto AS valor, quantidade
         FROM wh_posicao_compromissada
         WHERE unidade_administrativa_id = :ua AND data_posicao = :d
     """,
     "wh_posicao_renda_fixa": """
         SELECT codigo, nome_do_papel AS nome, valor_bruto AS valor,
-               nome_do_papel, quantidade, indexador
+               nome_do_papel, quantidade, indexador, emitente
         FROM wh_posicao_renda_fixa
         WHERE unidade_administrativa_id = :ua AND data_posicao = :d
     """,
     "wh_posicao_cota_fundo": """
         SELECT ativo_codigo AS codigo, ativo_nome AS nome, valor_atual AS valor,
-               ativo_nome
+               ativo_nome, quantidade, ativo_instituicao
         FROM wh_posicao_cota_fundo
         WHERE unidade_administrativa_id = :ua AND data_posicao = :d
     """,
@@ -263,6 +297,48 @@ async def _fetch_silver(
                 raw=r,
             ))
     return out
+
+
+# Heuristica de identificacao da classe Sub no MEC: o relatorio
+# `market.mec` da QiTech quebra o fundo por classe via `carteira_cliente_nome`.
+# As classes Sr/Mez carregam os tokens "SENIOR"/"MEZANINO" no nome; a Sub e o
+# residual (no Realinvest e literalmente "REALINVEST FIDC", sem sufixo). Se
+# aparecer outro fundo com nomenclatura distinta, evoluir pra mapeamento
+# explicito (fundo_id -> carteira_cliente_id da Sub).
+_SQL_PL_SUB_MEC = """
+    SELECT COALESCE(SUM(patrimonio), 0) AS pl_sub,
+           COUNT(*) AS classes_sub
+    FROM wh_mec_evolucao_cotas
+    WHERE unidade_administrativa_id = :ua
+      AND data_posicao = :d
+      AND carteira_cliente_nome !~* '\\m(senior|mezanino)\\M'
+"""
+
+
+async def _fetch_pl_sub_mec(
+    db: AsyncSession, ua_id: UUID, d: date,
+) -> Decimal | None:
+    """Le o PL da classe Subordinada direto do MEC (medida independente).
+
+    Retorna None quando o MEC do dia ainda nao foi ingerido para esse fundo —
+    caller marca a reconciliacao como `comparable=false`.
+
+    Levanta `RuntimeError` se mais de 1 classe nao-Sr/Mez aparecer (sinal
+    de fundo com nomenclatura fora do padrao Realinvest; vale revisar a
+    heuristica ou mapear explicitamente).
+    """
+    result = await db.execute(text(_SQL_PL_SUB_MEC), {"ua": ua_id, "d": d})
+    row = result.mappings().one()
+    count = int(row["classes_sub"] or 0)
+    if count == 0:
+        return None
+    if count > 1:
+        raise RuntimeError(
+            f"MEC retornou {count} classes nao-Sr/Mez em {d.isoformat()} para "
+            f"unidade_administrativa_id={ua_id}. Heuristica de identificacao "
+            f"da Sub e ambigua — revisar nomes em wh_mec_evolucao_cotas."
+        )
+    return Decimal(str(row["pl_sub"]))
 
 
 # ─── Pipeline principal ──────────────────────────────────────────────────────
@@ -336,19 +412,27 @@ async def compute_balancete_diario(
     classe_breakdown = _build_classe_breakdown(breakdown_d1, breakdown_d0)
 
     # 7. Reconciliacao Cota Sub
+    # Esperado (derivado do balancete) = ΔPL_Total - ΔSr_emitidas - ΔMez_emitidas.
+    # Real (direto do MEC)             = ΔPatrimonio da classe Sub via wh_mec_evolucao_cotas.
     pl_total_d1 = sum((r.valor for r in rows_d1), Decimal(0))
     pl_total_d0 = sum((r.valor for r in rows_d0), Decimal(0))
     sr_d1 = _sum_cotas_emitidas(rows_d1, rules_cache, overrides, "senior")
     sr_d0 = _sum_cotas_emitidas(rows_d0, rules_cache, overrides, "senior")
     mez_d1 = _sum_cotas_emitidas(rows_d1, rules_cache, overrides, "mezanino")
     mez_d0 = _sum_cotas_emitidas(rows_d0, rules_cache, overrides, "mezanino")
-    pl_sub_d1 = pl_total_d1 - sr_d1 - mez_d1
-    pl_sub_d0 = pl_total_d0 - sr_d0 - mez_d0
     delta_pl_total = pl_total_d0 - pl_total_d1
     delta_sr = sr_d0 - sr_d1
     delta_mez = mez_d0 - mez_d1
-    delta_real = pl_sub_d0 - pl_sub_d1
     delta_esp = delta_pl_total - delta_sr - delta_mez
+
+    mec_sub_d1 = await _fetch_pl_sub_mec(db, fundo_id, data_d_minus_1)
+    mec_sub_d0 = await _fetch_pl_sub_mec(db, fundo_id, data_d_zero)
+    # Fallback p/ derivacao do balancete quando MEC ausente — usuario ve um
+    # numero (em vez de zerado), mas a UI marca como nao-confiavel via
+    # data_quality (passo 9). residuo nesse fallback fica matematicamente zero.
+    pl_sub_d1 = mec_sub_d1 if mec_sub_d1 is not None else pl_total_d1 - sr_d1 - mez_d1
+    pl_sub_d0 = mec_sub_d0 if mec_sub_d0 is not None else pl_total_d0 - sr_d0 - mez_d0
+    delta_real = pl_sub_d0 - pl_sub_d1
     residuo = delta_real - delta_esp
     pct = (delta_real / abs(pl_sub_d1) * 100) if pl_sub_d1 else Decimal(0)
     reconciliacao = Reconciliacao(
@@ -369,8 +453,15 @@ async def compute_balancete_diario(
     cob = _build_cobertura(rows_d0, rules_cache, overrides)
 
     # 9. Data quality — detecta D-1/D0 com snapshot parcial (ETL incompleto)
+    # OU MEC ausente em alguma das datas (impede reconciliacao independente).
     data_quality = _build_data_quality(
-        rows_d1, rows_d0, data_d_minus_1, data_d_zero
+        rows_d1, rows_d0, data_d_minus_1, data_d_zero,
+        mec_sub_d1=mec_sub_d1, mec_sub_d0=mec_sub_d0,
+    )
+
+    # 10. Rows papel-a-papel por conta analitica (drill na tabela)
+    rows_por_cosif = _build_rows_diff_por_codigo(
+        rows_d1, rows_d0, rules_cache, overrides
     )
 
     return BalanceteResponse(
@@ -379,6 +470,7 @@ async def compute_balancete_diario(
         data_d_minus_1=data_d_minus_1,
         nodes=nodes,
         classe_breakdown_por_cosif=classe_breakdown,
+        rows_por_cosif=rows_por_cosif,
         reconciliacao=reconciliacao,
         cobertura=cob,
         data_quality=data_quality,
@@ -471,6 +563,108 @@ def _sum_cotas_emitidas(
     return total
 
 
+def _build_rows_diff_por_codigo(
+    rows_d1: list[_SilverRow],
+    rows_d0: list[_SilverRow],
+    rules_cache,
+    overrides,
+) -> dict[str, list[CosifRowDiff]]:
+    """Diff papel-a-papel agrupado por cosif_codigo analitico.
+
+    Para CADA conta analitica (folha COSIF que recebeu silver), monta a lista
+    de papeis (silver rows) que sustentam o saldo, com status novo/removido/
+    alterado/inalterado entre D-1 e D0. Mesma logica do `compute_cosif_rows()`
+    mas processando todas as contas de uma vez — evita N+1 quando a UI quer
+    drill em todas as folhas.
+
+    Rows pendentes (res.cosif=None) sao ignoradas — bucket pendente nao tem
+    composicao expandivel.
+    """
+    def _key(r: _SilverRow) -> tuple[str, str]:
+        codigo = r.raw.get("codigo")
+        if codigo:
+            return (r.silver_origin, str(codigo))
+        return (r.silver_origin, f"@{r.nome}")
+
+    # cosif -> chave -> {"d1": SilverRow?, "d0": SilverRow?, "source": str}
+    by_cosif: dict[str, dict[tuple[str, str], dict[str, Any]]] = defaultdict(dict)
+
+    for r in rows_d1:
+        res = classify(r.silver_origin, r.raw, rules_cache, overrides)
+        if res.cosif is None:
+            continue
+        key = _key(r)
+        slot = by_cosif[res.cosif].setdefault(key, {})
+        slot["d1"] = r
+        slot["source"] = res.source
+
+    for r in rows_d0:
+        res = classify(r.silver_origin, r.raw, rules_cache, overrides)
+        if res.cosif is None:
+            continue
+        key = _key(r)
+        slot = by_cosif[res.cosif].setdefault(key, {})
+        slot["d0"] = r
+        slot["source"] = res.source  # D0 wins (papel "atual")
+
+    out: dict[str, list[CosifRowDiff]] = {}
+    for cosif, items in by_cosif.items():
+        rows_out: list[CosifRowDiff] = []
+        for _, slot in items.items():
+            r_d1: _SilverRow | None = slot.get("d1")
+            r_d0: _SilverRow | None = slot.get("d0")
+            ref = r_d0 or r_d1
+            if ref is None:
+                continue
+
+            valor_d1 = r_d1.valor if r_d1 else Decimal(0)
+            valor_d0 = r_d0.valor if r_d0 else Decimal(0)
+            delta = valor_d0 - valor_d1
+
+            if r_d1 is None:
+                status = "novo"
+            elif r_d0 is None:
+                status = "removido"
+            elif delta == 0:
+                status = "inalterado"
+            else:
+                status = "alterado"
+
+            qtde_d1 = r_d1.raw.get("quantidade") if r_d1 else None
+            qtde_d0 = r_d0.raw.get("quantidade") if r_d0 else None
+            indexador = ref.raw.get("indexador")
+            # Contraparte: campo varia por silver. emitente em renda fixa,
+            # ativo_instituicao em cota_fundo. Demais silvers nao tem.
+            contraparte = (
+                ref.raw.get("emitente")
+                or ref.raw.get("ativo_instituicao")
+            )
+
+            rows_out.append(CosifRowDiff(
+                silver_origin=ref.silver_origin,
+                codigo=ref.raw.get("codigo"),
+                nome=ref.nome,
+                valor_d_minus_1=valor_d1,
+                valor_d_zero=valor_d0,
+                delta=delta,
+                quantidade_d_minus_1=(
+                    Decimal(str(qtde_d1)) if qtde_d1 is not None else None
+                ),
+                quantidade_d_zero=(
+                    Decimal(str(qtde_d0)) if qtde_d0 is not None else None
+                ),
+                indexador=indexador,
+                cosif_source=slot["source"],
+                status=status,
+                contraparte=contraparte,
+            ))
+
+        rows_out.sort(key=lambda x: (abs(x.delta), abs(x.valor_d_zero)), reverse=True)
+        out[cosif] = rows_out
+
+    return out
+
+
 def _build_cobertura(rows, rules_cache, overrides) -> Cobertura:
     counts: dict[str, int] = defaultdict(int)
     valor_por_source: dict[str, Decimal] = defaultdict(lambda: Decimal(0))
@@ -511,17 +705,24 @@ def _build_data_quality(
     rows_d0: list[_SilverRow],
     data_d_minus_1: date,
     data_d_zero: date,
+    *,
+    mec_sub_d1: Decimal | None = None,
+    mec_sub_d0: Decimal | None = None,
 ) -> DataQuality:
-    """Detecta snapshot parcial em D-1 ou D0 comparando presenca de silvers.
+    """Detecta snapshot parcial em D-1 ou D0 comparando presenca de silvers,
+    e MEC ausente em alguma das datas (impede reconciliacao independente).
 
     Conta rows por silver_origin em ambos os dias. Marca como `divergente`
     qualquer silver que tem rows em um dia mas nao no outro — sintoma de
     ETL incompleto.
 
-    `comparable` = True quando NENHUM silver e divergente. Isso e mais
-    robusto do que "todos os 7 populados" pois evita falsos positivos em
-    fundos que naturalmente nao tem `wh_saldo_tesouraria` ou
-    `wh_posicao_compromissada`, por exemplo.
+    Tambem checa se `wh_mec_evolucao_cotas` foi publicada para ambos os dias.
+    Sem MEC, o `delta_pl_cota_sub_real` cai no fallback derivado do balancete
+    (matematicamente identico ao Esperado) e a comparacao perde sentido.
+
+    `comparable` = True quando NENHUM silver e divergente E MEC presente em
+    ambos os dias. Robusto contra fundos que naturalmente nao tem
+    `wh_saldo_tesouraria` ou `wh_posicao_compromissada`, por exemplo.
     """
     silvers_d1: dict[str, int] = {origin: 0 for origin in _QUERIES}
     silvers_d0: dict[str, int] = {origin: 0 for origin in _QUERIES}
@@ -537,7 +738,15 @@ def _build_data_quality(
         if has_d1 != has_d0:
             divergentes.append(origin)
 
-    if not divergentes:
+    # MEC ausente vira "divergencia" sintetica — flagrado fora do dict de
+    # silvers (que e exclusivo do balancete COSIF), mas merge no reason.
+    mec_missing: list[date] = []
+    if mec_sub_d1 is None:
+        mec_missing.append(data_d_minus_1)
+    if mec_sub_d0 is None:
+        mec_missing.append(data_d_zero)
+
+    if not divergentes and not mec_missing:
         return DataQuality(
             silvers_d1=silvers_d1,
             silvers_d0=silvers_d0,
@@ -546,20 +755,31 @@ def _build_data_quality(
             reason=None,
         )
 
-    # Determina qual dia esta parcial — o que tem menos silvers populados.
-    populados_d1 = sum(1 for v in silvers_d1.values() if v > 0)
-    populados_d0 = sum(1 for v in silvers_d0.values() if v > 0)
-    dia_parcial = data_d_minus_1 if populados_d1 < populados_d0 else data_d_zero
-    dia_label = "D-1" if dia_parcial == data_d_minus_1 else "D0"
+    motivos: list[str] = []
 
-    silvers_faltando_humanos = [
-        _SILVER_HUMAN_LABEL.get(s, s) for s in divergentes
-    ]
-    reason = (
-        f"{dia_label} ({dia_parcial.strftime('%d/%m/%Y')}) com snapshot parcial — "
-        f"faltam dados de: {', '.join(silvers_faltando_humanos)}. "
-        f"Comparacao pode estar distorcida."
-    )
+    if divergentes:
+        # Determina qual dia esta parcial — o que tem menos silvers populados.
+        populados_d1 = sum(1 for v in silvers_d1.values() if v > 0)
+        populados_d0 = sum(1 for v in silvers_d0.values() if v > 0)
+        dia_parcial = data_d_minus_1 if populados_d1 < populados_d0 else data_d_zero
+        dia_label = "D-1" if dia_parcial == data_d_minus_1 else "D0"
+        silvers_faltando_humanos = [
+            _SILVER_HUMAN_LABEL.get(s, s) for s in divergentes
+        ]
+        motivos.append(
+            f"{dia_label} ({dia_parcial.strftime('%d/%m/%Y')}) com snapshot parcial "
+            f"— faltam dados de: {', '.join(silvers_faltando_humanos)}"
+        )
+
+    if mec_missing:
+        datas_humanas = ", ".join(d.strftime("%d/%m/%Y") for d in mec_missing)
+        motivos.append(
+            f"MEC nao publicado para: {datas_humanas} — reconciliacao da "
+            f"Cota Sub cai no fallback derivado do balancete (residuo zerado "
+            f"por construcao)"
+        )
+
+    reason = ". ".join(motivos) + ". Comparacao pode estar distorcida."
 
     return DataQuality(
         silvers_d1=silvers_d1,
@@ -577,22 +797,29 @@ async def compute_cosif_rows(
     db: AsyncSession,
     tenant_id: UUID,
     fundo_id: UUID,
-    data_posicao: date,
+    data_d_zero: date,
     cosif_codigo: str,
+    data_d_minus_1: date | None = None,
 ) -> CosifRowsResponse:
-    """Lista as rows do silver que sustentam o saldo de uma conta COSIF.
+    """Compara papeis (rows do silver) que sustentam uma conta COSIF entre D-1 e D0.
 
-    Usado pelo `CosifDrillSheet` na UI quando o usuario clica numa conta
-    analitica para ver os papeis individuais (ex.: clicar em
-    `1.3.1.15.30.001` mostra "739704 ITAU SOBERANO REF SI").
+    Usado pelo `CosifDrillSheet`. Mescha composicao (foto em D0) com analise
+    da variacao (movimento D-1 -> D0). Cada papel vira 1 row com status:
+    novo / removido / alterado / inalterado.
 
-    Aceita tanto conta analitica (folha) quanto sintetica (agrega todos
-    os descendentes). Resolve pela cascata override -> rule do classifier
-    em runtime — mesma logica de `compute_balancete_diario`.
+    Aceita conta analitica (folha) ou sintetica (agrega descendentes).
+    Resolve via cascata override -> rule do classifier — mesma logica do
+    `compute_balancete_diario`. Se `data_d_minus_1` nao for passado, infere
+    via `dia_util_anterior_qitech` (mesma fonte de verdade do Calendar).
 
-    Multi-tenant: query do silver ja filtra por `unidade_administrativa_id`
+    Multi-tenant: query do silver filtra por `unidade_administrativa_id`
     (= fundo_id); tenant_id reservado para futura validacao de subscription.
     """
+    if data_d_minus_1 is None:
+        data_d_minus_1 = await dia_util_anterior_qitech(
+            db, tenant_id, fundo_id, data_d_zero
+        )
+
     rules_cache = await load_rules_cache(db)
     overrides = await load_overrides(db, tenant_id, fundo_id)
     catalog = await load_catalog_tree(db)
@@ -617,35 +844,93 @@ async def compute_cosif_rows(
                 break
             cur = parent.parent_codigo
 
-    rows = await _fetch_silver(db, fundo_id, data_posicao)
+    rows_d1 = await _fetch_silver(db, fundo_id, data_d_minus_1)
+    rows_d0 = await _fetch_silver(db, fundo_id, data_d_zero)
 
-    out: list[CosifRow] = []
-    total = Decimal(0)
-    for r in rows:
+    # Index por (silver_origin, codigo) filtrando so quem cai no cosif solicitado.
+    # codigo None vira chave artificial baseada em nome para wh_cpr_movimento etc.
+    def _key(r: _SilverRow) -> tuple[str, str]:
+        codigo = r.raw.get("codigo")
+        if codigo:
+            return (r.silver_origin, str(codigo))
+        # Sem codigo: usa nome como chave (caso de wh_cpr_movimento)
+        return (r.silver_origin, f"@{r.nome}")
+
+    d1_map: dict[tuple[str, str], _SilverRow] = {}
+    d0_map: dict[tuple[str, str], _SilverRow] = {}
+    for r in rows_d1:
         res = classify(r.silver_origin, r.raw, rules_cache, overrides)
-        if res.cosif not in accepted:
-            continue
-        qtde = r.raw.get("quantidade")
-        indexador = r.raw.get("indexador")
-        out.append(CosifRow(
-            silver_origin=r.silver_origin,
-            codigo=r.raw.get("codigo"),
-            nome=r.nome,
-            valor=r.valor,
-            quantidade=Decimal(str(qtde)) if qtde is not None else None,
+        if res.cosif in accepted:
+            d1_map[_key(r)] = r
+    for r in rows_d0:
+        res = classify(r.silver_origin, r.raw, rules_cache, overrides)
+        if res.cosif in accepted:
+            d0_map[_key(r)] = r
+
+    all_keys = set(d1_map) | set(d0_map)
+    out: list[CosifRowDiff] = []
+    for key in all_keys:
+        r_d1 = d1_map.get(key)
+        r_d0 = d0_map.get(key)
+
+        # Pega referencia (preferencia D0 — papel "atual"; fallback D-1 quando
+        # o papel saiu da carteira).
+        ref = r_d0 or r_d1
+        if ref is None:
+            continue  # impossivel, mas calma o type checker
+
+        valor_d1 = r_d1.valor if r_d1 else Decimal(0)
+        valor_d0 = r_d0.valor if r_d0 else Decimal(0)
+        delta = valor_d0 - valor_d1
+
+        if r_d1 is None:
+            status = "novo"
+        elif r_d0 is None:
+            status = "removido"
+        elif delta == 0:
+            status = "inalterado"
+        else:
+            status = "alterado"
+
+        qtde_d1 = r_d1.raw.get("quantidade") if r_d1 else None
+        qtde_d0 = r_d0.raw.get("quantidade") if r_d0 else None
+        indexador = (r_d0 or r_d1).raw.get("indexador") if (r_d0 or r_d1) else None
+        contraparte = ref.raw.get("emitente") or ref.raw.get("ativo_instituicao")
+
+        # cosif_source vem do D0 (papel atual); fallback D-1
+        res = classify(ref.silver_origin, ref.raw, rules_cache, overrides)
+
+        out.append(CosifRowDiff(
+            silver_origin=ref.silver_origin,
+            codigo=ref.raw.get("codigo"),
+            nome=ref.nome,
+            valor_d_minus_1=valor_d1,
+            valor_d_zero=valor_d0,
+            delta=delta,
+            quantidade_d_minus_1=Decimal(str(qtde_d1)) if qtde_d1 is not None else None,
+            quantidade_d_zero=Decimal(str(qtde_d0)) if qtde_d0 is not None else None,
             indexador=indexador,
             cosif_source=res.source,
+            status=status,
+            contraparte=contraparte,
         ))
-        total += r.valor
 
-    # Ordena por |valor| desc — mais material primeiro.
-    out.sort(key=lambda x: abs(x.valor), reverse=True)
+    # Ordena: primeiro por |delta| desc (mais material movimento), depois por
+    # |valor_d_zero| desc — papel grande sem variacao continua importante.
+    out.sort(key=lambda x: (abs(x.delta), abs(x.valor_d_zero)), reverse=True)
+
+    total_d1 = sum((r.valor_d_minus_1 for r in out), Decimal(0))
+    total_d0 = sum((r.valor_d_zero for r in out), Decimal(0))
+    total_delta = total_d0 - total_d1
 
     return CosifRowsResponse(
         fundo_id=fundo_id,
-        data_posicao=data_posicao,
+        data_d_zero=data_d_zero,
+        data_d_minus_1=data_d_minus_1,
         cosif_codigo=cosif_codigo,
         cosif_nome=info.nome,
-        total_valor=total,
+        total_valor_d_minus_1=total_d1,
+        total_valor_d_zero=total_d0,
+        total_delta=total_delta,
         rows=out,
     )

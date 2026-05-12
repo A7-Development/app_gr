@@ -7,14 +7,59 @@
 // helpers de descoberta/expansao para a Z3 BalanceteDiarioTable e a Z2
 // ReconciliacaoWaterfallCard.
 
-import type { CosifNode, CosifSource } from "@/lib/api-client"
+import type {
+  ClasseBreakdown,
+  CosifNode,
+  CosifRowDiff,
+  CosifRowStatus,
+  CosifSource,
+} from "@/lib/api-client"
 
 /**
  * No da arvore COSIF para consumo do TanStack Table (com `subRows`).
  * Identico ao `CosifNode` do api-client + `subRows`.
+ *
+ * Tres tipos de no sintetico:
+ *
+ *  - `_isClasseRow=true` — quebra Sr/Mez/Sub de uma conta analitica que
+ *    carrega classe (ex.: 6.1.1.70.30.001 Cotas Emitidas). Vem do
+ *    `classe_breakdown_por_cosif` da BalanceteResponse.
+ *
+ *  - `_isPaperRow=true` — papel individual (silver row) sustentando o saldo
+ *    de uma conta analitica. Vem do `rows_por_cosif` da BalanceteResponse.
+ *    Carrega quantidade, indexador, status (novo|removido|alterado|inalterado).
+ *
+ *  - bucket pendente (`codigo=null`, sem flag) — agregador virtual de rows
+ *    sem classificacao COSIF.
  */
 export type CosifNodeUI = CosifNode & {
   subRows?: CosifNodeUI[]
+  _isClasseRow?: boolean
+  _classeLabel?: string
+  _isPaperRow?: boolean
+  /** Codigo do papel no silver (ex.: "739704"). Pode ser null. */
+  _paperCodigo?: string | null
+  /** Descricao do papel (ex.: "BB MAXIMA FIA"). Sempre presente. */
+  _paperNome?: string
+  _paperQtdD0?: number | null
+  _paperQtdD1?: number | null
+  _paperIndexador?: string | null
+  _paperStatus?: CosifRowStatus
+  _paperSilverOrigin?: string
+  /** Emitente (renda fixa) ou gestor (cota fundo). null nos demais silvers. */
+  _paperContraparte?: string | null
+}
+
+const _CLASSE_LABEL: Record<string, string> = {
+  senior:      "Senior",
+  mezanino:    "Mezanino",
+  subordinado: "Subordinada",
+  compensacao: "Compensacao",
+  aporte:      "Aporte",
+}
+
+function classeLabel(classe: string): string {
+  return _CLASSE_LABEL[classe] ?? (classe.charAt(0).toUpperCase() + classe.slice(1))
 }
 
 /**
@@ -48,9 +93,15 @@ export const GRUPO_PENDENTE = 0
  */
 export function buildCosifTree(
   nodes: readonly CosifNode[],
-  opts: { incluirCompensacao?: boolean } = {},
+  opts: {
+    incluirCompensacao?:      boolean
+    classeBreakdownPorCosif?: Record<string, readonly ClasseBreakdown[]>
+    rowsPorCosif?:            Record<string, readonly CosifRowDiff[]>
+  } = {},
 ): CosifNodeUI[] {
   const incluirCompensacao = opts.incluirCompensacao ?? false
+  const breakdowns = opts.classeBreakdownPorCosif ?? {}
+  const rowsPorCosif = opts.rowsPorCosif ?? {}
 
   // Filtra: pendentes vao pro bucket virtual; demais respeitam o toggle de
   // compensacao.
@@ -106,6 +157,83 @@ export function buildCosifTree(
       subRows:         pendentesUI,
     }
     roots.push(bucket)
+  }
+
+  // Injeta breakdown por classe (Sr/Mez/Sub) como subRows sinteticas das
+  // contas analiticas que carregam classe. Pivot-hide-aggregate da
+  // BalanceteDiarioTable esconde o saldo agregado quando expandido —
+  // visualmente fica como "drill direto na tabela".
+  for (const ui of Array.from(byCodigo.values())) {
+    if (!ui.codigo) continue
+    const breakdown = breakdowns[ui.codigo]
+    if (!breakdown || breakdown.length === 0) continue
+    // Skip se a quebra so tem 1 classe (igualaria o agregado, ruido visual).
+    if (breakdown.length < 2) continue
+    const classeRows: CosifNodeUI[] = breakdown.map((b) => {
+      const d_minus_1 = b.d_minus_1
+      const d_zero    = b.d_zero
+      const delta     = b.delta
+      const delta_pct = d_minus_1 !== 0 ? (delta / Math.abs(d_minus_1)) * 100 : 0
+      return {
+        codigo:          null,
+        nome:            classeLabel(b.classe),
+        natureza:        ui.natureza,
+        nivel:           ui.nivel + 1,
+        grupo:           ui.grupo,
+        parent_codigo:   ui.codigo,
+        d_minus_1,
+        d_zero,
+        delta,
+        delta_pct,
+        rows_classified: 0,
+        cosif_source:    ui.cosif_source,
+        _isClasseRow:    true,
+        _classeLabel:    classeLabel(b.classe),
+      }
+    })
+    // Ordem: |d_zero| desc (Senior > Mezanino > Subordinada tipicamente).
+    classeRows.sort((a, b) => Math.abs(b.d_zero) - Math.abs(a.d_zero))
+    ui.subRows = [...(ui.subRows ?? []), ...classeRows]
+  }
+
+  // Injeta papeis (silver rows) como subRows sinteticas das contas analiticas.
+  // Vem do `rows_por_cosif` da BalanceteResponse — diff D-1 vs D0 papel-a-papel.
+  // Backend ja so popula `rows_por_cosif` para folhas analiticas (cosif_codigo
+  // exato do silver classificado) — agrupamento de sinteticas e por
+  // _propagate_to_parents, nao gera entrada em rows_por_cosif.
+  for (const ui of Array.from(byCodigo.values())) {
+    if (!ui.codigo) continue
+    const papers = rowsPorCosif[ui.codigo]
+    if (!papers || papers.length === 0) continue
+    const paperRows: CosifNodeUI[] = papers.map((p) => {
+      const delta_pct = p.valor_d_minus_1 !== 0
+        ? (p.delta / Math.abs(p.valor_d_minus_1)) * 100
+        : 0
+      return {
+        codigo:             null,  // sintetico, sem codigo COSIF
+        nome:               p.nome,
+        natureza:           ui.natureza,
+        nivel:              ui.nivel + 1,
+        grupo:              ui.grupo,
+        parent_codigo:      ui.codigo,
+        d_minus_1:          p.valor_d_minus_1,
+        d_zero:             p.valor_d_zero,
+        delta:              p.delta,
+        delta_pct,
+        rows_classified:    1,
+        cosif_source:       p.cosif_source,
+        _isPaperRow:        true,
+        _paperCodigo:       p.codigo,
+        _paperNome:         p.nome,
+        _paperQtdD0:        p.quantidade_d_zero,
+        _paperQtdD1:        p.quantidade_d_minus_1,
+        _paperIndexador:    p.indexador,
+        _paperStatus:       p.status,
+        _paperSilverOrigin: p.silver_origin,
+        _paperContraparte:  p.contraparte,
+      }
+    })
+    ui.subRows = [...(ui.subRows ?? []), ...paperRows]
   }
 
   // Sort recursivo: roots por grupo (1, 4, 6, 8, depois compensacao 3/9,

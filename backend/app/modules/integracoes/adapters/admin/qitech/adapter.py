@@ -29,6 +29,13 @@ from app.core.enums import Environment
 from app.modules.integracoes.adapters.admin.qitech import bank_account_sync
 from app.modules.integracoes.adapters.admin.qitech.auth import get_api_token
 from app.modules.integracoes.adapters.admin.qitech.config import QiTechConfig
+from app.modules.integracoes.adapters.admin.qitech.custodia import (
+    resolve_cnpj_by_ua_id,
+    sync_aquisicao_consolidada,
+    sync_detalhes_operacoes,
+    sync_liquidados_baixados,
+    sync_movimento_aberto,
+)
 from app.modules.integracoes.adapters.admin.qitech.endpoint_catalog import (
     QITECH_ENDPOINTS_BY_NAME,
 )
@@ -45,6 +52,9 @@ from app.modules.integracoes.adapters.admin.qitech.etl import (
     sync_rf,
     sync_rf_compromissadas,
     sync_tesouraria,
+)
+from app.modules.integracoes.adapters.admin.qitech.report_jobs import (
+    request_fidc_estoque_report,
 )
 from app.modules.integracoes.adapters.admin.qitech.version import ADAPTER_VERSION
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
@@ -289,6 +299,180 @@ def _step_error(name: str, msg: str) -> dict[str, Any]:
     }
 
 
+_CUSTODIA_DEFAULT_WINDOW_DAYS = 7
+
+
+def _resolve_custodia_periodo(since: date | None) -> tuple[date, date]:
+    """Janela default pros endpoints custodia.* de periodo (aquisicao,
+    liquidados). Quando `since` e passado, vira `data_inicial` ate hoje;
+    senao janela movel D-7..D-1 (ultima semana fechada)."""
+    hoje = datetime.now(UTC).date()
+    if since is not None:
+        return since, hoje
+    return hoje - timedelta(days=_CUSTODIA_DEFAULT_WINDOW_DAYS), hoje - timedelta(days=1)
+
+
+async def _handler_custodia_periodo(
+    *,
+    name: str,
+    sync_fn: Any,  # callable async (sync_aquisicao_consolidada ou sync_liquidados_baixados)
+    tenant_id: UUID,
+    config: QiTechConfig,
+    environment: Environment,
+    unidade_administrativa_id: UUID | None,
+    since: date | None,
+) -> list[dict[str, Any]]:
+    """Wrapper pros custodia.* com janela (data_inicial..data_final).
+
+    Resolve UA -> CNPJ via `resolve_cnpj_by_ua_id`. Sem UA, falha (multi-UA
+    obrigatorio pra essa familia). Janela default = ultima semana fechada;
+    backfill com janela maior fica em POST /qitech/custodia/{name}/sync.
+    """
+    if unidade_administrativa_id is None:
+        return [_step_error(name, "UA obrigatoria — custodia.* requer UA configurada.")]
+    cnpj = await resolve_cnpj_by_ua_id(
+        tenant_id=tenant_id,
+        unidade_administrativa_id=unidade_administrativa_id,
+    )
+    if not cnpj:
+        return [_step_error(name, f"UA {unidade_administrativa_id} sem CNPJ cadastrado.")]
+    data_inicial, data_final = _resolve_custodia_periodo(since)
+    step = await sync_fn(
+        tenant_id=tenant_id,
+        environment=environment,
+        config=config,
+        cnpj_fundo=cnpj,
+        data_inicial=data_inicial,
+        data_final=data_final,
+        unidade_administrativa_id=unidade_administrativa_id,
+    )
+    return [step]
+
+
+async def _handler_custodia_movimento_aberto(
+    *,
+    tenant_id: UUID,
+    config: QiTechConfig,
+    environment: Environment,
+    unidade_administrativa_id: UUID | None,
+    since: date | None,
+) -> list[dict[str, Any]]:
+    """Wrapper pro custodia.movimento_aberto — snapshot atual."""
+    name = "custodia.movimento_aberto"
+    if unidade_administrativa_id is None:
+        return [_step_error(name, "UA obrigatoria — custodia.* requer UA configurada.")]
+    cnpj = await resolve_cnpj_by_ua_id(
+        tenant_id=tenant_id,
+        unidade_administrativa_id=unidade_administrativa_id,
+    )
+    if not cnpj:
+        return [_step_error(name, f"UA {unidade_administrativa_id} sem CNPJ cadastrado.")]
+    step = await sync_movimento_aberto(
+        tenant_id=tenant_id,
+        environment=environment,
+        config=config,
+        cnpj_fundo=cnpj,
+        data_referencia=since,  # None -> snapshot atual (default da funcao)
+        unidade_administrativa_id=unidade_administrativa_id,
+    )
+    return [step]
+
+
+async def _handler_custodia_detalhes_operacoes(
+    *,
+    tenant_id: UUID,
+    config: QiTechConfig,
+    environment: Environment,
+    unidade_administrativa_id: UUID | None,
+    since: date | None,
+) -> list[dict[str, Any]]:
+    """Wrapper pro custodia.detalhes_operacoes — data unica D-1 default."""
+    name = "custodia.detalhes_operacoes"
+    if unidade_administrativa_id is None:
+        return [_step_error(name, "UA obrigatoria — custodia.* requer UA configurada.")]
+    cnpj = await resolve_cnpj_by_ua_id(
+        tenant_id=tenant_id,
+        unidade_administrativa_id=unidade_administrativa_id,
+    )
+    if not cnpj:
+        return [_step_error(name, f"UA {unidade_administrativa_id} sem CNPJ cadastrado.")]
+    data_importacao = _resolve_data_alvo(since)
+    step = await sync_detalhes_operacoes(
+        tenant_id=tenant_id,
+        environment=environment,
+        config=config,
+        cnpj_fundo=cnpj,
+        data_importacao=data_importacao,
+        unidade_administrativa_id=unidade_administrativa_id,
+    )
+    return [step]
+
+
+async def _handler_market_fidc_estoque(
+    *,
+    tenant_id: UUID,
+    config: QiTechConfig,
+    environment: Environment,
+    unidade_administrativa_id: UUID | None,
+    since: date | None,
+) -> list[dict[str, Any]]:
+    """Wrapper pro market.fidc_estoque — assincrono (job + webhook callback).
+
+    Diferente dos demais handlers: aqui o retorno e "job enfileirado" e nao
+    "linhas ingeridas". A carga real chega depois via callback em
+    `routers/webhooks.py::process_fidc_estoque_callback` — esse handler
+    apenas dispara `request_fidc_estoque_report` (POST que cria o job).
+    """
+    name = "market.fidc_estoque"
+    t0 = time.monotonic()
+    if unidade_administrativa_id is None:
+        return [_step_error(name, "UA obrigatoria — fidc_estoque requer UA configurada.")]
+    cnpj = await resolve_cnpj_by_ua_id(
+        tenant_id=tenant_id,
+        unidade_administrativa_id=unidade_administrativa_id,
+    )
+    if not cnpj:
+        return [_step_error(name, f"UA {unidade_administrativa_id} sem CNPJ cadastrado.")]
+    reference_date = _resolve_data_alvo(since)
+
+    try:
+        async with AsyncSessionLocal() as db:
+            job = await request_fidc_estoque_report(
+                db=db,
+                tenant_id=tenant_id,
+                environment=environment,
+                config=config,
+                cnpj_fundo=cnpj,
+                reference_date=reference_date,
+                triggered_by="endpoint:sync",
+            )
+            await db.commit()
+    except Exception as e:
+        return [
+            {
+                "name": name,
+                "ok": False,
+                "errors": [f"{type(e).__name__}: {e}"],
+                "elapsed_seconds": round(time.monotonic() - t0, 2),
+            }
+        ]
+
+    return [
+        {
+            "name": name,
+            "ok": True,
+            "job_enqueued": True,
+            "job_id": str(job.id),
+            "qitech_job_id": job.qitech_job_id,
+            "cnpj_fundo": cnpj,
+            "reference_date": reference_date.isoformat(),
+            "canonical_rows_upserted": 0,  # carga vem pelo callback
+            "elapsed_seconds": round(time.monotonic() - t0, 2),
+            "errors": [],
+        }
+    ]
+
+
 # Mapping endpoint_name -> handler. Adicionar endpoint = adicionar linha aqui
 # + entrada no `endpoint_catalog.py` + snapshot da migration.
 _HANDLERS: dict[str, Any] = {
@@ -302,6 +486,19 @@ _HANDLERS: dict[str, Any] = {
     "market.rentabilidade": lambda **kw: _handler_market(sync_fn=sync_rentabilidade, **kw),
     "market.rf": lambda **kw: _handler_market(sync_fn=sync_rf, **kw),
     "market.rf_compromissadas": lambda **kw: _handler_market(sync_fn=sync_rf_compromissadas, **kw),
+    "market.fidc_estoque": _handler_market_fidc_estoque,
+    "custodia.aquisicao_consolidada": lambda **kw: _handler_custodia_periodo(
+        name="custodia.aquisicao_consolidada",
+        sync_fn=sync_aquisicao_consolidada,
+        **kw,
+    ),
+    "custodia.liquidados_baixados": lambda **kw: _handler_custodia_periodo(
+        name="custodia.liquidados_baixados",
+        sync_fn=sync_liquidados_baixados,
+        **kw,
+    ),
+    "custodia.movimento_aberto": _handler_custodia_movimento_aberto,
+    "custodia.detalhes_operacoes": _handler_custodia_detalhes_operacoes,
     "bank_account.balance": _handler_bank_balance,
     "bank_account.statement": _handler_bank_statement,
 }

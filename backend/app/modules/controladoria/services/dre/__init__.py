@@ -18,9 +18,17 @@ from app.modules.controladoria.services.dre.classifier import (
     DreClassifier,
     load_dre_classifier,
 )
+from app.modules.controladoria.services.dre.leitura import (
+    compute_drill_fornecedores,
+    compute_pivot,
+    listar_competencias,
+)
 
 __all__ = [
     "DreClassification",
     "DreClassifier",
+    "compute_drill_fornecedores",
+    "compute_pivot",
+    "listar_competencias",
     "load_dre_classifier",
 ]

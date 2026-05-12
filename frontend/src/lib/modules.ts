@@ -236,6 +236,12 @@ export const MODULES: ModuleDefinition[] = [
         icon: RiPercentLine,
       },
       {
+        name: "DRE",
+        href: "/controladoria/dre",
+        enabled: true,
+        icon: RiBarChartGroupedLine,
+      },
+      {
         name: "Pagamento Diario",
         href: "/controladoria/pagamento-diario",
         enabled: true,

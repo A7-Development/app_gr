@@ -134,10 +134,10 @@ function buildSteps(r: Reconciliacao): Step[] {
     {
       kind:      "real",
       label:     "Real",
-      labelFull: "ΔPL Sub Real (PL Sub D0 − PL Sub D-1)",
+      labelFull: "ΔPL Sub Real (MEC — patrimonio da classe Sub)",
       value:     r.delta_pl_cota_sub_real,
       color:     COLOR_NEUTRAL,
-      hint:      "Variacao medida direto no PL Sub",
+      hint:      "Patrimonio da classe Sub no MEC (qtde × cota patrimonial), independente do balancete",
     },
     {
       kind:      "residuo",
