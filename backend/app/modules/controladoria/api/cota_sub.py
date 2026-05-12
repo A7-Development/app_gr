@@ -11,12 +11,18 @@ from app.core.database import get_db
 from app.core.enums import Module, Permission
 from app.core.module_guard import require_module
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
+from app.modules.controladoria.schemas.balancete_diario import (
+    BalanceteResponseSchema,
+)
 from app.modules.controladoria.schemas.cota_sub import (
     BalancoResponse,
     VariacaoDiariaResponse,
     VariacoesDiaResponse,
 )
 from app.modules.controladoria.services.balanco import compute_balanco
+from app.modules.controladoria.services.balancete_diario import (
+    compute_balancete_diario,
+)
 from app.modules.controladoria.services.cota_sub import compute_variacao_diaria
 from app.modules.controladoria.services.variacoes_dia import compute_variacoes_dia
 from app.modules.integracoes.public import listar_datas_disponiveis_qitech
@@ -97,8 +103,8 @@ async def datas_disponiveis(
     Consumido pelo Calendar do frontend para impedir o usuario de selecionar
     dias sem dados (fim de semana, feriado, falha de ETL — qualquer buraco e
     tratado de forma uniforme). Le da `wh_dia_util_qitech` (silver), populada
-    via backfill a partir de `wh_mec_evolucao_cotas` na Fase A; ETL passa a
-    popular nativamente na Fase B.
+    pelo `etl.sync_all` ao termino de cada sync (Fase B, desde
+    qitech_adapter_v0.2.0).
 
     Multi-tenant: scope enforced via `principal.tenant_id` no service.
     """
@@ -139,3 +145,52 @@ async def variacoes_dia(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/balancete-diario", response_model=BalanceteResponseSchema)
+async def balancete_diario(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0). D-1 e calculado como dia util anterior QiTech.")],
+    data_anterior: Annotated[
+        date | None,
+        Query(description="Override opcional para D-1."),
+    ] = None,
+    _: None = _Guard,
+) -> BalanceteResponseSchema:
+    """Balancete patrimonial diario COSIF + reconciliacao da Cota Subordinada.
+
+    Modelo agnostico multi-tenant (CLAUDE.md §10). Classifica cada saldo do
+    silver em conta COSIF via cascata override -> regra -> pendente
+    (CosifResolution). Calcula:
+
+      PL Cota Sub = Σ_silver_TOTAL − |Cotas Sr emitidas| − |Cotas Mez emitidas|
+
+    Resposta inclui:
+
+      - `nodes`: arvore COSIF hierarquica D-1 vs D0 com Δ por conta
+      - `classe_breakdown_por_cosif`: quebra por classe Sr/Mez/Sub dentro
+        de contas que carregam classe (ex.: 6.1.1.70.30.001)
+      - `reconciliacao`: equacao da Cota Sub + residuo (deve ser ~0)
+      - `cobertura`: % rows classificadas por source — KPI da UI mostra
+        amber/red quando pendente > limite
+
+    Validado contra REALINVEST 08/05/2026: residuo = 0,00, cobertura 100%.
+
+    Multi-tenant: scope enforced via `principal.tenant_id`. Tenant A nao
+    enxerga fundos de outro tenant.
+    """
+    try:
+        result = await compute_balancete_diario(
+            db,
+            tenant_id=principal.tenant_id,
+            fundo_id=fundo_id,
+            data_d_zero=data,
+            data_d_minus_1=data_anterior,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+    return BalanceteResponseSchema.model_validate(result.to_dict())
