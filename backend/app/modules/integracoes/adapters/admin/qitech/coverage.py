@@ -46,6 +46,14 @@ class CoverageRow(NamedTuple):
 
 # Per-day endpoints: { endpoint_name: (tabela, type_col, type_value) }.
 # type_col=None significa "tabela inteira pertence a este endpoint".
+#
+# Custodia.* (2026-05-13): adicionados depois — gravam em wh_qitech_raw_relatorio
+# com tipo_de_mercado='fidc-custodia/<nome>' e data_posicao=data_referencia
+# (data_final pros range, data_importacao pro detalhes, hoje UTC pro snapshot
+# de movimento_aberto). 1 raw por dia de disparo do sync, cabe no padrao
+# per-day. Antes de adicionar aqui, esses 4 endpoints apareciam cinza vazio
+# (`supported=False`) no heatmap — bug observacional do PR original da aba
+# Cobertura (commit 75968e7).
 _PER_DAY_ENDPOINTS: dict[str, tuple[str, str | None, str | None]] = {
     "market.outros_fundos": ("wh_qitech_raw_relatorio", "tipo_de_mercado", "outros-fundos"),
     "market.conta_corrente": ("wh_qitech_raw_relatorio", "tipo_de_mercado", "conta-corrente"),
@@ -58,6 +66,10 @@ _PER_DAY_ENDPOINTS: dict[str, tuple[str, str | None, str | None]] = {
     "market.rf": ("wh_qitech_raw_relatorio", "tipo_de_mercado", "rf"),
     "market.rf_compromissadas": ("wh_qitech_raw_relatorio", "tipo_de_mercado", "rf-compromissadas"),
     "market.fidc_estoque": ("wh_qitech_raw_relatorio", "tipo_de_mercado", "fidc-estoque"),
+    "custodia.aquisicao_consolidada": ("wh_qitech_raw_relatorio", "tipo_de_mercado", "fidc-custodia/aquisicao-consolidada"),
+    "custodia.liquidados_baixados": ("wh_qitech_raw_relatorio", "tipo_de_mercado", "fidc-custodia/liquidados-baixados"),
+    "custodia.movimento_aberto": ("wh_qitech_raw_relatorio", "tipo_de_mercado", "fidc-custodia/movimento-aberto"),
+    "custodia.detalhes_operacoes": ("wh_qitech_raw_relatorio", "tipo_de_mercado", "fidc-custodia/detalhes-operacoes"),
     "bank_account.balance": ("wh_qitech_raw_bank_account_balance", None, None),
 }
 

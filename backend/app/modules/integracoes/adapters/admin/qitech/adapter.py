@@ -446,6 +446,7 @@ async def _handler_market_fidc_estoque(
                 cnpj_fundo=cnpj,
                 reference_date=reference_date,
                 triggered_by="endpoint:sync",
+                unidade_administrativa_id=unidade_administrativa_id,
             )
             await db.commit()
     except Exception as e:

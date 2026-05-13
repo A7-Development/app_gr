@@ -124,14 +124,20 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
     # job + webhook callback. POST /v2/queue/scheduler/report/fidc-estoque
     # devolve jobId; QiTech processa e chama nosso /webhooks/qitech/job-callback.
     # Ver `report_jobs.py::request_fidc_estoque_report` +
-    # `process_fidc_estoque_callback`. Default ON_DEMAND porque o disparo nao
-    # cabe no scheduler de polling — handler em adapter._HANDLERS pendente.
+    # `process_fidc_estoque_callback`.
+    #
+    # Schedule (2026-05-13, info da QiTech): "o fundo processa entre 8h-9h.
+    # Automatize a partir das 9h; retry depois das 10h se nao retornar".
+    # Daily_at 09:00 cobre a primeira tentativa; o reconciler (Fase 1 do
+    # auto-heal) re-tenta se nao chegar dado ate ~09:30/10:00 — sem deduplicar
+    # job assincrono ainda em pendente/processing na QiTech (skip guardado em
+    # `reconciler.py`). Ver memoria project_qitech_reconciler.md.
     EndpointSpec(
         name="market.fidc_estoque",
         label="Mercado · Estoque do FIDC (carteira)",
         description="Posicao consolidada da carteira de recebiveis do FIDC. Disparo assincrono via job + webhook callback.",
-        default_schedule_kind=ScheduleKind.ON_DEMAND,
-        default_schedule_value=None,
+        default_schedule_kind=ScheduleKind.DAILY_AT,
+        default_schedule_value="09:00",
         canonical_table="wh_estoque_recebivel",
     ),
 )

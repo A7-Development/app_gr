@@ -119,6 +119,19 @@ class QitechReportJob(Base):
         nullable=False,
     )
 
+    # UA dona da credencial que originou este job. Adicionada em 2026-05-13
+    # (migration a9d3e7c2b5f1). Nullable apenas pra retrocompat com jobs
+    # criados antes do fix — todos os novos sao gravados com UA preenchida.
+    # Necessario pra que o callback grave o raw em wh_qitech_raw_relatorio
+    # com ua_id correto e o coverage service consiga ver o dado.
+    unidade_administrativa_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(
+            "cadastros_unidade_administrativa.id", ondelete="RESTRICT"
+        ),
+        nullable=True,
+    )
+
     # ---- Identificacao do job ----
     # Tipo da familia /queue/scheduler/report/{tipo}, ex.: "fidc-estoque".
     # Mantido como string (nao enum) pra absorver novos tipos sem migration.

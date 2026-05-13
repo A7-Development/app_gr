@@ -200,6 +200,7 @@ async def dispatch_fidc_estoque(
             cnpj_fundo=payload.cnpj_fundo,
             reference_date=payload.reference_date,
             triggered_by=f"user:{principal.user_id}",
+            unidade_administrativa_id=ua_id,
         )
     except QiTechHttpError as e:
         raise HTTPException(

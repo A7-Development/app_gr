@@ -8,7 +8,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.scheduler import sync_dispatcher
-from app.scheduler.jobs import backfill_worker, qitech_jobs_poll
+from app.scheduler.jobs import backfill_worker, qitech_jobs_poll, reconciler
 
 logger = logging.getLogger("gr.scheduler")
 
@@ -57,13 +57,25 @@ def start_scheduler() -> AsyncIOScheduler:
         coalesce=True,
         misfire_grace_time=30,
     )
+    reconciler_minutes = reconciler.get_interval_minutes()
+    _scheduler.add_job(
+        reconciler.run,
+        trigger=IntervalTrigger(minutes=reconciler_minutes),
+        id="reconciler",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=300,  # 5 min — reconciler nao e urgente
+    )
     _scheduler.start()
     logger.info(
         "scheduler started: sync_dispatcher every %s min, "
-        "qitech_jobs_poll every %s min, backfill_worker every %s s",
+        "qitech_jobs_poll every %s min, backfill_worker every %s s, "
+        "reconciler every %s min",
         sync_dispatcher.INTERVAL_MINUTES,
         qitech_jobs_poll.INTERVAL_MINUTES,
         backfill_worker.INTERVAL_SECONDS,
+        reconciler_minutes,
     )
     return _scheduler
 

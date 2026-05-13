@@ -70,6 +70,21 @@ class Settings(BaseSettings):
     # schedule_value proprios. Liga em staging primeiro, depois prod.
     INTEGRACOES_USE_ENDPOINT_SCHEDULING: bool = Field(default=False)
 
+    # ---------- Reconciler (Fase 1 do auto-heal QiTech, 2026-05-13) ----------
+    # Loop periodico que detecta `gap` na janela de cobertura e enfileira
+    # BackfillJob automaticamente. Substitui monitoria manual ("ja sincou
+    # esse dia?", "ainda tem furo?"). Ver `services/reconciler.py` +
+    # memoria project_qitech_reconciler.md.
+    RECONCILER_ENABLED: bool = Field(default=True)
+    # Janela em dias corridos. 30 cobre o caso operacional comum (operador
+    # quer "ultimo mes sem furo") sem onerar a API com retro-fetch profundo.
+    # Bumpar quando Fase 2 adicionar politica por endpoint.
+    RECONCILER_LOOKBACK_DAYS: int = Field(default=30, ge=7, le=365)
+    # Cadencia do tick em minutos. 30 e raro o suficiente pra nao competir
+    # com sync regular (sync_dispatcher = 1 min) e frequente o suficiente
+    # pra furos sumirem dentro de ~1h sem operador clicar.
+    RECONCILER_TICK_MINUTES: int = Field(default=30, ge=5, le=180)
+
     # ---------- System health: token de servico (opcional) ----------
     # Bearer token para endpoints publicos de monitoramento (ex.:
     # /api/v1/system/endpoint-sync-status). Habilita observabilidade externa

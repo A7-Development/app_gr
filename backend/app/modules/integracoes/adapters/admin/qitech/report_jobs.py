@@ -152,6 +152,7 @@ async def request_fidc_estoque_report(
     cnpj_fundo: str,
     reference_date: date,
     triggered_by: str = "system:scheduler",
+    unidade_administrativa_id: UUID | None = None,
 ) -> QitechReportJob:
     """Dispara POST /v2/queue/scheduler/report/fidc-estoque + persiste job.
 
@@ -247,6 +248,7 @@ async def request_fidc_estoque_report(
     job = QitechReportJob(
         id=local_uuid,
         tenant_id=tenant_id,
+        unidade_administrativa_id=unidade_administrativa_id,
         environment=environment,
         report_type="fidc-estoque",
         cnpj_fundo=cnpj_digits,
@@ -428,6 +430,7 @@ async def process_fidc_estoque_callback(
     }
     raw = QiTechRawRelatorio(
         tenant_id=job.tenant_id,
+        unidade_administrativa_id=job.unidade_administrativa_id,
         tipo_de_mercado="fidc-estoque",
         data_posicao=job.reference_date,
         payload=payload_meta,
@@ -437,10 +440,14 @@ async def process_fidc_estoque_callback(
         fetched_at=fetched_at,
         fetched_by_version=ADAPTER_VERSION,
     )
-    # Upsert via UQ (tenant, tipo, data) — re-callback do mesmo dia
-    # (re-disparo) substitui payload.
+    # Upsert via UQ (tenant, tipo, data, ua) — re-callback do mesmo dia
+    # (re-disparo) substitui payload. Bug 2026-05-13: antes do fix do
+    # qitech_report_job.unidade_administrativa_id, esse upsert sempre
+    # gravava ua_id NULL, deixando os raws invisiveis no coverage filtrado
+    # por UA. Ver migration a9d3e7c2b5f1.
     raw_dict = {
         "tenant_id": raw.tenant_id,
+        "unidade_administrativa_id": raw.unidade_administrativa_id,
         "tipo_de_mercado": raw.tipo_de_mercado,
         "data_posicao": raw.data_posicao,
         "payload": raw.payload,

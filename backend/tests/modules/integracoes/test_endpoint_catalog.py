@@ -93,8 +93,11 @@ EXPECTED_QITECH_SNAPSHOT = [
     ("market.rf", "daily_at", "08:00"),
     ("market.rf_compromissadas", "daily_at", "08:00"),
     # Adicionado em 2026-05-10 — seed via migration `c4b9e8f2a1d3_seed_qitech_fidc_estoque_endpoint.py`.
-    # Snapshot original em `d5bf3669b8a0_endpoint_scheduling.py` ja em prod, nao editar.
-    ("market.fidc_estoque", "on_demand", None),
+    # Promovido de on_demand para daily_at 09:00 em 2026-05-13 — migration
+    # `f2a8c7e1b9d3_promote_qitech_fidc_estoque_to_daily.py` com base em info da
+    # QiTech ("fundo processa entre 8h-9h; automatize a partir das 9h, retry
+    # depois das 10h"). Reconciler cobre o retry implicito.
+    ("market.fidc_estoque", "daily_at", "09:00"),
     # Adicionados em 2026-05-12 — seed via migration `a3c5d1e7b8f2_seed_qitech_custodia_endpoints.py`.
     # Familia /v2/fidc-custodia/report/* — antes acessivel apenas via REST proprio
     # (`routers/qitech_custodia.py`), agora centralizada no catalogo.
