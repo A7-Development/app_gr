@@ -1731,6 +1731,7 @@ export type EndpointDetail = {
 /** Coverage — historico de datas cobertas por endpoint (Fase 1 aba Cobertura). */
 export type CoverageStatus =
   | "ok"
+  | "partial"          // http 200 mas payload parcial/vazio (Opcao A, 2026-05-13)
   | "not_published"
   | "gap"
   | "weekend"
@@ -1739,10 +1740,19 @@ export type CoverageStatus =
   | "before_first_sync"
   | "unsupported"
 
+/** Completeness do payload quando http=200 (Opcao A, 2026-05-13).
+ *
+ * Avaliado em backend/adapters/admin/qitech/completeness.py. Hoje so
+ * `market.mec` e `market.rf` tem perfil especifico — outros endpoints
+ * retornam 'complete' como default.
+ */
+export type Completeness = "complete" | "partial" | "empty"
+
 export type CoverageDay = {
   data: string // ISO date
   status: CoverageStatus
   http_status: number | null
+  completeness: Completeness | null
 }
 
 export type EndpointCoverage = {
@@ -1752,6 +1762,7 @@ export type EndpointCoverage = {
   supported: boolean
   days: CoverageDay[]
   count_ok: number
+  count_partial: number
   count_not_published: number
   count_gap: number
 }

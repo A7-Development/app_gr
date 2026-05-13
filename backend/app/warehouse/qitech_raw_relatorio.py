@@ -135,3 +135,13 @@ class QiTechRawRelatorio(Base):
         nullable=True,
         index=True,
     )
+
+    # Avaliacao semantica do payload (Opcao A da resposta-semantica, 2026-05-13).
+    # 'complete' = subsets esperados todos presentes;
+    # 'partial'  = http 200 mas falta subset (ex.: market.rf sem clienteId principal);
+    # 'empty'    = http 200 com payload sem dado utilizavel;
+    # NULL       = ainda nao avaliado (rows legacy pre-backfill).
+    # Avaliada por adapters/admin/qitech/completeness.py no momento do upsert.
+    completeness: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )

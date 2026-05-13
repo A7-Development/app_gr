@@ -38,6 +38,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
 from app.core.enums import Environment
+from app.modules.cadastros.public import UnidadeAdministrativa
+from app.modules.integracoes.adapters.admin.qitech.completeness import (
+    assess_completeness,
+)
 from app.modules.integracoes.adapters.admin.qitech.config import QiTechConfig
 from app.modules.integracoes.adapters.admin.qitech.connection import (
     build_async_client,
@@ -110,6 +114,27 @@ def _infer_http_status(payload: Any, tipo_de_mercado: str) -> int:
     return 400
 
 
+async def _resolve_ua_nome(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    unidade_administrativa_id: UUID | None,
+) -> str | None:
+    """Resolve o nome da UA via SELECT por PK (usado pelo completeness).
+
+    Retorna None quando `unidade_administrativa_id` e None (rows legacy
+    pre-Phase F) ou se a UA nao for encontrada. Sem UA o inspector ainda
+    classifica via perfil default (`complete` se payload nao vazio).
+    """
+    if unidade_administrativa_id is None:
+        return None
+    stmt = select(UnidadeAdministrativa.nome).where(
+        UnidadeAdministrativa.id == unidade_administrativa_id,
+        UnidadeAdministrativa.tenant_id == tenant_id,
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
 async def _upsert_raw(
     db: AsyncSession,
     *,
@@ -127,7 +152,23 @@ async def _upsert_raw(
 
     Multi-UA (Phase F): UQ inclui `unidade_administrativa_id`, entao 2 UAs
     do mesmo tenant podem fetchar o mesmo (tipo, data) sem colidir.
+
+    Completeness (Opcao A, 2026-05-13): resolve o nome da UA via SELECT
+    e chama `assess_completeness` pra classificar o payload em
+    `complete | partial | empty` antes do upsert. A coluna alimenta a aba
+    Cobertura com a 3a cor (partial) — ver `completeness.py`.
     """
+    ua_nome = await _resolve_ua_nome(
+        db,
+        tenant_id=tenant_id,
+        unidade_administrativa_id=unidade_administrativa_id,
+    )
+    completeness = assess_completeness(
+        tipo_de_mercado=tipo_de_mercado,
+        payload=payload,
+        http_status=http_status,
+        ua_nome=ua_nome,
+    )
     row = {
         "tenant_id": tenant_id,
         "tipo_de_mercado": tipo_de_mercado,
@@ -138,6 +179,7 @@ async def _upsert_raw(
         "payload_sha256": sha256_of_row(payload),
         "fetched_at": datetime.now(UTC),
         "fetched_by_version": ADAPTER_VERSION,
+        "completeness": completeness,
     }
     stmt = pg_insert(QiTechRawRelatorio.__table__).values(row)
     stmt = stmt.on_conflict_do_update(
@@ -148,6 +190,7 @@ async def _upsert_raw(
             "payload_sha256": stmt.excluded.payload_sha256,
             "fetched_at": stmt.excluded.fetched_at,
             "fetched_by_version": stmt.excluded.fetched_by_version,
+            "completeness": stmt.excluded.completeness,
         },
     )
     await db.execute(stmt)

@@ -37,6 +37,7 @@ from app.warehouse.dim_dia_util import DimDiaUtil
 
 class CoverageStatus(StrEnum):
     OK = "ok"
+    PARTIAL = "partial"  # http 200 mas payload parcial/vazio (Opcao A, 2026-05-13)
     NOT_PUBLISHED = "not_published"
     GAP = "gap"
     WEEKEND = "weekend"
@@ -51,6 +52,9 @@ class CoverageDay:
     data: date
     status: CoverageStatus
     http_status: int | None = None
+    # 'complete' | 'partial' | 'empty' | None. Detalha o status quando
+    # http=200 e a 200 nao implica que o payload veio integro (Opcao A).
+    completeness: str | None = None
 
 
 @dataclass(frozen=True)
@@ -62,6 +66,7 @@ class EndpointCoverage:
     days: list[CoverageDay]
     # Resumo agregado pra UI
     count_ok: int
+    count_partial: int
     count_not_published: int
     count_gap: int
 
@@ -99,15 +104,24 @@ def _classify_day(
     raw_status: int | None,
     calendar_entry: tuple[bool, bool, bool] | None,
     first_data_in_endpoint: date | None,
+    completeness: str | None = None,
 ) -> CoverageStatus:
-    """Decide qual status atribuir a um dia, dadas as evidencias."""
+    """Decide qual status atribuir a um dia, dadas as evidencias.
+
+    `completeness` (Opcao A, 2026-05-13): quando http=200 mas o payload
+    chegou parcial ou vazio (avaliado em `qitech/completeness.py`), o status
+    desce de OK para PARTIAL. Rows legacy ainda nao avaliadas (completeness
+    NULL) seguem como OK pra nao gerar regressao visual.
+    """
     # 1. Data futura ou hoje — pendente (publicacao esperada mais tarde).
     if day >= today:
         return CoverageStatus.PENDING
 
-    # 2. Tem linha raw — distingue ok vs not_published.
+    # 2. Tem linha raw — distingue ok vs partial vs not_published.
     if raw_status is not None:
         if 200 <= raw_status < 300:
+            if completeness in ("partial", "empty"):
+                return CoverageStatus.PARTIAL
             return CoverageStatus.OK
         return CoverageStatus.NOT_PUBLISHED
 
@@ -230,6 +244,7 @@ async def get_source_coverage(
                     supported=False,
                     days=[],
                     count_ok=0,
+                    count_partial=0,
                     count_not_published=0,
                     count_gap=0,
                 )
@@ -247,10 +262,11 @@ async def get_source_coverage(
         )
         # Indexa por data
         raw_by_date: dict[date, int | None] = {r.data_posicao: r.http_status for r in raw_rows}
+        compl_by_date: dict[date, str | None] = {r.data_posicao: r.completeness for r in raw_rows}
         first_data = min(raw_by_date.keys()) if raw_by_date else None
 
         days: list[CoverageDay] = []
-        count_ok = count_not_pub = count_gap = 0
+        count_ok = count_partial = count_not_pub = count_gap = 0
         cursor = start
         while cursor <= end:
             status = _classify_day(
@@ -259,16 +275,20 @@ async def get_source_coverage(
                 raw_status=raw_by_date.get(cursor),
                 calendar_entry=calendar_map.get(cursor),
                 first_data_in_endpoint=first_data,
+                completeness=compl_by_date.get(cursor),
             )
             days.append(
                 CoverageDay(
                     data=cursor,
                     status=status,
                     http_status=raw_by_date.get(cursor),
+                    completeness=compl_by_date.get(cursor),
                 )
             )
             if status == CoverageStatus.OK:
                 count_ok += 1
+            elif status == CoverageStatus.PARTIAL:
+                count_partial += 1
             elif status == CoverageStatus.NOT_PUBLISHED:
                 count_not_pub += 1
             elif status == CoverageStatus.GAP:
@@ -283,6 +303,7 @@ async def get_source_coverage(
                 supported=True,
                 days=days,
                 count_ok=count_ok,
+                count_partial=count_partial,
                 count_not_published=count_not_pub,
                 count_gap=count_gap,
             )

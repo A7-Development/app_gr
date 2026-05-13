@@ -33,11 +33,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class CoverageRow(NamedTuple):
-    """Uma linha de cobertura: (data, http_status). http_status=None quando
-    nao existe linha raw — a UI decide se eh gap, weekend, etc."""
+    """Uma linha de cobertura: (data, http_status, completeness).
+
+    `http_status=None` quando nao existe linha raw — a UI decide se eh gap,
+    weekend, etc. `completeness` so se aplica a tabelas raw que tem a coluna
+    (hoje so `wh_qitech_raw_relatorio`); demais tabelas devolvem None."""
 
     data_posicao: date
     http_status: int | None
+    completeness: str | None = None
 
 
 # Per-day endpoints: { endpoint_name: (tabela, type_col, type_value) }.
@@ -162,15 +166,24 @@ async def _fetch_per_day(
         where.append("unidade_administrativa_id = :ua_id")
         params["ua_id"] = unidade_administrativa_id
 
+    # `completeness` so existe em wh_qitech_raw_relatorio (migration
+    # e4a7b2c9d031). Para outras tabelas (ex.: wh_qitech_raw_bank_account_*)
+    # devolvemos NULL — UI trata como "sem semantica de completeness".
+    select_completeness = (
+        "completeness" if table == "wh_qitech_raw_relatorio" else "NULL"
+    )
     sql = text(
         f"""
-        SELECT data_posicao, http_status
+        SELECT data_posicao, http_status, {select_completeness} AS completeness
         FROM {table}
         WHERE {" AND ".join(where)}
         """
     )
     result = await db.execute(sql, params)
-    return [CoverageRow(data_posicao=r[0], http_status=r[1]) for r in result.all()]
+    return [
+        CoverageRow(data_posicao=r[0], http_status=r[1], completeness=r[2])
+        for r in result.all()
+    ]
 
 
 async def _fetch_range_overlap(
@@ -222,4 +235,8 @@ async def _fetch_range_overlap(
                 by_date[cursor] = http_status
             cursor = cursor + timedelta(days=1)
 
-    return [CoverageRow(data_posicao=d, http_status=s) for d, s in by_date.items()]
+    # bank_account_statement nao tem coluna completeness — devolvemos None.
+    return [
+        CoverageRow(data_posicao=d, http_status=s, completeness=None)
+        for d, s in by_date.items()
+    ]

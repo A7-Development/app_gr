@@ -9,13 +9,17 @@ import { Button } from "@/components/tremor/Button"
 import { cx } from "@/lib/utils"
 import type {
   BackfillJob,
+  Completeness,
   CoverageStatus,
   EndpointCoverage,
 } from "@/lib/api-client"
 
 const STATUS_STYLES: Record<CoverageStatus, { bg: string; label: string }> = {
   ok: { bg: "bg-emerald-500", label: "Coletado" },
-  not_published: { bg: "bg-amber-300", label: "Sem publicação (4xx)" },
+  // Escala de severidade da menor para a maior (Opcao A, 2026-05-13):
+  // ok (emerald) -> partial (amber-300) -> not_published (orange-400) -> gap (red).
+  partial: { bg: "bg-amber-300", label: "Publicação parcial" },
+  not_published: { bg: "bg-orange-400", label: "Sem publicação (4xx)" },
   gap: { bg: "bg-red-500", label: "FURO — dia útil sem dado" },
   weekend: { bg: "bg-gray-200 dark:bg-gray-800", label: "Fim de semana" },
   holiday: { bg: "bg-gray-200 dark:bg-gray-800", label: "Feriado" },
@@ -132,6 +136,8 @@ export function CoverageHeatmap({
             {format(parseISO(endDate), "dd/MMM/yyyy", { locale: ptBR })}
           </span>
           . Vermelho = dia útil ANBIMA sem nenhuma linha raw (furo real).
+          Amarelo = publicação parcial (a fonte respondeu OK mas faltou
+          subset esperado — ex.: relatório RF sem o POV principal).
           Cinza = fim de semana / feriado / antes do primeiro sync configurado.
           Click "Backfill" pra preencher os furos de um endpoint.
         </span>
@@ -213,7 +219,13 @@ function EndpointRow({
           return (
             <div
               key={d.data}
-              title={renderTooltip(d.data, d.status, d.http_status, isProcessing)}
+              title={renderTooltip(
+                d.data,
+                d.status,
+                d.http_status,
+                d.completeness,
+                isProcessing,
+              )}
               className={cx(
                 "h-6 rounded-[1px] cursor-default transition-opacity hover:opacity-70",
                 isProcessing
@@ -234,20 +246,32 @@ function renderTooltip(
   iso: string,
   status: CoverageStatus,
   httpStatus: number | null,
+  completeness: Completeness | null,
   isProcessing: boolean,
 ) {
   const dataFmt = format(parseISO(iso), "EEE dd/MMM/yyyy", { locale: ptBR })
   if (isProcessing) return `${dataFmt} · Backfill em andamento…`
   const statusLabel = STATUS_STYLES[status].label
-  if (httpStatus !== null) {
-    return `${dataFmt} · ${statusLabel} (HTTP ${httpStatus})`
+  // Detalha o "porque" quando partial — diferenca crucial vs zero real.
+  // Empty: payload chegou mas vazio; partial: chegou mas falta subset.
+  let suffix = ""
+  if (status === "partial") {
+    if (completeness === "empty") {
+      suffix = " — payload vazio (a fonte respondeu mas sem dados)"
+    } else {
+      suffix = " — falta subset esperado (ex.: classe de cota ausente)"
+    }
   }
-  return `${dataFmt} · ${statusLabel}`
+  if (httpStatus !== null) {
+    return `${dataFmt} · ${statusLabel} (HTTP ${httpStatus})${suffix}`
+  }
+  return `${dataFmt} · ${statusLabel}${suffix}`
 }
 
 function Legend() {
   const items: { status: CoverageStatus; label: string }[] = [
     { status: "ok", label: "Coletado" },
+    { status: "partial", label: "Parcial" },
     { status: "not_published", label: "Sem publicação" },
     { status: "gap", label: "Furo" },
     { status: "weekend", label: "Fds / feriado" },

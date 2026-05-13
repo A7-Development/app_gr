@@ -583,6 +583,9 @@ class CoverageDayOut(BaseModel):
     data: date
     status: str = Field(description=", ".join(s.value for s in CoverageStatus))
     http_status: int | None = None
+    # 'complete' | 'partial' | 'empty' | None — detalha o status quando
+    # http=200 mas a 200 nao implica payload integro (Opcao A, 2026-05-13).
+    completeness: str | None = None
 
 
 class EndpointCoverageOut(BaseModel):
@@ -592,6 +595,7 @@ class EndpointCoverageOut(BaseModel):
     supported: bool
     days: list[CoverageDayOut]
     count_ok: int
+    count_partial: int
     count_not_published: int
     count_gap: int
 
@@ -645,10 +649,12 @@ async def source_coverage(
                         data=d.data,
                         status=d.status.value,
                         http_status=d.http_status,
+                        completeness=d.completeness,
                     )
                     for d in ep.days
                 ],
                 count_ok=ep.count_ok,
+                count_partial=ep.count_partial,
                 count_not_published=ep.count_not_published,
                 count_gap=ep.count_gap,
             )
