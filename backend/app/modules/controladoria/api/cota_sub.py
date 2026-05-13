@@ -1,6 +1,7 @@
 """Controladoria · Cota Sub — endpoints."""
 
 from datetime import date
+from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
@@ -17,15 +18,19 @@ from app.modules.controladoria.schemas.balancete_diario import (
 )
 from app.modules.controladoria.schemas.cota_sub import (
     BalancoResponse,
+    ExplicacaoVariacaoResponse,
     VariacaoDiariaResponse,
     VariacoesDiaResponse,
 )
-from app.modules.controladoria.services.balanco import compute_balanco
 from app.modules.controladoria.services.balancete_diario import (
     compute_balancete_diario,
     compute_cosif_rows,
 )
+from app.modules.controladoria.services.balanco import compute_balanco
 from app.modules.controladoria.services.cota_sub import compute_variacao_diaria
+from app.modules.controladoria.services.cota_sub_explainers import (
+    compute_explicacao_variacao,
+)
 from app.modules.controladoria.services.variacoes_dia import compute_variacoes_dia
 from app.modules.integracoes.public import listar_datas_disponiveis_qitech
 
@@ -239,3 +244,53 @@ async def balancete_diario_cosif_rows(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
         ) from exc
     return CosifRowsResponseSchema.model_validate(result.to_dict())
+
+
+@router.get("/explicacao", response_model=ExplicacaoVariacaoResponse)
+async def explicacao_variacao(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0). D-1 e calculado como dia util anterior QiTech.")],
+    data_anterior: Annotated[
+        date | None,
+        Query(description="Override opcional para D-1."),
+    ] = None,
+    threshold_brl: Annotated[
+        Decimal,
+        Query(description="Threshold de evidencia (|Δ| em R$). Default 1.000."),
+    ] = Decimal("1000"),
+    top_n: Annotated[
+        int,
+        Query(ge=1, le=200, description="Cap de evidencias mostradas por categoria. Default 20."),
+    ] = 20,
+    _: None = _Guard,
+) -> ExplicacaoVariacaoResponse:
+    """Explainers heuristicos da variacao do PL Sub entre D-1 e D0.
+
+    Por ora implementa apenas **PDD (categoria 3.2)** — cruza
+    `wh_estoque_recebivel` D-1 vs D0 por papel, ordenado por `|Δ valor_pdd|`
+    DESC. Demais categorias (MTM, Aporte, Movimento de cotas Sr/Mez,
+    Diferimento, Liquidacao, Aquisicao) entrarao em PRs incrementais.
+
+    Resposta lista as categorias materializadas em `explanations`; categorias
+    sem variacao relevante (toda evidencia abaixo do threshold) sao omitidas.
+
+    Multi-tenant: scope enforced via `principal.tenant_id`.
+
+    Plano completo: `backend/docs/cota-sub-explainers-heuristicos.md`.
+    """
+    try:
+        return await compute_explicacao_variacao(
+            db,
+            tenant_id=principal.tenant_id,
+            ua_id=fundo_id,
+            data_d0=data,
+            data_d1=data_anterior,
+            threshold_brl=threshold_brl,
+            top_n=top_n,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc

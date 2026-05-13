@@ -215,3 +215,72 @@ class VariacoesDiaResponse(BaseModel):
     anomalias:           list[VariacaoItem]
 
     conferencia:         ConferenciaVariacao
+
+
+# ── Explainers heuristicos da variacao ──────────────────────────────────────
+#
+# Cada categoria que se materializa vira uma `Explanation` na lista
+# `explanations` da resposta. Por ora so PDD esta implementada; demais
+# categorias (MTM, Aporte, Resgate, Diferimento, Liquidacao, Aquisicao)
+# entrarao em PRs incrementais reusando o contrato. Ver
+# `backend/docs/cota-sub-explainers-heuristicos.md`.
+
+
+ExplainerCategoria = Literal[
+    "pdd",
+    "mtm",
+    "aporte",
+    "movimento_cotas",
+    "diferimento",
+    "liquidacao",
+    "aquisicao",
+]
+
+
+class PddEvidencia(BaseModel):
+    """1 papel cujo `valor_pdd` mexeu entre D-1 e D0."""
+
+    cedente_doc:              str
+    cedente_nome:             str
+    sacado_doc:               str
+    sacado_nome:              str
+    seu_numero:               str
+    numero_documento:         str
+    tipo_recebivel:           str
+    data_vencimento_ajustada: date | None
+    valor_pdd_d1:             Decimal
+    valor_pdd_d0:             Decimal
+    delta_valor_pdd:          Decimal = Field(description="valor_pdd_d0 - valor_pdd_d1")
+    faixa_pdd_d1:             str | None
+    faixa_pdd_d0:             str | None
+
+
+class PddExplanation(BaseModel):
+    """Categoria 3.2 — variacao de PDD por papel."""
+
+    categoria:           ExplainerCategoria = "pdd"
+    narrative:           str       = Field(description="Texto pronto pra UI (pt-BR)")
+    delta_brl:           Decimal   = Field(description="-Σ Δ valor_pdd (PDD sobe → PL Sub cai)")
+    evidencias_total:    int       = Field(description="Total de papeis com Δ acima do threshold")
+    evidencias_mostradas: int      = Field(description="Quantos vieram em `evidencias` (top_n)")
+    outros_delta_brl:    Decimal   = Field(description="Σ dos papeis nao mostrados (fora do top_n)")
+    evidencias:          list[PddEvidencia]
+
+
+class ExplicacaoVariacaoResponse(BaseModel):
+    """Resposta do endpoint GET /controladoria/cota-sub/explicacao.
+
+    Lista de explainers que materializaram. Por ora so PDD; demais entram
+    em PRs incrementais sem quebrar o contrato.
+    """
+
+    fundo_id:           str
+    data:               date
+    data_anterior:      date
+    delta_pl_sub:       Decimal
+    threshold_brl:      Decimal   = Field(description="Threshold usado pra filtrar evidencias")
+    top_n:              int       = Field(description="Cap de evidencias mostradas por categoria")
+    explanations:       list[PddExplanation] = Field(
+        description="Categorias materializadas. Vazio = nada matchou ou variacoes < threshold."
+    )
+    indeterminado_brl:  Decimal   = Field(description="Δ PL Sub - Σ delta_brl dos explainers")

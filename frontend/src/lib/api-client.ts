@@ -2148,6 +2148,58 @@ export type VariacaoDiariaResponse = {
   cpr_detalhado:      CprDetalhado
 }
 
+// ── Explainers heuristicos da variacao ───────────────────────────────────
+// Backend: backend/app/modules/controladoria/services/cota_sub_explainers.py
+// Doc:     backend/docs/cota-sub-explainers-heuristicos.md
+
+export type ExplainerCategoria =
+  | "pdd"
+  | "mtm"
+  | "aporte"
+  | "movimento_cotas"
+  | "diferimento"
+  | "liquidacao"
+  | "aquisicao"
+
+export type PddEvidencia = {
+  cedente_doc:              string
+  cedente_nome:             string
+  sacado_doc:               string
+  sacado_nome:              string
+  seu_numero:               string
+  numero_documento:         string
+  tipo_recebivel:           string
+  data_vencimento_ajustada: string | null
+  valor_pdd_d1:             number
+  valor_pdd_d0:             number
+  delta_valor_pdd:          number
+  faixa_pdd_d1:             string | null
+  faixa_pdd_d0:             string | null
+}
+
+export type PddExplanation = {
+  categoria:            "pdd"
+  narrative:            string
+  delta_brl:            number
+  evidencias_total:     number
+  evidencias_mostradas: number
+  outros_delta_brl:     number
+  evidencias:           PddEvidencia[]
+}
+
+export type Explanation = PddExplanation  // discriminated union quando outras chegarem
+
+export type ExplicacaoVariacaoResponse = {
+  fundo_id:           string
+  data:               string
+  data_anterior:      string
+  delta_pl_sub:       number
+  threshold_brl:      number
+  top_n:              number
+  explanations:       Explanation[]
+  indeterminado_brl:  number
+}
+
 // Pydantic v2 serializa Decimal como string. Convertemos para number aqui pra
 // manter os tipos do frontend numericos. Precisao suficiente para displays;
 // se algum calculo critico precisar Decimal, troca para `decimal.js`.
@@ -2194,6 +2246,37 @@ function _coerceVariacao(r: VariacaoDiariaResponse): VariacaoDiariaResponse {
       total_d0:   Number(r.cpr_detalhado.total_d0),
       variacao:   Number(r.cpr_detalhado.variacao),
     },
+  }
+}
+
+function _coercePddEvidencia(e: PddEvidencia): PddEvidencia {
+  return {
+    ...e,
+    valor_pdd_d1:    Number(e.valor_pdd_d1),
+    valor_pdd_d0:    Number(e.valor_pdd_d0),
+    delta_valor_pdd: Number(e.delta_valor_pdd),
+  }
+}
+function _coerceExplanation(e: Explanation): Explanation {
+  switch (e.categoria) {
+    case "pdd":
+      return {
+        ...e,
+        delta_brl:        Number(e.delta_brl),
+        outros_delta_brl: Number(e.outros_delta_brl),
+        evidencias:       e.evidencias.map(_coercePddEvidencia),
+      }
+    default:
+      return e
+  }
+}
+function _coerceExplicacao(r: ExplicacaoVariacaoResponse): ExplicacaoVariacaoResponse {
+  return {
+    ...r,
+    delta_pl_sub:      Number(r.delta_pl_sub),
+    threshold_brl:     Number(r.threshold_brl),
+    indeterminado_brl: Number(r.indeterminado_brl),
+    explanations:      r.explanations.map(_coerceExplanation),
   }
 }
 
@@ -2633,6 +2716,25 @@ export const controladoria = {
       `/controladoria/cota-sub/balancete-diario/cosif/${encodeURIComponent(cosifCodigo)}/rows?${params.toString()}`,
     )
     return _coerceCosifRowsResponse(raw)
+  },
+
+  cotaSubExplicacao: async (
+    fundoId: string,
+    data: string,
+    opts?: {
+      dataAnterior?: string
+      thresholdBrl?: number
+      topN?:         number
+    },
+  ): Promise<ExplicacaoVariacaoResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (opts?.dataAnterior) params.set("data_anterior", opts.dataAnterior)
+    if (opts?.thresholdBrl !== undefined) params.set("threshold_brl", String(opts.thresholdBrl))
+    if (opts?.topN !== undefined) params.set("top_n", String(opts.topN))
+    const raw = await apiClient.get<ExplicacaoVariacaoResponse>(
+      `/controladoria/cota-sub/explicacao?${params.toString()}`,
+    )
+    return _coerceExplicacao(raw)
   },
 
   // ── DRE — Demonstrativo do Resultado do Exercicio ─────────────────────

@@ -27,6 +27,8 @@ const KEYS = {
     ["controladoria", "cota-sub", "variacoes-dia", fundoId, data, dataAnterior ?? null] as const,
   datasDisponiveis: (fundoId: string) =>
     ["controladoria", "cota-sub", "datas-disponiveis", fundoId] as const,
+  explicacaoVariacao: (fundoId: string, data: string, dataAnterior?: string, thresholdBrl?: number, topN?: number) =>
+    ["controladoria", "cota-sub", "explicacao", fundoId, data, dataAnterior ?? null, thresholdBrl ?? null, topN ?? null] as const,
 
   dreCompetencias: (f: DreBaseFilters) =>
     ["controladoria", "dre", "competencias", f] as const,
@@ -118,6 +120,36 @@ export function useBalanceteDiario(
       data!,
       dataAnterior ?? undefined,
     ),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useExplicacaoVariacao(
+  fundoId: string | null | undefined,
+  data: string | null | undefined,
+  opts?: {
+    dataAnterior?: string | null
+    thresholdBrl?: number
+    topN?:         number
+  },
+) {
+  // Explainers heuristicos da variacao do PL Sub (D-1 -> D0). Por ora so PDD.
+  // Lazy: so dispara quando o usuario tem fundoId + data validos.
+  const enabled = !!fundoId && !!data
+  return useQuery({
+    queryKey: KEYS.explicacaoVariacao(
+      fundoId ?? "",
+      data ?? "",
+      opts?.dataAnterior ?? undefined,
+      opts?.thresholdBrl,
+      opts?.topN,
+    ),
+    queryFn: () => controladoria.cotaSubExplicacao(fundoId!, data!, {
+      dataAnterior: opts?.dataAnterior ?? undefined,
+      thresholdBrl: opts?.thresholdBrl,
+      topN:         opts?.topN,
+    }),
     enabled,
     staleTime: 5 * 60 * 1000,
   })
