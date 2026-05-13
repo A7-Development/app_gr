@@ -41,6 +41,7 @@ from app.modules.integracoes.adapters.admin.qitech.endpoint_catalog import (
 )
 from app.modules.integracoes.adapters.admin.qitech.errors import QiTechAdapterError
 from app.modules.integracoes.adapters.admin.qitech.etl import (
+    _mark_dia_util_qitech,
     sync_all,
     sync_conta_corrente,
     sync_cpr,
@@ -633,6 +634,29 @@ async def adapter_sync_endpoint(
         since=since,
         summary=summary,
     )
+
+    # Fase C (2026-05-13): MEC e a tabela-pulse de wh_dia_util_qitech. No
+    # caminho per-endpoint (Sub-fase 2A) o sync chega ate aqui sem passar
+    # por sync_all, entao precisamos disparar o marcador explicitamente
+    # quando o endpoint sincronizado for `market.mec` E o mapper produziu
+    # canonicas. A funcao em si e idempotente e data-driven — checa o
+    # estado real no DB e sobrescreve contadores.
+    if (
+        endpoint_name == "market.mec"
+        and unidade_administrativa_id is not None
+        and any(int(s.get("canonical_rows_upserted") or 0) > 0 for s in steps)
+    ):
+        try:
+            await _mark_dia_util_qitech(
+                tenant_id=tenant_id,
+                unidade_administrativa_id=unidade_administrativa_id,
+                data_posicao=_resolve_data_alvo(since),
+            )
+        except Exception as e:  # nao derruba o sync por erro de marcacao
+            summary["errors"].append(
+                f"dia_util_qitech: {type(e).__name__}: {e}"
+            )
+
     return summary
 
 

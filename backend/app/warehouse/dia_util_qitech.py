@@ -23,6 +23,14 @@ a mesma regra-pulse (MEC com canonical_rows > 0 = dia 'completo') e
 popula adicionalmente `relatorios_esperados` (= len(_PIPELINE)) e
 `relatorios_recebidos` (= steps com raw_persisted=True). Idempotente.
 
+Fonte (Fase C — 2026-05-13, apos Sub-fase 2A do scheduler per-endpoint):
+`_mark_dia_util_qitech` virou data-driven (consulta MEC silver + raw http=200
+diretamente no banco) e e chamada tanto por `etl.sync_all` quanto por
+`adapter.adapter_sync_endpoint` (quando endpoint_name == 'market.mec'). Bug
+corrigido: no caminho per-endpoint, o marcador nunca era acionado, deixando
+dias com MEC silver presente fora do Calendar da pagina cota-sub (ex.:
+2026-05-12, com 14/14 endpoints raw 200 mas wh_dia_util_qitech vazio).
+
 Granularidade: 1 linha por (tenant_id, unidade_administrativa_id,
 data_posicao, source_type).
 

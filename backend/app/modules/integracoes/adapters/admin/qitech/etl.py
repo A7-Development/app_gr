@@ -32,6 +32,7 @@ from itertools import islice
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -589,55 +590,82 @@ async def _mark_dia_util_qitech(
     tenant_id: UUID,
     unidade_administrativa_id: UUID,
     data_posicao: date,
-    steps: list[dict[str, Any]],
 ) -> bool:
     """Marca o dia em `wh_dia_util_qitech` quando ha sinal de publicacao QiTech.
 
-    Regra Fase B (mantem o conceito da Fase A — backfill via migration
-    `f9a3c2b1d8e0`): MEC e a tabela-pulse. Se o endpoint `mec` voltou linhas
-    canonicas no sync deste dia, marcamos o dia como `completo`. Sem MEC,
-    nao gravamos — preserva a semantica "ausencia = fim de semana / feriado /
-    falha de ETL / UA recem-cadastrada".
+    Regra Fase C (2026-05-13): MEC continua sendo a tabela-pulse, mas a funcao
+    agora e **data-driven** — consulta o estado real no DB ao inves de inspecionar
+    `steps` em memoria. Isso desacopla o marcador do caminho que disparou o sync,
+    permitindo que tanto `sync_all` (legado, pipeline inteiro) quanto
+    `adapter_sync_endpoint` (per-endpoint, Sub-fase 2A) cheguem aqui.
 
-    Metadados (`relatorios_esperados` / `relatorios_recebidos`) sao calculados
-    com base nos steps: esperados = len(_PIPELINE), recebidos = steps com
-    `raw_persisted=True` (raw chegou — independente de o mapper ter sucesso).
+    O bug que motivou a refatoracao: o scheduler novo (per-endpoint) so chamava
+    `adapter_sync_endpoint`, que nunca passava por `_mark_dia_util_qitech`.
+    Resultado: dias com MEC silver populado nao apareciam no Calendar da pagina
+    cota-sub. Ex.: 2026-05-12 — 14/14 endpoints com raw 200 e 2 linhas em
+    wh_mec_evolucao_cotas, mas wh_dia_util_qitech sem entrada.
+
+    Sinais consultados:
+      * MEC silver (`wh_mec_evolucao_cotas`) tem >=1 linha p/ (tenant, ua, data)?
+        - Sim: dia marcado como `completo`.
+        - Nao: retorna False, nao escreve (preserva semantica "ausencia").
+      * Raw QiTech (`wh_qitech_raw_relatorio`) — quantos `tipo_de_mercado`
+        distintos com `http_status=200`? -> `relatorios_recebidos`.
+      * `relatorios_esperados` = `len(_PIPELINE)` (constante).
 
     Idempotente via UQ `(tenant_id, ua_id, data_posicao, source_type)`. Re-rodar
-    o mesmo dia atualiza os contadores e `ingested_at`.
+    o mesmo dia atualiza contadores e `ingested_at`.
 
     Returns:
-        True se gravou/atualizou; False se nao havia sinal (MEC vazio).
+        True se gravou/atualizou; False se MEC silver ainda nao tem o dia.
     """
-    mec_step = next((s for s in steps if s.get("name") == "mec"), None)
-    if not mec_step or int(mec_step.get("canonical_rows_upserted") or 0) <= 0:
-        return False
-
-    esperados = len(_PIPELINE)
-    recebidos = sum(1 for s in steps if s.get("raw_persisted"))
-
-    row = {
-        "tenant_id": tenant_id,
-        "unidade_administrativa_id": unidade_administrativa_id,
-        "data_posicao": data_posicao,
-        "source_type": "admin:qitech",
-        "status": "completo",
-        "relatorios_esperados": esperados,
-        "relatorios_recebidos": recebidos,
-        "ingested_by_version": ADAPTER_VERSION,
-    }
-    stmt = pg_insert(DiaUtilQitech.__table__).values(row)
-    stmt = stmt.on_conflict_do_update(
-        constraint="uq_wh_dia_util_qitech",
-        set_={
-            "status": stmt.excluded.status,
-            "relatorios_esperados": stmt.excluded.relatorios_esperados,
-            "relatorios_recebidos": stmt.excluded.relatorios_recebidos,
-            "ingested_at": datetime.now(UTC),
-            "ingested_by_version": stmt.excluded.ingested_by_version,
-        },
-    )
     async with AsyncSessionLocal() as db:
+        # MEC silver presente para o dia? Sinal de "QiTech publicou".
+        mec_present_stmt = select(
+            func.count(MecEvolucaoCotas.id)
+        ).where(
+            MecEvolucaoCotas.tenant_id == tenant_id,
+            MecEvolucaoCotas.unidade_administrativa_id == unidade_administrativa_id,
+            MecEvolucaoCotas.data_posicao == data_posicao,
+        )
+        mec_count = (await db.execute(mec_present_stmt)).scalar_one()
+        if mec_count <= 0:
+            return False
+
+        # Quantos endpoints market.* chegaram com sucesso (raw http 200)?
+        # Reflete a realidade independentemente de qual caminho fez o sync.
+        recebidos_stmt = select(
+            func.count(func.distinct(QiTechRawRelatorio.tipo_de_mercado))
+        ).where(
+            QiTechRawRelatorio.tenant_id == tenant_id,
+            QiTechRawRelatorio.unidade_administrativa_id == unidade_administrativa_id,
+            QiTechRawRelatorio.data_posicao == data_posicao,
+            QiTechRawRelatorio.http_status == 200,
+        )
+        recebidos = (await db.execute(recebidos_stmt)).scalar_one() or 0
+        esperados = len(_PIPELINE)
+
+        row = {
+            "tenant_id": tenant_id,
+            "unidade_administrativa_id": unidade_administrativa_id,
+            "data_posicao": data_posicao,
+            "source_type": "admin:qitech",
+            "status": "completo",
+            "relatorios_esperados": esperados,
+            "relatorios_recebidos": recebidos,
+            "ingested_by_version": ADAPTER_VERSION,
+        }
+        stmt = pg_insert(DiaUtilQitech.__table__).values(row)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_wh_dia_util_qitech",
+            set_={
+                "status": stmt.excluded.status,
+                "relatorios_esperados": stmt.excluded.relatorios_esperados,
+                "relatorios_recebidos": stmt.excluded.relatorios_recebidos,
+                "ingested_at": datetime.now(UTC),
+                "ingested_by_version": stmt.excluded.ingested_by_version,
+            },
+        )
         await db.execute(stmt)
         await db.commit()
     return True
@@ -699,9 +727,10 @@ async def sync_all(
         except Exception as e:
             errors.append(f"{nome}: {type(e).__name__}: {e}")
 
-    # Fase B (CLAUDE.md §13.2.1): marcar dia em wh_dia_util_qitech se MEC
-    # publicou. Substitui o backfill manual a partir de wh_mec_evolucao_cotas
-    # que vigorava na Fase A (migration f9a3c2b1d8e0).
+    # Fase C (CLAUDE.md §13.2.1): marcar dia em wh_dia_util_qitech se MEC
+    # publicou. O marcador agora e data-driven (consulta MEC silver + raw
+    # http=200 diretamente do banco), entao independe de `sync_all` vs
+    # `adapter_sync_endpoint`. Mesma chamada serve a ambos os caminhos.
     dia_util_marcado = False
     if unidade_administrativa_id is not None:
         try:
@@ -709,7 +738,6 @@ async def sync_all(
                 tenant_id=tenant_id,
                 unidade_administrativa_id=unidade_administrativa_id,
                 data_posicao=data_posicao,
-                steps=steps,
             )
         except Exception as e:
             errors.append(f"dia_util_qitech: {type(e).__name__}: {e}")
