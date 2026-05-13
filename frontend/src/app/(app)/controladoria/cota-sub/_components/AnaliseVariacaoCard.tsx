@@ -144,65 +144,68 @@ export function AnaliseVariacaoCard({
           return (
             <li
               key={c.id}
-              className="flex items-start gap-3 py-3 first:pt-0 last:pb-0"
+              className="flex flex-col py-3 first:pt-0 last:pb-0"
             >
-              <span
-                className={cx(
-                  "mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded",
-                  "bg-gray-50 dark:bg-gray-900/60",
-                )}
-              >
-                <Icon className={cx("h-4 w-4", c.iconCls)} aria-hidden="true" />
-              </span>
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={cx(
-                      "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-                      c.dotCls,
-                    )}
-                    aria-hidden="true"
-                  />
-                  <span className="text-[13px] font-medium text-gray-900 dark:text-gray-50">
-                    {c.titulo}
-                  </span>
-                  {hasPdd && (
+              <div className="flex items-start gap-3">
+                <span
+                  className={cx(
+                    "mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded",
+                    "bg-gray-50 dark:bg-gray-900/60",
+                  )}
+                >
+                  <Icon className={cx("h-4 w-4", c.iconCls)} aria-hidden="true" />
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <div className="flex items-center gap-2">
                     <span
                       className={cx(
-                        "ml-auto rounded px-1.5 py-0.5 text-[11px] font-medium tabular-nums",
-                        pdd!.delta_brl < 0
-                          ? "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300"
-                          : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+                        "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+                        c.dotCls,
+                      )}
+                      aria-hidden="true"
+                    />
+                    <span className="text-[13px] font-medium text-gray-900 dark:text-gray-50">
+                      {c.titulo}
+                    </span>
+                    {hasPdd && (
+                      <span
+                        className={cx(
+                          "ml-auto rounded px-1.5 py-0.5 text-[11px] font-medium tabular-nums",
+                          pdd!.delta_brl < 0
+                            ? "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300"
+                            : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+                        )}
+                      >
+                        {pdd!.delta_brl > 0 ? "+" : ""}
+                        {fmtBRL.format(pdd!.delta_brl)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[12px] text-gray-500 dark:text-gray-400">
+                    {hasPdd ? pdd!.narrative : c.descricao}
+                  </p>
+                  {!hasPdd && (
+                    <p
+                      className={cx(
+                        "mt-1 text-[11px] italic",
+                        "text-gray-400 dark:text-gray-600",
                       )}
                     >
-                      {pdd!.delta_brl > 0 ? "+" : ""}
-                      {fmtBRL.format(pdd!.delta_brl)}
-                    </span>
+                      » Em construcao
+                    </p>
                   )}
                 </div>
-                <p className="text-[12px] text-gray-500 dark:text-gray-400">
-                  {hasPdd ? pdd!.narrative : c.descricao}
-                </p>
-                {hasPdd ? (
-                  <div className="mt-2 rounded border border-gray-100 bg-gray-50/40 p-2 dark:border-gray-900 dark:bg-gray-950/40">
-                    <PddEvidenciaTable
-                      evidencias={pdd!.evidencias}
-                      evidenciasTotal={pdd!.evidencias_total}
-                      evidenciasMostradas={pdd!.evidencias_mostradas}
-                      outrosDeltaBrl={pdd!.outros_delta_brl}
-                    />
-                  </div>
-                ) : (
-                  <p
-                    className={cx(
-                      "mt-1 text-[11px] italic",
-                      "text-gray-400 dark:text-gray-600",
-                    )}
-                  >
-                    » Em construcao
-                  </p>
-                )}
               </div>
+              {hasPdd && (
+                <div className="mt-2">
+                  <PddEvidenciaTable
+                    evidencias={pdd!.evidencias}
+                    evidenciasTotal={pdd!.evidencias_total}
+                    evidenciasMostradas={pdd!.evidencias_mostradas}
+                    outrosDeltaBrl={pdd!.outros_delta_brl}
+                  />
+                </div>
+              )}
             </li>
           )
         })}

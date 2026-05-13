@@ -92,6 +92,7 @@ async def _pdd_diff(
             func.coalesce(d0q.c.data_vencimento_ajustada, d1q.c.data_vencimento_ajustada).label(
                 "data_vencimento_ajustada"
             ),
+            func.coalesce(d0q.c.valor_nominal, d1q.c.valor_nominal).label("valor_nominal"),
             pdd_d1.label("valor_pdd_d1"),
             pdd_d0.label("valor_pdd_d0"),
             delta.label("delta_valor_pdd"),
@@ -121,6 +122,7 @@ async def _pdd_diff(
             numero_documento=r.numero_documento,
             tipo_recebivel=r.tipo_recebivel,
             data_vencimento_ajustada=r.data_vencimento_ajustada,
+            valor_nominal=Decimal(r.valor_nominal or 0),
             valor_pdd_d1=Decimal(r.valor_pdd_d1 or 0),
             valor_pdd_d0=Decimal(r.valor_pdd_d0 or 0),
             delta_valor_pdd=Decimal(r.delta_valor_pdd or 0),

@@ -2170,6 +2170,7 @@ export type PddEvidencia = {
   numero_documento:         string
   tipo_recebivel:           string
   data_vencimento_ajustada: string | null
+  valor_nominal:            number
   valor_pdd_d1:             number
   valor_pdd_d0:             number
   delta_valor_pdd:          number
@@ -2252,6 +2253,7 @@ function _coerceVariacao(r: VariacaoDiariaResponse): VariacaoDiariaResponse {
 function _coercePddEvidencia(e: PddEvidencia): PddEvidencia {
   return {
     ...e,
+    valor_nominal:   Number(e.valor_nominal),
     valor_pdd_d1:    Number(e.valor_pdd_d1),
     valor_pdd_d0:    Number(e.valor_pdd_d0),
     delta_valor_pdd: Number(e.delta_valor_pdd),

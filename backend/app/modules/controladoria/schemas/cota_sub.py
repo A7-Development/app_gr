@@ -248,6 +248,9 @@ class PddEvidencia(BaseModel):
     numero_documento:         str
     tipo_recebivel:           str
     data_vencimento_ajustada: date | None
+    valor_nominal:            Decimal = Field(
+        description="Valor nominal do recebivel (D0; fallback D-1). Permite estimar quanto falta de PDD constituir."
+    )
     valor_pdd_d1:             Decimal
     valor_pdd_d0:             Decimal
     delta_valor_pdd:          Decimal = Field(description="valor_pdd_d0 - valor_pdd_d1")
