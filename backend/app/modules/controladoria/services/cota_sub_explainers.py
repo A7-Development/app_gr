@@ -11,9 +11,15 @@ Diferimento, Liquidacao, Aquisicao) em
 
 Convencoes:
 - Sub absorve PDD: PDD sobe → PL Sub cai. `delta_brl = -Σ Δ valor_pdd`.
-- Threshold filtra por `|delta_valor_pdd| > threshold_brl`. Default R$ 1.000.
+- Threshold filtra por `|delta_valor_pdd| > threshold_brl`. Default R$ 100 —
+  calibrado em 2026-05-13 apos identificar que dias de constituicao rotineira
+  (reclassificacao de faixa A→B em multiplos papeis pequenos) ficavam invisiveis
+  com threshold R$ 1.000. Caso pratico: 12/05 REALINVEST teve 13 papeis acima
+  de R$ 100 (1 cedente LANNA com 10 deles) e zero acima de R$ 1.000.
 - Top N (default 20) evidencias mostradas, ordenadas por `|delta|` DESC.
   Restante agregado em `outros_delta_brl`.
+- Frontend agrupa por `cedente_doc` em runtime quando >= 2 papeis do mesmo
+  cedente — backend continua devolvendo lista plana de papeis.
 """
 
 from __future__ import annotations
@@ -225,7 +231,7 @@ async def compute_explicacao_variacao(
     ua_id: UUID,
     data_d0: date,
     data_d1: date | None = None,
-    threshold_brl: Decimal = Decimal("1000"),
+    threshold_brl: Decimal = Decimal("100"),
     top_n: int = 20,
 ) -> ExplicacaoVariacaoResponse:
     """Roda todos os explainers disponiveis e devolve a resposta consolidada.

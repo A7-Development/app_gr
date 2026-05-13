@@ -258,8 +258,8 @@ async def explicacao_variacao(
     ] = None,
     threshold_brl: Annotated[
         Decimal,
-        Query(description="Threshold de evidencia (|Δ| em R$). Default 1.000."),
-    ] = Decimal("1000"),
+        Query(description="Threshold de evidencia (|Δ| em R$). Default 100."),
+    ] = Decimal("100"),
     top_n: Annotated[
         int,
         Query(ge=1, le=200, description="Cap de evidencias mostradas por categoria. Default 20."),
