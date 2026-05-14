@@ -1,41 +1,56 @@
 "use client"
 
 /**
- * EventosDiaTab — composicao da Aba "Eventos do dia" da pagina cota-sub.
+ * EventosDiaTab — composicao da aba "Eventos do dia" da pagina cota-sub.
  *
- * Layout vertical (top -> bottom):
- *   1. KpiStrip 4 KPIs (PL Sub D0, ΔPL R$, %ΔvsD-1, Cobertura, Residuo)
- *   2. ReconciliacaoWaterfallCard — hero (Z2)
- *   3. BalanceteDiarioTable — arvore COSIF hierarquica (Z3)
- *   4. ResiduoAlertCard — alerta de cobertura/residuo (Z4)
+ * Redesenho 2026-05-14 a partir do handoff `analise-cota` (Claude Design).
+ * Substitui o shell antigo (`KpiHeadline + grid 2-col`) pelo split layout:
  *
- * Consome BalanceteResponse do endpoint /controladoria/cota-sub/balancete-diario.
- * Classificacao COSIF agnostica multi-tenant (CLAUDE.md §10) — ver
- * backend/docs/atribuicao-cota-sub-cosif.md.
+ *   [Banner sticky pendentes]                              <- defesa C1, preservado
+ *   [StatusHeadlineCompact]                                <- Z1 compacto (PL, ΔReal, Δ%, chips)
+ *   [SubTabBar: Resumo narrativo | Detalhe contábil]       <- segment
+ *   if Resumo:
+ *     grid 1.42fr/1fr:
+ *       left:  [BridgeCard]      <- waterfall por categoria
+ *              [ReconStatusCard] <- strip de reconciliacao + stats
+ *       right: [DriversCard]     <- 4 categorias com expand+evidencias
+ *   if Detalhe:
+ *     [BalanceteDiarioTable]     <- arvore COSIF hierarquica (preservada)
  *
- * Defensivo: quando `balancete` chega vazio ou em erro, renderiza EmptyState
- * em vez de KPIs/charts/tabela com numeros falsos. CLAUDE.md §14:
- * explicabilidade > sofisticacao em mercado regulado.
+ * Defesas preservadas integralmente: banner sticky de pendentes (incidente
+ * 2026-05-12), ErrorState/EmptyState defensivos, data_quality.comparable
+ * forca neutral, CosifDrillSheet para drill em folha COSIF (so na aba
+ * "Detalhe contábil"). Aderente a CLAUDE.md §14 explicabilidade > inferencia.
  */
 
 import * as React from "react"
 import { RiAlertLine, RiArrowDownLine, RiCalendarLine } from "@remixicon/react"
 
+import { cx } from "@/lib/utils"
 import { Button } from "@/components/tremor/Button"
-import {
-  KpiHeadline,
-  type KpiHeadlineDiagnostic,
-} from "@/design-system/components/KpiHeadline"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 
-import type { BalanceteResponse, CosifNode } from "@/lib/api-client"
+import type { BalanceteResponse, CosifNode, PddExplanation } from "@/lib/api-client"
+import { useExplicacaoVariacao } from "@/lib/hooks/controladoria"
 
-import { AnaliseVariacaoCard } from "./AnaliseVariacaoCard"
 import { BalanceteDiarioTable } from "./BalanceteDiarioTable"
+import {
+  BridgeCard,
+  type BridgeDriver,
+} from "./BridgeCard"
 import { CosifDrillSheet } from "./CosifDrillSheet"
-import { ReconciliacaoWaterfallCard } from "./ReconciliacaoWaterfallCard"
-import { ResiduoAlertCard } from "./ResiduoAlertCard"
+import {
+  buildDriverFromPdd,
+  DriversCard,
+  type DriverInput,
+} from "./DriversCard"
+import { ReconStatusCard } from "./ReconStatusCard"
+import {
+  StatusHeadlineCompact,
+  type StatusHeadlineChip,
+} from "./StatusHeadlineCompact"
+import { SubTabBar, type SubTabKey } from "./SubTabBar"
 
 // ─── Formatadores ────────────────────────────────────────────────────────────
 
@@ -62,110 +77,151 @@ export function EventosDiaTab({
   onRetry,
 }: EventosDiaTabProps) {
   const [selectedNode, setSelectedNode] = React.useState<CosifNode | null>(null)
+  const [subTab, setSubTab] = React.useState<SubTabKey>("resumo")
+  const [unit, setUnit] = React.useState<"R$" | "pp">("pp")
 
   const recon = balancete?.reconciliacao
-  const cob = balancete?.cobertura
-  const dq = balancete?.data_quality
+  const cob   = balancete?.cobertura
+  const dq    = balancete?.data_quality
   const nodes = balancete?.nodes ?? []
 
-  // Pendentes — usado em multiplos lugares (banner sticky, KpiHeadline,
-  // tone forcado). Conta + valor cumulativo |valor_por_source.pendente|.
+  // Explicacao da variacao (apenas PDD entregue hoje — 2026-05-13).
+  const explicacao = useExplicacaoVariacao(
+    balancete?.fundo_id ?? null,
+    balancete?.data_d_zero ?? null,
+    { dataAnterior: balancete?.data_d_minus_1 ?? null },
+  )
+
+  const pdd: PddExplanation | undefined = explicacao.data?.explanations.find(
+    (e) => e.categoria === "pdd",
+  )
+
+  // Pendentes — usado em multiplos lugares (banner sticky, chips, tone).
   const pendentesCount = cob?.rows_por_source.pendente ?? 0
   const pendentesValor = cob?.valor_por_source.pendente ?? 0
-  const hasPendentes = pendentesCount > 0
+  const hasPendentes   = pendentesCount > 0
 
   // Quando ha pendente OU dataquality incompativel, numero primary vira
-  // cinza — explicabilidade > sofisticacao (CLAUDE.md §14). Usuario nao
-  // deve interpretar variacao como tendencia real se ha lancamentos
-  // fora da arvore ou se o snapshot D-1 e parcial.
-  const cotaTonelaForcaNeutral = hasPendentes || (dq != null && !dq.comparable)
+  // cinza — explicabilidade > sofisticacao (CLAUDE.md §14).
+  const forceNeutral = hasPendentes || (dq != null && !dq.comparable)
 
-  // Ref para scroll do CTA "Ver pendentes" no banner
-  const residuoCardRef = React.useRef<HTMLDivElement>(null)
-  const scrollToResiduo = React.useCallback(() => {
-    residuoCardRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block:    "start",
-    })
-  }, [])
+  // Total de contas folha (nivel >= 3) para badge do sub-tab "Detalhe contabil".
+  const contasFolha = React.useMemo(
+    () => nodes.filter((n) => n.codigo != null && n.nivel >= 3).length,
+    [nodes],
+  )
 
-  // ─── Diagnostico do KpiHeadline ─────────────────────────────────────────
-  // Ordem dos chips:
-  //   0. (prioritario) Snapshot parcial — quando data_quality.comparable=false,
-  //      esse chip aparece PRIMEIRO em vermelho e o numero primary vira cinza.
-  //      Comparacao distorcida e o problema mais grave: sem dado consistente,
-  //      os outros diagnosticos perdem sentido.
-  //   1. Reconciliacao: |residuo| / |PL Sub D-1| <= 0,1pp = ok
-  //   2. Cobertura COSIF: 0 rows pendentes = ok
-  //   3. Anomalias adicionais: placeholder ate termos detector dedicado
-  const headlineDiagnostics = React.useMemo<KpiHeadlineDiagnostic[]>(() => {
-    if (!recon || !cob) return []
-    const out: KpiHeadlineDiagnostic[] = []
+  // ─── Chips do header ────────────────────────────────────────────────────
+  // Ordem: snapshot parcial (prioritario) -> reconciliacao -> cobertura.
+  const headerChips = React.useMemo<StatusHeadlineChip[]>(() => {
+    const out: StatusHeadlineChip[] = []
+    if (!recon || !cob) return out
 
-    // 0. Snapshot parcial — prioritario
     if (dq && !dq.comparable) {
       out.push({
-        label: dq.reason ?? "Comparacao nao confiavel (snapshot parcial)",
+        label: dq.reason ?? "Snapshot parcial — comparação não confiável",
         tone:  "error",
       })
     }
 
-    // 1. Reconciliacao
     const residuoPp =
       recon.pl_cota_sub_d1 !== 0
         ? Math.abs(recon.residuo) / Math.abs(recon.pl_cota_sub_d1)
         : 0
     if (residuoPp <= 0.001) {
-      out.push({ label: "Reconciliada", tone: "ok" })
+      out.push({
+        label: `Reconciliado · resíduo ${fmtBRLCompact.format(Math.abs(recon.residuo))}`,
+        tone:  "ok",
+      })
     } else if (residuoPp <= 0.01) {
       out.push({
-        label: `Residuo ${fmtBRLCompact.format(Math.abs(recon.residuo))}`,
-        tone:  "warning",
+        label: `Resíduo ${fmtBRLCompact.format(Math.abs(recon.residuo))}`,
+        tone:  "warn",
       })
     } else {
       out.push({
-        label: `Residuo ${fmtBRLCompact.format(Math.abs(recon.residuo))} acima da tolerancia`,
+        label: `Resíduo ${fmtBRLCompact.format(Math.abs(recon.residuo))} acima da tolerância`,
         tone:  "error",
       })
     }
 
-    // 2. Cobertura COSIF — QUALQUER pendente vira tone='error' (nao warning).
-    // Caso real 2026-05-12: 4 rows pendentes com R$ -19k passaram despercebidos
-    // com chip amber pequeno enquanto outros chips estavam em verde. Defesa:
-    // pendente >0 = chip prioritario em vermelho, alem do banner sticky no topo.
     if (pendentesCount === 0) {
-      out.push({ label: "Cobertura 100%", tone: "ok" })
+      out.push({ label: "Cobertura COSIF 100%", tone: "ok" })
     } else {
       out.push({
-        label: `${pendentesCount} ${pendentesCount === 1 ? "papel sem COSIF" : "papeis sem COSIF"}`,
+        label: `${pendentesCount} ${pendentesCount === 1 ? "papel sem COSIF" : "papéis sem COSIF"}`,
         tone:  "error",
       })
     }
-
-    // 3. Anomalias dedicadas — placeholder ate Fase 1.5 (detector heuristico)
-    out.push({ label: "0 anomalias", tone: "ok" })
 
     return out
   }, [recon, cob, dq, pendentesCount])
 
-  const headlinePrimary = React.useMemo(() => {
-    if (!recon) return { value: "—" }
-    const pct = recon.delta_pct_sobre_d1
-    const sinalPct = pct >= 0 ? "+" : ""
-    const sinalReal = recon.delta_pl_cota_sub_real >= 0 ? "+" : ""
-    // Numero primary fica cinza quando ha pendente OU snapshot parcial —
-    // usuario nao deve interpretar como tendencia real se ha lancamentos
-    // fora da arvore ou se D-1 e incompleto.
-    const tone: "positive" | "negative" | "neutral" | undefined =
-      cotaTonelaForcaNeutral ? "neutral" : undefined
-    return {
-      value: `${sinalPct}${pct.toFixed(2).replace(".", ",")}%`,
-      sub:   `${sinalReal}${fmtBRLCompact.format(recon.delta_pl_cota_sub_real)} vs D-1`,
-      tone,
+  // ─── Drivers para o BridgeCard + DriversCard ────────────────────────────
+  // Hoje so PDD tem dado real. Demais entram como placeholders.
+  const driverInputs = React.useMemo<DriverInput[]>(() => {
+    const list: DriverInput[] = []
+    if (pdd) {
+      list.push(buildDriverFromPdd(pdd))
+    } else {
+      list.push({ id: "eventos_contabeis", delta: 0, placeholder: true })
     }
-  }, [recon, cotaTonelaForcaNeutral])
+    list.push({ id: "fluxo_caixa",        delta: 0, placeholder: true })
+    list.push({ id: "movimento_carteira", delta: 0, placeholder: true })
+    list.push({ id: "marcacao_mercado",   delta: 0, placeholder: true })
+    return list
+  }, [pdd])
 
-  // Erro: prioriza ErrorState (CLAUDE.md §14 — explicar a falha).
+  // BridgeDrivers — converte DriverInput pro shape do waterfall.
+  // "Outros (nao classificado)" aparece quando indeterminado_brl > limiar.
+  const bridgeDrivers = React.useMemo<BridgeDriver[]>(() => {
+    const fromInput = (input: DriverInput): BridgeDriver => ({
+      id:          input.id,
+      label:       labelFromCategoryId(input.id),
+      shortLabel:  shortLabelFromCategoryId(input.id),
+      delta:       input.delta,
+      placeholder: input.placeholder,
+    })
+    // Mesma ordem do handoff: eventos, fluxo, carteira, mtm
+    const ordered = [
+      driverInputs.find((d) => d.id === "eventos_contabeis"),
+      driverInputs.find((d) => d.id === "fluxo_caixa"),
+      driverInputs.find((d) => d.id === "movimento_carteira"),
+      driverInputs.find((d) => d.id === "marcacao_mercado"),
+    ].filter((x): x is DriverInput => x !== undefined)
+    const out = ordered.map(fromInput)
+
+    // Adiciona "Outros (nao classificado)" quando indeterminado_brl
+    // representa mais que 1k em modulo (mostra o gap honestamente).
+    const indeterminado = explicacao.data?.indeterminado_brl ?? 0
+    const threshold = 1_000
+    if (Math.abs(indeterminado) > threshold) {
+      out.push({
+        id:          "outros",
+        label:       "Outros (não classificado)",
+        shortLabel:  "Outros",
+        delta:       indeterminado,
+      })
+    }
+    return out
+  }, [driverInputs, explicacao.data?.indeterminado_brl])
+
+  // Ref para scroll do CTA "Ver pendentes" no banner
+  const residuoCardRef = React.useRef<HTMLDivElement>(null)
+  const scrollToResiduo = React.useCallback(() => {
+    // Quando o user clica em "Ver pendentes" e estamos na sub-tab "Resumo",
+    // a tabela COSIF nao esta montada -- pula pro sub-tab "Detalhe".
+    setSubTab("detalhe")
+    requestAnimationFrame(() => {
+      residuoCardRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block:    "start",
+      })
+    })
+  }, [])
+
+  // ─── Estados patologicos ────────────────────────────────────────────────
+
   if (errorMessage && !loading) {
     return (
       <ErrorState
@@ -177,8 +233,6 @@ export function EventosDiaTab({
     )
   }
 
-  // Vazio: caso patologico — Calendar normalmente bloqueia. Mantemos
-  // EmptyState defensivo.
   if (!loading && !balancete) {
     return (
       <EmptyState
@@ -190,11 +244,13 @@ export function EventosDiaTab({
     )
   }
 
+  // ─── Render principal ──────────────────────────────────────────────────
+
   return (
-    <div className="flex flex-col gap-4">
-      {/* 0. Banner sticky de pendentes — defesa C1 (CLAUDE.md §14
-          explicabilidade > inferencia). Aparece SO quando ha pendentes,
-          some quando todos identificadores estao classificados. */}
+    <div className="flex flex-col gap-3">
+      {/* 0. Banner sticky de pendentes — defesa C1 do incidente 2026-05-12.
+          Aparece SO quando ha pendentes. CTA "Ver pendentes" alterna pro
+          sub-tab "Detalhe" e da scroll. */}
       {hasPendentes && (
         <div className="sticky top-0 z-10 -mx-6 flex flex-wrap items-center gap-3 border-b border-red-200 bg-red-50 px-6 py-2.5 text-[13px] dark:border-red-900/40 dark:bg-red-950/40">
           <RiAlertLine
@@ -202,10 +258,10 @@ export function EventosDiaTab({
             aria-hidden="true"
           />
           <span className="font-medium text-red-800 dark:text-red-200">
-            {pendentesCount} {pendentesCount === 1 ? "papel" : "papeis"} sem classificacao COSIF
+            {pendentesCount} {pendentesCount === 1 ? "papel" : "papéis"} sem classificação COSIF
           </span>
           <span className="text-red-700 dark:text-red-300">
-            ({fmtBRLCompact.format(Math.abs(pendentesValor))} fora da arvore) — analise pode estar incompleta
+            ({fmtBRLCompact.format(Math.abs(pendentesValor))} fora da árvore) — análise pode estar incompleta
           </span>
           <button
             type="button"
@@ -218,66 +274,108 @@ export function EventosDiaTab({
         </div>
       )}
 
-      {/* 1. KpiHeadline — Z1 canonica para paginas analiticas com pergunta
-          dominante. Substitui a strip de 4 KpiCards (tile syndrome). */}
-      <KpiHeadline
-        statement="Variação do PL"
-        primary={headlinePrimary}
-        diagnostics={headlineDiagnostics}
+      {/* 1. Status headline compacto (Z1) */}
+      <StatusHeadlineCompact
+        dataD0={balancete?.data_d_zero}
+        plSubD0={recon?.pl_cota_sub_d0}
+        deltaReal={recon?.delta_pl_cota_sub_real}
+        deltaPct={recon?.delta_pct_sobre_d1}
+        forceNeutral={forceNeutral}
+        chips={headerChips}
         loading={loading && !balancete}
       />
 
-      {/* 2. Balancete patrimonial diario hierarquico — tabela COSIF como
-          referencia primaria de leitura (controller le saldos antes do
-          waterfall, que e a sintese do movimento) */}
-      <BalanceteDiarioTable
-        nodes={nodes}
-        classeBreakdownPorCosif={balancete?.classe_breakdown_por_cosif}
-        rowsPorCosif={balancete?.rows_por_cosif}
-        resultado={recon ? {
-          label:     "RESULTADO DO DIA — COTA SUBORDINADA",
-          d_minus_1: recon.pl_cota_sub_d1,
-          d_zero:    recon.pl_cota_sub_d0,
-          delta:     recon.delta_pl_cota_sub_real,
-          delta_pct: recon.delta_pct_sobre_d1,
-        } : undefined}
-        data={balancete?.data_d_zero}
-        dataAnterior={balancete?.data_d_minus_1}
-        emptyMessage={loading ? "Carregando..." : undefined}
-        onSelectNode={setSelectedNode}
-        comparable={dq?.comparable ?? true}
-        unreliableReason={dq?.reason}
+      {/* 2. Sub-tab bar */}
+      <SubTabBar
+        value={subTab}
+        onChange={setSubTab}
+        contasCount={contasFolha}
+        trailing={
+          balancete?.data_d_zero
+            ? `Snapshot · ${formatBR(balancete.data_d_zero)}`
+            : undefined
+        }
       />
 
-      {/* 3. Grid 2-col — esquerda: waterfall da reconciliacao; direita:
-          shell de analise da variacao (explainers heuristicos virao). */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ReconciliacaoWaterfallCard
-          reconciliacao={recon}
-          nodes={nodes}
-          loading={loading}
-          error={errorMessage ?? null}
-          onRetry={onRetry}
-          comparable={dq?.comparable ?? true}
-          unreliableReason={dq?.reason}
-        />
-        <AnaliseVariacaoCard balancete={balancete} />
-      </div>
+      {/* 3. Conteudo do sub-tab */}
+      {subTab === "resumo" ? (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.42fr_1fr]">
+          <div className="flex min-w-0 flex-col gap-3">
+            <BridgeCard
+              startTotal={recon?.pl_cota_sub_d1 ?? 0}
+              endTotal={recon?.pl_cota_sub_d0 ?? 0}
+              drivers={bridgeDrivers}
+              dataD1={balancete?.data_d_minus_1 ?? ""}
+              dataD0={balancete?.data_d_zero ?? ""}
+              unit={unit}
+              onUnitChange={setUnit}
+              height={360}
+            />
+            <ReconStatusCard
+              reconciliacao={recon}
+              nodes={nodes}
+            />
+          </div>
+          <DriversCard
+            drivers={driverInputs}
+            base={recon?.pl_cota_sub_d1}
+          />
+        </div>
+      ) : (
+        <div ref={residuoCardRef} className="scroll-mt-4">
+          <BalanceteDiarioTable
+            nodes={nodes}
+            classeBreakdownPorCosif={balancete?.classe_breakdown_por_cosif}
+            rowsPorCosif={balancete?.rows_por_cosif}
+            resultado={recon ? {
+              label:     "RESULTADO DO DIA — COTA SUBORDINADA",
+              d_minus_1: recon.pl_cota_sub_d1,
+              d_zero:    recon.pl_cota_sub_d0,
+              delta:     recon.delta_pl_cota_sub_real,
+              delta_pct: recon.delta_pct_sobre_d1,
+            } : undefined}
+            data={balancete?.data_d_zero}
+            dataAnterior={balancete?.data_d_minus_1}
+            emptyMessage={loading ? "Carregando..." : undefined}
+            onSelectNode={setSelectedNode}
+            comparable={dq?.comparable ?? true}
+            unreliableReason={dq?.reason}
+          />
+        </div>
+      )}
 
-      {/* 4. Residuo + cobertura (Z4) — alvo do botao 'Ver pendentes'
-          no banner sticky acima. */}
-      <div ref={residuoCardRef} className="scroll-mt-4">
-        <ResiduoAlertCard
-          reconciliacao={recon}
-          cobertura={cob}
-        />
-      </div>
-
-      {/* Drill-down — sheet de EXPLICACAO (papeis ja estao na propria tabela). */}
+      {/* Drill-down — sheet de explicacao acessivel via Detalhe contabil. */}
       <CosifDrillSheet
         node={selectedNode}
         onClose={() => setSelectedNode(null)}
       />
     </div>
   )
+}
+
+// ─── helpers locais ─────────────────────────────────────────────────────────
+
+function labelFromCategoryId(id: BridgeDriver["id"]): string {
+  switch (id) {
+    case "fluxo_caixa":        return "Fluxo de cotista"
+    case "movimento_carteira": return "Carteira"
+    case "eventos_contabeis":  return "Eventos"
+    case "marcacao_mercado":   return "MtM"
+    case "outros":             return "Outros"
+  }
+}
+function shortLabelFromCategoryId(id: BridgeDriver["id"]): string {
+  switch (id) {
+    case "fluxo_caixa":        return "Fluxo"
+    case "movimento_carteira": return "Carteira"
+    case "eventos_contabeis":  return "Eventos"
+    case "marcacao_mercado":   return "MtM"
+    case "outros":             return "Outros"
+  }
+}
+
+function formatBR(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  if (!m) return iso
+  return `${m[3]}/${m[2]}/${m[1]}`
 }
