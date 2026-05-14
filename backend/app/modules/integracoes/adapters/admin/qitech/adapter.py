@@ -300,19 +300,6 @@ def _step_error(name: str, msg: str) -> dict[str, Any]:
     }
 
 
-_CUSTODIA_DEFAULT_WINDOW_DAYS = 7
-
-
-def _resolve_custodia_periodo(since: date | None) -> tuple[date, date]:
-    """Janela default pros endpoints custodia.* de periodo (aquisicao,
-    liquidados). Quando `since` e passado, vira `data_inicial` ate hoje;
-    senao janela movel D-7..D-1 (ultima semana fechada)."""
-    hoje = datetime.now(UTC).date()
-    if since is not None:
-        return since, hoje
-    return hoje - timedelta(days=_CUSTODIA_DEFAULT_WINDOW_DAYS), hoje - timedelta(days=1)
-
-
 async def _handler_custodia_periodo(
     *,
     name: str,
@@ -323,11 +310,21 @@ async def _handler_custodia_periodo(
     unidade_administrativa_id: UUID | None,
     since: date | None,
 ) -> list[dict[str, Any]]:
-    """Wrapper pros custodia.* com janela (data_inicial..data_final).
+    """Wrapper pros custodia.* de janela, rodando em data unitaria (data_inicial=data_final).
 
-    Resolve UA -> CNPJ via `resolve_cnpj_by_ua_id`. Sem UA, falha (multi-UA
-    obrigatorio pra essa familia). Janela default = ultima semana fechada;
-    backfill com janela maior fica em POST /qitech/custodia/{name}/sync.
+    A familia /v2/fidc-custodia/report/{aquisicao-consolidada,liquidados-baixados}
+    aceita `(data_inicial, data_final)` no path, mas o raw e indexado por
+    `data_posicao` (1 entrada por dia). Quando chamamos com janela ampla, o
+    adapter grava um unico raw em `data_posicao=data_final` — o coverage,
+    indexado por data, nao acha as datas intermediarias, marca todas como gap
+    e o reconciler entra em loop infinito enfileirando as mesmas datas a cada
+    tick. Solucao: tratar como ponto unitario (data_inicial=data_final=alvo),
+    igual o `_handler_market` faz pros endpoints /netreport/*. Cada chamada
+    cobre 1 dia, raw vai em `data_posicao=alvo` e o coverage casa.
+
+    Operadores que precisam de backfill com janela ampla continuam via REST
+    em `POST /qitech/custodia/{name}/sync` (router `qitech_custodia.py`), que
+    aceita `data_inicial`/`data_final` explicitos.
     """
     if unidade_administrativa_id is None:
         return [_step_error(name, "UA obrigatoria — custodia.* requer UA configurada.")]
@@ -337,14 +334,14 @@ async def _handler_custodia_periodo(
     )
     if not cnpj:
         return [_step_error(name, f"UA {unidade_administrativa_id} sem CNPJ cadastrado.")]
-    data_inicial, data_final = _resolve_custodia_periodo(since)
+    data_alvo = _resolve_data_alvo(since)
     step = await sync_fn(
         tenant_id=tenant_id,
         environment=environment,
         config=config,
         cnpj_fundo=cnpj,
-        data_inicial=data_inicial,
-        data_final=data_final,
+        data_inicial=data_alvo,
+        data_final=data_alvo,
         unidade_administrativa_id=unidade_administrativa_id,
     )
     return [step]

@@ -57,6 +57,15 @@ def _normalize_cnpj(value: str) -> str:
     return digits.zfill(14) if digits else ""
 
 
+# Status codes 4xx que a QiTech usa pra dizer "nao ha dado nesse dia" (envelope
+# vazio canonico, mesmo padrao da familia /netreport/* tratada em
+# `etl._infer_http_status`). Diferente de 401/403 (auth) ou 422 (request
+# malformado): aqui o request foi valido, a fonte simplesmente nao publicou
+# dado pra essa (UA, data, endpoint). Tratamos como "empty real" — grava raw
+# com http_status preservado pro coverage classificar como NOT_PUBLISHED.
+_EMPTY_ENVELOPE_STATUS = frozenset({400, 404})
+
+
 async def _fetch_json(
     *,
     tenant_id: UUID,
@@ -65,7 +74,17 @@ async def _fetch_json(
     path: str,
     unidade_administrativa_id: UUID | None = None,
 ) -> tuple[Any, int]:
-    """GET JSON tolerante a status de erro. Retorna (body_or_none, status)."""
+    """GET JSON. Retorna (body, status) inclusive para 4xx canonicos de
+    'sem dado'. Levanta QiTechHttpError em auth/validacao/5xx ou body nao-JSON.
+
+    Razao do tratamento diferenciado de 400/404: a QiTech responde 400/404 com
+    body JSON pra dizer "nao ha dado nesse dia". Antes esse caso levantava
+    exception e o raw nao era gravado — coverage marcava gap, reconciler
+    re-enfileirava em loop. Agora repassamos o body pro caller persistir raw
+    com http_status preservado (assess_completeness classifica como 'empty'
+    e o coverage marca NOT_PUBLISHED, quebrando o loop). Status fora desse
+    conjunto continua sendo erro real e levanta.
+    """
     async with build_async_client(
         tenant_id=tenant_id,
         environment=environment,
@@ -73,16 +92,29 @@ async def _fetch_json(
         unidade_administrativa_id=unidade_administrativa_id,
     ) as client:
         resp = await client.get(path)
-    if resp.status_code >= 400:
+
+    is_empty_envelope = resp.status_code in _EMPTY_ENVELOPE_STATUS
+    if resp.status_code >= 400 and not is_empty_envelope:
         raise QiTechHttpError(
-            status_code=resp.status_code, detail=resp.text[:500]
+            f"HTTP {resp.status_code} em {path}",
+            status_code=resp.status_code,
+            detail=resp.text[:500],
         )
+
     try:
-        return resp.json(), resp.status_code
+        body = resp.json()
     except ValueError as e:
+        if is_empty_envelope:
+            # 4xx canonico mas sem body JSON — ainda assim grava raw para
+            # quebrar o loop (payload sintetico marca a tentativa).
+            return ({"_non_json": resp.text[:500]}, resp.status_code)
         raise QiTechHttpError(
-            status_code=resp.status_code, detail=f"resposta nao-JSON: {e}"
+            f"resposta nao-JSON em {path}",
+            status_code=resp.status_code,
+            detail=str(e),
         ) from e
+
+    return body, resp.status_code
 
 
 async def _persist_raw(
