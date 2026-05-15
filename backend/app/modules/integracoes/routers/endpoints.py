@@ -45,9 +45,11 @@ from app.modules.integracoes.services.backfill_service import (
 )
 from app.modules.integracoes.services.coverage import (
     CoverageStatus,
+    PublicationState,
     get_source_coverage,
 )
 from app.modules.integracoes.services.source_config import list_configs
+from app.modules.integracoes.services.tolerance import resolve_tolerance_window
 from app.shared.endpoint_catalog import EndpointSpec
 
 router = APIRouter(prefix="/sources", tags=["integracoes:endpoints"])
@@ -73,6 +75,11 @@ class EndpointDetail(BaseModel):
     default_schedule_kind: ScheduleKindStr
     default_schedule_value: str | None
 
+    # Tolerancia de publicacao — defaults sempre presentes do catalogo.
+    default_expected_lag_business_days: int
+    default_tolerance_business_days: int
+    default_give_up_business_days: int
+
     # Override do tenant (None se nunca foi persistida linha em TSEC)
     enabled: bool | None = None
     schedule_kind: ScheduleKindStr | None = None
@@ -83,15 +90,32 @@ class EndpointDetail(BaseModel):
     last_sync_error: str | None = None
     unidade_administrativa_id: UUID | None = None
 
+    # Tolerancia — overrides (NULL = "segue default").
+    expected_lag_business_days_override: int | None = None
+    tolerance_business_days_override: int | None = None
+    give_up_business_days_override: int | None = None
+
+    # Valores efetivos = override OR default — facilita renderizacao na UI
+    # (sem ter que recombinar no cliente). Sempre preenchidos.
+    effective_expected_lag_business_days: int
+    effective_tolerance_business_days: int
+    effective_give_up_business_days: int
+
 
 class EndpointConfigPayload(BaseModel):
-    """PUT body — atualiza enabled / schedule_kind / schedule_value.
+    """PUT body — atualiza enabled / schedule_kind / schedule_value + tolerancia.
 
     Validacao espelha o CHECK constraint do banco
     (`ck_tsec_schedule_value_format`):
         - interval: schedule_value e int 15..1440 como string.
         - daily_at: schedule_value e HH:MM (24h, zero-padded).
         - on_demand: schedule_value tem que ser None.
+
+    Para tolerance:
+        - Cada campo pode vir como int >= 0 (override) ou null (segue default).
+        - Coerencia (expected <= tolerance <= give_up) e validada apos a
+          composicao com defaults do catalogo no handler (nao aqui — o
+          payload nao conhece os defaults).
     """
 
     enabled: bool | None = None
@@ -99,6 +123,17 @@ class EndpointConfigPayload(BaseModel):
     schedule_value: str | None = None
     environment: Environment = Environment.PRODUCTION
     unidade_administrativa_id: UUID | None = None
+
+    # Tolerancia — null = "limpar override e voltar a herdar do catalogo".
+    expected_lag_business_days_override: int | None = Field(
+        default=None, ge=0, le=30
+    )
+    tolerance_business_days_override: int | None = Field(
+        default=None, ge=0, le=60
+    )
+    give_up_business_days_override: int | None = Field(
+        default=None, ge=0, le=120
+    )
 
     @field_validator("schedule_value")
     @classmethod
@@ -148,6 +183,7 @@ class EndpointSyncResult(BaseModel):
 
 
 def _spec_to_detail(spec: EndpointSpec) -> EndpointDetail:
+    # Sem override: effective_* = default_*.
     return EndpointDetail(
         name=spec.name,
         label=spec.label,
@@ -155,13 +191,40 @@ def _spec_to_detail(spec: EndpointSpec) -> EndpointDetail:
         canonical_table=spec.canonical_table,
         default_schedule_kind=spec.default_schedule_kind.value,  # type: ignore[arg-type]
         default_schedule_value=spec.default_schedule_value,
+        default_expected_lag_business_days=spec.default_expected_lag_business_days,
+        default_tolerance_business_days=spec.default_tolerance_business_days,
+        default_give_up_business_days=spec.default_give_up_business_days,
+        effective_expected_lag_business_days=spec.default_expected_lag_business_days,
+        effective_tolerance_business_days=spec.default_tolerance_business_days,
+        effective_give_up_business_days=spec.default_give_up_business_days,
     )
 
 
 def _merge_override(
     detail: EndpointDetail, row: TenantSourceEndpointConfig
 ) -> EndpointDetail:
-    """Sobrepoe campos do TSEC no detail base do catalogo."""
+    """Sobrepoe campos do TSEC no detail base do catalogo.
+
+    Resolve `effective_*` = override OR default. Se override viola
+    monotonicidade contra defaults (combinacao mista invalida), mantem
+    effective_* = override em cada campo individualmente. UI mostra warning
+    e operador corrige.
+    """
+    effective_expected = (
+        row.expected_lag_business_days_override
+        if row.expected_lag_business_days_override is not None
+        else detail.default_expected_lag_business_days
+    )
+    effective_tolerance = (
+        row.tolerance_business_days_override
+        if row.tolerance_business_days_override is not None
+        else detail.default_tolerance_business_days
+    )
+    effective_give_up = (
+        row.give_up_business_days_override
+        if row.give_up_business_days_override is not None
+        else detail.default_give_up_business_days
+    )
     return detail.model_copy(
         update={
             "enabled": row.enabled,
@@ -172,6 +235,18 @@ def _merge_override(
             "last_sync_status": row.last_sync_status,
             "last_sync_error": row.last_sync_error,
             "unidade_administrativa_id": row.unidade_administrativa_id,
+            "expected_lag_business_days_override": (
+                row.expected_lag_business_days_override
+            ),
+            "tolerance_business_days_override": (
+                row.tolerance_business_days_override
+            ),
+            "give_up_business_days_override": (
+                row.give_up_business_days_override
+            ),
+            "effective_expected_lag_business_days": effective_expected,
+            "effective_tolerance_business_days": effective_tolerance,
+            "effective_give_up_business_days": effective_give_up,
         }
     )
 
@@ -307,6 +382,28 @@ async def update_endpoint(
         )
     row = (await db.execute(stmt)).scalar_one_or_none()
 
+    # Valida monotonicidade da JANELA EFETIVA (override + catalog) antes de
+    # persistir — caller pode mandar override parcial que viola contra os
+    # defaults do catalogo (ex.: tolerance=15 com default give_up=10).
+    try:
+        resolve_tolerance_window(
+            expected_lag_override=payload.expected_lag_business_days_override,
+            tolerance_override=payload.tolerance_business_days_override,
+            give_up_override=payload.give_up_business_days_override,
+            default_expected_lag=spec.default_expected_lag_business_days,
+            default_tolerance=spec.default_tolerance_business_days,
+            default_give_up=spec.default_give_up_business_days,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Combinacao de tolerancia invalida (override + defaults do "
+                f"catalogo): {e}. Ajuste expected/tolerance/give_up para "
+                f"satisfazer expected <= tolerance <= give_up."
+            ),
+        ) from e
+
     if row is None:
         row = TenantSourceEndpointConfig(
             tenant_id=principal.tenant_id,
@@ -317,6 +414,15 @@ async def update_endpoint(
             enabled=True if payload.enabled is None else payload.enabled,
             schedule_kind=payload.schedule_kind,
             schedule_value=payload.schedule_value,
+            expected_lag_business_days_override=(
+                payload.expected_lag_business_days_override
+            ),
+            tolerance_business_days_override=(
+                payload.tolerance_business_days_override
+            ),
+            give_up_business_days_override=(
+                payload.give_up_business_days_override
+            ),
         )
         db.add(row)
     else:
@@ -324,6 +430,24 @@ async def update_endpoint(
             row.enabled = payload.enabled
         row.schedule_kind = payload.schedule_kind
         row.schedule_value = payload.schedule_value
+        # Tolerance: respeita semantica "null explicito = limpa, omitido =
+        # preserva". `model_fields_set` lista os campos que vieram no body,
+        # incluindo aqueles com valor null. Frontend antigo (sem os 3
+        # campos novos) NAO aparece em fields_set -> mantemos override
+        # existente intacto.
+        fs = payload.model_fields_set
+        if "expected_lag_business_days_override" in fs:
+            row.expected_lag_business_days_override = (
+                payload.expected_lag_business_days_override
+            )
+        if "tolerance_business_days_override" in fs:
+            row.tolerance_business_days_override = (
+                payload.tolerance_business_days_override
+            )
+        if "give_up_business_days_override" in fs:
+            row.give_up_business_days_override = (
+                payload.give_up_business_days_override
+            )
     await db.commit()
     await db.refresh(row)
 
@@ -586,6 +710,13 @@ class CoverageDayOut(BaseModel):
     # 'complete' | 'partial' | 'empty' | None — detalha o status quando
     # http=200 mas a 200 nao implica payload integro (Opcao A, 2026-05-13).
     completeness: str | None = None
+    # 'esperado' | 'atrasado' | 'suspeito' | 'furo_definitivo' | None.
+    # Aplica apenas quando o dia ainda nao publicou (GAP/NOT_PUBLISHED/
+    # PENDING). UI usa pra pintar badge color e mostrar tooltip de tempo.
+    tolerance_state: str | None = Field(
+        default=None,
+        description=", ".join(s.value for s in PublicationState),
+    )
 
 
 class EndpointCoverageOut(BaseModel):
@@ -598,6 +729,17 @@ class EndpointCoverageOut(BaseModel):
     count_partial: int
     count_not_published: int
     count_gap: int
+    # Janela efetiva (override OR catalogo). None quando endpoint nao suporta
+    # coverage. Frontend renderiza "Esperado em D+X · Suspeito a partir D+Y"
+    # como subtitulo da linha do endpoint.
+    expected_lag_business_days: int | None = None
+    tolerance_business_days: int | None = None
+    give_up_business_days: int | None = None
+    # Agregados por estado de tolerancia — contagem dentro do range pedido.
+    count_esperado: int = 0
+    count_atrasado: int = 0
+    count_suspeito: int = 0
+    count_furo_definitivo: int = 0
 
 
 class CoverageResponseOut(BaseModel):
@@ -650,6 +792,11 @@ async def source_coverage(
                         status=d.status.value,
                         http_status=d.http_status,
                         completeness=d.completeness,
+                        tolerance_state=(
+                            d.tolerance_state.value
+                            if d.tolerance_state is not None
+                            else None
+                        ),
                     )
                     for d in ep.days
                 ],
@@ -657,6 +804,13 @@ async def source_coverage(
                 count_partial=ep.count_partial,
                 count_not_published=ep.count_not_published,
                 count_gap=ep.count_gap,
+                expected_lag_business_days=ep.expected_lag_business_days,
+                tolerance_business_days=ep.tolerance_business_days,
+                give_up_business_days=ep.give_up_business_days,
+                count_esperado=ep.count_esperado,
+                count_atrasado=ep.count_atrasado,
+                count_suspeito=ep.count_suspeito,
+                count_furo_definitivo=ep.count_furo_definitivo,
             )
             for ep in cov.endpoints
         ],

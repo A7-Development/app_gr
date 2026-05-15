@@ -39,6 +39,20 @@ from app.shared.endpoint_catalog import EndpointSpec, ScheduleKind
 # Market reports — ETL canonical pipeline
 # ─────────────────────────────────────────────────────────────────────────────
 
+#
+# Defaults de tolerancia para market reports QiTech (2026-05-15):
+#
+#   expected=1, tolerance=3, give_up=10
+#
+# Reflete o que observamos em producao: market reports de D-1 sao publicados
+# ate ~D+1 09:30 SP na maioria dos dias. D+2 ja e atrasado (operador deve
+# notar); D+3..D+9 e suspeito (problema na fonte); D+10 e abandono (raro mas
+# acontece — ex.: 30/04 furou e so apareceu semanas depois).
+#
+# Mexer por endpoint quando houver evidencia empirica (ex.: rentabilidade
+# que historicamente vem mais tarde, ou rf_compromissadas que tem cadencia
+# irregular). Por enquanto manter uniforme.
+#
 _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
     EndpointSpec(
         name="market.outros_fundos",
@@ -139,6 +153,10 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="09:00",
         canonical_table="wh_estoque_recebivel",
+        # Tolerancia mais apertada — fluxo assincrono e mais sensivel a furo
+        # (cada disparo pendente segura o reconciler ate timeout do callback).
+        default_tolerance_business_days=2,
+        default_give_up_business_days=7,
     ),
 )
 
@@ -206,6 +224,10 @@ _BANK_ACCOUNT_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="19:00",
         canonical_table="wh_bank_account_balance",
+        # End-of-day mesmo dia — D+0 e o esperado, D+1 ja chama atencao.
+        default_expected_lag_business_days=0,
+        default_tolerance_business_days=1,
+        default_give_up_business_days=5,
     ),
     EndpointSpec(
         name="bank_account.statement",
@@ -214,6 +236,12 @@ _BANK_ACCOUNT_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_kind=ScheduleKind.INTERVAL,
         default_schedule_value="60",
         canonical_table="wh_bank_account_statement",
+        # Intraday — semanticamente nao tem "data referencia" no mesmo sentido
+        # dos market reports. Tolerancia ampla — coverage nao se aplica nesse
+        # endpoint hoje (UNSUPPORTED), mas mantemos valores defensivos.
+        default_expected_lag_business_days=0,
+        default_tolerance_business_days=1,
+        default_give_up_business_days=3,
     ),
 )
 

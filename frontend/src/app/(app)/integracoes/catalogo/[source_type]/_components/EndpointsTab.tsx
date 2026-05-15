@@ -25,7 +25,6 @@ import {
 import type { ColumnDef } from "@tanstack/react-table"
 
 import { Button } from "@/components/tremor/Button"
-import { Card } from "@/components/tremor/Card"
 import {
   Dialog,
   DialogContent,
@@ -39,7 +38,6 @@ import { Label } from "@/components/tremor/Label"
 import { Switch } from "@/components/tremor/Switch"
 import { Badge } from "@/components/tremor/Badge"
 import { DataTableShell } from "@/design-system/components/DataTableShell"
-import { EmptyState } from "@/design-system/components/EmptyState"
 import { LastSyncCell } from "@/design-system/components/LastSyncCell"
 import { SegmentSwitch } from "@/design-system/components/SegmentSwitch"
 import { tableTokens } from "@/design-system/tokens/table"
@@ -319,6 +317,12 @@ function EndpointEditorDialog({
   const [enabled, setEnabled] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
 
+  // Tolerância: strings vazias representam "herda do catálogo" (null no PUT).
+  // Inputs numéricos guardam string crua pra permitir digitação parcial.
+  const [expectedLagStr, setExpectedLagStr] = React.useState("")
+  const [toleranceStr, setToleranceStr] = React.useState("")
+  const [giveUpStr, setGiveUpStr] = React.useState("")
+
   // Sincroniza o estado do form quando o endpoint muda (open/close).
   React.useEffect(() => {
     if (!endpoint) return
@@ -329,9 +333,31 @@ function EndpointEditorDialog({
     setError(null)
     if (k === "interval" && v) setIntervalValue(v)
     if (k === "daily_at" && v) setDailyAtValue(v)
+    setExpectedLagStr(
+      endpoint.expected_lag_business_days_override?.toString() ?? "",
+    )
+    setToleranceStr(
+      endpoint.tolerance_business_days_override?.toString() ?? "",
+    )
+    setGiveUpStr(endpoint.give_up_business_days_override?.toString() ?? "")
   }, [endpoint])
 
   if (!endpoint) return null
+
+  // Valores efetivos previstos com o que está atualmente no form. Usado pra
+  // a pré-visualização ao vivo da seção Tolerância.
+  const previewExpected =
+    expectedLagStr === ""
+      ? endpoint.default_expected_lag_business_days
+      : Number.parseInt(expectedLagStr, 10)
+  const previewTolerance =
+    toleranceStr === ""
+      ? endpoint.default_tolerance_business_days
+      : Number.parseInt(toleranceStr, 10)
+  const previewGiveUp =
+    giveUpStr === ""
+      ? endpoint.default_give_up_business_days
+      : Number.parseInt(giveUpStr, 10)
 
   const handleSave = async () => {
     setError(null)
@@ -354,12 +380,77 @@ function EndpointEditorDialog({
     }
     // on_demand → schedule_value fica null
 
+    // Tolerância: string vazia = null (limpa override). Caso contrário,
+    // valida que é inteiro >= 0 e enquadra na monotonia local antes de
+    // mandar pro backend (que valida de novo contra defaults do catálogo).
+    const parseToleranceField = (
+      raw: string,
+      max: number,
+      label: string,
+    ): number | null | "invalid" => {
+      if (raw.trim() === "") return null
+      const n = Number.parseInt(raw, 10)
+      if (Number.isNaN(n) || n < 0 || n > max) {
+        setError(
+          `${label} precisa ser inteiro entre 0 e ${max}, ou vazio para herdar do catálogo.`,
+        )
+        return "invalid"
+      }
+      return n
+    }
+    const expectedOverride = parseToleranceField(
+      expectedLagStr,
+      30,
+      "Esperado em D+",
+    )
+    if (expectedOverride === "invalid") return
+    const toleranceOverride = parseToleranceField(
+      toleranceStr,
+      60,
+      "Atrasado após",
+    )
+    if (toleranceOverride === "invalid") return
+    const giveUpOverride = parseToleranceField(giveUpStr, 120, "Desistir após")
+    if (giveUpOverride === "invalid") return
+
+    // Pré-check de monotonicidade da janela efetiva (mesma fórmula do backend
+    // mas em JS, pra feedback imediato sem round-trip).
+    const eff = (override: number | null, defaultVal: number) =>
+      override ?? defaultVal
+    const effExpected = eff(
+      expectedOverride,
+      endpoint.default_expected_lag_business_days,
+    )
+    const effTolerance = eff(
+      toleranceOverride,
+      endpoint.default_tolerance_business_days,
+    )
+    const effGiveUp = eff(
+      giveUpOverride,
+      endpoint.default_give_up_business_days,
+    )
+    if (effTolerance < effExpected) {
+      setError(
+        `Janela inválida: "atrasado após" (${effTolerance}) precisa ser >= "esperado em D+" (${effExpected}).`,
+      )
+      return
+    }
+    if (effGiveUp < effTolerance) {
+      setError(
+        `Janela inválida: "desistir após" (${effGiveUp}) precisa ser >= "atrasado após" (${effTolerance}).`,
+      )
+      return
+    }
+
     const payload: EndpointConfigPayload = {
       enabled,
       schedule_kind: kind,
       schedule_value: scheduleValue,
       environment,
       unidade_administrativa_id: uaId ?? null,
+      expected_lag_business_days_override: expectedOverride,
+      tolerance_business_days_override: toleranceOverride,
+      give_up_business_days_override: giveUpOverride,
     }
 
     try {
@@ -378,7 +469,7 @@ function EndpointEditorDialog({
 
   return (
     <Dialog open={!!endpoint} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{endpoint.label}</DialogTitle>
           <DialogDescription>{endpoint.description}</DialogDescription>
@@ -448,6 +539,119 @@ function EndpointEditorDialog({
               ações de outros módulos (ex.: workflow do crédito).
             </div>
           )}
+
+          {/* Tolerância de publicação (2026-05-15) — quando começar a alertar
+              que o relatório não chegou. Vide CLAUDE.md memoria
+              project_qitech_freshness_followups + project_qitech_response_semantics. */}
+          <div className="flex flex-col gap-2 rounded border border-gray-200 px-3 py-3 dark:border-gray-800">
+            <div className="flex flex-col gap-0.5">
+              <Label className="text-sm font-medium">
+                Tolerância de publicação
+              </Label>
+              <span className={tableTokens.cellSecondary}>
+                Quantos dias úteis ANBIMA esperar antes de considerar o dia
+                atrasado, suspeito ou furo definitivo. Vazio = herda do
+                catálogo (padrão por endpoint).
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="expected-lag-input" className="text-xs">
+                  Esperado em D+
+                </Label>
+                <Input
+                  id="expected-lag-input"
+                  type="number"
+                  min={0}
+                  max={30}
+                  placeholder={String(
+                    endpoint.default_expected_lag_business_days,
+                  )}
+                  value={expectedLagStr}
+                  onChange={(e) => setExpectedLagStr(e.currentTarget.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="tolerance-input" className="text-xs">
+                  Atrasado após D+
+                </Label>
+                <Input
+                  id="tolerance-input"
+                  type="number"
+                  min={0}
+                  max={60}
+                  placeholder={String(
+                    endpoint.default_tolerance_business_days,
+                  )}
+                  value={toleranceStr}
+                  onChange={(e) => setToleranceStr(e.currentTarget.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="give-up-input" className="text-xs">
+                  Desistir após D+
+                </Label>
+                <Input
+                  id="give-up-input"
+                  type="number"
+                  min={0}
+                  max={120}
+                  placeholder={String(
+                    endpoint.default_give_up_business_days,
+                  )}
+                  value={giveUpStr}
+                  onChange={(e) => setGiveUpStr(e.currentTarget.value)}
+                />
+              </div>
+            </div>
+            <p
+              className={cx(
+                tableTokens.cellSecondary,
+                "leading-snug pt-1",
+              )}
+            >
+              Pré-visualização efetiva:{" "}
+              <strong>esperado em D+{previewExpected}</strong>,{" "}
+              <strong>atrasado entre D+{previewExpected + 1} e D+
+                {previewTolerance}</strong>
+              , <strong>suspeito até D+{previewGiveUp}</strong>, depois disso
+              vira furo definitivo (sistema para de tentar sozinho).
+            </p>
+          </div>
+
+          {/* Informativo: como o sistema tenta — frequência fixa, NÃO é configurável.
+              Documentado aqui pro usuário entender o vocabulário das janelas acima. */}
+          <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-800 dark:bg-gray-900/40">
+            <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+              Como tentamos buscar
+            </p>
+            <ul className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-600 dark:text-gray-400">
+              <li>
+                <strong>Esperado</strong> — sistema tenta a cada tick do
+                reconciler (~30 min).
+              </li>
+              <li>
+                <strong>Atrasado</strong> — sistema tenta no máximo a cada 4h.
+              </li>
+              <li>
+                <strong>Suspeito</strong> — sistema tenta no máximo 1x/dia +
+                alerta na aba Cobertura.
+              </li>
+              <li>
+                <strong>Furo definitivo</strong> — sistema para de tentar
+                sozinho. Você pode reabrir manualmente na Cobertura.
+              </li>
+            </ul>
+            <p
+              className={cx(
+                tableTokens.cellSecondary,
+                "leading-snug pt-2",
+              )}
+            >
+              A frequência das tentativas é fixa do sistema. Você define os
+              limites entre os estados nos campos acima.
+            </p>
+          </div>
 
           {/* Enabled */}
           <div className="flex items-center justify-between gap-3 rounded border border-gray-200 px-3 py-2 dark:border-gray-800">

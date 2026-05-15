@@ -32,6 +32,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -94,6 +95,25 @@ class TenantSourceEndpointConfig(Base):
             "last_sync_status IS NULL OR "
             "last_sync_status IN ('ok', 'erro', 'em_progresso')",
             name="ck_tsec_last_sync_status",
+        ),
+        # Tolerance window monotonicity: quando os 3 overrides estao
+        # preenchidos, expected <= tolerance <= give_up. NULL em qualquer
+        # campo relaxa a comparacao correspondente (semantica: "segue default
+        # do catalogo nesse lado").
+        CheckConstraint(
+            "("
+            "  expected_lag_business_days_override IS NULL OR "
+            "  expected_lag_business_days_override >= 0"
+            ") AND ("
+            "  expected_lag_business_days_override IS NULL OR "
+            "  tolerance_business_days_override IS NULL OR "
+            "  tolerance_business_days_override >= expected_lag_business_days_override"
+            ") AND ("
+            "  tolerance_business_days_override IS NULL OR "
+            "  give_up_business_days_override IS NULL OR "
+            "  give_up_business_days_override >= tolerance_business_days_override"
+            ")",
+            name="ck_tsec_tolerance_window_monotonic",
         ),
     )
 
@@ -164,6 +184,22 @@ class TenantSourceEndpointConfig(Base):
         String(16), nullable=True
     )
     last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Tolerance window overrides — NULL = "segue default do catalogo
+    # (EndpointSpec)". Quando preenchido, sobrepoe o default sem mexer no
+    # catalogo. Usado pelo compute_publication_state (services/coverage.py)
+    # pra classificar cada (data, endpoint) em ESPERADO/ATRASADO/SUSPEITO/
+    # FURO_DEFINITIVO. Reconciler le esse estado pra decidir cadencia de
+    # retry. Ver migration `e8a2b9c4d167_tsec_tolerance_window.py`.
+    expected_lag_business_days_override: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    tolerance_business_days_override: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    give_up_business_days_override: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

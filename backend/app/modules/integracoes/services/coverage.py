@@ -23,14 +23,23 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import SourceType
+from app.core.enums import Environment, SourceType
 from app.modules.integracoes.adapters.admin.qitech.coverage import (
     CoverageRow,
     fetch_qitech_coverage,
     fetch_qitech_first_data_date,
     qitech_endpoint_supports_coverage,
 )
+from app.modules.integracoes.models.tenant_source_endpoint_config import (
+    TenantSourceEndpointConfig,
+)
 from app.modules.integracoes.public import endpoint_catalog
+from app.modules.integracoes.services.tolerance import (
+    PublicationState,
+    ToleranceWindow,
+    compute_publication_state,
+    resolve_tolerance_window,
+)
 from app.shared.endpoint_catalog import EndpointSpec, ScheduleKind
 from app.warehouse.dim_dia_util import DimDiaUtil
 
@@ -55,6 +64,12 @@ class CoverageDay:
     # 'complete' | 'partial' | 'empty' | None. Detalha o status quando
     # http=200 e a 200 nao implica que o payload veio integro (Opcao A).
     completeness: str | None = None
+    # Camada ortogonal ao `status` (2026-05-15): quao atrasada esta a
+    # publicacao em relacao ao SLA configurado. Aplica-se apenas a dias
+    # cuja publicacao ainda nao chegou (GAP / NOT_PUBLISHED / PENDING) —
+    # para OK / PARTIAL / WEEKEND / HOLIDAY / etc. fica None. Front usa
+    # essa info pra pintar amber/red e exibir tooltip explicativo.
+    tolerance_state: PublicationState | None = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +84,19 @@ class EndpointCoverage:
     count_partial: int
     count_not_published: int
     count_gap: int
+    # Janela efetiva (override do tenant OR default do catalogo) — a UI exibe
+    # esses 3 numeros junto com o badge do estado pra explicar o "porque" da
+    # classificacao. None quando o endpoint nao suporta coverage.
+    expected_lag_business_days: int | None = None
+    tolerance_business_days: int | None = None
+    give_up_business_days: int | None = None
+    # Contagem agregada por estado de tolerancia (apenas dias com
+    # tolerance_state nao-None). UI usa pra mostrar "X esperados, Y atrasados,
+    # Z suspeitos, W furos" no cabecalho da linha do endpoint.
+    count_esperado: int = 0
+    count_atrasado: int = 0
+    count_suspeito: int = 0
+    count_furo_definitivo: int = 0
 
 
 @dataclass(frozen=True)
@@ -96,6 +124,48 @@ async def _load_calendar(
     )
     rows = (await db.execute(stmt)).all()
     return {r[0]: (r[1], r[2], r[3]) for r in rows}
+
+
+def _is_business_day(calendar_entry: tuple[bool, bool, bool] | None) -> bool:
+    """Conveniencia: dia util ANBIMA segundo wh_dim_dia_util."""
+    if calendar_entry is None:
+        return False
+    eh_dia_util, _, _ = calendar_entry
+    return bool(eh_dia_util)
+
+
+def _compute_tolerance_state(
+    *,
+    status: CoverageStatus,
+    day: date,
+    today: date,
+    business_days_set: frozenset[date],
+    window: ToleranceWindow | None,
+) -> PublicationState | None:
+    """Classifica tolerance_state quando aplicavel.
+
+    Sentido: aplica apenas quando o dado NAO chegou (ainda) — GAP /
+    NOT_PUBLISHED / PENDING. Outros status (OK, PARTIAL, WEEKEND, HOLIDAY,
+    BEFORE_FIRST_SYNC, UNSUPPORTED) nao tem semantica de "atraso" e ficam
+    com None (UI nao pinta badge de estado).
+
+    Window pode ser None quando o endpoint nao suporta coverage — nesse
+    caso nem chamamos esta funcao.
+    """
+    if window is None:
+        return None
+    if status not in (
+        CoverageStatus.GAP,
+        CoverageStatus.NOT_PUBLISHED,
+        CoverageStatus.PENDING,
+    ):
+        return None
+    return compute_publication_state(
+        reference_date=day,
+        today=today,
+        business_days_set=business_days_set,
+        window=window,
+    )
 
 
 def _classify_day(
@@ -142,6 +212,44 @@ def _classify_day(
 
     # 5. Dia util sem linha — furo real.
     return CoverageStatus.GAP
+
+
+async def _load_tolerance_overrides(
+    db: AsyncSession,
+    *,
+    source_type: SourceType,
+    tenant_id: UUID,
+    unidade_administrativa_id: UUID | None,
+    environment: Environment = Environment.PRODUCTION,
+) -> dict[str, tuple[int | None, int | None, int | None]]:
+    """Carrega overrides de tolerancia por endpoint do TSEC.
+
+    Retorna dict {endpoint_name: (expected, tolerance, give_up)} para
+    rapida lookup. Endpoints nao presentes (sem linha em TSEC) caem no
+    default do catalogo via `resolve_tolerance_window`. Cada elemento da
+    tupla pode ser None — segue catalogo nesse campo.
+    """
+    stmt = select(
+        TenantSourceEndpointConfig.endpoint_name,
+        TenantSourceEndpointConfig.expected_lag_business_days_override,
+        TenantSourceEndpointConfig.tolerance_business_days_override,
+        TenantSourceEndpointConfig.give_up_business_days_override,
+    ).where(
+        TenantSourceEndpointConfig.tenant_id == tenant_id,
+        TenantSourceEndpointConfig.source_type == source_type,
+        TenantSourceEndpointConfig.environment == environment,
+    )
+    if unidade_administrativa_id is None:
+        stmt = stmt.where(
+            TenantSourceEndpointConfig.unidade_administrativa_id.is_(None)
+        )
+    else:
+        stmt = stmt.where(
+            TenantSourceEndpointConfig.unidade_administrativa_id
+            == unidade_administrativa_id
+        )
+    rows = (await db.execute(stmt)).all()
+    return {r[0]: (r[1], r[2], r[3]) for r in rows}
 
 
 async def _fetch_endpoint_rows(
@@ -232,6 +340,16 @@ async def get_source_coverage(
 
     catalog = endpoint_catalog(source_type)
     calendar_map = await _load_calendar(db, tenant_id, start, end)
+    # Conjunto pra `compute_publication_state` (precisa de frozenset).
+    business_days_set: frozenset[date] = frozenset(
+        d for d, entry in calendar_map.items() if _is_business_day(entry)
+    )
+    overrides_by_endpoint = await _load_tolerance_overrides(
+        db,
+        source_type=source_type,
+        tenant_id=tenant_id,
+        unidade_administrativa_id=unidade_administrativa_id,
+    )
 
     endpoints_out: list[EndpointCoverage] = []
     for spec in catalog:
@@ -265,8 +383,26 @@ async def get_source_coverage(
         compl_by_date: dict[date, str | None] = {r.data_posicao: r.completeness for r in raw_rows}
         first_data = min(raw_by_date.keys()) if raw_by_date else None
 
+        # Resolve janela efetiva (override do tenant OR default do catalogo).
+        ov = overrides_by_endpoint.get(spec.name, (None, None, None))
+        try:
+            window: ToleranceWindow | None = resolve_tolerance_window(
+                expected_lag_override=ov[0],
+                tolerance_override=ov[1],
+                give_up_override=ov[2],
+                default_expected_lag=spec.default_expected_lag_business_days,
+                default_tolerance=spec.default_tolerance_business_days,
+                default_give_up=spec.default_give_up_business_days,
+            )
+        except ValueError:
+            # Combinacao override+default que violou monotonicidade — UI
+            # exibe sem tolerance_state e operador corrige no Dialog. Nao
+            # quebra a resposta inteira.
+            window = None
+
         days: list[CoverageDay] = []
         count_ok = count_partial = count_not_pub = count_gap = 0
+        count_esperado = count_atrasado = count_suspeito = count_furo = 0
         cursor = start
         while cursor <= end:
             status = _classify_day(
@@ -277,12 +413,20 @@ async def get_source_coverage(
                 first_data_in_endpoint=first_data,
                 completeness=compl_by_date.get(cursor),
             )
+            tolerance_state = _compute_tolerance_state(
+                status=status,
+                day=cursor,
+                today=today,
+                business_days_set=business_days_set,
+                window=window,
+            )
             days.append(
                 CoverageDay(
                     data=cursor,
                     status=status,
                     http_status=raw_by_date.get(cursor),
                     completeness=compl_by_date.get(cursor),
+                    tolerance_state=tolerance_state,
                 )
             )
             if status == CoverageStatus.OK:
@@ -293,6 +437,14 @@ async def get_source_coverage(
                 count_not_pub += 1
             elif status == CoverageStatus.GAP:
                 count_gap += 1
+            if tolerance_state == PublicationState.ESPERADO:
+                count_esperado += 1
+            elif tolerance_state == PublicationState.ATRASADO:
+                count_atrasado += 1
+            elif tolerance_state == PublicationState.SUSPEITO:
+                count_suspeito += 1
+            elif tolerance_state == PublicationState.FURO_DEFINITIVO:
+                count_furo += 1
             cursor = cursor + timedelta(days=1)
 
         endpoints_out.append(
@@ -306,6 +458,19 @@ async def get_source_coverage(
                 count_partial=count_partial,
                 count_not_published=count_not_pub,
                 count_gap=count_gap,
+                expected_lag_business_days=(
+                    window.expected_lag_business_days if window else None
+                ),
+                tolerance_business_days=(
+                    window.tolerance_business_days if window else None
+                ),
+                give_up_business_days=(
+                    window.give_up_business_days if window else None
+                ),
+                count_esperado=count_esperado,
+                count_atrasado=count_atrasado,
+                count_suspeito=count_suspeito,
+                count_furo_definitivo=count_furo,
             )
         )
 
@@ -322,6 +487,7 @@ __all__ = [
     "CoverageResponse",
     "CoverageStatus",
     "EndpointCoverage",
+    "PublicationState",
     "ScheduleKind",
     "get_source_coverage",
 ]

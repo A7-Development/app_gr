@@ -12,6 +12,7 @@ import type {
   Completeness,
   CoverageStatus,
   EndpointCoverage,
+  PublicationState,
 } from "@/lib/api-client"
 
 const STATUS_STYLES: Record<CoverageStatus, { bg: string; label: string }> = {
@@ -31,6 +32,25 @@ const STATUS_STYLES: Record<CoverageStatus, { bg: string; label: string }> = {
   unsupported: {
     bg: "bg-gray-100 dark:bg-gray-900",
     label: "Não aplicável",
+  },
+}
+
+// Override por `tolerance_state` (2026-05-15) — substitui cor do STATUS_STYLES
+// quando o dia esta em GAP/NOT_PUBLISHED/PENDING. Distingue:
+//   ESPERADO        — slate (sem alarde, ainda dentro do SLA)
+//   ATRASADO        — amber (passou do SLA, mas razoavel)
+//   SUSPEITO        — red (provavel problema)
+//   FURO_DEFINITIVO — gray escuro com hatch (sistema desistiu)
+const TOLERANCE_STYLES: Record<
+  PublicationState,
+  { bg: string; label: string }
+> = {
+  esperado: { bg: "bg-slate-300 dark:bg-slate-700", label: "Esperado" },
+  atrasado: { bg: "bg-amber-400", label: "Atrasado" },
+  suspeito: { bg: "bg-red-500", label: "Suspeito" },
+  furo_definitivo: {
+    bg: "bg-gray-400 dark:bg-gray-600",
+    label: "Furo definitivo",
   },
 }
 
@@ -135,11 +155,14 @@ export function CoverageHeatmap({
           <span className="font-medium">
             {format(parseISO(endDate), "dd/MMM/yyyy", { locale: ptBR })}
           </span>
-          . Vermelho = dia útil ANBIMA sem nenhuma linha raw (furo real).
-          Amarelo = publicação parcial (a fonte respondeu OK mas faltou
-          subset esperado — ex.: relatório RF sem o POV principal).
-          Cinza = fim de semana / feriado / antes do primeiro sync configurado.
-          Click "Backfill" pra preencher os furos de um endpoint.
+          . Dias sem dado são classificados pela tolerância configurada do
+          endpoint:{" "}
+          <strong>esperado</strong> (dentro do prazo),{" "}
+          <strong>atrasado</strong> (passou do prazo, sistema ainda tenta),{" "}
+          <strong>suspeito</strong> (provavel problema na fonte) e{" "}
+          <strong>furo definitivo</strong> (sistema desistiu — clique em
+          Reabrir pra forçar). Janela de cada endpoint configurável na aba
+          Endpoints.
         </span>
       </p>
     </div>
@@ -180,24 +203,69 @@ function EndpointRow({
   const isJobActive =
     activeJob?.status === "pending" || activeJob?.status === "running"
 
+  // Sub-titulo: janela efetiva legivel. Se o endpoint nao suporta coverage
+  // (unsupported), os campos sao null e nao mostramos legenda.
+  const hasWindow =
+    ep.expected_lag_business_days !== null &&
+    ep.tolerance_business_days !== null &&
+    ep.give_up_business_days !== null
+
+  // Botao de backfill conta APENAS furos definitivos (sistema desistiu).
+  // Datas em ESPERADO/ATRASADO/SUSPEITO o reconciler ainda esta tentando —
+  // operador nao precisa forcar manualmente.
+  const furosDefinitivosDates = React.useMemo(
+    () =>
+      ep.days
+        .filter((d) => d.tolerance_state === "furo_definitivo")
+        .map((d) => d.data),
+    [ep.days],
+  )
+  const hasFurosDefinitivos = furosDefinitivosDates.length > 0
+
   return (
     <>
       <div className="flex items-center gap-2 min-w-0">
-        <div
-          className="truncate text-[12px] font-medium text-gray-900 dark:text-gray-100"
-          title={`${ep.label} · ${ep.schedule_kind}`}
-        >
-          {ep.label}
+        <div className="flex flex-col min-w-0">
+          <div
+            className="truncate text-[12px] font-medium text-gray-900 dark:text-gray-100"
+            title={`${ep.label} · ${ep.schedule_kind}`}
+          >
+            {ep.label}
+          </div>
+          {hasWindow && (
+            <div
+              className="text-[10px] text-gray-500 dark:text-gray-400"
+              title="Janela efetiva (override do tenant ou default do catálogo)"
+            >
+              esperado D+{ep.expected_lag_business_days} · atrasado D+
+              {(ep.tolerance_business_days as number) + 1} · suspeito até D+
+              {ep.give_up_business_days}
+            </div>
+          )}
         </div>
-        {hasGaps && onBackfill && !isJobActive && (
+        {hasFurosDefinitivos && onBackfill && !isJobActive && (
           <Button
             variant="ghost"
             className="h-6 shrink-0 px-2 text-[11px]"
-            onClick={() => onBackfill(ep.name, gapDates)}
-            title={`Preencher ${gapDates.length} furo${gapDates.length > 1 ? "s" : ""} chamando a API pra cada data`}
+            onClick={() => onBackfill(ep.name, furosDefinitivosDates)}
+            title={`Reabrir ${furosDefinitivosDates.length} furo${furosDefinitivosDates.length > 1 ? "s" : ""} definitivo${furosDefinitivosDates.length > 1 ? "s" : ""} — sistema havia desistido, força nova tentativa`}
           >
             <RiPlayLine className="size-3 mr-1" aria-hidden />
-            {gapDates.length} furo{gapDates.length > 1 ? "s" : ""}
+            Reabrir {furosDefinitivosDates.length}
+          </Button>
+        )}
+        {!hasFurosDefinitivos && hasGaps && onBackfill && !isJobActive && (
+          // Fallback: nenhum furo definitivo mas ainda há gaps em estados
+          // recuperáveis (ESPERADO/ATRASADO/SUSPEITO). Reconciler está
+          // cuidando — botão fica disponivel pra forcar imediato.
+          <Button
+            variant="ghost"
+            className="h-6 shrink-0 px-2 text-[11px] text-gray-600"
+            onClick={() => onBackfill(ep.name, gapDates)}
+            title={`Forçar backfill de ${gapDates.length} furo${gapDates.length > 1 ? "s" : ""} (o reconciler já está tentando — clicar acelera)`}
+          >
+            <RiPlayLine className="size-3 mr-1" aria-hidden />
+            Forçar {gapDates.length}
           </Button>
         )}
         {isJobActive && (
@@ -216,6 +284,14 @@ function EndpointRow({
         {ep.days.map((d) => {
           const isProcessing = pendingSet.has(d.data)
           const isInActiveJob = processingSet.has(d.data)
+          // Cor: tolerance_state sobrepoe status quando aplicavel.
+          const cellBg = isProcessing
+            ? "bg-blue-300 animate-pulse"
+            : isInActiveJob && !pendingSet.has(d.data)
+            ? "bg-emerald-500"
+            : d.tolerance_state
+            ? TOLERANCE_STYLES[d.tolerance_state].bg
+            : STATUS_STYLES[d.status].bg
           return (
             <div
               key={d.data}
@@ -224,15 +300,12 @@ function EndpointRow({
                 d.status,
                 d.http_status,
                 d.completeness,
+                d.tolerance_state,
                 isProcessing,
               )}
               className={cx(
                 "h-6 rounded-[1px] cursor-default transition-opacity hover:opacity-70",
-                isProcessing
-                  ? "bg-blue-300 animate-pulse"
-                  : isInActiveJob && !pendingSet.has(d.data)
-                  ? "bg-emerald-500"
-                  : STATUS_STYLES[d.status].bg,
+                cellBg,
               )}
             />
           )
@@ -247,10 +320,33 @@ function renderTooltip(
   status: CoverageStatus,
   httpStatus: number | null,
   completeness: Completeness | null,
+  toleranceState: PublicationState | null,
   isProcessing: boolean,
 ) {
   const dataFmt = format(parseISO(iso), "EEE dd/MMM/yyyy", { locale: ptBR })
   if (isProcessing) return `${dataFmt} · Backfill em andamento…`
+  // Quando tolerance_state esta presente, ele e a info mais relevante pro
+  // operador (graduacao temporal); status base vira complementar.
+  if (toleranceState) {
+    const stateLabel = TOLERANCE_STYLES[toleranceState].label
+    const baseLabel = STATUS_STYLES[status].label
+    let detail = ""
+    if (toleranceState === "esperado") {
+      detail = " — ainda dentro do prazo esperado de publicação."
+    } else if (toleranceState === "atrasado") {
+      detail = " — passou do prazo, sistema continua tentando."
+    } else if (toleranceState === "suspeito") {
+      detail =
+        " — muito atrasado, provavel problema na fonte. Sistema tenta com cadência reduzida."
+    } else if (toleranceState === "furo_definitivo") {
+      detail =
+        " — sistema parou de tentar automaticamente. Clique em Reabrir pra forçar nova tentativa."
+    }
+    if (httpStatus !== null) {
+      return `${dataFmt} · ${stateLabel} (${baseLabel.toLowerCase()}, HTTP ${httpStatus})${detail}`
+    }
+    return `${dataFmt} · ${stateLabel} (${baseLabel.toLowerCase()})${detail}`
+  }
   const statusLabel = STATUS_STYLES[status].label
   // Detalha o "porque" quando partial — diferenca crucial vs zero real.
   // Empty: payload chegou mas vazio; partial: chegou mas falta subset.
@@ -269,29 +365,56 @@ function renderTooltip(
 }
 
 function Legend() {
-  const items: { status: CoverageStatus; label: string }[] = [
+  // Legenda separa em 2 grupos: status base (presente) e tolerância (futuro).
+  // Operador entende que tolerance_state se aplica a dias que estão sem dado.
+  const statusItems: { status: CoverageStatus; label: string }[] = [
     { status: "ok", label: "Coletado" },
     { status: "partial", label: "Parcial" },
-    { status: "not_published", label: "Sem publicação" },
-    { status: "gap", label: "Furo" },
     { status: "weekend", label: "Fds / feriado" },
-    { status: "pending", label: "Pendente" },
     { status: "before_first_sync", label: "Antes do 1º sync" },
   ]
+  const toleranceItems: { state: PublicationState; label: string }[] = [
+    { state: "esperado", label: "Esperado" },
+    { state: "atrasado", label: "Atrasado" },
+    { state: "suspeito", label: "Suspeito" },
+    { state: "furo_definitivo", label: "Furo definitivo" },
+  ]
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-gray-600 dark:text-gray-400">
-      {items.map((i) => (
-        <div key={i.status} className="flex items-center gap-1.5">
-          <span
-            className={cx(
-              "inline-block h-3 w-3 rounded-[1px] ring-1 ring-inset ring-gray-200 dark:ring-gray-700",
-              STATUS_STYLES[i.status].bg,
-            )}
-            aria-hidden
-          />
-          {i.label}
-        </div>
-      ))}
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-gray-600 dark:text-gray-400">
+        <span className="font-medium text-gray-700 dark:text-gray-300">
+          Coletado:
+        </span>
+        {statusItems.map((i) => (
+          <div key={i.status} className="flex items-center gap-1.5">
+            <span
+              className={cx(
+                "inline-block h-3 w-3 rounded-[1px] ring-1 ring-inset ring-gray-200 dark:ring-gray-700",
+                STATUS_STYLES[i.status].bg,
+              )}
+              aria-hidden
+            />
+            {i.label}
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-gray-600 dark:text-gray-400">
+        <span className="font-medium text-gray-700 dark:text-gray-300">
+          Ainda sem dado:
+        </span>
+        {toleranceItems.map((i) => (
+          <div key={i.state} className="flex items-center gap-1.5">
+            <span
+              className={cx(
+                "inline-block h-3 w-3 rounded-[1px] ring-1 ring-inset ring-gray-200 dark:ring-gray-700",
+                TOLERANCE_STYLES[i.state].bg,
+              )}
+              aria-hidden
+            />
+            {i.label}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

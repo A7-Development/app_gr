@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -57,6 +57,7 @@ from app.modules.integracoes.models.qitech_report_job import (
 from app.modules.integracoes.services.backfill_service import create_backfill_job
 from app.modules.integracoes.services.coverage import (
     CoverageStatus,
+    PublicationState,
     get_source_coverage,
 )
 from app.modules.integracoes.services.eligibility import list_enabled_configs
@@ -155,6 +156,88 @@ async def _count_attempts_by_date(
     return counts
 
 
+async def _last_attempt_at_by_date(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    source_type: SourceType,
+    unidade_administrativa_id: UUID | None,
+    endpoint_name: str,
+    dates: list[date],
+) -> dict[date, datetime]:
+    """Para cada data candidata, MAX(BackfillJob.created_at) entre os jobs
+    que tocaram aquela data.
+
+    Usado pelo modulator de cadencia: data em estado ATRASADO so e
+    re-enfileirada se passaram >= 4h desde a ultima tentativa. SUSPEITO
+    espera >= 24h. ESPERADO entra a cada tick (skip_window = 0).
+    """
+    if not dates:
+        return {}
+    stmt = select(
+        func.unnest(
+            func.array_cat(BackfillJob.dates_pending, BackfillJob.dates_done)
+        ).label("d"),
+        BackfillJob.created_at,
+    ).where(
+        BackfillJob.tenant_id == tenant_id,
+        BackfillJob.source_type == source_type.value,
+        BackfillJob.endpoint_name == endpoint_name,
+    )
+    if unidade_administrativa_id is not None:
+        stmt = stmt.where(
+            BackfillJob.unidade_administrativa_id == unidade_administrativa_id
+        )
+    else:
+        stmt = stmt.where(BackfillJob.unidade_administrativa_id.is_(None))
+
+    out: dict[date, datetime] = {}
+    dates_set = set(dates)
+    for row in (await db.execute(stmt)).all():
+        d = row[0]
+        if d in dates_set:
+            ts = row[1]
+            if d not in out or ts > out[d]:
+                out[d] = ts
+    return out
+
+
+# Janelas de cooldown por estado — quanto tempo esperar entre tentativas.
+# ESPERADO: sem cooldown (cada tick do reconciler pode disparar).
+# ATRASADO: 4h.
+# SUSPEITO: 24h.
+# FURO_DEFINITIVO: skip total (filtrado antes de chegar aqui).
+_COOLDOWN_BY_STATE: dict[PublicationState, timedelta] = {
+    PublicationState.ESPERADO: timedelta(seconds=0),
+    PublicationState.ATRASADO: timedelta(hours=4),
+    PublicationState.SUSPEITO: timedelta(hours=24),
+}
+
+
+def _dates_due_for_retry(
+    *,
+    candidates: list[tuple[date, PublicationState]],
+    last_attempt_by_date: dict[date, datetime],
+    now: datetime,
+) -> list[date]:
+    """Filtra datas pelo cooldown do estado de tolerancia.
+
+    Retorna apenas as datas cuja ultima tentativa esta mais antiga que o
+    cooldown do estado, ou que nunca foram tentadas (sem entrada em
+    `last_attempt_by_date`).
+    """
+    out: list[date] = []
+    for d, state in candidates:
+        cooldown = _COOLDOWN_BY_STATE.get(state)
+        if cooldown is None:
+            # FURO_DEFINITIVO ou estado desconhecido — skip.
+            continue
+        last_at = last_attempt_by_date.get(d)
+        if last_at is None or (now - last_at) >= cooldown:
+            out.append(d)
+    return out
+
+
 async def _active_async_job_dates_for_fidc_estoque(
     db: AsyncSession,
     *,
@@ -245,22 +328,57 @@ async def find_qitech_gaps_to_heal(
         for ep in cov.endpoints:
             if not ep.supported or ep.count_gap == 0:
                 continue
-            gap_dates = [
-                d.data for d in ep.days if d.status == CoverageStatus.GAP
+            # Carrega (data, tolerance_state) — coverage ja calculou pra
+            # gente. FURO_DEFINITIVO sai imediatamente: reconciler nao tenta
+            # mais sozinho, operador reabre manual via UI.
+            gap_candidates: list[tuple[date, PublicationState]] = [
+                (d.data, d.tolerance_state)
+                for d in ep.days
+                if d.status == CoverageStatus.GAP
+                and d.tolerance_state is not None
+                and d.tolerance_state != PublicationState.FURO_DEFINITIVO
             ]
-            if not gap_dates:
+            if not gap_candidates:
                 continue
+            gap_dates = [d for d, _ in gap_candidates]
 
             # Anti-duplicacao do job assincrono (fidc_estoque) — datas com
             # QitechReportJob WAITING/PROCESSING saem do candidato.
             if ep.name == "market.fidc_estoque" and async_active_dates:
-                gap_dates = [d for d in gap_dates if d not in async_active_dates]
+                gap_candidates = [
+                    (d, st) for (d, st) in gap_candidates if d not in async_active_dates
+                ]
+                gap_dates = [d for d, _ in gap_candidates]
                 if not gap_dates:
                     continue
 
-            # Fase 1.5: cap de tentativas por data. Datas que ja foram
-            # tentadas N+ vezes no historico viram "stale" e nao sao mais
-            # enfileiradas. Evita martelar fonte morta 1440x/30d.
+            # Modulacao de cadencia por estado (2026-05-15): respeita cooldown
+            # entre tentativas — ESPERADO sem espera, ATRASADO 4h, SUSPEITO 24h.
+            # Evita martelar fonte que ja foi tentada recentemente sem barrar
+            # tentativas em estado "recente" (D+1 ainda esperado).
+            last_attempt = await _last_attempt_at_by_date(
+                db,
+                tenant_id=cfg.tenant_id,
+                source_type=SourceType.ADMIN_QITECH,
+                unidade_administrativa_id=cfg.unidade_administrativa_id,
+                endpoint_name=ep.name,
+                dates=gap_dates,
+            )
+            now = datetime.now(UTC)
+            due_dates_set = set(
+                _dates_due_for_retry(
+                    candidates=gap_candidates,
+                    last_attempt_by_date=last_attempt,
+                    now=now,
+                )
+            )
+            if not due_dates_set:
+                continue
+            gap_dates = [d for d in gap_dates if d in due_dates_set]
+
+            # Fase 1.5: cap absoluto de tentativas por data (defesa adicional
+            # contra estado SUSPEITO que ja foi tentado N+ vezes mesmo
+            # respeitando cooldown). Evita martelar fonte morta indefinidamente.
             attempts = await _count_attempts_by_date(
                 db,
                 tenant_id=cfg.tenant_id,

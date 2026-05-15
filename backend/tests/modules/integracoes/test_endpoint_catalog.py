@@ -205,6 +205,86 @@ def test_endpoint_spec_accepts_on_demand_with_null():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Tolerance window primitives (2026-05-15) — expected/tolerance/give_up
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_endpoint_spec_defaults_tolerance_window():
+    """Defaults sao 1/3/10 — coerentes com market reports tipicos QiTech."""
+    ep = EndpointSpec(
+        name="x.y",
+        label="X",
+        description="D",
+        default_schedule_kind=ScheduleKind.DAILY_AT,
+        default_schedule_value="08:00",
+        canonical_table="t",
+    )
+    assert ep.default_expected_lag_business_days == 1
+    assert ep.default_tolerance_business_days == 3
+    assert ep.default_give_up_business_days == 10
+
+
+def test_endpoint_spec_rejects_negative_expected():
+    with pytest.raises(ValueError, match="expected_lag must be >= 0"):
+        EndpointSpec(
+            name="x.y",
+            label="X",
+            description="D",
+            default_schedule_kind=ScheduleKind.DAILY_AT,
+            default_schedule_value="08:00",
+            canonical_table="t",
+            default_expected_lag_business_days=-1,
+        )
+
+
+def test_endpoint_spec_rejects_tolerance_below_expected():
+    with pytest.raises(ValueError, match="tolerance .* must be >= expected"):
+        EndpointSpec(
+            name="x.y",
+            label="X",
+            description="D",
+            default_schedule_kind=ScheduleKind.DAILY_AT,
+            default_schedule_value="08:00",
+            canonical_table="t",
+            default_expected_lag_business_days=3,
+            default_tolerance_business_days=2,
+        )
+
+
+def test_endpoint_spec_rejects_give_up_below_tolerance():
+    with pytest.raises(ValueError, match="give_up .* must be >= tolerance"):
+        EndpointSpec(
+            name="x.y",
+            label="X",
+            description="D",
+            default_schedule_kind=ScheduleKind.DAILY_AT,
+            default_schedule_value="08:00",
+            canonical_table="t",
+            default_tolerance_business_days=5,
+            default_give_up_business_days=3,
+        )
+
+
+def test_qitech_catalog_tolerance_overrides():
+    """Endpoints com tolerancia customizada — mantem o desvio explicito.
+
+    fidc_estoque: 1/2/7 (mais apertado, assincrono).
+    bank_account.balance: 0/1/5 (mesmo dia).
+    """
+    by_name = QITECH_ENDPOINTS_BY_NAME
+    assert by_name["market.fidc_estoque"].default_tolerance_business_days == 2
+    assert by_name["market.fidc_estoque"].default_give_up_business_days == 7
+    assert (
+        by_name["bank_account.balance"].default_expected_lag_business_days == 0
+    )
+    assert by_name["bank_account.balance"].default_give_up_business_days == 5
+    # Market reports continuam no default 1/3/10.
+    assert by_name["market.conta_corrente"].default_expected_lag_business_days == 1
+    assert by_name["market.conta_corrente"].default_tolerance_business_days == 3
+    assert by_name["market.conta_corrente"].default_give_up_business_days == 10
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Public contract endpoint_catalog()
 # ─────────────────────────────────────────────────────────────────────────────
 

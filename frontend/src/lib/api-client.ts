@@ -1716,6 +1716,12 @@ export type EndpointDetail = {
   canonical_table: string
   default_schedule_kind: ScheduleKind
   default_schedule_value: string | null
+  // Defaults de tolerância de publicação (2026-05-15) — sempre presentes do
+  // catálogo. Frontend exibe como placeholder/legenda na seção Tolerância
+  // do Dialog de configuração.
+  default_expected_lag_business_days: number
+  default_tolerance_business_days: number
+  default_give_up_business_days: number
 
   // Override do tenant (null se nunca foi persistida linha em TSEC)
   enabled: boolean | null
@@ -1726,7 +1732,30 @@ export type EndpointDetail = {
   last_sync_status: "ok" | "erro" | "em_progresso" | null
   last_sync_error: string | null
   unidade_administrativa_id: string | null
+
+  // Override de tolerância (null = "segue default do catálogo").
+  expected_lag_business_days_override: number | null
+  tolerance_business_days_override: number | null
+  give_up_business_days_override: number | null
+
+  // Valores efetivos = override OR default. Sempre preenchidos — frontend
+  // usa direto sem recombinar.
+  effective_expected_lag_business_days: number
+  effective_tolerance_business_days: number
+  effective_give_up_business_days: number
 }
+
+/** Estado de tolerância de publicação — graduação por tempo decorrido.
+ *
+ * Aplica-se a dias cuja publicação ainda não chegou (GAP/NOT_PUBLISHED/
+ * PENDING). Outros status (OK/PARTIAL/WEEKEND/etc) ficam com tolerance_state
+ * null. UI usa cor + tooltip baseado no estado.
+ */
+export type PublicationState =
+  | "esperado"
+  | "atrasado"
+  | "suspeito"
+  | "furo_definitivo"
 
 /** Coverage — historico de datas cobertas por endpoint (Fase 1 aba Cobertura). */
 export type CoverageStatus =
@@ -1753,6 +1782,9 @@ export type CoverageDay = {
   status: CoverageStatus
   http_status: number | null
   completeness: Completeness | null
+  // Estado de tolerância (2026-05-15) — null quando não aplicável
+  // (dia OK/PARTIAL/WEEKEND/HOLIDAY/etc).
+  tolerance_state: PublicationState | null
 }
 
 export type EndpointCoverage = {
@@ -1765,6 +1797,15 @@ export type EndpointCoverage = {
   count_partial: number
   count_not_published: number
   count_gap: number
+  // Janela efetiva (override OR catalogo).
+  expected_lag_business_days: number | null
+  tolerance_business_days: number | null
+  give_up_business_days: number | null
+  // Agregados por estado de tolerância no range pedido.
+  count_esperado: number
+  count_atrasado: number
+  count_suspeito: number
+  count_furo_definitivo: number
 }
 
 export type CoverageResponse = {
@@ -1822,6 +1863,12 @@ export type EndpointConfigPayload = {
   schedule_value: string | null
   environment?: Environment
   unidade_administrativa_id?: string | null
+  /** Tolerância — null = "limpa override, herda do catálogo". Omitir o campo
+   * inteiro do payload = "preserva valor atual" (semântica `model_fields_set`
+   * no backend). */
+  expected_lag_business_days_override?: number | null
+  tolerance_business_days_override?: number | null
+  give_up_business_days_override?: number | null
 }
 
 export type EndpointSyncResult = {

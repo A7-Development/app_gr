@@ -65,6 +65,21 @@ class EndpointSpec:
         canonical_table: Name of the silver table populated by this endpoint.
             Mostly for observability (UI showing "this endpoint feeds wh_X")
             and audit traceability.
+        default_expected_lag_business_days: When reference-date data is
+            expected to be published, counted in ANBIMA business days. For a
+            D-1 market report fetched in D+1 morning, this is 1. For an
+            intraday balance fetched same-day, this is 0. Tolerance state
+            classifier (`compute_publication_state`) treats a row as
+            ESPERADO while business_days_since_reference <= this value.
+        default_tolerance_business_days: Upper bound, in business days, of
+            the "slightly late but still expected" window. Once
+            business_days_since_reference exceeds this, the row turns
+            ATRASADO -> SUSPEITO (frontend shows amber/red). Must be
+            >= default_expected_lag_business_days.
+        default_give_up_business_days: After this many business days the
+            row turns FURO_DEFINITIVO and the reconciler stops retrying
+            automatically. Operator can reopen manually from the UI. Must
+            be >= default_tolerance_business_days.
     """
 
     name: str
@@ -73,6 +88,9 @@ class EndpointSpec:
     default_schedule_kind: ScheduleKind
     default_schedule_value: str | None
     canonical_table: str
+    default_expected_lag_business_days: int = 1
+    default_tolerance_business_days: int = 3
+    default_give_up_business_days: int = 10
 
     def __post_init__(self) -> None:
         # Self-validation: catch typos at module load time, before any DB
@@ -104,6 +122,32 @@ class EndpointSpec:
                     f"EndpointSpec({self.name!r}): DAILY_AT requires "
                     f"default_schedule_value HH:MM, got {v!r}"
                 )
+
+        # Tolerance window monotonicity — out-of-order values are programming
+        # errors, not config typos. Catch at module load.
+        if self.default_expected_lag_business_days < 0:
+            raise ValueError(
+                f"EndpointSpec({self.name!r}): expected_lag must be >= 0, got "
+                f"{self.default_expected_lag_business_days}"
+            )
+        if (
+            self.default_tolerance_business_days
+            < self.default_expected_lag_business_days
+        ):
+            raise ValueError(
+                f"EndpointSpec({self.name!r}): tolerance "
+                f"({self.default_tolerance_business_days}) must be >= "
+                f"expected ({self.default_expected_lag_business_days})"
+            )
+        if (
+            self.default_give_up_business_days
+            < self.default_tolerance_business_days
+        ):
+            raise ValueError(
+                f"EndpointSpec({self.name!r}): give_up "
+                f"({self.default_give_up_business_days}) must be >= "
+                f"tolerance ({self.default_tolerance_business_days})"
+            )
 
 
 def _looks_like_hhmm(value: str) -> bool:
