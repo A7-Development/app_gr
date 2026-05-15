@@ -14,7 +14,9 @@ deploy atual (gr-api --workers 1) o lock e teorico, mas e barato.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
@@ -28,6 +30,22 @@ from app.modules.integracoes.models.backfill_job import BackfillJob
 from app.modules.integracoes.services.sync_runner import run_sync_endpoint
 
 logger = logging.getLogger("gr.integracoes.backfill")
+
+# Pause sustentada entre datas dentro do MESMO job. Necessario porque o
+# APScheduler `INTERVAL_SECONDS` so controla a frequencia de busca por novos
+# jobs, nao a velocidade interna do `_process_job_dates`. Sem esse sleep,
+# `run_sync_endpoint` e chamado em loop tao rapido quanto a latencia do
+# vendor permite (~5 req/s pra QiTech) -- e o WAF Imperva da Singulare
+# bloqueia rajadas, devolvendo 403 sistematico a partir de ~60 requests/min
+# per-IP. Validado em 2026-05-15: 2 batches de ~1030 datas resultaram em 54
+# sucessos + 975 falhas cada (mesmo padrao).
+#
+# Default 2s = 0.5 req/s sustained, bem abaixo do limite WAF. Configuravel
+# por env var pra acelerar (1s) quando precisar OU desacelerar (4s+) se o
+# WAF ainda reagir.
+_INTER_DATE_SLEEP_S: float = float(
+    os.environ.get("GR_BACKFILL_INTER_DATE_SLEEP_S", "2.0")
+)
 
 
 async def create_backfill_job(
@@ -269,3 +287,11 @@ async def _process_job_dates(job_id: UUID, summary: dict[str, Any]) -> None:
         summary["dates_processed"] += 1
         if not new_pending:
             return
+
+        # Rate limit cooperativo com WAF Imperva (Singulare/QiTech). Ver
+        # comentario no topo do modulo. Acontece APOS commit do progresso
+        # da data atual, antes de ir pra proxima -- se o operador cancelar
+        # durante esse sleep, a proxima iteracao captura via SELECT em
+        # _process_job_dates.
+        if _INTER_DATE_SLEEP_S > 0:
+            await asyncio.sleep(_INTER_DATE_SLEEP_S)
