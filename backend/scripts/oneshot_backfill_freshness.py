@@ -121,17 +121,36 @@ def _matches_only(endpoint_name: str, only: str | None) -> bool:
     return endpoint_name == only
 
 
-async def _list_dus_in_range(
+async def _list_all_dates_in_range(
     db, *, tenant_id: UUID, start: date, end: date
 ) -> list[date]:
-    """Le wh_dim_dia_util e devolve so dias uteis no range."""
+    """Le wh_dim_dia_util e devolve TODOS os dias no range (DU + fds + feriado).
+
+    Por que NAO filtrar fds/feriado (decisao 2026-05-15, Ricardo):
+
+        Manter a regra "raw e a fonte unica da verdade do que existe". O
+        scheduler diario (`daily_at`) ja chama em fds/feriado e o vendor
+        responde com 400-envelope-vazio -- isso vira raw classificada como
+        `not_published` no coverage. Pra o backfill historico ficar
+        consistente com o recente, precisa chamar em TODOS os dias tambem
+        -- senao fds antigo aparece como `weekend` (calendario) e fds
+        recente como `not_published` (raw), confundindo o operador.
+
+        Custo: ~30% chamadas extras (fds + feriado em 4.5 anos =~ 700 dias
+        a mais por endpoint). Aceitavel pra QiTech (custo zero). Em fontes
+        pagas (Serasa) reavaliar -- talvez criar flag `--skip-weekends`
+        opt-in.
+
+    Pra incluir/excluir fds/feriado, o filtro fica visivel via output
+    do script (mostrar contadores DU/FDS/feriado separadamente seria
+    melhoria futura).
+    """
     sql = text(
         """
         SELECT data
         FROM wh_dim_dia_util
         WHERE tenant_id = :tenant_id
           AND data BETWEEN :start AND :end
-          AND eh_dia_util = true
         ORDER BY data
         """
     )
@@ -404,19 +423,21 @@ async def _scan_group_historic(
 ) -> None:
     """Modo historico: usa wh_dim_dia_util como ancora (ignora before_first_sync).
 
-    Pra cada endpoint, target = DUs no range; gap = target - dias_ja_com_200.
+    Pra cada endpoint, target = TODOS os dias no range (DU + fds + feriado);
+    gap = target - dias_ja_com_200. Ver docstring de
+    `_list_all_dates_in_range` para o porque incluir fds/feriado.
     """
-    dus = await _list_dus_in_range(
+    all_dates = await _list_all_dates_in_range(
         db, tenant_id=tenant_id, start=from_date, end=to_date
     )
-    if not dus:
-        msg = f"Nenhum DU no range {from_date}..{to_date} (wh_dim_dia_util populado?)"
+    if not all_dates:
+        msg = f"Nenhum dia no range {from_date}..{to_date} (wh_dim_dia_util populado?)"
         summary["errors"].append(msg)
         print(f"  ERRO: {msg}", file=sys.stderr)
         return
 
-    dus_set = set(dus)
-    print(f"  range = {from_date} -> {to_date} ({len(dus)} DUs)")
+    target_set = set(all_dates)
+    print(f"  range = {from_date} -> {to_date} ({len(all_dates)} dias - inclui fds/feriado)")
 
     for cfg in cfgs:
         summary["endpoints_scanned"] += 1
@@ -432,17 +453,17 @@ async def _scan_group_historic(
             start=from_date,
             end=to_date,
         )
-        gap_dates = sorted(dus_set - ja_ok)
-        n_ok = len(ja_ok & dus_set)
+        gap_dates = sorted(target_set - ja_ok)
+        n_ok = len(ja_ok & target_set)
         if not gap_dates:
             print(
-                f"  - {cfg.endpoint_name:<40} DUs={len(dus):<4} "
+                f"  - {cfg.endpoint_name:<40} dias={len(all_dates):<4} "
                 f"ok={n_ok:<4} gap=0"
             )
             continue
 
         print(
-            f"  - {cfg.endpoint_name:<40} DUs={len(dus):<4} "
+            f"  - {cfg.endpoint_name:<40} dias={len(all_dates):<4} "
             f"ok={n_ok:<4} gap={len(gap_dates)}",
             end="",
         )
