@@ -132,9 +132,12 @@ export function AppSidebar({
         className,
       )}
     >
-      {/* Header: BrandCard + ModuleSwitcher */}
-      <div className="shrink-0 border-b border-gray-200 px-3 py-3 dark:border-gray-800">
-        <BrandCard className="mb-2.5" />
+      {/* Header: BrandCard + caption "Modulo ativo" + ModuleSwitcher */}
+      <div className="shrink-0 border-b border-gray-200 px-3.5 pb-4 pt-3.5 dark:border-gray-800">
+        <BrandCard className="mb-4" />
+        <p className="px-1.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.07em] text-gray-400 dark:text-gray-600">
+          Módulo ativo
+        </p>
         <ModuleSwitcher />
       </div>
 

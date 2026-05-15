@@ -18,7 +18,7 @@ import {
   type ModuleDefinition,
 } from "@/lib/modules"
 import { cx, focusInput } from "@/lib/utils"
-import { RiArrowUpDownLine, RiCheckLine } from "@remixicon/react"
+import { RiArrowDownSLine, RiCheckLine } from "@remixicon/react"
 import { usePathname, useRouter } from "next/navigation"
 import * as React from "react"
 
@@ -67,7 +67,12 @@ export function ModuleSwitcher() {
       <DropdownMenuTrigger asChild>
         <button
           className={cx(
-            "flex w-full items-center gap-2 rounded-md border border-gray-200 bg-white px-2 py-1.5 transition-colors duration-100 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 hover:dark:bg-gray-900",
+            // Trigger ghost-style (handoff Strata v3 v2): sem border/bg em
+            // estado idle; aparece em hover ou data-state=open.
+            "flex w-full items-center gap-2 rounded-md border px-1.5 py-1 transition-colors duration-150",
+            "border-transparent bg-transparent",
+            "hover:border-gray-200 hover:bg-gray-50 dark:hover:border-gray-800 dark:hover:bg-gray-900",
+            "data-[state=open]:border-gray-200 data-[state=open]:bg-white dark:data-[state=open]:border-gray-800 dark:data-[state=open]:bg-gray-950",
             focusInput,
           )}
         >
@@ -86,7 +91,7 @@ export function ModuleSwitcher() {
           <span className="flex-1 truncate text-left text-[13px] font-medium text-gray-900 dark:text-gray-50">
             {activeModule.name}
           </span>
-          <RiArrowUpDownLine
+          <RiArrowDownSLine
             className="size-3.5 shrink-0 text-gray-400"
             aria-hidden="true"
           />
