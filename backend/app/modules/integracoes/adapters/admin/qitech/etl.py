@@ -262,6 +262,51 @@ async def _bulk_upsert_canonical(
     return total
 
 
+# ---- 4xx-as-row helper -------------------------------------------------
+
+
+async def _persist_error_raw(
+    *,
+    tenant_id: UUID,
+    tipo_de_mercado: str,
+    data_posicao: date,
+    unidade_administrativa_id: UUID | None,
+    http_status: int,
+    error_detail: str,
+    step: dict[str, Any],
+) -> None:
+    """Grava raw sentinel quando o vendor devolveu HTTP error real.
+
+    Payload sentinel: `{"_error": <detail truncado>, "_status": <int>}`.
+    sha256 derivado de (status, detail[:200]) — estavel quando o vendor
+    repete o mesmo erro em multiplos dias (ex.: 401 com credencial vencida
+    durante uma janela). Idempotente sob re-run via UQ
+    `uq_wh_qitech_raw_relatorio`.
+
+    Falha gravando raw nao propaga: registra em `step["errors"]` e segue.
+    O caller ja vai retornar com erro do sync; este helper e best-effort
+    pra evitar gap silencioso no coverage.
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            await _upsert_raw(
+                db,
+                tenant_id=tenant_id,
+                tipo_de_mercado=tipo_de_mercado,
+                data_posicao=data_posicao,
+                payload={
+                    "_error": error_detail[:500],
+                    "_status": http_status,
+                },
+                http_status=http_status,
+                unidade_administrativa_id=unidade_administrativa_id,
+            )
+            await db.commit()
+        step["raw_persisted"] = True
+    except Exception as e:
+        step["errors"].append(f"raw_error_sentinel: {type(e).__name__}: {e}")
+
+
 # ---- Generic endpoint sync ---------------------------------------------
 
 
@@ -318,6 +363,27 @@ async def _sync_endpoint(
                 posicao=data_posicao,
             )
     except QiTechHttpError as e:
+        # 4xx-as-row generalizado (Sub-fase 2B, 2026-05-15): se o vendor
+        # devolveu status HTTP real (401/403/404/429/5xx, ou 400 sem shape
+        # canonico), grava raw como sentinel pra coverage marcar
+        # `not_published` em vez de `gap`. Sinaliza ao polling adaptive
+        # "ja tentei este dia" e evita re-enfileiramento eterno do
+        # reconciler/watermark scanner.
+        #
+        # Falhas de rede (status_code IS None — timeout, DNS, connect refused)
+        # NAO viram row: sao do nosso lado, devem ser retentadas em ticks
+        # subsequentes. Gravar como not_published mascararia o problema.
+        if e.status_code is not None:
+            step["raw_http_status"] = e.status_code
+            await _persist_error_raw(
+                tenant_id=tenant_id,
+                tipo_de_mercado=tipo_de_mercado,
+                data_posicao=data_posicao,
+                unidade_administrativa_id=unidade_administrativa_id,
+                http_status=e.status_code,
+                error_detail=str(e),
+                step=step,
+            )
         step["errors"].append(f"fetch: HTTP {e.status_code}: {e}")
         step["elapsed_seconds"] = round(time.monotonic() - t0, 2)
         return step

@@ -5,10 +5,16 @@ from __future__ import annotations
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.scheduler import sync_dispatcher
-from app.scheduler.jobs import backfill_worker, qitech_jobs_poll, reconciler
+from app.scheduler.jobs import (
+    backfill_worker,
+    qitech_jobs_poll,
+    reconciler,
+    watermark_scanner,
+)
 
 logger = logging.getLogger("gr.scheduler")
 
@@ -67,15 +73,34 @@ def start_scheduler() -> AsyncIOScheduler:
         coalesce=True,
         misfire_grace_time=300,  # 5 min — reconciler nao e urgente
     )
+    # Watermark scanner — varre TSEC 1x/dia as 06:00 SP, enfileira backfill_job
+    # pra gaps detectados nos ultimos 30 dias (Sub-fase 2B). 06:00 da margem
+    # pro backfill_worker drenar antes dos daily_at dos endpoints (07:00).
+    _scheduler.add_job(
+        watermark_scanner.run,
+        trigger=CronTrigger(
+            hour=watermark_scanner.DAILY_HOUR,
+            minute=watermark_scanner.DAILY_MINUTE,
+            timezone="America/Sao_Paulo",
+        ),
+        id="watermark_scanner",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,  # 1h — diario, se perder o slot ainda vale
+    )
     _scheduler.start()
     logger.info(
         "scheduler started: sync_dispatcher every %s min, "
         "qitech_jobs_poll every %s min, backfill_worker every %s s, "
-        "reconciler every %s min",
+        "reconciler every %s min, "
+        "watermark_scanner daily at %02d:%02d SP",
         sync_dispatcher.INTERVAL_MINUTES,
         qitech_jobs_poll.INTERVAL_MINUTES,
         backfill_worker.INTERVAL_SECONDS,
         reconciler_minutes,
+        watermark_scanner.DAILY_HOUR,
+        watermark_scanner.DAILY_MINUTE,
     )
     return _scheduler
 
