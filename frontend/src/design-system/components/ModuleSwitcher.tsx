@@ -18,7 +18,7 @@ import {
   type ModuleDefinition,
 } from "@/lib/modules"
 import { cx, focusInput } from "@/lib/utils"
-import { RiArrowDownSLine, RiCheckLine } from "@remixicon/react"
+import { RiArrowUpDownLine, RiCheckLine } from "@remixicon/react"
 import { usePathname, useRouter } from "next/navigation"
 import * as React from "react"
 
@@ -67,28 +67,29 @@ export function ModuleSwitcher() {
       <DropdownMenuTrigger asChild>
         <button
           className={cx(
-            "flex w-full items-center gap-x-2.5 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm shadow-sm transition-all hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 hover:dark:bg-gray-900",
+            "flex w-full items-center gap-2 rounded-md border border-gray-200 bg-white px-2 py-1.5 transition-colors duration-100 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 hover:dark:bg-gray-900",
             focusInput,
           )}
         >
-          <ModuleAvatar module={activeModule} size="sm" />
-          <div className="flex w-full items-center justify-between gap-x-4 truncate">
-            <div className="truncate text-left">
-              <p className="truncate whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-50">
-                {activeModule.name}
-              </p>
-              <p className="whitespace-nowrap text-xs text-gray-700 dark:text-gray-300">
-                {PERMISSION_LABEL[activeModule.permission]}
-              </p>
-            </div>
-            <RiArrowDownSLine
-              className={cx(
-                "size-4 shrink-0 text-gray-400 transition-transform duration-150",
-                open && "rotate-180",
-              )}
-              aria-hidden="true"
-            />
-          </div>
+          {/* Avatar inline 22px (handoff Strata v3) — alinhado a uma unica
+              linha de label. ModuleAvatar canonica continua em size-7/size-5
+              para outros consumidores; aqui o trigger usa dimensao propria. */}
+          <span
+            className={cx(
+              "flex size-[22px] shrink-0 items-center justify-center rounded-[5px] text-[10px] font-bold text-white",
+              MODULE_AVATAR_COLORS[activeModule.color],
+            )}
+            aria-hidden="true"
+          >
+            {activeModule.initials}
+          </span>
+          <span className="flex-1 truncate text-left text-[13px] font-medium text-gray-900 dark:text-gray-50">
+            {activeModule.name}
+          </span>
+          <RiArrowUpDownLine
+            className="size-3.5 shrink-0 text-gray-400"
+            aria-hidden="true"
+          />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-64">
