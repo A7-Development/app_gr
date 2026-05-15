@@ -49,8 +49,11 @@ export {
   type ShellEmptyState,
 } from "./DataTableShell"
 export {
-  AppSidebar, useSidebarCollapsed,
+  AppSidebar, useSidebarCollapsed, setSidebarCollapsed, toggleSidebarCollapsed,
+  SidebarTrigger, BrandCard, UserProfileDropdown,
   type AppSidebarProps, type BadgeCounts,
+  type SidebarTriggerProps, type BrandCardProps,
+  type UserProfileDropdownProps, type UserCommand,
 } from "./Sidebar"
 export {
   DrillDownSheet,

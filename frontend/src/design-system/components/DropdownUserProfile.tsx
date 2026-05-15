@@ -1,3 +1,7 @@
+/**
+ * @deprecated Use `UserProfileDropdown` from `@/design-system/components/Sidebar` instead.
+ * Mantido apenas pelo `UserProfile.tsx` legacy. A remover quando esse for ajustado.
+ */
 "use client"
 
 import {
