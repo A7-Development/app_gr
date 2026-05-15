@@ -756,14 +756,15 @@ async def source_coverage(
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
     source_type: Annotated[SourceType, Path()],
-    range_days: Annotated[int, Query(ge=0, le=730)] = 90,
+    range_days: Annotated[int, Query(ge=0, le=2000)] = 180,
     unidade_administrativa_id: Annotated[UUID | None, Query(alias="ua")] = None,
     _: None = _Guard,
 ) -> CoverageResponseOut:
     """Cobertura historica por endpoint nos ultimos `range_days` dias.
 
     `range_days=0` significa "todo o periodo desde o primeiro dado
-    coletado" — cap absoluto em 730 dias pra nao estourar o DOM.
+    coletado" — cap absoluto em `MAX_RANGE_DAYS` (2000d, ~5.5 anos)
+    pra nao estourar o DOM.
 
     Cruza raw tables com calendario ANBIMA (`wh_dim_dia_util`) pra
     distinguir furo real de feriado. Endpoints ON_DEMAND/INTERVAL tambem

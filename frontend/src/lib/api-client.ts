@@ -2014,7 +2014,7 @@ export const integracoes = {
     options: { rangeDays?: number; uaId?: string | null } = {},
   ) => {
     const qs = new URLSearchParams({
-      range_days: String(options.rangeDays ?? 90),
+      range_days: String(options.rangeDays ?? 180),
     })
     if (options.uaId) qs.set("ua", options.uaId)
     return apiClient.get<CoverageResponse>(

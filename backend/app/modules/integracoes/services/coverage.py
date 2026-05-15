@@ -283,9 +283,15 @@ def _endpoint_supports_coverage(
     return False
 
 
-# Cap absoluto: mesmo "todo o periodo" nao mostra mais que isso, pra
-# evitar DOM gigante no frontend (730 dias x 12 endpoints = ~8.7k celulas).
-MAX_RANGE_DAYS = 730
+# Cap absoluto: mesmo "todo o periodo" nao mostra mais que isso. Trade-off
+# DOM-vs-historia: 2000 dias x 17 endpoints = ~34k celulas. Funciona em
+# desktop razoavel; pode lagar em laptop fraco. Sem virtualization no
+# heatmap (segue como CSS grid puro). Followup: react-virtual quando der
+# incomodo OU agrupar por semana em ranges > 365d.
+#
+# Subido de 730 -> 2000 em 2026-05-15 pra exibir backfill historico
+# (desde 2021-11-10 = ~1650 dias).
+MAX_RANGE_DAYS = 2000
 
 
 async def _resolve_full_range_start(

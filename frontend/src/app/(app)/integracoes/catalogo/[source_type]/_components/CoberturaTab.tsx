@@ -51,7 +51,7 @@ export function CoberturaTab({
   uaId: string | null
   environment?: Environment
 }) {
-  const [rangeDays, setRangeDays] = React.useState<number>(90)
+  const [rangeDays, setRangeDays] = React.useState<number>(180)
 
   const coverageQ = useSourceCoverage(sourceType, rangeDays, uaId)
   const activeJobsQ = useActiveBackfills(sourceType)
