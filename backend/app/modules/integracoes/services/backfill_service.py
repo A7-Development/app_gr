@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -45,6 +45,18 @@ logger = logging.getLogger("gr.integracoes.backfill")
 # WAF ainda reagir.
 _INTER_DATE_SLEEP_S: float = float(
     os.environ.get("GR_BACKFILL_INTER_DATE_SLEEP_S", "2.0")
+)
+
+# Janela apos a qual um job em status='running' sem update e considerado
+# orfao (processo morreu sem terminar -- ex.: OOM kill, restart manual).
+# O worker reclama esses jobs no proximo tick: UPDATE status='running' ->
+# 'pending', proximo tick pega normalmente via SELECT FOR UPDATE SKIP LOCKED.
+#
+# 5 min = ~60 ticks do worker (5s cada) sem progresso = sinal claro. Em
+# uso normal, o `updated_at` e refrescado a cada data processada (a cada
+# ~3s), entao 5 min de inatividade nao acontece em job saudavel.
+_ORPHAN_THRESHOLD_MINUTES: int = int(
+    os.environ.get("GR_BACKFILL_ORPHAN_THRESHOLD_MINUTES", "5")
 )
 
 
@@ -153,8 +165,39 @@ async def process_next_pending_job() -> dict[str, Any]:
         "dates_succeeded": 0,
         "dates_failed": 0,
         "elapsed_seconds": 0.0,
+        "orphans_reclaimed": 0,
     }
     started_at = datetime.now(UTC)
+
+    # 0. Reclama orfaos (jobs em 'running' sem update ha > threshold).
+    # Processo morreu (OOM kill, restart manual) deixando o job sem worker
+    # vivo. SELECT FOR UPDATE SKIP LOCKED garante que reclaim e safe sob
+    # concorrencia. Sem isso, qualquer crash exige intervencao manual via
+    # UPDATE direto no banco.
+    async with AsyncSessionLocal() as db:
+        orphan_cutoff = datetime.now(UTC) - timedelta(
+            minutes=_ORPHAN_THRESHOLD_MINUTES
+        )
+        result = await db.execute(
+            update(BackfillJob)
+            .where(
+                BackfillJob.status == "running",
+                BackfillJob.updated_at < orphan_cutoff,
+            )
+            .values(
+                status="pending",
+                started_at=None,
+                updated_at=datetime.now(UTC),
+            )
+        )
+        await db.commit()
+        if result.rowcount:
+            summary["orphans_reclaimed"] = result.rowcount
+            logger.warning(
+                "backfill: reclaimed %d orfaos (running sem update > %dmin)",
+                result.rowcount,
+                _ORPHAN_THRESHOLD_MINUTES,
+            )
 
     # 1. Pega 1 job pending com lock atomico
     async with AsyncSessionLocal() as db:
