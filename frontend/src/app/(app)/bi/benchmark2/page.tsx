@@ -192,8 +192,22 @@ export default function Benchmark2Page() {
     const totalFundos = data.length
     const plTotal = data.reduce((s, r) => s + (r.pl_ult_mes ?? 0), 0)
     const cotistasTotal = data.reduce((s, r) => s + (r.cotistas ?? 0), 0)
-    const ticketMedio = totalFundos > 0 ? plTotal / totalFundos : 0
-    return { totalFundos, plTotal, cotistasTotal, ticketMedio }
+    const plMedio = totalFundos > 0 ? plTotal / totalFundos : 0
+    // Mediana dos PLs (ignora valores nulos/zero — fundos sem PL reportado
+    // distorcem a mediana central).
+    const plsValid = data
+      .map((r) => r.pl_ult_mes)
+      .filter((v): v is number => v != null && v > 0)
+      .sort((a, b) => a - b)
+    const plMediano =
+      plsValid.length === 0
+        ? 0
+        : plsValid.length % 2 === 0
+          ? (plsValid[plsValid.length / 2 - 1] +
+              plsValid[plsValid.length / 2]) /
+            2
+          : plsValid[Math.floor(plsValid.length / 2)]
+    return { totalFundos, plTotal, cotistasTotal, plMedio, plMediano }
   }, [data])
 
   // Filtros aplicados client-side (a query ja vem sem paginacao).
@@ -476,7 +490,8 @@ export default function Benchmark2Page() {
             totalFundos={kpis.totalFundos}
             plTotal={kpis.plTotal}
             cotistasTotal={kpis.cotistasTotal}
-            ticketMedio={kpis.ticketMedio}
+            plMedio={kpis.plMedio}
+            plMediano={kpis.plMediano}
             loading={fundosQuery.isPending}
           />
 
@@ -564,14 +579,16 @@ function MarketStatusHeadline({
   totalFundos,
   plTotal,
   cotistasTotal,
-  ticketMedio,
+  plMedio,
+  plMediano,
   loading = false,
 }: {
   competencia: string
   totalFundos: number
   plTotal: number
   cotistasTotal: number
-  ticketMedio: number
+  plMedio: number
+  plMediano: number
   loading?: boolean
 }) {
   const compLabel = competencia ? fmtCompetencia(competencia) : ""
@@ -626,16 +643,30 @@ function MarketStatusHeadline({
           )}
         </div>
 
-        {/* Coluna 4: Ticket medio (20px) */}
+        {/* Coluna 4: PL medio (20px) */}
         <div className="ml-1 border-l border-gray-200 pl-4 dark:border-gray-800">
           <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">
-            Ticket medio
+            PL medio
           </div>
           {loading ? (
             <div className="mt-1 h-[20px] w-24 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
           ) : (
             <div className="mt-0.5 text-[20px] font-semibold leading-tight tracking-[-0.02em] tabular-nums text-gray-900 dark:text-gray-50">
-              {fmtBRLCompact.format(ticketMedio)}
+              {fmtBRLCompact.format(plMedio)}
+            </div>
+          )}
+        </div>
+
+        {/* Coluna 5: PL mediano (20px) */}
+        <div className="ml-1 border-l border-gray-200 pl-4 dark:border-gray-800">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">
+            PL mediano
+          </div>
+          {loading ? (
+            <div className="mt-1 h-[20px] w-24 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+          ) : (
+            <div className="mt-0.5 text-[20px] font-semibold leading-tight tracking-[-0.02em] tabular-nums text-gray-900 dark:text-gray-50">
+              {fmtBRLCompact.format(plMediano)}
             </div>
           )}
         </div>
