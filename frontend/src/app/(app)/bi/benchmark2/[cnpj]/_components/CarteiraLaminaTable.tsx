@@ -11,40 +11,21 @@ import { SectionCard } from "./SectionCard"
 // CarteiraLaminaTable — reproduz a tabela "Posicao da Carteira" da Lamina
 // Austin (R$ mil OU % do PL conforme `format`).
 //
-// Estrutura (labels Austin, 9 linhas):
-//   DIREITOS CREDITORIOS   (header)
-//     Direitos Creditorios    (a vencer  = tab_v_a_vl_dircred_prazo)
-//     Creditos Vencidos       (inad      = tab_v_b_vl_dircred_inad)
-//     Total Dir. Creditorios  (subtotal a+b)
-//   ---
-//     Titulos Publicos        (tab_i2d_vl_titpub_fed)
-//     Fundos Renda Fixa       (cotas_fidc + cotas_fidc_np + outros_rf)
-//     Saldo Tesouraria        (tab_i1_vl_disp)
-//   ---
-//   Total Geral da Carteira   (total = Total DC + tit_pub + fundos_rf + tesouraria)
-//   PDD                       (emphasis, valor negativo -> vermelho automatico)
-//   Imoveis                   (= I.4 outro_ativo — aproximacao CVM)
+// Decomposicao CVM completa em 4 linhas dentro de "DIREITOS CREDITORIOS":
+//   - A vencer (com risco)    = tab_i2a1
+//   - Vencidos (com risco)    = tab_i2a2 + i2a3 + i2a5
+//   - A vencer (sem risco)    = tab_i2b1
+//   - Vencidos (sem risco)    = tab_i2b2 + i2b3 + i2b5
+//   - Total Dir. Creditorios  = soma das 4
 //
-// Quando o fundo sub-reporta tab_v (caso Puma), uma nota inline alerta o
-// usuario que os DC reportados estao abaixo do total do fundo.
+// Cobre fundos que classificam a maior parte como "sem risco" (REALINVEST,
+// Puma). A separacao "com/sem risco" reflete a estrutura contabil CVM: DC
+// com risco = cedente mantem coobrigacao; DC sem risco = cessao sem
+// coobrigacao.
 
 type Props = {
   ficha: FichaFundo
   format: "brl" | "pct"
-}
-
-// Detecta sub-reporting: soma(a + b) << soma(dc_risco + dc_sem_risco).
-function isSubReported(serie: FundoCarteiraPonto[]): boolean {
-  if (serie.length === 0) return false
-  const sumAB = serie.reduce(
-    (s, p) => s + (p.dc_a_vencer ?? 0) + (p.dc_inadimplente ?? 0),
-    0,
-  )
-  const sumRisco = serie.reduce(
-    (s, p) => s + (p.dc_risco ?? 0) + (p.dc_sem_risco ?? 0),
-    0,
-  )
-  return sumRisco > 0 && sumAB / sumRisco < 0.5
 }
 
 function valuesByComp(
@@ -91,26 +72,57 @@ export function CarteiraLaminaTable({ ficha, format }: Props) {
   const periodos = serie.map((p) => p.competencia)
   const formatRow = format === "brl" ? "brlFull" : "pct"
   const get = makeGetter(format, plByComp)
-  const subReported = isSubReported(serie)
+
+  // Helper pra somar 4 sub-categorias do DC com tolerancia a null.
+  const totalDc = (p: FundoCarteiraPonto): number => {
+    return (
+      (p.dc_a_vencer_com_risco ?? 0) +
+      (p.dc_vencido_com_risco ?? 0) +
+      (p.dc_a_vencer_sem_risco ?? 0) +
+      (p.dc_vencido_sem_risco ?? 0)
+    )
+  }
 
   const rows: CompactSeriesRow[] = [
     { label: "DIREITOS CREDITORIOS", emphasis: "header", values: {} },
     {
-      label: "Direitos Creditorios",
+      label: "A vencer (com risco)",
       format: formatRow,
       indent: 1,
       values: valuesByComp(serie, (p) =>
-        p.dc_a_vencer == null ? null : get(p.dc_a_vencer, p.competencia),
+        p.dc_a_vencer_com_risco == null
+          ? null
+          : get(p.dc_a_vencer_com_risco, p.competencia),
       ),
     },
     {
-      label: "Creditos Vencidos",
+      label: "Vencidos (com risco)",
       format: formatRow,
       indent: 1,
       values: valuesByComp(serie, (p) =>
-        p.dc_inadimplente == null
+        p.dc_vencido_com_risco == null
           ? null
-          : get(p.dc_inadimplente, p.competencia),
+          : get(p.dc_vencido_com_risco, p.competencia),
+      ),
+    },
+    {
+      label: "A vencer (sem risco)",
+      format: formatRow,
+      indent: 1,
+      values: valuesByComp(serie, (p) =>
+        p.dc_a_vencer_sem_risco == null
+          ? null
+          : get(p.dc_a_vencer_sem_risco, p.competencia),
+      ),
+    },
+    {
+      label: "Vencidos (sem risco)",
+      format: formatRow,
+      indent: 1,
+      values: valuesByComp(serie, (p) =>
+        p.dc_vencido_sem_risco == null
+          ? null
+          : get(p.dc_vencido_sem_risco, p.competencia),
       ),
     },
     {
@@ -118,7 +130,7 @@ export function CarteiraLaminaTable({ ficha, format }: Props) {
       format: formatRow,
       emphasis: "subtotal",
       values: valuesByComp(serie, (p) => {
-        const v = (p.dc_a_vencer ?? 0) + (p.dc_inadimplente ?? 0)
+        const v = totalDc(p)
         if (v <= 0) return null
         return get(v, p.competencia)
       }),
@@ -147,7 +159,7 @@ export function CarteiraLaminaTable({ ficha, format }: Props) {
       format: formatRow,
       emphasis: "total",
       values: valuesByComp(serie, (p) => {
-        const dc = (p.dc_a_vencer ?? 0) + (p.dc_inadimplente ?? 0)
+        const dc = totalDc(p)
         const rf = p.cotas_fidc + p.cotas_fidc_np + p.outros_rf
         const total = dc + p.tit_pub + rf + p.disp
         if (total <= 0) return null
@@ -158,7 +170,7 @@ export function CarteiraLaminaTable({ ficha, format }: Props) {
       label: "PDD",
       format: formatRow,
       emphasis: "emphasis",
-      // PDD negativo: vermelho automatico pelo CompactSeriesTable
+      // PDD negativo: vermelho automatico pelo CompactSeriesTable.
       values: valuesByComp(serie, (p) =>
         get(-Math.abs(p.pdd_aprox), p.competencia),
       ),
@@ -177,7 +189,7 @@ export function CarteiraLaminaTable({ ficha, format }: Props) {
           ? "Posicao da Carteira (R$ mil)"
           : "Posicao da Carteira (% do PL)"
       }
-      info="Fonte: CVM Informe Mensal FIDC (tab_i, tab_v). Direitos Creditorios = tab_v_a (a vencer). Creditos Vencidos = tab_v_b (inadimplentes). Imoveis = tab_i4 (Outros Ativos — aproximacao CVM)."
+      info="Fonte: CVM Informe Mensal FIDC. DC decomposto em 4 linhas: com risco (i2a) vs sem risco (i2b), cada qual em a-vencer e vencidos. Imoveis = tab_i4 (Outros Ativos)."
     >
       <CompactSeriesTable
         label="Linha"
@@ -186,13 +198,6 @@ export function CarteiraLaminaTable({ ficha, format }: Props) {
         bordered={false}
         widthMode="adaptive"
       />
-      {subReported ? (
-        <p className="mt-1 text-[11px] italic text-amber-700 dark:text-amber-400">
-          Os Direitos Creditorios reportados (tab_v) estao abaixo do total
-          do fundo. O administrador classifica a maior parte como
-          &ldquo;DC sem risco&rdquo; e nao detalha em a-vencer/inadimplente.
-        </p>
-      ) : null}
     </SectionCard>
   )
 }

@@ -1598,7 +1598,20 @@ async def get_fundo(
                     COALESCE(i.tab_i2a11_vl_reducao_recup, 0) AS pdd_aprox,
                     COALESCE(i.tab_i_vl_ativo,             0) AS ativo_total,
                     v.tab_v_a_vl_dircred_prazo               AS dc_a_vencer,
-                    v.tab_v_b_vl_dircred_inad                AS dc_inadimplente
+                    v.tab_v_b_vl_dircred_inad                AS dc_inadimplente,
+                    -- Decomposicao com risco / sem risco (necessaria pra fundos
+                    -- que classificam a maior parte como "sem risco", caso
+                    -- REALINVEST/Puma — onde tab_v sozinha sub-reporta).
+                    COALESCE(i.tab_i2a1_vl_cred_venc_ad,   0) AS dc_a_vencer_com_risco,
+                    COALESCE(i.tab_i2a2_vl_cred_venc_inad, 0)
+                    + COALESCE(i.tab_i2a3_vl_cred_inad,    0)
+                    + COALESCE(i.tab_i2a5_vl_cred_vencido_pendente, 0)
+                                                              AS dc_vencido_com_risco,
+                    COALESCE(i.tab_i2b1_vl_cred_venc_ad,   0) AS dc_a_vencer_sem_risco,
+                    COALESCE(i.tab_i2b2_vl_cred_venc_inad, 0)
+                    + COALESCE(i.tab_i2b3_vl_cred_inad,    0)
+                    + COALESCE(i.tab_i2b5_vl_cred_vencido_pendente, 0)
+                                                              AS dc_vencido_sem_risco
                 FROM cvm_remote.tab_i i
                 LEFT JOIN cvm_remote.tab_v v
                        ON v.cnpj_fundo_classe = i.cnpj_fundo_classe
@@ -1634,6 +1647,10 @@ async def get_fundo(
             dc_inadimplente=(
                 _as_float(r.dc_inadimplente) if r.dc_inadimplente is not None else None
             ),
+            dc_a_vencer_com_risco=_as_float(r.dc_a_vencer_com_risco),
+            dc_vencido_com_risco=_as_float(r.dc_vencido_com_risco),
+            dc_a_vencer_sem_risco=_as_float(r.dc_a_vencer_sem_risco),
+            dc_vencido_sem_risco=_as_float(r.dc_vencido_sem_risco),
         )
         for r in cart_rows
     ]

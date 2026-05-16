@@ -101,6 +101,14 @@ class CarteiraPonto(BaseModel):
     # Opcionais com default None para retrocompat com consumers do schema.
     dc_a_vencer: float | None = None       # tab_v_a_vl_dircred_prazo
     dc_inadimplente: float | None = None   # tab_v_b_vl_dircred_inad
+    # Decomposicao COMPLETA por categoria CVM (com risco i2a vs sem risco i2b).
+    # CVM detalha a-vencer/vencidos em AMBAS categorias. Layout Lamina precisa
+    # das 4 linhas pra refletir o total real do fundo (Puma/REALINVEST e cia
+    # classificam a maior parte como "sem risco").
+    dc_a_vencer_com_risco: float | None = None   # tab_i2a1_vl_cred_venc_ad
+    dc_vencido_com_risco: float | None = None    # tab_i2a2 + i2a3 + i2a5
+    dc_a_vencer_sem_risco: float | None = None   # tab_i2b1_vl_cred_venc_ad
+    dc_vencido_sem_risco: float | None = None    # tab_i2b2 + i2b3 + i2b5
 
 
 class CoberturaSubordinacaoPonto(BaseModel):

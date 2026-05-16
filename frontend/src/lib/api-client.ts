@@ -1349,6 +1349,13 @@ export type FundoCarteiraPonto = {
   // "Direitos Creditorios" (a vencer) de "Creditos Vencidos" (inad).
   dc_a_vencer: number | null
   dc_inadimplente: number | null
+  // Decomposicao COMPLETA (com risco i2a vs sem risco i2b). CVM detalha
+  // a-vencer/vencidos em AMBAS categorias. Cobre fundos que classificam
+  // a maior parte como "sem risco" (REALINVEST, Puma).
+  dc_a_vencer_com_risco: number | null
+  dc_vencido_com_risco: number | null
+  dc_a_vencer_sem_risco: number | null
+  dc_vencido_sem_risco: number | null
 }
 
 // Cobertura PL Subordinada / Sigma(maiores cedentes) — em vezes.
