@@ -15,43 +15,97 @@ import type {
   PublicationState,
 } from "@/lib/api-client"
 
-const STATUS_STYLES: Record<CoverageStatus, { bg: string; label: string }> = {
-  ok: { bg: "bg-emerald-500", label: "Coletado" },
-  // Escala de severidade da menor para a maior (Opcao A, 2026-05-13):
-  // ok (emerald) -> partial (amber-300) -> not_published (orange-400) -> gap (red).
-  partial: { bg: "bg-amber-300", label: "Publicação parcial" },
-  not_published: { bg: "bg-orange-400", label: "Sem publicação (4xx)" },
-  gap: { bg: "bg-red-500", label: "FURO — dia útil sem dado" },
-  weekend: { bg: "bg-gray-200 dark:bg-gray-800", label: "Fim de semana" },
-  holiday: { bg: "bg-gray-200 dark:bg-gray-800", label: "Feriado" },
-  pending: { bg: "bg-blue-300", label: "Pendente (data futura/hoje)" },
-  before_first_sync: {
-    bg: "bg-gray-100 dark:bg-gray-900",
-    label: "Antes do primeiro sync",
+/**
+ * Modelo de saude do dado — 5 estados voltados ao usuario.
+ *
+ * Decisao 2026-05-16 (Ricardo): UI projeta o cross-product de
+ * (CoverageStatus × PublicationState × completeness) em 5 estados
+ * canonicos. Backend mantem granularidade pra audit; aqui mostramos
+ * "esta saude do dado e do sistema, agora".
+ *
+ *   ready       — dado pronto, sem expectativa de mudar
+ *   may_change  — temos algo mas pode evoluir (partial, not_published,
+ *                 ou complete recente sob refresh)
+ *   in_progress — sem dado mas sistema esta cuidando (gap em retry)
+ *   blocked     — sistema desistiu; precisa intervencao do operador
+ *   na          — nao se aplica (fds, feriado, antes do 1o sync)
+ */
+type DataHealth = "ready" | "may_change" | "in_progress" | "blocked" | "na"
+
+const HEALTH_STYLES: Record<
+  DataHealth,
+  { bg: string; label: string; description: string }
+> = {
+  ready: {
+    bg: "bg-emerald-500",
+    label: "Pronto",
+    description: "Dado completo, sem expectativa de mudança.",
   },
-  unsupported: {
-    bg: "bg-gray-100 dark:bg-gray-900",
-    label: "Não aplicável",
+  may_change: {
+    bg: "bg-amber-400",
+    label: "Pode mudar",
+    description:
+      "Temos algum dado mas pode evoluir — sistema continua re-checando.",
+  },
+  in_progress: {
+    bg: "bg-blue-400",
+    label: "Sistema cuidando",
+    description:
+      "Sem dado ainda; sistema está tentando dentro da janela esperada.",
+  },
+  blocked: {
+    bg: "bg-red-500",
+    label: "Bloqueado",
+    description:
+      "Sistema parou de tentar — operador decide reabrir ou aceitar.",
+  },
+  na: {
+    bg: "bg-gray-200 dark:bg-gray-800",
+    label: "N/A",
+    description: "Fim de semana, feriado ou antes do primeiro sync.",
   },
 }
 
-// Override por `tolerance_state` (2026-05-15) — substitui cor do STATUS_STYLES
-// quando o dia esta em GAP/NOT_PUBLISHED/PENDING. Distingue:
-//   ESPERADO        — slate (sem alarde, ainda dentro do SLA)
-//   ATRASADO        — amber (passou do SLA, mas razoavel)
-//   SUSPEITO        — red (provavel problema)
-//   FURO_DEFINITIVO — gray escuro com hatch (sistema desistiu)
-const TOLERANCE_STYLES: Record<
-  PublicationState,
-  { bg: string; label: string }
-> = {
-  esperado: { bg: "bg-slate-300 dark:bg-slate-700", label: "Esperado" },
-  atrasado: { bg: "bg-amber-400", label: "Atrasado" },
-  suspeito: { bg: "bg-red-500", label: "Suspeito" },
-  furo_definitivo: {
-    bg: "bg-gray-400 dark:bg-gray-600",
-    label: "Furo definitivo",
-  },
+/**
+ * Projeta o tuplo (status, tolerance_state, completeness) -> DataHealth.
+ *
+ * Regras:
+ *   ok+complete (ou completeness=null por legacy)  -> ready
+ *   ok+partial/empty                                -> may_change
+ *   partial (qualquer tolerance)                    -> may_change
+ *   not_published                                   -> blocked se FURO_DEFINITIVO
+ *                                                      may_change caso contrario
+ *   gap                                             -> blocked se FURO_DEFINITIVO
+ *                                                      in_progress caso contrario
+ *   pending                                         -> in_progress
+ *   weekend/holiday/before_first_sync/unsupported   -> na
+ */
+function deriveHealth(
+  status: CoverageStatus,
+  toleranceState: PublicationState | null,
+  completeness: Completeness | null,
+): DataHealth {
+  if (toleranceState === "furo_definitivo") return "blocked"
+  switch (status) {
+    case "ok":
+      // Legacy rows tinham completeness=null. Default benevolente = ready.
+      return completeness && completeness !== "complete" ? "may_change" : "ready"
+    case "partial":
+      return "may_change"
+    case "not_published":
+      return "may_change"
+    case "gap":
+      return "in_progress"
+    case "pending":
+      return "in_progress"
+    case "weekend":
+    case "holiday":
+    case "before_first_sync":
+    case "unsupported":
+      return "na"
+    default:
+      return "na"
+  }
 }
 
 const LABEL_COL = "minmax(220px, 280px)"
@@ -62,7 +116,7 @@ const LABEL_COL = "minmax(220px, 280px)"
  * Cada linha tem: label + (botao Backfill se houver furos) + heatmap.
  * Tooltips via `title` HTML nativo.
  *
- * Suporta qualquer range (30..730 dias). Acima de 365 dias ativa scroll
+ * Suporta qualquer range (30..2000 dias). Acima de 365 dias ativa scroll
  * horizontal.
  *
  * Backfill: quando um endpoint tem um `activeJobByEndpoint[name]`, as
@@ -155,14 +209,10 @@ export function CoverageHeatmap({
           <span className="font-medium">
             {format(parseISO(endDate), "dd/MMM/yyyy", { locale: ptBR })}
           </span>
-          . Dias sem dado são classificados pela tolerância configurada do
-          endpoint:{" "}
-          <strong>esperado</strong> (dentro do prazo),{" "}
-          <strong>atrasado</strong> (passou do prazo, sistema ainda tenta),{" "}
-          <strong>suspeito</strong> (provavel problema na fonte) e{" "}
-          <strong>furo definitivo</strong> (sistema desistiu — clique em
-          Reabrir pra forçar). Janela de cada endpoint configurável na aba
-          Endpoints.
+          . As cores resumem a <strong>saúde do dado em cada dia</strong>:
+          pronto, pode mudar, sistema cuidando, bloqueado, ou não-aplicável.
+          Detalhes técnicos (HTTP, status, janela de tolerância) aparecem no
+          tooltip de cada célula. Janela configurável na aba Endpoints.
         </span>
       </p>
     </div>
@@ -180,8 +230,20 @@ function EndpointRow({
   onBackfill?: (endpointName: string, dates: string[]) => void
   activeJob?: BackfillJob
 }) {
-  const gapDates = React.useMemo(
-    () => ep.days.filter((d) => d.status === "gap").map((d) => d.data),
+  // Datas em estados retentaveis pelo reconciler (Fix A, 2026-05-16):
+  // gap + partial + not_published que ainda nao viraram FURO_DEFINITIVO.
+  // O botao "Forcar" antecipa a proxima tentativa pra TODAS elas.
+  const retryableDates = React.useMemo(
+    () =>
+      ep.days
+        .filter(
+          (d) =>
+            (d.status === "gap" ||
+              d.status === "partial" ||
+              d.status === "not_published") &&
+            d.tolerance_state !== "furo_definitivo",
+        )
+        .map((d) => d.data),
     [ep.days],
   )
 
@@ -199,7 +261,6 @@ function EndpointRow({
     [activeJob],
   )
 
-  const hasGaps = gapDates.length > 0
   const isJobActive =
     activeJob?.status === "pending" || activeJob?.status === "running"
 
@@ -210,9 +271,9 @@ function EndpointRow({
     ep.tolerance_business_days !== null &&
     ep.give_up_business_days !== null
 
-  // Botao de backfill conta APENAS furos definitivos (sistema desistiu).
-  // Datas em ESPERADO/ATRASADO/SUSPEITO o reconciler ainda esta tentando —
-  // operador nao precisa forcar manualmente.
+  // Botoes:
+  // - "Reabrir N" para FURO_DEFINITIVO (sistema desistiu — acao consciente)
+  // - "Forçar N" para qualquer dia retentavel (sistema ainda tenta — acelera)
   const furosDefinitivosDates = React.useMemo(
     () =>
       ep.days
@@ -221,6 +282,7 @@ function EndpointRow({
     [ep.days],
   )
   const hasFurosDefinitivos = furosDefinitivosDates.length > 0
+  const hasRetryable = retryableDates.length > 0
 
   return (
     <>
@@ -248,24 +310,21 @@ function EndpointRow({
             variant="ghost"
             className="h-6 shrink-0 px-2 text-[11px]"
             onClick={() => onBackfill(ep.name, furosDefinitivosDates)}
-            title={`Reabrir ${furosDefinitivosDates.length} furo${furosDefinitivosDates.length > 1 ? "s" : ""} definitivo${furosDefinitivosDates.length > 1 ? "s" : ""} — sistema havia desistido, força nova tentativa`}
+            title={`Reabrir ${furosDefinitivosDates.length} dia${furosDefinitivosDates.length > 1 ? "s" : ""} bloqueado${furosDefinitivosDates.length > 1 ? "s" : ""} — sistema havia desistido, força nova tentativa.`}
           >
             <RiPlayLine className="size-3 mr-1" aria-hidden />
             Reabrir {furosDefinitivosDates.length}
           </Button>
         )}
-        {!hasFurosDefinitivos && hasGaps && onBackfill && !isJobActive && (
-          // Fallback: nenhum furo definitivo mas ainda há gaps em estados
-          // recuperáveis (ESPERADO/ATRASADO/SUSPEITO). Reconciler está
-          // cuidando — botão fica disponivel pra forcar imediato.
+        {!hasFurosDefinitivos && hasRetryable && onBackfill && !isJobActive && (
           <Button
             variant="ghost"
             className="h-6 shrink-0 px-2 text-[11px] text-gray-600"
-            onClick={() => onBackfill(ep.name, gapDates)}
-            title={`Forçar backfill de ${gapDates.length} furo${gapDates.length > 1 ? "s" : ""} (o reconciler já está tentando — clicar acelera)`}
+            onClick={() => onBackfill(ep.name, retryableDates)}
+            title={`Forçar nova tentativa em ${retryableDates.length} dia${retryableDates.length > 1 ? "s" : ""} (sistema já está re-checando — clicar acelera).`}
           >
             <RiPlayLine className="size-3 mr-1" aria-hidden />
-            Forçar {gapDates.length}
+            Forçar {retryableDates.length}
           </Button>
         )}
         {isJobActive && (
@@ -283,15 +342,13 @@ function EndpointRow({
       >
         {ep.days.map((d) => {
           const isProcessing = pendingSet.has(d.data)
-          const isInActiveJob = processingSet.has(d.data)
-          // Cor: tolerance_state sobrepoe status quando aplicavel.
+          const wasProcessed = processingSet.has(d.data) && !isProcessing
+          const health = deriveHealth(d.status, d.tolerance_state, d.completeness)
           const cellBg = isProcessing
             ? "bg-blue-300 animate-pulse"
-            : isInActiveJob && !pendingSet.has(d.data)
-            ? "bg-emerald-500"
-            : d.tolerance_state
-            ? TOLERANCE_STYLES[d.tolerance_state].bg
-            : STATUS_STYLES[d.status].bg
+            : wasProcessed
+            ? HEALTH_STYLES.ready.bg
+            : HEALTH_STYLES[health].bg
           return (
             <div
               key={d.data}
@@ -301,6 +358,7 @@ function EndpointRow({
                 d.http_status,
                 d.completeness,
                 d.tolerance_state,
+                health,
                 isProcessing,
               )}
               className={cx(
@@ -321,100 +379,105 @@ function renderTooltip(
   httpStatus: number | null,
   completeness: Completeness | null,
   toleranceState: PublicationState | null,
+  health: DataHealth,
   isProcessing: boolean,
 ) {
   const dataFmt = format(parseISO(iso), "EEE dd/MMM/yyyy", { locale: ptBR })
   if (isProcessing) return `${dataFmt} · Backfill em andamento…`
-  // Quando tolerance_state esta presente, ele e a info mais relevante pro
-  // operador (graduacao temporal); status base vira complementar.
-  if (toleranceState) {
-    const stateLabel = TOLERANCE_STYLES[toleranceState].label
-    const baseLabel = STATUS_STYLES[status].label
-    let detail = ""
-    if (toleranceState === "esperado") {
-      detail = " — ainda dentro do prazo esperado de publicação."
-    } else if (toleranceState === "atrasado") {
-      detail = " — passou do prazo, sistema continua tentando."
-    } else if (toleranceState === "suspeito") {
-      detail =
-        " — muito atrasado, provavel problema na fonte. Sistema tenta com cadência reduzida."
-    } else if (toleranceState === "furo_definitivo") {
-      detail =
-        " — sistema parou de tentar automaticamente. Clique em Reabrir pra forçar nova tentativa."
-    }
-    if (httpStatus !== null) {
-      return `${dataFmt} · ${stateLabel} (${baseLabel.toLowerCase()}, HTTP ${httpStatus})${detail}`
-    }
-    return `${dataFmt} · ${stateLabel} (${baseLabel.toLowerCase()})${detail}`
+
+  const healthLabel = HEALTH_STYLES[health].label
+  const technical = describeTechnical(status, httpStatus, completeness, toleranceState)
+  const why = describeWhy(health, status, completeness, toleranceState)
+  return `${dataFmt} · ${healthLabel}\n${technical}\n${why}`.trim()
+}
+
+function describeTechnical(
+  status: CoverageStatus,
+  httpStatus: number | null,
+  completeness: Completeness | null,
+  toleranceState: PublicationState | null,
+): string {
+  const bits: string[] = []
+  if (httpStatus !== null) bits.push(`HTTP ${httpStatus}`)
+  if (completeness && completeness !== "complete") bits.push(`payload ${completeness}`)
+  if (status === "gap") bits.push("sem registro raw")
+  if (toleranceState && toleranceState !== "furo_definitivo") {
+    bits.push(`tolerância: ${toleranceState}`)
   }
-  const statusLabel = STATUS_STYLES[status].label
-  // Detalha o "porque" quando partial — diferenca crucial vs zero real.
-  // Empty: payload chegou mas vazio; partial: chegou mas falta subset.
-  let suffix = ""
-  if (status === "partial") {
-    if (completeness === "empty") {
-      suffix = " — payload vazio (a fonte respondeu mas sem dados)"
-    } else {
-      suffix = " — falta subset esperado (ex.: classe de cota ausente)"
-    }
+  if (toleranceState === "furo_definitivo") bits.push("janela excedida")
+  return bits.length > 0 ? `[${bits.join(" · ")}]` : ""
+}
+
+function describeWhy(
+  health: DataHealth,
+  status: CoverageStatus,
+  completeness: Completeness | null,
+  toleranceState: PublicationState | null,
+): string {
+  switch (health) {
+    case "ready":
+      return "Dado coletado e considerado completo."
+    case "may_change":
+      if (status === "partial") {
+        if (completeness === "empty") {
+          return "A fonte respondeu mas o payload veio vazio — sistema continua re-checando."
+        }
+        return "Falta um subset esperado (ex.: classe de cota ausente). Sistema continua re-checando."
+      }
+      if (status === "not_published") {
+        return "A fonte respondeu sem publicação (4xx) — sistema continua tentando."
+      }
+      return "Dado pode evoluir — sistema continua re-checando periodicamente."
+    case "in_progress":
+      if (status === "pending") {
+        return "Data futura ou hoje — coleta esperada em breve."
+      }
+      if (toleranceState === "esperado") {
+        return "Sem dado ainda, mas ainda dentro do prazo esperado."
+      }
+      if (toleranceState === "atrasado") {
+        return "Atrasado — sistema retenta a cada 4h."
+      }
+      if (toleranceState === "suspeito") {
+        return "Bem atrasado — sistema retenta com cadência reduzida (24h)."
+      }
+      return "Sistema tentando coletar."
+    case "blocked":
+      return "Sistema desistiu de tentar automaticamente. Clique em Reabrir pra forçar."
+    case "na":
+      return "Sem expectativa de dado — fim de semana, feriado, ou antes do primeiro sync."
   }
-  if (httpStatus !== null) {
-    return `${dataFmt} · ${statusLabel} (HTTP ${httpStatus})${suffix}`
-  }
-  return `${dataFmt} · ${statusLabel}${suffix}`
 }
 
 function Legend() {
-  // Legenda separa em 2 grupos: status base (presente) e tolerância (futuro).
-  // Operador entende que tolerance_state se aplica a dias que estão sem dado.
-  const statusItems: { status: CoverageStatus; label: string }[] = [
-    { status: "ok", label: "Coletado" },
-    { status: "partial", label: "Parcial" },
-    { status: "weekend", label: "Fds / feriado" },
-    { status: "before_first_sync", label: "Antes do 1º sync" },
-  ]
-  const toleranceItems: { state: PublicationState; label: string }[] = [
-    { state: "esperado", label: "Esperado" },
-    { state: "atrasado", label: "Atrasado" },
-    { state: "suspeito", label: "Suspeito" },
-    { state: "furo_definitivo", label: "Furo definitivo" },
+  const items: { health: DataHealth }[] = [
+    { health: "ready" },
+    { health: "may_change" },
+    { health: "in_progress" },
+    { health: "blocked" },
+    { health: "na" },
   ]
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-gray-600 dark:text-gray-400">
-        <span className="font-medium text-gray-700 dark:text-gray-300">
-          Coletado:
-        </span>
-        {statusItems.map((i) => (
-          <div key={i.status} className="flex items-center gap-1.5">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-gray-600 dark:text-gray-400">
+      {items.map((i) => {
+        const style = HEALTH_STYLES[i.health]
+        return (
+          <div
+            key={i.health}
+            className="flex items-center gap-1.5"
+            title={style.description}
+          >
             <span
               className={cx(
                 "inline-block h-3 w-3 rounded-[1px] ring-1 ring-inset ring-gray-200 dark:ring-gray-700",
-                STATUS_STYLES[i.status].bg,
+                style.bg,
               )}
               aria-hidden
             />
-            {i.label}
+            {style.label}
           </div>
-        ))}
-      </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-gray-600 dark:text-gray-400">
-        <span className="font-medium text-gray-700 dark:text-gray-300">
-          Ainda sem dado:
-        </span>
-        {toleranceItems.map((i) => (
-          <div key={i.state} className="flex items-center gap-1.5">
-            <span
-              className={cx(
-                "inline-block h-3 w-3 rounded-[1px] ring-1 ring-inset ring-gray-200 dark:ring-gray-700",
-                TOLERANCE_STYLES[i.state].bg,
-              )}
-              aria-hidden
-            />
-            {i.label}
-          </div>
-        ))}
-      </div>
+        )
+      })}
     </div>
   )
 }

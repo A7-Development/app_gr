@@ -24,7 +24,7 @@ estao populados na canonica?".
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import NamedTuple
 from uuid import UUID
 
@@ -33,15 +33,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class CoverageRow(NamedTuple):
-    """Uma linha de cobertura: (data, http_status, completeness).
+    """Uma linha de cobertura: (data, http_status, completeness, fetched_at).
 
     `http_status=None` quando nao existe linha raw — a UI decide se eh gap,
     weekend, etc. `completeness` so se aplica a tabelas raw que tem a coluna
-    (hoje so `wh_qitech_raw_relatorio`); demais tabelas devolvem None."""
+    (hoje so `wh_qitech_raw_relatorio`); demais tabelas devolvem None.
+    `fetched_at` quando a linha raw existe — usado pelo refresher (2026-05-16)
+    pra decidir se vale re-buscar baseado na idade da ultima coleta."""
 
     data_posicao: date
     http_status: int | None
     completeness: str | None = None
+    fetched_at: datetime | None = None
 
 
 # Per-day endpoints: { endpoint_name: (tabela, type_col, type_value) }.
@@ -186,14 +189,20 @@ async def _fetch_per_day(
     )
     sql = text(
         f"""
-        SELECT data_posicao, http_status, {select_completeness} AS completeness
+        SELECT data_posicao, http_status, {select_completeness} AS completeness,
+               fetched_at
         FROM {table}
         WHERE {" AND ".join(where)}
         """
     )
     result = await db.execute(sql, params)
     return [
-        CoverageRow(data_posicao=r[0], http_status=r[1], completeness=r[2])
+        CoverageRow(
+            data_posicao=r[0],
+            http_status=r[1],
+            completeness=r[2],
+            fetched_at=r[3],
+        )
         for r in result.all()
     ]
 

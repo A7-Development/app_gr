@@ -94,6 +94,15 @@ from app.modules.integracoes.services.coverage import (
     get_source_coverage,
 )
 
+# Status que entram no candidate set do backfill (2026-05-16, alinhado com
+# reconciler/watermark): GAP, PARTIAL, NOT_PUBLISHED. Os tres podem
+# evoluir num retry futuro.
+_RETRYABLE_STATUSES = (
+    CoverageStatus.GAP,
+    CoverageStatus.PARTIAL,
+    CoverageStatus.NOT_PUBLISHED,
+)
+
 
 def _parse_date(s: str | None) -> date | None:
     if s is None:
@@ -390,14 +399,15 @@ async def _scan_group_coverage(
         if ep is None or not ep.supported:
             print(f"  - {cfg.endpoint_name:<40} unsupported")
             continue
-        if ep.count_gap <= 0:
+        retryable = ep.count_gap + ep.count_partial + ep.count_not_published
+        if retryable <= 0:
             print(
                 f"  - {cfg.endpoint_name:<40} ok={ep.count_ok:<4} "
                 f"part={ep.count_partial:<3} np={ep.count_not_published:<3} gap=0"
             )
             continue
 
-        gap_dates = [d.data for d in ep.days if d.status == CoverageStatus.GAP]
+        gap_dates = [d.data for d in ep.days if d.status in _RETRYABLE_STATUSES]
         await _maybe_enqueue(
             db,
             cfg=cfg,

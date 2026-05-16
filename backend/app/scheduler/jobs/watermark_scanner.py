@@ -50,6 +50,16 @@ from app.modules.integracoes.services.coverage import (
 
 logger = logging.getLogger("gr.scheduler.watermark_scanner")
 
+# Status que voltam ao candidate set a cada tick (2026-05-16):
+# GAP (sem row), PARTIAL (200 com subset esperado ausente),
+# NOT_PUBLISHED (4xx-as-row). Refletem dias em que o dado ainda
+# pode evoluir.
+_RETRYABLE_STATUSES = (
+    CoverageStatus.GAP,
+    CoverageStatus.PARTIAL,
+    CoverageStatus.NOT_PUBLISHED,
+)
+
 # Sliding window -- quantos dias atras o scanner olha. 30 dias cobre cura
 # recente sem se misturar com one-shot scan (cobertura ampla, sob demanda).
 LOOKBACK_DAYS = 30
@@ -178,18 +188,28 @@ async def _maybe_enqueue(
 ) -> bool:
     """Decide se enfileira backfill para 1 endpoint. True = enfileirou.
 
-    Skip silencioso quando: endpoint nao suportado, zero gaps, ou ja existe
-    backfill ativo (pending/running) pra mesma (tenant, source, ua, endpoint).
+    Skip silencioso quando: endpoint nao suportado, zero datas a curar,
+    ou ja existe backfill ativo (pending/running) pra mesma chave.
+
+    Datas retentaveis (2026-05-16): GAP, PARTIAL e NOT_PUBLISHED. GAP
+    eh furo total (sem row); PARTIAL eh 200 com subset esperado
+    ausente (administradora pode republicar); NOT_PUBLISHED eh 4xx-as-row
+    (vendor pode liberar relatorio depois).
     """
     if endpoint_coverage is None or not endpoint_coverage.supported:
         return False
-    if endpoint_coverage.count_gap <= 0:
+    retryable_total = (
+        endpoint_coverage.count_gap
+        + endpoint_coverage.count_partial
+        + endpoint_coverage.count_not_published
+    )
+    if retryable_total <= 0:
         return False
 
     gap_dates = [
         d.data
         for d in endpoint_coverage.days
-        if d.status == CoverageStatus.GAP
+        if d.status in _RETRYABLE_STATUSES
     ]
     if not gap_dates:
         return False

@@ -1,20 +1,20 @@
-"""Reconciler service — Fase 1 do auto-heal (memoria project_qitech_reconciler.md).
+"""Reconciler service — auto-heal de syncs QiTech.
 
 Padrao "reconciliation loop" (Kubernetes controller pattern) aplicado a
 dados: detecta drift entre **estado desejado** (todos os dias uteis ANBIMA
-da janela devem estar coletados) e **estado real** (linhas em
-wh_qitech_raw_relatorio), enfileira BackfillJob pros furos.
+da janela devem estar coletados com dado integro) e **estado real**
+(linhas em wh_qitech_raw_relatorio), enfileira BackfillJob pros furos.
 
-Fase 1 (este modulo):
-- Detecta APENAS `gap` real (dia util sem nenhuma linha raw).
-- Janela hardcoded por defaul em `RECONCILER_LOOKBACK_DAYS` (settings).
-- Sem politica de retry (BackfillJob.create existente ja roda 1x).
-- Sem token bucket/circuit breaker (fica pra Fase 2).
-- Sem health score (fica pra Fase 3).
+Fase 1.6 (2026-05-16) — candidate set ampliado: alem de GAP (dia sem
+nenhuma linha raw), agora cobre tambem PARTIAL (200 com subset esperado
+ausente — caso MEC/RF que ficava preso indefinidamente) e NOT_PUBLISHED
+(4xx-as-row gravado por excecao do vendor). Cooldown por estado de
+tolerancia (ATRASADO 4h, SUSPEITO 24h) modula a frequencia de retry;
+FURO_DEFINITIVO sai do candidate set sozinho.
 
-Faseado pra Fase 1 entregar valor sozinho. Fica autocurativo pra furos —
-o problema operacional mais visivel hoje. Parciais/sem-publicacao ficam
-pra Fase 2 quando tivermos politica diferenciada.
+Roadmap pendente:
+- Token bucket/circuit breaker (Fase 2)
+- Health score + alertas (Fase 3)
 
 Algoritmo (por tick, default a cada 30 min):
 
@@ -70,7 +70,12 @@ RECONCILER_CREATED_BY = "system:reconciler"
 
 @dataclass(frozen=True)
 class GapToHeal:
-    """Drift detectado: um endpoint de uma UA tem N datas em estado gap."""
+    """Drift detectado: um endpoint de uma UA tem N datas a curar.
+
+    Nome legado — apos 2026-05-16 cobre tambem PARTIAL e NOT_PUBLISHED,
+    nao apenas GAP. Renomear quebraria callers; o conceito ficou o mesmo:
+    'datas que o sistema precisa retentar'.
+    """
 
     tenant_id: UUID
     unidade_administrativa_id: UUID | None
@@ -326,7 +331,12 @@ async def find_qitech_gaps_to_heal(
         )
 
         for ep in cov.endpoints:
-            if not ep.supported or ep.count_gap == 0:
+            if not ep.supported:
+                continue
+            retryable_total = (
+                ep.count_gap + ep.count_partial + ep.count_not_published
+            )
+            if retryable_total == 0:
                 continue
             # Carrega (data, tolerance_state) — coverage ja calculou pra
             # gente. FURO_DEFINITIVO sai imediatamente: reconciler nao tenta
@@ -334,7 +344,7 @@ async def find_qitech_gaps_to_heal(
             gap_candidates: list[tuple[date, PublicationState]] = [
                 (d.data, d.tolerance_state)
                 for d in ep.days
-                if d.status == CoverageStatus.GAP
+                if d.status in _RETRYABLE_STATUSES
                 and d.tolerance_state is not None
                 and d.tolerance_state != PublicationState.FURO_DEFINITIVO
             ]
@@ -407,13 +417,13 @@ async def find_qitech_gaps_to_heal(
             if len(gap_dates) > _MAX_GAPS_PER_JOB:
                 gap_dates = gap_dates[-_MAX_GAPS_PER_JOB:]
                 logger.warning(
-                    "reconciler: capping gaps for %s/%s/%s at %d "
+                    "reconciler: capping retryable for %s/%s/%s at %d "
                     "(was %d, processing most recent)",
                     cfg.tenant_id,
                     cfg.unidade_administrativa_id,
                     ep.name,
                     _MAX_GAPS_PER_JOB,
-                    ep.count_gap,
+                    retryable_total,
                 )
 
             already_running = await _has_active_backfill_job(
@@ -578,6 +588,20 @@ async def run_reconciler_tick() -> dict[str, Any]:
         "jobs_failed": sum(1 for s in job_summaries if not s["ok"]),
         "elapsed_seconds": round(elapsed, 2),
     }
+
+
+# Candidate set inclui dias em GAP (sem row), PARTIAL (200 com subset
+# esperado ausente) e NOT_PUBLISHED (4xx-as-row). Os tres podem evoluir
+# no proximo retry: GAP -> 200 quando vendor publicar; PARTIAL ->
+# complete quando administradora republicar; NOT_PUBLISHED -> 200
+# quando vendor liberar o relatorio. Adicionado em 2026-05-16 pra
+# fechar o gap "partial gruda pra sempre" — ver memoria
+# project_qitech_response_semantics.
+_RETRYABLE_STATUSES = (
+    CoverageStatus.GAP,
+    CoverageStatus.PARTIAL,
+    CoverageStatus.NOT_PUBLISHED,
+)
 
 
 # Cap defensivo por (tenant, ua, endpoint). Janela grande + endpoint sem

@@ -144,10 +144,14 @@ def _compute_tolerance_state(
 ) -> PublicationState | None:
     """Classifica tolerance_state quando aplicavel.
 
-    Sentido: aplica apenas quando o dado NAO chegou (ainda) — GAP /
-    NOT_PUBLISHED / PENDING. Outros status (OK, PARTIAL, WEEKEND, HOLIDAY,
-    BEFORE_FIRST_SYNC, UNSUPPORTED) nao tem semantica de "atraso" e ficam
-    com None (UI nao pinta badge de estado).
+    Sentido: aplica quando o dado pode ainda evoluir — GAP /
+    NOT_PUBLISHED / PARTIAL / PENDING. PARTIAL entrou em 2026-05-16
+    (memoria `qitech_response_semantics`): a publicacao chegou mas falta
+    subset esperado; a administradora pode republicar completo, entao o
+    reconciler precisa do estado pra modular cooldown.
+
+    OK / WEEKEND / HOLIDAY / BEFORE_FIRST_SYNC / UNSUPPORTED nao tem
+    semantica de "atraso" e ficam com None (UI nao pinta badge de estado).
 
     Window pode ser None quando o endpoint nao suporta coverage — nesse
     caso nem chamamos esta funcao.
@@ -157,6 +161,7 @@ def _compute_tolerance_state(
     if status not in (
         CoverageStatus.GAP,
         CoverageStatus.NOT_PUBLISHED,
+        CoverageStatus.PARTIAL,
         CoverageStatus.PENDING,
     ):
         return None

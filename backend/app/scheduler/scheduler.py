@@ -12,6 +12,7 @@ from app.scheduler import sync_dispatcher
 from app.scheduler.jobs import (
     backfill_worker,
     qitech_jobs_poll,
+    recent_complete_refresher,
     reconciler,
     watermark_scanner,
 )
@@ -89,18 +90,38 @@ def start_scheduler() -> AsyncIOScheduler:
         coalesce=True,
         misfire_grace_time=3600,  # 1h — diario, se perder o slot ainda vale
     )
+    # Recent-complete refresher — Fix B (2026-05-16). Re-busca dias
+    # `complete` recentes pra detectar republicacoes silenciosas do vendor.
+    # Roda 1x/dia as 18:00 SP, apos publicacao tipica de market reports +
+    # adaptive polling. Cap proprio de 3 refreshes/data evita martelar.
+    _scheduler.add_job(
+        recent_complete_refresher.run,
+        trigger=CronTrigger(
+            hour=recent_complete_refresher.DAILY_HOUR,
+            minute=recent_complete_refresher.DAILY_MINUTE,
+            timezone="America/Sao_Paulo",
+        ),
+        id="recent_complete_refresher",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
     _scheduler.start()
     logger.info(
         "scheduler started: sync_dispatcher every %s min, "
         "qitech_jobs_poll every %s min, backfill_worker every %s s, "
         "reconciler every %s min, "
-        "watermark_scanner daily at %02d:%02d SP",
+        "watermark_scanner daily at %02d:%02d SP, "
+        "recent_complete_refresher daily at %02d:%02d SP",
         sync_dispatcher.INTERVAL_MINUTES,
         qitech_jobs_poll.INTERVAL_MINUTES,
         backfill_worker.INTERVAL_SECONDS,
         reconciler_minutes,
         watermark_scanner.DAILY_HOUR,
         watermark_scanner.DAILY_MINUTE,
+        recent_complete_refresher.DAILY_HOUR,
+        recent_complete_refresher.DAILY_MINUTE,
     )
     return _scheduler
 
