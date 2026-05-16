@@ -36,7 +36,6 @@ import {
 
 import { PageHeader } from "@/design-system/components/PageHeader"
 import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
-import { KpiCard, KpiStrip } from "@/design-system/components/KpiStrip"
 import {
   ProvenanceFooter,
   type ProvenanceSource,
@@ -468,35 +467,18 @@ export default function Benchmark2Page() {
 
         {/* Conteudo scrollavel */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4">
-          {/* Barra de KPIs do mercado (equivalente do StatusHeadlineCompact da Cota Sub) */}
-          <KpiStrip cols={4} className="mb-4">
-            <KpiCard
-              label="Fundos"
-              value={fmtInt.format(kpis.totalFundos)}
-              sub="FIDCs"
-              source="CVM (publico)"
-              updatedAtISO={competencia ? `${competencia}-01` : undefined}
-            />
-            <KpiCard
-              label="PL total mercado"
-              value={fmtBRLCompact.format(kpis.plTotal)}
-              source="CVM (publico)"
-              updatedAtISO={competencia ? `${competencia}-01` : undefined}
-            />
-            <KpiCard
-              label="Cotistas"
-              value={fmtInt.format(kpis.cotistasTotal)}
-              source="CVM (publico)"
-              updatedAtISO={competencia ? `${competencia}-01` : undefined}
-            />
-            <KpiCard
-              label="Ticket medio"
-              value={fmtBRLCompact.format(kpis.ticketMedio)}
-              sub="PL/fundo"
-              source="CVM (publico)"
-              updatedAtISO={competencia ? `${competencia}-01` : undefined}
-            />
-          </KpiStrip>
+          {/* MarketStatusHeadline — banda compacta de KPIs do mercado.
+              Mesma anatomy do StatusHeadlineCompact da Cota Sub: single line,
+              eyebrow 10px uppercase + valor grande, colunas separadas por
+              border-l, chip CVM no canto direito. */}
+          <MarketStatusHeadline
+            competencia={competencia}
+            totalFundos={kpis.totalFundos}
+            plTotal={kpis.plTotal}
+            cotistasTotal={kpis.cotistasTotal}
+            ticketMedio={kpis.ticketMedio}
+            loading={fundosQuery.isPending}
+          />
 
           <div className="overflow-hidden rounded border border-gray-200 dark:border-gray-800">
             <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 px-4 py-2.5 dark:border-gray-800">
@@ -567,6 +549,115 @@ export default function Benchmark2Page() {
         )}
       </DrillDownSheet>
     </div>
+  )
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// MarketStatusHeadline — barra compacta de KPIs do mercado FIDC.
+// Espelha a anatomy do <StatusHeadlineCompact> da Cota Sub: single line denso,
+// label eyebrow 10px uppercase + valor grande, colunas separadas por border-l,
+// chip CVM no canto direito.
+// ───────────────────────────────────────────────────────────────────────────
+
+function MarketStatusHeadline({
+  competencia,
+  totalFundos,
+  plTotal,
+  cotistasTotal,
+  ticketMedio,
+  loading = false,
+}: {
+  competencia: string
+  totalFundos: number
+  plTotal: number
+  cotistasTotal: number
+  ticketMedio: number
+  loading?: boolean
+}) {
+  const compLabel = competencia ? fmtCompetencia(competencia) : ""
+
+  return (
+    <section
+      className={cx(
+        "mb-4 flex flex-wrap items-center gap-x-7 gap-y-2 rounded border px-4 py-3",
+        "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
+      )}
+    >
+      {/* Coluna 1: PL total — destaque principal (26px) */}
+      <div className="flex items-baseline gap-3">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">
+            PL total mercado{compLabel ? ` · ${compLabel}` : ""}
+          </div>
+          {loading ? (
+            <div className="mt-1 h-[26px] w-44 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+          ) : (
+            <div className="mt-0.5 text-[26px] font-semibold leading-[1.05] tracking-[-0.025em] tabular-nums text-gray-900 dark:text-gray-50">
+              {fmtBRLCompact.format(plTotal)}
+            </div>
+          )}
+        </div>
+
+        {/* Coluna 2: Fundos (20px) */}
+        <div className="ml-1 border-l border-gray-200 pl-4 dark:border-gray-800">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">
+            Fundos
+          </div>
+          {loading ? (
+            <div className="mt-1 h-[20px] w-20 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+          ) : (
+            <div className="mt-0.5 text-[20px] font-semibold leading-tight tracking-[-0.02em] tabular-nums text-gray-900 dark:text-gray-50">
+              {fmtInt.format(totalFundos)}
+            </div>
+          )}
+        </div>
+
+        {/* Coluna 3: Cotistas (20px) */}
+        <div className="ml-1 border-l border-gray-200 pl-4 dark:border-gray-800">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">
+            Cotistas
+          </div>
+          {loading ? (
+            <div className="mt-1 h-[20px] w-24 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+          ) : (
+            <div className="mt-0.5 text-[20px] font-semibold leading-tight tracking-[-0.02em] tabular-nums text-gray-900 dark:text-gray-50">
+              {fmtInt.format(cotistasTotal)}
+            </div>
+          )}
+        </div>
+
+        {/* Coluna 4: Ticket medio (20px) */}
+        <div className="ml-1 border-l border-gray-200 pl-4 dark:border-gray-800">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">
+            Ticket medio
+          </div>
+          {loading ? (
+            <div className="mt-1 h-[20px] w-24 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+          ) : (
+            <div className="mt-0.5 text-[20px] font-semibold leading-tight tracking-[-0.02em] tabular-nums text-gray-900 dark:text-gray-50">
+              {fmtBRLCompact.format(ticketMedio)}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Chips no canto direito */}
+      <div className="ml-auto flex flex-wrap items-center gap-1.5">
+        <span
+          className={cx(
+            "inline-flex items-center gap-1.5 whitespace-nowrap rounded border px-2 py-0.5 text-[11px] font-medium leading-tight",
+            "border-emerald-100 bg-emerald-50 text-emerald-700",
+            "dark:border-emerald-900/40 dark:bg-emerald-500/10 dark:text-emerald-300",
+          )}
+        >
+          <span
+            className="inline-block size-1.5 rounded-full bg-emerald-500"
+            aria-hidden="true"
+          />
+          CVM publico
+        </span>
+      </div>
+    </section>
   )
 }
 
