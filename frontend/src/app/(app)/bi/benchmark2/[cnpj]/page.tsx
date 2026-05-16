@@ -15,13 +15,11 @@
 // CNPJ vem do route param (formatado ou so digitos). Backend normaliza.
 
 import Link from "next/link"
-import { RiArrowLeftLine } from "@remixicon/react"
-import { use } from "react"
+import { RiAlertLine, RiArrowLeftLine, RiSearchLine } from "@remixicon/react"
 
 import { Button } from "@/components/tremor/Button"
 import { PageHeader } from "@/design-system/components/PageHeader"
 import { EmptyState } from "@/design-system/components/EmptyState"
-import { RiAlertLine, RiSearchLine } from "@remixicon/react"
 
 import { useBenchmark2Fundo } from "../_components/useBenchmark2"
 import { CarteiraLaminaTable } from "./_components/CarteiraLaminaTable"
@@ -31,13 +29,14 @@ import { IdentidadeHeader } from "./_components/IdentidadeHeader"
 const PAGE_INFO =
   "Ficha do fundo no layout Lamina (Austin Rating style). Dados publicos via CVM Informe Mensal FIDC (schema cvm_remote)."
 
+// Next 14 (App Router): `params` em client components vem como objeto plano,
+// nao Promise. (Promise + use() so a partir de Next 15.)
 type PageProps = {
-  params: Promise<{ cnpj: string }>
+  params: { cnpj: string }
 }
 
 export default function Benchmark2FichaPage({ params }: PageProps) {
-  const { cnpj: cnpjParam } = use(params)
-  const digits = cnpjParam.replace(/\D/g, "")
+  const digits = params.cnpj.replace(/\D/g, "")
   const query = useBenchmark2Fundo(digits)
 
   if (query.isPending) {
@@ -58,7 +57,7 @@ export default function Benchmark2FichaPage({ params }: PageProps) {
         <EmptyState
           icon={RiAlertLine}
           title="Fundo nao encontrado"
-          description={`Nenhuma ficha disponivel para o CNPJ ${cnpjParam} na base CVM.`}
+          description={`Nenhuma ficha disponivel para o CNPJ ${params.cnpj} na base CVM.`}
         />
       </div>
     )
