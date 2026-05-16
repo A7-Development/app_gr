@@ -31,7 +31,13 @@ import { Button } from "@/components/tremor/Button"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 
-import type { BalanceteResponse, CosifNode, PddExplanation } from "@/lib/api-client"
+import type {
+  ApropriacaoExplanation,
+  BalanceteResponse,
+  CosifNode,
+  DiferimentoExplanation,
+  PddExplanation,
+} from "@/lib/api-client"
 import { useExplicacaoVariacao } from "@/lib/hooks/controladoria"
 
 import { BalanceteDiarioTable } from "./BalanceteDiarioTable"
@@ -41,7 +47,7 @@ import {
 } from "./BridgeCard"
 import { CosifDrillSheet } from "./CosifDrillSheet"
 import {
-  buildDriverFromPdd,
+  buildDriverFromEventosContabeis,
   DriversCard,
   type DriverInput,
 } from "./DriversCard"
@@ -92,8 +98,14 @@ export function EventosDiaTab({
     { dataAnterior: balancete?.data_d_minus_1 ?? null },
   )
 
-  const pdd: PddExplanation | undefined = explicacao.data?.explanations.find(
-    (e) => e.categoria === "pdd",
+  const pdd = explicacao.data?.explanations.find(
+    (e): e is PddExplanation => e.categoria === "pdd",
+  )
+  const diferimento = explicacao.data?.explanations.find(
+    (e): e is DiferimentoExplanation => e.categoria === "diferimento",
+  )
+  const apropriacao = explicacao.data?.explanations.find(
+    (e): e is ApropriacaoExplanation => e.categoria === "apropriacao",
   )
 
   // Pendentes — usado em multiplos lugares (banner sticky, chips, tone).
@@ -158,19 +170,24 @@ export function EventosDiaTab({
   }, [recon, cob, dq, pendentesCount])
 
   // ─── Drivers para o BridgeCard + DriversCard ────────────────────────────
-  // Hoje so PDD tem dado real. Demais entram como placeholders.
+  // Hoje "eventos_contabeis" agrega PDD + Diferimento + Apropriacao.
+  // Demais buckets (fluxo_caixa, movimento_carteira, marcacao_mercado)
+  // ainda sao placeholders ate seus explainers entrarem.
   const driverInputs = React.useMemo<DriverInput[]>(() => {
     const list: DriverInput[] = []
-    if (pdd) {
-      list.push(buildDriverFromPdd(pdd))
-    } else {
-      list.push({ id: "eventos_contabeis", delta: 0, placeholder: true })
-    }
+    const eventosContabeis = buildDriverFromEventosContabeis({
+      pdd,
+      diferimento,
+      apropriacao,
+    })
+    list.push(
+      eventosContabeis ?? { id: "eventos_contabeis", delta: 0, placeholder: true },
+    )
     list.push({ id: "fluxo_caixa",        delta: 0, placeholder: true })
     list.push({ id: "movimento_carteira", delta: 0, placeholder: true })
     list.push({ id: "marcacao_mercado",   delta: 0, placeholder: true })
     return list
-  }, [pdd])
+  }, [pdd, diferimento, apropriacao])
 
   // BridgeDrivers — converte DriverInput pro shape do waterfall.
   // "Outros (nao classificado)" aparece quando indeterminado_brl > limiar.

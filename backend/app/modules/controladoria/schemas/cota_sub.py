@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field
 
@@ -232,6 +232,7 @@ ExplainerCategoria = Literal[
     "aporte",
     "movimento_cotas",
     "diferimento",
+    "apropriacao",
     "liquidacao",
     "aquisicao",
 ]
@@ -261,7 +262,7 @@ class PddEvidencia(BaseModel):
 class PddExplanation(BaseModel):
     """Categoria 3.2 — variacao de PDD por papel."""
 
-    categoria:           ExplainerCategoria = "pdd"
+    categoria:           Literal["pdd"] = "pdd"
     narrative:           str       = Field(description="Texto pronto pra UI (pt-BR)")
     delta_brl:           Decimal   = Field(description="-Σ Δ valor_pdd (PDD sobe → PL Sub cai)")
     evidencias_total:    int       = Field(description="Total de papeis com Δ acima do threshold")
@@ -270,11 +271,67 @@ class PddExplanation(BaseModel):
     evidencias:          list[PddEvidencia]
 
 
+class EvidenciaCprLinha(BaseModel):
+    """1 rubrica do CPR cujo valor mexeu entre D-1 e D0.
+
+    Generica — usada por Diferimento e Apropriacao. Sem cedente/papel
+    (rubrica de CPR e estrutural do fundo, nao tem entidade associada).
+    """
+
+    descricao:           str       = Field(description="`descricao` original do CPR (longa, com data de venc/pagto)")
+    historico_traduzido: str       = Field(description="`historico_traduzido` (label curta apresentavel)")
+    valor_d1:            Decimal   = Field(description="Saldo CPR em D-1 (R$)")
+    valor_d0:            Decimal   = Field(description="Saldo CPR em D0 (R$)")
+    delta_valor:         Decimal   = Field(description="valor_d0 - valor_d1 (em R$)")
+
+
+class DiferimentoExplanation(BaseModel):
+    """Categoria 3.3.a — apropriacao mensal de despesas diferidas (CVM, Rating, ANBIMA).
+
+    Detecta linhas com `descricao` iniciando em 'Diferimento de despesa'
+    no CPR. Sub absorve a amortizacao: linha diferida diminui em modulo
+    a cada dia (rubrica positiva caindo) -> PL Sub cai.
+    """
+
+    categoria:           Literal["diferimento"] = "diferimento"
+    narrative:           str
+    delta_brl:           Decimal   = Field(description="Σ ΔCPR das rubricas diferidas (negativo = Sub cai)")
+    evidencias_total:    int
+    evidencias_mostradas: int
+    outros_delta_brl:    Decimal
+    evidencias:          list[EvidenciaCprLinha]
+
+
+class ApropriacaoExplanation(BaseModel):
+    """Categoria 3.3.b — apropriacao de despesas/taxas operacionais do dia.
+
+    Cobre Taxa de Adm/Custodia/Gestao Apropriada, Despesa de %,
+    'a Pagar em %', IOF/IR a Recolher, REGISTRADORA, Despesas com %.
+    Sub absorve sempre (despesa do fundo cai no resultado).
+    """
+
+    categoria:           Literal["apropriacao"] = "apropriacao"
+    narrative:           str
+    delta_brl:           Decimal   = Field(description="Σ ΔCPR das rubricas de apropriacao (negativo = Sub cai)")
+    evidencias_total:    int
+    evidencias_mostradas: int
+    outros_delta_brl:    Decimal
+    evidencias:          list[EvidenciaCprLinha]
+
+
+# Discriminated union — Pydantic v2 escolhe o tipo via campo `categoria`.
+Explanation = Annotated[
+    Union[PddExplanation, DiferimentoExplanation, ApropriacaoExplanation],
+    Field(discriminator="categoria"),
+]
+
+
 class ExplicacaoVariacaoResponse(BaseModel):
     """Resposta do endpoint GET /controladoria/cota-sub/explicacao.
 
-    Lista de explainers que materializaram. Por ora so PDD; demais entram
-    em PRs incrementais sem quebrar o contrato.
+    Lista de explainers que materializaram. Hoje cobre 3.2 PDD, 3.3.a
+    Diferimento e 3.3.b Apropriacao; demais entram em PRs incrementais
+    sem quebrar o contrato.
     """
 
     fundo_id:           str
@@ -283,7 +340,7 @@ class ExplicacaoVariacaoResponse(BaseModel):
     delta_pl_sub:       Decimal
     threshold_brl:      Decimal   = Field(description="Threshold usado pra filtrar evidencias")
     top_n:              int       = Field(description="Cap de evidencias mostradas por categoria")
-    explanations:       list[PddExplanation] = Field(
+    explanations:       list[Explanation] = Field(
         description="Categorias materializadas. Vazio = nada matchou ou variacoes < threshold."
     )
     indeterminado_brl:  Decimal   = Field(description="Δ PL Sub - Σ delta_brl dos explainers")

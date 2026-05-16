@@ -27,7 +27,13 @@ import {
 import type { ComponentType } from "react"
 
 import { cx, focusRing } from "@/lib/utils"
-import type { PddEvidencia, PddExplanation } from "@/lib/api-client"
+import type {
+  ApropriacaoExplanation,
+  DiferimentoExplanation,
+  EvidenciaCprLinha,
+  PddEvidencia,
+  PddExplanation,
+} from "@/lib/api-client"
 
 import type { BridgeCategoryId } from "./BridgeCard"
 
@@ -406,7 +412,7 @@ function defaultNarrative(id: CategoryMeta["id"]): string {
   }
 }
 
-// ─── Helper para o EventosDiaTab montar o input a partir do PddExplanation ──
+// ─── Helpers para o EventosDiaTab montar o input do bucket eventos_contabeis ─
 
 export function buildDriverFromPdd(pdd: PddExplanation): DriverInput {
   return {
@@ -422,6 +428,69 @@ export function buildDriverFromPdd(pdd: PddExplanation): DriverInput {
   }
 }
 
+/**
+ * Empilha PDD + Diferimento + Apropriacao no bucket unico `eventos_contabeis`.
+ * Soma deltas, agrega evidencias por categoria com prefixo no subtitle, monta
+ * sublabel composta. Quando so PDD existe, fallback pra buildDriverFromPdd
+ * (preserva texto historico).
+ */
+export function buildDriverFromEventosContabeis(args: {
+  pdd?:          PddExplanation | undefined
+  diferimento?:  DiferimentoExplanation | undefined
+  apropriacao?:  ApropriacaoExplanation | undefined
+}): DriverInput | undefined {
+  const { pdd, diferimento, apropriacao } = args
+  const presentes = [pdd, diferimento, apropriacao].filter(Boolean)
+  if (presentes.length === 0) return undefined
+  if (presentes.length === 1 && pdd) return buildDriverFromPdd(pdd)
+
+  const delta =
+    (pdd?.delta_brl ?? 0)
+    + (diferimento?.delta_brl ?? 0)
+    + (apropriacao?.delta_brl ?? 0)
+
+  const evidencias: DriverEvidence[] = [
+    ...(pdd?.evidencias.map(evidenciaFromPdd) ?? []),
+    ...(diferimento?.evidencias.map(
+      (e) => evidenciaFromCpr(e, "Diferimento"),
+    ) ?? []),
+    ...(apropriacao?.evidencias.map(
+      (e) => evidenciaFromCpr(e, "Apropriação"),
+    ) ?? []),
+  ]
+
+  // Sublabel: composicao curta, ex.: "13 papéis PDD · 5 apropriações · 3 diferimentos"
+  const partes: string[] = []
+  if (pdd) {
+    partes.push(
+      pdd.evidencias_total === 1
+        ? "1 papel PDD"
+        : `${pdd.evidencias_total} papéis PDD`,
+    )
+  }
+  if (apropriacao) {
+    partes.push(
+      apropriacao.evidencias_total === 1
+        ? "1 apropriação"
+        : `${apropriacao.evidencias_total} apropriações`,
+    )
+  }
+  if (diferimento) {
+    partes.push(
+      diferimento.evidencias_total === 1
+        ? "1 diferimento"
+        : `${diferimento.evidencias_total} diferimentos`,
+    )
+  }
+
+  return {
+    id:         "eventos_contabeis",
+    delta,
+    sublabel:   partes.join(" · "),
+    evidencias,
+  }
+}
+
 function evidenciaFromPdd(e: PddEvidencia): DriverEvidence {
   const tipoLabel = e.tipo_recebivel ? `${e.tipo_recebivel} · ` : ""
   const faixaInfo = e.faixa_pdd_d1 && e.faixa_pdd_d0 && e.faixa_pdd_d1 !== e.faixa_pdd_d0
@@ -434,11 +503,29 @@ function evidenciaFromPdd(e: PddEvidencia): DriverEvidence {
   // provisao = deducao do ativo).
   return {
     titulo:       `${e.cedente_nome || e.cedente_doc} — ${e.sacado_nome || e.sacado_doc}`,
-    subtitle:     `${tipoLabel}${e.numero_documento || "—"} · ${faixaInfo}`,
+    subtitle:     `PDD · ${tipoLabel}${e.numero_documento || "—"} · ${faixaInfo}`,
     d1:           -e.valor_pdd_d1,
     d0:           -e.valor_pdd_d0,
     delta:        -e.delta_valor_pdd,
     valorNominal: e.valor_nominal,
     flowLabel:    "PDD",
   }
+}
+
+function evidenciaFromCpr(
+  e: EvidenciaCprLinha,
+  categoria: "Diferimento" | "Apropriação",
+): DriverEvidence {
+  return {
+    titulo:    e.historico_traduzido || e.descricao,
+    subtitle:  `${categoria} · CPR · ${truncate(e.descricao, 64)}`,
+    d1:        e.valor_d1,
+    d0:        e.valor_d0,
+    delta:     e.delta_valor,
+    flowLabel: "CPR",
+  }
+}
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s
 }

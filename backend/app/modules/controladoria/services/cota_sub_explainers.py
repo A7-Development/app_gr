@@ -33,12 +33,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.cadastros.public import UnidadeAdministrativa
 from app.modules.controladoria.schemas.cota_sub import (
+    ApropriacaoExplanation,
+    DiferimentoExplanation,
+    EvidenciaCprLinha,
+    Explanation,
     ExplicacaoVariacaoResponse,
     PddEvidencia,
     PddExplanation,
 )
 from app.modules.controladoria.services.cota_sub import _mec_classes
 from app.modules.integracoes.public import dia_util_anterior_qitech
+from app.warehouse.cpr_movimento import CprMovimento
 from app.warehouse.estoque_recebivel import EstoqueRecebivel
 
 ZERO = Decimal("0")
@@ -220,6 +225,223 @@ async def compute_pdd_explanation(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CPR — helpers compartilhados (Diferimento + Apropriacao)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def _cpr_diff_by_descricao(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    ua_id: UUID,
+    data_d0: date,
+    data_d1: date,
+    descricao_filters: list,
+    threshold_brl: Decimal,
+) -> list[EvidenciaCprLinha]:
+    """Diff CPR D-1 vs D0 agrupando por `descricao` (mesma linha de CPR).
+
+    Sub absorve todo movimento de CPR — sinal exibido na evidencia e o
+    `Δvalor` puro do CPR (sem inversao). Caller decide se inverte ou nao
+    pra `delta_brl` da Explanation conforme natureza da rubrica.
+
+    `descricao_filters` e uma lista de clauses SQLAlchemy (LIKE/ILIKE) que
+    sao ORadas. A funcao garante que o filtro casa em D-1 OU D0 (FULL JOIN).
+    """
+    from sqlalchemy import or_
+
+    descricao_clause = or_(*descricao_filters)
+
+    d1q = (
+        select(
+            CprMovimento.descricao,
+            CprMovimento.historico_traduzido,
+            func.sum(CprMovimento.valor).label("valor"),
+        )
+        .where(CprMovimento.tenant_id == tenant_id)
+        .where(CprMovimento.unidade_administrativa_id == ua_id)
+        .where(CprMovimento.data_posicao == data_d1)
+        .where(descricao_clause)
+        .group_by(CprMovimento.descricao, CprMovimento.historico_traduzido)
+        .subquery()
+    )
+    d0q = (
+        select(
+            CprMovimento.descricao,
+            CprMovimento.historico_traduzido,
+            func.sum(CprMovimento.valor).label("valor"),
+        )
+        .where(CprMovimento.tenant_id == tenant_id)
+        .where(CprMovimento.unidade_administrativa_id == ua_id)
+        .where(CprMovimento.data_posicao == data_d0)
+        .where(descricao_clause)
+        .group_by(CprMovimento.descricao, CprMovimento.historico_traduzido)
+        .subquery()
+    )
+
+    valor_d1 = func.coalesce(d1q.c.valor, ZERO)
+    valor_d0 = func.coalesce(d0q.c.valor, ZERO)
+    delta = valor_d0 - valor_d1
+
+    stmt = (
+        select(
+            func.coalesce(d0q.c.descricao, d1q.c.descricao).label("descricao"),
+            func.coalesce(
+                d0q.c.historico_traduzido, d1q.c.historico_traduzido
+            ).label("historico_traduzido"),
+            valor_d1.label("valor_d1"),
+            valor_d0.label("valor_d0"),
+            delta.label("delta_valor"),
+        )
+        .select_from(
+            d0q.join(d1q, d0q.c.descricao == d1q.c.descricao, full=True)
+        )
+        .where(func.abs(delta) > threshold_brl)
+        .order_by(func.abs(delta).desc())
+    )
+
+    rows = (await db.execute(stmt)).all()
+    return [
+        EvidenciaCprLinha(
+            descricao=r.descricao,
+            historico_traduzido=r.historico_traduzido or r.descricao,
+            valor_d1=Decimal(r.valor_d1 or 0),
+            valor_d0=Decimal(r.valor_d0 or 0),
+            delta_valor=Decimal(r.delta_valor or 0),
+        )
+        for r in rows
+    ]
+
+
+def _build_cpr_narrative(
+    evidencias: list[EvidenciaCprLinha], delta_brl: Decimal, label: str
+) -> str:
+    """Texto curto pt-BR para narrative do card."""
+    if not evidencias:
+        return f"{label} nao teve variacao relevante no periodo."
+    n = len(evidencias)
+    sufixo = "rubrica" if n == 1 else "rubricas"
+    top = evidencias[0]
+    return (
+        f"{label} em {n} {sufixo}, impacto liquido de R$ {_fmt_brl(delta_brl)} "
+        f"no PL Sub. Maior movimento: {top.historico_traduzido} "
+        f"(Δ R$ {_fmt_brl(top.delta_valor)})."
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Diferimento (categoria 3.3.a)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def compute_diferimento_explanation(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    ua_id: UUID,
+    data_d0: date,
+    data_d1: date,
+    threshold_brl: Decimal,
+    top_n: int,
+) -> DiferimentoExplanation | None:
+    """Detecta apropriacao mensal de despesas diferidas (CVM, Rating, ANBIMA).
+
+    Filtro: `descricao LIKE 'Diferimento de despesa%'`. Rubricas diferidas
+    sao positivas no CPR (saldo a apropriar); a cada dia diminuem em
+    modulo a medida que sao amortizadas — esse `Δ` (negativo) flui pro PL
+    Sub como despesa absorvida. `delta_brl` reflete diretamente o ΔCPR
+    (Sub absorve sem inversao de sinal).
+    """
+    evidencias_all = await _cpr_diff_by_descricao(
+        db,
+        tenant_id=tenant_id,
+        ua_id=ua_id,
+        data_d0=data_d0,
+        data_d1=data_d1,
+        descricao_filters=[CprMovimento.descricao.like("Diferimento de despesa%")],
+        threshold_brl=threshold_brl,
+    )
+    if not evidencias_all:
+        return None
+
+    delta_brl_total = sum((e.delta_valor for e in evidencias_all), ZERO)
+    mostradas = evidencias_all[:top_n]
+    fora_top = evidencias_all[top_n:]
+    outros = sum((e.delta_valor for e in fora_top), ZERO)
+
+    return DiferimentoExplanation(
+        narrative=_build_cpr_narrative(
+            evidencias_all, delta_brl_total, "Despesas diferidas apropriadas"
+        ),
+        delta_brl=delta_brl_total,
+        evidencias_total=len(evidencias_all),
+        evidencias_mostradas=len(mostradas),
+        outros_delta_brl=outros,
+        evidencias=mostradas,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Apropriacao de despesas/taxas (categoria 3.3.b)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def compute_apropriacao_explanation(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    ua_id: UUID,
+    data_d0: date,
+    data_d1: date,
+    threshold_brl: Decimal,
+    top_n: int,
+) -> ApropriacaoExplanation | None:
+    """Detecta apropriacao de despesas/taxas operacionais (Adm, Custodia,
+    Gestao, Auditoria, Consultoria, Cobranca, IOF, IR, SELIC, Banco
+    Liquidante, REGISTRADORA).
+
+    Cobre o leque mapeado no dicionario do CPR (CLAUDE.md / doc dos
+    explainers). Sub absorve todos — `delta_brl` = ΔCPR puro.
+    """
+    filters = [
+        CprMovimento.descricao.ilike("Taxa de % Apropriada"),
+        CprMovimento.descricao.ilike("Despesa de %"),
+        CprMovimento.descricao.ilike("Despesas com %"),
+        CprMovimento.descricao.ilike("% a Pagar em %"),
+        CprMovimento.descricao.ilike("IOF a Recolher%"),
+        CprMovimento.descricao.ilike("IR a Recolher%"),
+        CprMovimento.descricao.ilike("REGISTRADORA%"),
+    ]
+    evidencias_all = await _cpr_diff_by_descricao(
+        db,
+        tenant_id=tenant_id,
+        ua_id=ua_id,
+        data_d0=data_d0,
+        data_d1=data_d1,
+        descricao_filters=filters,
+        threshold_brl=threshold_brl,
+    )
+    if not evidencias_all:
+        return None
+
+    delta_brl_total = sum((e.delta_valor for e in evidencias_all), ZERO)
+    mostradas = evidencias_all[:top_n]
+    fora_top = evidencias_all[top_n:]
+    outros = sum((e.delta_valor for e in fora_top), ZERO)
+
+    return ApropriacaoExplanation(
+        narrative=_build_cpr_narrative(
+            evidencias_all, delta_brl_total, "Apropriacao de despesas/taxas"
+        ),
+        delta_brl=delta_brl_total,
+        evidencias_total=len(evidencias_all),
+        evidencias_mostradas=len(mostradas),
+        outros_delta_brl=outros,
+        evidencias=mostradas,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Orquestrador
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -259,7 +481,7 @@ async def compute_explicacao_variacao(
     classes_d0 = await _mec_classes(db, tenant_id, ua_id, ua.nome, data_d0)
     delta_pl_sub = classes_d0["sub_jr"] - classes_d1["sub_jr"]
 
-    explanations: list[PddExplanation] = []
+    explanations: list[Explanation] = []
 
     pdd = await compute_pdd_explanation(
         db,
@@ -272,6 +494,30 @@ async def compute_explicacao_variacao(
     )
     if pdd is not None:
         explanations.append(pdd)
+
+    diferimento = await compute_diferimento_explanation(
+        db,
+        tenant_id=tenant_id,
+        ua_id=ua_id,
+        data_d0=data_d0,
+        data_d1=d1,
+        threshold_brl=threshold_brl,
+        top_n=top_n,
+    )
+    if diferimento is not None:
+        explanations.append(diferimento)
+
+    apropriacao = await compute_apropriacao_explanation(
+        db,
+        tenant_id=tenant_id,
+        ua_id=ua_id,
+        data_d0=data_d0,
+        data_d1=d1,
+        threshold_brl=threshold_brl,
+        top_n=top_n,
+    )
+    if apropriacao is not None:
+        explanations.append(apropriacao)
 
     soma_explicada = sum((e.delta_brl for e in explanations), ZERO)
     indeterminado = delta_pl_sub - soma_explicada

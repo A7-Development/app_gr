@@ -1342,9 +1342,27 @@ export type FundoCarteiraPonto = {
   contrato_futuro: number   // (I.2.j) Warrants/futuros
   carteira_sub: number      // (I.2)  Subtotal Carteira
   deriv: number             // (I.3)
-  outro_ativo: number       // (I.4)
+  outro_ativo: number       // (I.4) — mapeia "Imoveis" no layout Austin
   pdd_aprox: number         // (I.2.a.11) redutor ja contido em dc_risco
   ativo_total: number       // (I)
+  // Decomposicao do DC (tab_v) - usado pelo layout Lamina Austin que separa
+  // "Direitos Creditorios" (a vencer) de "Creditos Vencidos" (inad).
+  dc_a_vencer: number | null
+  dc_inadimplente: number | null
+}
+
+// Cobertura PL Subordinada / Sigma(maiores cedentes) — em vezes.
+// Reproduz "Indices de Cobertura da Subordinacao" da Lamina Austin (so
+// cedentes, sem sacados; so top-9, limite CVM).
+// `dado_indisponivel=true` quando tab_x_qt_cota=NULL (caso Puma).
+export type FundoCoberturaSubordinacaoPonto = {
+  competencia: string
+  pl_subordinada: number | null
+  cobertura_maior_cedente: number | null
+  cobertura_top3_cedentes: number | null
+  cobertura_top5_cedentes: number | null
+  cobertura_top9_cedentes: number | null
+  dado_indisponivel: boolean
 }
 
 export type FundoAtrasoBuckets = {
@@ -1480,6 +1498,7 @@ export type FichaFundo = {
   scr_distribuicao: FundoSCRLinha[]
   garantias: FundoGarantias | null
   limitacoes: string[]
+  cobertura_subordinacao_serie: FundoCoberturaSubordinacaoPonto[]
 }
 
 // Favoritos de fundo (por user, escopo tenant).
@@ -2205,6 +2224,7 @@ export type ExplainerCategoria =
   | "aporte"
   | "movimento_cotas"
   | "diferimento"
+  | "apropriacao"
   | "liquidacao"
   | "aquisicao"
 
@@ -2225,6 +2245,15 @@ export type PddEvidencia = {
   faixa_pdd_d0:             string | null
 }
 
+/** Evidencia generica de rubrica CPR — usada por Diferimento e Apropriacao. */
+export type EvidenciaCprLinha = {
+  descricao:           string
+  historico_traduzido: string
+  valor_d1:            number
+  valor_d0:            number
+  delta_valor:         number
+}
+
 export type PddExplanation = {
   categoria:            "pdd"
   narrative:            string
@@ -2235,7 +2264,30 @@ export type PddExplanation = {
   evidencias:           PddEvidencia[]
 }
 
-export type Explanation = PddExplanation  // discriminated union quando outras chegarem
+export type DiferimentoExplanation = {
+  categoria:            "diferimento"
+  narrative:            string
+  delta_brl:            number
+  evidencias_total:     number
+  evidencias_mostradas: number
+  outros_delta_brl:     number
+  evidencias:           EvidenciaCprLinha[]
+}
+
+export type ApropriacaoExplanation = {
+  categoria:            "apropriacao"
+  narrative:            string
+  delta_brl:            number
+  evidencias_total:     number
+  evidencias_mostradas: number
+  outros_delta_brl:     number
+  evidencias:           EvidenciaCprLinha[]
+}
+
+export type Explanation =
+  | PddExplanation
+  | DiferimentoExplanation
+  | ApropriacaoExplanation
 
 export type ExplicacaoVariacaoResponse = {
   fundo_id:           string
@@ -2306,6 +2358,14 @@ function _coercePddEvidencia(e: PddEvidencia): PddEvidencia {
     delta_valor_pdd: Number(e.delta_valor_pdd),
   }
 }
+function _coerceCprEvidencia(e: EvidenciaCprLinha): EvidenciaCprLinha {
+  return {
+    ...e,
+    valor_d1:    Number(e.valor_d1),
+    valor_d0:    Number(e.valor_d0),
+    delta_valor: Number(e.delta_valor),
+  }
+}
 function _coerceExplanation(e: Explanation): Explanation {
   switch (e.categoria) {
     case "pdd":
@@ -2314,6 +2374,14 @@ function _coerceExplanation(e: Explanation): Explanation {
         delta_brl:        Number(e.delta_brl),
         outros_delta_brl: Number(e.outros_delta_brl),
         evidencias:       e.evidencias.map(_coercePddEvidencia),
+      }
+    case "diferimento":
+    case "apropriacao":
+      return {
+        ...e,
+        delta_brl:        Number(e.delta_brl),
+        outros_delta_brl: Number(e.outros_delta_brl),
+        evidencias:       e.evidencias.map(_coerceCprEvidencia),
       }
     default:
       return e
