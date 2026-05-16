@@ -1595,7 +1595,8 @@ async def get_fundo(
                     COALESCE(i.tab_i2_vl_carteira,         0) AS carteira_sub,
                     COALESCE(i.tab_i3_vl_posicao_deriv,    0) AS deriv,
                     COALESCE(i.tab_i4_vl_outro_ativo,      0) AS outro_ativo,
-                    COALESCE(i.tab_i2a11_vl_reducao_recup, 0) AS pdd_aprox,
+                    COALESCE(i.tab_i2a11_vl_reducao_recup, 0)
+                    + COALESCE(i.tab_i2b11_vl_reducao_recup, 0) AS pdd_aprox,
                     COALESCE(i.tab_i_vl_ativo,             0) AS ativo_total,
                     v.tab_v_a_vl_dircred_prazo               AS dc_a_vencer,
                     v.tab_v_b_vl_dircred_inad                AS dc_inadimplente,
