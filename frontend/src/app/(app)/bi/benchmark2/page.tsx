@@ -63,6 +63,17 @@ import {
 import { CarteiraLaminaTable } from "./_components/CarteiraLaminaTable"
 import { CoberturaSubordinacaoTable } from "./_components/CoberturaSubordinacaoTable"
 import { IdentidadeHeader } from "./_components/IdentidadeHeader"
+// Componentes reusados do FichaFundoTab canonico (sera deletado na Fase 4 e
+// os imports apontarao pra _components/ local apos a renomeacao).
+import {
+  AtrasoTable,
+  CedentesSnapshot,
+  PlSubclassesTable,
+  RecompraTable,
+  RentAcumuladaTable,
+  RentMensalTable,
+  SetoresSnapshot,
+} from "../benchmark/_components/FichaFundoTab"
 
 // ───────────────────────────────────────────────────────────────────────────
 // Formatters
@@ -744,9 +755,34 @@ function FichaContent({
   return (
     <div className="flex flex-col gap-4 overflow-y-auto p-4">
       <IdentidadeHeader ficha={ficha} />
+
+      {/* Ordem Lamina Austin (sem prazo medio nem CDI). */}
       <CarteiraLaminaTable ficha={ficha} format="brl" />
       <CarteiraLaminaTable ficha={ficha} format="pct" />
+
+      {/* Natureza dos DC por setor (substituto CVM da "natureza" Austin). */}
+      <SetoresSnapshot ficha={ficha} />
+
+      {/* Recompras (tab_vii.d) — R$ + %PL mes-a-mes. */}
+      <RecompraTable ficha={ficha} />
+
+      {/* Indices de Atraso (10 buckets CVM nativos). */}
+      <AtrasoTable ficha={ficha} />
+
+      {/* Concentracao top-9 cedentes (snapshot competencia atual). */}
+      <CedentesSnapshot ficha={ficha} />
+
+      {/* PL por subclasse — fallback "dado nao reportado" pro Puma. */}
+      <PlSubclassesTable ficha={ficha} />
+
+      {/* Cobertura PL Sub / cedentes top-N (vezes). */}
       <CoberturaSubordinacaoTable ficha={ficha} />
+
+      {/* Rentabilidade mensal por subclasse. */}
+      <RentMensalTable ficha={ficha} />
+
+      {/* Rentabilidade acumulada (chart linha sem CDI). */}
+      <RentAcumuladaTable ficha={ficha} />
     </div>
   )
 }

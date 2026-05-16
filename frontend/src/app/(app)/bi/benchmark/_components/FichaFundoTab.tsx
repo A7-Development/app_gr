@@ -308,7 +308,7 @@ function PlEvolucaoTable({ ficha }: { ficha: FichaFundo }) {
   )
 }
 
-function RecompraTable({ ficha }: { ficha: FichaFundo }) {
+export function RecompraTable({ ficha }: { ficha: FichaFundo }) {
   const serie = ficha.recompra_serie
   if (serie.length === 0) {
     return (
@@ -666,7 +666,7 @@ const ATRASO_BUCKETS: { key: keyof FundoAtrasoBuckets; label: string }[] = [
   { key: "b1080_plus", label: ">1080d" },
 ]
 
-function AtrasoTable({
+export function AtrasoTable({
   ficha,
   className,
 }: {
@@ -774,7 +774,7 @@ function PrazoMedioTable({
 // §8 — PL por subclasse (tabela wide 24m)
 // ===========================================================================
 
-function PlSubclassesTable({ ficha }: { ficha: FichaFundo }) {
+export function PlSubclassesTable({ ficha }: { ficha: FichaFundo }) {
   const serie = ficha.pl_subclasses_serie
   const subs = collectSubclasses(ficha)
   if (serie.length === 0 || subs.length === 0) {
@@ -819,7 +819,7 @@ function PlSubclassesTable({ ficha }: { ficha: FichaFundo }) {
 // §9 — Rentabilidade mensal (tabela wide)
 // ===========================================================================
 
-function RentMensalTable({ ficha }: { ficha: FichaFundo }) {
+export function RentMensalTable({ ficha }: { ficha: FichaFundo }) {
   const serie = ficha.rent_serie
   const subs = collectSubclasses(ficha)
   if (serie.length === 0 || subs.length === 0) {
@@ -859,7 +859,7 @@ function RentMensalTable({ ficha }: { ficha: FichaFundo }) {
 // §10 — Rentabilidade acumulada
 // ===========================================================================
 
-function RentAcumuladaTable({ ficha }: { ficha: FichaFundo }) {
+export function RentAcumuladaTable({ ficha }: { ficha: FichaFundo }) {
   const serie = ficha.rent_acumulada
   const subs = collectSubclasses(ficha)
   if (serie.length === 0 || subs.length === 0) {
@@ -1111,7 +1111,7 @@ function LiquidezTable({ ficha }: { ficha: FichaFundo }) {
 // §14 — Cedentes (snapshot compacto)
 // ===========================================================================
 
-function CedentesSnapshot({ ficha }: { ficha: FichaFundo }) {
+export function CedentesSnapshot({ ficha }: { ficha: FichaFundo }) {
   if (ficha.cedentes.length === 0) {
     return (
       <ChartCard title="Cedentes — snapshot" className="w-fit max-w-full">
@@ -1157,7 +1157,7 @@ function CedentesSnapshot({ ficha }: { ficha: FichaFundo }) {
 // §15 — Setores (snapshot compacto)
 // ===========================================================================
 
-function SetoresSnapshot({ ficha }: { ficha: FichaFundo }) {
+export function SetoresSnapshot({ ficha }: { ficha: FichaFundo }) {
   if (ficha.setores.length === 0) {
     return (
       <ChartCard title="Setores — snapshot" className="w-fit max-w-full">
