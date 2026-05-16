@@ -36,6 +36,7 @@ import {
 
 import { PageHeader } from "@/design-system/components/PageHeader"
 import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
+import { KpiCard, KpiStrip } from "@/design-system/components/KpiStrip"
 import {
   ProvenanceFooter,
   type ProvenanceSource,
@@ -72,6 +73,12 @@ const fmtBRL = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
   maximumFractionDigits: 0,
+})
+const fmtBRLCompact = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  notation: "compact",
+  maximumFractionDigits: 1,
 })
 const fmtInt = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 })
 
@@ -180,6 +187,15 @@ export default function Benchmark2Page() {
   const fundosQuery = useBenchmark2Fundos()
   const data = fundosQuery.data?.fundos ?? []
   const competencia = fundosQuery.data?.competencia ?? ""
+
+  // KPIs agregados do mercado (toda a base CVM, antes dos filtros locais).
+  const kpis = React.useMemo(() => {
+    const totalFundos = data.length
+    const plTotal = data.reduce((s, r) => s + (r.pl_ult_mes ?? 0), 0)
+    const cotistasTotal = data.reduce((s, r) => s + (r.cotistas ?? 0), 0)
+    const ticketMedio = totalFundos > 0 ? plTotal / totalFundos : 0
+    return { totalFundos, plTotal, cotistasTotal, ticketMedio }
+  }, [data])
 
   // Filtros aplicados client-side (a query ja vem sem paginacao).
   const filteredRows = React.useMemo(() => {
@@ -452,6 +468,36 @@ export default function Benchmark2Page() {
 
         {/* Conteudo scrollavel */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4">
+          {/* Barra de KPIs do mercado (equivalente do StatusHeadlineCompact da Cota Sub) */}
+          <KpiStrip cols={4} className="mb-4">
+            <KpiCard
+              label="Fundos"
+              value={fmtInt.format(kpis.totalFundos)}
+              sub="FIDCs"
+              source="CVM (publico)"
+              updatedAtISO={competencia ? `${competencia}-01` : undefined}
+            />
+            <KpiCard
+              label="PL total mercado"
+              value={fmtBRLCompact.format(kpis.plTotal)}
+              source="CVM (publico)"
+              updatedAtISO={competencia ? `${competencia}-01` : undefined}
+            />
+            <KpiCard
+              label="Cotistas"
+              value={fmtInt.format(kpis.cotistasTotal)}
+              source="CVM (publico)"
+              updatedAtISO={competencia ? `${competencia}-01` : undefined}
+            />
+            <KpiCard
+              label="Ticket medio"
+              value={fmtBRLCompact.format(kpis.ticketMedio)}
+              sub="PL/fundo"
+              source="CVM (publico)"
+              updatedAtISO={competencia ? `${competencia}-01` : undefined}
+            />
+          </KpiStrip>
+
           <div className="overflow-hidden rounded border border-gray-200 dark:border-gray-800">
             <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 px-4 py-2.5 dark:border-gray-800">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
