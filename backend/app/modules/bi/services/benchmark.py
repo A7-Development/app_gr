@@ -72,6 +72,7 @@ from app.modules.bi.schemas.fundo import (
     AtrasoPonto,
     CarteiraPonto,
     CedenteLinha,
+    CoberturaSubordinacaoPonto,
     CotistasPonto,
     CotistasTipoPonto,
     DesempenhoGap,
@@ -1579,27 +1580,32 @@ async def get_fundo(
             text(
                 """
                 SELECT
-                    competencia,
-                    COALESCE(tab_i1_vl_disp,             0) AS disp,
-                    COALESCE(tab_i2a_vl_dircred_risco,   0) AS dc_risco,
-                    COALESCE(tab_i2b_vl_dircred_sem_risco,0) AS dc_sem_risco,
-                    COALESCE(tab_i2c_vl_vlmob,           0) AS vlmob,
-                    COALESCE(tab_i2d_vl_titpub_fed,      0) AS tit_pub,
-                    COALESCE(tab_i2e_vl_cdb,             0) AS cdb,
-                    COALESCE(tab_i2f_vl_oper_comprom,    0) AS oper_comprom,
-                    COALESCE(tab_i2g_vl_outro_rf,        0) AS outros_rf,
-                    COALESCE(tab_i2h_vl_cota_fidc,       0) AS cotas_fidc,
-                    COALESCE(tab_i2i_vl_cota_fidc_np,    0) AS cotas_fidc_np,
-                    COALESCE(tab_i2j_vl_contrato_futuro, 0) AS contrato_futuro,
-                    COALESCE(tab_i2_vl_carteira,         0) AS carteira_sub,
-                    COALESCE(tab_i3_vl_posicao_deriv,    0) AS deriv,
-                    COALESCE(tab_i4_vl_outro_ativo,      0) AS outro_ativo,
-                    COALESCE(tab_i2a11_vl_reducao_recup, 0) AS pdd_aprox,
-                    COALESCE(tab_i_vl_ativo,             0) AS ativo_total
-                FROM cvm_remote.tab_i
-                WHERE cnpj_fundo_classe = :cnpj
-                  AND competencia BETWEEN :inicio AND :fim
-                ORDER BY competencia
+                    i.competencia                            AS competencia,
+                    COALESCE(i.tab_i1_vl_disp,             0) AS disp,
+                    COALESCE(i.tab_i2a_vl_dircred_risco,   0) AS dc_risco,
+                    COALESCE(i.tab_i2b_vl_dircred_sem_risco,0) AS dc_sem_risco,
+                    COALESCE(i.tab_i2c_vl_vlmob,           0) AS vlmob,
+                    COALESCE(i.tab_i2d_vl_titpub_fed,      0) AS tit_pub,
+                    COALESCE(i.tab_i2e_vl_cdb,             0) AS cdb,
+                    COALESCE(i.tab_i2f_vl_oper_comprom,    0) AS oper_comprom,
+                    COALESCE(i.tab_i2g_vl_outro_rf,        0) AS outros_rf,
+                    COALESCE(i.tab_i2h_vl_cota_fidc,       0) AS cotas_fidc,
+                    COALESCE(i.tab_i2i_vl_cota_fidc_np,    0) AS cotas_fidc_np,
+                    COALESCE(i.tab_i2j_vl_contrato_futuro, 0) AS contrato_futuro,
+                    COALESCE(i.tab_i2_vl_carteira,         0) AS carteira_sub,
+                    COALESCE(i.tab_i3_vl_posicao_deriv,    0) AS deriv,
+                    COALESCE(i.tab_i4_vl_outro_ativo,      0) AS outro_ativo,
+                    COALESCE(i.tab_i2a11_vl_reducao_recup, 0) AS pdd_aprox,
+                    COALESCE(i.tab_i_vl_ativo,             0) AS ativo_total,
+                    v.tab_v_a_vl_dircred_prazo               AS dc_a_vencer,
+                    v.tab_v_b_vl_dircred_inad                AS dc_inadimplente
+                FROM cvm_remote.tab_i i
+                LEFT JOIN cvm_remote.tab_v v
+                       ON v.cnpj_fundo_classe = i.cnpj_fundo_classe
+                      AND v.competencia       = i.competencia
+                WHERE i.cnpj_fundo_classe = :cnpj
+                  AND i.competencia BETWEEN :inicio AND :fim
+                ORDER BY i.competencia
                 """
             ),
             params_range,
@@ -1624,6 +1630,10 @@ async def get_fundo(
             outro_ativo=_as_float(r.outro_ativo),
             pdd_aprox=_as_float(r.pdd_aprox),
             ativo_total=_as_float(r.ativo_total),
+            dc_a_vencer=_as_float(r.dc_a_vencer) if r.dc_a_vencer is not None else None,
+            dc_inadimplente=(
+                _as_float(r.dc_inadimplente) if r.dc_inadimplente is not None else None
+            ),
         )
         for r in cart_rows
     ]
@@ -2217,6 +2227,93 @@ async def get_fundo(
             garantias = Garantias(vl_garantia=vl_g, pct_garantia=pct_g)
 
     # -----------------------------------------------------------------
+    # 13) cobertura_subordinacao_serie -- PL_Sub / (% cedente * PL_total)
+    #
+    # Reproduz "Indices de Cobertura da Subordinacao" da Lamina Austin,
+    # restrita ao que CVM publica: SO cedentes (sem sacados), SO top-9
+    # (sem top-10/20). Fallback Puma: qt_cota=NULL -> PL_Sub=None +
+    # dado_indisponivel=True.
+    # -----------------------------------------------------------------
+    ced_serie_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    competencia,
+                    COALESCE(tab_i2a12_pr_cedente_1, 0) AS p1,
+                    COALESCE(tab_i2a12_pr_cedente_2, 0) AS p2,
+                    COALESCE(tab_i2a12_pr_cedente_3, 0) AS p3,
+                    COALESCE(tab_i2a12_pr_cedente_4, 0) AS p4,
+                    COALESCE(tab_i2a12_pr_cedente_5, 0) AS p5,
+                    COALESCE(tab_i2a12_pr_cedente_6, 0) AS p6,
+                    COALESCE(tab_i2a12_pr_cedente_7, 0) AS p7,
+                    COALESCE(tab_i2a12_pr_cedente_8, 0) AS p8,
+                    COALESCE(tab_i2a12_pr_cedente_9, 0) AS p9
+                FROM cvm_remote.tab_i
+                WHERE cnpj_fundo_classe = :cnpj
+                  AND competencia BETWEEN :inicio AND :fim
+                ORDER BY competencia
+                """
+            ),
+            params_range,
+        )
+    ).all()
+    ced_pct_por_comp: dict[date, list[float]] = {}
+    for r in ced_serie_rows:
+        raw = [_as_float(getattr(r, f"p{i}")) for i in range(1, 10)]
+        # CVM oscila entre fracao 0..1 e percentual 0..100. Normaliza pra fracao.
+        pcts = [(x / 100.0 if x > 1 else x) if x > 0 else 0.0 for x in raw]
+        pcts.sort(reverse=True)
+        ced_pct_por_comp[r.competencia] = pcts
+
+    cobertura_subordinacao_serie: list[CoberturaSubordinacaoPonto] = []
+    comps_cobertura = sorted(
+        set(plsub_map.keys()) | set(ced_pct_por_comp.keys()) | set(pl_por_comp.keys())
+    )
+    for comp in comps_cobertura:
+        pl_total = pl_por_comp.get(comp, 0.0)
+        sub_map = plsub_map.get(comp, {})
+        # Detecta classes subordinadas pelo nome (heuristica robusta: cobre
+        # "Subordinada", "Sub-1", "Cota Subordinada Junior", etc).
+        pl_sub = sum(v for k, v in sub_map.items() if "sub" in k.lower())
+        pcts = ced_pct_por_comp.get(comp, [0.0] * 9)
+
+        if pl_sub <= 0 or pl_total <= 0:
+            cobertura_subordinacao_serie.append(
+                CoberturaSubordinacaoPonto(
+                    competencia=comp,
+                    pl_subordinada=None,
+                    cobertura_maior_cedente=None,
+                    cobertura_top3_cedentes=None,
+                    cobertura_top5_cedentes=None,
+                    cobertura_top9_cedentes=None,
+                    dado_indisponivel=True,
+                )
+            )
+            continue
+
+        p1 = pcts[0]
+        p3 = sum(pcts[:3])
+        p5 = sum(pcts[:5])
+        p9 = sum(pcts[:9])
+        exp1 = p1 * pl_total
+        exp3 = p3 * pl_total
+        exp5 = p5 * pl_total
+        exp9 = p9 * pl_total
+
+        cobertura_subordinacao_serie.append(
+            CoberturaSubordinacaoPonto(
+                competencia=comp,
+                pl_subordinada=pl_sub,
+                cobertura_maior_cedente=pl_sub / exp1 if exp1 > 0 else None,
+                cobertura_top3_cedentes=pl_sub / exp3 if exp3 > 0 else None,
+                cobertura_top5_cedentes=pl_sub / exp5 if exp5 > 0 else None,
+                cobertura_top9_cedentes=pl_sub / exp9 if exp9 > 0 else None,
+                dado_indisponivel=False,
+            )
+        )
+
+    # -----------------------------------------------------------------
     # Monta resposta + proveniencia na competencia atual.
     # -----------------------------------------------------------------
     ficha = FichaFundo(
@@ -2240,5 +2337,6 @@ async def get_fundo(
         scr_distribuicao=scr_distribuicao,
         garantias=garantias,
         limitacoes=list(_LIMITACOES_FICHA),
+        cobertura_subordinacao_serie=cobertura_subordinacao_serie,
     )
     return ficha, await _build_provenance(db, comp_atual)

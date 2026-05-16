@@ -1,18 +1,19 @@
 "use client"
 
-// /bi/benchmark2 — Demo do pattern <DataTableShell> em pagina BI real.
+// /bi/benchmark2 — Listagem dos FIDCs CVM + entry point pra Ficha Lamina.
 //
 // Estrutura (CLAUDE.md sec 11.6 hierarquia 3 niveis):
 //   L3 = TabNavigation com 4 abas. Aba "Fundos" tem a tabela <DataTableShell>
 //   com a lista completa de fundos CVM (PL + cotistas via cvm_remote.*).
+//   Clicar numa linha navega pra /bi/benchmark2/[cnpj] (Ficha Lamina).
 //
 // Padroes aplicados:
-//   - PageHeader com info + actions canonicos (DashboardHeaderActions).
+//   - PageHeader com info + actions canonicos.
 //   - KpiStrip 4 KPIs derivados da lista de fundos.
 //   - <DataTableShell> + tableTokens.* nas cells (decisao 2026-04-30).
 
 import * as React from "react"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 
 import { Button } from "@/components/tremor/Button"
@@ -22,6 +23,7 @@ import {
 } from "@/components/tremor/TabNavigation"
 import {
   DataTableShell,
+  KpiCard,
   KpiStrip,
   PageHeader,
 } from "@/design-system/components"
@@ -120,6 +122,7 @@ const col = createColumnHelper<Benchmark2FundoRow>()
 export default function Benchmark2Page() {
   const activeTab = useActiveTab()
   const sp = useSearchParams()
+  const router = useRouter()
 
   const fundosQuery = useBenchmark2Fundos()
   const data = fundosQuery.data?.fundos ?? []
@@ -256,32 +259,33 @@ export default function Benchmark2Page() {
       </TabNavigation>
 
       {/* Z4 — KPIs (sempre visiveis em todas as abas) */}
-      <KpiStrip
-        cols={4}
-        items={[
-          {
-            label: "Fundos",
-            value: fmtInt.format(kpis.totalFundos),
-            unit: "FIDCs",
-            source: { source: "CVM (publico)", updatedAtISO: competencia ? `${competencia}-01` : undefined },
-          },
-          {
-            label: "PL total mercado",
-            value: fmtBRLCompact.format(kpis.plTotal),
-            source: { source: "CVM (publico)", updatedAtISO: competencia ? `${competencia}-01` : undefined },
-          },
-          {
-            label: "Cotistas",
-            value: fmtInt.format(kpis.cotistasTotal),
-            source: { source: "CVM (publico)", updatedAtISO: competencia ? `${competencia}-01` : undefined },
-          },
-          {
-            label: "Ticket medio (PL/fundo)",
-            value: fmtBRLCompact.format(kpis.ticketMedio),
-            source: { source: "CVM (publico)", updatedAtISO: competencia ? `${competencia}-01` : undefined },
-          },
-        ]}
-      />
+      <KpiStrip cols={4}>
+        <KpiCard
+          label="Fundos"
+          value={fmtInt.format(kpis.totalFundos)}
+          sub="FIDCs"
+          source="CVM (publico)"
+          updatedAtISO={competencia ? `${competencia}-01` : undefined}
+        />
+        <KpiCard
+          label="PL total mercado"
+          value={fmtBRLCompact.format(kpis.plTotal)}
+          source="CVM (publico)"
+          updatedAtISO={competencia ? `${competencia}-01` : undefined}
+        />
+        <KpiCard
+          label="Cotistas"
+          value={fmtInt.format(kpis.cotistasTotal)}
+          source="CVM (publico)"
+          updatedAtISO={competencia ? `${competencia}-01` : undefined}
+        />
+        <KpiCard
+          label="Ticket medio (PL/fundo)"
+          value={fmtBRLCompact.format(kpis.ticketMedio)}
+          source="CVM (publico)"
+          updatedAtISO={competencia ? `${competencia}-01` : undefined}
+        />
+      </KpiStrip>
 
       {/* Z5 — conteudo da aba */}
       {activeTab === "fundos" && (
@@ -306,6 +310,10 @@ export default function Benchmark2Page() {
             ],
           }}
           itemNoun={{ singular: "fundo", plural: "fundos" }}
+          onRowClick={(row) => {
+            const digits = row.cnpj.replace(/\D/g, "")
+            router.push(`/bi/benchmark2/${digits}`)
+          }}
         />
       )}
       {activeTab !== "fundos" && (

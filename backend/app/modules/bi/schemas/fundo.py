@@ -96,6 +96,32 @@ class CarteiraPonto(BaseModel):
     outro_ativo: float
     pdd_aprox: float
     ativo_total: float
+    # Decomposicao do DC com risco (tab_v) — necessaria pelo layout Austin que
+    # separa "Direitos Creditorios" (a vencer) de "Creditos Vencidos" (inad).
+    # Opcionais com default None para retrocompat com consumers do schema.
+    dc_a_vencer: float | None = None       # tab_v_a_vl_dircred_prazo
+    dc_inadimplente: float | None = None   # tab_v_b_vl_dircred_inad
+
+
+class CoberturaSubordinacaoPonto(BaseModel):
+    """Cobertura PL Subordinada / Sigma(maiores cedentes) -- em vezes.
+
+    Reproduz a tabela "Indices de Cobertura da Subordinacao" da Lamina Austin,
+    mas restrita ao que o CVM publica: SO cedentes (sem sacados) e SO top-9
+    (sem top-10/20).
+
+    Fallback Puma: quando `tab_x_2.qt_cota` e NULL (admin nao reporta a CVM),
+    `pl_subordinada` retorna None, todas as coberturas vem None e
+    `dado_indisponivel=True`.
+    """
+
+    competencia: date
+    pl_subordinada: float | None
+    cobertura_maior_cedente: float | None
+    cobertura_top3_cedentes: float | None
+    cobertura_top5_cedentes: float | None
+    cobertura_top9_cedentes: float | None
+    dado_indisponivel: bool = False
 
 
 class AtrasoBuckets(BaseModel):
@@ -255,3 +281,4 @@ class FichaFundo(BaseModel):
     scr_distribuicao: list[SCRLinha]
     garantias: Garantias | None
     limitacoes: list[str]
+    cobertura_subordinacao_serie: list[CoberturaSubordinacaoPonto] = []
