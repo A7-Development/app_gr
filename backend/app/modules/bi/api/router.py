@@ -2,16 +2,14 @@
 
 from fastapi import APIRouter
 
-from app.modules.bi.api import benchmark, benchmark2, metadata, operacoes, operacoes2
+from app.modules.bi.api import benchmark, benchmark2, metadata, operacoes2
 
 router = APIRouter()
 
-# L2 Operacoes (Sprint 4 entrega inicial).
-router.include_router(operacoes.router)
-
-# L2 Operacoes2 (refatoracao 2026-05-03): nova UX em rota paralela.
+# L2 Operacoes — entrega canonica desde 2026-05-17 (substituiu o legado).
 # KPI Strip global + 4 abas (Volume & Ritmo, Produtos & Pricing, Receita,
-# Cedentes & Concentracao). Pagina vive em `/bi/operacoes2` no frontend.
+# Cedentes & Concentracao). Pagina vive em `/bi/operacoes2` no frontend
+# (rename pasta -> /bi/operacoes pendente: tech debt).
 router.include_router(operacoes2.router)
 
 # L2 Benchmark (CVM FIDC via postgres_fdw — CLAUDE.md 13.1).
