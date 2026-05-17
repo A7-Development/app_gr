@@ -114,6 +114,11 @@ function formatCNPJ(v: string): string {
 // Cells custom (badge)
 // ───────────────────────────────────────────────────────────────────────────
 
+// Aberto / Fechado sao CLASSIFICACOES (tipo do fundo), nao estados ativo/inativo:
+// - Aberto:  cotista pode aplicar/resgatar a qualquer momento.
+// - Fechado: cotas so podem ser resgatadas em prazos/eventos definidos (FIDC
+//             classico). Ambos sao validos — daí o uso de duas cores de
+//             accent equivalentes (azul + violeta), sem hierarquia visual.
 function CondomBadge({ value }: { value: Benchmark2FundoRow["condom"] }) {
   if (!value) return <span className={tableTokens.cellMuted}>—</span>
   if (value === "aberto") {
@@ -132,7 +137,7 @@ function CondomBadge({ value }: { value: Benchmark2FundoRow["condom"] }) {
     <span
       className={cx(
         tableTokens.badge,
-        "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+        "bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300",
       )}
     >
       Fechado
@@ -296,11 +301,16 @@ export default function Benchmark2Page() {
   const columns = React.useMemo<ColumnDef<Benchmark2FundoRow, unknown>[]>(
     () => [
       col.accessor("fundo", {
+        // Larguras tunadas pra somar ~1500px (container tipico) — mantem
+        // distribuicao proporcional do table-fixed minima, sem gaps visiveis.
         header: "Fundo",
-        size: 380,
+        size: 480,
         cell: (info) => (
           <span
-            className={cx(tableTokens.cellText, "block max-w-full truncate")}
+            className={cx(
+              tableTokens.cellText,
+              "block max-w-full overflow-hidden text-ellipsis whitespace-nowrap",
+            )}
             title={info.getValue()}
           >
             {info.getValue()}
@@ -310,16 +320,43 @@ export default function Benchmark2Page() {
 
       col.accessor("cnpj", {
         header: "CNPJ",
-        size: 160,
+        size: 145,
         cell: (info) => (
-          <span className={tableTokens.cellTextMono}>{info.getValue()}</span>
+          <span className={cx(tableTokens.cellTextMono, "whitespace-nowrap")}>
+            {info.getValue()}
+          </span>
         ),
       }) as ColumnDef<Benchmark2FundoRow, unknown>,
 
       col.accessor("condom", {
         header: "Condominio",
+        meta: { align: "center" },
         size: 110,
-        cell: (info) => <CondomBadge value={info.getValue()} />,
+        cell: (info) => (
+          <div className="flex justify-center">
+            <CondomBadge value={info.getValue()} />
+          </div>
+        ),
+      }) as ColumnDef<Benchmark2FundoRow, unknown>,
+
+      col.accessor("admin", {
+        header: "Administradora",
+        size: 290,
+        cell: (info) => {
+          const v = info.getValue()
+          if (!v) return <span className={tableTokens.cellMuted}>—</span>
+          return (
+            <span
+              className={cx(
+                tableTokens.cellText,
+                "block max-w-full overflow-hidden text-ellipsis whitespace-nowrap",
+              )}
+              title={v}
+            >
+              {v}
+            </span>
+          )
+        },
       }) as ColumnDef<Benchmark2FundoRow, unknown>,
 
       col.accessor("cotistas", {
@@ -332,7 +369,10 @@ export default function Benchmark2Page() {
             return <span className={tableTokens.cellMuted}>—</span>
           return (
             <span
-              className={cx(tableTokens.cellNumber, "block text-right")}
+              className={cx(
+                tableTokens.cellNumber,
+                "block whitespace-nowrap text-right",
+              )}
             >
               {fmtInt.format(v)}
             </span>
@@ -343,16 +383,19 @@ export default function Benchmark2Page() {
       col.accessor("pl_medio_3m", {
         header: "PL medio 3M",
         meta: { align: "right" },
-        size: 160,
+        size: 150,
         cell: (info) => {
           const v = info.getValue()
           if (v == null)
             return <span className={tableTokens.cellMuted}>—</span>
           return (
             <span
-              className={cx(tableTokens.cellNumber, "block text-right")}
+              className={cx(
+                tableTokens.cellNumber,
+                "block whitespace-nowrap text-right",
+              )}
             >
-              {fmtBRL.format(v)}
+              {fmtBRLCompact.format(v)}
             </span>
           )
         },
@@ -370,10 +413,10 @@ export default function Benchmark2Page() {
             <span
               className={cx(
                 tableTokens.cellNumber,
-                "block text-right font-medium",
+                "block whitespace-nowrap text-right font-medium",
               )}
             >
-              {fmtBRL.format(v)}
+              {fmtBRLCompact.format(v)}
             </span>
           )
         },
@@ -506,7 +549,7 @@ export default function Benchmark2Page() {
             loading={fundosQuery.isPending}
           />
 
-          <div className="overflow-hidden rounded border border-gray-200 dark:border-gray-800">
+          <div className="overflow-hidden rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
             <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 px-4 py-2.5 dark:border-gray-800">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
                 Fundos CVM
@@ -544,6 +587,7 @@ export default function Benchmark2Page() {
               showExport={false}
               virtualize={true}
               onRowClick={setSelectedFundo}
+              className="[&_table]:table-fixed"
             />
           </div>
         </div>

@@ -1607,6 +1607,7 @@ export type Benchmark2FundoRow = {
   cnpj: string
   fundo: string
   condom: "aberto" | "fechado" | null
+  admin: string | null
   cotistas: number | null
   pl_medio_3m: number | null
   pl_ult_mes: number | null

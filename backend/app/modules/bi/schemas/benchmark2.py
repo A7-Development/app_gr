@@ -15,6 +15,7 @@ class Benchmark2FundoRow(BaseModel):
     cnpj: str
     fundo: str
     condom: str | None  # 'aberto' | 'fechado' (normalizado lower-case)
+    admin: str | None  # razao social da administradora (cvm_remote.tab_i.admin)
     cotistas: int | None
     pl_medio_3m: float | None
     pl_ult_mes: float | None
