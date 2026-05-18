@@ -55,6 +55,7 @@ from app.warehouse.cpr_movimento import CprMovimento
 from app.warehouse.estoque_recebivel import EstoqueRecebivel
 from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel
 from app.warehouse.mec_evolucao_cotas import MecEvolucaoCotas
+from app.warehouse.movimento_caixa import MovimentoCaixa
 from app.warehouse.posicao_compromissada import PosicaoCompromissada
 from app.warehouse.posicao_cota_fundo import PosicaoCotaFundo
 from app.warehouse.posicao_outros_ativos import PosicaoOutrosAtivos
@@ -101,10 +102,30 @@ def _is_titulo_publico(descricao_tipo: str) -> bool:
     return any(k in n for k in ("titulo publico", "tpf", "lft", "ltn", "ntn", "tesouro"))
 
 
-def _is_fundo_di(ativo_nome: str, ativo_instituicao: str) -> bool:
-    a = (ativo_nome or "").lower()
-    i = (ativo_instituicao or "").lower()
-    return " di" in a or "renda fixa" in a or "renda fixa" in i or a.startswith("di ")
+def _is_fundo_externo(ativo_nome: str, ua_nome: str) -> bool:
+    """Fundo EXTERNO = nao bate com o PREFIXO do nome da UA do fundo.
+
+    Mudanca 2026-05-18 (Fase 3c-pre): antes existia `_is_fundo_di` com
+    regex por nome ('DI', 'soberano', 'selic', etc.) — fragil porque
+    cada novo fundo (ex.: ITAU SOBERANO REF SI) exigia atualizacao da
+    lista. Filosofia nova: confiar no endpoint da QiTech (todo papel
+    em `wh_posicao_cota_fundo` e cota de fundo). Filtro residual: so
+    EXCLUIR fundos internos (representacao alternativa da carteira DC
+    do proprio FIDC — ex.: 'REALINVEST A VENCER', 'REALINVEST VENCIDOS'),
+    pra nao duplicar contagem com o driver Apropriacao DC.
+
+    Identificacao do interno: primeira palavra do nome da UA aparece no
+    nome do papel. `REALINVEST FIDC` -> prefixo `REALINVEST` -> casa com
+    `REALINVEST A VENCER` e `REALINVEST VENCIDOS`. Funciona porque o
+    nome do FIDC sempre comeca pelo nome unico do fundo (sem coincidir
+    com nome de fundo externo).
+    """
+    a = _norm(ativo_nome or "")
+    ua_tokens = _norm(ua_nome or "").split()
+    if not ua_tokens:
+        return True
+    prefix = ua_tokens[0]
+    return prefix not in a
 
 
 def _dia_util_anterior(d: date) -> date:
@@ -160,6 +181,77 @@ async def _mec_classes(
         elif _is_senior(nome):
             out["senior"] += v
     return out
+
+
+async def _sum_mov_caixa_fundo_externo(
+    db: AsyncSession,
+    tenant_id: UUID,
+    ua_id: UUID,
+    ua_nome: str,
+    data: date,
+) -> Decimal:
+    """Net cash flow do dia relacionado a fundos EXTERNOS (entradas + saidas).
+
+    Filtro: `descricao ILIKE '%fundo%'` AND (`aplicacao` OR `resgate`)
+    AND nao casa com o nome da UA (exclui fundos internos REALINVEST
+    A VENCER / VENCIDOS, que sao DC contabilizada em outro driver).
+
+    Dedup defensivo: agrupa por (entradas, saidas) DISTINCT. QiTech publica
+    varias rows pro mesmo evento — com/sem 'a receber em DD/MM' no fim da
+    descricao, com/sem `[CODIGO]`, sufixos variados. Em REALINVEST 13/05
+    o resgate ITAU SOBERANO aparece com 3 descricoes distintas mas todas
+    com mesma entrada R$ 318.166,73 — chave so por valores absorve as 3.
+
+    Convencao de sinal:
+      - Aplicacao no fundo: caixa SAI (saida < 0). Soma E+S < 0.
+      - Resgate do fundo:   caixa ENTRA (entrada > 0). Soma E+S > 0.
+
+    Filtro de fundos internos (carteira DC propria, ex.: REALINVEST A VENCER):
+    busca por `prefixo` do nome da UA na descricao. `REALINVEST FIDC` ->
+    prefixo `REALINVEST` -> casa com "Aplicacao no Fundo REALINVEST A VENCER".
+
+    Usado em `compute_fundos_di` (Fase 3c-C) para isolar rendimento:
+      rendimento_fundo = ΔPos + net_caixa.
+    """
+    stmt = (
+        select(
+            MovimentoCaixa.descricao,
+            MovimentoCaixa.entradas,
+            MovimentoCaixa.saidas,
+        )
+        .where(MovimentoCaixa.tenant_id == tenant_id)
+        .where(MovimentoCaixa.unidade_administrativa_id == ua_id)
+        .where(MovimentoCaixa.data_liquidacao == data)
+    )
+    rows = (await db.execute(stmt)).all()
+
+    # Prefixo do nome da UA para detectar fundos internos.
+    # "REALINVEST FIDC" -> "REALINVEST"; fundos internos da carteira propria
+    # aparecem como "REALINVEST A VENCER", "REALINVEST VENCIDOS", etc.
+    ua_tokens = _norm(ua_nome or "").split()
+    ua_prefix = ua_tokens[0] if ua_tokens else ""
+
+    seen: set[tuple[str, str]] = set()
+    total = ZERO
+    for desc, ent, sai in rows:
+        d = (desc or "")
+        d_lower = d.lower()
+        if "fundo" not in d_lower:
+            continue
+        # Excluir aplicacao/resgate em fundos internos (carteira DC propria)
+        if ua_prefix and ua_prefix in _norm(d):
+            continue
+        if ("aplicação" not in d_lower
+                and "aplicacao" not in d_lower
+                and "resgate" not in d_lower):
+            continue
+        # Dedup por (ent, sai) so — descricoes variam com sufixos a receber/pagar.
+        key = (str(ent or 0), str(sai or 0))
+        if key in seen:
+            continue
+        seen.add(key)
+        total += Decimal(ent or 0) + Decimal(sai or 0)
+    return total
 
 
 async def _mec_classes_fluxo_caixa(
@@ -251,12 +343,18 @@ async def _sum_outros_ativos_nao_tpf(
 
 
 async def _sum_fundos_di(
-    db: AsyncSession, tenant_id: UUID, ua_id: UUID, data: date
+    db: AsyncSession, tenant_id: UUID, ua_id: UUID, ua_nome: str, data: date
 ) -> Decimal:
+    """Soma posicoes em fundos EXTERNOS (qualquer fundo em
+    `wh_posicao_cota_fundo` cujo nome nao bata com o da UA).
+
+    Fundos internos (`REALINVEST A VENCER` / `REALINVEST VENCIDOS`) sao
+    excluidos — representam a carteira DC do proprio FIDC, contabilizada
+    no driver Apropriacao DC.
+    """
     stmt = (
         select(
             PosicaoCotaFundo.ativo_nome,
-            PosicaoCotaFundo.ativo_instituicao,
             PosicaoCotaFundo.valor_liquido,
         )
         .where(PosicaoCotaFundo.tenant_id == tenant_id)
@@ -265,8 +363,8 @@ async def _sum_fundos_di(
     )
     rows = (await db.execute(stmt)).all()
     total = ZERO
-    for nome, instituicao, valor in rows:
-        if _is_fundo_di(nome or "", instituicao or ""):
+    for nome, valor in rows:
+        if _is_fundo_externo(nome or "", ua_nome):
             total += Decimal(valor or 0)
     return total
 
@@ -578,8 +676,8 @@ async def compute_variacao_diaria(
     titulos_d0 = await _sum_titulos_publicos(db, tenant_id, ua_id, data_d0)
     outros_d1 = await _sum_outros_ativos_nao_tpf(db, tenant_id, ua_id, d1)
     outros_d0 = await _sum_outros_ativos_nao_tpf(db, tenant_id, ua_id, data_d0)
-    fundos_di_d1 = await _sum_fundos_di(db, tenant_id, ua_id, d1)
-    fundos_di_d0 = await _sum_fundos_di(db, tenant_id, ua_id, data_d0)
+    fundos_di_d1 = await _sum_fundos_di(db, tenant_id, ua_id, ua.nome, d1)
+    fundos_di_d0 = await _sum_fundos_di(db, tenant_id, ua_id, ua.nome, data_d0)
     dc_d1 = await _sum_dc(db, tenant_id, fundo_doc, d1)
     dc_d0 = await _sum_dc(db, tenant_id, fundo_doc, data_d0)
     pdd_d1 = await _sum_pdd(db, tenant_id, fundo_doc, d1)

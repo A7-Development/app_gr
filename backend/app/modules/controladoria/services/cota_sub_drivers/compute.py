@@ -56,6 +56,7 @@ from app.modules.controladoria.services.cota_sub import (  # noqa: I001 - circul
     _mec_classes_fluxo_caixa,
     _sum_compromissada,
     _sum_fundos_di,
+    _sum_mov_caixa_fundo_externo,
     _sum_outros_ativos_nao_tpf,
     _sum_pdd,
     _sum_tesouraria,
@@ -329,17 +330,32 @@ async def compute_fundos_di(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Fundos DI = dPosicao (subtracao de mov caixa em Fase 3c).
+    """Fundos DI = (ΔPos posicao_cota_fundo externo) + net_caixa_fundos_dia.
 
-    TECH DEBT (Fase 3c): subtrair movimento de caixa especifico (aplicacao /
-    resgate) pra isolar rendimento. Hoje retorna dPosicao bruta — pode
-    superestimar o impacto quando ha movimento de caixa no dia.
+    Fase 3c-C (2026-05-18): subtrai movimento de caixa do dia pra isolar
+    APENAS rendimento (curva/MtM). Antes retornava ΔPos bruta — em dia
+    com aplicacao/resgate (ex.: REALINVEST 13/05 resgate R$ 318k do ITAU
+    SOBERANO) o driver indicava -R$ 318k de perda, mas era movimento
+    patrimonial neutro pro PL Sub (caixa entrou, fundo saiu — net 0).
+
+    Convencao de sinal:
+      - Aplicacao no fundo: ΔPos > 0 (cresce), caixa < 0 (sai). Soma = 0.
+      - Resgate do fundo:   ΔPos < 0 (cai),   caixa > 0 (entra). Soma = 0.
+      - Rendimento (curva, MtM): ΔPos > 0, caixa = 0. Soma = ΔPos.
+
+    Fonte do estoque: `_sum_fundos_di` (filtra wh_posicao_cota_fundo por
+    fundos EXTERNOS — exclui internos REALINVEST A VENCER / VENCIDOS).
+    Fonte do caixa: `_sum_mov_caixa_fundo_externo` (filtra wh_movimento_caixa
+    por descricao 'Aplicacao'/'Resgate' em fundo externo).
     """
-    prev = await _sum_fundos_di(db, tenant_id, ua_id, d_prev)
-    d_0 = await _sum_fundos_di(db, tenant_id, ua_id, d0)
+    prev = await _sum_fundos_di(db, tenant_id, ua_id, ua_nome, d_prev)
+    d_0 = await _sum_fundos_di(db, tenant_id, ua_id, ua_nome, d0)
+    caixa_dia = await _sum_mov_caixa_fundo_externo(
+        db, tenant_id, ua_id, ua_nome, d0,
+    )
     return _result(
         "cota_sub.driver.fundos_di",
-        valor=d_0 - prev,
+        valor=(d_0 - prev) + caixa_dia,
         valor_d_prev=prev,
         valor_d0=d_0,
     )
