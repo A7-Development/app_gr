@@ -250,16 +250,28 @@ async def compute_apropriacao_despesas(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Apropriacao despesas = ΔCPR liquido (receber - pagar).
+    """Apropriacao despesas = Σ ΔCPR FILTRADO por items de apropriacao real.
 
-    Fase 4b: evidencias enriquecidas via heuristicas existentes:
-    - `compute_apropriacao_explanation`: taxas/despesas operacionais (Adm,
-      Custodia, Gestao, Auditoria, IOF, IR, REGISTRADORA, etc).
-    - `compute_diferimento_explanation`: despesas diferidas (CVM, Rating,
-      ANBIMA) sendo amortizadas dia-a-dia.
+    Frente 2 fix (2026-05-18): antes usavamos `_cpr_detalhado.variacao`
+    (ΔCPR cru = total_d0 - total_d1), mas o CPR carrega TAMBEM movimentos
+    de caixa (`LIQUIDADOS TOTAL - PROV`, `Aporte`, `Devolucao`) que sao
+    neutros pro PL Sub (so trocam ativo→caixa). REALINVEST 13/05 tinha
+    `LIQUIDADOS` caindo R$ 182k num dia (papel liquidado, caixa recebido)
+    → driver inflava pra -R$ 188k em vez do real ~-R$ 5,8k.
 
-    Evidencias dos dois sao mescladas em `cpr_evidencias` (mesmo shape
-    EvidenciaCprLinha), ordenadas por |Δ| desc.
+    Agora `valor_brl` = soma `delta_brl` dos 2 explainers ja existentes
+    que JA filtram corretamente:
+    - `compute_apropriacao_explanation`: Taxa Apropriada, Despesa de %,
+      Despesas com %, a Pagar em %, IOF, IR, REGISTRADORA.
+    - `compute_diferimento_explanation`: 'Diferimento de despesa%'.
+
+    Items NAO captados (LIQUIDADOS, Aporte, etc) sao movimento de caixa
+    e pertencem a outros drivers (Apropriacao DC, fluxo de caixa). Caem
+    em "Outros Ativos" / "Tesouraria" naturalmente quando o saldo do
+    fundo se ajusta.
+
+    `valor_d_prev` e `valor_d0` continuam mostrando o saldo CPR total
+    (informativo para a UI), mas o `valor_brl` reflete so apropriacoes.
     """
     cpr = await _cpr_detalhado(db, tenant_id, ua_id, d_prev, d0)
 
@@ -288,6 +300,13 @@ async def compute_apropriacao_despesas(
         top_n=20,
     )
 
+    # valor_brl = soma das apropriacoes reais (NAO o ΔCPR cru).
+    delta_apropriacao = ZERO
+    if apropriacao_exp is not None:
+        delta_apropriacao += apropriacao_exp.delta_brl
+    if diferimento_exp is not None:
+        delta_apropriacao += diferimento_exp.delta_brl
+
     # Mescla evidencias dos dois e re-ordena por |Δ| desc. Top 20.
     cpr_evid: list = []
     if apropriacao_exp is not None:
@@ -299,7 +318,7 @@ async def compute_apropriacao_despesas(
 
     return _result(
         "cota_sub.driver.apropriacao_despesas",
-        valor=cpr.variacao,
+        valor=delta_apropriacao,
         valor_d_prev=cpr.total_d1,
         valor_d0=cpr.total_d0,
         cpr_evidencias=tuple(cpr_evid),
