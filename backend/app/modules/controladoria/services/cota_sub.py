@@ -162,6 +162,53 @@ async def _mec_classes(
     return out
 
 
+async def _mec_classes_fluxo_caixa(
+    db: AsyncSession,
+    tenant_id: UUID,
+    ua_id: UUID,
+    ua_nome: str,
+    data: date,
+) -> dict[str, Decimal]:
+    """Devolve {sub_jr, mezanino, senior} -> fluxo liquido de caixa do dia.
+
+    fluxo = entradas - saidas + aporte - retirada (defensivo: QiTech popula
+    so um dos pares — REALINVEST usa entradas/saidas; outros fundos podem
+    usar aporte/retirada). Soma os 4 cobre ambos os casos sem dupla
+    contagem desde que QiTech nao popule ambos.
+
+    Usado por `compute_senior`/`compute_mezanino` (Fase 3c-A) para subtrair
+    cash flow do ΔPL da classe e isolar APENAS a remuneracao (rendimento).
+    """
+    stmt = (
+        select(
+            MecEvolucaoCotas.carteira_cliente_nome,
+            MecEvolucaoCotas.entradas,
+            MecEvolucaoCotas.saidas,
+            MecEvolucaoCotas.aporte,
+            MecEvolucaoCotas.retirada,
+        )
+        .where(MecEvolucaoCotas.tenant_id == tenant_id)
+        .where(MecEvolucaoCotas.unidade_administrativa_id == ua_id)
+        .where(MecEvolucaoCotas.data_posicao == data)
+    )
+    rows = (await db.execute(stmt)).all()
+    out: dict[str, Decimal] = {"sub_jr": ZERO, "mezanino": ZERO, "senior": ZERO}
+    for nome, entradas, saidas, aporte, retirada in rows:
+        fluxo = (
+            Decimal(entradas or 0)
+            - Decimal(saidas or 0)
+            + Decimal(aporte or 0)
+            - Decimal(retirada or 0)
+        )
+        if _is_sub_jr(nome, ua_nome):
+            out["sub_jr"] += fluxo
+        elif _is_mezanino(nome):
+            out["mezanino"] += fluxo
+        elif _is_senior(nome):
+            out["senior"] += fluxo
+    return out
+
+
 async def _sum_titulos_publicos(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID, data: date
 ) -> Decimal:

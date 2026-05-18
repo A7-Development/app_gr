@@ -14,8 +14,8 @@ d_prev, d0) -> DriverResult`. As queries vem do `cota_sub.py` ja existente
 | fundos_di        | dPos − caixa       | dPos bruta             | subtrair mov caixa por descricao   |
 | compromissada    | dPos − overnight   | dPos bruta             | subtrair mov caixa por descricao   |
 | titulos_publicos | dPos − aq + liq    | dPos bruta             | subtrair aquisicao + liquidacao    |
-| senior           | -ΔPL_Sr            | implementado completo  | -                                  |
-| mezanino         | -ΔPL_Mz            | implementado completo  | -                                  |
+| senior           | -(ΔPL_Sr − caixa)  | -(ΔPL_Sr − caixa) (3c-A) | -                                  |
+| mezanino         | -(ΔPL_Mz − caixa)  | -(ΔPL_Mz − caixa) (3c-A) | -                                  |
 | tesouraria       | dPos (literal)     | implementado completo  | -                                  |
 | op_estruturadas  | dPos (filtrado)    | zero hardcoded         | filtro por descricao_tipo_de_ativo |
 | outros_ativos    | dPos residual      | implementado completo  | -                                  |
@@ -53,6 +53,7 @@ from app.modules.controladoria.services.cota_sub import (  # noqa: I001 - circul
     _apropriacao_dc,
     _cpr_detalhado,
     _mec_classes,
+    _mec_classes_fluxo_caixa,
     _sum_compromissada,
     _sum_fundos_di,
     _sum_outros_ativos_nao_tpf,
@@ -416,22 +417,30 @@ async def compute_senior(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Senior = -ΔPL_Sr (Sub paga subordinacao a classe Senior).
+    """Senior = -(ΔPL_Sr - caixa_Sr).
+
+    Fase 3c-A (2026-05-18): subtrai fluxo de caixa do dia (entradas - saidas
+    + aporte - retirada da classe Senior em d0) do ΔPL bruto, isolando
+    APENAS a remuneracao (rendimento da curva contratada). Cash flow vai
+    pro driver Sub_Jr (residual do MEC) se for aporte na Sub, ou e neutro
+    no PL Sub se for aporte/resgate na propria classe Sr.
 
     Fase 4b: evidencia rica via `compute_remuneracao_sr_mez_explanation`
-    (filtrada pra classe Senior). Inclui valor_cota_d1/d0 + delta_pct +
-    impacto_pl_sub.
+    (filtrada pra classe Senior).
     """
     classes_prev = await _mec_classes(db, tenant_id, ua_id, ua_nome, d_prev)
     classes_d0 = await _mec_classes(db, tenant_id, ua_id, ua_nome, d0)
-    # PL_Sr cresceu -> Sub paga -> driver negativo.
-    delta_pl_sr = classes_d0["senior"] - classes_prev["senior"]
+    fluxo_d0 = await _mec_classes_fluxo_caixa(db, tenant_id, ua_id, ua_nome, d0)
+    # ΔPL bruto inclui rendimento + caixa. Rendimento = bruto - caixa.
+    # PL_Sr rendimento -> Sub paga -> driver negativo.
+    delta_pl_sr_bruto = classes_d0["senior"] - classes_prev["senior"]
+    delta_pl_sr_remuneracao = delta_pl_sr_bruto - fluxo_d0["senior"]
     rem_evid = await _remuneracao_evidencias_por_classe(
         db, tenant_id, ua_id, ua_nome, d_prev, d0, classe="senior"
     )
     return _result(
         "cota_sub.driver.senior",
-        valor=-delta_pl_sr,
+        valor=-delta_pl_sr_remuneracao,
         valor_d_prev=classes_prev["senior"],
         valor_d0=classes_d0["senior"],
         remuneracao_evidencias=rem_evid,
@@ -442,19 +451,21 @@ async def compute_mezanino(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Mezanino = -ΔPL_Mz (analogo a Senior).
+    """Mezanino = -(ΔPL_Mz - caixa_Mz) (analogo a Senior — ver Fase 3c-A).
 
     Fase 4b: evidencia rica filtrada pra classe Mezanino.
     """
     classes_prev = await _mec_classes(db, tenant_id, ua_id, ua_nome, d_prev)
     classes_d0 = await _mec_classes(db, tenant_id, ua_id, ua_nome, d0)
-    delta_pl_mz = classes_d0["mezanino"] - classes_prev["mezanino"]
+    fluxo_d0 = await _mec_classes_fluxo_caixa(db, tenant_id, ua_id, ua_nome, d0)
+    delta_pl_mz_bruto = classes_d0["mezanino"] - classes_prev["mezanino"]
+    delta_pl_mz_remuneracao = delta_pl_mz_bruto - fluxo_d0["mezanino"]
     rem_evid = await _remuneracao_evidencias_por_classe(
         db, tenant_id, ua_id, ua_nome, d_prev, d0, classe="mezanino"
     )
     return _result(
         "cota_sub.driver.mezanino",
-        valor=-delta_pl_mz,
+        valor=-delta_pl_mz_remuneracao,
         valor_d_prev=classes_prev["mezanino"],
         valor_d0=classes_d0["mezanino"],
         remuneracao_evidencias=rem_evid,
