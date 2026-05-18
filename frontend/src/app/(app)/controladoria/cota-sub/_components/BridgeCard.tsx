@@ -21,9 +21,24 @@ import * as React from "react"
 import { cx } from "@/lib/utils"
 
 export type BridgeCategoryId =
+  // Drivers do metodo gestor (Fase 4c, 2026-05-19) — 11 categorias patrimoniais
+  // canonicas vindas de /variacao-diaria. Espelha COTA_SUB_DRIVERS no backend.
+  | "pdd"
+  | "apropriacao_dc"
+  | "apropriacao_despesas"
+  | "fundos_di"
+  | "compromissada"
+  | "titulos_publicos"
+  | "senior"
+  | "mezanino"
+  | "tesouraria"
+  | "op_estruturadas"
+  | "outros_ativos"
+  // Legacy: buckets COSIF particionados (/explicacao). Mantidos por compat
+  // com builders antigos enquanto a migracao 4c roda. Limpar quando UI
+  // estabilizar nos drivers do gestor.
   | "fluxo_caixa"
   | "movimento_carteira"
-  | "pdd"
   | "ajustes_contabeis"
   | "marcacao_mercado"
   | "remuneracao_sr_mez"

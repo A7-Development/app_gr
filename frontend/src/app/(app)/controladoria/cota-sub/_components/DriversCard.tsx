@@ -53,6 +53,7 @@ import type {
   ApropriacaoExplanation,
   CosifOrigem,
   DiferimentoExplanation,
+  DriverResultOut,
   EventoOperacionalEvidencia,
   EvidenciaCprLinha,
   FluxoCaixaEvidencia,
@@ -100,6 +101,10 @@ type CategoryMeta = {
 }
 
 const CATEGORY_META: readonly CategoryMeta[] = [
+  // Drivers canonicos do metodo gestor (Fase 4c, 2026-05-19). Ordem da lista
+  // segue a planilha REALINVEST: ativos da carteira primeiro, depois passivos
+  // (Sr/Mez), depois residuais. DriversCard re-ordena por |delta| desc em
+  // runtime, mas a ordem aqui controla o waterfall e o estado "empty".
   {
     id:      "pdd",
     label:   "PDD (provisão de crédito)",
@@ -109,52 +114,84 @@ const CATEGORY_META: readonly CategoryMeta[] = [
     barHex:  "#F43F5E",
   },
   {
-    id:      "ajustes_contabeis",
-    label:   "Ajustes contábeis",
-    icon:    RiFileList3Line,
-    iconCls: "text-violet-600 dark:text-violet-400",
-    bgCls:   "bg-violet-50 dark:bg-violet-500/10",
-    barHex:  "#8B5CF6",
-  },
-  {
-    id:      "fluxo_caixa",
-    label:   "Aporte e resgate de cotistas",
-    icon:    RiBankCardLine,
-    iconCls: "text-emerald-600 dark:text-emerald-400",
-    bgCls:   "bg-emerald-50 dark:bg-emerald-500/10",
-    barHex:  "#10B981",
-  },
-  {
-    id:      "movimento_carteira",
-    label:   "Movimento de carteira",
+    id:      "apropriacao_dc",
+    label:   "Apropriação de DC",
     icon:    RiBriefcaseLine,
     iconCls: "text-blue-600 dark:text-blue-400",
     bgCls:   "bg-blue-50 dark:bg-blue-500/10",
     barHex:  "#3B82F6",
   },
   {
-    id:      "marcacao_mercado",
-    label:   "Renda Fixa",
+    id:      "apropriacao_despesas",
+    label:   "Apropriação de despesas",
+    icon:    RiFileList3Line,
+    iconCls: "text-violet-600 dark:text-violet-400",
+    bgCls:   "bg-violet-50 dark:bg-violet-500/10",
+    barHex:  "#8B5CF6",
+  },
+  {
+    id:      "fundos_di",
+    label:   "Fundos DI",
+    icon:    RiBankCardLine,
+    iconCls: "text-cyan-600 dark:text-cyan-400",
+    bgCls:   "bg-cyan-50 dark:bg-cyan-500/10",
+    barHex:  "#06B6D4",
+  },
+  {
+    id:      "compromissada",
+    label:   "Compromissada",
+    icon:    RiStackLine,
+    iconCls: "text-indigo-600 dark:text-indigo-400",
+    bgCls:   "bg-indigo-50 dark:bg-indigo-500/10",
+    barHex:  "#6366F1",
+  },
+  {
+    id:      "titulos_publicos",
+    label:   "Títulos Públicos",
     icon:    RiLineChartLine,
     iconCls: "text-amber-600 dark:text-amber-400",
     bgCls:   "bg-amber-50 dark:bg-amber-500/10",
     barHex:  "#F59E0B",
   },
   {
-    id:      "remuneracao_sr_mez",
-    label:   "Remuneração Sr/Mez",
+    id:      "senior",
+    label:   "Senior (subordinação)",
     icon:    RiStackLine,
     iconCls: "text-rose-600 dark:text-rose-400",
     bgCls:   "bg-rose-50 dark:bg-rose-500/10",
     barHex:  "#F43F5E",
   },
   {
-    id:      "outros",
-    label:   "Não explicado",
+    id:      "mezanino",
+    label:   "Mezanino (subordinação)",
+    icon:    RiStackLine,
+    iconCls: "text-rose-500 dark:text-rose-400",
+    bgCls:   "bg-rose-50 dark:bg-rose-500/10",
+    barHex:  "#FB7185",
+  },
+  {
+    id:      "tesouraria",
+    label:   "Tesouraria",
+    icon:    RiBankCardLine,
+    iconCls: "text-teal-600 dark:text-teal-400",
+    bgCls:   "bg-teal-50 dark:bg-teal-500/10",
+    barHex:  "#14B8A6",
+  },
+  {
+    id:      "op_estruturadas",
+    label:   "Op Estruturadas",
+    icon:    RiFileList3Line,
+    iconCls: "text-orange-600 dark:text-orange-400",
+    bgCls:   "bg-orange-50 dark:bg-orange-500/10",
+    barHex:  "#F97316",
+  },
+  {
+    id:      "outros_ativos",
+    label:   "Outros Ativos",
     icon:    RiQuestionLine,
     iconCls: "text-slate-600 dark:text-slate-400",
     bgCls:   "bg-slate-100 dark:bg-slate-500/10",
-    barHex:  "#64748B",  // slate-500
+    barHex:  "#64748B",
   },
 ]
 
@@ -634,24 +671,48 @@ function fmtBRLkSigned(v: number): string {
 
 function defaultSublabel(id: CategoryMeta["id"]): string {
   switch (id) {
-    case "pdd":                return "Constituição ou reversão de provisão de crédito"
-    case "ajustes_contabeis":  return "Apropriação de diferimentos e despesas contábeis"
-    case "fluxo_caixa":        return "Aporte ou resgate em qualquer classe de cota"
-    case "movimento_carteira": return "Giro da carteira de direitos creditórios"
-    case "marcacao_mercado":   return "TPF + Notas comerciais + cotas de fundos RF"
-    case "remuneracao_sr_mez": return "Custo de subordinação das cotas Sr e Mez"
-    case "outros":             return "Gap residual entre ΔPL real e Σ drivers conhecidos"
+    // Drivers do metodo gestor (Fase 4c)
+    case "pdd":                  return "Constituição ou reversão de provisão de crédito"
+    case "apropriacao_dc":       return "Apropriação de juros do estoque DC (dEstoque − Aq + Liq)"
+    case "apropriacao_despesas": return "Apropriação de despesas e taxas operacionais via CPR"
+    case "fundos_di":            return "Rendimento de cotas de fundos externos (DI, Selic, CDI)"
+    case "compromissada":        return "Rendimento de operações compromissadas"
+    case "titulos_publicos":     return "Marcação a mercado de TPF (LTN, NTN, LFT)"
+    case "senior":               return "Custo de subordinação da classe Senior"
+    case "mezanino":             return "Custo de subordinação da classe Mezanino"
+    case "tesouraria":           return "Rendimento de saldos em conta corrente e tesouraria"
+    case "op_estruturadas":      return "Variação de operações estruturadas"
+    case "outros_ativos":        return "Outros ativos não classificados em categorias específicas"
+    // Legacy COSIF
+    case "ajustes_contabeis":    return "Apropriação de diferimentos e despesas contábeis"
+    case "fluxo_caixa":          return "Aporte ou resgate em qualquer classe de cota"
+    case "movimento_carteira":   return "Giro da carteira de direitos creditórios"
+    case "marcacao_mercado":     return "TPF + Notas comerciais + cotas de fundos RF"
+    case "remuneracao_sr_mez":   return "Custo de subordinação das cotas Sr e Mez"
+    case "outros":               return "Gap residual entre ΔPL real e Σ drivers conhecidos"
   }
 }
 function defaultNarrative(id: CategoryMeta["id"]): string {
   switch (id) {
-    case "pdd":                return "Mudança de faixa de provisão dos direitos creditórios — Sub absorve PDD, então constituição reduz o PL Sub e reversão aumenta."
-    case "ajustes_contabeis":  return "Apropriação de despesas diferidas e lançamentos de competência — natureza temporal, não muda risco de crédito."
-    case "fluxo_caixa":        return "Aporte ou resgate em Subordinada, Mezanino ou Senior. Sub absorve direto (aporte Sub = +PL Sub); Mez/Sr afetam Sub via equity (aporte Mez = −PL Sub residual)."
-    case "movimento_carteira": return "Giro da carteira: papéis liquidados saem do DC; papéis adquiridos entram. Bucket informacional — movimento patrimonial neutro no PL Sub (caixa cresce/cai e DC cai/cresce no mesmo valor). Diferenças residuais aparecem em PDD ou Apropriação."
-    case "marcacao_mercado":   return "Variações em títulos de Renda Fixa: TPF (LTN, NTN), Notas Comerciais e cotas de fundos de RF. Inclui marcação a mercado (PU pela curva do dia), apropriação de juros, ganhos/perdas de liquidação."
-    case "remuneracao_sr_mez": return "Cotas Senior e Mezanino valorizam diariamente pela curva contratada (CDI + spread). Sub absorve com sinal invertido: PL_Sub = Ativo − Passivo − Equity_Sr − Equity_Mez. Quanto mais Sr/Mez valorizam, mais Sub paga de subordinação."
-    case "outros":             return "Diferença entre o ΔPL real (do MEC) e a soma dos drivers acima. Não é erro do balancete — o balancete fecha. É um pedaço da variação que os heurísticos atuais ainda não atribuem a uma causa nomeada."
+    // Drivers do metodo gestor (Fase 4c)
+    case "pdd":                  return "Mudança de faixa de provisão dos direitos creditórios — Sub absorve PDD, então constituição reduz o PL Sub e reversão aumenta."
+    case "apropriacao_dc":       return "Apropriação dos juros embutidos no estoque DC: Apropriação = Estoque_D0 − (Estoque_D−1 + Aquisições − Liquidações). Carrego diário da curva contratada de cada recebível."
+    case "apropriacao_despesas": return "Apropriação de despesas e taxas operacionais (Adm, Custódia, Gestão, Auditoria, IOF, Cobrança, Registradora, etc.) e diferimentos sendo amortizados. Sub absorve direto."
+    case "fundos_di":            return "Rendimento diário de cotas de fundos externos (Itaú Soberano, BB Fix, etc.). Δposição menos movimento de caixa do dia (aplicação/resgate é neutro pro PL)."
+    case "compromissada":        return "Rendimento de operações compromissadas (overnight ou prazo) — Δposição da carteira de compromissadas. Comum em FIDCs que parquerizam caixa entre giros."
+    case "titulos_publicos":     return "Marcação a mercado de Títulos Públicos Federais (TPF: LTN, NTN-B, NTN-F, LFT). Variação do PU pela curva do dia. Não conta resgate/aquisição (esses são movimento de caixa)."
+    case "senior":               return "Cotas Senior valorizam diariamente pela curva contratada (CDI + spread). Sub absorve com sinal invertido. Aporte/resgate na classe Sr é subtraído pra isolar APENAS a remuneração (curva)."
+    case "mezanino":             return "Cotas Mezanino valorizam diariamente pela curva contratada. Análogo a Senior — Sub paga a remuneração da classe."
+    case "tesouraria":           return "Rendimento de saldos em conta corrente e tesouraria (incluindo conta movimento, conciliação)."
+    case "op_estruturadas":      return "Variação de operações estruturadas — derivativos, hedge, instrumentos sintéticos. Raro em REALINVEST."
+    case "outros_ativos":        return "Ativos que não casaram com nenhuma das 10 categorias canônicas — em regime estável fica perto de zero. Quando aparece, indica papel novo no payload que precisa entrar no filtro."
+    // Legacy COSIF
+    case "ajustes_contabeis":    return "Apropriação de despesas diferidas e lançamentos de competência — natureza temporal, não muda risco de crédito."
+    case "fluxo_caixa":          return "Aporte ou resgate em Subordinada, Mezanino ou Senior. Sub absorve direto (aporte Sub = +PL Sub); Mez/Sr afetam Sub via equity (aporte Mez = −PL Sub residual)."
+    case "movimento_carteira":   return "Giro da carteira: papéis liquidados saem do DC; papéis adquiridos entram. Bucket informacional — movimento patrimonial neutro no PL Sub (caixa cresce/cai e DC cai/cresce no mesmo valor). Diferenças residuais aparecem em PDD ou Apropriação."
+    case "marcacao_mercado":     return "Variações em títulos de Renda Fixa: TPF (LTN, NTN), Notas Comerciais e cotas de fundos de RF. Inclui marcação a mercado (PU pela curva do dia), apropriação de juros, ganhos/perdas de liquidação."
+    case "remuneracao_sr_mez":   return "Cotas Senior e Mezanino valorizam diariamente pela curva contratada (CDI + spread). Sub absorve com sinal invertido: PL_Sub = Ativo − Passivo − Equity_Sr − Equity_Mez. Quanto mais Sr/Mez valorizam, mais Sub paga de subordinação."
+    case "outros":               return "Diferença entre o ΔPL real (do MEC) e a soma dos drivers acima. Não é erro do balancete — o balancete fecha. É um pedaço da variação que os heurísticos atuais ainda não atribuem a uma causa nomeada."
   }
 }
 
@@ -1009,5 +1070,76 @@ function evidenciaFromRemuneracao(e: RemuneracaoSrMezEvidencia): DriverEvidence 
     d0:        e.pl_d0,
     delta:     e.impacto_pl_sub,
     flowLabel: "PL classe",
+  }
+}
+
+
+// ─── Builder unificado pra drivers do metodo gestor (Fase 4c, 2026-05-19) ───
+//
+// Substitui os builders 1-por-bucket COSIF (buildDriverFromPdd,
+// buildDriverFromMovimentoCarteira, etc.) por um unico que consome o
+// DriverResultOut canonico de /variacao-diaria. Cada driver:
+//   - mapeia metric_global_id -> BridgeCategoryId (parte final do dotted id)
+//   - usa valor_brl como delta
+//   - detecta qual campo de evidencia esta populado (5 tipos: PDD, MtM, CPR,
+//     Remuneracao, MovimentoCarteira) e renderiza com o conversor
+//     correspondente
+//
+// Drivers sem evidencia rica (Fundos DI, Compromissada, Tesouraria, etc.)
+// mostram so o numero — formula descritiva ja vive em formula_description.
+
+/** Extrai `<tail>` de `controladoria.cota_sub.driver.<tail>`. */
+function categoryIdFromMetric(metricGlobalId: string): BridgeCategoryId {
+  const parts = metricGlobalId.split(".")
+  return (parts[parts.length - 1] || "outros_ativos") as BridgeCategoryId
+}
+
+export function buildDriverFromDriverResultOut(d: DriverResultOut): DriverInput {
+  const id = categoryIdFromMetric(d.metric_global_id)
+
+  // Detecta evidencias populadas (so 1 campo por driver) + monta sublabel.
+  // Ordem importa pouco — cada driver popula APENAS 1 campo. Cair pro
+  // proximo `else if` quando o anterior estiver vazio e o caminho normal.
+  let evidencias: DriverEvidence[] = []
+  let sublabel: string | undefined
+
+  if (d.pdd_evidencias.length > 0) {
+    evidencias = d.pdd_evidencias.map(evidenciaFromPdd)
+    const n = d.pdd_evidencias.length
+    sublabel = n === 1 ? "1 papel com variação de PDD" : `${n} papéis com variação de PDD`
+  } else if (d.mtm_evidencias.length > 0) {
+    evidencias = d.mtm_evidencias.map(evidenciaFromMtm)
+    const n = d.mtm_evidencias.length
+    sublabel = n === 1 ? "1 papel com variação de mercado" : `${n} papéis com variação de mercado`
+  } else if (d.cpr_evidencias.length > 0) {
+    evidencias = d.cpr_evidencias.map((e) => evidenciaFromCpr(e, "Apropriação"))
+    const n = d.cpr_evidencias.length
+    sublabel = n === 1 ? "1 apropriação" : `${n} apropriações`
+  } else if (d.remuneracao_evidencias.length > 0) {
+    evidencias = d.remuneracao_evidencias.map(evidenciaFromRemuneracao)
+    sublabel = "Custo de subordinação"
+  } else if (d.movimento_carteira_evidencias.length > 0) {
+    evidencias = d.movimento_carteira_evidencias.map(evidenciaFromMovimentoCarteira)
+    const n = d.movimento_carteira_evidencias.length
+    sublabel = n === 1 ? "1 papel movimentado" : `${n} papéis movimentados`
+  }
+
+  // Fallback de sublabel pra drivers sem evidencia rica: usar a formula
+  // descritiva do catalog (ex.: "dPosicao − caixa do dia").
+  if (!sublabel && d.formula_description) {
+    sublabel = d.formula_description
+  }
+
+  return {
+    id,
+    delta: d.valor_brl,
+    sublabel,
+    evidencias,
+    // Driver indeterminado por dado: marca como placeholder (ainda nao
+    // computado por falta de fonte) — UI mostra "Em construcao".
+    placeholder: d.indeterminado_por_dado,
+    // Driver implementado mas dia trivial (sem evento) — UI mostra
+    // "Sem movimentacao no dia".
+    empty: !d.indeterminado_por_dado && d.valor_brl === 0 && evidencias.length === 0,
   }
 }

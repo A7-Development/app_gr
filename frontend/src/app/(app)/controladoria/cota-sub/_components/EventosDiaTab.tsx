@@ -32,33 +32,20 @@ import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 
 import type {
-  ApropriacaoExplanation,
   BalanceteResponse,
   CosifNode,
-  DiferimentoExplanation,
-  FluxoCaixaExplanation,
-  MovimentoCarteiraExplanation,
-  MtmExplanation,
-  OutrosExplanation,
-  PddExplanation,
-  RemuneracaoSrMezExplanation,
 } from "@/lib/api-client"
-import { useExplicacaoVariacao } from "@/lib/hooks/controladoria"
+import { useVariacaoDiaria } from "@/lib/hooks/controladoria"
 
 import { BalanceteDiarioTable } from "./BalanceteDiarioTable"
 import {
   BridgeCard,
   type BridgeDriver,
+  type BridgeCategoryId,
 } from "./BridgeCard"
 import { CosifDrillSheet } from "./CosifDrillSheet"
 import {
-  buildDriverFromAjustesContabeis,
-  buildDriverFromFluxoCaixa,
-  buildDriverFromMovimentoCarteira,
-  buildDriverFromMtm,
-  buildDriverFromOutros,
-  buildDriverFromPdd,
-  buildDriverFromRemuneracaoSrMez,
+  buildDriverFromDriverResultOut,
   DriversCard,
   type DriverInput,
 } from "./DriversCard"
@@ -102,36 +89,15 @@ export function EventosDiaTab({
   const dq    = balancete?.data_quality
   const nodes = balancete?.nodes ?? []
 
-  // Explicacao da variacao (apenas PDD entregue hoje — 2026-05-13).
-  const explicacao = useExplicacaoVariacao(
+  // Variacao diaria — drivers canonicos do metodo gestor (Fase 4c, 2026-05-19).
+  // Substituiu useExplicacaoVariacao (COSIF particionado): agora cada driver
+  // vem com formula explicita (PDD = -Δvalor_pdd, Apropriação DC = dEstoque
+  // − Aquisições + Liquidações, Senior = -(ΔPL_Sr − caixa), etc.) e evidências
+  // especializadas (5 tipos: pdd/mtm/cpr/remuneracao/movimento_carteira).
+  const variacaoDiaria = useVariacaoDiaria(
     balancete?.fundo_id ?? null,
     balancete?.data_d_zero ?? null,
-    { dataAnterior: balancete?.data_d_minus_1 ?? null },
-  )
-
-  const pdd = explicacao.data?.explanations.find(
-    (e): e is PddExplanation => e.categoria === "pdd",
-  )
-  const diferimento = explicacao.data?.explanations.find(
-    (e): e is DiferimentoExplanation => e.categoria === "diferimento",
-  )
-  const apropriacao = explicacao.data?.explanations.find(
-    (e): e is ApropriacaoExplanation => e.categoria === "apropriacao",
-  )
-  const fluxoCaixa = explicacao.data?.explanations.find(
-    (e): e is FluxoCaixaExplanation => e.categoria === "fluxo_caixa",
-  )
-  const movimentoCarteira = explicacao.data?.explanations.find(
-    (e): e is MovimentoCarteiraExplanation => e.categoria === "movimento_carteira",
-  )
-  const mtm = explicacao.data?.explanations.find(
-    (e): e is MtmExplanation => e.categoria === "mtm",
-  )
-  const remuneracao = explicacao.data?.explanations.find(
-    (e): e is RemuneracaoSrMezExplanation => e.categoria === "remuneracao_sr_mez",
-  )
-  const outros = explicacao.data?.explanations.find(
-    (e): e is OutrosExplanation => e.categoria === "outros",
+    balancete?.data_d_minus_1 ?? null,
   )
 
   // Pendentes — usado em multiplos lugares (banner sticky, chips, tone).
@@ -196,71 +162,25 @@ export function EventosDiaTab({
   }, [recon, cob, dq, pendentesCount])
 
   // ─── Drivers para o BridgeCard + DriversCard ────────────────────────────
-  // Status 2026-05-17: TODOS os 6 drivers entregues.
-  //  - PDD (bucket proprio, rose)
-  //  - Ajustes contabeis (diferimento + apropriacao, violet)
-  //  - Fluxo de caixa do cotista (aporte/resgate Sub/Mez/Sr, emerald)
-  //  - Movimento de carteira (liquidacao/aquisicao, blue) - INFORMACIONAL delta=0
-  //  - Marcacao a mercado (renda fixa, amber) - Sub absorve direto
-  //  - Remuneracao Sr/Mez (custo de subordinacao, rose) - Sub paga
+  // Fase 4c (2026-05-19): 11 drivers canonicos do metodo gestor REALINVEST,
+  // vindos de /variacao-diaria. Espelha COTA_SUB_DRIVERS no backend. Ordem:
+  //   PDD, Apropriacao DC, Apropriacao Despesas, Fundos DI, Compromissada,
+  //   Titulos Publicos, Senior, Mezanino, Tesouraria, Op Estruturadas,
+  //   Outros Ativos.
   //
-  // Fallback: quando o explainer ENTREGUE retorna undefined (sem evento no
-  // dia), usar `empty: true` (nao `placeholder: true`) — sinaliza categoria
-  // implementada mas dia trivial, render "Sem movimentacao no dia".
+  // Cada driver ja vem com valor_brl computado, formula_description e
+  // ate 1 tipo de evidencia rica (pdd/mtm/cpr/remuneracao/movimento_carteira).
+  // `buildDriverFromDriverResultOut` faz a conversao para o shape do
+  // DriversCard (BridgeCategoryId + DriverEvidence[]).
   const driverInputs = React.useMemo<DriverInput[]>(() => {
-    const list: DriverInput[] = []
-    list.push(
-      pdd
-        ? buildDriverFromPdd(pdd)
-        : { id: "pdd", delta: 0, empty: true },
-    )
-
-    const ajustes = buildDriverFromAjustesContabeis({ diferimento, apropriacao })
-    list.push(
-      ajustes ?? { id: "ajustes_contabeis", delta: 0, empty: true },
-    )
-
-    list.push(
-      fluxoCaixa
-        ? buildDriverFromFluxoCaixa(fluxoCaixa)
-        : { id: "fluxo_caixa", delta: 0, empty: true },
-    )
-
-    list.push(
-      movimentoCarteira
-        ? buildDriverFromMovimentoCarteira(movimentoCarteira)
-        : { id: "movimento_carteira", delta: 0, empty: true },
-    )
-
-    list.push(
-      mtm
-        ? buildDriverFromMtm(mtm)
-        : { id: "marcacao_mercado", delta: 0, empty: true },
-    )
-
-    list.push(
-      remuneracao
-        ? buildDriverFromRemuneracaoSrMez(remuneracao)
-        : { id: "remuneracao_sr_mez", delta: 0, empty: true },
-    )
-
-    // Bucket "Nao explicado" (id="outros") — refactor 2026-05-17:
-    // agora reflete APENAS folhas COSIF sem mapping em
-    // `cosif_to_bucket.py`. Em regime estavel deve ser zero.
-    // (O residuo MEC vs Contabil agora vai pro painel proprio de conciliacao,
-    // nao mais pra este bucket.)
-    if (outros) {
-      list.push(buildDriverFromOutros(outros))
-    }
-    return list
-  }, [
-    pdd, diferimento, apropriacao, fluxoCaixa, movimentoCarteira, mtm, remuneracao, outros,
-  ])
+    const drivers = variacaoDiaria.data?.drivers ?? []
+    return drivers.map(buildDriverFromDriverResultOut)
+  }, [variacaoDiaria.data])
 
   // BridgeDrivers — converte DriverInput pro shape do waterfall.
-  // "Outros (nao classificado)" aparece quando indeterminado_brl > limiar.
-  // Labels do eixo X sao cognatos 1:1 dos titulos dos cards do DriversCard
-  // (single source of truth — ver shortLabelFromCategoryId).
+  // Fase 4c: ordem fixa dos 11 drivers do metodo gestor. Drivers com
+  // delta=0 (empty) aparecem placeholder no waterfall pra preservar o
+  // mapa mental do usuario (todos os 11 sempre visiveis).
   const bridgeDrivers = React.useMemo<BridgeDriver[]>(() => {
     const fromInput = (input: DriverInput): BridgeDriver => {
       const sl = shortLabelFromCategoryId(input.id)
@@ -270,20 +190,26 @@ export function EventosDiaTab({
         shortLabel:   sl.line1,
         shortLabel2:  sl.line2,
         delta:        input.delta,
-        placeholder:  input.placeholder,
+        placeholder:  input.placeholder || input.empty,
       }
     }
-    // Ordem fixa no waterfall: PDD, Ajustes, Fluxo, Carteira, MtM,
-    // Remuneracao Sr/Mez, Outros (no fim, sempre que presente).
-    const ordered = [
-      driverInputs.find((d) => d.id === "pdd"),
-      driverInputs.find((d) => d.id === "ajustes_contabeis"),
-      driverInputs.find((d) => d.id === "fluxo_caixa"),
-      driverInputs.find((d) => d.id === "movimento_carteira"),
-      driverInputs.find((d) => d.id === "marcacao_mercado"),
-      driverInputs.find((d) => d.id === "remuneracao_sr_mez"),
-      driverInputs.find((d) => d.id === "outros"),
-    ].filter((x): x is DriverInput => x !== undefined)
+    // Ordem canonica dos drivers (igual ao catalog backend).
+    const ORDER: BridgeCategoryId[] = [
+      "pdd",
+      "apropriacao_dc",
+      "apropriacao_despesas",
+      "fundos_di",
+      "compromissada",
+      "titulos_publicos",
+      "senior",
+      "mezanino",
+      "tesouraria",
+      "op_estruturadas",
+      "outros_ativos",
+    ]
+    const ordered = ORDER
+      .map((id) => driverInputs.find((d) => d.id === id))
+      .filter((x): x is DriverInput => x !== undefined)
     return ordered.map(fromInput)
   }, [driverInputs])
 
@@ -469,26 +395,50 @@ export function EventosDiaTab({
 // eixo X do waterfall (uma label NUNCA difere da outra).
 function labelFromCategoryId(id: BridgeDriver["id"]): string {
   switch (id) {
-    case "pdd":                return "PDD"
-    case "ajustes_contabeis":  return "Ajustes contábeis"
-    case "fluxo_caixa":        return "Aporte e resgate"
-    case "movimento_carteira": return "Movimento de carteira"
-    case "marcacao_mercado":   return "Renda Fixa"
-    case "remuneracao_sr_mez": return "Remuneração Sr/Mez"
-    case "outros":             return "Não explicado"
+    // Drivers do metodo gestor (Fase 4c)
+    case "pdd":                  return "PDD"
+    case "apropriacao_dc":       return "Apropriação DC"
+    case "apropriacao_despesas": return "Apropriação despesas"
+    case "fundos_di":            return "Fundos DI"
+    case "compromissada":        return "Compromissada"
+    case "titulos_publicos":     return "Títulos Públicos"
+    case "senior":               return "Senior"
+    case "mezanino":             return "Mezanino"
+    case "tesouraria":           return "Tesouraria"
+    case "op_estruturadas":      return "Op Estruturadas"
+    case "outros_ativos":        return "Outros Ativos"
+    // Legacy COSIF (mantido por compat — Fase 4c em rollout)
+    case "ajustes_contabeis":    return "Ajustes contábeis"
+    case "fluxo_caixa":          return "Aporte e resgate"
+    case "movimento_carteira":   return "Movimento de carteira"
+    case "marcacao_mercado":     return "Renda Fixa"
+    case "remuneracao_sr_mez":   return "Remuneração Sr/Mez"
+    case "outros":               return "Não explicado"
   }
 }
 
 type ShortAxisLabel = { line1: string; line2?: string }
 function shortLabelFromCategoryId(id: BridgeDriver["id"]): ShortAxisLabel {
   switch (id) {
-    case "pdd":                return { line1: "PDD" }
-    case "ajustes_contabeis":  return { line1: "Ajustes",        line2: "contábeis" }
-    case "fluxo_caixa":        return { line1: "Aporte",         line2: "e resgate" }
-    case "movimento_carteira": return { line1: "Movimento",      line2: "de carteira" }
-    case "marcacao_mercado":   return { line1: "Renda",          line2: "Fixa" }
-    case "remuneracao_sr_mez": return { line1: "Remuneração",    line2: "Sr/Mez" }
-    case "outros":             return { line1: "Não",            line2: "explicado" }
+    // Drivers do metodo gestor (Fase 4c)
+    case "pdd":                  return { line1: "PDD" }
+    case "apropriacao_dc":       return { line1: "Apropriação", line2: "DC" }
+    case "apropriacao_despesas": return { line1: "Apropriação", line2: "despesas" }
+    case "fundos_di":            return { line1: "Fundos DI" }
+    case "compromissada":        return { line1: "Comprom." }
+    case "titulos_publicos":     return { line1: "Títulos",     line2: "Públicos" }
+    case "senior":               return { line1: "Senior" }
+    case "mezanino":             return { line1: "Mezanino" }
+    case "tesouraria":           return { line1: "Tesouraria" }
+    case "op_estruturadas":      return { line1: "Op Estr." }
+    case "outros_ativos":        return { line1: "Outros",      line2: "Ativos" }
+    // Legacy COSIF
+    case "ajustes_contabeis":    return { line1: "Ajustes",     line2: "contábeis" }
+    case "fluxo_caixa":          return { line1: "Aporte",      line2: "e resgate" }
+    case "movimento_carteira":   return { line1: "Movimento",   line2: "de carteira" }
+    case "marcacao_mercado":     return { line1: "Renda",       line2: "Fixa" }
+    case "remuneracao_sr_mez":   return { line1: "Remuneração", line2: "Sr/Mez" }
+    case "outros":               return { line1: "Não",         line2: "explicado" }
   }
 }
 
