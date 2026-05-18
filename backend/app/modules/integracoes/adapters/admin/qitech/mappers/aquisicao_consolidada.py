@@ -6,6 +6,11 @@ real de 583 cessoes (REALINVEST FIDC, periodo 2026-01-01..2026-01-08).
 Inconsistencias da QiTech (vs liquidados-baixados-v2):
 - `fundoCnpj` aqui e int (laa e str). `_normalize_cnpj_any` lida com ambos.
 - `idRecebivel` aqui e int (laa e str). Convertido pra str sempre no DB.
+- `valorCompra` e `valorVencimento` vem como inteiro em CENTAVOS
+  (ex.: 7476156 = R$ 74.761,56). Em liquidados-baixados o mesmo conceito
+  vem em REAIS (float ISO ou string BR). Inconsistencia confirmada em
+  2026-05-18 cruzando wh_aquisicao_recebivel vs wh_estoque_recebivel —
+  razao exata 100x. Aplicamos `_centavos_to_reais` em ambos os campos.
 
 source_id = `{cnpj_fundo}|{idRecebivel}|aq` — UQ por cessao adquirida.
 """
@@ -14,6 +19,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -22,6 +28,21 @@ from app.modules.integracoes.adapters.admin.qitech.mappers._common import (
     parse_iso_or_none,
     to_decimal,
 )
+
+# Divisor pra conversao centavos -> reais. Constante explicita pra deixar
+# claro o que esta acontecendo na callsite (vs literal "100").
+_CENTAVOS_PER_REAL = Decimal("100")
+
+
+def _centavos_to_reais(value: Any) -> Decimal:
+    """Converte inteiro em centavos pra Decimal em reais.
+
+    QiTech entrega `valorCompra` e `valorVencimento` no endpoint
+    aquisicao-consolidada como int (centavos). Outros endpoints da mesma
+    administradora usam float ISO ou string BR — divergencia confirmada
+    em 2026-05-18 cruzando silver de aquisicao vs estoque.
+    """
+    return to_decimal(value) / _CENTAVOS_PER_REAL
 
 
 def _normalize_cnpj_any(value: Any) -> str:
@@ -87,9 +108,11 @@ def map_aquisicao_consolidada(
                 "seu_numero": str(item.get("seuNumero", "")),
                 "numero_documento": str(item.get("numeroDocumento", "")),
                 "tipo_recebivel": str(item.get("tipoRecebivel", "")),
-                # Fatos
-                "valor_compra": to_decimal(item.get("valorCompra")),
-                "valor_vencimento": to_decimal(item.get("valorVencimento")),
+                # Fatos. valor_compra e valor_vencimento vem em centavos
+                # (int) do endpoint aquisicao-consolidada — converter pra
+                # reais antes de gravar no silver. Ver docstring.
+                "valor_compra": _centavos_to_reais(item.get("valorCompra")),
+                "valor_vencimento": _centavos_to_reais(item.get("valorVencimento")),
                 "prazo_recebivel": int(item.get("prazoRecebivel") or 0),
                 "taxa_aquisicao": to_decimal(item.get("taxaAquisicao")),
                 # Proveniencia

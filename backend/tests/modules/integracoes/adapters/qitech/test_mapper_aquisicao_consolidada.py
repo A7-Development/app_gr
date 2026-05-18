@@ -48,11 +48,65 @@ def test_decimais_precisao(payload: dict, tenant_id: UUID) -> None:
         payload=payload, tenant_id=tenant_id, cnpj_fundo=CNPJ
     )
     r0 = rows[0]
-    # Sample item 1: valorCompra=155783, valorVencimento=166997, taxa=0.7930165297
-    assert r0["valor_compra"] == Decimal("155783")
-    assert r0["valor_vencimento"] == Decimal("166997")
+    # Sample item 1: valorCompra=155783 (CENTAVOS), valorVencimento=166997
+    # (CENTAVOS), taxa=0.7930165297. Mapper aplica /100 nos valores monetarios
+    # — ver docstring do mapper + payload_shape doc + memo
+    # `project_qitech_aquisicao_escala_centavos`.
+    assert r0["valor_compra"] == Decimal("1557.83")
+    assert r0["valor_vencimento"] == Decimal("1669.97")
     assert r0["taxa_aquisicao"] == Decimal("0.7930165297")
     assert r0["prazo_recebivel"] == 30
+
+
+def test_valor_compra_em_centavos_convertido_pra_reais(tenant_id: UUID) -> None:
+    """Guard explicito: payload com valorCompra=7476156 (centavos) deve gerar
+    valor_compra=Decimal('74761.56') no silver.
+
+    Captura regressao se alguem reverter o /100. Bug original 2026-05-18:
+    cruzamento wh_aquisicao_recebivel vs wh_estoque_recebivel mostrou razao
+    100x sistematica.
+    """
+    payload = {
+        "aquisicaoConsolidada": [
+            {
+                "fundoCnpj": 42449234000160,
+                "fundoNome": "REALINVEST FIDC",
+                "idRecebivel": 418762793,
+                "seuNumero": "DID104769",
+                "numeroDocumento": "12225",
+                "tipoRecebivel": "Duplicata",
+                "cedente": "Cedente Exemplo",
+                "cpfCnpjCedente": 42373817000155,
+                "nomeSacado": "Sacado Exemplo",
+                "cpfCnpjSacado": 10272473000100,
+                "valorCompra": 7476156,        # CENTAVOS = R$ 74.761,56
+                "valorVencimento": 7566000,    # CENTAVOS = R$ 75.660,00
+                "prazoRecebivel": 8,
+                "taxaAquisicao": 0.4568721243,
+                "dataDaPosicao": "2026-05-13T00:00:00.000Z",
+                "dataVencimento": "2026-05-25T00:00:00.000Z",
+            }
+        ]
+    }
+    rows = map_aquisicao_consolidada(
+        payload=payload, tenant_id=tenant_id, cnpj_fundo=CNPJ
+    )
+    assert len(rows) == 1
+    r0 = rows[0]
+    assert r0["valor_compra"] == Decimal("74761.56")
+    assert r0["valor_vencimento"] == Decimal("75660.00")
+
+
+def test_centavos_to_reais_zero_e_none(tenant_id: UUID) -> None:
+    """Helper deve tratar 0 e None sem estourar."""
+    from app.modules.integracoes.adapters.admin.qitech.mappers.aquisicao_consolidada import (
+        _centavos_to_reais,
+    )
+
+    assert _centavos_to_reais(0) == Decimal("0")
+    assert _centavos_to_reais(None) == Decimal("0")
+    assert _centavos_to_reais(100) == Decimal("1.00")
+    assert _centavos_to_reais(1) == Decimal("0.01")
 
 
 def test_cnpjs_normalizados_pra_string(payload: dict, tenant_id: UUID) -> None:
