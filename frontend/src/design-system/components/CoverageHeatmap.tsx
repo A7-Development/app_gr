@@ -30,9 +30,9 @@ import type {
  *   blocked     — sistema desistiu; precisa intervencao do operador
  *   na          — nao se aplica (fds, feriado, antes do 1o sync)
  */
-type DataHealth = "ready" | "may_change" | "in_progress" | "blocked" | "na"
+export type DataHealth = "ready" | "may_change" | "in_progress" | "blocked" | "na"
 
-const HEALTH_STYLES: Record<
+export const HEALTH_STYLES: Record<
   DataHealth,
   { bg: string; label: string; description: string }
 > = {
@@ -80,7 +80,7 @@ const HEALTH_STYLES: Record<
  *   pending                                         -> in_progress
  *   weekend/holiday/before_first_sync/unsupported   -> na
  */
-function deriveHealth(
+export function deriveHealth(
   status: CoverageStatus,
   toleranceState: PublicationState | null,
   completeness: Completeness | null,

@@ -6,12 +6,14 @@ import {
   RiBarChartGroupedLine,
   RiBookOpenLine,
   RiBuilding2Line,
+  RiCheckDoubleLine,
   RiCheckboxCircleLine,
   RiContactsBookLine,
   RiCpuLine,
   RiDashboard3Line,
   RiExchangeFundsLine,
   RiFileChart2Line,
+  RiFileChartLine,
   RiFileTextLine,
   RiFlaskLine,
   RiFlowChart,
@@ -20,7 +22,6 @@ import {
   RiKey2Line,
   RiLineChartLine,
   RiMoneyDollarBoxLine,
-  RiPercentLine,
   RiPieChart2Line,
   RiRefreshLine,
   RiRobot2Line,
@@ -229,42 +230,88 @@ export const MODULES: ModuleDefinition[] = [
     permission: "admin",
     basePath: "/controladoria",
     sections: [
+      // 7 parents expand-only (1 nivel de aninhamento, CLAUDE.md §11.6).
+      // Reestruturado 2026-05-17 a partir do briefing "Pontos de Controle".
+      // Parents nao navegam (NavParent so toggla expand). `href` do parent e
+      // identificador semantico — nunca vira <Link>. Filhos nao tem `icon`
+      // pois NavSubLink so renderiza nome (nav-items.tsx:231-247). Itens nao
+      // implementados ficam enabled=false como placeholders.
       {
-        name: "Cota Sub",
-        href: "/controladoria/cota-sub",
+        name: "Patrimonio e Cotas",
+        href: "#patrimonio-cotas",
         enabled: true,
-        icon: RiPercentLine,
+        icon: RiPieChart2Line,
+        children: [
+          { name: "Cota Sub", href: "/controladoria/cota-sub", enabled: true },
+          { name: "Cotas Sr/Mez", href: "/controladoria/cotas-sr-mez", enabled: false },
+          { name: "Gatilhos", href: "/controladoria/gatilhos", enabled: false },
+        ],
       },
       {
-        name: "DRE",
-        href: "/controladoria/dre",
+        name: "Carteira",
+        href: "#carteira",
+        enabled: true,
+        icon: RiWallet3Line,
+        children: [
+          { name: "Saldo e Composicao", href: "/controladoria/carteira", enabled: false },
+          { name: "PDD", href: "/controladoria/pdd", enabled: false },
+          // Renomeado de "Padronizados". URL mantida pra nao quebrar links.
+          { name: "Fechamentos", href: "/controladoria/relatorios/padronizados", enabled: true },
+        ],
+      },
+      {
+        name: "Elegibilidade e Concentracao",
+        href: "#elegibilidade",
         enabled: true,
         icon: RiBarChartGroupedLine,
+        children: [
+          { name: "Concentracoes", href: "/controladoria/concentracoes", enabled: false },
+          { name: "Limites", href: "/controladoria/limites", enabled: false },
+          { name: "Cessoes", href: "/controladoria/cessoes", enabled: false },
+          { name: "Desconformidades", href: "/controladoria/desconformidades", enabled: false },
+        ],
       },
       {
-        name: "Pagamento Diario",
-        href: "/controladoria/pagamento-diario",
+        name: "Liquidez e Cobranca",
+        href: "#liquidez-cobranca",
         enabled: true,
         icon: RiHandCoinLine,
+        children: [
+          { name: "Pagamento Diario", href: "/controladoria/pagamento-diario", enabled: true },
+          { name: "Liquidez", href: "/controladoria/liquidez", enabled: false },
+          { name: "Collection", href: "/controladoria/collection", enabled: false },
+        ],
       },
       {
-        name: "Relatorios",
-        // Parent expand-only (sem destino navegavel — /controladoria/relatorios
-        // e 404). Href usado APENAS como prefixo de active-state propagation.
-        href: "/controladoria/relatorios",
+        name: "Receitas e Resultado",
+        href: "#receitas-resultado",
         enabled: true,
-        icon: RiFileChart2Line,
+        icon: RiFileChartLine,
         children: [
-          {
-            name: "Padronizados",
-            href: "/controladoria/relatorios/padronizados",
-            enabled: true,
-          },
-          {
-            name: "Espelho Adm",
-            href: "/controladoria/relatorios/espelho",
-            enabled: true,
-          },
+          { name: "DRE", href: "/controladoria/dre", enabled: true },
+          { name: "Receitas", href: "/controladoria/receitas", enabled: false },
+        ],
+      },
+      {
+        name: "Contrapartes",
+        href: "#contrapartes",
+        enabled: true,
+        icon: RiContactsBookLine,
+        children: [
+          { name: "Cedentes", href: "/controladoria/cedentes", enabled: false },
+          { name: "Sacados", href: "/controladoria/sacados", enabled: false },
+        ],
+      },
+      {
+        name: "Conciliacoes",
+        href: "#conciliacoes",
+        enabled: true,
+        icon: RiCheckDoubleLine,
+        children: [
+          { name: "Custodiante", href: "/controladoria/conciliacao/custodiante", enabled: false },
+          { name: "Banco Cobrador", href: "/controladoria/conciliacao/banco-cobrador", enabled: false },
+          // URL mantida (era filha do parent "Relatorios" original).
+          { name: "Espelho Adm", href: "/controladoria/relatorios/espelho", enabled: true },
         ],
       },
     ],

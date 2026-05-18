@@ -165,7 +165,19 @@ export {
 export { DropdownUserProfile } from "./DropdownUserProfile"
 export { EmptyState } from "./EmptyState"
 export { ErrorState } from "./ErrorState"
-export { CoverageHeatmap } from "./CoverageHeatmap"
+export {
+  CoverageHeatmap,
+  deriveHealth,
+  HEALTH_STYLES,
+  type DataHealth,
+} from "./CoverageHeatmap"
+export {
+  QiTechCoverageStrip,
+  buildEntry as buildCoverageStripEntry,
+  isEntryHealthy as isCoverageStripEntryHealthy,
+  type CoverageStripEntry,
+  type QiTechCoverageStripProps,
+} from "./QiTechCoverageStrip"
 export { FilterPill, type FilterPillOption } from "./FilterPill"
 export { InfoTooltip } from "./InfoTooltip"
 export {

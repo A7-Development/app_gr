@@ -16,21 +16,23 @@
 //
 // HOW TO ADAPT (mocks → queries reais):
 //   1. MOCK_MOVIMENTACOES → useQuery `/controladoria/cota-sub/movimentacoes`
-//   2. MOCK_PROVENANCE → status real dos adapters (Bitfin, QiTech, PDD)
-//   3. Series ECharts da aba "Movimentacoes" → wh_posicao_cota_fundo +
+//   2. Series ECharts da aba "Movimentacoes" → wh_posicao_cota_fundo +
 //      wh_movimentacao_cotista (silver)
-//   4. AIPanel.sendMessage → LLM real (api.aiChat) — ja preparado em
+//   3. AIPanel.sendMessage → LLM real (api.aiChat) — ja preparado em
 //      operacoes2; portar quando ligar IA na Controladoria.
 
 "use client"
 
 import * as React from "react"
 import {
+  RiAlertLine,
   RiCalendarLine,
   RiCheckLine,
+  RiCloudOffLine,
   RiDownloadLine,
   RiEqualizerLine,
   RiFundsLine,
+  RiPlayLine,
 } from "@remixicon/react"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 import type { EChartsOption } from "echarts"
@@ -53,10 +55,6 @@ import {
 
 import { PageHeader } from "@/design-system/components/PageHeader"
 import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
-import {
-  ProvenanceFooter,
-  type ProvenanceSource,
-} from "@/design-system/components/ProvenanceFooter"
 import { VizParam } from "@/design-system/components/VizParam"
 import {
   EChartsCard,
@@ -69,7 +67,17 @@ import {
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { Insight, InsightBar } from "@/design-system/components/Insight"
 import { useUAs } from "@/lib/hooks/cadastros"
-import { useBalanceteDiario, useBalanco, useDatasDisponiveis } from "@/lib/hooks/controladoria"
+import {
+  useBalanceteDiario,
+  useBalanco,
+  useCotaSubReadiness,
+  useDatasDisponiveis,
+} from "@/lib/hooks/controladoria"
+import { useCreateBackfill } from "@/lib/hooks/integracoes"
+import {
+  QiTechCoverageStrip,
+  type CoverageStripEntry,
+} from "@/design-system/components/QiTechCoverageStrip"
 import {
   CurrencyCell,
   DataTable,
@@ -121,12 +129,6 @@ const MOCK_INSIGHTS: AIInsight[] = [
   { text: "Subordinacao efetiva em 15,0% (+0,3pp), acima do minimo regulamentar de 10%. Margem confortavel para absorver perdas." },
   { text: "Rentabilidade da Cota Sub em 118,2% do CDI — 3 meses consecutivos batendo o benchmark." },
   { text: "Top 3 cotistas concentram 62% do PL subordinado — acima do alerta interno de 50%. Considerar diversificacao." },
-]
-
-const MOCK_PROVENANCE: ProvenanceSource[] = [
-  { label: "Bitfin", updated: "ha 12 min", sla: "15 min", stale: false },
-  { label: "QiTech", updated: "ha 8 min",  sla: "30 min", stale: false },
-  { label: "PDD",    updated: "ha 47 min", sla: "30 min", stale: true  },
 ]
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -647,6 +649,25 @@ export default function CotaSubPage() {
     [datasDisponiveisQuery.data],
   )
 
+  // Readiness QiTech — gate da pagina. Toda Cota Sub depende de 8 reports
+  // (tesouraria, conta-corrente, rf, rf_compromissadas, outros-fundos,
+  // outros-ativos, cpr, mec). So renderiza analise quando os 8 estao em
+  // ready/may_change. Outros estados (in_progress/blocked/na) bloqueiam.
+  const readiness = useCotaSubReadiness(fundoId, dayIso)
+  const backfillMutation = useCreateBackfill("admin:qitech")
+
+  const handleForceBackfill = React.useCallback((endpointName: string) => {
+    if (!dayIso) return
+    backfillMutation.mutate({
+      endpointName,
+      payload: {
+        dates:                     [dayIso],
+        environment:               "production",
+        unidade_administrativa_id: fundoId ?? undefined,
+      },
+    })
+  }, [backfillMutation, dayIso, fundoId])
+
   // Quando o fundo troca: se o "day" atual nao existe nas datas disponiveis,
   // recua para a mais recente da lista (data top, ja vem ordenada desc do
   // backend). Evita estado inconsistente apos trocar de UA.
@@ -957,50 +978,66 @@ export default function CotaSubPage() {
               className="mt-4"
             />
           ) : (
-            <>
-              {activeTab === "eventos" && (
-                <EventosDiaTab
-                  balancete={balanceteQuery.data}
-                  loading={balanceteQuery.isLoading}
-                  errorMessage={
-                    balanceteQuery.isError
-                      ? `Erro: ${(balanceteQuery.error as Error)?.message ?? "desconhecido"}`
-                      : undefined
-                  }
-                  onRetry={() => balanceteQuery.refetch()}
+            <div className="flex flex-col gap-3">
+              {/* Strip de saude QiTech — visivel em todas as sub-tabs.
+                  8/8 ready/may_change colapsa para pill compacta. */}
+              <QiTechCoverageStrip
+                date={dayIso}
+                entries={readiness.entries}
+                loading={readiness.isLoading}
+                onBackfill={handleForceBackfill}
+              />
+
+              {!readiness.allReady && !readiness.isLoading ? (
+                <CoverageGateEmpty
+                  blocking={readiness.blocking}
+                  onBackfill={handleForceBackfill}
                 />
+              ) : (
+                <>
+                  {activeTab === "eventos" && (
+                    <EventosDiaTab
+                      balancete={balanceteQuery.data}
+                      loading={balanceteQuery.isLoading}
+                      errorMessage={
+                        balanceteQuery.isError
+                          ? `Erro: ${(balanceteQuery.error as Error)?.message ?? "desconhecido"}`
+                          : undefined
+                      }
+                      onRetry={() => balanceteQuery.refetch()}
+                    />
+                  )}
+                  {activeTab === "balanco" && (
+                    <BalancoTab
+                      rows={balanceQuery.data?.rows ?? []}
+                      data={balanceQuery.data?.data}
+                      dataAnterior={balanceQuery.data?.data_anterior}
+                      emptyMessage={
+                        balanceQuery.isLoading
+                          ? "Carregando..."
+                          : balanceQuery.isError
+                          ? `Erro: ${(balanceQuery.error as Error)?.message ?? "desconhecido"}`
+                          : undefined
+                      }
+                    />
+                  )}
+                  {activeTab === "movimentacoes" && (
+                    <MovimentacoesTab
+                      rows={filteredRows}
+                      tableStatus={tableStatus}
+                      setTableStatus={setTableStatus}
+                      tableCotista={tableCotista}
+                      setTableCotista={setTableCotista}
+                      onRowClick={setSelected}
+                    />
+                  )}
+                  {activeTab === "cotistas" && <PlaceholderTab label="Cotistas" />}
+                </>
               )}
-              {activeTab === "balanco" && (
-                <BalancoTab
-                  rows={balanceQuery.data?.rows ?? []}
-                  data={balanceQuery.data?.data}
-                  dataAnterior={balanceQuery.data?.data_anterior}
-                  emptyMessage={
-                    balanceQuery.isLoading
-                      ? "Carregando..."
-                      : balanceQuery.isError
-                      ? `Erro: ${(balanceQuery.error as Error)?.message ?? "desconhecido"}`
-                      : undefined
-                  }
-                />
-              )}
-              {activeTab === "movimentacoes" && (
-                <MovimentacoesTab
-                  rows={filteredRows}
-                  tableStatus={tableStatus}
-                  setTableStatus={setTableStatus}
-                  tableCotista={tableCotista}
-                  setTableCotista={setTableCotista}
-                  onRowClick={setSelected}
-                />
-              )}
-              {activeTab === "cotistas" && <PlaceholderTab label="Cotistas" />}
-            </>
+            </div>
           )}
         </div>
 
-        {/* ProvenanceFooter (mock — substituir por status real dos adapters) */}
-        <ProvenanceFooter sources={MOCK_PROVENANCE} />
       </div>
 
       {/* AI Panel — drawer in-layout */}
@@ -1090,6 +1127,99 @@ function PlaceholderSheetTab({ label }: { label: string }) {
   return (
     <div className="flex h-full items-center justify-center py-10 text-sm text-gray-500 dark:text-gray-400">
       Em desenvolvimento — aba &quot;{label}&quot;
+    </div>
+  )
+}
+
+// ─── CoverageGateEmpty ──────────────────────────────────────────────────────
+// Bloqueia a renderizacao da analise quando algum dos 8 reports QiTech esta
+// em estado bloqueante (in_progress/blocked/na) para o dia selecionado.
+// Lista os reports faltantes + CTA "Forcar sync de N reports".
+
+function CoverageGateEmpty({
+  blocking,
+  onBackfill,
+}: {
+  blocking: CoverageStripEntry[]
+  onBackfill: (endpointName: string) => void
+}) {
+  const handleSyncAll = React.useCallback(() => {
+    for (const entry of blocking) onBackfill(entry.name)
+  }, [blocking, onBackfill])
+
+  const blockedCount = blocking.filter((e) => e.health === "blocked").length
+  const inProgressCount = blocking.filter((e) => e.health === "in_progress").length
+  const naCount = blocking.filter((e) => e.health === "na").length
+
+  return (
+    <div className="flex flex-col items-center gap-4 rounded border border-gray-200 bg-white px-6 py-10 text-center dark:border-gray-800 dark:bg-gray-950">
+      <div className="flex size-12 items-center justify-center rounded-full bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+        <RiCloudOffLine className="size-6" aria-hidden="true" />
+      </div>
+
+      <div className="max-w-xl">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-gray-50">
+          Dados ainda nao disponiveis para esta data
+        </h3>
+        <p className="mt-1 text-[13px] text-gray-600 dark:text-gray-400">
+          A analise da Cota Sub precisa que os 8 reports QiTech estejam
+          publicados. {blocking.length} report{blocking.length === 1 ? "" : "s"}
+          {" "}ainda nao{blocking.length === 1 ? " atende" : " atendem"} —{" "}
+          {[
+            blockedCount && `${blockedCount} bloqueado${blockedCount > 1 ? "s" : ""}`,
+            inProgressCount && `${inProgressCount} em curso`,
+            naCount && `${naCount} N/A`,
+          ].filter(Boolean).join(", ")}
+          . Verifique no strip acima qual e cada um.
+        </p>
+      </div>
+
+      <ul className="flex max-w-md flex-col gap-1 text-left">
+        {blocking.map((entry) => (
+          <li
+            key={entry.name}
+            className="flex items-center justify-between gap-3 rounded border border-gray-200 bg-gray-50 px-3 py-1.5 text-[12px] dark:border-gray-800 dark:bg-gray-900"
+          >
+            <span className="flex items-center gap-2">
+              <span
+                className={cx(
+                  "inline-block size-2 rounded-full",
+                  entry.health === "blocked"
+                    ? "bg-red-500"
+                    : entry.health === "in_progress"
+                    ? "bg-blue-400"
+                    : "bg-gray-300 dark:bg-gray-700",
+                )}
+                aria-hidden="true"
+              />
+              <span className="font-medium text-gray-700 dark:text-gray-200">
+                {entry.fullLabel ?? entry.shortLabel}
+              </span>
+              <span className="font-mono text-[11px] text-gray-500 dark:text-gray-500">
+                {entry.name}
+              </span>
+            </span>
+            {entry.health !== "na" && (
+              <button
+                type="button"
+                onClick={() => onBackfill(entry.name)}
+                className="inline-flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-0.5 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                <RiPlayLine className="size-3" aria-hidden="true" />
+                Forcar
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {blocking.some((e) => e.health !== "na") && (
+        <Button variant="primary" onClick={handleSyncAll}>
+          <RiAlertLine className="size-3.5" aria-hidden="true" />
+          Forcar sync de {blocking.filter((e) => e.health !== "na").length} report
+          {blocking.filter((e) => e.health !== "na").length === 1 ? "" : "s"}
+        </Button>
+      )}
     </div>
   )
 }

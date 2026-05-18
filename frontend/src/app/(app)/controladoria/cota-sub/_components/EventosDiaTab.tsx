@@ -36,7 +36,12 @@ import type {
   BalanceteResponse,
   CosifNode,
   DiferimentoExplanation,
+  FluxoCaixaExplanation,
+  MovimentoCarteiraExplanation,
+  MtmExplanation,
+  OutrosExplanation,
   PddExplanation,
+  RemuneracaoSrMezExplanation,
 } from "@/lib/api-client"
 import { useExplicacaoVariacao } from "@/lib/hooks/controladoria"
 
@@ -47,7 +52,13 @@ import {
 } from "./BridgeCard"
 import { CosifDrillSheet } from "./CosifDrillSheet"
 import {
-  buildDriverFromEventosContabeis,
+  buildDriverFromAjustesContabeis,
+  buildDriverFromFluxoCaixa,
+  buildDriverFromMovimentoCarteira,
+  buildDriverFromMtm,
+  buildDriverFromOutros,
+  buildDriverFromPdd,
+  buildDriverFromRemuneracaoSrMez,
   DriversCard,
   type DriverInput,
 } from "./DriversCard"
@@ -106,6 +117,21 @@ export function EventosDiaTab({
   )
   const apropriacao = explicacao.data?.explanations.find(
     (e): e is ApropriacaoExplanation => e.categoria === "apropriacao",
+  )
+  const fluxoCaixa = explicacao.data?.explanations.find(
+    (e): e is FluxoCaixaExplanation => e.categoria === "fluxo_caixa",
+  )
+  const movimentoCarteira = explicacao.data?.explanations.find(
+    (e): e is MovimentoCarteiraExplanation => e.categoria === "movimento_carteira",
+  )
+  const mtm = explicacao.data?.explanations.find(
+    (e): e is MtmExplanation => e.categoria === "mtm",
+  )
+  const remuneracao = explicacao.data?.explanations.find(
+    (e): e is RemuneracaoSrMezExplanation => e.categoria === "remuneracao_sr_mez",
+  )
+  const outros = explicacao.data?.explanations.find(
+    (e): e is OutrosExplanation => e.categoria === "outros",
   )
 
   // Pendentes — usado em multiplos lugares (banner sticky, chips, tone).
@@ -170,58 +196,96 @@ export function EventosDiaTab({
   }, [recon, cob, dq, pendentesCount])
 
   // ─── Drivers para o BridgeCard + DriversCard ────────────────────────────
-  // Hoje "eventos_contabeis" agrega PDD + Diferimento + Apropriacao.
-  // Demais buckets (fluxo_caixa, movimento_carteira, marcacao_mercado)
-  // ainda sao placeholders ate seus explainers entrarem.
+  // Status 2026-05-17: TODOS os 6 drivers entregues.
+  //  - PDD (bucket proprio, rose)
+  //  - Ajustes contabeis (diferimento + apropriacao, violet)
+  //  - Fluxo de caixa do cotista (aporte/resgate Sub/Mez/Sr, emerald)
+  //  - Movimento de carteira (liquidacao/aquisicao, blue) - INFORMACIONAL delta=0
+  //  - Marcacao a mercado (renda fixa, amber) - Sub absorve direto
+  //  - Remuneracao Sr/Mez (custo de subordinacao, rose) - Sub paga
+  //
+  // Fallback: quando o explainer ENTREGUE retorna undefined (sem evento no
+  // dia), usar `empty: true` (nao `placeholder: true`) — sinaliza categoria
+  // implementada mas dia trivial, render "Sem movimentacao no dia".
   const driverInputs = React.useMemo<DriverInput[]>(() => {
     const list: DriverInput[] = []
-    const eventosContabeis = buildDriverFromEventosContabeis({
-      pdd,
-      diferimento,
-      apropriacao,
-    })
     list.push(
-      eventosContabeis ?? { id: "eventos_contabeis", delta: 0, placeholder: true },
+      pdd
+        ? buildDriverFromPdd(pdd)
+        : { id: "pdd", delta: 0, empty: true },
     )
-    list.push({ id: "fluxo_caixa",        delta: 0, placeholder: true })
-    list.push({ id: "movimento_carteira", delta: 0, placeholder: true })
-    list.push({ id: "marcacao_mercado",   delta: 0, placeholder: true })
+
+    const ajustes = buildDriverFromAjustesContabeis({ diferimento, apropriacao })
+    list.push(
+      ajustes ?? { id: "ajustes_contabeis", delta: 0, empty: true },
+    )
+
+    list.push(
+      fluxoCaixa
+        ? buildDriverFromFluxoCaixa(fluxoCaixa)
+        : { id: "fluxo_caixa", delta: 0, empty: true },
+    )
+
+    list.push(
+      movimentoCarteira
+        ? buildDriverFromMovimentoCarteira(movimentoCarteira)
+        : { id: "movimento_carteira", delta: 0, empty: true },
+    )
+
+    list.push(
+      mtm
+        ? buildDriverFromMtm(mtm)
+        : { id: "marcacao_mercado", delta: 0, empty: true },
+    )
+
+    list.push(
+      remuneracao
+        ? buildDriverFromRemuneracaoSrMez(remuneracao)
+        : { id: "remuneracao_sr_mez", delta: 0, empty: true },
+    )
+
+    // Bucket "Nao explicado" (id="outros") — refactor 2026-05-17:
+    // agora reflete APENAS folhas COSIF sem mapping em
+    // `cosif_to_bucket.py`. Em regime estavel deve ser zero.
+    // (O residuo MEC vs Contabil agora vai pro painel proprio de conciliacao,
+    // nao mais pra este bucket.)
+    if (outros) {
+      list.push(buildDriverFromOutros(outros))
+    }
     return list
-  }, [pdd, diferimento, apropriacao])
+  }, [
+    pdd, diferimento, apropriacao, fluxoCaixa, movimentoCarteira, mtm, remuneracao, outros,
+  ])
 
   // BridgeDrivers — converte DriverInput pro shape do waterfall.
   // "Outros (nao classificado)" aparece quando indeterminado_brl > limiar.
+  // Labels do eixo X sao cognatos 1:1 dos titulos dos cards do DriversCard
+  // (single source of truth — ver shortLabelFromCategoryId).
   const bridgeDrivers = React.useMemo<BridgeDriver[]>(() => {
-    const fromInput = (input: DriverInput): BridgeDriver => ({
-      id:          input.id,
-      label:       labelFromCategoryId(input.id),
-      shortLabel:  shortLabelFromCategoryId(input.id),
-      delta:       input.delta,
-      placeholder: input.placeholder,
-    })
-    // Mesma ordem do handoff: eventos, fluxo, carteira, mtm
+    const fromInput = (input: DriverInput): BridgeDriver => {
+      const sl = shortLabelFromCategoryId(input.id)
+      return {
+        id:           input.id,
+        label:        labelFromCategoryId(input.id),
+        shortLabel:   sl.line1,
+        shortLabel2:  sl.line2,
+        delta:        input.delta,
+        placeholder:  input.placeholder,
+      }
+    }
+    // Ordem fixa no waterfall: PDD, Ajustes, Fluxo, Carteira, MtM,
+    // Remuneracao Sr/Mez, Outros (no fim, sempre que presente).
     const ordered = [
-      driverInputs.find((d) => d.id === "eventos_contabeis"),
+      driverInputs.find((d) => d.id === "pdd"),
+      driverInputs.find((d) => d.id === "ajustes_contabeis"),
       driverInputs.find((d) => d.id === "fluxo_caixa"),
       driverInputs.find((d) => d.id === "movimento_carteira"),
       driverInputs.find((d) => d.id === "marcacao_mercado"),
+      driverInputs.find((d) => d.id === "remuneracao_sr_mez"),
+      driverInputs.find((d) => d.id === "outros"),
     ].filter((x): x is DriverInput => x !== undefined)
-    const out = ordered.map(fromInput)
-
-    // Adiciona "Outros (nao classificado)" quando indeterminado_brl
-    // representa mais que 1k em modulo (mostra o gap honestamente).
-    const indeterminado = explicacao.data?.indeterminado_brl ?? 0
-    const threshold = 1_000
-    if (Math.abs(indeterminado) > threshold) {
-      out.push({
-        id:          "outros",
-        label:       "Outros (não classificado)",
-        shortLabel:  "Outros",
-        delta:       indeterminado,
-      })
-    }
-    return out
-  }, [driverInputs, explicacao.data?.indeterminado_brl])
+    return ordered.map(fromInput)
+  }, [driverInputs])
 
   // Ref para scroll do CTA "Ver pendentes" no banner
   const residuoCardRef = React.useRef<HTMLDivElement>(null)
@@ -291,12 +355,28 @@ export function EventosDiaTab({
         </div>
       )}
 
-      {/* 1. Status headline compacto (Z1) */}
+      {/* 1. Status headline compacto (Z1) — 3 deltas.
+            ATENCAO a nomenclatura do backend (balancete_diario.py:484-485):
+              - `delta_pl_cota_sub_real`     = MEC direto (verdade do administrador)
+              - `delta_pl_cota_sub_esperado` = derivado contabil (ΔTotal − Sr − Mez)
+            "Real" no schema = MEC apurado; "Esperado" = inferencia contabil.
+            UI mostra:
+              - Variacao apurada (MEC) ← delta_pl_cota_sub_real
+              - Variacao calculada (contabil) ← delta_pl_cota_sub_esperado
+              - Nao-explicado ← residuo = real − esperado. */}
       <StatusHeadlineCompact
         dataD0={balancete?.data_d_zero}
         plSubD0={recon?.pl_cota_sub_d0}
-        deltaReal={recon?.delta_pl_cota_sub_real}
-        deltaPct={recon?.delta_pct_sobre_d1}
+        deltaApuradoMec={recon?.delta_pl_cota_sub_real}
+        deltaApuradoPct={recon?.delta_pct_sobre_d1}
+        deltaCalculadoReal={recon?.delta_pl_cota_sub_esperado}
+        deltaCalculadoPct={
+          recon && recon.pl_cota_sub_d1 !== 0
+            ? (recon.delta_pl_cota_sub_esperado / recon.pl_cota_sub_d1) * 100
+            : undefined
+        }
+        residuo={recon?.residuo}
+        baseResiduo={recon?.pl_cota_sub_d1}
         forceNeutral={forceNeutral}
         chips={headerChips}
         loading={loading && !balancete}
@@ -314,9 +394,14 @@ export function EventosDiaTab({
         }
       />
 
-      {/* 3. Conteudo do sub-tab */}
+      {/* 3. Conteudo do sub-tab.
+          Layout split 50/50: BridgeCard + DriversCard com mesma largura.
+          O `minmax(0,1fr)` em AMBAS impede que o conteudo intrinseco
+          (evidencias PDD/Ajustes expandidas) infle qualquer coluna alem
+          da proporcao — sem isso, a direita engordava ao expandir e
+          empurrava a esquerda (resize visual confuso). */}
       {subTab === "resumo" ? (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.42fr_1fr]">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="flex min-w-0 flex-col gap-3">
             <BridgeCard
               startTotal={recon?.pl_cota_sub_d1 ?? 0}
@@ -333,10 +418,13 @@ export function EventosDiaTab({
               nodes={nodes}
             />
           </div>
-          <DriversCard
-            drivers={driverInputs}
-            base={recon?.pl_cota_sub_d1}
-          />
+          <div className="min-w-0">
+            <DriversCard
+              drivers={driverInputs}
+              base={recon?.pl_cota_sub_d1}
+              onInvestigate={() => setSubTab("detalhe")}
+            />
+          </div>
         </div>
       ) : (
         <div ref={residuoCardRef} className="scroll-mt-4">
@@ -372,22 +460,35 @@ export function EventosDiaTab({
 
 // ─── helpers locais ─────────────────────────────────────────────────────────
 
+// Labels do eixo X do waterfall — single source of truth pra textos que
+// aparecem na pagina cota-sub. Cognato 1:1 com os titulos exibidos no
+// DriversCard (rail direito). Quando o nome tem 2 palavras e nao cabe em
+// 1 linha do eixo X, quebra em 2 linhas (line1 + line2) via tspan no SVG.
+//
+// Regra: o que o usuario le no card a direita = o que o usuario le no
+// eixo X do waterfall (uma label NUNCA difere da outra).
 function labelFromCategoryId(id: BridgeDriver["id"]): string {
   switch (id) {
-    case "fluxo_caixa":        return "Fluxo de cotista"
-    case "movimento_carteira": return "Carteira"
-    case "eventos_contabeis":  return "Eventos"
-    case "marcacao_mercado":   return "MtM"
-    case "outros":             return "Outros"
+    case "pdd":                return "PDD"
+    case "ajustes_contabeis":  return "Ajustes contábeis"
+    case "fluxo_caixa":        return "Aporte e resgate"
+    case "movimento_carteira": return "Movimento de carteira"
+    case "marcacao_mercado":   return "Renda Fixa"
+    case "remuneracao_sr_mez": return "Remuneração Sr/Mez"
+    case "outros":             return "Não explicado"
   }
 }
-function shortLabelFromCategoryId(id: BridgeDriver["id"]): string {
+
+type ShortAxisLabel = { line1: string; line2?: string }
+function shortLabelFromCategoryId(id: BridgeDriver["id"]): ShortAxisLabel {
   switch (id) {
-    case "fluxo_caixa":        return "Fluxo"
-    case "movimento_carteira": return "Carteira"
-    case "eventos_contabeis":  return "Eventos"
-    case "marcacao_mercado":   return "MtM"
-    case "outros":             return "Outros"
+    case "pdd":                return { line1: "PDD" }
+    case "ajustes_contabeis":  return { line1: "Ajustes",        line2: "contábeis" }
+    case "fluxo_caixa":        return { line1: "Aporte",         line2: "e resgate" }
+    case "movimento_carteira": return { line1: "Movimento",      line2: "de carteira" }
+    case "marcacao_mercado":   return { line1: "Renda",          line2: "Fixa" }
+    case "remuneracao_sr_mez": return { line1: "Remuneração",    line2: "Sr/Mez" }
+    case "outros":             return { line1: "Não",            line2: "explicado" }
   }
 }
 

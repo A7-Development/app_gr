@@ -3,23 +3,27 @@
 /**
  * AnaliseVariacaoCard — narrativa das variacoes do dia.
  *
- * Abriga os explainers heuristicos das variacoes patrimoniais. Quatro
- * categorias canonicas (mapeadas com Ricardo em 2026-05-12; atualizadas
- * 2026-05-13 apos investigacao de schema):
+ * Abriga os explainers heuristicos das variacoes patrimoniais. Cinco
+ * categorias canonicas (split de "eventos_contabeis" em 2 buckets em
+ * 2026-05-17 — PDD merece visualizacao propria):
  *
- *   1. Fluxo de caixa do cotista — aporte/resgate
+ *   1. PDD — provisao de credito (rose, alerta de risco)
+ *      Fonte: diff wh_estoque_recebivel.valor_pdd
+ *      Status: **entregue 2026-05-13 (categoria 3.2)**
+ *
+ *   2. Ajustes contabeis — diferimento + apropriacao de despesas (violet)
+ *      Fontes: CPR `Diferimento de despesa%` + `Apropriacao%`
+ *      Status: em construcao
+ *
+ *   3. Fluxo de caixa do cotista — aporte/resgate (emerald)
  *      Fonte: CPR `Aporte` + cruzamento com MEC (Δquantidade por classe)
- *      Status: em construcao (PR proximo)
+ *      Status: em construcao
  *
- *   2. Movimento de carteira — liquidacao / aquisicao de papeis
+ *   4. Movimento de carteira — liquidacao / aquisicao de papeis (blue)
  *      Fontes: diff wh_estoque_recebivel D-1 vs D0 + CPR `LIQUIDADOS TOTAL - PROV`
  *      Status: em construcao
  *
- *   3. Eventos contabeis — PDD, diferimento, apropriacao de despesas
- *      Fontes: diff wh_estoque_recebivel.valor_pdd + CPR `Diferimento de despesa%`
- *      Status: **PDD entregue 2026-05-13 (categoria 3.2)**; diferimento pendente
- *
- *   4. Marcacao a mercado — papel com qtde delta=0 e valor delta != 0
+ *   5. Marcacao a mercado — papel com qtde delta=0 e valor delta != 0 (amber)
  *      Fonte: cruzamento direto wh_posicao_renda_fixa D-1 vs D0
  *      Status: em construcao
  *
@@ -32,6 +36,8 @@ import {
   RiBriefcaseLine,
   RiFileList3Line,
   RiLineChartLine,
+  RiShieldCheckLine,
+  RiStackLine,
 } from "@remixicon/react"
 import type { ComponentType } from "react"
 
@@ -51,10 +57,10 @@ const fmtBRL = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits:  2,
 })
 
-// ─── Categorias (4, fixas) ───────────────────────────────────────────────────
+// ─── Categorias (5, fixas) ───────────────────────────────────────────────────
 
 type Categoria = {
-  id:          "fluxo_caixa" | "movimento_carteira" | "eventos_contabeis" | "marcacao_mercado"
+  id:          "pdd" | "ajustes_contabeis" | "fluxo_caixa" | "movimento_carteira" | "marcacao_mercado" | "remuneracao_sr_mez"
   icon:        ComponentType<{ className?: string }>
   iconCls:     string
   dotCls:      string
@@ -64,12 +70,28 @@ type Categoria = {
 
 const CATEGORIAS: readonly Categoria[] = [
   {
+    id:        "pdd",
+    icon:      RiShieldCheckLine,
+    iconCls:   "text-rose-600 dark:text-rose-400",
+    dotCls:    "bg-rose-500",
+    titulo:    "PDD (provisao de credito)",
+    descricao: "Constituicao ou reversao de provisao por mudanca de faixa de credito.",
+  },
+  {
+    id:        "ajustes_contabeis",
+    icon:      RiFileList3Line,
+    iconCls:   "text-violet-600 dark:text-violet-400",
+    dotCls:    "bg-violet-500",
+    titulo:    "Ajustes contabeis",
+    descricao: "Diferimento e apropriacao de despesas — natureza temporal.",
+  },
+  {
     id:        "fluxo_caixa",
     icon:      RiBankCardLine,
     iconCls:   "text-emerald-600 dark:text-emerald-400",
     dotCls:    "bg-emerald-500",
-    titulo:    "Fluxo de caixa do cotista",
-    descricao: "Aporte ou resgate da Cota Subordinada no dia.",
+    titulo:    "Aporte e resgate de cotistas",
+    descricao: "Aporte ou resgate em Sub, Mez ou Sr. Sub absorve direto; Mez/Sr afetam via equity.",
   },
   {
     id:        "movimento_carteira",
@@ -77,15 +99,7 @@ const CATEGORIAS: readonly Categoria[] = [
     iconCls:   "text-blue-600 dark:text-blue-400",
     dotCls:    "bg-blue-500",
     titulo:    "Movimento de carteira",
-    descricao: "Liquidacao e aquisicao de papeis no dia.",
-  },
-  {
-    id:        "eventos_contabeis",
-    icon:      RiFileList3Line,
-    iconCls:   "text-violet-600 dark:text-violet-400",
-    dotCls:    "bg-violet-500",
-    titulo:    "Eventos contabeis",
-    descricao: "Constituicao de PDD, diferimento e apropriacao de despesas.",
+    descricao: "Giro da carteira de DC. Bucket informacional — movimento patrimonial neutro no Sub.",
   },
   {
     id:        "marcacao_mercado",
@@ -93,7 +107,15 @@ const CATEGORIAS: readonly Categoria[] = [
     iconCls:   "text-amber-600 dark:text-amber-400",
     dotCls:    "bg-amber-500",
     titulo:    "Marcacao a mercado",
-    descricao: "Variacao tecnica de papeis sem movimento de quantidade.",
+    descricao: "Papeis de renda fixa com qtd estavel - PU mexeu pela curva do dia. Sub absorve direto.",
+  },
+  {
+    id:        "remuneracao_sr_mez",
+    icon:      RiStackLine,
+    iconCls:   "text-rose-600 dark:text-rose-400",
+    dotCls:    "bg-rose-500",
+    titulo:    "Remuneracao Sr/Mez",
+    descricao: "Custo de subordinacao. Cotas Sr e Mez valorizam pela curva, Sub absorve com sinal invertido.",
   },
 ]
 
@@ -139,8 +161,8 @@ export function AnaliseVariacaoCard({
       <ul className="flex flex-1 flex-col divide-y divide-gray-100 dark:divide-gray-800">
         {CATEGORIAS.map((c) => {
           const Icon = c.icon
-          const isEventosContabeis = c.id === "eventos_contabeis"
-          const hasPdd = isEventosContabeis && pdd && pdd.evidencias_total > 0
+          const isPdd = c.id === "pdd"
+          const hasPdd = isPdd && pdd && pdd.evidencias_total > 0
           return (
             <li
               key={c.id}

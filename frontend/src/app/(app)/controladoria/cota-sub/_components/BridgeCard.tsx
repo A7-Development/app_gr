@@ -23,14 +23,19 @@ import { cx } from "@/lib/utils"
 export type BridgeCategoryId =
   | "fluxo_caixa"
   | "movimento_carteira"
-  | "eventos_contabeis"
+  | "pdd"
+  | "ajustes_contabeis"
   | "marcacao_mercado"
+  | "remuneracao_sr_mez"
   | "outros"
 
 export type BridgeDriver = {
   id:          BridgeCategoryId
   label:       string
+  /** Label no eixo X (linha 1). Manter cognato com o titulo do card a direita. */
   shortLabel:  string
+  /** Linha 2 opcional. Use quando o nome do card tem 2 palavras e nao cabe em 1 linha. */
+  shortLabel2?: string
   /** Delta R$ na categoria. 0 = sem dado / categoria neutra. */
   delta:       number
   /** Quando true, a coluna entra cinza pontilhada (categoria sem dado real). */
@@ -62,6 +67,16 @@ const fmtBRLk = (v: number) => {
 }
 const fmtBRLkSigned = (v: number) => (v > 0 ? "+" : "") + fmtBRLk(v).replace("+", "")
 
+const fmtBRLFull = new Intl.NumberFormat("pt-BR", {
+  style: "currency", currency: "BRL",
+  minimumFractionDigits: 2, maximumFractionDigits: 2,
+})
+// 4 casas decimais — Cota Sub mexe em centesimos de pp; 2 casas perde sinal.
+const fmtPctSigned = (pct: number): string => {
+  const sign = pct > 0 ? "+" : pct < 0 ? "−" : ""
+  return `${sign}${Math.abs(pct).toFixed(4).replace(".", ",")}%`
+}
+
 export type BridgeCardProps = {
   startTotal: number
   endTotal:   number
@@ -92,56 +107,22 @@ export function BridgeCard({
         "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
       )}
     >
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2">
         <div>
           <h3 className="text-[13.5px] font-semibold leading-tight tracking-[-0.01em] text-gray-900 dark:text-gray-50">
             Decomposição da variação
           </h3>
           <p className="mt-0.5 text-[11.5px] text-gray-500 dark:text-gray-400">
-            PL D-1 → contribuições por categoria → PL D0
+            Contribuições por categoria
           </p>
         </div>
-        <div className="flex gap-1">
-          <UnitChip active={unit === "R$"}  onClick={() => onUnitChange?.("R$")}>R$</UnitChip>
-          <UnitChip active={unit === "pp"}  onClick={() => onUnitChange?.("pp")}>pp do PL</UnitChip>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <VariacaoChip startTotal={startTotal} endTotal={endTotal} />
+          <div className="flex gap-1">
+            <UnitChip active={unit === "R$"}  onClick={() => onUnitChange?.("R$")}>R$</UnitChip>
+            <UnitChip active={unit === "pp"}  onClick={() => onUnitChange?.("pp")}>pp do PL</UnitChip>
+          </div>
         </div>
-      </div>
-
-      {/* Legenda — cor semantica do waterfall (positivo / negativo). */}
-      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 pt-1">
-        <span className="flex items-center gap-1.5">
-          <span
-            className="size-[9px] rounded-sm"
-            style={{ backgroundColor: COLOR_POSITIVE }}
-            aria-hidden="true"
-          />
-          <span className="text-[11px] text-gray-600 dark:text-gray-400">
-            Contribuição positiva
-          </span>
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span
-            className="size-[9px] rounded-sm"
-            style={{ backgroundColor: COLOR_NEGATIVE }}
-            aria-hidden="true"
-          />
-          <span className="text-[11px] text-gray-600 dark:text-gray-400">
-            Contribuição negativa
-          </span>
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span
-            className="size-[9px] rounded-sm border"
-            style={{
-              backgroundColor: GRAY_TOTAL_BAR,
-              borderColor:     GRAY_TOTAL_STROKE,
-            }}
-            aria-hidden="true"
-          />
-          <span className="text-[11px] text-gray-600 dark:text-gray-400">
-            Total (D-1 / D0)
-          </span>
-        </span>
       </div>
 
       <div className="mt-1 min-w-0 flex-1">
@@ -156,6 +137,38 @@ export function BridgeCard({
         />
       </div>
     </section>
+  )
+}
+
+function VariacaoChip({
+  startTotal,
+  endTotal,
+}: {
+  startTotal: number
+  endTotal:   number
+}) {
+  const delta = endTotal - startTotal
+  const deltaPct = startTotal !== 0 ? (delta / startTotal) * 100 : 0
+  const color = delta === 0 ? "#6B7280" : delta > 0 ? COLOR_POSITIVE : COLOR_NEGATIVE
+  const sign = delta > 0 ? "+" : delta < 0 ? "−" : ""
+  return (
+    <div className="flex items-baseline gap-1.5">
+      <span className="text-[10px] uppercase tracking-[0.04em] text-gray-500 dark:text-gray-400">
+        Variação dia
+      </span>
+      <span
+        className="text-[14px] font-semibold tabular-nums leading-none"
+        style={{ color }}
+      >
+        {sign}{fmtBRLFull.format(Math.abs(delta)).replace("R$ ", "R$ ")}
+      </span>
+      <span
+        className="text-[11px] font-medium tabular-nums leading-none"
+        style={{ color }}
+      >
+        {fmtPctSigned(deltaPct)}
+      </span>
+    </div>
   )
 }
 
@@ -190,10 +203,14 @@ type BarSpec = {
   kind:        "total" | "segment"
   label:       string
   shortLabel?: string
+  shortLabel2?: string
   sublabel:    string
   value:       number
   color:       string
+  /** Categoria nao implementada (em construcao). */
   placeholder?: boolean
+  /** Categoria implementada mas delta=0 (sem impacto no dia). */
+  isZero?:      boolean
   x:           number
   barTop:      number
   barBottom:   number
@@ -233,7 +250,10 @@ function CategoryBridgeSvg({
   const padLeft = 64
   const padRight = 16
   const padTop = 32
-  const padBottom = 56
+  // padBottom = 70: comporta 2 linhas de label (eixo X) + sublabel (pp / data).
+  // Labels longos como "Marcação a mercado" e "Remuneração Sr/Mez" quebram em 2 linhas
+  // pra manter cognato com os titulos dos cards a direita (single source of truth).
+  const padBottom = 70
   const innerW = w - padLeft - padRight
   const innerH = height - padTop - padBottom
 
@@ -276,25 +296,34 @@ function CategoryBridgeSvg({
   })
 
   // Drivers — cor pela direcao do impacto (verde positivo / vermelho negativo).
+  // delta=0 e tratado como visualmente neutro (cinza), mesmo quando a
+  // categoria nao e placeholder — uma barra sem contribuicao confunde
+  // mais que ajuda no waterfall. Distinguimos:
+  //   - placeholder: categoria nao implementada -> "em construcao"
+  //   - delta=0 implementada: cinza, mas label embaixo fica "—" (nao "em construcao")
   drivers.forEach((d, i) => {
     const seg = segmentRunning[i]
     const top = Math.min(yPos(seg.from), yPos(seg.to))
     const bot = Math.max(yPos(seg.from), yPos(seg.to))
-    const color = d.placeholder
+    const isZero = d.delta === 0 && !d.placeholder
+    const isNeutral = d.placeholder || isZero
+    const color = isNeutral
       ? GRAY_PLACEHOLDER
-      : d.delta >= 0
+      : d.delta > 0
         ? COLOR_POSITIVE
         : COLOR_NEGATIVE
     bars.push({
       kind:        "segment",
       label:       d.label,
       shortLabel:  d.shortLabel,
-      sublabel:    d.placeholder
+      shortLabel2: d.shortLabel2,
+      sublabel:    isNeutral
         ? "—"
         : fmtPctRelative(d.delta, startTotal),
       value:       d.delta,
       color,
-      placeholder: d.placeholder,
+      placeholder: d.placeholder,  // preserva o flag original
+      isZero,
       x:           padLeft + slot * (i + 1) + (slot - barW) / 2,
       barTop:      top,
       barBottom:   bot,
@@ -328,7 +357,9 @@ function CategoryBridgeSvg({
 
   // Gridlines (3 horizontais)
   const gridY = [yMin + yRange * 0.25, yMin + yRange * 0.5, yMin + yRange * 0.75]
-  const tickValues = [yMin + yRange * 0.1, yMin + yRange * 0.5, yMin + yRange * 0.9]
+  // Ticks laterais 'extremos' — o tick do meio e substituido pela linha de
+  // referencia do PL D-1 (zero relativo do waterfall), renderizada abaixo.
+  const tickValues = [yMin + yRange * 0.1, yMin + yRange * 0.9]
 
   return (
     <div ref={ref} className="w-full">
@@ -370,6 +401,44 @@ function CategoryBridgeSvg({
           </text>
         ))}
 
+        {/* Linha de referencia PL D-1 — 'zero relativo' do waterfall.
+            Tudo acima dela contribuiu positivamente no dia, tudo abaixo
+            contribuiu negativamente. Mais forte que as gridlines para
+            ancorar a leitura. */}
+        <line
+          x1={padLeft}
+          x2={w - padRight}
+          y1={yPos(startTotal)}
+          y2={yPos(startTotal)}
+          stroke="#374151"
+          strokeWidth={1.5}
+          strokeOpacity={0.9}
+        />
+        <text
+          x={padLeft - 8}
+          y={yPos(startTotal) - 4}
+          textAnchor="end"
+          fontSize={9}
+          fontWeight={700}
+          fill="#374151"
+          fontFamily="inherit"
+          style={{ letterSpacing: "0.04em" }}
+        >
+          PL D-1
+        </text>
+        <text
+          x={padLeft - 8}
+          y={yPos(startTotal) + 9}
+          textAnchor="end"
+          fontSize={10}
+          fontWeight={600}
+          fill="#374151"
+          fontFamily="inherit"
+          style={{ fontVariantNumeric: "tabular-nums" }}
+        >
+          {fmtBRLk(startTotal).replace(/^[+−]/, "")}
+        </text>
+
         {/* Connectors */}
         {connectors.map((c, i) => (
           <line
@@ -399,7 +468,7 @@ function CategoryBridgeSvg({
                 stroke={isTotal ? GRAY_TOTAL_STROKE : "none"}
                 strokeWidth={isTotal ? 1 : 0}
                 rx={2}
-                opacity={b.placeholder ? 0.65 : 1}
+                opacity={(b.placeholder || b.isZero) ? 0.65 : 1}
               />
 
               {/* Value label */}
@@ -420,12 +489,13 @@ function CategoryBridgeSvg({
               >
                 {isTotal
                   ? fmtBRLk(b.value).replace(/^\+/, "")
-                  : b.placeholder
+                  : (b.placeholder || b.isZero)
                     ? "—"
                     : fmtBRLkSigned(b.value)}
               </text>
 
-              {/* X-axis label */}
+              {/* X-axis label — quebra em 2 linhas quando shortLabel2 esta presente.
+                  Cognato 1:1 com o titulo do card a direita (single source of truth). */}
               <text
                 x={b.x + barW / 2}
                 y={padTop + innerH + 18}
@@ -436,9 +506,21 @@ function CategoryBridgeSvg({
               >
                 {b.shortLabel ?? b.label}
               </text>
+              {b.shortLabel2 && (
+                <text
+                  x={b.x + barW / 2}
+                  y={padTop + innerH + 31}
+                  textAnchor="middle"
+                  fontSize={11}
+                  fontWeight={500}
+                  fill="#374151"
+                >
+                  {b.shortLabel2}
+                </text>
+              )}
               <text
                 x={b.x + barW / 2}
-                y={padTop + innerH + 32}
+                y={padTop + innerH + (b.shortLabel2 ? 47 : 32)}
                 textAnchor="middle"
                 fontSize={10}
                 fill={GRAY_AXIS}
@@ -448,9 +530,11 @@ function CategoryBridgeSvg({
                   ? formatBR(b.sublabel)
                   : b.placeholder
                     ? "em construção"
-                    : unit === "pp"
-                      ? b.sublabel
-                      : fmtBRLkSigned(b.value)}
+                    : b.isZero
+                      ? "sem impacto"
+                      : unit === "pp"
+                        ? b.sublabel
+                        : fmtBRLkSigned(b.value)}
               </text>
             </g>
           )

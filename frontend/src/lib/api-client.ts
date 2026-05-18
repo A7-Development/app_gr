@@ -2083,6 +2083,21 @@ export type ExplainerCategoria =
   | "apropriacao"
   | "liquidacao"
   | "aquisicao"
+  | "outros"
+
+/**
+ * 1 conta COSIF folha mapeada pro bucket — fonte contabil do delta_brl.
+ * Refactor 2026-05-17: cada Explanation traz a lista de COSIFs que compoem
+ * o delta_brl do bucket. Permite auditar exatamente de onde vem o impacto
+ * antes mesmo de qualquer heuristica de enriquecimento.
+ */
+export type CosifOrigem = {
+  codigo:    string
+  nome:      string
+  d_minus_1: number
+  d_zero:    number
+  delta:     number
+}
 
 export type PddEvidencia = {
   cedente_doc:              string
@@ -2118,6 +2133,7 @@ export type PddExplanation = {
   evidencias_mostradas: number
   outros_delta_brl:     number
   evidencias:           PddEvidencia[]
+  cosif_origin?:        CosifOrigem[]
 }
 
 export type DiferimentoExplanation = {
@@ -2128,6 +2144,7 @@ export type DiferimentoExplanation = {
   evidencias_mostradas: number
   outros_delta_brl:     number
   evidencias:           EvidenciaCprLinha[]
+  cosif_origin?:        CosifOrigem[]
 }
 
 export type ApropriacaoExplanation = {
@@ -2138,22 +2155,162 @@ export type ApropriacaoExplanation = {
   evidencias_mostradas: number
   outros_delta_brl:     number
   evidencias:           EvidenciaCprLinha[]
+  cosif_origin?:        CosifOrigem[]
+}
+
+export type ClasseCotaKey = "sub_jr" | "mezanino" | "senior"
+
+export type FluxoCaixaEvidencia = {
+  tipo:           "aporte" | "resgate"
+  classe:         ClasseCotaKey
+  classe_label:   string
+  valor_brl:      number
+  delta_qtd:      number
+  valor_cota_d0:  number
+  /** Impacto liquido no PL Sub com sinal coerente (verde se +, vermelho se -). */
+  impacto_pl_sub: number
+}
+
+export type EventoOperacionalEvidencia = {
+  tipo:      "aporte_engaiolado" | "devolucao_engaiolado"
+  descricao: string
+  valor_brl: number
+  detalhe:   string | null
+}
+
+export type FluxoCaixaExplanation = {
+  categoria:            "fluxo_caixa"
+  narrative:            string
+  delta_brl:            number
+  evidencias:           FluxoCaixaEvidencia[]
+  eventos_operacionais: EventoOperacionalEvidencia[]
+  cosif_origin?:        CosifOrigem[]
+}
+
+export type MovimentoCarteiraEvidencia = {
+  tipo:                     "liquidado" | "adquirido"
+  cedente_doc:              string
+  cedente_nome:             string
+  sacado_doc:               string
+  sacado_nome:              string
+  seu_numero:               string
+  numero_documento:         string
+  tipo_recebivel:           string
+  valor_brl:                number
+  valor_nominal:            number
+  data_vencimento_ajustada: string | null
+}
+
+export type MovimentoCarteiraExplanation = {
+  categoria:            "movimento_carteira"
+  narrative:            string
+  /**
+   * Σ Δ folhas COSIF: bancos (1.1.2.*) + recebiveis (1.6.1.30.*) + transito
+   * + creditos a conciliar. ANTES era sempre 0 ("informacional"); apos
+   * refactor 2026-05-17 reflete o impacto contabil real do giro de carteira.
+   */
+  delta_brl:            number
+  total_liquidado_brl:  number
+  total_adquirido_brl:  number
+  papeis_liquidados:    number
+  papeis_adquiridos:    number
+  evidencias_mostradas: number
+  evidencias:           MovimentoCarteiraEvidencia[]
+  cosif_origin?:        CosifOrigem[]
+}
+
+export type MtmEvidencia = {
+  codigo:           string
+  nome_do_papel:    string
+  emitente:         string
+  indexador:        string
+  data_vencimento:  string | null
+  quantidade:       number
+  valor_d1:         number
+  valor_d0:         number
+  delta_valor:      number
+  pu_d1:            number
+  pu_d0:            number
+}
+
+/**
+ * Bucket "Renda Fixa" (categoria interna ainda "mtm" pra evitar migration):
+ * agrega TPF (LTN, NTN), Notas Comerciais, Cotas de fundos de RF. Inclui
+ * MtM puro + ganhos/perdas de liquidacao + apropriacao de juros de RF.
+ * Display label e "Renda Fixa" no frontend.
+ */
+export type MtmExplanation = {
+  categoria:            "mtm"
+  narrative:            string
+  delta_brl:            number
+  evidencias_total:     number
+  evidencias_mostradas: number
+  outros_delta_brl:     number
+  evidencias:           MtmEvidencia[]
+  cosif_origin?:        CosifOrigem[]
+}
+
+export type RemuneracaoSrMezEvidencia = {
+  classe:         "senior" | "mezanino"
+  classe_label:   string
+  pl_d1:          number
+  pl_d0:          number
+  /** pl_d0 - pl_d1 - (entradas_d0 - saidas_d0). Positivo = classe valorizou. */
+  delta_pl:       number
+  /** delta_pl / pl_d1 (fracao decimal). */
+  delta_pct:      number
+  valor_cota_d1:  number
+  valor_cota_d0:  number
+  /** -delta_pl (Sub paga a remuneracao das tranches mais seniores). */
+  impacto_pl_sub: number
+}
+
+export type RemuneracaoSrMezExplanation = {
+  categoria:            "remuneracao_sr_mez"
+  narrative:            string
+  /** -(ΔPL_Sr + ΔPL_Mez) — negativo = Sub paga subordinacao. */
+  delta_brl:            number
+  evidencias:           RemuneracaoSrMezEvidencia[]
+  cosif_origin?:        CosifOrigem[]
+}
+
+/**
+ * Bucket residual — folhas COSIF que nao casaram com nenhum mapping.
+ * Em regime estavel deve ser zero; quando nao for, lista folhas explicitas
+ * pra adicionar em `cosif_to_bucket.py`.
+ */
+export type OutrosExplanation = {
+  categoria:    "outros"
+  narrative:    string
+  delta_brl:    number
+  cosif_origin: CosifOrigem[]
 }
 
 export type Explanation =
   | PddExplanation
   | DiferimentoExplanation
   | ApropriacaoExplanation
+  | FluxoCaixaExplanation
+  | MovimentoCarteiraExplanation
+  | MtmExplanation
+  | RemuneracaoSrMezExplanation
+  | OutrosExplanation
 
 export type ExplicacaoVariacaoResponse = {
-  fundo_id:           string
-  data:               string
-  data_anterior:      string
-  delta_pl_sub:       number
-  threshold_brl:      number
-  top_n:              number
-  explanations:       Explanation[]
-  indeterminado_brl:  number
+  fundo_id:                  string
+  data:                      string
+  data_anterior:             string
+  /** ΔPL Sub apurado pelo MEC (administrador). */
+  delta_pl_sub:              number
+  /** ΔPL Sub calculado pelo balancete COSIF (refactor 2026-05-17). */
+  delta_pl_sub_contabil:     number
+  /** delta_pl_sub - delta_pl_sub_contabil. Residuo MEC vs Contabil. */
+  divergencia_mec_contabil:  number
+  threshold_brl:             number
+  top_n:                     number
+  explanations:              Explanation[]
+  /** Σ Δ folhas COSIF sem mapping (esperado: zero). */
+  indeterminado_brl:         number
 }
 
 // Pydantic v2 serializa Decimal como string. Convertemos para number aqui pra
@@ -2222,6 +2379,59 @@ function _coerceCprEvidencia(e: EvidenciaCprLinha): EvidenciaCprLinha {
     delta_valor: Number(e.delta_valor),
   }
 }
+function _coerceFluxoCaixaEvidencia(e: FluxoCaixaEvidencia): FluxoCaixaEvidencia {
+  return {
+    ...e,
+    valor_brl:      Number(e.valor_brl),
+    delta_qtd:      Number(e.delta_qtd),
+    valor_cota_d0:  Number(e.valor_cota_d0),
+    impacto_pl_sub: Number(e.impacto_pl_sub),
+  }
+}
+function _coerceEventoOperacional(e: EventoOperacionalEvidencia): EventoOperacionalEvidencia {
+  return { ...e, valor_brl: Number(e.valor_brl) }
+}
+function _coerceMovimentoCarteiraEvidencia(e: MovimentoCarteiraEvidencia): MovimentoCarteiraEvidencia {
+  return {
+    ...e,
+    valor_brl:     Number(e.valor_brl),
+    valor_nominal: Number(e.valor_nominal),
+  }
+}
+function _coerceMtmEvidencia(e: MtmEvidencia): MtmEvidencia {
+  return {
+    ...e,
+    quantidade:  Number(e.quantidade),
+    valor_d1:    Number(e.valor_d1),
+    valor_d0:    Number(e.valor_d0),
+    delta_valor: Number(e.delta_valor),
+    pu_d1:       Number(e.pu_d1),
+    pu_d0:       Number(e.pu_d0),
+  }
+}
+function _coerceRemuneracaoSrMezEvidencia(e: RemuneracaoSrMezEvidencia): RemuneracaoSrMezEvidencia {
+  return {
+    ...e,
+    pl_d1:          Number(e.pl_d1),
+    pl_d0:          Number(e.pl_d0),
+    delta_pl:       Number(e.delta_pl),
+    delta_pct:      Number(e.delta_pct),
+    valor_cota_d1:  Number(e.valor_cota_d1),
+    valor_cota_d0:  Number(e.valor_cota_d0),
+    impacto_pl_sub: Number(e.impacto_pl_sub),
+  }
+}
+function _coerceCosifOrigem(c: CosifOrigem): CosifOrigem {
+  return {
+    ...c,
+    d_minus_1: Number(c.d_minus_1),
+    d_zero:    Number(c.d_zero),
+    delta:     Number(c.delta),
+  }
+}
+function _coerceCosifOrigemList(list: CosifOrigem[] | undefined): CosifOrigem[] | undefined {
+  return list ? list.map(_coerceCosifOrigem) : undefined
+}
 function _coerceExplanation(e: Explanation): Explanation {
   switch (e.categoria) {
     case "pdd":
@@ -2230,6 +2440,7 @@ function _coerceExplanation(e: Explanation): Explanation {
         delta_brl:        Number(e.delta_brl),
         outros_delta_brl: Number(e.outros_delta_brl),
         evidencias:       e.evidencias.map(_coercePddEvidencia),
+        cosif_origin:     _coerceCosifOrigemList(e.cosif_origin),
       }
     case "diferimento":
     case "apropriacao":
@@ -2238,6 +2449,45 @@ function _coerceExplanation(e: Explanation): Explanation {
         delta_brl:        Number(e.delta_brl),
         outros_delta_brl: Number(e.outros_delta_brl),
         evidencias:       e.evidencias.map(_coerceCprEvidencia),
+        cosif_origin:     _coerceCosifOrigemList(e.cosif_origin),
+      }
+    case "fluxo_caixa":
+      return {
+        ...e,
+        delta_brl:            Number(e.delta_brl),
+        evidencias:           e.evidencias.map(_coerceFluxoCaixaEvidencia),
+        eventos_operacionais: e.eventos_operacionais.map(_coerceEventoOperacional),
+        cosif_origin:         _coerceCosifOrigemList(e.cosif_origin),
+      }
+    case "movimento_carteira":
+      return {
+        ...e,
+        delta_brl:           Number(e.delta_brl),
+        total_liquidado_brl: Number(e.total_liquidado_brl),
+        total_adquirido_brl: Number(e.total_adquirido_brl),
+        evidencias:          e.evidencias.map(_coerceMovimentoCarteiraEvidencia),
+        cosif_origin:        _coerceCosifOrigemList(e.cosif_origin),
+      }
+    case "mtm":
+      return {
+        ...e,
+        delta_brl:        Number(e.delta_brl),
+        outros_delta_brl: Number(e.outros_delta_brl),
+        evidencias:       e.evidencias.map(_coerceMtmEvidencia),
+        cosif_origin:     _coerceCosifOrigemList(e.cosif_origin),
+      }
+    case "remuneracao_sr_mez":
+      return {
+        ...e,
+        delta_brl:    Number(e.delta_brl),
+        evidencias:   e.evidencias.map(_coerceRemuneracaoSrMezEvidencia),
+        cosif_origin: _coerceCosifOrigemList(e.cosif_origin),
+      }
+    case "outros":
+      return {
+        ...e,
+        delta_brl:    Number(e.delta_brl),
+        cosif_origin: e.cosif_origin.map(_coerceCosifOrigem),
       }
     default:
       return e
@@ -2246,10 +2496,12 @@ function _coerceExplanation(e: Explanation): Explanation {
 function _coerceExplicacao(r: ExplicacaoVariacaoResponse): ExplicacaoVariacaoResponse {
   return {
     ...r,
-    delta_pl_sub:      Number(r.delta_pl_sub),
-    threshold_brl:     Number(r.threshold_brl),
-    indeterminado_brl: Number(r.indeterminado_brl),
-    explanations:      r.explanations.map(_coerceExplanation),
+    delta_pl_sub:             Number(r.delta_pl_sub),
+    delta_pl_sub_contabil:    Number(r.delta_pl_sub_contabil),
+    divergencia_mec_contabil: Number(r.divergencia_mec_contabil),
+    threshold_brl:            Number(r.threshold_brl),
+    indeterminado_brl:        Number(r.indeterminado_brl),
+    explanations:             r.explanations.map(_coerceExplanation),
   }
 }
 

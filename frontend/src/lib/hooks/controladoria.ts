@@ -5,14 +5,24 @@
  * Espelha endpoints em backend/app/modules/controladoria/api/.
  */
 
+import * as React from "react"
+import { differenceInCalendarDays, parseISO } from "date-fns"
 import { useQuery } from "@tanstack/react-query"
 
 import {
   controladoria,
+  type CoverageDay,
   type DreBaseFilters,
   type DreDrillFornecedoresFilters,
   type DrePivotFilters,
 } from "@/lib/api-client"
+import {
+  buildCoverageStripEntry,
+  isCoverageStripEntryHealthy,
+  type CoverageStripEntry,
+} from "@/design-system/components"
+
+import { useSourceCoverage } from "./integracoes"
 
 const KEYS = {
   variacaoDiaria: (fundoId: string, data: string, dataAnterior?: string) =>
@@ -173,6 +183,103 @@ export function useCosifRows(
     enabled,
     staleTime: 5 * 60 * 1000,
   })
+}
+
+// ── Readiness QiTech (gate da pagina Cota Sub) ────────────────────────────
+//
+// A pagina Cota Sub depende de 8 reports QiTech para uma data especifica.
+// Esse hook consulta /integracoes/sources/admin:qitech/coverage e devolve
+// `{ entries, allReady, blocking }` — o consumer renderiza o strip de
+// saude e aplica o gate suave (so renderiza analise quando allReady).
+//
+// staleTime espelha o do `useSourceCoverage` (5min) — coverage nao muda em
+// segundos. Quando o user dispara backfill, invalidar manualmente via
+// `useCreateBackfill` ja faz o refetch.
+
+/** Reports QiTech que alimentam a pagina Cota Sub. Ordem = display order. */
+export const COTA_SUB_REPORTS: ReadonlyArray<{
+  name:       string
+  shortLabel: string
+  fullLabel:  string
+}> = [
+  { name: "market.tesouraria",        shortLabel: "Tesouraria",  fullLabel: "Tesouraria"                },
+  { name: "market.conta_corrente",    shortLabel: "Conta corr.", fullLabel: "Conta-corrente"            },
+  { name: "market.rf",                shortLabel: "RF",          fullLabel: "Renda fixa"                },
+  { name: "market.rf_compromissadas", shortLabel: "RF compr.",   fullLabel: "RF compromissadas"         },
+  { name: "market.outros_fundos",     shortLabel: "Out. fundos", fullLabel: "Posicao em outros fundos"  },
+  { name: "market.outros_ativos",     shortLabel: "Out. ativos", fullLabel: "Outros ativos"             },
+  { name: "market.cpr",               shortLabel: "CPR",         fullLabel: "CPR (movimentacoes)"       },
+  { name: "market.mec",               shortLabel: "MEC",         fullLabel: "MEC (evolucao cotas)"      },
+] as const
+
+export type CotaSubReadiness = {
+  /** 1 entry por report, na ordem canonica de `COTA_SUB_REPORTS`. */
+  entries:   CoverageStripEntry[]
+  /** Todos os entries em `ready`/`may_change`. */
+  allReady:  boolean
+  /** Entries que bloqueiam (in_progress/blocked/na). */
+  blocking:  CoverageStripEntry[]
+  /** Estado bruto da query (loading/error/refetching). */
+  isLoading: boolean
+  isError:   boolean
+  refetch:   () => void
+}
+
+/**
+ * Calcula `range_days` minimo para incluir `dataIso` no payload do /coverage.
+ * `range_days` no backend representa "ultimos N dias contando hoje" — entao
+ * precisamos cobrir do `dataIso` ate hoje. Cap em 365d (1 ano) para nao puxar
+ * payload absurdo se o user picar data antiga.
+ */
+function _rangeDaysFor(dataIso: string | null | undefined): number {
+  if (!dataIso) return 7
+  try {
+    const diff = differenceInCalendarDays(new Date(), parseISO(dataIso))
+    return Math.min(Math.max(7, diff + 3), 365)
+  } catch {
+    return 7
+  }
+}
+
+export function useCotaSubReadiness(
+  fundoId: string | null | undefined,
+  data:    string | null | undefined,
+): CotaSubReadiness {
+  const cov = useSourceCoverage(
+    fundoId ? "admin:qitech" : null,
+    _rangeDaysFor(data),
+    fundoId,
+  )
+
+  const entries = React.useMemo<CoverageStripEntry[]>(() => {
+    const byName = new Map<string, CoverageDay | undefined>()
+    if (cov.data && data) {
+      for (const ep of cov.data.endpoints) {
+        const day = ep.days.find((d) => d.data === data)
+        byName.set(ep.name, day)
+      }
+    }
+    return COTA_SUB_REPORTS.map((r) =>
+      buildCoverageStripEntry({
+        name:       r.name,
+        shortLabel: r.shortLabel,
+        fullLabel:  r.fullLabel,
+        day:        byName.get(r.name),
+      }),
+    )
+  }, [cov.data, data])
+
+  const allReady = entries.every(isCoverageStripEntryHealthy)
+  const blocking = entries.filter((e) => !isCoverageStripEntryHealthy(e))
+
+  return {
+    entries,
+    allReady,
+    blocking,
+    isLoading: cov.isLoading,
+    isError:   cov.isError,
+    refetch:   cov.refetch,
+  }
 }
 
 // ── DRE — Demonstrativo do Resultado do Exercicio ──────────────────────────

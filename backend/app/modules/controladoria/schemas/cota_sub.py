@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -217,13 +217,16 @@ class VariacoesDiaResponse(BaseModel):
     conferencia:         ConferenciaVariacao
 
 
-# ── Explainers heuristicos da variacao ──────────────────────────────────────
+# ── Explainers da variacao da Cota Sub ───────────────────────────────────────
 #
-# Cada categoria que se materializa vira uma `Explanation` na lista
-# `explanations` da resposta. Por ora so PDD esta implementada; demais
-# categorias (MTM, Aporte, Resgate, Diferimento, Liquidacao, Aquisicao)
-# entrarao em PRs incrementais reusando o contrato. Ver
-# `backend/docs/cota-sub-explainers-heuristicos.md`.
+# Refactor 2026-05-17: cada categoria PARTICIONA contas COSIF do balancete.
+# `delta_brl` de cada Explanation = Σ Δ folhas COSIF mapeadas pro bucket
+# (matematica, nao heuristica). Σ buckets ≡ ΔPL contabil POR CONSTRUCAO.
+#
+# Heuristicas (PDD/CPR diff, MtM por codigo_lastro, Fluxo MEC) param de
+# calcular delta_brl e viram ENRIQUECEDORAS de `evidencias[]` — puxam
+# cedente/sacado/papel/historico pra dar narrativa rica. Onde nao cobrir,
+# o `cosif_origin[]` mostra as folhas COSIF cruas pra auditoria.
 
 
 ExplainerCategoria = Literal[
@@ -235,7 +238,25 @@ ExplainerCategoria = Literal[
     "apropriacao",
     "liquidacao",
     "aquisicao",
+    "remuneracao_sr_mez",
+    "outros",
 ]
+
+
+class CosifOrigem(BaseModel):
+    """1 conta COSIF folha mapeada pro bucket — fonte contabil do delta_brl.
+
+    Toda categoria tem `cosif_origin: list[CosifOrigem]`. O `delta_brl` do
+    bucket = Σ delta dessas linhas. Permite auditar exatamente DE ONDE
+    contabilmente vem o impacto, antes mesmo de qualquer heuristica de
+    enriquecimento.
+    """
+
+    codigo:    str       = Field(description="Codigo COSIF da conta folha")
+    nome:      str       = Field(description="Nome da conta no plano COSIF")
+    d_minus_1: Decimal
+    d_zero:    Decimal
+    delta:     Decimal   = Field(description="d_zero - d_minus_1 (com sinal contabil natural)")
 
 
 class PddEvidencia(BaseModel):
@@ -260,15 +281,25 @@ class PddEvidencia(BaseModel):
 
 
 class PddExplanation(BaseModel):
-    """Categoria 3.2 — variacao de PDD por papel."""
+    """Categoria 3.2 — variacao de PDD por papel.
+
+    `delta_brl` (refactor 2026-05-17) = Σ Δ folhas COSIF `1.6.9.97.*`
+    (provisao para devedores duvidosos). Heuristica de diff de
+    `wh_estoque_recebivel` continua viva mas APENAS pra enriquecer
+    `evidencias[]` (cedente/sacado/papel/faixa).
+    """
 
     categoria:           Literal["pdd"] = "pdd"
     narrative:           str       = Field(description="Texto pronto pra UI (pt-BR)")
-    delta_brl:           Decimal   = Field(description="-Σ Δ valor_pdd (PDD sobe → PL Sub cai)")
+    delta_brl:           Decimal   = Field(description="Σ Δ folhas COSIF do bucket (fonte: balancete)")
     evidencias_total:    int       = Field(description="Total de papeis com Δ acima do threshold")
     evidencias_mostradas: int      = Field(description="Quantos vieram em `evidencias` (top_n)")
     outros_delta_brl:    Decimal   = Field(description="Σ dos papeis nao mostrados (fora do top_n)")
     evidencias:          list[PddEvidencia]
+    cosif_origin:        list[CosifOrigem] = Field(
+        default_factory=list,
+        description="Folhas COSIF do bucket — fonte contabil do delta_brl",
+    )
 
 
 class EvidenciaCprLinha(BaseModel):
@@ -295,11 +326,12 @@ class DiferimentoExplanation(BaseModel):
 
     categoria:           Literal["diferimento"] = "diferimento"
     narrative:           str
-    delta_brl:           Decimal   = Field(description="Σ ΔCPR das rubricas diferidas (negativo = Sub cai)")
+    delta_brl:           Decimal   = Field(description="Σ Δ folhas COSIF do bucket Ajustes contabeis (parcela diferimento)")
     evidencias_total:    int
     evidencias_mostradas: int
     outros_delta_brl:    Decimal
     evidencias:          list[EvidenciaCprLinha]
+    cosif_origin:        list[CosifOrigem] = Field(default_factory=list)
 
 
 class ApropriacaoExplanation(BaseModel):
@@ -312,16 +344,264 @@ class ApropriacaoExplanation(BaseModel):
 
     categoria:           Literal["apropriacao"] = "apropriacao"
     narrative:           str
-    delta_brl:           Decimal   = Field(description="Σ ΔCPR das rubricas de apropriacao (negativo = Sub cai)")
+    delta_brl:           Decimal   = Field(description="Σ Δ folhas COSIF do bucket Ajustes contabeis (parcela apropriacao)")
     evidencias_total:    int
     evidencias_mostradas: int
     outros_delta_brl:    Decimal
     evidencias:          list[EvidenciaCprLinha]
+    cosif_origin:        list[CosifOrigem] = Field(default_factory=list)
+
+
+# ── Fluxo de caixa do cotista (categoria 1.1 + 1.2) ──────────────────────────
+
+
+ClasseCotaKey = Literal["sub_jr", "mezanino", "senior"]
+
+
+class FluxoCaixaEvidencia(BaseModel):
+    """1 movimento de aporte ou resgate em uma classe de cota.
+
+    Sinal de `impacto_pl_sub` segue a equacao:
+      Sub = Ativo - Passivo Contabil - Equity (Mez + Sr)
+
+    - Aporte Sub      -> +impacto (Sub absorve direto, PL Sub cresce)
+    - Resgate Sub     -> -impacto
+    - Aporte Mez/Sr   -> -impacto (cresce equity, Sub residual cai)
+    - Resgate Mez/Sr  -> +impacto (equity reduz, Sub residual sobe)
+    """
+
+    tipo:           Literal["aporte", "resgate"]
+    classe:         ClasseCotaKey
+    classe_label:   str       = Field(description="Label amigavel da classe (ex.: 'Subordinada Jr', 'Mezanino', 'Senior')")
+    valor_brl:      Decimal   = Field(description="Valor do MEC (aporte ou retirada) - sempre positivo")
+    delta_qtd:      Decimal   = Field(description="Δ quantidade de cotas D0 - D-1 da classe")
+    valor_cota_d0:  Decimal   = Field(description="Valor da cota em D0")
+    impacto_pl_sub: Decimal   = Field(description="Impacto liquido no PL Sub (com sinal coerente)")
+
+
+class EventoOperacionalEvidencia(BaseModel):
+    """Evento operacional de caixa sem impacto no PL Sub.
+
+    Caso canonico: aporte engaiolado (CPR `Aporte` com linha de provisao
+    de devolucao criada no mesmo dia, sem integralizacao em nenhuma classe).
+    Provisao neutraliza o caixa → impacto liquido = 0. Veja caso REALINVEST
+    07-13/05/2026 documentado no memory.
+    """
+
+    tipo:        Literal["aporte_engaiolado", "devolucao_engaiolado"]
+    descricao:   str       = Field(description="`descricao` original do CPR")
+    valor_brl:   Decimal   = Field(description="Valor absoluto em R$ envolvido")
+    detalhe:     str | None = Field(default=None, description="Texto explicativo curto")
+
+
+class FluxoCaixaExplanation(BaseModel):
+    """Categoria 1.1 + 1.2 — fluxo de caixa do cotista.
+
+    Detecta aporte/resgate em qualquer classe (Sub Jr, Mezanino, Senior)
+    a partir do MEC. Sub absorve direto (aporte Sub = +PL Sub); Mez/Sr
+    afetam Sub via equity (aporte Mez = -PL Sub por exclusao).
+
+    Eventos operacionais (aporte engaiolado, devolucao) entram em
+    `eventos_operacionais` SEM somar em `delta_brl` - sao informativos
+    mas neutros pra equacao de PL.
+    """
+
+    categoria:            Literal["fluxo_caixa"] = "fluxo_caixa"
+    narrative:            str
+    delta_brl:            Decimal   = Field(description="Σ Δ classe Sub em 6.1.1.70.* (aporte/resgate da Cota Sub propria)")
+    evidencias:           list[FluxoCaixaEvidencia] = Field(
+        description="Aporte/Resgate com impacto no PL Sub"
+    )
+    eventos_operacionais: list[EventoOperacionalEvidencia] = Field(
+        default_factory=list,
+        description="Eventos sem impacto no PL Sub (aporte engaiolado, devolucao)",
+    )
+    cosif_origin:         list[CosifOrigem] = Field(default_factory=list)
+
+
+# ── Movimento de carteira (categoria 2.1 + 2.2) ──────────────────────────────
+
+
+class MovimentoCarteiraEvidencia(BaseModel):
+    """1 papel que entrou ou saiu da carteira entre D-1 e D0.
+
+    `tipo="liquidado"`: papel existia em D-1 e nao existe em D0 (sacado
+    pagou ou foi baixado). `valor_brl` = valor_presente do papel em D-1.
+
+    `tipo="adquirido"`: papel novo em D0, nao existia em D-1. `valor_brl`
+    = valor_presente do papel em D0.
+    """
+
+    tipo:                     Literal["liquidado", "adquirido"]
+    cedente_doc:              str
+    cedente_nome:             str
+    sacado_doc:               str
+    sacado_nome:              str
+    seu_numero:               str
+    numero_documento:         str
+    tipo_recebivel:           str
+    valor_brl:                Decimal   = Field(description="valor_presente do papel (do dia em que existia)")
+    valor_nominal:            Decimal
+    data_vencimento_ajustada: date | None = None
+
+
+class MovimentoCarteiraExplanation(BaseModel):
+    """Categoria 2.1 + 2.2 — giro da carteira de direitos creditorios.
+
+    Detecta papeis que entraram (adquiridos) e sairam (liquidados) entre
+    D-1 e D0 cruzando `wh_estoque_recebivel` por (seu_numero,
+    numero_documento) com FULL OUTER JOIN.
+
+    Bucket INFORMACIONAL: `delta_brl = 0` por construcao. Movimento
+    patrimonial neutro no PL Sub (papel liquidado: caixa +X, DC -X →
+    net 0). Diferencas residuais (sacado pagou menos que valor presente,
+    ganho/perda de liquidacao) caem em PDD ou Apropriacao — buckets
+    proprios. Aqui mostramos APENAS a atividade (volume girado, papeis
+    movidos) para o controller auditar.
+
+    Quando `delta_brl` do `indeterminado_brl` da resposta global ficar
+    grande em dias com so-movimento-de-carteira, e sinal pra migrar pra
+    explainer com impacto residual (caixa recebido - valor presente).
+    """
+
+    categoria:             Literal["movimento_carteira"] = "movimento_carteira"
+    narrative:             str
+    delta_brl:             Decimal   = Field(
+        default=Decimal("0"),
+        description="Σ Δ folhas COSIF: bancos (1.1.2.*) + recebiveis (1.6.1.30.*) + transito + conciliacao",
+    )
+    total_liquidado_brl:   Decimal   = Field(description="Σ valor_presente dos papeis liquidados (em D-1)")
+    total_adquirido_brl:   Decimal   = Field(description="Σ valor_presente dos papeis adquiridos (em D0)")
+    papeis_liquidados:     int
+    papeis_adquiridos:     int
+    evidencias_mostradas:  int       = Field(description="Quantos vieram em `evidencias` (top_n total)")
+    evidencias:            list[MovimentoCarteiraEvidencia] = Field(
+        description="Top N papeis movidos no dia, ordenados por |valor_brl| DESC"
+    )
+    cosif_origin:          list[CosifOrigem] = Field(default_factory=list)
+
+
+# ── Marcacao a mercado (categoria 4.1) ───────────────────────────────────────
+
+
+class MtmEvidencia(BaseModel):
+    """1 papel de renda fixa cujo valor mexeu sem variar quantidade.
+
+    `valor_d1`/`valor_d0` sao `valor_bruto` do papel nos dois dias.
+    `delta_valor` = valor_d0 - valor_d1 (positivo = papel subiu = Sub sobe).
+    `pu_d1`/`pu_d0` sao `pu_mercado` (preco unitario) — auxiliam auditoria
+    contra a curva do dia.
+    """
+
+    codigo:           str
+    nome_do_papel:    str
+    emitente:         str
+    indexador:        str
+    data_vencimento:  date | None
+    quantidade:       Decimal   = Field(description="Qtd estavel D-1 e D0 (Δqtd=0 por construcao)")
+    valor_d1:         Decimal
+    valor_d0:         Decimal
+    delta_valor:      Decimal   = Field(description="valor_d0 - valor_d1")
+    pu_d1:            Decimal
+    pu_d0:            Decimal
+
+
+class MtmExplanation(BaseModel):
+    """Categoria 4.1 — marcacao a mercado de papeis de renda fixa.
+
+    Detecta papeis em `wh_posicao_renda_fixa` com `Δqtd = 0` E `Δvalor_bruto`
+    fora de tolerancia entre D-1 e D0. Sub absorve direto: papel subiu →
+    Ativo sobe → PL Sub sobe.
+
+    `delta_brl` = Σ Δvalor_bruto dos papeis no top_n + outros. Sinal coerente
+    com impacto (positivo = Sub ganhou via mercado).
+    """
+
+    categoria:           Literal["mtm"] = "mtm"
+    narrative:           str
+    delta_brl:           Decimal   = Field(description="Σ Δ folhas COSIF de Renda Fixa (1.2.x TPF + 1.3.1.10/15.* RF + fundos)")
+    evidencias_total:    int
+    evidencias_mostradas: int
+    outros_delta_brl:    Decimal
+    evidencias:          list[MtmEvidencia]
+    cosif_origin:        list[CosifOrigem] = Field(default_factory=list)
+
+
+# ── Remuneracao Sr/Mez (categoria 5.1) ───────────────────────────────────────
+
+
+class RemuneracaoSrMezEvidencia(BaseModel):
+    """1 classe de cota nao-Sub cujo PL valorizou (ou desvalorizou) no dia.
+
+    Sub absorve com sinal invertido: PL_Sub = Ativo - Passivo - Equity_Sr -
+    Equity_Mez. ΔEquity_Sr/Mez positivo -> impacto -ΔEquity_Sr/Mez no Sub.
+    """
+
+    classe:         Literal["senior", "mezanino"]
+    classe_label:   str       = Field(description="Label amigavel (ex.: 'Senior', 'Mezanino')")
+    pl_d1:          Decimal   = Field(description="Patrimonio da classe em D-1")
+    pl_d0:          Decimal   = Field(description="Patrimonio da classe em D0")
+    delta_pl:       Decimal   = Field(description="pl_d0 - pl_d1 (positivo = classe valorizou)")
+    delta_pct:      Decimal   = Field(description="delta_pl / pl_d1 em pp (fracao decimal)")
+    valor_cota_d1:  Decimal
+    valor_cota_d0:  Decimal
+    impacto_pl_sub: Decimal   = Field(description="-delta_pl (Sub paga a remuneracao)")
+
+
+class RemuneracaoSrMezExplanation(BaseModel):
+    """Categoria 5.1 — remuneracao das cotas Senior e Mezanino.
+
+    Cota Sub absorve o rendimento diario das tranches mais protegidas como
+    subordinacao. Fonte: `wh_mec_evolucao_cotas` (campo `patrimonio` por
+    classe, D-1 vs D0).
+
+    `delta_brl = -(ΔPL_Sr + ΔPL_Mez)`. Movimento ja descontado de aportes/
+    resgates (esses entram em `fluxo_caixa`), entao reflete apenas a
+    valorizacao da cota. Operacionalmente: PL_classe_d0 - PL_classe_d1 ja
+    captura o aporte/resgate diluido, mas o `fluxo_caixa` capturou o
+    `entradas/saidas` em separado — preferir filtrar so dias sem aporte/
+    resgate na classe pra evitar dupla contagem, ou subtrair `entradas-saidas`
+    do delta_pl. Implementacao escolhida: subtrair entradas-saidas do delta_pl
+    da classe (delta_pl_remuneracao = delta_pl - (entradas - saidas)).
+    """
+
+    categoria:           Literal["remuneracao_sr_mez"] = "remuneracao_sr_mez"
+    narrative:           str
+    delta_brl:           Decimal   = Field(description="Σ Δ classe Sr+Mez em 6.1.1.70.* (custo de subordinacao)")
+    evidencias:          list[RemuneracaoSrMezEvidencia]
+    cosif_origin:        list[CosifOrigem] = Field(default_factory=list)
+
+
+# ── Outros — folhas COSIF sem mapping definido ───────────────────────────────
+
+
+class OutrosExplanation(BaseModel):
+    """Bucket residual — folhas COSIF que nao casaram com nenhum mapping.
+
+    Em regime estavel deve ser zero (todo COSIF tem bucket). Quando nao for,
+    indica COSIF novo no balancete que precisa entrar na tabela de mapping
+    em `services/cota_sub/cosif_to_bucket.py`. UI mostra a lista de folhas
+    explicitas pra revisao manual.
+    """
+
+    categoria:    Literal["outros"] = "outros"
+    narrative:    str
+    delta_brl:    Decimal           = Field(description="Σ Δ folhas COSIF sem mapping")
+    cosif_origin: list[CosifOrigem] = Field(
+        description="Folhas COSIF sem mapping definido — adicionar em cosif_to_bucket.py"
+    )
 
 
 # Discriminated union — Pydantic v2 escolhe o tipo via campo `categoria`.
 Explanation = Annotated[
-    Union[PddExplanation, DiferimentoExplanation, ApropriacaoExplanation],
+    PddExplanation
+    | DiferimentoExplanation
+    | ApropriacaoExplanation
+    | FluxoCaixaExplanation
+    | MovimentoCarteiraExplanation
+    | MtmExplanation
+    | RemuneracaoSrMezExplanation
+    | OutrosExplanation,
     Field(discriminator="categoria"),
 ]
 
@@ -329,18 +609,21 @@ Explanation = Annotated[
 class ExplicacaoVariacaoResponse(BaseModel):
     """Resposta do endpoint GET /controladoria/cota-sub/explicacao.
 
-    Lista de explainers que materializaram. Hoje cobre 3.2 PDD, 3.3.a
-    Diferimento e 3.3.b Apropriacao; demais entram em PRs incrementais
-    sem quebrar o contrato.
+    Refactor 2026-05-17: `delta_brl` de cada explanation vem da soma das
+    folhas COSIF mapeadas pro bucket (matematica, fonte = balancete).
+    Σ explanations.delta_brl ≡ `delta_pl_sub_contabil`. Heuristicas continuam
+    enriquecendo `evidencias[]` mas nao mais calculam delta_brl.
     """
 
-    fundo_id:           str
-    data:               date
-    data_anterior:      date
-    delta_pl_sub:       Decimal
-    threshold_brl:      Decimal   = Field(description="Threshold usado pra filtrar evidencias")
-    top_n:              int       = Field(description="Cap de evidencias mostradas por categoria")
-    explanations:       list[Explanation] = Field(
-        description="Categorias materializadas. Vazio = nada matchou ou variacoes < threshold."
+    fundo_id:                  str
+    data:                      date
+    data_anterior:             date
+    delta_pl_sub:              Decimal   = Field(description="ΔPL Sub apurado pelo MEC (administrador)")
+    delta_pl_sub_contabil:     Decimal   = Field(description="ΔPL Sub calculado pelo balancete COSIF")
+    divergencia_mec_contabil:  Decimal   = Field(description="delta_pl_sub - delta_pl_sub_contabil. Residuo MEC vs Contabil — quando != 0, ha lancamento sem espelho entre as fontes")
+    threshold_brl:             Decimal   = Field(description="Threshold usado pra filtrar evidencias")
+    top_n:                     int       = Field(description="Cap de evidencias mostradas por categoria")
+    explanations:              list[Explanation] = Field(
+        description="Buckets COSIF particionados. Σ delta_brl ≡ delta_pl_sub_contabil."
     )
-    indeterminado_brl:  Decimal   = Field(description="Δ PL Sub - Σ delta_brl dos explainers")
+    indeterminado_brl:         Decimal   = Field(description="Σ Δ folhas COSIF sem mapping (esperado: zero)")
