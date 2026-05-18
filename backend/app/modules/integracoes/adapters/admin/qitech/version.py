@@ -8,4 +8,4 @@ Incrementar seguindo semver:
 
 from __future__ import annotations
 
-ADAPTER_VERSION = "qitech_adapter_v0.2.1"  # 2026-05-18: fix escala centavos em aquisicao_consolidada
+ADAPTER_VERSION = "qitech_adapter_v0.3.0"  # 2026-05-18: split raw por dataDaPosicao em endpoints de janela (aquisicao-consolidada + liquidados-baixados)

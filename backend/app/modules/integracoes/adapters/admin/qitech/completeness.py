@@ -25,6 +25,11 @@ Perfis cobertos no MVP (Opcao A):
 - `rf` : deve ter ao menos 1 row com `clienteId` casando com o
   `cliente_id_principal` da UA (primeira palavra do nome em UPPER, ex.:
   "REALINVEST FIDC" -> "REALINVEST"). Sem isso -> `partial` (caso 12/05).
+- `fidc-estoque` e `fidc-custodia/*`: endpoints CSV (relatorio entregue como
+  arquivo externo). O `payload` armazenado e *metadata* do report file —
+  nao tem chave `relatórios`, entao o `_default_assess` marcava sempre como
+  `empty` (bug observado em 2026-05-18). Perfil novo `_assess_csv_report`
+  usa `bytes > 0` ou `rows_estimate > 0` como sinal de conteudo presente.
 
 Outros tipos (`conta-corrente`, `tesouraria`, etc.) hoje retornam `complete`
 quando http==200 — perfil pode ser adicionado aqui sob demanda quando
@@ -114,11 +119,83 @@ def _assess_rf(payload: dict[str, Any] | None, ua_nome: str) -> Completeness:
     return "partial"
 
 
+def _assess_csv_report(payload: dict[str, Any] | None, ua_nome: str) -> Completeness:
+    """Para endpoints CSV (fidc-estoque, fidc-custodia/*), o `payload` no raw e
+    *metadata* do report file gerado pela QiTech — nao o conteudo bruto. O CSV
+    propriamente dito mora em storage externo apontado por `qitech_job_id`.
+
+    Shape tipico do payload (visto em 2026-05-18 com report cheio):
+        {"bytes": 1148660, "format": "csv", "delimiter": ";",
+         "qitech_job_id": "...", "rows_estimate": 2888, "qitech_webhook_id": 835558}
+
+    E quando o report e gerado mas sem conteudo (dia sem operacoes ou fundo
+    ainda nao constituido):
+        {"bytes": 0, ..., "rows_estimate": 0, ...}
+
+    Sinal de complete: existe `qitech_job_id` E (bytes > 0 OU rows_estimate > 0).
+    Sem job_id -> envelope corrompido, marca empty. Job presente mas tamanho
+    zerado -> dia legitimamente vazio, marca empty.
+
+    `ua_nome` aceito por compatibilidade de assinatura — completeness aqui e
+    propriedade do report inteiro, nao depende da UA.
+    """
+    del ua_nome  # nao usado, mas assinatura padrao de _ASSESSORS
+    if not isinstance(payload, dict):
+        return "empty"
+    if not payload.get("qitech_job_id"):
+        return "empty"
+    bytes_ = payload.get("bytes")
+    rows_estimate = payload.get("rows_estimate")
+    has_bytes = isinstance(bytes_, int) and bytes_ > 0
+    has_rows = isinstance(rows_estimate, int) and rows_estimate > 0
+    if has_bytes or has_rows:
+        return "complete"
+    return "empty"
+
+
+def _assess_window_json_report(payload: dict[str, Any] | None, ua_nome: str) -> Completeness:
+    """Para endpoints `/fidc-custodia/report/*` SINCRONOS (JSON inline, nao CSV
+    async): `aquisicao-consolidada` e `liquidados-baixados`. Payload tipico:
+
+        {"aquisicaoConsolidada": [...]} ou {"liquidadosBaixados": [...]}
+
+    Apos split por `dataDaPosicao` (custodia.py::_persist_raw_split_by_window),
+    cada raw cobre 1 dia: array pode estar cheio (operacoes naquele dia) ou
+    vazio (dia sem movimento — fim de semana, feriado, ou simplesmente sem
+    aquisicoes/liquidacoes).
+
+    Sinal:
+      - payload sem dict ou sem key esperada -> empty (envelope corrompido)
+      - array non-empty -> complete (dia teve operacao)
+      - array vazio mas http=200 -> empty (dia legitimamente sem mov;
+        cobertura UI deve diferenciar de "fetch falhou")
+    """
+    del ua_nome  # nao usado — completeness e propriedade do payload
+    if not isinstance(payload, dict):
+        return "empty"
+    # Aceita aquisicaoConsolidada OU liquidadosBaixados (uma key por endpoint).
+    for v in payload.values():
+        if isinstance(v, list) and v:
+            return "complete"
+    return "empty"
+
+
 # Map tipo_de_mercado -> assessor especifico. Tipos ausentes do mapa caem
 # no default permissivo (`_default_assess`) — `complete` quando http==200.
 _ASSESSORS = {
     "mec": _assess_mec,
     "rf": _assess_rf,
+    # Endpoint CSV assincrono — payload e metadata do report file.
+    "fidc-estoque": _assess_csv_report,
+    # Endpoints JSON sincronos (split por dia em custodia.py). Payload e
+    # array de items inline, nao metadata de CSV.
+    "fidc-custodia/aquisicao-consolidada": _assess_window_json_report,
+    "fidc-custodia/liquidados-baixados": _assess_window_json_report,
+    # TODO: definir assessor especifico pros 2 abaixo quando aparecerem em
+    # producao — provavelmente _assess_window_json_report se for json, ou
+    # _assess_csv_report se virar CSV async.
+    "fidc-custodia/movimento-aberto": _assess_csv_report,
+    "fidc-custodia/detalhes-operacoes": _assess_csv_report,
 }
 
 

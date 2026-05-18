@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 import time
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -150,6 +150,72 @@ async def _persist_raw(
         await db.commit()
 
 
+async def _persist_raw_split_by_window(
+    *,
+    tenant_id: UUID,
+    tipo_de_mercado: str,
+    data_inicial: date,
+    data_final: date,
+    payload: dict[str, Any],
+    items_field: str,
+    item_date_field: str,
+    http_status: int,
+    unidade_administrativa_id: UUID | None = None,
+) -> int:
+    """Grava 1 raw por dia em [data_inicial..data_final].
+
+    Endpoint de janela (di, df) devolve items com `item_date_field` heterogeneo.
+    Pra UI Cobertura saber em quais dias o endpoint foi chamado, splitamos o
+    payload em N raws (um por dia em [di..df]). Dias sem items recebem raw
+    vazio (`{items_field: []}`) — `assess_completeness` classifica como empty.
+
+    A chave UQ `(tenant, tipo, data_posicao, ua)` garante upsert idempotente
+    (re-rodar a mesma janela substitui cada dia). Silver continua mapeado a
+    partir do payload completo (chamado em separado pelo caller) — split aqui
+    afeta APENAS a camada raw.
+
+    Retorna o numero de raws gravados (= dias na janela, inclusivos).
+    """
+    items = payload.get(items_field, []) if isinstance(payload, dict) else []
+    if not isinstance(items, list):
+        items = []
+
+    by_date: dict[date, list[dict[str, Any]]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        raw_date = item.get(item_date_field)
+        if not raw_date:
+            continue
+        # Aceita "2026-05-06T00:00:00.000Z" ou "2026-05-06"
+        s = str(raw_date)[:10]
+        try:
+            d = date.fromisoformat(s)
+        except ValueError:
+            continue
+        by_date.setdefault(d, []).append(item)
+
+    n = 0
+    cur = data_inicial
+    while cur <= data_final:
+        items_dia = by_date.get(cur, [])
+        payload_dia: dict[str, Any] = {items_field: items_dia}
+        async with AsyncSessionLocal() as db:
+            await _upsert_raw(
+                db,
+                tenant_id=tenant_id,
+                tipo_de_mercado=tipo_de_mercado,
+                data_posicao=cur,
+                payload=payload_dia,
+                http_status=http_status,
+                unidade_administrativa_id=unidade_administrativa_id,
+            )
+            await db.commit()
+        n += 1
+        cur += timedelta(days=1)
+    return n
+
+
 # Hash custom pra raw quando payload e lista (override do default na _upsert_raw,
 # que usa sha256_of_row do dict). Hoje passamos o dict ja embrulhado, entao
 # o sha sai sobre o dict envolvedor — ok pra detecao de mudanca.
@@ -173,6 +239,13 @@ async def _generic_sync(
     data_referencia: date,
     mapper_extra_kwargs: dict[str, Any] | None = None,
     unidade_administrativa_id: UUID | None = None,
+    # Split raw por dia (endpoints de janela). Quando setado, grava N raws (1
+    # por dia em [data_inicial..data_final]) ao inves de 1 raw em data_referencia.
+    # Silver continua mapeado a partir do payload completo — split afeta APENAS
+    # a camada raw (cobertura UI marca cada dia da janela).
+    split_window: tuple[date, date] | None = None,
+    split_items_field: str | None = None,
+    split_item_date_field: str = "dataDaPosicao",
 ) -> dict[str, Any]:
     """Pipeline generico: fetch -> raw -> mapper -> canonico canonical."""
     t0 = time.monotonic()
@@ -207,17 +280,33 @@ async def _generic_sync(
         step["elapsed_seconds"] = round(time.monotonic() - t0, 2)
         return step
 
-    # 2. Raw
+    # 2. Raw — 1 raw por dia da janela (split) ou 1 raw em data_referencia.
     try:
-        await _persist_raw(
-            tenant_id=tenant_id,
-            tipo_de_mercado=tipo_de_mercado,
-            data_referencia=data_referencia,
-            payload=payload,
-            http_status=status,
-            unidade_administrativa_id=unidade_administrativa_id,
-        )
-        step["raw_persisted"] = True
+        if split_window is not None and split_items_field is not None:
+            di, df = split_window
+            n_raws = await _persist_raw_split_by_window(
+                tenant_id=tenant_id,
+                tipo_de_mercado=tipo_de_mercado,
+                data_inicial=di,
+                data_final=df,
+                payload=payload if isinstance(payload, dict) else {},
+                items_field=split_items_field,
+                item_date_field=split_item_date_field,
+                http_status=status,
+                unidade_administrativa_id=unidade_administrativa_id,
+            )
+            step["raw_persisted"] = True
+            step["raw_days_persisted"] = n_raws
+        else:
+            await _persist_raw(
+                tenant_id=tenant_id,
+                tipo_de_mercado=tipo_de_mercado,
+                data_referencia=data_referencia,
+                payload=payload,
+                http_status=status,
+                unidade_administrativa_id=unidade_administrativa_id,
+            )
+            step["raw_persisted"] = True
     except Exception as e:
         step["errors"].append(f"raw: {type(e).__name__}: {e}")
 
@@ -267,7 +356,11 @@ async def sync_aquisicao_consolidada(
     data_final: date,
     unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
-    """GET aquisicao-consolidada {cnpj}/{di}/{df} -> wh_aquisicao_recebivel."""
+    """GET aquisicao-consolidada {cnpj}/{di}/{df} -> wh_aquisicao_recebivel.
+
+    Endpoint de janela: grava 1 raw por dia em [di..df] (split por
+    `dataDaPosicao` do payload). Silver mapeado do payload completo.
+    """
     cnpj = _normalize_cnpj(cnpj_fundo)
     path = (
         f"/v2/fidc-custodia/report/aquisicao-consolidada/"
@@ -285,6 +378,9 @@ async def sync_aquisicao_consolidada(
         cnpj_fundo=cnpj,
         data_referencia=data_final,
         unidade_administrativa_id=unidade_administrativa_id,
+        split_window=(data_inicial, data_final),
+        split_items_field="aquisicaoConsolidada",
+        split_item_date_field="dataDaPosicao",
     )
 
 
@@ -298,7 +394,11 @@ async def sync_liquidados_baixados(
     data_final: date,
     unidade_administrativa_id: UUID | None = None,
 ) -> dict[str, Any]:
-    """GET liquidados-baixados/v2 {cnpj}/{di}/{df} -> wh_liquidacao_recebivel."""
+    """GET liquidados-baixados/v2 {cnpj}/{di}/{df} -> wh_liquidacao_recebivel.
+
+    Endpoint de janela: grava 1 raw por dia em [di..df] (split por
+    `dataDaPosicao` do payload).
+    """
     cnpj = _normalize_cnpj(cnpj_fundo)
     path = (
         f"/v2/fidc-custodia/report/liquidados-baixados/v2/"
@@ -316,6 +416,9 @@ async def sync_liquidados_baixados(
         cnpj_fundo=cnpj,
         data_referencia=data_final,
         unidade_administrativa_id=unidade_administrativa_id,
+        split_window=(data_inicial, data_final),
+        split_items_field="liquidadosBaixados",
+        split_item_date_field="dataDaPosicao",
     )
 
 
