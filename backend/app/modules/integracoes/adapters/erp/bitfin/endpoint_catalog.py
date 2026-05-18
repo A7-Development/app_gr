@@ -27,6 +27,7 @@ from app.shared.endpoint_catalog import EndpointSpec, ScheduleKind
 
 BITFIN_ENDPOINTS: tuple[EndpointSpec, ...] = (
     EndpointSpec(
+        admin_code="bitfin",
         name="bitfin.full_sync",
         label="Bitfin · Sync completo",
         description=(

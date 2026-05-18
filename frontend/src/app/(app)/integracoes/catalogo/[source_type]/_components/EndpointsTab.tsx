@@ -21,6 +21,8 @@ import {
   RiPlayLine,
   RiSettings3Line,
   RiInboxLine,
+  RiFileCopyLine,
+  RiCheckLine,
 } from "@remixicon/react"
 import type { ColumnDef } from "@tanstack/react-table"
 
@@ -155,6 +157,11 @@ export function EndpointsTab({
               <span className={tableTokens.cellSecondary}>
                 {ep.description}
               </span>
+              {/* global_id mono — facilita correlacao com logs e referencias
+                  cruzadas no catalogo de proveniencia (Fase 1 2026-05-18). */}
+              <span className={cx(tableTokens.cellTextMono, "text-gray-500")}>
+                {ep.global_id}
+              </span>
             </div>
           )
         },
@@ -269,6 +276,90 @@ export function EndpointsTab({
         onClose={() => setEditing(null)}
       />
     </>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EndpointIdentifiers — bloco compacto mostrando global_id + handle + silver
+// canonico. Copy-to-clipboard em cada linha. Sem caixa preta: admin enxerga
+// qual codigo identifica este endpoint no sistema todo e qual tabela ele
+// alimenta.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function EndpointIdentifiers({
+  globalId,
+  tenantHandle,
+  canonicalTable,
+}: {
+  globalId: string
+  tenantHandle: string
+  canonicalTable: string
+}) {
+  return (
+    <div className="flex flex-col gap-1.5 rounded border border-gray-200 px-3 py-2.5 dark:border-gray-800">
+      <CopyableId
+        label="Endpoint global"
+        value={globalId}
+        hint="Identifica este endpoint em todo o sistema (admin + nome)."
+      />
+      <CopyableId
+        label="Handle do tenant"
+        value={tenantHandle}
+        hint="Inclui o slug do tenant — usado em logs e suporte."
+      />
+      <div className="flex items-center gap-2">
+        <span className="min-w-[7.5rem] text-[11px] font-medium text-gray-500 dark:text-gray-400">
+          Tabela canônica
+        </span>
+        <code className="text-xs font-mono text-gray-700 dark:text-gray-300">
+          {canonicalTable}
+        </code>
+      </div>
+    </div>
+  )
+}
+
+function CopyableId({
+  label,
+  value,
+  hint,
+}: {
+  label: string
+  value: string
+  hint: string
+}) {
+  const [copied, setCopied] = React.useState(false)
+  const handleCopy = React.useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      toast.error("Falha ao copiar — copie manualmente.")
+    }
+  }, [value])
+
+  return (
+    <div className="flex items-center gap-2" title={hint}>
+      <span className="min-w-[7.5rem] text-[11px] font-medium text-gray-500 dark:text-gray-400">
+        {label}
+      </span>
+      <code className="flex-1 truncate text-xs font-mono text-gray-700 dark:text-gray-300">
+        {value}
+      </code>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        aria-label={`Copiar ${label}`}
+      >
+        {copied ? (
+          <RiCheckLine className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+        ) : (
+          <RiFileCopyLine className="size-3.5" aria-hidden />
+        )}
+      </button>
+    </div>
   )
 }
 
@@ -476,6 +567,14 @@ function EndpointEditorDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-4 py-2">
+          {/* Identificadores do endpoint (Fase 1 do refactor de proveniencia
+              transversal, 2026-05-18) — visivel pro admin SEM caixa preta. */}
+          <EndpointIdentifiers
+            globalId={endpoint.global_id}
+            tenantHandle={endpoint.tenant_endpoint_handle}
+            canonicalTable={endpoint.canonical_table}
+          />
+
           {/* Modo */}
           <div className="flex flex-col gap-1.5">
             <Label>Modo de agendamento</Label>

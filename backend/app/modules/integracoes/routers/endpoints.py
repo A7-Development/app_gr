@@ -75,6 +75,18 @@ class EndpointDetail(BaseModel):
     default_schedule_kind: ScheduleKindStr
     default_schedule_value: str | None
 
+    # Identidade cross-admin / cross-tenant (Fase 1 do refactor de proveniencia
+    # transversal, 2026-05-18). admin_code e global_id sao derivados do
+    # EndpointSpec; tenant_endpoint_handle e derivado no handler (precisa do
+    # tenant.slug). Ver CLAUDE.md §14.
+    admin_code: str
+    global_id: str
+    tenant_endpoint_handle: str
+    # Doc do shape do payload (Fase 2, 2026-05-18). Path relativo a raiz do
+    # repo. None = adapter ainda nao publicou catalogo de shapes. UI admin
+    # consome pra abrir doc in-line.
+    payload_shape_doc_relpath: str | None = None
+
     # Tolerancia de publicacao — defaults sempre presentes do catalogo.
     default_expected_lag_business_days: int
     default_tolerance_business_days: int
@@ -182,7 +194,28 @@ class EndpointSyncResult(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _spec_to_detail(spec: EndpointSpec) -> EndpointDetail:
+async def _resolve_tenant_slug(db: AsyncSession, tenant_id: UUID) -> str:
+    """Carrega tenant.slug 1x por request pra montar tenant_endpoint_handle.
+
+    Slug e curto (max 100 chars), indexed, e nao muda durante a vida do
+    tenant — uma query simples e suficiente. NAO cacheia em modulo: tenants
+    podem ser renomeados administrativamente e cache ficaria stale.
+    """
+    from app.shared.identity.tenant import Tenant
+
+    row = await db.execute(select(Tenant.slug).where(Tenant.id == tenant_id))
+    slug = row.scalar_one_or_none()
+    if slug is None:
+        # Defesa: nao deveria acontecer (principal vem do JWT validado), mas
+        # se rolar, melhor 422 explicito que stack trace silencioso.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Tenant {tenant_id} nao encontrado.",
+        )
+    return slug
+
+
+def _spec_to_detail(spec: EndpointSpec, tenant_slug: str) -> EndpointDetail:
     # Sem override: effective_* = default_*.
     return EndpointDetail(
         name=spec.name,
@@ -191,6 +224,10 @@ def _spec_to_detail(spec: EndpointSpec) -> EndpointDetail:
         canonical_table=spec.canonical_table,
         default_schedule_kind=spec.default_schedule_kind.value,  # type: ignore[arg-type]
         default_schedule_value=spec.default_schedule_value,
+        admin_code=spec.admin_code,
+        global_id=spec.global_id,
+        tenant_endpoint_handle=spec.tenant_endpoint_handle(tenant_slug),
+        payload_shape_doc_relpath=spec.payload_shape_doc_relpath,
         default_expected_lag_business_days=spec.default_expected_lag_business_days,
         default_tolerance_business_days=spec.default_tolerance_business_days,
         default_give_up_business_days=spec.default_give_up_business_days,
@@ -278,6 +315,7 @@ async def list_endpoints(
     if not catalog:
         return []
 
+    tenant_slug = await _resolve_tenant_slug(db, principal.tenant_id)
     overrides = await list_endpoint_configs_for_source(
         db,
         tenant_id=principal.tenant_id,
@@ -289,7 +327,7 @@ async def list_endpoints(
 
     out: list[EndpointDetail] = []
     for spec in catalog:
-        detail = _spec_to_detail(spec)
+        detail = _spec_to_detail(spec, tenant_slug)
         if spec.name in overrides_by_name:
             detail = _merge_override(detail, overrides_by_name[spec.name])
         out.append(detail)
@@ -320,7 +358,8 @@ async def get_endpoint(
                 f"{source_type.value}."
             ),
         )
-    detail = _spec_to_detail(spec)
+    tenant_slug = await _resolve_tenant_slug(db, principal.tenant_id)
+    detail = _spec_to_detail(spec, tenant_slug)
 
     stmt = select(TenantSourceEndpointConfig).where(
         TenantSourceEndpointConfig.tenant_id == principal.tenant_id,
@@ -451,7 +490,8 @@ async def update_endpoint(
     await db.commit()
     await db.refresh(row)
 
-    detail = _merge_override(_spec_to_detail(spec), row)
+    tenant_slug = await _resolve_tenant_slug(db, principal.tenant_id)
+    detail = _merge_override(_spec_to_detail(spec, tenant_slug), row)
     return detail
 
 

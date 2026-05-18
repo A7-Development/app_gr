@@ -35,6 +35,19 @@ from __future__ import annotations
 
 from app.shared.endpoint_catalog import EndpointSpec, ScheduleKind
 
+# Prefix relpath dos arquivos .md de payload shape (Fase 2 do refactor de
+# proveniencia transversal, 2026-05-18). Convencao: 1 arquivo por endpoint
+# em `payload_shapes/<name>.md`. Consumido pela UI admin pra abrir doc
+# in-line do shape do payload.
+_PAYLOAD_SHAPE_DIR = (
+    "backend/app/modules/integracoes/adapters/admin/qitech/payload_shapes"
+)
+
+
+def _shape(name: str) -> str:
+    """Relpath canonico do .md pra um endpoint QiTech."""
+    return f"{_PAYLOAD_SHAPE_DIR}/{name}.md"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Market reports — ETL canonical pipeline
 # ─────────────────────────────────────────────────────────────────────────────
@@ -55,84 +68,104 @@ from app.shared.endpoint_catalog import EndpointSpec, ScheduleKind
 #
 _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
     EndpointSpec(
+        admin_code="qitech",
         name="market.outros_fundos",
         label="Mercado · Outros fundos",
         description="Posicao em outros fundos do FIDC (PL, cota) — relatorio D-1.",
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="07:00",
         canonical_table="wh_posicao_cota_fundo",
+        payload_shape_doc_relpath=_shape("market.outros_fundos"),
     ),
     EndpointSpec(
+        admin_code="qitech",
         name="market.conta_corrente",
         label="Mercado · Conta-corrente",
         description="Saldo de conta-corrente do FIDC — relatorio D-1.",
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="07:30",
         canonical_table="wh_saldo_conta_corrente",
+        payload_shape_doc_relpath=_shape("market.conta_corrente"),
     ),
     EndpointSpec(
+        admin_code="qitech",
         name="market.tesouraria",
         label="Mercado · Tesouraria",
         description="Posicao de tesouraria do FIDC — relatorio D-1.",
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="07:30",
         canonical_table="wh_saldo_tesouraria",
+        payload_shape_doc_relpath=_shape("market.tesouraria"),
     ),
     EndpointSpec(
+        admin_code="qitech",
         name="market.outros_ativos",
         label="Mercado · Outros ativos",
         description="Posicoes diversas nao classificadas em renda fixa/variavel.",
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="08:00",
         canonical_table="wh_posicao_outros_ativos",
+        payload_shape_doc_relpath=_shape("market.outros_ativos"),
     ),
     EndpointSpec(
+        admin_code="qitech",
         name="market.demonstrativo_caixa",
         label="Mercado · Demonstrativo de caixa",
         description="Movimentacao de caixa do FIDC — entradas/saidas D-1.",
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="08:00",
         canonical_table="wh_movimento_caixa",
+        payload_shape_doc_relpath=_shape("market.demonstrativo_caixa"),
     ),
     EndpointSpec(
+        admin_code="qitech",
         name="market.cpr",
         label="Mercado · CPR",
         description="Contas a pagar e receber — movimento D-1.",
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="08:30",
         canonical_table="wh_cpr_movimento",
+        payload_shape_doc_relpath=_shape("market.cpr"),
     ),
     EndpointSpec(
+        admin_code="qitech",
         name="market.mec",
         label="Mercado · MEC (mapa evolutivo de cotas)",
         description="Evolucao de cotas do FIDC — relatorio D-1.",
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="08:30",
         canonical_table="wh_mec_evolucao_cotas",
+        payload_shape_doc_relpath=_shape("market.mec"),
     ),
     EndpointSpec(
+        admin_code="qitech",
         name="market.rentabilidade",
         label="Mercado · Rentabilidade",
         description="Rentabilidade calculada do FIDC.",
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="09:00",
         canonical_table="wh_rentabilidade_fundo",
+        payload_shape_doc_relpath=_shape("market.rentabilidade"),
     ),
     EndpointSpec(
+        admin_code="qitech",
         name="market.rf",
         label="Mercado · Renda fixa",
         description="Posicoes de renda fixa do FIDC — D-1.",
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="08:00",
         canonical_table="wh_posicao_renda_fixa",
+        payload_shape_doc_relpath=_shape("market.rf"),
     ),
     EndpointSpec(
+        admin_code="qitech",
         name="market.rf_compromissadas",
         label="Mercado · Compromissadas",
         description="Posicoes em operacoes compromissadas — D-1.",
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="08:00",
         canonical_table="wh_posicao_compromissada",
+        payload_shape_doc_relpath=_shape("market.rf_compromissadas"),
     ),
     # Estoque do FIDC (carteira de recebiveis cedidos) — fluxo assincrono via
     # job + webhook callback. POST /v2/queue/scheduler/report/fidc-estoque
@@ -147,6 +180,7 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
     # job assincrono ainda em pendente/processing na QiTech (skip guardado em
     # `reconciler.py`). Ver memoria project_qitech_reconciler.md.
     EndpointSpec(
+        admin_code="qitech",
         name="market.fidc_estoque",
         label="Mercado · Estoque do FIDC (carteira)",
         description="Posicao consolidada da carteira de recebiveis do FIDC. Disparo assincrono via job + webhook callback.",
@@ -157,6 +191,7 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
         # (cada disparo pendente segura o reconciler ate timeout do callback).
         default_tolerance_business_days=2,
         default_give_up_business_days=7,
+        payload_shape_doc_relpath=_shape("market.fidc_estoque"),
     ),
 )
 
@@ -177,36 +212,44 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
 
 _CUSTODIA_ENDPOINTS: tuple[EndpointSpec, ...] = (
     EndpointSpec(
+        admin_code="qitech",
         name="custodia.aquisicao_consolidada",
         label="Custodia · Aquisicoes consolidadas",
         description="Cessoes adquiridas no periodo — granularidade por recebivel. Janela rolante D-7..D-1.",
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="09:30",
         canonical_table="wh_aquisicao_recebivel",
+        payload_shape_doc_relpath=_shape("custodia.aquisicao_consolidada"),
     ),
     EndpointSpec(
+        admin_code="qitech",
         name="custodia.liquidados_baixados",
         label="Custodia · Liquidacoes e baixas",
         description="Liquidacoes e baixas de recebiveis no periodo — granularidade por recebivel. Janela rolante D-7..D-1.",
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="09:45",
         canonical_table="wh_liquidacao_recebivel",
+        payload_shape_doc_relpath=_shape("custodia.liquidados_baixados"),
     ),
     EndpointSpec(
+        admin_code="qitech",
         name="custodia.movimento_aberto",
         label="Custodia · Cessoes em aberto (snapshot)",
         description="Snapshot diario de cessoes pendentes de liquidacao. Sem data no path — cada disparo e foto do estado naquela manha, formando serie temporal.",
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="10:00",
         canonical_table="wh_movimento_aberto",
+        payload_shape_doc_relpath=_shape("custodia.movimento_aberto"),
     ),
     EndpointSpec(
+        admin_code="qitech",
         name="custodia.detalhes_operacoes",
         label="Custodia · Detalhes de operacoes (CNAB)",
         description="Lotes CNAB processados no dia — uma linha por arquivo de remessa. Data alvo D-1.",
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="10:00",
         canonical_table="wh_operacao_remessa",
+        payload_shape_doc_relpath=_shape("custodia.detalhes_operacoes"),
     ),
 )
 
@@ -218,30 +261,34 @@ _CUSTODIA_ENDPOINTS: tuple[EndpointSpec, ...] = (
 
 _BANK_ACCOUNT_ENDPOINTS: tuple[EndpointSpec, ...] = (
     EndpointSpec(
+        admin_code="qitech",
         name="bank_account.balance",
         label="Conta-corrente · Saldo",
         description="Saldo de fechamento das contas-corrente Singulare. Disponivel apos ~18h SP.",
         default_schedule_kind=ScheduleKind.DAILY_AT,
         default_schedule_value="19:00",
-        canonical_table="wh_bank_account_balance",
+        canonical_table="wh_saldo_bancario_diario",
         # End-of-day mesmo dia — D+0 e o esperado, D+1 ja chama atencao.
         default_expected_lag_business_days=0,
         default_tolerance_business_days=1,
         default_give_up_business_days=5,
+        payload_shape_doc_relpath=_shape("bank_account.balance"),
     ),
     EndpointSpec(
+        admin_code="qitech",
         name="bank_account.statement",
         label="Conta-corrente · Extrato",
         description="Lancamentos da conta-corrente — atualizados ao longo do dia.",
         default_schedule_kind=ScheduleKind.INTERVAL,
         default_schedule_value="60",
-        canonical_table="wh_bank_account_statement",
+        canonical_table="wh_extrato_bancario",
         # Intraday — semanticamente nao tem "data referencia" no mesmo sentido
         # dos market reports. Tolerancia ampla — coverage nao se aplica nesse
         # endpoint hoje (UNSUPPORTED), mas mantemos valores defensivos.
         default_expected_lag_business_days=0,
         default_tolerance_business_days=1,
         default_give_up_business_days=3,
+        payload_shape_doc_relpath=_shape("bank_account.statement"),
     ),
 )
 

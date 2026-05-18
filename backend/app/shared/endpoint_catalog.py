@@ -51,6 +51,11 @@ class EndpointSpec:
     """One endpoint of an integration adapter.
 
     Attributes:
+        admin_code: Short, snake_case identifier of the upstream administrator
+            / provider (e.g. "qitech", "bitfin", "btg"). Combined with `name`
+            forms a system-wide unique handle for the endpoint (`global_id`).
+            Required for multi-administrator catalog clarity — see
+            CLAUDE.md §14 (proveniencia transversal).
         name: Source-prefixed unique identifier (e.g. "market.outros_fundos",
             "bank_account.balance"). Used as a key in `_HANDLERS` dicts inside
             adapters and stored in `tenant_source_endpoint_config.endpoint_name`.
@@ -82,6 +87,7 @@ class EndpointSpec:
             be >= default_tolerance_business_days.
     """
 
+    admin_code: str
     name: str
     label: str
     description: str
@@ -91,11 +97,41 @@ class EndpointSpec:
     default_expected_lag_business_days: int = 1
     default_tolerance_business_days: int = 3
     default_give_up_business_days: int = 10
+    # Doc do shape do payload (Fase 2 do refactor de proveniencia transversal,
+    # 2026-05-18). Path relativo a raiz do repo. None = sem doc ainda (adapter
+    # nao publicou catalogo de shapes). UI e tooling consultam pra abrir
+    # documentacao em-linha.
+    payload_shape_doc_relpath: str | None = None
+
+    @property
+    def global_id(self) -> str:
+        """System-wide unique identifier: `<admin_code>.<name>`.
+
+        Example: "qitech.market.fidc_estoque", "bitfin.bitfin.full_sync".
+        Suffix collisions across admins are impossible because `name` already
+        has an area prefix; collision in `admin_code` is caught at module load.
+        """
+        return f"{self.admin_code}.{self.name}"
+
+    def tenant_endpoint_handle(self, tenant_slug: str) -> str:
+        """Human-readable handle including the tenant slug.
+
+        Example: "realinvest.qitech.market.fidc_estoque". Used by the admin UI
+        for debugging / copy-to-clipboard / log correlation. NOT persisted —
+        derived on demand from (`tenant.slug`, `admin_code`, `name`).
+        """
+        return f"{tenant_slug}.{self.global_id}"
 
     def __post_init__(self) -> None:
         # Self-validation: catch typos at module load time, before any DB
         # write happens. Anything caught here is a programming error in the
         # adapter's catalog file.
+        if not self.admin_code or not _looks_like_snake_atom(self.admin_code):
+            raise ValueError(
+                f"EndpointSpec({self.name!r}): admin_code must be a "
+                f"non-empty snake_case atom without dots, got "
+                f"{self.admin_code!r}"
+            )
         if self.default_schedule_kind == ScheduleKind.ON_DEMAND:
             if self.default_schedule_value is not None:
                 raise ValueError(
@@ -161,3 +197,15 @@ def _looks_like_hhmm(value: str) -> bool:
     if not (hh.isdigit() and mm.isdigit()):
         return False
     return 0 <= int(hh) <= 23 and 0 <= int(mm) <= 59
+
+
+def _looks_like_snake_atom(value: str) -> bool:
+    """Validate admin_code shape: snake_case atom, no dots, starts with letter.
+
+    Accepted: "qitech", "btg", "bank_of_america", "kanastra_v2".
+    Rejected: "QiTech" (uppercase), "qitech.market" (dot), "1qitech" (digit
+    start), "" (empty), "qi tech" (space).
+    """
+    if not value or not value[0].isalpha():
+        return False
+    return all(c.islower() or c.isdigit() or c == "_" for c in value)

@@ -1591,6 +1591,23 @@ export type EndpointDetail = {
   canonical_table: string
   default_schedule_kind: ScheduleKind
   default_schedule_value: string | null
+
+  // Identidade cross-admin / cross-tenant (Fase 1 do refactor de proveniência
+  // transversal, 2026-05-18). `admin_code` é o slug da administradora
+  // (ex.: "qitech", "bitfin"). `global_id` é único no sistema todo
+  // (ex.: "qitech.market.fidc_estoque"). `tenant_endpoint_handle` inclui o
+  // slug do tenant (ex.: "realinvest.qitech.market.fidc_estoque") — útil pra
+  // copy-to-clipboard em logs / debug / suporte.
+  admin_code: string
+  global_id: string
+  tenant_endpoint_handle: string
+
+  // Doc do shape do payload (Fase 2 do refactor, 2026-05-18). Path relativo
+  // à raiz do repo apontando pro arquivo .md em `payload_shapes/`. `null`
+  // significa que o adapter ainda não publicou catálogo. UI mostra link
+  // "Ver shape" no Dialog de edição quando preenchido.
+  payload_shape_doc_relpath: string | null
+
   // Defaults de tolerância de publicação (2026-05-15) — sempre presentes do
   // catálogo. Frontend exibe como placeholder/legenda na seção Tolerância
   // do Dialog de configuração.

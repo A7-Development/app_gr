@@ -147,6 +147,7 @@ def test_endpoint_spec_is_frozen():
 def test_endpoint_spec_rejects_interval_out_of_range():
     with pytest.raises(ValueError, match="INTERVAL value must be"):
         EndpointSpec(
+            admin_code="test",
             name="x.y",
             label="X",
             description="D",
@@ -159,6 +160,7 @@ def test_endpoint_spec_rejects_interval_out_of_range():
 def test_endpoint_spec_rejects_interval_non_integer():
     with pytest.raises(ValueError, match="INTERVAL requires"):
         EndpointSpec(
+            admin_code="test",
             name="x.y",
             label="X",
             description="D",
@@ -171,6 +173,7 @@ def test_endpoint_spec_rejects_interval_non_integer():
 def test_endpoint_spec_rejects_daily_at_bad_format():
     with pytest.raises(ValueError, match="DAILY_AT requires"):
         EndpointSpec(
+            admin_code="test",
             name="x.y",
             label="X",
             description="D",
@@ -183,6 +186,7 @@ def test_endpoint_spec_rejects_daily_at_bad_format():
 def test_endpoint_spec_rejects_on_demand_with_value():
     with pytest.raises(ValueError, match="ON_DEMAND must have"):
         EndpointSpec(
+            admin_code="test",
             name="x.y",
             label="X",
             description="D",
@@ -194,6 +198,7 @@ def test_endpoint_spec_rejects_on_demand_with_value():
 
 def test_endpoint_spec_accepts_on_demand_with_null():
     ep = EndpointSpec(
+        admin_code="test",
         name="x.y",
         label="X",
         description="D",
@@ -205,6 +210,131 @@ def test_endpoint_spec_accepts_on_demand_with_null():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# admin_code + global_id (2026-05-18) — identidade cross-admin do endpoint
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_endpoint_spec_global_id_format():
+    """global_id = <admin_code>.<name> — sem espacos, sem maiusculas."""
+    ep = QITECH_ENDPOINTS_BY_NAME["market.fidc_estoque"]
+    assert ep.admin_code == "qitech"
+    assert ep.global_id == "qitech.market.fidc_estoque"
+
+
+def test_endpoint_spec_tenant_endpoint_handle():
+    """Handle exposto na UI admin: <tenant_slug>.<admin_code>.<name>."""
+    ep = QITECH_ENDPOINTS_BY_NAME["market.fidc_estoque"]
+    handle = ep.tenant_endpoint_handle("realinvest")
+    assert handle == "realinvest.qitech.market.fidc_estoque"
+
+
+def test_endpoint_spec_rejects_empty_admin_code():
+    with pytest.raises(ValueError, match="admin_code must be"):
+        EndpointSpec(
+            admin_code="",
+            name="x.y",
+            label="X",
+            description="D",
+            default_schedule_kind=ScheduleKind.ON_DEMAND,
+            default_schedule_value=None,
+            canonical_table="t",
+        )
+
+
+def test_endpoint_spec_rejects_uppercase_admin_code():
+    with pytest.raises(ValueError, match="admin_code must be"):
+        EndpointSpec(
+            admin_code="QiTech",
+            name="x.y",
+            label="X",
+            description="D",
+            default_schedule_kind=ScheduleKind.ON_DEMAND,
+            default_schedule_value=None,
+            canonical_table="t",
+        )
+
+
+def test_endpoint_spec_rejects_admin_code_with_dot():
+    with pytest.raises(ValueError, match="admin_code must be"):
+        EndpointSpec(
+            admin_code="qitech.foo",
+            name="x.y",
+            label="X",
+            description="D",
+            default_schedule_kind=ScheduleKind.ON_DEMAND,
+            default_schedule_value=None,
+            canonical_table="t",
+        )
+
+
+def test_qitech_all_have_admin_code_qitech():
+    """Todos os specs do catalogo QiTech declaram admin_code='qitech'."""
+    assert all(ep.admin_code == "qitech" for ep in QITECH_ENDPOINTS)
+
+
+def test_bitfin_all_have_admin_code_bitfin():
+    assert all(ep.admin_code == "bitfin" for ep in BITFIN_ENDPOINTS)
+
+
+def test_global_ids_unique_across_admins():
+    """Combinacao admin_code+name nao colide entre QiTech e Bitfin."""
+    all_specs = [*QITECH_ENDPOINTS, *BITFIN_ENDPOINTS]
+    ids = [ep.global_id for ep in all_specs]
+    assert len(ids) == len(set(ids)), f"Colisao em global_id: {ids}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Payload shape docs (Fase 2 do refactor, 2026-05-18) — todo endpoint QiTech
+# tem .md correspondente. Arquivo + spec apontam pro mesmo caminho.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_qitech_all_have_payload_shape_doc_relpath():
+    """Cada spec QiTech declara o relpath do .md de shape."""
+    missing = [ep.name for ep in QITECH_ENDPOINTS if not ep.payload_shape_doc_relpath]
+    assert missing == [], f"Specs sem payload_shape_doc_relpath: {missing}"
+
+
+def test_qitech_payload_shape_doc_relpath_format():
+    """Relpath segue convencao `.../payload_shapes/<name>.md`."""
+    for ep in QITECH_ENDPOINTS:
+        relpath = ep.payload_shape_doc_relpath
+        assert relpath is not None
+        assert relpath.endswith(f"/{ep.name}.md"), (
+            f"{ep.name}: relpath={relpath!r} nao termina em /{ep.name}.md"
+        )
+        assert "payload_shapes/" in relpath, (
+            f"{ep.name}: relpath={relpath!r} nao contem payload_shapes/"
+        )
+
+
+def test_qitech_payload_shape_doc_files_exist():
+    """Cada relpath aponta pra arquivo .md real no disco."""
+    import os
+    from pathlib import Path
+
+    # Resolver raiz do repo: subir ate achar `backend/`.
+    here = Path(__file__).resolve()
+    repo_root = here
+    while repo_root.name != "backend":
+        repo_root = repo_root.parent
+    repo_root = repo_root.parent  # subir mais 1 — repo_root = .../app_gr
+
+    missing = []
+    for ep in QITECH_ENDPOINTS:
+        full_path = repo_root / ep.payload_shape_doc_relpath
+        if not full_path.is_file():
+            missing.append(f"{ep.name}: {full_path}")
+    assert missing == [], f"Arquivos .md faltando:\n  " + "\n  ".join(missing)
+
+
+def test_bitfin_has_no_payload_shape_doc_yet():
+    """Bitfin ainda nao publicou shape catalog — None e aceitavel."""
+    # Quando publicar, atualizar este teste pra exigir.
+    assert BITFIN_ENDPOINTS[0].payload_shape_doc_relpath is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Tolerance window primitives (2026-05-15) — expected/tolerance/give_up
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -212,6 +342,7 @@ def test_endpoint_spec_accepts_on_demand_with_null():
 def test_endpoint_spec_defaults_tolerance_window():
     """Defaults sao 1/3/10 — coerentes com market reports tipicos QiTech."""
     ep = EndpointSpec(
+        admin_code="test",
         name="x.y",
         label="X",
         description="D",
@@ -227,6 +358,7 @@ def test_endpoint_spec_defaults_tolerance_window():
 def test_endpoint_spec_rejects_negative_expected():
     with pytest.raises(ValueError, match="expected_lag must be >= 0"):
         EndpointSpec(
+            admin_code="test",
             name="x.y",
             label="X",
             description="D",
@@ -240,6 +372,7 @@ def test_endpoint_spec_rejects_negative_expected():
 def test_endpoint_spec_rejects_tolerance_below_expected():
     with pytest.raises(ValueError, match="tolerance .* must be >= expected"):
         EndpointSpec(
+            admin_code="test",
             name="x.y",
             label="X",
             description="D",
@@ -254,6 +387,7 @@ def test_endpoint_spec_rejects_tolerance_below_expected():
 def test_endpoint_spec_rejects_give_up_below_tolerance():
     with pytest.raises(ValueError, match="give_up .* must be >= tolerance"):
         EndpointSpec(
+            admin_code="test",
             name="x.y",
             label="X",
             description="D",
