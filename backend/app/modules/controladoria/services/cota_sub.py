@@ -595,6 +595,8 @@ async def compute_variacao_diaria(
             indeterminado_por_dado=d.indeterminado_por_dado,
             motivo_indeterminado=d.motivo_indeterminado,
             endpoints_unavailable=list(d.endpoints_unavailable),
+            # Evidencias especializadas — hoje so PDD (Fase 4 MVP).
+            pdd_evidencias=list(d.pdd_evidencias),
         )
         for d in driver_computation.drivers
     ]

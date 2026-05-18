@@ -114,6 +114,15 @@ class DriverResultOut(BaseModel):
     motivo_indeterminado: str | None = None
     endpoints_unavailable: list[str] = Field(default_factory=list)
 
+    # Evidencias especializadas por driver (Fase 4 do refactor, 2026-05-18).
+    # PDD entregue como prova de conceito; outros drivers ganham campos
+    # analogos conforme heuristicas em cota_sub_explainers.py viram
+    # enriquecedoras. Frontend renderiza condicional ao driver.
+    pdd_evidencias: list[PddEvidencia] = Field(
+        default_factory=list,
+        description="Papel-a-papel onde |Δvalor_pdd| > R$ 100, top 20. So preenchido para driver PDD.",
+    )
+
 
 class VariacaoDiariaResponse(BaseModel):
     """Resposta do endpoint GET /controladoria/cota-sub/variacao-diaria."""

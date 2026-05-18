@@ -87,6 +87,10 @@ def test_driver_result_has_expected_fields():
         "indeterminado_por_dado",
         "motivo_indeterminado",
         "endpoints_unavailable",
+        # Fase 4: evidencias especializadas por driver. PDD entregue como MVP;
+        # outros drivers ganham campos analogos conforme heuristicas em
+        # cota_sub_explainers.py viram enriquecedoras.
+        "pdd_evidencias",
     }
     actual = set(DriverResult.__dataclass_fields__.keys())
     assert actual == expected, f"Diff: missing={expected-actual} extra={actual-expected}"

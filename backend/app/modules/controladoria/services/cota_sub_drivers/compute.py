@@ -106,6 +106,10 @@ class DriverResult:
             Quando True, `valor_brl` deve ser desconsiderado.
         motivo_indeterminado: string humana explicando porque (quando True).
         endpoints_unavailable: lista de endpoints faltando (quando True).
+        pdd_evidencias: lista de `PddEvidencia` (papel-a-papel) quando driver
+            e PDD. Tupla porque DriverResult e frozen. Tipado como tuple[Any]
+            pra evitar import circular com schemas — caller faz cast pra
+            list[PddEvidencia] ao serializar.
     """
 
     metric_global_id: str
@@ -119,6 +123,11 @@ class DriverResult:
     indeterminado_por_dado: bool = False
     motivo_indeterminado: str | None = None
     endpoints_unavailable: tuple[str, ...] = ()
+    # Evidencias especializadas por driver. MVP entrega so PDD; outros drivers
+    # ganham campos analogos (mtm_evidencias, cpr_evidencias, ...) conforme
+    # heuristicas em cota_sub_explainers.py forem migradas pra enriquecedoras.
+    # Quando o numero crescer, refactor pra discriminated union.
+    pdd_evidencias: tuple = ()
 
 
 # Tipo do compute_fn — assinatura uniforme para o dispatcher.
@@ -160,17 +169,42 @@ async def compute_pdd(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """PDD = -Δvalor_pdd (PDD sobe -> Sub cai)."""
+    """PDD = -Δvalor_pdd (PDD sobe -> Sub cai).
+
+    Fase 4 do refactor de proveniencia: heuristica de _pdd_diff
+    (cota_sub_explainers.py) populada como `pdd_evidencias` — papel-a-papel
+    onde |Δvalor_pdd| > R$ 100. Frontend usa pra mostrar cedente/sacado/
+    valor que justificam o numero.
+    """
     pdd_prev = await _sum_pdd(db, tenant_id, fundo_doc, d_prev)
     pdd_d0 = await _sum_pdd(db, tenant_id, fundo_doc, d0)
     # _sum_pdd ja retorna o valor negativado (PDD eh tratado como passivo
     # na implementacao atual). Delta direto: -(|PDD_d0| - |PDD_d_prev|).
     delta = pdd_d0 - pdd_prev
+
+    # Enriquecer com evidencias papel-a-papel. Lazy import pra evitar
+    # circular: cota_sub_explainers.py importa de cota_sub.py.
+    from app.modules.controladoria.services.cota_sub_explainers import (
+        _pdd_diff,
+    )
+
+    pdd_evid = await _pdd_diff(
+        db,
+        tenant_id=tenant_id,
+        fundo_doc=fundo_doc,
+        data_d0=d0,
+        data_d1=d_prev,
+        threshold_brl=Decimal("100"),
+    )
+    # Top 20 evidencias por |delta| desc (ja vem ordenado de _pdd_diff).
+    top_evid = tuple(pdd_evid[:20])
+
     return _result(
         "cota_sub.driver.pdd",
         valor=delta,
         valor_d_prev=pdd_prev,
         valor_d0=pdd_d0,
+        pdd_evidencias=top_evid,
     )
 
 

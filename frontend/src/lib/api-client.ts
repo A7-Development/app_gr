@@ -2070,6 +2070,31 @@ export type CprDetalhado = {
   variacao:   number
 }
 
+/**
+ * Driver canonico da Cota Sub (Fase 3b do refactor de proveniencia transversal,
+ * 2026-05-18). Cada driver e uma decomposicao parcial do ΔPL Sub no metodo
+ * do gestor REALINVEST. Σ drivers (excluindo indeterminados) ≈ ΔPL_Sub_MEC.
+ *
+ * Espelha backend `cota_sub_drivers.compute.DriverResult` +
+ * `schemas/cota_sub.py::DriverResultOut`.
+ */
+export type DriverResultOut = {
+  metric_global_id:       string  // ex.: "controladoria.cota_sub.driver.pdd"
+  label:                  string
+  formula_description:    string
+  valor_brl:              number  // impacto liquido no PL Sub
+  valor_d_prev:           number | null
+  valor_d0:               number | null
+  endpoints_required:     string[]
+  indeterminado_por_dado: boolean
+  motivo_indeterminado:   string | null
+  endpoints_unavailable:  string[]
+  // Evidencias especializadas por driver (Fase 4 MVP, 2026-05-18). Hoje so
+  // PDD entregue. Outros drivers ganham campos analogos quando heuristicas
+  // forem migradas pra enriquecedoras. So preenchido quando driver e PDD.
+  pdd_evidencias:         PddEvidencia[]
+}
+
 export type VariacaoDiariaResponse = {
   fundo_id:           string
   fundo_nome:         string
@@ -2085,6 +2110,11 @@ export type VariacaoDiariaResponse = {
   divergencia:        number
   apropriacao_dc:     ApropriacaoDc
   cpr_detalhado:      CprDetalhado
+  // Fase 3b/4: drivers canonicos + soma + residuo do modelo. Paralelo a
+  // `decomposicao` legacy — frontend migra incrementalmente.
+  drivers:            DriverResultOut[]
+  soma_drivers:       number
+  residuo_modelo:     number
 }
 
 // ── Explainers heuristicos da variacao ───────────────────────────────────
