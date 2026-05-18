@@ -87,10 +87,14 @@ def test_driver_result_has_expected_fields():
         "indeterminado_por_dado",
         "motivo_indeterminado",
         "endpoints_unavailable",
-        # Fase 4: evidencias especializadas por driver. PDD entregue como MVP;
-        # outros drivers ganham campos analogos conforme heuristicas em
-        # cota_sub_explainers.py viram enriquecedoras.
+        # Fase 4b (2026-05-18): evidencias especializadas por driver. Cada
+        # driver popula 0-1 campo; demais ficam vazios. Quando o numero
+        # crescer, refactor pra discriminated union (kind="pdd"|"mtm"|...).
         "pdd_evidencias",
+        "mtm_evidencias",
+        "cpr_evidencias",
+        "remuneracao_evidencias",
+        "movimento_carteira_evidencias",
     }
     actual = set(DriverResult.__dataclass_fields__.keys())
     assert actual == expected, f"Diff: missing={expected-actual} extra={actual-expected}"

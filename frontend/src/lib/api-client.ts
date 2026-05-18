@@ -2089,10 +2089,15 @@ export type DriverResultOut = {
   indeterminado_por_dado: boolean
   motivo_indeterminado:   string | null
   endpoints_unavailable:  string[]
-  // Evidencias especializadas por driver (Fase 4 MVP, 2026-05-18). Hoje so
-  // PDD entregue. Outros drivers ganham campos analogos quando heuristicas
-  // forem migradas pra enriquecedoras. So preenchido quando driver e PDD.
-  pdd_evidencias:         PddEvidencia[]
+  // Evidencias especializadas por driver (Fase 4b, 2026-05-18). Cada driver
+  // popula 0-1 campo; demais ficam vazios. Frontend renderiza condicional
+  // ao tipo de evidencia presente. Quando o numero crescer, refactor pra
+  // discriminated union (kind="pdd"|"mtm"|...).
+  pdd_evidencias:                 PddEvidencia[]                 // driver PDD
+  mtm_evidencias:                 MtmEvidencia[]                 // driver Titulos Publicos
+  cpr_evidencias:                 EvidenciaCprLinha[]            // driver Apropriacao Despesas
+  remuneracao_evidencias:         RemuneracaoSrMezEvidencia[]    // drivers Senior / Mezanino
+  movimento_carteira_evidencias:  MovimentoCarteiraEvidencia[]   // driver Apropriacao DC
 }
 
 export type VariacaoDiariaResponse = {

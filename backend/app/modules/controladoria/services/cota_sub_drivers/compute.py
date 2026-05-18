@@ -123,11 +123,14 @@ class DriverResult:
     indeterminado_por_dado: bool = False
     motivo_indeterminado: str | None = None
     endpoints_unavailable: tuple[str, ...] = ()
-    # Evidencias especializadas por driver. MVP entrega so PDD; outros drivers
-    # ganham campos analogos (mtm_evidencias, cpr_evidencias, ...) conforme
-    # heuristicas em cota_sub_explainers.py forem migradas pra enriquecedoras.
-    # Quando o numero crescer, refactor pra discriminated union.
-    pdd_evidencias: tuple = ()
+    # Evidencias especializadas por tipo. Fase 4b (2026-05-18): 5 campos,
+    # 1 por shape de evidencia. Cada compute_fn popula 0-1 dos campos.
+    # Quando o numero crescer demais, refactor pra discriminated union.
+    pdd_evidencias: tuple = ()                 # PDD driver
+    mtm_evidencias: tuple = ()                 # Titulos Publicos driver
+    cpr_evidencias: tuple = ()                 # Apropriacao Despesas (mescla apropriacao + diferimento)
+    remuneracao_evidencias: tuple = ()         # Senior / Mezanino drivers
+    movimento_carteira_evidencias: tuple = ()  # Apropriacao DC driver
 
 
 # Tipo do compute_fn — assinatura uniforme para o dispatcher.
@@ -212,11 +215,33 @@ async def compute_apropriacao_dc(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Apropriacao DC = dEstoque - Aquisicoes + Liquidacoes (a_vencer + vencidos)."""
+    """Apropriacao DC = dEstoque - Aquisicoes + Liquidacoes (a_vencer + vencidos).
+
+    Fase 4b: evidencias via `_movimento_carteira_diff` — papel-a-papel
+    adquirido/liquidado entre D-1 e D0 (giro de carteira). Movimento
+    patrimonial e neutro em si (caixa <-> DC); evidencias justificam a
+    parcela de apropriacao da curva no estoque.
+    """
     apr = await _apropriacao_dc(db, tenant_id, ua_id, fundo_doc, d_prev, d0)
+
+    # Evidencias de movimento de carteira (Fase 4b). Lazy import.
+    from app.modules.controladoria.services.cota_sub_explainers import (
+        _movimento_carteira_diff,
+    )
+
+    mc_evid, _tot_liq, _tot_adq, _n_liq, _n_adq = await _movimento_carteira_diff(
+        db,
+        tenant_id=tenant_id,
+        fundo_doc=fundo_doc,
+        data_d0=d0,
+        data_d1=d_prev,
+        threshold_brl=Decimal("100"),
+    )
+
     return _result(
         "cota_sub.driver.apropriacao_dc",
         valor=apr.total,
+        movimento_carteira_evidencias=tuple(mc_evid[:20]),
     )
 
 
@@ -224,13 +249,59 @@ async def compute_apropriacao_despesas(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Apropriacao despesas = ΔCPR liquido (receber - pagar)."""
+    """Apropriacao despesas = ΔCPR liquido (receber - pagar).
+
+    Fase 4b: evidencias enriquecidas via heuristicas existentes:
+    - `compute_apropriacao_explanation`: taxas/despesas operacionais (Adm,
+      Custodia, Gestao, Auditoria, IOF, IR, REGISTRADORA, etc).
+    - `compute_diferimento_explanation`: despesas diferidas (CVM, Rating,
+      ANBIMA) sendo amortizadas dia-a-dia.
+
+    Evidencias dos dois sao mescladas em `cpr_evidencias` (mesmo shape
+    EvidenciaCprLinha), ordenadas por |Δ| desc.
+    """
     cpr = await _cpr_detalhado(db, tenant_id, ua_id, d_prev, d0)
+
+    # Enriquecer com evidencias (Fase 4b). Lazy import pra evitar circular.
+    from app.modules.controladoria.services.cota_sub_explainers import (
+        compute_apropriacao_explanation,
+        compute_diferimento_explanation,
+    )
+
+    apropriacao_exp = await compute_apropriacao_explanation(
+        db,
+        tenant_id=tenant_id,
+        ua_id=ua_id,
+        data_d0=d0,
+        data_d1=d_prev,
+        threshold_brl=Decimal("100"),
+        top_n=20,
+    )
+    diferimento_exp = await compute_diferimento_explanation(
+        db,
+        tenant_id=tenant_id,
+        ua_id=ua_id,
+        data_d0=d0,
+        data_d1=d_prev,
+        threshold_brl=Decimal("100"),
+        top_n=20,
+    )
+
+    # Mescla evidencias dos dois e re-ordena por |Δ| desc. Top 20.
+    cpr_evid: list = []
+    if apropriacao_exp is not None:
+        cpr_evid.extend(apropriacao_exp.evidencias)
+    if diferimento_exp is not None:
+        cpr_evid.extend(diferimento_exp.evidencias)
+    cpr_evid.sort(key=lambda e: abs(e.delta_valor), reverse=True)
+    cpr_evid = cpr_evid[:20]
+
     return _result(
         "cota_sub.driver.apropriacao_despesas",
         valor=cpr.variacao,
         valor_d_prev=cpr.total_d1,
         valor_d0=cpr.total_d0,
+        cpr_evidencias=tuple(cpr_evid),
     )
 
 
@@ -280,31 +351,90 @@ async def compute_titulos_publicos(
 
     TECH DEBT (Fase 3c): subtrair aquisicao + liquidacao pra isolar so curva.
     Filtro de TPF e via descricao_tipo_de_ativo (_is_titulo_publico).
+
+    Fase 4b: evidencias via `_mtm_diff` (cota_sub_explainers.py) — papel-a-papel
+    em wh_posicao_renda_fixa com Δqtd_agregada=0 + |Δvalor|>R$100. Agrega
+    por codigo_lastro pra cancelar pares ativo/passivo de operacoes pegadas
+    internas (FIDC contabiliza isso isoladamente, mas soma zero).
     """
     prev = await _sum_titulos_publicos(db, tenant_id, ua_id, d_prev)
     d_0 = await _sum_titulos_publicos(db, tenant_id, ua_id, d0)
+
+    # Evidencias MtM (Fase 4b). Lazy import pra evitar circular.
+    from app.modules.controladoria.services.cota_sub_explainers import (
+        _mtm_diff,
+    )
+
+    mtm_evid = await _mtm_diff(
+        db,
+        tenant_id=tenant_id,
+        ua_id=ua_id,
+        data_d0=d0,
+        data_d1=d_prev,
+        threshold_brl=Decimal("100"),
+    )
+
     return _result(
         "cota_sub.driver.titulos_publicos",
         valor=d_0 - prev,
         valor_d_prev=prev,
         valor_d0=d_0,
+        mtm_evidencias=tuple(mtm_evid[:20]),
     )
+
+
+async def _remuneracao_evidencias_por_classe(
+    db: AsyncSession,
+    tenant_id: UUID,
+    ua_id: UUID,
+    ua_nome: str,
+    d_prev: date,
+    d0: date,
+    classe: str,
+) -> tuple:
+    """Helper interno: chama compute_remuneracao_sr_mez_explanation e filtra
+    evidencias por classe ('senior' ou 'mezanino'). Lazy import."""
+    from app.modules.controladoria.services.cota_sub_explainers import (
+        compute_remuneracao_sr_mez_explanation,
+    )
+
+    exp = await compute_remuneracao_sr_mez_explanation(
+        db,
+        tenant_id=tenant_id,
+        ua_id=ua_id,
+        ua_nome=ua_nome,
+        data_d0=d0,
+        data_d1=d_prev,
+        threshold_brl=Decimal("100"),
+    )
+    if exp is None:
+        return ()
+    return tuple(e for e in exp.evidencias if e.classe == classe)
 
 
 async def compute_senior(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Senior = -ΔPL_Sr (Sub paga subordinacao a classe Senior)."""
+    """Senior = -ΔPL_Sr (Sub paga subordinacao a classe Senior).
+
+    Fase 4b: evidencia rica via `compute_remuneracao_sr_mez_explanation`
+    (filtrada pra classe Senior). Inclui valor_cota_d1/d0 + delta_pct +
+    impacto_pl_sub.
+    """
     classes_prev = await _mec_classes(db, tenant_id, ua_id, ua_nome, d_prev)
     classes_d0 = await _mec_classes(db, tenant_id, ua_id, ua_nome, d0)
     # PL_Sr cresceu -> Sub paga -> driver negativo.
     delta_pl_sr = classes_d0["senior"] - classes_prev["senior"]
+    rem_evid = await _remuneracao_evidencias_por_classe(
+        db, tenant_id, ua_id, ua_nome, d_prev, d0, classe="senior"
+    )
     return _result(
         "cota_sub.driver.senior",
         valor=-delta_pl_sr,
         valor_d_prev=classes_prev["senior"],
         valor_d0=classes_d0["senior"],
+        remuneracao_evidencias=rem_evid,
     )
 
 
@@ -312,15 +442,22 @@ async def compute_mezanino(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Mezanino = -ΔPL_Mz (analogo a Senior)."""
+    """Mezanino = -ΔPL_Mz (analogo a Senior).
+
+    Fase 4b: evidencia rica filtrada pra classe Mezanino.
+    """
     classes_prev = await _mec_classes(db, tenant_id, ua_id, ua_nome, d_prev)
     classes_d0 = await _mec_classes(db, tenant_id, ua_id, ua_nome, d0)
     delta_pl_mz = classes_d0["mezanino"] - classes_prev["mezanino"]
+    rem_evid = await _remuneracao_evidencias_por_classe(
+        db, tenant_id, ua_id, ua_nome, d_prev, d0, classe="mezanino"
+    )
     return _result(
         "cota_sub.driver.mezanino",
         valor=-delta_pl_mz,
         valor_d_prev=classes_prev["mezanino"],
         valor_d0=classes_d0["mezanino"],
+        remuneracao_evidencias=rem_evid,
     )
 
 

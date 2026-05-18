@@ -114,13 +114,29 @@ class DriverResultOut(BaseModel):
     motivo_indeterminado: str | None = None
     endpoints_unavailable: list[str] = Field(default_factory=list)
 
-    # Evidencias especializadas por driver (Fase 4 do refactor, 2026-05-18).
-    # PDD entregue como prova de conceito; outros drivers ganham campos
-    # analogos conforme heuristicas em cota_sub_explainers.py viram
-    # enriquecedoras. Frontend renderiza condicional ao driver.
+    # Evidencias especializadas por tipo de heuristica (Fase 4b, 2026-05-18).
+    # Cada driver popula 0-1 campo. Frontend renderiza condicional ao tipo
+    # de evidencia presente. Quando o numero crescer, refactor pra
+    # discriminated union (kind="pdd"|"mtm"|...).
     pdd_evidencias: list[PddEvidencia] = Field(
         default_factory=list,
         description="Papel-a-papel onde |Δvalor_pdd| > R$ 100, top 20. So preenchido para driver PDD.",
+    )
+    mtm_evidencias: list[MtmEvidencia] = Field(
+        default_factory=list,
+        description="Papel-a-papel agregado por codigo_lastro (qtd estavel, MtM puro). So preenchido para driver Titulos Publicos.",
+    )
+    cpr_evidencias: list[EvidenciaCprLinha] = Field(
+        default_factory=list,
+        description="Linhas do CPR (apropriacao + diferimento) com |Δvalor| > R$ 100. So preenchido para driver Apropriacao Despesas.",
+    )
+    remuneracao_evidencias: list[RemuneracaoSrMezEvidencia] = Field(
+        default_factory=list,
+        description="Valorizacao da classe (PL d-1/d0, valor_cota, impacto_pl_sub). So preenchido para drivers Senior / Mezanino.",
+    )
+    movimento_carteira_evidencias: list[MovimentoCarteiraEvidencia] = Field(
+        default_factory=list,
+        description="Papeis adquiridos/liquidados entre D-1 e D0 com valor > R$ 100. So preenchido para driver Apropriacao DC.",
     )
 
 
