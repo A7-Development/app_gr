@@ -93,6 +93,28 @@ class CprDetalhado(BaseModel):
     variacao:   Decimal = Field(description="total_d0 - total_d1 (entra como D30 da Analise)")
 
 
+class DriverResultOut(BaseModel):
+    """Driver canonico da Cota Sub (Fase 3b do refactor de proveniencia, 2026-05-18).
+
+    Espelha `cota_sub_drivers.compute.DriverResult`. Cada driver e uma
+    decomposicao parcial do ΔPL Sub no metodo do gestor REALINVEST.
+
+    Σ drivers (excluindo indeterminados) ≈ ΔPL_Sub_MEC.
+    Residuo = ΔPL_Sub_MEC − Σ drivers (exposto sempre, sem threshold).
+    """
+
+    metric_global_id:    str         = Field(description="ex.: controladoria.cota_sub.driver.pdd")
+    label:               str
+    formula_description: str
+    valor_brl:           Decimal     = Field(description="Impacto liquido no PL Sub")
+    valor_d_prev:        Decimal | None = None
+    valor_d0:            Decimal | None = None
+    endpoints_required:  list[str]   = Field(default_factory=list)
+    indeterminado_por_dado: bool     = False
+    motivo_indeterminado: str | None = None
+    endpoints_unavailable: list[str] = Field(default_factory=list)
+
+
 class VariacaoDiariaResponse(BaseModel):
     """Resposta do endpoint GET /controladoria/cota-sub/variacao-diaria."""
 
@@ -110,6 +132,23 @@ class VariacaoDiariaResponse(BaseModel):
     divergencia:        Decimal   = Field(description="decomposicao_total - pl_delta (deve ser ~0)")
     apropriacao_dc:     ApropriacaoDc
     cpr_detalhado:      CprDetalhado
+
+    # Novo (Fase 3b, 2026-05-18): catalog-backed drivers + residuo expostos
+    # paralelos a `decomposicao` legacy. Frontend pode migrar incrementalmente.
+    # Ver `app/modules/controladoria/services/cota_sub_drivers/` e memos
+    # `project_cota_sub_metodo_gestor` + `project_cota_sub_drivers_canonicos`.
+    drivers:            list[DriverResultOut] = Field(
+        default_factory=list,
+        description="11 drivers canonicos do metodo do gestor. Vazio em respostas legacy.",
+    )
+    soma_drivers:       Decimal = Field(
+        default=Decimal("0"),
+        description="Σ drivers (excluindo indeterminados)",
+    )
+    residuo_modelo:     Decimal = Field(
+        default=Decimal("0"),
+        description="pl_delta − soma_drivers. Sem threshold; valor exato exposto.",
+    )
 
 
 # ── Balanco · otica Sub Jr ──────────────────────────────────────────────────

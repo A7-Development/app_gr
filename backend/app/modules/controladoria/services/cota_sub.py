@@ -571,6 +571,34 @@ async def compute_variacao_diaria(
     apr_dc = await _apropriacao_dc(db, tenant_id, ua_id, fundo_doc, d1, data_d0)
     cpr_det = await _cpr_detalhado(db, tenant_id, ua_id, d1, data_d0)
 
+    # Drivers canonicos (Fase 3b do refactor, 2026-05-18). Lazy import pra
+    # evitar circular: compute.py importa helpers daqui (`_sum_*`); inverter
+    # o sentido aqui exigiria mover helpers pra modulo neutro — refactor
+    # registrado como tech debt da Fase 4.
+    from app.modules.controladoria.services.cota_sub_drivers import (
+        compute_drivers,
+    )
+    from app.modules.controladoria.schemas.cota_sub import DriverResultOut
+
+    driver_computation = await compute_drivers(
+        db, tenant_id=tenant_id, ua_id=ua_id, data_d0=data_d0, data_d_prev=d1,
+    )
+    drivers_out = [
+        DriverResultOut(
+            metric_global_id=d.metric_global_id,
+            label=d.label,
+            formula_description=d.formula_description,
+            valor_brl=d.valor_brl,
+            valor_d_prev=d.valor_d_prev,
+            valor_d0=d.valor_d0,
+            endpoints_required=list(d.endpoints_required),
+            indeterminado_por_dado=d.indeterminado_por_dado,
+            motivo_indeterminado=d.motivo_indeterminado,
+            endpoints_unavailable=list(d.endpoints_unavailable),
+        )
+        for d in driver_computation.drivers
+    ]
+
     # Decomposicao (painel C27:D35 da planilha)
     delta_pdd = pdd_d0 - pdd_d1
     delta_compromissada = compromissada_d0 - compromissada_d1
@@ -607,4 +635,7 @@ async def compute_variacao_diaria(
         divergencia=decomposicao_total - pl_delta,
         apropriacao_dc=apr_dc,
         cpr_detalhado=cpr_det,
+        drivers=drivers_out,
+        soma_drivers=driver_computation.soma_drivers,
+        residuo_modelo=driver_computation.residuo,
     )
