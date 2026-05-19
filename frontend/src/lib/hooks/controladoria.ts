@@ -215,9 +215,27 @@ export const COTA_SUB_REPORTS: ReadonlyArray<{
   { name: "market.tesouraria",        shortLabel: "Tesouraria",  fullLabel: "Tesouraria"                },
   { name: "market.conta_corrente",    shortLabel: "Conta corr.", fullLabel: "Conta-corrente"            },
   { name: "market.rf",                shortLabel: "RF",          fullLabel: "Renda fixa"                },
-  { name: "market.rf_compromissadas", shortLabel: "RF compr.",   fullLabel: "RF compromissadas"         },
+  // RF compromissadas e legitimamente vazio na maioria dos dias (so existe
+  // operacao quando o fundo paquera caixa via compromissada overnight/curto).
+  // Marcado advisory: nao bloqueia gate. Quando ha operacao, silver popula
+  // e o driver Compromissada da Cota Sub mostra o valor. Quando nao ha, fica
+  // R$ 0 — que e a verdade.
+  {
+    name:       "market.rf_compromissadas",
+    shortLabel: "RF compr.",
+    fullLabel:  "RF compromissadas",
+    advisory:   true,
+  },
   { name: "market.outros_fundos",     shortLabel: "Out. fundos", fullLabel: "Posicao em outros fundos"  },
-  { name: "market.outros_ativos",     shortLabel: "Out. ativos", fullLabel: "Outros ativos"             },
+  // Outros ativos tambem fica frequentemente vazio (endpoint cobre instrumentos
+  // pouco comuns). Mesma logica do rf_compromissadas: ausencia = zero real
+  // pra cota-sub.
+  {
+    name:       "market.outros_ativos",
+    shortLabel: "Out. ativos",
+    fullLabel:  "Outros ativos",
+    advisory:   true,
+  },
   { name: "market.cpr",               shortLabel: "CPR",         fullLabel: "CPR (movimentacoes)"       },
   { name: "market.mec",               shortLabel: "MEC",         fullLabel: "MEC (evolucao cotas)"      },
   {
@@ -280,6 +298,7 @@ export function useCotaSubReadiness(
         name:       r.name,
         shortLabel: r.shortLabel,
         fullLabel:  r.fullLabel,
+        advisory:   r.advisory,
         day:        byName.get(r.name),
       }),
     )

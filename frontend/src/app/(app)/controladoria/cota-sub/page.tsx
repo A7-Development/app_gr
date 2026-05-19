@@ -68,6 +68,7 @@ import { EmptyState } from "@/design-system/components/EmptyState"
 import { Insight, InsightBar } from "@/design-system/components/Insight"
 import { useUAs } from "@/lib/hooks/cadastros"
 import {
+  COTA_SUB_REPORTS,
   useBalanceteDiario,
   useBalanco,
   useCotaSubReadiness,
@@ -97,6 +98,9 @@ import {
 import { tokens, type StatusKey } from "@/design-system/tokens"
 import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 
+import { toast } from "sonner"
+
+import { ActiveBackfillJobsPanel } from "./_components/ActiveBackfillJobsPanel"
 import { BalanceTable } from "./_components/BalanceTable"
 import { EventosDiaTab } from "./_components/EventosDiaTab"
 
@@ -656,17 +660,38 @@ export default function CotaSubPage() {
   const readiness = useCotaSubReadiness(fundoId, dayIso)
   const backfillMutation = useCreateBackfill("admin:qitech")
 
-  const handleForceBackfill = React.useCallback((endpointName: string) => {
-    if (!dayIso) return
-    backfillMutation.mutate({
-      endpointName,
-      payload: {
-        dates:                     [dayIso],
-        environment:               "production",
-        unidade_administrativa_id: fundoId ?? undefined,
-      },
-    })
-  }, [backfillMutation, dayIso, fundoId])
+  const handleForceBackfill = React.useCallback(
+    async (endpointName: string) => {
+      if (!dayIso) return
+      const reportLabel =
+        COTA_SUB_REPORTS.find((r) => r.name === endpointName)?.shortLabel
+        ?? endpointName
+      const dateBr = (() => {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayIso)
+        return m ? `${m[3]}/${m[2]}` : dayIso
+      })()
+      try {
+        const job = await backfillMutation.mutateAsync({
+          endpointName,
+          payload: {
+            dates:                     [dayIso],
+            environment:               "production",
+            unidade_administrativa_id: fundoId ?? undefined,
+          },
+        })
+        toast.success(
+          `Sync de ${reportLabel} (${dateBr}) enfileirado — job ${job.id.slice(0, 8)}`,
+          { description: "Acompanhe no painel logo abaixo. Strip vira verde quando concluir." },
+        )
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        toast.error(`Falha ao enfileirar sync de ${reportLabel} (${dateBr})`, {
+          description: msg,
+        })
+      }
+    },
+    [backfillMutation, dayIso, fundoId],
+  )
 
   // Quando o fundo troca: se o "day" atual nao existe nas datas disponiveis,
   // recua para a mais recente da lista (data top, ja vem ordenada desc do
@@ -987,6 +1012,8 @@ export default function CotaSubPage() {
                 loading={readiness.isLoading}
                 onBackfill={handleForceBackfill}
               />
+
+              <ActiveBackfillJobsPanel fundoId={fundoId} dayIso={dayIso} />
 
               {!readiness.allReady && !readiness.isLoading ? (
                 <CoverageGateEmpty

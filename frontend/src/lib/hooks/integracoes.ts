@@ -307,7 +307,12 @@ export function useBackfillJob(
 export function useActiveBackfills(
   sourceType: SourceTypeId | null,
   endpointName?: string,
+  options?: { pollMs?: number },
 ) {
+  // pollMs: quando setado, refetch periodico enquanto endpoint retornar
+  // jobs (backend ja filtra status=pending|running). Quando lista zera,
+  // refetch para. Util pra paineis de "Jobs em execucao".
+  const pollMs = options?.pollMs ?? 0
   return useQuery<BackfillJob[]>({
     queryKey: sourceType
       ? KEYS.activeBackfills(sourceType, endpointName)
@@ -316,6 +321,12 @@ export function useActiveBackfills(
       integracoes.listActiveBackfills(sourceType!, endpointName),
     enabled: !!sourceType,
     staleTime: 5_000,
+    refetchInterval: pollMs > 0
+      ? (q) => {
+          const jobs = q.state.data as BackfillJob[] | undefined
+          return jobs && jobs.length > 0 ? pollMs : false
+        }
+      : false,
   })
 }
 

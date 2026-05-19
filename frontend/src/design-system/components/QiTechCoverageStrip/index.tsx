@@ -61,6 +61,15 @@ export type CoverageStripEntry = {
   fullLabel?: string
   /** Saude derivada para o dia em foco. */
   health: DataHealth
+  /**
+   * Endpoint "advisory": pode legitimamente ficar vazio em dias normais
+   * (ex.: rf_compromissadas, outros_ativos — so existe quando ha operacao
+   * naquela natureza). Quando true E o health e nao-saudavel, o chip
+   * renderiza com estilo neutro (dashed cinza) em vez de alerta vermelho;
+   * popover sinaliza que o estado nao bloqueia a analise. Quando o health
+   * e saudavel (ready/may_change), a flag advisory nao muda o visual.
+   */
+  advisory?: boolean
   /** Dados brutos do dia (status, completeness, tolerance) — usado no Popover. */
   raw?: {
     status: CoverageStatus
@@ -100,14 +109,17 @@ export function buildEntry(args: {
   name: string
   shortLabel: string
   fullLabel?: string
+  /** Marca o endpoint como advisory: vazio nao bloqueia analise. */
+  advisory?: boolean
   day?: CoverageDay
 }): CoverageStripEntry {
-  const { name, shortLabel, fullLabel, day } = args
+  const { name, shortLabel, fullLabel, advisory, day } = args
   if (!day) {
     return {
       name,
       shortLabel,
       fullLabel,
+      advisory,
       health: "na",
     }
   }
@@ -115,6 +127,7 @@ export function buildEntry(args: {
     name,
     shortLabel,
     fullLabel,
+    advisory,
     health: deriveHealth(day.status, day.tolerance_state, day.completeness),
     raw: {
       status: day.status,
@@ -280,11 +293,16 @@ function EntryChip({
   onBackfill?: (endpointName: string) => void
 }) {
   const style = HEALTH_STYLES[entry.health]
-  const isBlocking =
+  const isUnhealthy =
     entry.health === "in_progress" ||
     entry.health === "blocked" ||
     entry.health === "na"
-  const canBackfill = !!onBackfill && isBlocking && !inProgressJob
+  // "Advisory degradado" = endpoint que pode legitimamente ficar vazio E
+  // hoje esta em estado nao-saudavel. Tratamos visualmente como neutro
+  // (dashed cinza) pra nao parecer erro — mas mantemos o canBackfill caso
+  // o usuario queira forcar (vai ser zero real se nao tinha operacao).
+  const isAdvisoryDegraded = !!entry.advisory && isUnhealthy
+  const canBackfill = !!onBackfill && isUnhealthy && !inProgressJob
 
   return (
     <Popover>
@@ -293,22 +311,34 @@ function EntryChip({
           type="button"
           className={cx(
             "inline-flex h-[24px] items-center gap-1.5 rounded border px-2 text-[11px] font-medium transition-colors",
-            "border-gray-200 bg-white hover:bg-gray-50",
-            "dark:border-gray-800 dark:bg-gray-950 dark:hover:bg-gray-900",
-            entry.health === "blocked" &&
-              "border-red-200 dark:border-red-900/40",
+            isAdvisoryDegraded
+              ? "border-dashed border-gray-300 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-950 dark:hover:bg-gray-900"
+              : cx(
+                  "border-gray-200 bg-white hover:bg-gray-50",
+                  "dark:border-gray-800 dark:bg-gray-950 dark:hover:bg-gray-900",
+                  entry.health === "blocked" &&
+                    "border-red-200 dark:border-red-900/40",
+                ),
           )}
-          aria-label={`${entry.shortLabel}: ${style.label}`}
+          aria-label={`${entry.shortLabel}: ${style.label}${isAdvisoryDegraded ? " (advisory)" : ""}`}
         >
           <span
             className={cx(
               "inline-block size-1.5 rounded-full",
-              style.bg,
+              isAdvisoryDegraded
+                ? "bg-gray-300 dark:bg-gray-600"
+                : style.bg,
               inProgressJob && "animate-pulse",
             )}
             aria-hidden="true"
           />
-          <span className="text-gray-700 dark:text-gray-200">
+          <span
+            className={cx(
+              isAdvisoryDegraded
+                ? "text-gray-500 dark:text-gray-400"
+                : "text-gray-700 dark:text-gray-200",
+            )}
+          >
             {entry.shortLabel}
           </span>
         </button>
@@ -316,8 +346,15 @@ function EntryChip({
       <PopoverContent align="start" sideOffset={6} className="w-72 p-3">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <div className="text-[13px] font-semibold text-gray-900 dark:text-gray-50">
-              {entry.fullLabel ?? entry.shortLabel}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[13px] font-semibold text-gray-900 dark:text-gray-50">
+                {entry.fullLabel ?? entry.shortLabel}
+              </span>
+              {entry.advisory && (
+                <span className="inline-flex items-center rounded-sm bg-gray-100 px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.05em] text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                  Advisory
+                </span>
+              )}
             </div>
             <div className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400 font-mono">
               {entry.name}
@@ -326,19 +363,28 @@ function EntryChip({
           <span
             className={cx(
               "shrink-0 inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.04em]",
-              healthBadgeStyle(entry.health),
+              isAdvisoryDegraded
+                ? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                : healthBadgeStyle(entry.health),
             )}
           >
             <span
-              className={cx("inline-block size-1.5 rounded-full", style.bg)}
+              className={cx(
+                "inline-block size-1.5 rounded-full",
+                isAdvisoryDegraded
+                  ? "bg-gray-300 dark:bg-gray-600"
+                  : style.bg,
+              )}
               aria-hidden="true"
             />
-            {style.label}
+            {isAdvisoryDegraded ? "sem dado" : style.label}
           </span>
         </div>
 
         <p className="mt-2 text-[12px] leading-snug text-gray-600 dark:text-gray-300">
-          {style.description}
+          {isAdvisoryDegraded
+            ? "Este endpoint pode ficar vazio em dias normais (so existe quando ha operacao naquela natureza). Nao bloqueia a analise da Cota Sub — o driver correspondente exibe zero quando nao ha posicao."
+            : style.description}
         </p>
 
         {entry.raw && (
