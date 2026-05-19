@@ -1,7 +1,7 @@
 """endpoint_date_state: F1 do refactor de sync (state machine)
 
 Revision ID: b4f1a8d2c903
-Revises: e8a2b9c4d167
+Revises: d7e3a9b1f4c2
 Create Date: 2026-05-19 10:00:00.000000
 
 Cria a tabela `endpoint_date_state` — 1 row por (tenant, source, env, ua,
@@ -22,9 +22,10 @@ Estrutura:
 Os campos `state_machine_enabled` e `refresh_complete_window_business_days`
 no `EndpointSpec` sao codigo (dataclass frozen) — nao precisam de migration.
 
-Down_revision aponta direto pra `e8a2b9c4d167` (paralelo a migration de
-identity `d7e3a9b1f4c2` que sera commitada em sessao separada). Quando
-ambas convergirem em prod, criar `alembic merge` pra unificar as heads.
+Down_revision aponta pra `d7e3a9b1f4c2` (identity/invitations) que precisa
+estar commitada no repo. Trabalho dessa migration foi aplicado em prod
+antes de virar commit — sessao paralela deve commitar ASAP pra ambientes
+novos nao quebrarem.
 """
 from collections.abc import Sequence
 
@@ -33,7 +34,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "b4f1a8d2c903"
-down_revision: str | None = "e8a2b9c4d167"
+down_revision: str | None = "d7e3a9b1f4c2"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
