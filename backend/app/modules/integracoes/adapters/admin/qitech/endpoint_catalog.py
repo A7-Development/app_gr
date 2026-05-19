@@ -86,6 +86,14 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_value="07:30",
         canonical_table="wh_saldo_conta_corrente",
         payload_shape_doc_relpath=_shape("market.conta_corrente"),
+        # PILOTO da state machine (F1.5, 2026-05-19). Selecionado por:
+        # 1) Alto volume — toda data util tem dado, exercita todas transicoes.
+        # 2) Foi um dos 5 endpoints presos em 2026-05-15 pro REALINVEST —
+        #    state machine valida no caso real que motivou o refactor.
+        # 3) Sem downstream critico (Cota Sub depende de CPR/MEC/FIDC estoque,
+        #    nao deste) — rollback nao impacta dashboards principais.
+        # Demais endpoints continuam no caminho legado ate validacao.
+        state_machine_enabled=True,
     ),
     EndpointSpec(
         admin_code="qitech",

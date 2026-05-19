@@ -14,6 +14,8 @@ from app.scheduler.jobs import (
     qitech_jobs_poll,
     recent_complete_refresher,
     reconciler,
+    state_machine_seeder,
+    state_machine_tick,
     watermark_scanner,
 )
 
@@ -107,13 +109,45 @@ def start_scheduler() -> AsyncIOScheduler:
         coalesce=True,
         misfire_grace_time=3600,
     )
+    # State machine tick — F1.3 do refactor de sync (2026-05-19).
+    # Substitui reconciler+watermark+refresh_complete pros endpoints com
+    # `state_machine_enabled=True` no EndpointSpec. Roda em paralelo com
+    # os legados — endpoints ainda nao migrados seguem caminho antigo.
+    _scheduler.add_job(
+        state_machine_tick.run,
+        trigger=IntervalTrigger(minutes=state_machine_tick.INTERVAL_MINUTES),
+        id="state_machine_tick",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=60,
+    )
+    # State machine seeder — F1.4. Roda 1x/dia as 08:00 SP, apos
+    # watermark_scanner (06:00). Cria rows NOT_STARTED em endpoint_date_state
+    # pra dias uteis no range [today-30bd, today+5bd] dos endpoints
+    # state-machine-enabled. INSERT ON CONFLICT DO NOTHING — idempotente.
+    _scheduler.add_job(
+        state_machine_seeder.run,
+        trigger=CronTrigger(
+            hour=state_machine_seeder.DAILY_HOUR,
+            minute=state_machine_seeder.DAILY_MINUTE,
+            timezone="America/Sao_Paulo",
+        ),
+        id="state_machine_seeder",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
     _scheduler.start()
     logger.info(
         "scheduler started: sync_dispatcher every %s min, "
         "qitech_jobs_poll every %s min, backfill_worker every %s s, "
         "reconciler every %s min, "
         "watermark_scanner daily at %02d:%02d SP, "
-        "recent_complete_refresher daily at %02d:%02d SP",
+        "recent_complete_refresher daily at %02d:%02d SP, "
+        "state_machine_tick every %s min, "
+        "state_machine_seeder daily at %02d:%02d SP",
         sync_dispatcher.INTERVAL_MINUTES,
         qitech_jobs_poll.INTERVAL_MINUTES,
         backfill_worker.INTERVAL_SECONDS,
@@ -122,6 +156,9 @@ def start_scheduler() -> AsyncIOScheduler:
         watermark_scanner.DAILY_MINUTE,
         recent_complete_refresher.DAILY_HOUR,
         recent_complete_refresher.DAILY_MINUTE,
+        state_machine_tick.INTERVAL_MINUTES,
+        state_machine_seeder.DAILY_HOUR,
+        state_machine_seeder.DAILY_MINUTE,
     )
     return _scheduler
 

@@ -14,7 +14,7 @@ Todos exigem `require_module(Module.INTEGRACOES, Permission.ADMIN)`.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, date, datetime
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -29,6 +29,14 @@ from app.core.enums import Environment, Module, Permission, SourceType
 from app.core.module_guard import require_module
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.modules.integracoes.public import run_ping, run_sync_one
+from app.modules.integracoes.services.backfill_service import (
+    create_backfill_job,
+    list_active_backfill_jobs,
+)
+from app.modules.integracoes.services.coverage import (
+    CoverageStatus,
+    get_source_coverage,
+)
 from app.modules.integracoes.services.source_config import (
     decrypt_config,
     get_config,
@@ -163,6 +171,34 @@ class RunEntry(BaseModel):
     triggered_by: str
     explanation: str | None
     output: dict[str, Any] | None
+
+
+class RefreshEmptyEndpointResult(BaseModel):
+    """Resultado por endpoint da varredura refresh-empty."""
+
+    endpoint_name: str
+    label: str
+    # Datas detectadas com state nos `states` pedidos no range.
+    detected_dates_count: int
+    # Datas que ja estavam em jobs ativos (pending/running) — nao re-enfileiradas.
+    skipped_in_active_jobs_count: int
+    # Datas efetivamente enfileiradas neste call.
+    enqueued_dates_count: int
+    job_id: UUID | None = None
+
+
+class RefreshEmptyResult(BaseModel):
+    """Retorno consolidado de POST /refresh-empty."""
+
+    since: date
+    until: date
+    states_scanned: list[CoverageStatus]
+    endpoints_scanned: int
+    endpoints_with_matches: int
+    endpoints_enqueued: int
+    total_dates_detected: int
+    total_dates_enqueued: int
+    per_endpoint: list[RefreshEmptyEndpointResult]
 
 
 # --- Helpers -------------------------------------------------------------------
@@ -457,6 +493,163 @@ async def sync_source(
             status_code=status.HTTP_409_CONFLICT, detail=str(e)
         ) from e
     return SyncResult(**summary)
+
+
+# Estados default que disparam re-enfileiramento. Cobre os 3 casos onde a
+# publicacao do vendor pode ainda evoluir e justifica retentar:
+# - NOT_PUBLISHED: linha raw existe com http != 200 (ex.: 400/404 padrao
+#   MEC e dos endpoints market quando vendor ainda nao publicou). Caso real
+#   dos 5 endpoints presos do REALINVEST em 2026-05-15.
+# - PARTIAL: http=200 mas completeness in ("partial", "empty") — payload
+#   incompleto que pode ser republicado pelo vendor.
+# - GAP: dia util sem nenhuma linha raw (ETL nunca tentou ou erro de rede
+#   antes de gravar raw).
+#
+# Operador pode override via `?states=...&states=...` se quiser, por ex.,
+# excluir PARTIAL e so retentar NOT_PUBLISHED.
+_REFRESH_EMPTY_DEFAULT_STATES: tuple[CoverageStatus, ...] = (
+    CoverageStatus.NOT_PUBLISHED,
+    CoverageStatus.PARTIAL,
+    CoverageStatus.GAP,
+)
+
+
+@router.post(
+    "/{source_type}/refresh-empty",
+    response_model=RefreshEmptyResult,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def refresh_empty_dates(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    source_type: Annotated[SourceType, Path()],
+    since: Annotated[date, Query(description="Limite inferior do range, inclusivo (YYYY-MM-DD).")],
+    until: Annotated[
+        date | None,
+        Query(description="Limite superior, inclusivo. Default = hoje."),
+    ] = None,
+    states: Annotated[
+        list[CoverageStatus] | None,
+        Query(description="Estados que disparam backfill. Default: not_published, partial, gap."),
+    ] = None,
+    environment: Annotated[Environment, Query()] = Environment.PRODUCTION,
+    unidade_administrativa_id: Annotated[UUID | None, Query()] = None,
+    _: None = _Guard,
+) -> RefreshEmptyResult:
+    """Varre cobertura no range e enfileira BackfillJob pros dias presos.
+
+    Caso de uso: depois que reconciler/cap absoluto esgota tentativas e
+    deixa endpoint preso em empty/not_published, esta rota destrava em
+    massa — varre todos os endpoints da source, encontra dias com state
+    nos `states` pedidos, e cria 1 BackfillJob por endpoint.
+
+    Idempotencia: dias que ja estao em job ativo (pending/running) sao
+    ignorados — evita duplicacao quando operador clica de novo.
+    """
+    today = datetime.now(UTC).date()
+    end = until or today
+    if since > end:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"since ({since}) nao pode ser posterior a until/today ({end}).",
+        )
+
+    range_days = (end - since).days + 1
+    selected_states = tuple(states) if states else _REFRESH_EMPTY_DEFAULT_STATES
+
+    coverage = await get_source_coverage(
+        db,
+        source_type=source_type,
+        tenant_id=principal.tenant_id,
+        unidade_administrativa_id=unidade_administrativa_id,
+        range_days=range_days,
+    )
+
+    # get_source_coverage usa today como end e clampa start em today-range_days+1
+    # — pode divergir do `since` informado quando until != today. Filtramos pelo
+    # range pedido pra resposta refletir exatamente o intervalo solicitado.
+    per_endpoint: list[RefreshEmptyEndpointResult] = []
+    total_detected = 0
+    total_enqueued = 0
+    endpoints_with_matches = 0
+    endpoints_enqueued = 0
+
+    for ep_cov in coverage.endpoints:
+        if not ep_cov.supported:
+            continue
+
+        detected = [
+            d.data
+            for d in ep_cov.days
+            if since <= d.data <= end and d.status in selected_states
+        ]
+        if not detected:
+            per_endpoint.append(
+                RefreshEmptyEndpointResult(
+                    endpoint_name=ep_cov.name,
+                    label=ep_cov.label,
+                    detected_dates_count=0,
+                    skipped_in_active_jobs_count=0,
+                    enqueued_dates_count=0,
+                )
+            )
+            continue
+
+        endpoints_with_matches += 1
+        total_detected += len(detected)
+
+        # Idempotencia: dedup contra jobs ativos do MESMO endpoint.
+        active_jobs = await list_active_backfill_jobs(
+            db,
+            tenant_id=principal.tenant_id,
+            source_type=source_type,
+            endpoint_name=ep_cov.name,
+        )
+        dates_in_active: set[date] = set()
+        for job in active_jobs:
+            dates_in_active.update(job.dates_pending or [])
+
+        to_enqueue = [d for d in detected if d not in dates_in_active]
+        skipped = len(detected) - len(to_enqueue)
+
+        job_id: UUID | None = None
+        if to_enqueue:
+            job = await create_backfill_job(
+                db,
+                tenant_id=principal.tenant_id,
+                source_type=source_type,
+                environment=environment,
+                unidade_administrativa_id=unidade_administrativa_id,
+                endpoint_name=ep_cov.name,
+                dates=to_enqueue,
+                created_by=f"refresh-empty:{principal.user_id}",
+            )
+            job_id = job.id
+            endpoints_enqueued += 1
+            total_enqueued += len(to_enqueue)
+
+        per_endpoint.append(
+            RefreshEmptyEndpointResult(
+                endpoint_name=ep_cov.name,
+                label=ep_cov.label,
+                detected_dates_count=len(detected),
+                skipped_in_active_jobs_count=skipped,
+                enqueued_dates_count=len(to_enqueue),
+                job_id=job_id,
+            )
+        )
+
+    return RefreshEmptyResult(
+        since=since,
+        until=end,
+        states_scanned=list(selected_states),
+        endpoints_scanned=sum(1 for e in coverage.endpoints if e.supported),
+        endpoints_with_matches=endpoints_with_matches,
+        endpoints_enqueued=endpoints_enqueued,
+        total_dates_detected=total_detected,
+        total_dates_enqueued=total_enqueued,
+        per_endpoint=per_endpoint,
+    )
 
 
 @router.get("/{source_type}/runs", response_model=list[RunEntry])

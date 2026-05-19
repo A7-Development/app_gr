@@ -102,6 +102,18 @@ class EndpointSpec:
     # nao publicou catalogo de shapes). UI e tooling consultam pra abrir
     # documentacao em-linha.
     payload_shape_doc_relpath: str | None = None
+    # Sync state machine (F1, 2026-05-19) — ver
+    # `project_qitech_sync_state_machine` memory. Flag por endpoint pra
+    # rollout gradual: enquanto False, este endpoint continua sob o regime
+    # legado (reconciler + watermark + refresh_complete). Liga manualmente
+    # endpoint a endpoint apos validar o piloto.
+    state_machine_enabled: bool = False
+    # TTL (em dias uteis) apos atingir COMPLETE antes da state machine
+    # marcar `next_attempt_at` pra re-fetch e detectar republicacao do
+    # vendor. Substitui o job legado refresh_complete (Fix B do
+    # project_qitech_partial_refetch). Default 3 — espelha 3 dias uteis
+    # de janela de republicacao observada empiricamente.
+    refresh_complete_window_business_days: int = 3
 
     @property
     def global_id(self) -> str:
