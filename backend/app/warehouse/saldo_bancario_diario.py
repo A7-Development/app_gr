@@ -45,8 +45,14 @@ class SaldoBancarioDiario(Auditable, Base):
 
     __tablename__ = "wh_saldo_bancario_diario"
     __table_args__ = (
+        # Business key: 1 saldo por conta (UA + agencia + conta) num dia.
         UniqueConstraint(
-            "tenant_id", "source_id", name="uq_wh_saldo_bancario_diario"
+            "tenant_id",
+            "unidade_administrativa_id",
+            "agencia",
+            "conta",
+            "data_posicao",
+            name="uq_wh_saldo_bancario_diario",
         ),
         Index(
             "ix_wh_saldo_bancario_diario_tenant_data",

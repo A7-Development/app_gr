@@ -237,7 +237,11 @@ async def sync_balance(
                     db,
                     SaldoBancarioDiario,
                     canonical_rows,
-                    ["tenant_id", "source_id"],
+                    # Business key — ver uq_wh_saldo_bancario_diario.
+                    [
+                        "tenant_id", "unidade_administrativa_id",
+                        "agencia", "conta", "data_posicao",
+                    ],
                     unidade_administrativa_id=unidade_administrativa_id,
                 )
                 step["canonical_rows_upserted"] = count
@@ -344,7 +348,12 @@ async def sync_statement(
                     db,
                     ExtratoBancario,
                     canonical_rows,
-                    ["tenant_id", "source_id"],
+                    # Business key — ver uq_wh_extrato_bancario.
+                    [
+                        "tenant_id", "unidade_administrativa_id",
+                        "agencia", "conta", "data_lancamento",
+                        "valor", "tipo", "descricao", "contrapartida_doc",
+                    ],
                     unidade_administrativa_id=unidade_administrativa_id,
                 )
                 step["canonical_rows_upserted"] = count

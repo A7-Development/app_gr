@@ -8,4 +8,4 @@ Incrementar seguindo semver:
 
 from __future__ import annotations
 
-ADAPTER_VERSION = "qitech_adapter_v0.3.0"  # 2026-05-18: split raw por dataDaPosicao em endpoints de janela (aquisicao-consolidada + liquidados-baixados)
+ADAPTER_VERSION = "qitech_adapter_v0.4.0"  # 2026-05-19: business key explicita em 16 silvers (source_id vira proveniencia pura). Conserto do bug v0.3.0 que duplicou wh_cpr_movimento REALINVEST 14/05.

@@ -490,19 +490,25 @@ async def process_fidc_estoque_callback(
             MAX_PG_PARAMS,
         )
 
+        # Business key — ver uq_wh_estoque_recebivel.
+        bk_cols = [
+            "tenant_id", "data_referencia", "fundo_doc", "cedente_doc",
+            "seu_numero", "numero_documento",
+        ]
         all_columns = [c.name for c in EstoqueRecebivel.__table__.columns if c.name != "id"]
         normalized = [{c: row.get(c) for c in all_columns} for row in canonical_rows]
-        # Dedup por source_id (caso CSV tenha duplicata exata)
-        seen: dict[str, dict] = {}
+        # Dedup por business key (caso CSV tenha duplicata exata). Mantem
+        # ultima ocorrencia — sha16(item) deixou de ser conflict key.
+        seen: dict[tuple, dict] = {}
         for r in normalized:
-            seen[r["source_id"]] = r
+            seen[tuple(r[c] for c in bk_cols)] = r
         deduped = list(seen.values())
 
         chunk_size = max(1, min(CHUNK_SIZE, MAX_PG_PARAMS // len(all_columns)))
         update_cols = [
             c.name
             for c in EstoqueRecebivel.__table__.columns
-            if c.name not in {"id", "tenant_id", "source_id", "ingested_at"}
+            if c.name not in {"id", *bk_cols, "ingested_at"}
         ]
 
         def _chunked(it, size):
@@ -514,7 +520,7 @@ async def process_fidc_estoque_callback(
             stmt = pg_insert(EstoqueRecebivel.__table__).values(chunk)
             update_set = {name: stmt.excluded[name] for name in update_cols}
             stmt = stmt.on_conflict_do_update(
-                index_elements=["tenant_id", "source_id"], set_=update_set
+                index_elements=bk_cols, set_=update_set
             )
             await db.execute(stmt)
             rows_inserted += len(chunk)

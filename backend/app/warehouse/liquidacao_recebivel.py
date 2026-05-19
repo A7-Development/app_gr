@@ -39,8 +39,12 @@ class LiquidacaoRecebivel(Auditable, Base):
 
     __tablename__ = "wh_liquidacao_recebivel"
     __table_args__ = (
+        # Business key: id_recebivel e estavel; cada recebivel tem 1 baixa final.
         UniqueConstraint(
-            "tenant_id", "source_id", name="uq_wh_liquidacao_recebivel"
+            "tenant_id",
+            "fundo_doc",
+            "id_recebivel",
+            name="uq_wh_liquidacao_recebivel",
         ),
         Index(
             "ix_wh_liquidacao_recebivel_tenant_fundo_data",

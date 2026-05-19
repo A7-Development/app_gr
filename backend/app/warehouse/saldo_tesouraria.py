@@ -36,7 +36,13 @@ class SaldoTesouraria(Auditable, Base):
 
     __tablename__ = "wh_saldo_tesouraria"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "source_id", name="uq_wh_saldo_tesouraria"),
+        # Business key: 1 linha por classe de cota num dia (clienteId discrimina classe).
+        UniqueConstraint(
+            "tenant_id",
+            "data_posicao",
+            "carteira_cliente_id",
+            name="uq_wh_saldo_tesouraria",
+        ),
         Index("ix_wh_saldo_tesouraria_tenant_data", "tenant_id", "data_posicao"),
         Index(
             "ix_wh_saldo_tesouraria_tenant_carteira",

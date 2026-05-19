@@ -467,7 +467,10 @@ async def sync_outros_fundos(
         tipo_de_mercado="outros-fundos",
         mapper=map_outros_fundos,
         model=PosicaoCotaFundo,
-        conflict_columns=["tenant_id", "source_id"],
+        # Business key — ver uq_wh_posicao_cota_fundo.
+        conflict_columns=[
+            "tenant_id", "data_posicao", "carteira_cliente_id", "ativo_codigo",
+        ],
         tenant_id=tenant_id,
         environment=environment,
         config=config,
@@ -489,7 +492,10 @@ async def sync_conta_corrente(
         tipo_de_mercado="conta-corrente",
         mapper=map_conta_corrente,
         model=SaldoContaCorrente,
-        conflict_columns=["tenant_id", "source_id"],
+        # Business key — ver uq_wh_saldo_conta_corrente.
+        conflict_columns=[
+            "tenant_id", "data_posicao", "carteira_cliente_id", "codigo",
+        ],
         tenant_id=tenant_id,
         environment=environment,
         config=config,
@@ -511,7 +517,8 @@ async def sync_tesouraria(
         tipo_de_mercado="tesouraria",
         mapper=map_tesouraria,
         model=SaldoTesouraria,
-        conflict_columns=["tenant_id", "source_id"],
+        # Business key — ver uq_wh_saldo_tesouraria.
+        conflict_columns=["tenant_id", "data_posicao", "carteira_cliente_id"],
         tenant_id=tenant_id,
         environment=environment,
         config=config,
@@ -533,7 +540,10 @@ async def sync_outros_ativos(
         tipo_de_mercado="outros-ativos",
         mapper=map_outros_ativos,
         model=PosicaoOutrosAtivos,
-        conflict_columns=["tenant_id", "source_id"],
+        # Business key — ver uq_wh_posicao_outros_ativos.
+        conflict_columns=[
+            "tenant_id", "data_posicao", "carteira_cliente_id", "codigo",
+        ],
         tenant_id=tenant_id,
         environment=environment,
         config=config,
@@ -555,6 +565,10 @@ async def sync_demonstrativo_caixa(
         tipo_de_mercado="demonstrativo-caixa",
         mapper=map_demonstrativo_caixa,
         model=MovimentoCaixa,
+        # EXCECAO: wh_movimento_caixa NAO migrou pra business key porque a
+        # QiTech publica lancamentos byte-iguais legitimamente (ex.: 2 resgates
+        # do mesmo fundo no mesmo dia) — 75 colisoes detectadas em REALINVEST.
+        # Mantem (tenant_id, source_id) com sha16(item) ate refactor c/ seq_no.
         conflict_columns=["tenant_id", "source_id"],
         tenant_id=tenant_id,
         environment=environment,
@@ -577,7 +591,11 @@ async def sync_cpr(
         tipo_de_mercado="cpr",
         mapper=map_cpr,
         model=CprMovimento,
-        conflict_columns=["tenant_id", "source_id"],
+        # Business key — ver uq_wh_cpr_movimento.
+        conflict_columns=[
+            "tenant_id", "data_posicao", "carteira_cliente_id",
+            "descricao", "valor",
+        ],
         tenant_id=tenant_id,
         environment=environment,
         config=config,
@@ -599,7 +617,8 @@ async def sync_mec(
         tipo_de_mercado="mec",
         mapper=map_mec,
         model=MecEvolucaoCotas,
-        conflict_columns=["tenant_id", "source_id"],
+        # Business key — ver uq_wh_mec_evolucao_cotas.
+        conflict_columns=["tenant_id", "data_posicao", "carteira_cliente_id"],
         tenant_id=tenant_id,
         environment=environment,
         config=config,
@@ -621,7 +640,10 @@ async def sync_rentabilidade(
         tipo_de_mercado="rentabilidade",
         mapper=map_rentabilidade,
         model=RentabilidadeFundo,
-        conflict_columns=["tenant_id", "source_id"],
+        # Business key — ver uq_wh_rentabilidade_fundo.
+        conflict_columns=[
+            "tenant_id", "data_posicao", "carteira_cliente_id", "indexador",
+        ],
         tenant_id=tenant_id,
         environment=environment,
         config=config,
@@ -643,7 +665,10 @@ async def sync_rf(
         tipo_de_mercado="rf",
         mapper=map_rf,
         model=PosicaoRendaFixa,
-        conflict_columns=["tenant_id", "source_id"],
+        # Business key — ver uq_wh_posicao_renda_fixa.
+        conflict_columns=[
+            "tenant_id", "data_posicao", "carteira_cliente_id", "codigo",
+        ],
         tenant_id=tenant_id,
         environment=environment,
         config=config,
@@ -665,7 +690,10 @@ async def sync_rf_compromissadas(
         tipo_de_mercado="rf-compromissadas",
         mapper=map_rf_compromissadas,
         model=PosicaoCompromissada,
-        conflict_columns=["tenant_id", "source_id"],
+        # Business key — ver uq_wh_posicao_compromissada.
+        conflict_columns=[
+            "tenant_id", "data_posicao", "carteira_cliente_id", "codigo",
+        ],
         tenant_id=tenant_id,
         environment=environment,
         config=config,

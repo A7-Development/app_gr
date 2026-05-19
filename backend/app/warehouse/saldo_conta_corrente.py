@@ -47,8 +47,13 @@ class SaldoContaCorrente(Auditable, Base):
 
     __tablename__ = "wh_saldo_conta_corrente"
     __table_args__ = (
+        # Business key: 1 linha por (carteira, conta) num dia.
         UniqueConstraint(
-            "tenant_id", "source_id", name="uq_wh_saldo_conta_corrente"
+            "tenant_id",
+            "data_posicao",
+            "carteira_cliente_id",
+            "codigo",
+            name="uq_wh_saldo_conta_corrente",
         ),
         Index(
             "ix_wh_saldo_conta_corrente_tenant_data",

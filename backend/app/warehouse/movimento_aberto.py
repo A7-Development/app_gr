@@ -39,8 +39,14 @@ class MovimentoAberto(Auditable, Base):
 
     __tablename__ = "wh_movimento_aberto"
     __table_args__ = (
+        # Business key: 1 linha por recebivel pendente num snapshot (data_referencia).
         UniqueConstraint(
-            "tenant_id", "source_id", name="uq_wh_movimento_aberto"
+            "tenant_id",
+            "data_referencia",
+            "fundo_doc",
+            "seu_numero",
+            "numero_documento",
+            name="uq_wh_movimento_aberto",
         ),
         Index(
             "ix_wh_movimento_aberto_tenant_fundo_ref",

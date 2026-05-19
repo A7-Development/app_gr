@@ -33,7 +33,17 @@ class CprMovimento(Auditable, Base):
 
     __tablename__ = "wh_cpr_movimento"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "source_id", name="uq_wh_cpr_movimento"),
+        # Business key: 1 linha por (carteira, descricao, valor) num dia. Risco
+        # residual aceito: 2 CPRs com mesma (descricao, valor) no mesmo dia
+        # colidem em 1 linha — dupla legitima e rara, documentada em cpr.py.
+        UniqueConstraint(
+            "tenant_id",
+            "data_posicao",
+            "carteira_cliente_id",
+            "descricao",
+            "valor",
+            name="uq_wh_cpr_movimento",
+        ),
         Index("ix_wh_cpr_movimento_tenant_data", "tenant_id", "data_posicao"),
         Index(
             "ix_wh_cpr_movimento_tenant_carteira",

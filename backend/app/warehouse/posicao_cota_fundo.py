@@ -49,8 +49,13 @@ class PosicaoCotaFundo(Auditable, Base):
 
     __tablename__ = "wh_posicao_cota_fundo"
     __table_args__ = (
+        # Business key: 1 linha por (carteira, ativo) num dia.
         UniqueConstraint(
-            "tenant_id", "source_id", name="uq_wh_posicao_cota_fundo"
+            "tenant_id",
+            "data_posicao",
+            "carteira_cliente_id",
+            "ativo_codigo",
+            name="uq_wh_posicao_cota_fundo",
         ),
         # Indice composto canonico para filtros de BI (por tenant + data).
         Index(

@@ -39,8 +39,12 @@ class AquisicaoRecebivel(Auditable, Base):
 
     __tablename__ = "wh_aquisicao_recebivel"
     __table_args__ = (
+        # Business key: id_recebivel e estavel por cessao na QiTech.
         UniqueConstraint(
-            "tenant_id", "source_id", name="uq_wh_aquisicao_recebivel"
+            "tenant_id",
+            "fundo_doc",
+            "id_recebivel",
+            name="uq_wh_aquisicao_recebivel",
         ),
         Index(
             "ix_wh_aquisicao_recebivel_tenant_fundo_data",

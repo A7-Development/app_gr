@@ -59,8 +59,15 @@ class EstoqueRecebivel(Auditable, Base):
 
     __tablename__ = "wh_estoque_recebivel"
     __table_args__ = (
+        # Business key: 1 linha por recebivel (cedente+numeros) num data_referencia.
         UniqueConstraint(
-            "tenant_id", "source_id", name="uq_wh_estoque_recebivel"
+            "tenant_id",
+            "data_referencia",
+            "fundo_doc",
+            "cedente_doc",
+            "seu_numero",
+            "numero_documento",
+            name="uq_wh_estoque_recebivel",
         ),
         Index(
             "ix_wh_estoque_recebivel_tenant_fundo_data",

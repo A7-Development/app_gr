@@ -44,8 +44,20 @@ class ExtratoBancario(Auditable, Base):
 
     __tablename__ = "wh_extrato_bancario"
     __table_args__ = (
+        # Business key: 1 linha por lancamento (data + valor + tipo + descricao
+        # + contrapartida) numa conta. Colisao se 2 lancamentos byte-iguais
+        # aparecerem no mesmo dia — raro, aceito (dupla legitima).
         UniqueConstraint(
-            "tenant_id", "source_id", name="uq_wh_extrato_bancario"
+            "tenant_id",
+            "unidade_administrativa_id",
+            "agencia",
+            "conta",
+            "data_lancamento",
+            "valor",
+            "tipo",
+            "descricao",
+            "contrapartida_doc",
+            name="uq_wh_extrato_bancario",
         ),
         Index(
             "ix_wh_extrato_bancario_tenant_conta_data",

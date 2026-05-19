@@ -35,8 +35,13 @@ class PosicaoRendaFixa(Auditable, Base):
 
     __tablename__ = "wh_posicao_renda_fixa"
     __table_args__ = (
+        # Business key: 1 linha por (carteira, papel) num dia.
         UniqueConstraint(
-            "tenant_id", "source_id", name="uq_wh_posicao_renda_fixa"
+            "tenant_id",
+            "data_posicao",
+            "carteira_cliente_id",
+            "codigo",
+            name="uq_wh_posicao_renda_fixa",
         ),
         Index(
             "ix_wh_posicao_renda_fixa_tenant_data",

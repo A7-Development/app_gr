@@ -35,8 +35,13 @@ class MecEvolucaoCotas(Auditable, Base):
 
     __tablename__ = "wh_mec_evolucao_cotas"
     __table_args__ = (
+        # Business key: 1 linha por classe de cota num dia (clienteId discrimina classe).
+        # source_id continua existindo (proveniencia), mas nao e mais chave de upsert.
         UniqueConstraint(
-            "tenant_id", "source_id", name="uq_wh_mec_evolucao_cotas"
+            "tenant_id",
+            "data_posicao",
+            "carteira_cliente_id",
+            name="uq_wh_mec_evolucao_cotas",
         ),
         Index(
             "ix_wh_mec_evolucao_cotas_tenant_data",

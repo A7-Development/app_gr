@@ -239,6 +239,9 @@ async def _generic_sync(
     data_referencia: date,
     mapper_extra_kwargs: dict[str, Any] | None = None,
     unidade_administrativa_id: UUID | None = None,
+    # Business key do upsert. Default `(tenant_id, source_id)` mantido pra
+    # retrocompat — todo caller novo deve passar a BK explicitamente.
+    conflict_columns: list[str] | None = None,
     # Split raw por dia (endpoints de janela). Quando setado, grava N raws (1
     # por dia em [data_inicial..data_final]) ao inves de 1 raw em data_referencia.
     # Silver continua mapeado a partir do payload completo — split afeta APENAS
@@ -331,7 +334,7 @@ async def _generic_sync(
                     db,
                     model,
                     canonical_rows,
-                    ["tenant_id", "source_id"],
+                    conflict_columns or ["tenant_id", "source_id"],
                     unidade_administrativa_id=unidade_administrativa_id,
                 )
                 await db.commit()
@@ -378,6 +381,8 @@ async def sync_aquisicao_consolidada(
         cnpj_fundo=cnpj,
         data_referencia=data_final,
         unidade_administrativa_id=unidade_administrativa_id,
+        # Business key — ver uq_wh_aquisicao_recebivel.
+        conflict_columns=["tenant_id", "fundo_doc", "id_recebivel"],
         split_window=(data_inicial, data_final),
         split_items_field="aquisicaoConsolidada",
         split_item_date_field="dataDaPosicao",
@@ -416,6 +421,8 @@ async def sync_liquidados_baixados(
         cnpj_fundo=cnpj,
         data_referencia=data_final,
         unidade_administrativa_id=unidade_administrativa_id,
+        # Business key — ver uq_wh_liquidacao_recebivel.
+        conflict_columns=["tenant_id", "fundo_doc", "id_recebivel"],
         split_window=(data_inicial, data_final),
         split_items_field="liquidadosBaixados",
         split_item_date_field="dataDaPosicao",
@@ -452,6 +459,8 @@ async def sync_detalhes_operacoes(
         cnpj_fundo=cnpj,
         data_referencia=data_importacao,
         unidade_administrativa_id=unidade_administrativa_id,
+        # Business key — ver uq_wh_operacao_remessa.
+        conflict_columns=["tenant_id", "fundo_doc", "id_operacao_recebivel"],
     )
 
 
@@ -492,6 +501,11 @@ async def sync_movimento_aberto(
         data_referencia=data_referencia,
         mapper_extra_kwargs={"data_referencia": data_referencia},
         unidade_administrativa_id=unidade_administrativa_id,
+        # Business key — ver uq_wh_movimento_aberto.
+        conflict_columns=[
+            "tenant_id", "data_referencia", "fundo_doc",
+            "seu_numero", "numero_documento",
+        ],
     )
 
 

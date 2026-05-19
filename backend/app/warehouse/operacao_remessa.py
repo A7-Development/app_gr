@@ -40,8 +40,12 @@ class OperacaoRemessa(Auditable, Base):
 
     __tablename__ = "wh_operacao_remessa"
     __table_args__ = (
+        # Business key: id_operacao_recebivel e estavel por lote/arquivo.
         UniqueConstraint(
-            "tenant_id", "source_id", name="uq_wh_operacao_remessa"
+            "tenant_id",
+            "fundo_doc",
+            "id_operacao_recebivel",
+            name="uq_wh_operacao_remessa",
         ),
         Index(
             "ix_wh_operacao_remessa_tenant_fundo_data",

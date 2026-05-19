@@ -31,8 +31,13 @@ class PosicaoOutrosAtivos(Auditable, Base):
 
     __tablename__ = "wh_posicao_outros_ativos"
     __table_args__ = (
+        # Business key: 1 linha por (carteira, codigo) num dia.
         UniqueConstraint(
-            "tenant_id", "source_id", name="uq_wh_posicao_outros_ativos"
+            "tenant_id",
+            "data_posicao",
+            "carteira_cliente_id",
+            "codigo",
+            name="uq_wh_posicao_outros_ativos",
         ),
         Index(
             "ix_wh_posicao_outros_ativos_tenant_data",

@@ -35,8 +35,13 @@ class RentabilidadeFundo(Auditable, Base):
 
     __tablename__ = "wh_rentabilidade_fundo"
     __table_args__ = (
+        # Business key: 1 linha por (carteira, indexador) num dia.
         UniqueConstraint(
-            "tenant_id", "source_id", name="uq_wh_rentabilidade_fundo"
+            "tenant_id",
+            "data_posicao",
+            "carteira_cliente_id",
+            "indexador",
+            name="uq_wh_rentabilidade_fundo",
         ),
         Index(
             "ix_wh_rentabilidade_fundo_tenant_data",
