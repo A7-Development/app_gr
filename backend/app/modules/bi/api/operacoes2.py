@@ -11,6 +11,7 @@ Convivem com o router legado `operacoes.py` (rota `/bi/operacoes/*`) — a
 nova UX vive em rota separada para nao quebrar a pagina existente.
 """
 
+from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -24,8 +25,11 @@ from app.modules.bi.api.deps import bi_filters
 from app.modules.bi.schemas.common import BIFilters, BIResponse
 from app.modules.bi.schemas.operacoes2 import (
     AbaMesCorrenteData,
+    AbaMesCorrenteV3Data,
     AbaProdutosPricingData,
     AbaVolumeRitmoData,
+    CedentesMtdData,
+    OperacoesDoDiaData,
     OperacoesKpiStripData,
     VopPotencialData,
 )
@@ -146,3 +150,81 @@ async def aba1_mes_corrente(
         db, principal.tenant_id, _filter_dict(filters), dimension
     )
     return BIResponse(data=data, provenance=prov)
+
+
+@router.get("/aba3-mes-corrente", response_model=BIResponse[AbaMesCorrenteV3Data])
+async def aba3_mes_corrente(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    filters: Annotated[BIFilters, Depends(bi_filters)],
+    dimension: Annotated[
+        Literal["produto", "ua", "faixa_ticket"],
+        Query(description="Dimensao da decomposicao do VOP Waterfall no hero L2"),
+    ] = "produto",
+    _: None = _Guard,
+) -> BIResponse[AbaMesCorrenteV3Data]:
+    """Aba '/bi/operacoes3' — Mes Corrente v3 (socio-diretor view).
+
+    Bundle reorientado para responder "como ta o mes, onde estou ganhando/
+    perdendo?" em uma piscadela:
+
+    - **Termometro**: 5 KPIs (VOP, Receita, Taxa, Prazo, Potencial) com dupla
+      comparacao (VOP-DU paridade DU + MOM normalizado por DU). Potencial
+      e absoluto (sem delta).
+    - **VOP do mes (hero)**: serie diaria do mes (consolidada + quebra por
+      UA pra modo stacked) + variance bridge canonico decomposto por
+      `dimension` (produto/ua/faixa_ticket).
+    - **Decomposicao avancada**: receita/taxa/prazo/mix/concentracao
+      reusados da v1 (frontend renderiza collapsible fechada por default).
+    """
+    data, prov = await svc.get_aba3_mes_corrente(
+        db, principal.tenant_id, _filter_dict(filters), dimension
+    )
+    return BIResponse(data=data, provenance=prov)
+
+
+@router.get("/operacoes-do-dia", response_model=BIResponse[OperacoesDoDiaData])
+async def operacoes_do_dia(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    filters: Annotated[BIFilters, Depends(bi_filters)],
+    data: Annotated[
+        date,
+        Query(description="Dia ISO YYYY-MM-DD — clique numa barra do VOP Diario"),
+    ],
+    _: None = _Guard,
+) -> BIResponse[OperacoesDoDiaData]:
+    """Drill 'operacoes do dia X' — conteudo do DrillDownSheet.
+
+    Lista operacoes efetivadas em `data`, KPIs agregados do dia e quebra
+    por produto/UA. Aplica todos os filtros globais (`_apply_filters` §7.2)
+    + tenant scope.
+    """
+    bundle, prov = await svc.get_operacoes_do_dia(
+        db, principal.tenant_id, _filter_dict(filters), data
+    )
+    return BIResponse(data=bundle, provenance=prov)
+
+
+@router.get("/cedentes-mtd", response_model=BIResponse[CedentesMtdData])
+async def cedentes_mtd(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    filters: Annotated[BIFilters, Depends(bi_filters)],
+    _: None = _Guard,
+) -> BIResponse[CedentesMtdData]:
+    """Tabela narrativa de cedentes MTD — alimenta L3 de /bi/operacoes3.
+
+    Cada linha = 1 cedente com:
+      - volume_mtd, delta_vs_mes_ant_pct (same-DU)
+      - status: novo | recorrente | sumido
+      - n_op, dias_mtd, taxa_media (ponderada)
+      - primeira_op + ultima_op (historicas)
+
+    Sumidos = cedentes do mes anterior MTD ausentes do MTD corrente
+    (volume_mtd=None, delta=-100%). Aplica filtros globais (`_apply_filters`).
+    """
+    bundle, prov = await svc.get_cedentes_mtd(
+        db, principal.tenant_id, _filter_dict(filters)
+    )
+    return BIResponse(data=bundle, provenance=prov)

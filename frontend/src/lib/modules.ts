@@ -123,6 +123,7 @@ export const MODULES: ModuleDefinition[] = [
     basePath: "/bi",
     sections: [
       { name: "Operacoes", href: "/bi/operacoes2", enabled: true, icon: RiDashboard3Line, groupLabel: "Visao geral" },
+      { name: "Mês corrente (novo)", href: "/bi/operacoes3", enabled: true, icon: RiDashboard3Line, groupLabel: "Visao geral" },
       { name: "Pagina padrao", href: "/bi/padrao", enabled: true, icon: RiBookOpenLine, groupLabel: "Templates" },
       { name: "Carteira", href: "/bi/carteira", enabled: false, icon: RiWallet3Line, groupLabel: "Operacao" },
       { name: "Comportamento", href: "/bi/comportamento", enabled: false, icon: RiUserStarLine, groupLabel: "Operacao" },

@@ -35,9 +35,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.bi.schemas.common import Point, Provenance
 from app.modules.bi.schemas.operacoes2 import (
     AbaMesCorrenteData,
+    AbaMesCorrenteV3Data,
     AbaProdutosPricingData,
     AbaVolumeRitmoData,
     AcumuladoDiarioPonto,
+    CedenteMtdItem,
+    CedentesMtdData,
     ConcentracaoDeltaData,
     ConcentracaoMovement,
     DriverContribution,
@@ -52,19 +55,28 @@ from app.modules.bi.schemas.operacoes2 import (
     KpiCellProduto,
     KpiSecundario,
     KpisSecundariosVolume,
+    MesCorrenteKpiCell,
+    MesCorrentePotencialCell,
+    MesCorrenteTermometro,
     MesDestaque,
     MixTemporalProdutoPonto,
+    OperacaoDoDiaItem,
+    OperacoesDoDiaData,
     OperacoesKpiStripData,
     PaceDiario,
     ProdutoDestaque,
     ProjectionBridgeData,
     PvmBridgeData,
+    QuebraDiaPorDimensao,
     QuebraDimensaoLinha,
     RankingProdutoLinha,
     RitmoMesCorrente,
     RitmoUaItem,
     ScatterProdutoPonto,
     VarianceBridgeData,
+    VopDiarioPonto,
+    VopDiarioPorUaPonto,
+    VopMtdPorUa,
     VopPotencialData,
     VopPotencialPorUa,
 )
@@ -88,8 +100,9 @@ from app.modules.bi.services.operacoes import (
 from app.warehouse.caixa_snapshot import CaixaSnapshot
 from app.warehouse.dim import DimUnidadeAdministrativa
 from app.warehouse.dim_dia_util import DimDiaUtil
-from app.warehouse.operacao import Operacao
+from app.warehouse.operacao import Operacao, OperacaoItem
 from app.warehouse.titulo import Titulo
+from app.warehouse.titulo_snapshot import TituloSnapshot
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Helpers especificos do operacoes2
@@ -1213,6 +1226,346 @@ async def _acumulado_dia_a_dia(
             AcumuladoDiarioPonto(du_index=i, corrente=acum_corr, anterior=acum_prev)
         )
     return out
+
+
+async def _vop_diario_mes_corrente(
+    db: AsyncSession,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+    mes_inicio: date,
+    mes_fim: date,
+    hoje: date,
+) -> list[VopDiarioPonto]:
+    """Serie diaria de VOP do mes corrente — TODOS os dias do calendario.
+
+    Cobre dia 1 ate o ultimo dia do mes, inclusive sabados, domingos e
+    feriados. Dias futuros (`d > hoje`) vem com `vop=None` para que o
+    frontend renderize o eixo X completo (placeholder de prazo restante)
+    sem desenhar barra.
+
+    `eh_dia_util` vem de `wh_dim_dia_util` quando disponivel; fallback para
+    "seg-sex" (weekday < 5) em degraded mode (tabela vazia).
+
+    Aplica os filtros globais da pagina via `_apply_filters` (§7.2): a
+    janela temporal local sobrescreve `periodo_inicio`/`periodo_fim` dos
+    filtros do usuario, mas `produto_sigla`/`ua_id` continuam vigentes.
+    """
+    op_data = cast(Operacao.data_de_efetivacao, Date)
+
+    # 1) VOP agregado por dia-calendario (so dias com pelo menos 1 op).
+    diario_filters = {**filters, "periodo_inicio": mes_inicio, "periodo_fim": mes_fim}
+    diario_stmt = _apply_filters(
+        select(
+            op_data.label("dia"),
+            func.coalesce(func.sum(Operacao.total_bruto), 0).label("vop"),
+        )
+        .group_by(op_data)
+        .order_by(op_data),
+        tenant_id=tenant_id,
+        **diario_filters,
+    )
+    diario_rows = (await db.execute(diario_stmt)).all()
+    vop_by_day: dict[date, float] = {r.dia: _as_float(r.vop) for r in diario_rows}
+
+    # 2) eh_dia_util por dia (tenant calendar) — tolerante a tabela vazia.
+    du_stmt = select(DimDiaUtil.data, DimDiaUtil.eh_dia_util).where(
+        and_(
+            DimDiaUtil.tenant_id == tenant_id,
+            DimDiaUtil.data >= mes_inicio,
+            DimDiaUtil.data <= mes_fim,
+        )
+    )
+    du_rows = (await db.execute(du_stmt)).all()
+    dia_util_by_day: dict[date, bool] = {r.data: bool(r.eh_dia_util) for r in du_rows}
+
+    # 3) Materializa serie densa de TODOS os dias do mes.
+    out: list[VopDiarioPonto] = []
+    d = mes_inicio
+    while d <= mes_fim:
+        eh_futuro = d > hoje
+        vop = None if eh_futuro else vop_by_day.get(d, 0.0)
+        eh_util = dia_util_by_day.get(d, d.weekday() < 5)
+        out.append(VopDiarioPonto(data=d, vop=vop, eh_dia_util=eh_util, eh_futuro=eh_futuro))
+        d += timedelta(days=1)
+    return out
+
+
+async def _vop_diario_por_ua_mes_corrente(
+    db: AsyncSession,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+    mes_inicio: date,
+    mes_fim: date,
+    hoje: date,
+) -> list[VopDiarioPorUaPonto]:
+    """VOP por (dia, UA) do mes corrente — alimenta modo 'Por UA' do hero.
+
+    Cobre todos os dias do calendario do mes (mesmo regime do
+    `_vop_diario_mes_corrente`), porem quebrado por UA. Apenas UAs com
+    pelo menos 1 operacao no mes aparecem na serie — UA sem op nao gera
+    linhas (frontend nao precisaria empilhar zeros).
+
+    Aplica filtros globais via `_apply_filters` (§7.2). Mesma janela e
+    semantica do `_vop_diario_mes_corrente` para futuro/dia_util.
+    """
+    op_data = cast(Operacao.data_de_efetivacao, Date)
+
+    # 1) VOP agregado por (dia, UA)
+    diario_filters = {**filters, "periodo_inicio": mes_inicio, "periodo_fim": mes_fim}
+    stmt = _apply_filters(
+        select(
+            op_data.label("dia"),
+            Operacao.unidade_administrativa_id.label("ua_id"),
+            func.coalesce(func.sum(Operacao.total_bruto), 0).label("vop"),
+        )
+        .where(Operacao.unidade_administrativa_id.is_not(None))
+        .group_by(op_data, Operacao.unidade_administrativa_id)
+        .order_by(op_data),
+        tenant_id=tenant_id,
+        **diario_filters,
+    )
+    rows = (await db.execute(stmt)).all()
+    # Index: (dia, ua_id) -> vop
+    vop_by_day_ua: dict[tuple[date, int], float] = {
+        (r.dia, int(r.ua_id)): _as_float(r.vop) for r in rows
+    }
+    uas_no_mes: set[int] = {int(r.ua_id) for r in rows}
+
+    # 2) Nomes das UAs (lookup tabela DIM)
+    ua_nomes = await _ua_id_to_nome_map(db, tenant_id)
+
+    # 3) eh_dia_util por dia
+    du_stmt = select(DimDiaUtil.data, DimDiaUtil.eh_dia_util).where(
+        and_(
+            DimDiaUtil.tenant_id == tenant_id,
+            DimDiaUtil.data >= mes_inicio,
+            DimDiaUtil.data <= mes_fim,
+        )
+    )
+    du_rows = (await db.execute(du_stmt)).all()
+    dia_util_by_day: dict[date, bool] = {r.data: bool(r.eh_dia_util) for r in du_rows}
+
+    # 4) Materializa serie densa: para cada (dia, UA presente no mes), 1 ponto.
+    out: list[VopDiarioPorUaPonto] = []
+    uas_sorted = sorted(uas_no_mes)
+    d = mes_inicio
+    while d <= mes_fim:
+        eh_futuro = d > hoje
+        eh_util = dia_util_by_day.get(d, d.weekday() < 5)
+        for ua_id in uas_sorted:
+            vop = None if eh_futuro else vop_by_day_ua.get((d, ua_id), 0.0)
+            out.append(
+                VopDiarioPorUaPonto(
+                    data=d,
+                    ua_id=ua_id,
+                    ua_nome=ua_nomes.get(ua_id, f"UA {ua_id}"),
+                    vop=vop,
+                    eh_dia_util=eh_util,
+                    eh_futuro=eh_futuro,
+                )
+            )
+        d += timedelta(days=1)
+    return out
+
+
+async def _vop_mtd_por_ua(
+    db: AsyncSession,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+    mes_inicio: date,
+    hoje: date,
+    mes_ant_par_inicio: date,
+    mes_ant_par_fim: date,
+) -> list[VopMtdPorUa]:
+    """VOP MTD + Δ VOP-DU por UA — alimenta header KPI quando o usuario
+    seleciona uma UA especifica no card VOP Diario.
+
+    Aplica filtros globais (`_apply_filters` §7.2). 2 queries: MTD corrente
+    e MTD same-DU mes anterior. So UAs com VOP MTD > 0 no mes corrente
+    aparecem (UAs sem op no MTD nao tem header KPI relevante).
+    """
+    # MTD corrente por UA
+    corr_filters = {**filters, "periodo_inicio": mes_inicio, "periodo_fim": hoje}
+    corr_stmt = _apply_filters(
+        select(
+            Operacao.unidade_administrativa_id.label("ua_id"),
+            func.coalesce(func.sum(Operacao.total_bruto), 0).label("vop"),
+        )
+        .where(Operacao.unidade_administrativa_id.is_not(None))
+        .group_by(Operacao.unidade_administrativa_id),
+        tenant_id=tenant_id,
+        **corr_filters,
+    )
+    corr_rows = (await db.execute(corr_stmt)).all()
+    mtd_por_ua: dict[int, float] = {int(r.ua_id): _as_float(r.vop) for r in corr_rows}
+
+    # MTD same-DU mes anterior por UA (apples-to-apples)
+    ant_filters = {
+        **filters,
+        "periodo_inicio": mes_ant_par_inicio,
+        "periodo_fim": mes_ant_par_fim,
+    }
+    ant_stmt = _apply_filters(
+        select(
+            Operacao.unidade_administrativa_id.label("ua_id"),
+            func.coalesce(func.sum(Operacao.total_bruto), 0).label("vop"),
+        )
+        .where(Operacao.unidade_administrativa_id.is_not(None))
+        .group_by(Operacao.unidade_administrativa_id),
+        tenant_id=tenant_id,
+        **ant_filters,
+    )
+    ant_rows = (await db.execute(ant_stmt)).all()
+    ant_por_ua: dict[int, float] = {int(r.ua_id): _as_float(r.vop) for r in ant_rows}
+
+    # Resolve nomes
+    ua_nomes = await _ua_id_to_nome_map(db, tenant_id)
+
+    out: list[VopMtdPorUa] = []
+    for ua_id, valor_mtd in mtd_por_ua.items():
+        valor_ant = ant_por_ua.get(ua_id, 0.0)
+        if valor_ant > 0:
+            delta_pct = ((valor_mtd / valor_ant) - 1.0) * 100.0
+        else:
+            delta_pct = None
+        out.append(
+            VopMtdPorUa(
+                ua_id=ua_id,
+                ua_nome=ua_nomes.get(ua_id, f"UA {ua_id}"),
+                valor_mtd=valor_mtd,
+                delta_vop_du_pct=delta_pct,
+            )
+        )
+    # Ordena por valor MTD desc (maior UA primeiro).
+    out.sort(key=lambda u: u.valor_mtd, reverse=True)
+    return out
+
+
+async def _du_total_mes_de(
+    db: AsyncSession, tenant_id: UUID, dia_no_mes: date
+) -> int:
+    """DUs totais do mes ao qual `dia_no_mes` pertence (via dim_dia_util).
+
+    Retorna 0 quando o calendario nao cobre o mes (degraded mode).
+    """
+    stmt = (
+        select(DimDiaUtil.total_dias_uteis_no_mes)
+        .where(
+            and_(
+                DimDiaUtil.tenant_id == tenant_id,
+                DimDiaUtil.data == dia_no_mes,
+            )
+        )
+        .limit(1)
+    )
+    row = (await db.execute(stmt)).scalar_one_or_none()
+    return int(row) if row is not None else 0
+
+
+async def _calcular_termometro_cells(
+    db: AsyncSession,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+    today: date,
+    du_decorridos: int,
+    du_disponivel: bool,
+) -> tuple[
+    MesCorrenteKpiCell, MesCorrenteKpiCell, MesCorrenteKpiCell, MesCorrenteKpiCell
+]:
+    """Calcula os 4 cells absolutos/medios do termometro (VOP, Receita, Taxa, Prazo).
+
+    Cada cell carrega:
+      - valor: agregado MTD do mes corrente
+      - delta_vop_du_pct: MTD corrente vs MTD mes anterior nos mesmos N DUs
+      - delta_mom_pct: ritmo (pace/DU) corrente vs ritmo mes anterior fechado
+                      (somente VOP/Receita; Taxa/Prazo comparam medias diretas)
+
+    Aplica filtros globais via `_apply_filters` em todas as queries (§7.2).
+    Potencial e calculado separadamente reusando `_calc_vop_potencial`.
+    """
+    mes_inicio = today.replace(day=1)
+    mes_label = f"{_MES_PT[today.month - 1]}/{today.year % 100:02d}"
+
+    # 1. MTD do mes corrente
+    mtd_filters = {**filters, "periodo_inicio": mes_inicio, "periodo_fim": today}
+    agg_mtd = await _agg_kpi(db, tenant_id, mtd_filters)
+
+    # 2. Mes anterior — paridade DU (apples-to-apples). Degraded => MTD same-day.
+    if du_disponivel and du_decorridos > 0:
+        mes_ant_par_inicio, mes_ant_par_fim = await _mes_anterior_paridade_du(
+            db, tenant_id, today, du_decorridos
+        )
+    else:
+        mes_ant_par_inicio, mes_ant_par_fim = _mes_anterior_window(today)
+    ant_par_filters = {
+        **filters,
+        "periodo_inicio": mes_ant_par_inicio,
+        "periodo_fim": mes_ant_par_fim,
+    }
+    agg_ant_par = await _agg_kpi(db, tenant_id, ant_par_filters)
+
+    # 3. Mes anterior fechado (completo)
+    last_day_prev = mes_inicio - timedelta(days=1)
+    mes_ant_fechado_inicio = last_day_prev.replace(day=1)
+    ant_fech_filters = {
+        **filters,
+        "periodo_inicio": mes_ant_fechado_inicio,
+        "periodo_fim": last_day_prev,
+    }
+    agg_ant_fech = await _agg_kpi(db, tenant_id, ant_fech_filters)
+
+    # 4. DUs totais do mes anterior fechado (pra pace MoM)
+    du_total_ant = (
+        await _du_total_mes_de(db, tenant_id, last_day_prev) if du_disponivel else 0
+    )
+
+    def _delta_pct(curr: float, base: float) -> float | None:
+        if not base:
+            return None
+        return ((curr / base) - 1.0) * 100.0
+
+    def _build_abs(
+        mtd_val: float, ant_par: float, ant_fech: float, unidade: str
+    ) -> MesCorrenteKpiCell:
+        delta_vop_du = _delta_pct(mtd_val, ant_par) if du_decorridos > 0 else None
+        if du_decorridos > 0 and du_total_ant > 0 and ant_fech > 0:
+            pace_mtd = mtd_val / du_decorridos
+            pace_ant = ant_fech / du_total_ant
+            delta_mom = _delta_pct(pace_mtd, pace_ant)
+        else:
+            delta_mom = None
+        return MesCorrenteKpiCell(
+            valor=mtd_val,
+            delta_vop_du_pct=delta_vop_du,
+            delta_mom_pct=delta_mom,
+            unidade=unidade,
+            mes_label=mes_label,
+        )
+
+    def _build_media(
+        mtd_val: float, ant_par: float, ant_fech: float, unidade: str
+    ) -> MesCorrenteKpiCell:
+        # Para medias ponderadas (Taxa, Prazo): comparacao direta media-vs-media
+        # em ambos os deltas. Sem normalizacao por DU.
+        return MesCorrenteKpiCell(
+            valor=mtd_val,
+            delta_vop_du_pct=_delta_pct(mtd_val, ant_par),
+            delta_mom_pct=_delta_pct(mtd_val, ant_fech),
+            unidade=unidade,
+            mes_label=mes_label,
+        )
+
+    vop_cell = _build_abs(agg_mtd["vop"], agg_ant_par["vop"], agg_ant_fech["vop"], "BRL")
+    receita_cell = _build_abs(
+        agg_mtd["receita"], agg_ant_par["receita"], agg_ant_fech["receita"], "BRL"
+    )
+    taxa_cell = _build_media(
+        agg_mtd["taxa"], agg_ant_par["taxa"], agg_ant_fech["taxa"], "%"
+    )
+    prazo_cell = _build_media(
+        agg_mtd["prazo"], agg_ant_par["prazo"], agg_ant_fech["prazo"], "dias"
+    )
+    return vop_cell, receita_cell, taxa_cell, prazo_cell
 
 
 async def _calc_ritmo_por_ua(
@@ -2592,6 +2945,13 @@ async def get_aba1_mes_corrente(
         mes_anterior_label=mes_anterior_label,
     )
 
+    # 14. Serie diaria de VOP do mes corrente (alimenta card "VOP Diario").
+    last_day = monthrange(today.year, today.month)[1]
+    mes_fim_corrente = date(today.year, today.month, last_day)
+    vop_diario = await _vop_diario_mes_corrente(
+        db, tenant_id, filters, mes_inicio, mes_fim_corrente, today
+    )
+
     data = AbaMesCorrenteData(
         narrative_sentence=narrative,
         comparacao_label_pt=comparacao_label,
@@ -2606,6 +2966,7 @@ async def get_aba1_mes_corrente(
         prazo=prazo_data,
         mix=mix_data,
         concentracao=concentracao_data,
+        vop_diario=vop_diario,
         dimension_active=dimension,
     )
     prov = await _build_provenance(db, tenant_id, filters)
@@ -2849,5 +3210,574 @@ async def get_vop_potencial(
     )
     # Provenance ancorado em wh_operacao (proveniencia agregada multi-fonte
     # fica como follow-up; hoje usamos a do bitfin_adapter geral).
+    prov = await _build_provenance(db, tenant_id, filters)
+    return data, prov
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Aba "Mes Corrente v3" — pagina /bi/operacoes3 (socio-diretor view)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+async def get_aba3_mes_corrente(
+    db: AsyncSession,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+    dimension: str = "produto",
+) -> tuple[AbaMesCorrenteV3Data, Provenance]:
+    """Bundle da aba /bi/operacoes3 — Mes Corrente v3.
+
+    Reusa `get_aba1_mes_corrente` (toda a decomposicao avancada — vop/receita/
+    taxa/prazo/mix/concentracao + vop_diario) e adiciona:
+      - termometro: 5 KPIs com dupla comparacao (VOP-DU + MOM-norm-DU)
+      - Potencial: reusa `get_vop_potencial` consolidado
+      - vop_diario_por_ua: serie diaria quebrada por UA (alimenta modo
+        "Por UA" do hero L2 — stacked bar)
+
+    `dimension` controla a decomposicao do VOP Waterfall (produto/ua/
+    faixa_ticket) — alimenta o SegmentSwitch local do card no hero.
+    """
+    today = filters.get("periodo_fim") or date.today()
+
+    # 1. Reuso da decomposicao v1 (vop, receita, taxa, prazo, mix, concentracao,
+    #    vop_diario, du metadata). Dimensao propaga para o waterfall.
+    v1_data, prov = await get_aba1_mes_corrente(
+        db, tenant_id, filters, dimension=dimension
+    )
+
+    # 1b. VOP diario por UA — serie do filtro de UA do hero L2.
+    mes_inicio = today.replace(day=1)
+    last_day = monthrange(today.year, today.month)[1]
+    mes_fim_corrente = date(today.year, today.month, last_day)
+    vop_diario_por_ua = await _vop_diario_por_ua_mes_corrente(
+        db, tenant_id, filters, mes_inicio, mes_fim_corrente, today
+    )
+
+    # 1c. VOP MTD + Δ VOP-DU por UA — alimenta header KPI quando uma UA
+    # especifica e selecionada no card VOP Diario.
+    if v1_data.du_disponivel and v1_data.du_decorridos > 0:
+        mes_ant_par_inicio, mes_ant_par_fim = await _mes_anterior_paridade_du(
+            db, tenant_id, today, v1_data.du_decorridos
+        )
+    else:
+        mes_ant_par_inicio, mes_ant_par_fim = _mes_anterior_window(today)
+    vop_mtd_por_ua = await _vop_mtd_por_ua(
+        db,
+        tenant_id,
+        filters,
+        mes_inicio,
+        today,
+        mes_ant_par_inicio,
+        mes_ant_par_fim,
+    )
+
+    # 2. Termometro: 4 cells absolutos/medios.
+    vop_cell, receita_cell, taxa_cell, prazo_cell = await _calcular_termometro_cells(
+        db,
+        tenant_id,
+        filters,
+        today,
+        v1_data.du_decorridos,
+        v1_data.du_disponivel,
+    )
+
+    # 3. Potencial: reusa get_vop_potencial (consolidado).
+    pot_data, _ = await get_vop_potencial(db, tenant_id, filters)
+    mes_label = f"{_MES_PT[today.month - 1]}/{today.year % 100:02d}"
+    potencial_cell = MesCorrentePotencialCell(
+        valor=pot_data.vop_potencial,
+        realizado=pot_data.vop_realizado_mtd,
+        caixa=pot_data.caixa_disponivel,
+        a_liquidar=pot_data.liquidacoes_previstas,
+        mes_label=mes_label,
+    )
+
+    termometro = MesCorrenteTermometro(
+        vop=vop_cell,
+        receita=receita_cell,
+        taxa=taxa_cell,
+        prazo=prazo_cell,
+        potencial=potencial_cell,
+    )
+
+    data = AbaMesCorrenteV3Data(
+        termometro=termometro,
+        comparacao_label_pt=v1_data.comparacao_label_pt,
+        du_decorridos=v1_data.du_decorridos,
+        du_totais_mes=v1_data.du_totais_mes,
+        du_disponivel=v1_data.du_disponivel,
+        vop_diario=v1_data.vop_diario,
+        vop_diario_por_ua=vop_diario_por_ua,
+        vop_mtd_por_ua=vop_mtd_por_ua,
+        vop=v1_data.vop,
+        vop_projecao=v1_data.vop_projecao,
+        receita=v1_data.receita,
+        receita_projecao=v1_data.receita_projecao,
+        taxa=v1_data.taxa,
+        prazo=v1_data.prazo,
+        mix=v1_data.mix,
+        concentracao=v1_data.concentracao,
+    )
+    return data, prov
+
+
+async def get_operacoes_do_dia(
+    db: AsyncSession,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+    dia: date,
+) -> tuple[OperacoesDoDiaData, Provenance]:
+    """Drill 'operacoes do dia X' — conteudo do DrillDownSheet.
+
+    Lista todas as operacoes efetivadas em `dia` (com filtros globais
+    aplicados via `_apply_filters` §7.2), KPIs do dia e quebra por
+    produto/UA.
+
+    Cedente: `wh_operacao.cedente_nome` esta NULL no warehouse atual (etl
+    nao popula). Buscamos via join `wh_operacao_item` x `wh_titulo_snapshot`
+    (titulo_id -> snapshot_id). Uma op pode ter N titulos -> N cedentes; o
+    `cedente_principal` (ordenado por nome) e exibido + sufixo "+N" quando
+    a op tem >1 cedente distinto. Sem custo extra pro caller — feito em 2
+    queries em sequencia (a listagem + 1 lookup agregado por op_ids).
+    """
+    op_data = cast(Operacao.data_de_efetivacao, Date)
+    day_filters = {**filters, "periodo_inicio": dia, "periodo_fim": dia}
+
+    # 1. Lista de operacoes do dia.
+    stmt = _apply_filters(
+        select(
+            Operacao.id.label("op_id"),
+            # operacao_id (integer, chave de negocio) — necessario para o
+            # lookup de cedentes via wh_operacao_item.operacao_id.
+            Operacao.operacao_id.label("op_id_business"),
+            Operacao.data_de_efetivacao,
+            Operacao.unidade_administrativa_id.label("ua_id"),
+            _produto_expr().label("produto_sigla"),
+            Operacao.total_bruto,
+            Operacao.taxa_de_juros,
+            Operacao.prazo_medio_real,
+        )
+        .where(op_data == dia)
+        .order_by(Operacao.total_bruto.desc()),
+        tenant_id=tenant_id,
+        **day_filters,
+    )
+    rows = (await db.execute(stmt)).all()
+
+    # 1b. Lookup de cedentes por (operacao_id) — via op_item x titulo_snapshot.
+    # Uma op tem N titulos -> N cedentes potenciais. Agregamos por op_id:
+    # menor nome alfabetico como "principal" + count distinct para sufixo "+N".
+    op_id_business_list = [
+        int(r.op_id_business) for r in rows if r.op_id_business is not None
+    ]
+    cedente_por_op: dict[int, tuple[str, int]] = {}
+    if op_id_business_list:
+        ced_stmt = (
+            select(
+                OperacaoItem.operacao_id.label("op_id"),
+                func.min(TituloSnapshot.cedente_nome).label("cedente_principal"),
+                func.count(func.distinct(TituloSnapshot.cedente_nome)).label("n_cedentes"),
+            )
+            .select_from(OperacaoItem)
+            .join(
+                TituloSnapshot,
+                and_(
+                    TituloSnapshot.tenant_id == OperacaoItem.tenant_id,
+                    TituloSnapshot.snapshot_id == OperacaoItem.titulo_id,
+                ),
+            )
+            .where(
+                and_(
+                    OperacaoItem.tenant_id == tenant_id,
+                    OperacaoItem.operacao_id.in_(op_id_business_list),
+                    TituloSnapshot.cedente_nome.is_not(None),
+                )
+            )
+            .group_by(OperacaoItem.operacao_id)
+        )
+        ced_rows = (await db.execute(ced_stmt)).all()
+        cedente_por_op = {
+            int(r.op_id): (r.cedente_principal, int(r.n_cedentes)) for r in ced_rows
+        }
+
+    # 2. Resolvers para nomes (UA, produto)
+    ua_nomes_map = await _ua_id_to_nome_map(db, tenant_id)
+    produto_nomes_map = await _produto_sigla_to_nome_map(db, tenant_id)
+
+    operacoes: list[OperacaoDoDiaItem] = []
+    vop_total = 0.0
+    por_produto: dict[str, float] = {}
+    por_ua: dict[int, float] = {}
+
+    for r in rows:
+        valor = _as_float(r.total_bruto)
+        vop_total += valor
+        sigla = r.produto_sigla
+        if sigla:
+            por_produto[sigla] = por_produto.get(sigla, 0.0) + valor
+        if r.ua_id is not None:
+            por_ua[r.ua_id] = por_ua.get(r.ua_id, 0.0) + valor
+        # Resolve cedente: principal + sufixo "+N" quando op tem >1 cedente.
+        cedente_info = (
+            cedente_por_op.get(int(r.op_id_business))
+            if r.op_id_business is not None
+            else None
+        )
+        if cedente_info is not None:
+            principal, n_ced = cedente_info
+            cedente_display = principal if n_ced <= 1 else f"{principal} +{n_ced - 1}"
+        else:
+            cedente_display = None
+
+        operacoes.append(
+            OperacaoDoDiaItem(
+                operacao_id=str(r.op_id),
+                data_de_efetivacao=r.data_de_efetivacao.date()
+                if hasattr(r.data_de_efetivacao, "date")
+                else r.data_de_efetivacao,
+                cedente=cedente_display,
+                produto_sigla=sigla,
+                produto_nome=produto_nomes_map.get(sigla) if sigla else None,
+                ua_id=r.ua_id,
+                ua_nome=ua_nomes_map.get(r.ua_id) if r.ua_id is not None else None,
+                valor_bruto=valor,
+                taxa=_as_float(r.taxa_de_juros) if r.taxa_de_juros is not None else None,
+                prazo_medio=_as_float(r.prazo_medio_real)
+                if r.prazo_medio_real is not None
+                else None,
+            )
+        )
+
+    # 3. KPIs do dia (medias ponderadas por valor)
+    n_ops = len(operacoes)
+    ticket_medio = vop_total / n_ops if n_ops > 0 else 0.0
+    taxa_media: float | None
+    prazo_medio: float | None
+    if vop_total > 0:
+        soma_taxa = sum((o.taxa or 0.0) * o.valor_bruto for o in operacoes)
+        soma_prazo = sum((o.prazo_medio or 0.0) * o.valor_bruto for o in operacoes)
+        taxa_media = soma_taxa / vop_total
+        prazo_medio = soma_prazo / vop_total
+    else:
+        taxa_media = None
+        prazo_medio = None
+
+    # 4. Quebras (ordenadas por valor desc, share calculado sobre vop_total)
+    def _to_quebra(
+        mapping: dict[Any, float], label_resolver: Callable[[Any], str]
+    ) -> list[QuebraDiaPorDimensao]:
+        out = [
+            QuebraDiaPorDimensao(
+                label=label_resolver(k),
+                valor=v,
+                share_pct=(v / vop_total * 100.0) if vop_total > 0 else 0.0,
+            )
+            for k, v in mapping.items()
+        ]
+        out.sort(key=lambda q: q.valor, reverse=True)
+        return out
+
+    por_produto_list = _to_quebra(
+        por_produto, lambda s: produto_nomes_map.get(s, s) or s
+    )
+    por_ua_list = _to_quebra(
+        por_ua, lambda i: ua_nomes_map.get(int(i), f"UA {i}")
+    )
+
+    data = OperacoesDoDiaData(
+        data=dia,
+        vop_do_dia=vop_total,
+        n_operacoes=n_ops,
+        ticket_medio=ticket_medio,
+        taxa_media=taxa_media,
+        prazo_medio=prazo_medio,
+        operacoes=operacoes,
+        por_produto=por_produto_list,
+        por_ua=por_ua_list,
+    )
+    prov = await _build_provenance(db, tenant_id, filters)
+    return data, prov
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Tabela de cedentes MTD (alimenta a tabela narrativa em /bi/operacoes3 L3)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Granularidade: POR TITULO (correta). `wh_operacao_item.valor_base` carrega
+# o valor bruto de cada titulo da operacao — e SUM(valor_base) = total_bruto
+# da op (verificado em 2026-05-19, caso da op 9604: 204.467,69 = 204.467,69).
+#
+# A versao anterior atribuia o total_bruto inteiro ao "cedente principal"
+# (MIN(nome)), o que causava super-atribuicao em ops com multiplos cedentes
+# (caso real: op 9604 tinha 5 cedentes, e atribuiu R\$ 204k inteiros ao
+# Agnus Seven que tinha apenas 1 de 12 titulos).
+
+
+async def _titulos_por_cedente_periodo(
+    db: AsyncSession,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+    periodo_inicio: date,
+    periodo_fim: date,
+) -> list[Any]:
+    """Granularidade por titulo: cada row = 1 titulo de 1 op com cedente.
+
+    Retorna: cedente_nome, cedente_id, valor_base (do titulo), op_id, data
+    da op, taxa (da op — homogenea para todos os titulos da mesma op).
+
+    Aplica `_apply_filters` na consulta as ops do periodo.
+    """
+    op_data = cast(Operacao.data_de_efetivacao, Date)
+    win_filters = {**filters, "periodo_inicio": periodo_inicio, "periodo_fim": periodo_fim}
+
+    # 1. Ops do periodo (apos filtros globais)
+    ops_stmt = _apply_filters(
+        select(
+            Operacao.operacao_id.label("op_id"),
+            Operacao.data_de_efetivacao,
+            Operacao.taxa_de_juros,
+        ).where(op_data.between(periodo_inicio, periodo_fim)),
+        tenant_id=tenant_id,
+        **win_filters,
+    )
+    ops_rows = (await db.execute(ops_stmt)).all()
+    if not ops_rows:
+        return []
+    op_meta: dict[int, tuple[date, float | None]] = {}
+    for r in ops_rows:
+        if r.op_id is None:
+            continue
+        d = (
+            r.data_de_efetivacao.date()
+            if hasattr(r.data_de_efetivacao, "date")
+            else r.data_de_efetivacao
+        )
+        taxa = _as_float(r.taxa_de_juros) if r.taxa_de_juros is not None else None
+        op_meta[int(r.op_id)] = (d, taxa)
+
+    # 2. Titulos dessas ops com cedente
+    op_ids = list(op_meta.keys())
+    item_stmt = (
+        select(
+            OperacaoItem.operacao_id.label("op_id"),
+            OperacaoItem.valor_base,
+            TituloSnapshot.cedente_nome,
+            TituloSnapshot.cedente_cliente_id,
+        )
+        .select_from(OperacaoItem)
+        .join(
+            TituloSnapshot,
+            and_(
+                TituloSnapshot.tenant_id == OperacaoItem.tenant_id,
+                TituloSnapshot.snapshot_id == OperacaoItem.titulo_id,
+            ),
+        )
+        .where(
+            and_(
+                OperacaoItem.tenant_id == tenant_id,
+                OperacaoItem.operacao_id.in_(op_ids),
+                TituloSnapshot.cedente_nome.is_not(None),
+            )
+        )
+    )
+    item_rows = (await db.execute(item_stmt)).all()
+
+    enriched: list[Any] = []
+    for r in item_rows:
+        op_id = int(r.op_id)
+        meta = op_meta.get(op_id)
+        if meta is None:
+            continue
+        data_op, taxa = meta
+        enriched.append({
+            "cedente_nome": r.cedente_nome,
+            "cedente_id": r.cedente_cliente_id,
+            "valor_base": _as_float(r.valor_base) if r.valor_base is not None else 0.0,
+            "op_id": op_id,
+            "data_de_efetivacao": data_op,
+            "taxa": taxa,
+        })
+    return enriched
+
+
+async def get_cedentes_mtd(
+    db: AsyncSession,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+) -> tuple[CedentesMtdData, Provenance]:
+    """Tabela narrativa de cedentes MTD com status novo/recorrente/sumido.
+
+    Calcula por cedente:
+      - volume_mtd: SUM(total_bruto) das ops onde o cedente e principal no MTD
+      - delta_vs_mes_ant_pct: % vs same-DU mes anterior
+      - n_op, dias_mtd, taxa_media (ponderada por valor)
+      - primeira_op / ultima_op (historicas)
+      - status:
+          'novo' = primeira_op historica cai dentro do MTD
+          'sumido' = cedente apareceu no mes anterior MTD mas nao no MTD corrente
+          'recorrente' = tinha ops antes do MTD E no MTD
+
+    Sumidos: lookup adicional do mes anterior (same-DU); cedentes la presentes
+    e ausentes do MTD entram com volume_mtd=None e delta=-100%.
+    """
+    periodo_fim = filters.get("periodo_fim")
+    today = periodo_fim or date.today()
+    mes_inicio = today.replace(day=1)
+    mes_label = f"{_MES_PT[today.month - 1]}/{today.year % 100:02d}"
+
+    # Janela same-DU mes anterior (apples-to-apples)
+    du_disponivel, du_decorridos, _ = await _du_position(db, tenant_id, today)
+    if du_disponivel and du_decorridos > 0:
+        mes_ant_par_inicio, mes_ant_par_fim = await _mes_anterior_paridade_du(
+            db, tenant_id, today, du_decorridos
+        )
+    else:
+        mes_ant_par_inicio, mes_ant_par_fim = _mes_anterior_window(today)
+
+    # 1. Titulos do MTD por cedente (granularidade real via valor_base)
+    titulos_mtd = await _titulos_por_cedente_periodo(
+        db, tenant_id, filters, mes_inicio, today
+    )
+
+    # 2. Titulos do mes anterior same-DU por cedente
+    titulos_ant = await _titulos_por_cedente_periodo(
+        db, tenant_id, filters, mes_ant_par_inicio, mes_ant_par_fim
+    )
+
+    # 3. Agrega MTD por cedente_nome (granularidade por titulo)
+    mtd_agg: dict[str, dict[str, Any]] = {}
+    for t in titulos_mtd:
+        nome = t["cedente_nome"]
+        entry = mtd_agg.setdefault(
+            nome,
+            {
+                "cedente_id": t["cedente_id"],
+                "volume": 0.0,
+                "ops": set(),
+                "dias": set(),
+                "soma_taxa_x_valor": 0.0,
+                "soma_valor": 0.0,
+            },
+        )
+        entry["volume"] += t["valor_base"]
+        entry["ops"].add(t["op_id"])
+        entry["dias"].add(t["data_de_efetivacao"])
+        if t["taxa"] is not None:
+            entry["soma_taxa_x_valor"] += t["taxa"] * t["valor_base"]
+            entry["soma_valor"] += t["valor_base"]
+
+    # 4. Agrega mes anterior same-DU por cedente_nome (pra delta + detectar sumidos)
+    ant_agg: dict[str, float] = {}
+    for t in titulos_ant:
+        ant_agg[t["cedente_nome"]] = ant_agg.get(t["cedente_nome"], 0.0) + t["valor_base"]
+
+    # 5. Lookup historico (1a op + ultima op) para cedentes que aparecem em MTD ou ANT
+    nomes_envolvidos = set(mtd_agg.keys()) | set(ant_agg.keys())
+    historico: dict[str, tuple[date, date]] = {}
+    if nomes_envolvidos:
+        hist_stmt = (
+            select(
+                TituloSnapshot.cedente_nome,
+                func.min(cast(Operacao.data_de_efetivacao, Date)).label("primeira"),
+                func.max(cast(Operacao.data_de_efetivacao, Date)).label("ultima"),
+            )
+            .select_from(Operacao)
+            .join(
+                OperacaoItem,
+                and_(
+                    OperacaoItem.tenant_id == Operacao.tenant_id,
+                    OperacaoItem.operacao_id == Operacao.operacao_id,
+                ),
+            )
+            .join(
+                TituloSnapshot,
+                and_(
+                    TituloSnapshot.tenant_id == OperacaoItem.tenant_id,
+                    TituloSnapshot.snapshot_id == OperacaoItem.titulo_id,
+                ),
+            )
+            .where(
+                and_(
+                    Operacao.tenant_id == tenant_id,
+                    Operacao.efetivada.is_(True),
+                    Operacao.data_de_efetivacao.is_not(None),
+                    TituloSnapshot.cedente_nome.in_(list(nomes_envolvidos)),
+                )
+            )
+            .group_by(TituloSnapshot.cedente_nome)
+        )
+        for r in (await db.execute(hist_stmt)).all():
+            historico[r.cedente_nome] = (r.primeira, r.ultima)
+
+    # 6. Monta linhas finais
+    cedentes_out: list[CedenteMtdItem] = []
+    for nome, m in mtd_agg.items():
+        ant_val = ant_agg.get(nome, 0.0)
+        if ant_val > 0:
+            delta_pct: float | None = ((m["volume"] / ant_val) - 1.0) * 100.0
+        else:
+            delta_pct = None  # cedente sem base no mes ant (novo ou bridge)
+
+        # Status: novo = primeira op historica esta dentro do MTD
+        primeira, ultima = historico.get(nome, (None, None))
+        if primeira is not None and primeira >= mes_inicio:
+            status = "novo"
+        else:
+            status = "recorrente"
+
+        taxa_media = (
+            (m["soma_taxa_x_valor"] / m["soma_valor"])
+            if m["soma_valor"] > 0
+            else None
+        )
+
+        cedentes_out.append(
+            CedenteMtdItem(
+                cedente_nome=nome,
+                cedente_id=m["cedente_id"],
+                volume_mtd=m["volume"],
+                delta_vs_mes_ant_pct=delta_pct,
+                status=status,
+                n_op=len(m["ops"]),
+                dias_mtd=len(m["dias"]),
+                taxa_media=taxa_media,
+                primeira_op=primeira,
+                ultima_op=ultima,
+            )
+        )
+
+    # 7. Sumidos — cedentes que apareceram no mes ant mas zero no MTD
+    sumidos = [nome for nome in ant_agg if nome not in mtd_agg]
+    for nome in sumidos:
+        primeira, ultima = historico.get(nome, (None, None))
+        cedentes_out.append(
+            CedenteMtdItem(
+                cedente_nome=nome,
+                cedente_id=None,
+                volume_mtd=None,
+                delta_vs_mes_ant_pct=-100.0,
+                status="sumido",
+                n_op=None,
+                dias_mtd=None,
+                taxa_media=None,
+                primeira_op=primeira,
+                ultima_op=ultima,
+            )
+        )
+
+    # 8. Ordena: ativos primeiro (volume desc), sumidos por nome
+    cedentes_out.sort(
+        key=lambda c: (
+            0 if c.volume_mtd is not None else 1,
+            -(c.volume_mtd or 0.0),
+            c.cedente_nome,
+        )
+    )
+
+    data = CedentesMtdData(
+        cedentes=cedentes_out,
+        total=len(cedentes_out),
+        mes_label=mes_label,
+    )
     prov = await _build_provenance(db, tenant_id, filters)
     return data, prov

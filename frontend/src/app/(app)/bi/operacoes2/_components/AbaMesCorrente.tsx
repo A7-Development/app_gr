@@ -22,16 +22,19 @@ import { useQuery } from "@tanstack/react-query"
 import { Card } from "@/components/tremor/Card"
 import {
   ConcentracaoDeltaCard,
+  EvolucaoDiariaCard,
   MixDeltaBarCard,
   PvmBridgeCard,
   SegmentSwitch,
   VarianceBridgeCard,
+  type EvolucaoDiariaPonto,
   type SegmentDef,
 } from "@/design-system/components"
 import { DrillDownSheet } from "@/design-system/components/DrillDownSheet"
 import { cardTokens } from "@/design-system/tokens/card"
 import { biOperacoes2 } from "@/lib/api-client"
 import type {
+  Operacoes2AbaMesCorrenteData,
   Operacoes2DriverContribution,
   Operacoes2Dimension,
   Operacoes2PvmBridgeData,
@@ -57,6 +60,27 @@ const fmtBRLFull = new Intl.NumberFormat("pt-BR", {
   currency: "BRL",
   maximumFractionDigits: 0,
 })
+
+const _MESES_LONGO_PT = [
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
+]
+
+function presetLabelFromIso(iso: string): string {
+  const [y, m] = iso.split("-").map(Number)
+  if (!y || !m) return ""
+  return `${_MESES_LONGO_PT[m - 1]}/${y}`
+}
 
 // ─── SegmentSwitch options ─────────────────────────────────────────────────
 //
@@ -276,8 +300,12 @@ export function AbaMesCorrente() {
         />
       </div>
 
-      {/* Linha 2 — grid 2x3 de cards */}
+      {/* Linha 2 — grid de cards (7 entradas: VOP Diario hero + 6 decomposicoes) */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+        {/* VOP DIARIO — serie diaria do mes corrente (todos os dias do
+            calendario), padrao visual irmao do "Evolução do VOP" da Aba 1.
+            Posicionado a esquerda do waterfall do VOP. */}
+        <VopDiarioCardSlot vopDiario={data.vop_diario} vop={data.vop} />
         <VarianceBridgeCard
           data={data.vop}
           title="VOP"
@@ -391,6 +419,63 @@ export function AbaMesCorrente() {
         {drill?.kind === "pvm" && <PvmDrillDownContent state={drill} />}
       </DrillDownSheet>
     </div>
+  )
+}
+
+// ─── VOP Diario slot ───────────────────────────────────────────────────────
+//
+// Encapsula a derivacao do header KPI (VOP MTD acumulado + Δ vs same-period
+// mes anterior). `current_anchor_value` ja vem do backend = SUM dos
+// `vop_diario` nao-nulos. `delta_pct` ja vem calculado pela paridade DU
+// (mesmo numero de DUs do mes anterior).
+
+function VopDiarioCardSlot({
+  vopDiario,
+  vop,
+}: {
+  vopDiario: Operacoes2AbaMesCorrenteData["vop_diario"]
+  vop: Operacoes2VarianceBridgeData
+}) {
+  const data: EvolucaoDiariaPonto[] = React.useMemo(
+    () =>
+      vopDiario.map((p) => ({
+        data: p.data,
+        valor: p.vop,
+        ehDiaUtil: p.eh_dia_util,
+        ehFuturo: p.eh_futuro,
+      })),
+    [vopDiario],
+  )
+
+  const presetLabel = React.useMemo(() => {
+    const first = vopDiario[0]
+    return first ? presetLabelFromIso(first.data) : ""
+  }, [vopDiario])
+
+  const headerKpi = React.useMemo(() => {
+    return {
+      value: fmtBRLFull.format(vop.current_anchor_value),
+      delta:
+        vop.delta_pct != null
+          ? { value: vop.delta_pct, suffix: "%" as const }
+          : undefined,
+      deltaSub: "MTD" as const,
+    }
+  }, [vop])
+
+  return (
+    <EvolucaoDiariaCard
+      title="VOP DIÁRIO"
+      presetLabel={presetLabel}
+      data={data}
+      headerKpi={headerKpi}
+      valueFormatter={(v) => fmtBRLFull.format(v)}
+      axisFormatter={(v) => fmtBRLCompact.format(v)}
+      dataLabelFormatter={(v) =>
+        (v / 1_000_000).toFixed(1).replace(".", ",")
+      }
+      height={248}
+    />
   )
 }
 

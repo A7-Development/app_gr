@@ -1074,6 +1074,45 @@ export type Operacoes2ConcentracaoDeltaData = {
   movements_losers: Operacoes2ConcentracaoMovement[]
 }
 
+/**
+ * VOP por dia-calendario do mes corrente. Cobre todos os dias (incluindo
+ * sab/dom/feriado). Dias futuros vem com `vop=null` (placeholder no eixo X
+ * sem barra), `eh_futuro=true`. `eh_dia_util` permite UI dimming/destaque
+ * de fim de semana e feriado.
+ */
+export type Operacoes2VopDiarioPonto = {
+  /** Data ISO "YYYY-MM-DD". */
+  data: string
+  /** VOP do dia em BRL. null para dias futuros. */
+  vop: number | null
+  eh_dia_util: boolean
+  eh_futuro: boolean
+}
+
+/**
+ * VOP por (dia, UA) do mes corrente — alimenta filtro de UA do hero L2.
+ */
+export type Operacoes2VopDiarioPorUaPonto = {
+  data: string
+  ua_id: number
+  ua_nome: string
+  vop: number | null
+  eh_dia_util: boolean
+  eh_futuro: boolean
+}
+
+/**
+ * Agregado MTD do VOP por UA — alimenta header KPI quando uma UA
+ * especifica e selecionada no card VOP Diario.
+ */
+export type Operacoes2VopMtdPorUa = {
+  ua_id: number
+  ua_nome: string
+  valor_mtd: number
+  /** Δ VOP-DU (paridade DU vs mes anterior). Null = sem base. */
+  delta_vop_du_pct: number | null
+}
+
 export type Operacoes2AbaMesCorrenteData = {
   /** Frase pt-BR multi-KPI gerada server-side (template deterministico). */
   narrative_sentence: string
@@ -1091,6 +1130,8 @@ export type Operacoes2AbaMesCorrenteData = {
   prazo: Operacoes2PvmBridgeData
   mix: Operacoes2DumbbellSeriesData
   concentracao: Operacoes2ConcentracaoDeltaData
+  /** Serie diaria de VOP do mes corrente (alimenta o card "VOP Diario"). */
+  vop_diario: Operacoes2VopDiarioPonto[]
   dimension_active: Operacoes2Dimension
   dimensions_disponiveis: Operacoes2Dimension[]
 }
@@ -1127,6 +1168,124 @@ export type Operacoes2VopPotencialData = {
   por_ua: Operacoes2VopPotencialPorUa[]
 }
 
+// ── Mes Corrente v3 — pagina /bi/operacoes3 ─────────────────────────────────
+
+/**
+ * Cell do termometro v3: valor + 2 deltas (VOP-DU paridade DU e MOM
+ * normalizado por DU). Pra Taxa/Prazo, MOM e comparacao direta media-vs-media.
+ */
+export type Operacoes2MesCorrenteKpiCell = {
+  valor: number
+  /** MTD corrente vs MTD mes anterior nos mesmos N DUs (paridade). */
+  delta_vop_du_pct: number | null
+  /** Pace/DU corrente vs pace/DU mes anterior fechado (Taxa/Prazo: direto). */
+  delta_mom_pct: number | null
+  /** "BRL" | "%" | "dias" — frontend formata adequadamente. */
+  unidade: string
+  /** Ex.: "mai/26". */
+  mes_label: string
+}
+
+/** Cell Potencial — absoluto, sem delta. */
+export type Operacoes2MesCorrentePotencialCell = {
+  valor: number
+  realizado: number
+  caixa: number
+  a_liquidar: number
+  mes_label: string
+}
+
+export type Operacoes2MesCorrenteTermometro = {
+  vop: Operacoes2MesCorrenteKpiCell
+  receita: Operacoes2MesCorrenteKpiCell
+  taxa: Operacoes2MesCorrenteKpiCell
+  prazo: Operacoes2MesCorrenteKpiCell
+  potencial: Operacoes2MesCorrentePotencialCell
+}
+
+/**
+ * Bundle da /bi/operacoes3 — termometro + hero (VOP Diario + Waterfall) +
+ * decomposicao avancada (collapsible no frontend).
+ */
+export type Operacoes2AbaMesCorrenteV3Data = {
+  termometro: Operacoes2MesCorrenteTermometro
+  comparacao_label_pt: string
+  du_decorridos: number
+  du_totais_mes: number
+  du_disponivel: boolean
+  vop_diario: Operacoes2VopDiarioPonto[]
+  vop_diario_por_ua: Operacoes2VopDiarioPorUaPonto[]
+  vop_mtd_por_ua: Operacoes2VopMtdPorUa[]
+  vop: Operacoes2VarianceBridgeData
+  vop_projecao: Operacoes2ProjectionBridgeData | null
+  receita: Operacoes2VarianceBridgeData
+  receita_projecao: Operacoes2ProjectionBridgeData | null
+  taxa: Operacoes2PvmBridgeData
+  prazo: Operacoes2PvmBridgeData
+  mix: Operacoes2DumbbellSeriesData
+  concentracao: Operacoes2ConcentracaoDeltaData
+}
+
+/** Operacao individual exibida no DrillDownSheet do dia. */
+export type Operacoes2OperacaoDoDiaItem = {
+  operacao_id: string
+  data_de_efetivacao: string
+  cedente: string | null
+  produto_sigla: string | null
+  produto_nome: string | null
+  ua_id: number | null
+  ua_nome: string | null
+  valor_bruto: number
+  taxa: number | null
+  prazo_medio: number | null
+}
+
+export type Operacoes2QuebraDiaPorDimensao = {
+  label: string
+  valor: number
+  share_pct: number
+}
+
+/**
+ * Linha da tabela narrativa de cedentes MTD.
+ *
+ * Status:
+ *   - "novo":       cedente sem operacoes anteriores ao MTD
+ *   - "sumido":     teve op no mes anterior mas zero no MTD (volume_mtd=null)
+ *   - "recorrente": teve op antes do MTD E no MTD
+ */
+export type Operacoes2CedenteMtdItem = {
+  cedente_nome: string
+  cedente_id: number | null
+  volume_mtd: number | null
+  delta_vs_mes_ant_pct: number | null
+  status: "novo" | "recorrente" | "sumido"
+  n_op: number | null
+  dias_mtd: number | null
+  taxa_media: number | null
+  primeira_op: string | null
+  ultima_op: string | null
+}
+
+export type Operacoes2CedentesMtdData = {
+  cedentes: Operacoes2CedenteMtdItem[]
+  total: number
+  mes_label: string
+}
+
+/** Drill 'operacoes do dia X' — conteudo do DrillDownSheet. */
+export type Operacoes2OperacoesDoDiaData = {
+  data: string
+  vop_do_dia: number
+  n_operacoes: number
+  ticket_medio: number
+  taxa_media: number | null
+  prazo_medio: number | null
+  operacoes: Operacoes2OperacaoDoDiaItem[]
+  por_produto: Operacoes2QuebraDiaPorDimensao[]
+  por_ua: Operacoes2QuebraDiaPorDimensao[]
+}
+
 export const biOperacoes2 = {
   kpiStrip: (f: BIFilters) =>
     apiClient.get<BIResponse<Operacoes2KpiStripData>>(
@@ -1153,6 +1312,27 @@ export const biOperacoes2 = {
   vopPotencial: (f: BIFilters) =>
     apiClient.get<BIResponse<Operacoes2VopPotencialData>>(
       `/bi/operacoes2/vop-potencial${filtersToQueryString(f)}`,
+    ),
+  abaMesCorrenteV3: (
+    f: BIFilters,
+    dimension: Operacoes2Dimension = "produto",
+  ) => {
+    const baseQs = filtersToQueryString(f)
+    const sep = baseQs ? "&" : "?"
+    return apiClient.get<BIResponse<Operacoes2AbaMesCorrenteV3Data>>(
+      `/bi/operacoes2/aba3-mes-corrente${baseQs}${sep}dimension=${dimension}`,
+    )
+  },
+  operacoesDoDia: (f: BIFilters, data: string) => {
+    const baseQs = filtersToQueryString(f)
+    const sep = baseQs ? "&" : "?"
+    return apiClient.get<BIResponse<Operacoes2OperacoesDoDiaData>>(
+      `/bi/operacoes2/operacoes-do-dia${baseQs}${sep}data=${data}`,
+    )
+  },
+  cedentesMtd: (f: BIFilters) =>
+    apiClient.get<BIResponse<Operacoes2CedentesMtdData>>(
+      `/bi/operacoes2/cedentes-mtd${filtersToQueryString(f)}`,
     ),
 }
 

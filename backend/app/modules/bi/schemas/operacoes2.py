@@ -199,6 +199,63 @@ class AcumuladoDiarioPonto(BaseModel):
     anterior: float
 
 
+class VopDiarioPonto(BaseModel):
+    """VOP por dia-calendario do mes corrente.
+
+    Cobre TODOS os dias do mes (1..ultimo_dia), incluindo sabados, domingos
+    e feriados. Para dias passados/hoje: `vop` = SUM(Operacao.total_bruto)
+    daquele dia (0 quando nao houve operacao efetivada). Para dias futuros:
+    `vop` = None — frontend renderiza barra ausente, mas o dia ainda aparece
+    no eixo X (placeholder de prazo restante).
+
+    `eh_dia_util` permite UI dimming/destaque de fim de semana e feriado.
+    """
+
+    data: date
+    vop: float | None = Field(
+        description="VOP do dia em BRL. None para dias futuros."
+    )
+    eh_dia_util: bool = Field(
+        description="True quando o dia e util (dim_dia_util). False = sab/dom/feriado."
+    )
+    eh_futuro: bool = Field(description="True para dias > hoje (sem VOP apurado).")
+
+
+class VopMtdPorUa(BaseModel):
+    """Agregado MTD do VOP por UA (alimenta header KPI quando UA filtrada
+    no card VOP Diario).
+
+    Pra cada UA com operacao no mes corrente, carrega:
+      - valor_mtd: VOP MTD da UA (1o dia do mes a hoje)
+      - delta_vop_du_pct: VOP-DU (paridade DU vs mes anterior nos mesmos N DUs)
+        — None quando nao ha base de comparacao.
+    """
+
+    ua_id: int
+    ua_nome: str
+    valor_mtd: float
+    delta_vop_du_pct: float | None
+
+
+class VopDiarioPorUaPonto(BaseModel):
+    """VOP por (dia-calendario, UA) do mes corrente — alimenta o modo
+    'Por UA' do card VOP Diario (stacked bar com cores por UA).
+
+    Mesmas regras de `VopDiarioPonto` (todos os dias, sab/dom/feriado, dias
+    futuros = None), porem com quebra por unidade administrativa. Frontend
+    pivota num dict {ua_id -> serie[]} para montar stacked bar.
+    """
+
+    data: date
+    ua_id: int
+    ua_nome: str
+    vop: float | None = Field(
+        description="VOP do dia/UA em BRL. None para dias futuros."
+    )
+    eh_dia_util: bool
+    eh_futuro: bool
+
+
 class RitmoUaItem(BaseModel):
     """Quebra por UA do ritmo do mes corrente — apenas dados textuais."""
 
@@ -699,6 +756,11 @@ class AbaMesCorrenteData(BaseModel):
     mix: DumbbellSeriesData
     concentracao: ConcentracaoDeltaData
 
+    # Serie diaria de VOP do mes corrente (todos os dias do calendario).
+    # Alimenta o card "VOP Diario" — irmao visual do "Evolucao do VOP"
+    # (granularidade mensal) usado na Aba 1 Volume & Ritmo.
+    vop_diario: list[VopDiarioPonto] = Field(default_factory=list)
+
     # Dimensao ativa para a decomposicao das bridges (VOP, Receita, Taxa, Prazo)
     dimension_active: Dimension
     dimensions_disponiveis: list[Dimension] = Field(
@@ -749,3 +811,228 @@ class VopPotencialData(BaseModel):
 
     # Quebra por UA (sempre presente; lista vazia se nenhuma UA elegivel)
     por_ua: list[VopPotencialPorUa]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Aba "Mes Corrente v3" — pagina /bi/operacoes3
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Reorienta a aba pro socio-diretor. Responde uma pergunta de cabeca:
+#   "Como ta o mes? Onde estou ganhando, onde estou perdendo?"
+#
+# Estrutura final visual:
+#   L1 Termometro: 5 KPIs (VOP, Receita, Taxa, Prazo, Potencial) — cada um
+#      com valor + 2 deltas (VOP-DU paridade DU e MOM normalizado por DU).
+#      Potencial e absoluto (sem delta).
+#   L2 Hero VOP do mes: VOP Diario (col-span-2) + VOP Waterfall (col-span-1).
+#      Drill por dia abre Sheet com operacoes do dia.
+#   L3 Movimentos (Cedentes / Produtos / Taxas / Prazos)  -> PR2
+#   L4 Sinais discretos                                    -> PR3
+#   L5 Decomposicao avancada (collapsible, fechada default): Receita, Taxa,
+#      Prazo, Mix, Concentracao — reusa schemas existentes.
+#
+# DESIGN NOTAS:
+# - VOP-DU (paridade DU): MTD do mes corrente vs MTD do mes anterior nos
+#   mesmos N DUs decorridos. Apples-to-apples temporal.
+# - MOM normalizado por DU: pace_corrente vs pace_mes_anterior_fechado, onde
+#   pace = valor / DUs do periodo. Pra valores absolutos (VOP, Receita).
+#   Pra medias ponderadas (Taxa, Prazo), MOM = corrente vs mes_anterior_fechado
+#   direto (media com media, nao normaliza por DU).
+
+
+class MesCorrenteKpiCell(BaseModel):
+    """Cell do termometro: 1 valor + 2 deltas (VOP-DU e MOM-norm-DU).
+
+    `delta_vop_du_pct`: variacao percentual MTD corrente vs MTD do mes
+    anterior no mesmo numero de DUs (paridade). None quando nao ha base
+    de comparacao ou degraded mode (du_disponivel=false).
+
+    `delta_mom_pct`: variacao percentual do RITMO (pace por DU) do mes
+    corrente vs ritmo do mes anterior fechado. Para Taxa/Prazo (medias
+    ponderadas), e comparacao direta sem normalizacao por DU. None quando
+    nao ha base.
+
+    `unidade`: "BRL" | "%" | "dias" — frontend formata adequadamente.
+    """
+
+    valor: float
+    delta_vop_du_pct: float | None = Field(
+        description="MTD vs MTD mes anterior nos mesmos N DUs (paridade)"
+    )
+    delta_mom_pct: float | None = Field(
+        description="Ritmo (pace/DU) vs ritmo mes anterior fechado. Para "
+        "Taxa/Prazo, comparacao direta sem normalizacao por DU."
+    )
+    unidade: str = Field(description="'BRL' | '%' | 'dias'")
+    mes_label: str = Field(description="Ex.: 'mai/26' (mes corrente)")
+
+
+class MesCorrentePotencialCell(BaseModel):
+    """Cell Potencial — absoluto, sem delta.
+
+    Reusa o calculo do VOP Potencial (vop_realizado_mtd + caixa + a liquidar).
+    Frontend mostra apenas valor + sublabel descritivo das 3 parcelas.
+    """
+
+    valor: float = Field(description="VOP Potencial total em BRL")
+    realizado: float = Field(description="VOP MTD efetivado")
+    caixa: float = Field(description="Caixa disponivel nas UAs incluidas")
+    a_liquidar: float = Field(description="Liquidacoes previstas ate fim do mes")
+    mes_label: str
+
+
+class MesCorrenteTermometro(BaseModel):
+    """Termometro do mes corrente — 5 cells consolidados."""
+
+    vop: MesCorrenteKpiCell
+    receita: MesCorrenteKpiCell
+    taxa: MesCorrenteKpiCell
+    prazo: MesCorrenteKpiCell
+    potencial: MesCorrentePotencialCell
+
+
+class AbaMesCorrenteV3Data(BaseModel):
+    """Bundle da aba /bi/operacoes3 — Mes Corrente v3 (socio-diretor view).
+
+    Reutiliza schemas existentes para nao duplicar logica:
+      - `vop_diario`: serie diaria do mes (alimenta hero L2 esquerda)
+      - `vop`: variance bridge (alimenta hero L2 direita)
+      - `receita`, `taxa`, `prazo`, `mix`, `concentracao`: decomposicao
+        avancada (L5 collapsible, fechada default)
+
+    Campos novos (especificos v3):
+      - `termometro`: 5 KPIs com dupla comparacao (L1)
+      - `du_decorridos`, `du_totais_mes`, `du_disponivel`: contexto
+      - `comparacao_label_pt`: ex.: 'comparado a abr/2026 ate DU 12 (de 21)'
+    """
+
+    termometro: MesCorrenteTermometro
+    comparacao_label_pt: str
+    du_decorridos: int
+    du_totais_mes: int
+    du_disponivel: bool
+
+    # Reuso: hero L2
+    vop_diario: list[VopDiarioPonto] = Field(default_factory=list)
+    # Quebra do VOP diario por UA — alimenta filtro de UA do hero L2.
+    vop_diario_por_ua: list[VopDiarioPorUaPonto] = Field(default_factory=list)
+    # Agregados MTD por UA (valor + VOP-DU) — alimenta header KPI quando
+    # uma UA especifica e selecionada no card VOP Diario.
+    vop_mtd_por_ua: list[VopMtdPorUa] = Field(default_factory=list)
+    vop: VarianceBridgeData
+    vop_projecao: ProjectionBridgeData | None
+
+    # Reuso: L5 decomposicao avancada
+    receita: VarianceBridgeData
+    receita_projecao: ProjectionBridgeData | None
+    taxa: PvmBridgeData
+    prazo: PvmBridgeData
+    mix: DumbbellSeriesData
+    concentracao: ConcentracaoDeltaData
+
+
+# ─── Drill: operacoes do dia (clique em barra do VOP Diario) ────────────────
+
+
+class OperacaoDoDiaItem(BaseModel):
+    """Operacao individual exibida no DrillDownSheet do dia."""
+
+    operacao_id: str = Field(description="ID externo da operacao (Bitfin)")
+    data_de_efetivacao: date
+    cedente: str | None = Field(description="Nome do cedente quando disponivel")
+    produto_sigla: str | None
+    produto_nome: str | None
+    ua_id: int | None
+    ua_nome: str | None
+    valor_bruto: float = Field(description="Operacao.total_bruto em BRL")
+    taxa: float | None = Field(description="Taxa de juros (% am ou aa, conforme operacao)")
+    prazo_medio: float | None = Field(description="Prazo medio real em dias")
+
+
+class QuebraDiaPorDimensao(BaseModel):
+    """Quebra do VOP do dia por uma dimensao (produto ou ua)."""
+
+    label: str
+    valor: float
+    share_pct: float = Field(description="Participacao % no VOP do dia")
+
+
+class CedenteMtdItem(BaseModel):
+    """Linha da tabela narrativa de cedentes MTD.
+
+    Granularidade: cedente principal de cada operacao (MIN(cedente_nome) dos
+    titulos da op, via wh_operacao_item x wh_titulo_snapshot). Aceita-se
+    aproximacao quando uma op tem multiplos cedentes — todo o valor da op
+    vai pro principal. Refinamento por titulo (valor_base) fica como
+    follow-up se virar bloqueador.
+
+    Status:
+      - "novo":       cedente sem operacoes anteriores ao MTD (primeira_op
+                      cai dentro do mes corrente).
+      - "sumido":     cedente teve operacao no mes anterior mas zero no MTD
+                      (volume_mtd, n_op, dias_mtd, taxa_media = None).
+      - "recorrente": teve operacoes antes do MTD E tem no MTD.
+    """
+
+    cedente_nome: str
+    cedente_id: int | None = Field(
+        description=(
+            "ID quando disponivel (cedente_cliente_id de wh_titulo_snapshot). "
+            "Pode ser None se o cedente aparece so com nome."
+        )
+    )
+    volume_mtd: float | None = Field(
+        description="VOP MTD do cedente em BRL. None quando 'sumido'."
+    )
+    delta_vs_mes_ant_pct: float | None = Field(
+        description=(
+            "Variacao percentual vs MTD same-DU do mes anterior. "
+            "-100% quando 'sumido', None quando nao ha base (cedente 'novo')."
+        )
+    )
+    status: str = Field(description='"novo" | "recorrente" | "sumido"')
+    n_op: int | None = Field(
+        description="Numero de operacoes no MTD. None quando 'sumido'."
+    )
+    dias_mtd: int | None = Field(
+        description="Dias distintos com operacao no MTD. None quando 'sumido'."
+    )
+    taxa_media: float | None = Field(
+        description=(
+            "Taxa media ponderada por valor das ops do MTD do cedente. "
+            "None quando 'sumido'."
+        )
+    )
+    primeira_op: date | None = Field(
+        description="Data da 1a operacao historica do cedente."
+    )
+    ultima_op: date | None = Field(
+        description="Data da ultima operacao historica do cedente."
+    )
+
+
+class CedentesMtdData(BaseModel):
+    """Bundle da Tabela narrativa de cedentes MTD."""
+
+    cedentes: list[CedenteMtdItem]
+    total: int = Field(description="Numero total de cedentes na lista.")
+    mes_label: str = Field(description="Ex.: 'mai/26' (mes corrente).")
+
+
+class OperacoesDoDiaData(BaseModel):
+    """Drill 'operacoes do dia X' — conteudo do DrillDownSheet.
+
+    Servido pelo endpoint `/bi/operacoes2/operacoes-do-dia?data=YYYY-MM-DD`.
+    Aplica todos os filtros globais (UA, produto, etc) e escopo de tenant.
+    """
+
+    data: date
+    vop_do_dia: float
+    n_operacoes: int
+    ticket_medio: float
+    taxa_media: float | None
+    prazo_medio: float | None
+
+    operacoes: list[OperacaoDoDiaItem]
+    por_produto: list[QuebraDiaPorDimensao]
+    por_ua: list[QuebraDiaPorDimensao]
