@@ -4,12 +4,14 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.core.enums import TenantStatus
 
 
 class Tenant(Base):
@@ -37,6 +39,20 @@ class Tenant(Base):
     # management, prompt library) — see core/system_maintainer_guard.py.
     is_system_maintainer: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
+    )
+
+    # Lifecycle do tenant (trial/active/suspended/cancelled). Suspended/cancelled
+    # bloqueia login. Default 'active' pra back-compat; novos tenants criados
+    # via /admin/tenants podem nascer em 'trial' com prazo.
+    status: Mapped[TenantStatus] = mapped_column(
+        SAEnum(TenantStatus, name="tenant_status", native_enum=False, length=16),
+        nullable=False,
+        default=TenantStatus.ACTIVE,
+        server_default=TenantStatus.ACTIVE.value,
+        index=True,
+    )
+    trial_ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     created_at: Mapped[datetime] = mapped_column(

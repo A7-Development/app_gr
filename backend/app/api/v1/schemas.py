@@ -15,10 +15,16 @@ class HealthResponse(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    """POST /auth/login payload."""
+    """POST /auth/login payload.
+
+    `tenant_slug` is optional. Omitted: server picks the unique match by
+    email; if the email exists in N tenants, server returns 409 listing the
+    slugs so the client can resubmit with the chosen one.
+    """
 
     email: EmailStr
     password: str = Field(..., min_length=1)
+    tenant_slug: str | None = Field(default=None, max_length=100)
 
 
 class LoginResponse(BaseModel):
@@ -35,6 +41,7 @@ class TenantInfo(BaseModel):
     id: UUID
     slug: str
     name: str
+    status: str = "active"
     is_system_maintainer: bool = False
 
 
@@ -44,6 +51,7 @@ class UserInfo(BaseModel):
     id: UUID
     email: str
     name: str
+    tenant_role: str = "member"
 
 
 class MeResponse(BaseModel):

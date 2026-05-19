@@ -6,6 +6,7 @@ import {
   RiBarChartGroupedLine,
   RiBookOpenLine,
   RiBuilding2Line,
+  RiBuilding4Line,
   RiCheckDoubleLine,
   RiCheckboxCircleLine,
   RiContactsBookLine,
@@ -28,6 +29,7 @@ import {
   RiSettings3Line,
   RiShieldCheckLine,
   RiStackLine,
+  RiUserLine,
   RiUserStarLine,
   RiWallet3Line,
   type RemixiconComponentType,
@@ -367,6 +369,20 @@ export const MODULES: ModuleDefinition[] = [
     basePath: "/admin",
     sections: [
       {
+        name: "Tenants",
+        href: "/admin/tenants",
+        enabled: true,
+        icon: RiBuilding4Line,
+        groupLabel: "Gestao",
+      },
+      {
+        name: "Usuarios",
+        href: "/admin/usuarios",
+        enabled: true,
+        icon: RiUserLine,
+        groupLabel: "Gestao",
+      },
+      {
         name: "Provedores",
         href: "/admin/ia/providers",
         enabled: true,
@@ -426,4 +442,22 @@ export function getActiveModule(pathname: string): ModuleDefinition {
 // Modulos visiveis no dropdown = enabled pelo tenant + com permissao >= read.
 export function getVisibleModules(): ModuleDefinition[] {
   return MODULES.filter((m) => m.enabled && m.permission !== "none")
+}
+
+// Rota de pouso do modulo — para onde navegar quando o user seleciona o modulo
+// no ModuleSwitcher (ou em qualquer "entrar no modulo X"). Regra do CLAUDE.md
+// §11.6 regra 2: o `href` de section parent (com `children`) e expand-only e
+// NUNCA destino real. Quando o primeiro section enabled e um parent, descemos
+// pro primeiro filho enabled. Fallback final: `module.basePath`.
+export function getModuleLandingHref(module: ModuleDefinition): string {
+  for (const section of module.sections) {
+    if (!section.enabled) continue
+    if (section.children && section.children.length > 0) {
+      const firstChild = section.children.find((c) => c.enabled)
+      if (firstChild) return firstChild.href
+      continue
+    }
+    return section.href
+  }
+  return module.basePath
 }

@@ -16,6 +16,8 @@ from app.modules.admin.api import (
     ai_prompts,
     ai_provider_credentials,
     ai_subscriptions,
+    tenants,
+    users,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -23,3 +25,5 @@ router.include_router(ai_provider_credentials.router)
 router.include_router(ai_subscriptions.router)
 router.include_router(ai_prompts.router)
 router.include_router(ai_agents.router)
+router.include_router(tenants.router)
+router.include_router(users.router)

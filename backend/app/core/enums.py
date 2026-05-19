@@ -39,6 +39,31 @@ class Permission(enum.StrEnum):
         return order[self] >= order[required]
 
 
+class TenantStatus(enum.StrEnum):
+    """Lifecycle of a tenant."""
+
+    TRIAL = "trial"          # tenant em avaliacao com prazo
+    ACTIVE = "active"        # contratado, plenamente operacional
+    SUSPENDED = "suspended"  # bloqueado por inadimplencia/abuso (login negado)
+    CANCELLED = "cancelled"  # encerrado (login negado, dado preservado p/ auditoria)
+
+
+class TenantRole(enum.StrEnum):
+    """Role of a user inside a tenant.
+
+    UX layer above the granular `user_module_permission` matrix. Assigning
+    or changing a role (re)populates the matrix via
+    `app.shared.identity.role_defaults.apply_role_defaults`.
+
+    Owner has full power inside the tenant (gere users, perms, subscriptions).
+    Member is the typical operational user. Viewer is read-only.
+    """
+
+    OWNER = "owner"
+    MEMBER = "member"
+    VIEWER = "viewer"
+
+
 class AICapability(enum.StrEnum):
     """User permission scale for the AI capability (parallel to Permission).
 

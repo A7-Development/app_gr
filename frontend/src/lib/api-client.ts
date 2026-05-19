@@ -171,9 +171,33 @@ export type LoginResponse = {
 
 export type Permission = "none" | "read" | "write" | "admin"
 
+export type TenantRoleId = "owner" | "member" | "viewer"
+export type TenantStatusId = "trial" | "active" | "suspended" | "cancelled"
+export type ModuleId =
+  | "bi"
+  | "cadastros"
+  | "operacoes"
+  | "credito"
+  | "controladoria"
+  | "risco"
+  | "integracoes"
+  | "laboratorio"
+  | "admin"
+
 export type MeResponse = {
-  user: { id: string; email: string; name: string }
-  tenant: { id: string; slug: string; name: string; is_system_maintainer: boolean }
+  user: {
+    id: string
+    email: string
+    name: string
+    tenant_role: TenantRoleId
+  }
+  tenant: {
+    id: string
+    slug: string
+    name: string
+    status: TenantStatusId
+    is_system_maintainer: boolean
+  }
   enabled_modules: string[]
   user_permissions: Record<string, Permission>
   ai_enabled: boolean
@@ -248,6 +272,182 @@ export type AIProviderCredentialUpdatePayload = {
   zdr_enabled?: boolean
   active?: boolean
   notes?: string | null
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Admin · Tenants (system maintainer)
+// Espelha backend/app/modules/admin/api/tenants.py
+// ───────────────────────────────────────────────────────────────────────────
+
+export type TenantSubscriptionRead = {
+  module: ModuleId
+  enabled: boolean
+  enabled_since: string | null
+  enabled_until: string | null
+  plan_ref: string | null
+}
+
+export type TenantRead = {
+  id: string
+  slug: string
+  name: string
+  subdomain: string | null
+  status: TenantStatusId
+  trial_ends_at: string | null
+  is_system_maintainer: boolean
+  ativo: boolean
+  created_at: string
+  updated_at: string
+  subscriptions: TenantSubscriptionRead[]
+  user_count: number
+}
+
+export type TenantCreatePayload = {
+  slug: string
+  name: string
+  subdomain?: string | null
+  status?: TenantStatusId
+  trial_ends_at?: string | null
+  owner_email: string
+  enabled_modules: ModuleId[]
+}
+
+export type TenantUpdatePayload = {
+  name?: string
+  subdomain?: string | null
+  status?: TenantStatusId
+  trial_ends_at?: string | null
+  ativo?: boolean
+}
+
+export type TenantSubscriptionUpdatePayload = {
+  enabled: boolean
+  plan_ref?: string | null
+  enabled_until?: string | null
+}
+
+export type InvitationRead = {
+  id: string
+  tenant_id: string
+  email: string
+  role: TenantRoleId
+  invited_by_id: string | null
+  expires_at: string
+  accepted_at: string | null
+  revoked_at: string | null
+  created_at: string
+}
+
+export type InvitationCreateResponse = {
+  invitation: InvitationRead
+  token: string
+  accept_url: string
+}
+
+export type InvitationContext = {
+  tenant_id: string
+  tenant_name: string
+  tenant_slug: string
+  email: string
+  role: TenantRoleId
+  expires_at: string
+}
+
+export const adminTenants = {
+  list: () => apiClient.get<TenantRead[]>("/admin/tenants"),
+  get: (id: string) => apiClient.get<TenantRead>(`/admin/tenants/${id}`),
+  create: (payload: TenantCreatePayload) =>
+    apiClient.post<InvitationCreateResponse>("/admin/tenants", payload),
+  update: (id: string, payload: TenantUpdatePayload) =>
+    apiClient.patch<TenantRead>(`/admin/tenants/${id}`, payload),
+  setSubscription: (
+    id: string,
+    moduleId: ModuleId,
+    payload: TenantSubscriptionUpdatePayload,
+  ) =>
+    apiClient.put<TenantSubscriptionRead>(
+      `/admin/tenants/${id}/subscriptions/${moduleId}`,
+      payload,
+    ),
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Admin · Users (Owner do tenant)
+// Espelha backend/app/modules/admin/api/users.py
+// ───────────────────────────────────────────────────────────────────────────
+
+export type UserPermissionRead = {
+  module: ModuleId
+  permission: Permission
+}
+
+export type UserRead = {
+  id: string
+  tenant_id: string
+  email: string
+  name: string
+  tenant_role: TenantRoleId
+  ativo: boolean
+  last_login_at: string | null
+  email_verified_at: string | null
+  invited_by_id: string | null
+  created_at: string
+  permissions: UserPermissionRead[]
+}
+
+export type UserUpdatePayload = {
+  name?: string
+  ativo?: boolean
+  tenant_role?: TenantRoleId
+}
+
+export type UserPermissionUpdatePayload = {
+  permission: Permission
+}
+
+export type InvitationCreatePayload = {
+  email: string
+  role: TenantRoleId
+}
+
+export const adminUsers = {
+  list: () => apiClient.get<UserRead[]>("/admin/users"),
+  get: (id: string) => apiClient.get<UserRead>(`/admin/users/${id}`),
+  update: (id: string, payload: UserUpdatePayload) =>
+    apiClient.patch<UserRead>(`/admin/users/${id}`, payload),
+  setPermission: (
+    id: string,
+    moduleId: ModuleId,
+    payload: UserPermissionUpdatePayload,
+  ) =>
+    apiClient.put<UserPermissionRead>(
+      `/admin/users/${id}/permissions/${moduleId}`,
+      payload,
+    ),
+  invitations: {
+    list: () => apiClient.get<InvitationRead[]>("/admin/users/invitations"),
+    create: (payload: InvitationCreatePayload) =>
+      apiClient.post<InvitationCreateResponse>(
+        "/admin/users/invitations",
+        payload,
+      ),
+    cancel: (id: string) =>
+      apiClient.delete<void>(`/admin/users/invitations/${id}`),
+  },
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Invitations publicas (sem auth — surface de aceite)
+// ───────────────────────────────────────────────────────────────────────────
+
+export const invitations = {
+  context: (token: string) =>
+    apiClient.get<InvitationContext>(`/invitations/${encodeURIComponent(token)}`),
+  accept: (token: string, payload: { name: string; password: string }) =>
+    apiClient.post<LoginResponse>(
+      `/invitations/${encodeURIComponent(token)}/accept`,
+      payload,
+    ),
 }
 
 export const adminAI = {
@@ -429,13 +629,26 @@ export function buildAIChatRequest(
 // Helpers de alto nivel
 //
 
-export async function login(email: string, password: string): Promise<LoginResponse> {
+export async function login(
+  email: string,
+  password: string,
+  tenantSlug?: string,
+): Promise<LoginResponse> {
   const res = await apiClient.post<LoginResponse>("/auth/login", {
     email,
     password,
+    ...(tenantSlug ? { tenant_slug: tenantSlug } : {}),
   })
   setToken(res.access_token)
   return res
+}
+
+// Quando o backend devolve 409 no /auth/login, o email tem match em N tenants
+// e precisamos pedir ao usuario que escolha um slug. detail vira:
+// { message: string, tenant_slugs: string[] }.
+export type LoginAmbiguousTenant = {
+  message: string
+  tenant_slugs: string[]
 }
 
 export async function fetchMe(): Promise<MeResponse> {

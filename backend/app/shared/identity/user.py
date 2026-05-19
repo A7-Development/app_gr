@@ -4,11 +4,13 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.core.enums import TenantRole
 
 
 class User(Base):
@@ -31,6 +33,22 @@ class User(Base):
 
     ativo: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true", index=True
+    )
+
+    # Role do user dentro do tenant. Owner gere o tenant; Member opera o
+    # produto; Viewer e read-only. Mudar o role re-popula
+    # `user_module_permission` via apply_role_defaults().
+    tenant_role: Mapped[TenantRole] = mapped_column(
+        SAEnum(TenantRole, name="tenant_role", native_enum=False, length=16),
+        nullable=False,
+        default=TenantRole.MEMBER,
+        server_default=TenantRole.MEMBER.value,
+        index=True,
+    )
+
+    # Quem convidou este user (NULL para users seed/criados via SQL manual).
+    invited_by_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
     email_verified_at: Mapped[datetime | None] = mapped_column(

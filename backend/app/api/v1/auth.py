@@ -16,7 +16,7 @@ from app.api.v1.schemas import (
 )
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.enums import AICapability
+from app.core.enums import AICapability, TenantStatus
 from app.core.security import create_access_token, verify_password
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.shared.ai.models.permission import UserAIPermission
@@ -36,17 +36,55 @@ async def login(
     payload: LoginRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> LoginResponse:
-    """Authenticate user by email+password and return a JWT."""
-    # Note: MVP login nao e tenant-scoped — usa o primeiro match por email.
-    # Em Etapa G (spinoff multi-tenant), adicionar tenant_slug ao payload e filtrar.
-    stmt = select(User).where(User.email == payload.email, User.ativo.is_(True))
-    user = (await db.execute(stmt)).scalars().first()
+    """Authenticate user by email+password and return a JWT.
 
-    if user is None or not verify_password(payload.password, user.password_hash):
+    Multi-tenant resolution:
+        - email + tenant_slug -> filtra pelo tenant especifico.
+        - email so -> se houver match unico, autentica direto. Se houver N
+          matches em N tenants distintos, retorna HTTP 409 com a lista de
+          slugs disponiveis pra o cliente reenviar com tenant_slug.
+    """
+    base_stmt = (
+        select(User, Tenant)
+        .join(Tenant, Tenant.id == User.tenant_id)
+        .where(User.email == payload.email, User.ativo.is_(True))
+    )
+    if payload.tenant_slug:
+        base_stmt = base_stmt.where(Tenant.slug == payload.tenant_slug)
+
+    rows = (await db.execute(base_stmt)).all()
+
+    if len(rows) > 1:
+        slugs = sorted({t.slug for _, t in rows})
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Este email pertence a varios tenants. Informe `tenant_slug`.",
+                "tenant_slugs": slugs,
+            },
+        )
+
+    pair = rows[0] if rows else None
+    if pair is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email ou senha invalidos",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user, tenant = pair
+
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email ou senha invalidos",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if tenant.status in {TenantStatus.SUSPENDED, TenantStatus.CANCELLED} or not tenant.ativo:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Tenant '{tenant.slug}' esta {tenant.status.value}.",
         )
 
     user.last_login_at = datetime.now(UTC)
@@ -120,11 +158,17 @@ async def me(
     ai_permission = (ai_perm.permission if ai_perm else AICapability.NONE).value
 
     return MeResponse(
-        user=UserInfo(id=user.id, email=user.email, name=user.name),
+        user=UserInfo(
+            id=user.id,
+            email=user.email,
+            name=user.name,
+            tenant_role=user.tenant_role.value,
+        ),
         tenant=TenantInfo(
             id=tenant.id,
             slug=tenant.slug,
             name=tenant.name,
+            status=tenant.status.value,
             is_system_maintainer=tenant.is_system_maintainer,
         ),
         enabled_modules=enabled_modules,

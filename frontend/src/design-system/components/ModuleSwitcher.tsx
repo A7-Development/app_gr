@@ -14,6 +14,7 @@ import {
   MODULE_AVATAR_COLORS,
   PERMISSION_LABEL,
   getActiveModule,
+  getModuleLandingHref,
   getVisibleModules,
   type ModuleDefinition,
 } from "@/lib/modules"
@@ -103,8 +104,7 @@ export function ModuleSwitcher() {
             Modulos ({visibleModules.length})
           </DropdownMenuLabel>
           {visibleModules.map((module) => {
-            const firstSection = module.sections.find((s) => s.enabled)
-            const href = firstSection?.href ?? module.basePath
+            const href = getModuleLandingHref(module)
             const isCurrent = module.id === activeModule.id
             return (
               <DropdownMenuItem

@@ -2,21 +2,21 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import audit, auth, system
+from app.api.v1 import audit, auth, invitations, system
 from app.api.v1.ai import router as ai_router
 from app.modules.admin.api import router as admin_router
 from app.modules.bi.api.router import router as bi_router
 from app.modules.cadastros.api.router import router as cadastros_router
 from app.modules.controladoria.api.router import router as controladoria_router
 from app.modules.credito.api.router import router as credito_router
+from app.modules.integracoes.routers.endpoints import (
+    router as integracoes_endpoints_router,
+)
 from app.modules.integracoes.routers.qitech_bank_account import (
     router as integracoes_qitech_bank_account_router,
 )
 from app.modules.integracoes.routers.qitech_custodia import (
     router as integracoes_qitech_custodia_router,
-)
-from app.modules.integracoes.routers.endpoints import (
-    router as integracoes_endpoints_router,
 )
 from app.modules.integracoes.routers.qitech_jobs import (
     router as integracoes_qitech_jobs_router,
@@ -30,6 +30,9 @@ api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(audit.router)
 api_router.include_router(system.router)
+
+# Public invitation endpoints (no auth — accepts/preview).
+api_router.include_router(invitations.router)
 
 # AI capability (transversal — own subscription/permission, see CLAUDE.md sec 19).
 api_router.include_router(ai_router)

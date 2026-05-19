@@ -1,5 +1,6 @@
 """Identity: Tenant, User, Role, Permission, Subscription (cross-module)."""
 
+from app.shared.identity.invitation import UserInvitation
 from app.shared.identity.subscription import TenantModuleSubscription
 from app.shared.identity.tenant import Tenant
 from app.shared.identity.user import User
@@ -9,5 +10,6 @@ __all__ = [
     "Tenant",
     "TenantModuleSubscription",
     "User",
+    "UserInvitation",
     "UserModulePermission",
 ]

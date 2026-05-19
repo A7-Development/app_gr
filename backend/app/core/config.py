@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     # ---------- CORS ----------
     CORS_ORIGINS: str = "http://localhost:3000"
 
+    # ---------- Frontend (para montar links de convite) ----------
+    # Base URL do frontend (sem barra final). Usada pra montar URLs de aceite
+    # de convite (`{APP_BASE_URL}/invitations/{token}`). Em dev:
+    # http://localhost:3000; em prod: https://strataai.com.br.
+    APP_BASE_URL: str = Field(default="http://localhost:3000")
+
     # ---------- Integracoes: criptografia de secrets ----------
     # KEK (Key Encryption Key) Fernet 32-byte URL-safe base64. Usada para
     # envelope encryption do campo `tenant_source_config.config`. Gerar com:
