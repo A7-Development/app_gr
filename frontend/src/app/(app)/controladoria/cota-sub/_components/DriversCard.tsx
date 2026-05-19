@@ -50,6 +50,7 @@ import type { ComponentType } from "react"
 
 import { cx, focusRing } from "@/lib/utils"
 import type {
+  ApropriacaoDcEvidencia,
   ApropriacaoExplanation,
   CosifOrigem,
   DiferimentoExplanation,
@@ -67,6 +68,7 @@ import type {
   PddExplanation,
   RemuneracaoSrMezEvidencia,
   RemuneracaoSrMezExplanation,
+  SaldoTesourariaEvidencia,
 } from "@/lib/api-client"
 
 import type { BridgeCategoryId } from "./BridgeCard"
@@ -153,21 +155,18 @@ const CATEGORY_META: readonly CategoryMeta[] = [
     bgCls:   "bg-amber-50 dark:bg-amber-500/10",
     barHex:  "#F59E0B",
   },
+  // Senior + Mezanino sao colapsados em UM driver na UI ("Remuneracao Sr/Mez"),
+  // mantendo as duas classes detalhadas no expand. Backend continua expondo
+  // 2 drivers granulares (controladoria.cota_sub.driver.senior e .mezanino);
+  // o merge acontece no EventosDiaTab antes de chegar aqui. Reduz a contagem
+  // de drivers visiveis (de 11 pra 10) sem perder granularidade auditavel.
   {
-    id:      "senior",
-    label:   "Senior (subordinação)",
+    id:      "remuneracao_sr_mez",
+    label:   "Remuneração Sr/Mez",
     icon:    RiStackLine,
     iconCls: "text-rose-600 dark:text-rose-400",
     bgCls:   "bg-rose-50 dark:bg-rose-500/10",
     barHex:  "#F43F5E",
-  },
-  {
-    id:      "mezanino",
-    label:   "Mezanino (subordinação)",
-    icon:    RiStackLine,
-    iconCls: "text-rose-500 dark:text-rose-400",
-    bgCls:   "bg-rose-50 dark:bg-rose-500/10",
-    barHex:  "#FB7185",
   },
   {
     id:      "tesouraria",
@@ -247,6 +246,11 @@ export type DriverInput = {
    * Permite auditar exatamente DE ONDE vem o impacto antes mesmo das
    * evidencias enriquecidas pelas heuristicas. */
   cosifOrigin?: DriverCosifOrigem[]
+  /** Quando o granular nao pode ser computado por dado upstream ausente
+   * (ex.: wh_estoque_recebivel vazio em D-1 ou D0), carrega explicacao
+   * curta. Driver continua valido (vem do consolidado MEC); evidencias
+   * ficam vazias. UI renderiza este texto no lugar da lista de papeis. */
+  evidenciasIndisponiveisMotivo?: string
 }
 
 export type OperationalEvent = {
@@ -554,6 +558,25 @@ function DriverItem({
                 <EvidenceItem key={i} ev={e} />
               ))}
             </ul>
+          )}
+
+          {input?.evidenciasIndisponiveisMotivo
+            && (!input.evidencias || input.evidencias.length === 0) && (
+            <div
+              className={cx(
+                "mt-2.5 rounded border border-dashed px-3 py-2.5",
+                "border-amber-300 bg-amber-50/60 dark:border-amber-500/40 dark:bg-amber-500/5",
+              )}
+            >
+              <div className="mb-1 flex items-baseline gap-1.5">
+                <span className="text-[10.5px] font-semibold uppercase tracking-[0.04em] text-amber-700 dark:text-amber-400">
+                  Evidências papel-a-papel indisponíveis
+                </span>
+              </div>
+              <p className="text-[11.5px] leading-[1.5] text-amber-900 dark:text-amber-200">
+                {input.evidenciasIndisponiveisMotivo}
+              </p>
+            </div>
           )}
 
           {input?.operationalEvents && input.operationalEvents.length > 0 && (
@@ -1057,6 +1080,47 @@ export function buildDriverFromOutros(outros: OutrosExplanation): DriverInput {
   }
 }
 
+function evidenciaFromSaldoTesouraria(e: SaldoTesourariaEvidencia): DriverEvidence {
+  // Shape generico de "composicao de saldo" — usado por Tesouraria (1 conta),
+  // Fundos DI (1 fundo externo), Compromissada (1 operacao). Subtitle deduz a
+  // origem pela `fonte` da evidencia.
+  const fonteLabel =
+    e.fonte === "wh_saldo_conta_corrente"
+      ? `Conta corrente${e.codigo ? ` · ${e.codigo}` : ""}`
+      : e.fonte === "wh_posicao_cota_fundo"
+        ? "Fundo externo"
+        : e.fonte === "wh_posicao_compromissada"
+          ? `Operação compromissada${e.codigo ? ` · ${e.codigo}` : ""}`
+          : "Tesouraria QiTech"
+  return {
+    titulo:    e.descricao,
+    subtitle:  fonteLabel,
+    d1:        e.valor_d_prev,
+    d0:        e.valor_d0,
+    delta:     e.delta,
+    flowLabel: "Saldo",
+  }
+}
+
+function evidenciaFromApropriacaoDc(e: ApropriacaoDcEvidencia): DriverEvidence {
+  // Estoques (a_vencer/vencidos): mostram d_prev → d_0 + delta.
+  // Aquisicoes/Liquidacoes: mostram apenas o valor (sem d_prev/d_0).
+  const isEstoque = e.bloco === "a_vencer" || e.bloco === "vencidos"
+  const subtitle = isEstoque
+    ? `${e.fonte} · ΔEstoque`
+    : e.bloco === "aquisicoes"
+      ? "Saída de caixa (entrada de DC) · com sinal negativo"
+      : "Entrada de caixa (saída de DC) · com sinal positivo"
+  return {
+    titulo:    e.label,
+    subtitle,
+    d1:        isEstoque ? e.valor_d_prev : null,
+    d0:        isEstoque ? e.valor_d0 : null,
+    delta:     e.valor_brl,
+    flowLabel: isEstoque ? "Estoque" : "Valor",
+  }
+}
+
 function evidenciaFromRemuneracao(e: RemuneracaoSrMezEvidencia): DriverEvidence {
   // Subtitle: rendimento em pp + valor da cota antes/depois pra auditoria.
   const ppAbs = Math.abs(e.delta_pct * 100).toFixed(4).replace(".", ",")
@@ -1097,10 +1161,13 @@ function categoryIdFromMetric(metricGlobalId: string): BridgeCategoryId {
 export function buildDriverFromDriverResultOut(d: DriverResultOut): DriverInput {
   const id = categoryIdFromMetric(d.metric_global_id)
 
-  // Detecta evidencias populadas (so 1 campo por driver) + monta sublabel.
-  // Ordem importa pouco — cada driver popula APENAS 1 campo. Cair pro
-  // proximo `else if` quando o anterior estiver vazio e o caminho normal.
+  // Detecta evidencias populadas + monta sublabel.
+  // Apropriacao DC tem 2 campos populados (apropriacao_dc_evidencias E
+  // movimento_carteira_evidencias). O 1o e composicao do calculo (Σ =
+  // valor_brl); o 2o e atividade do dia (informacional). Renderizamos
+  // o 1o como evidencias principais e o 2o como operationalEvents (sub-secao).
   let evidencias: DriverEvidence[] = []
+  let operationalEvents: OperationalEvent[] = []
   let sublabel: string | undefined
 
   if (d.pdd_evidencias.length > 0) {
@@ -1118,10 +1185,36 @@ export function buildDriverFromDriverResultOut(d: DriverResultOut): DriverInput 
   } else if (d.remuneracao_evidencias.length > 0) {
     evidencias = d.remuneracao_evidencias.map(evidenciaFromRemuneracao)
     sublabel = "Custo de subordinação"
+  } else if (d.apropriacao_dc_evidencias.length > 0) {
+    // Composicao do calculo (Σ = valor_brl). `movimento_carteira_evidencias`
+    // continua disponivel no payload pra eventual uso futuro (drill-down,
+    // export), mas NAO renderizamos como sub-secao — polui muito a analise
+    // (até 20 papeis adquiridos/liquidados, decisao Ricardo 2026-05-19).
+    evidencias = d.apropriacao_dc_evidencias.map(evidenciaFromApropriacaoDc)
+    sublabel = "ΔEstoque − Aquisições + Liquidações"
   } else if (d.movimento_carteira_evidencias.length > 0) {
+    // Fallback legado — driver Apropriacao DC sem apropriacao_dc_evidencias
+    // (shouldn't happen apos refactor 2026-05-19).
     evidencias = d.movimento_carteira_evidencias.map(evidenciaFromMovimentoCarteira)
     const n = d.movimento_carteira_evidencias.length
     sublabel = n === 1 ? "1 papel movimentado" : `${n} papéis movimentados`
+  } else if (d.saldo_tesouraria_evidencias.length > 0) {
+    evidencias = d.saldo_tesouraria_evidencias.map(evidenciaFromSaldoTesouraria)
+    const n = d.saldo_tesouraria_evidencias.length
+    // Shape generico — sublabel adapta ao tipo predominante de fonte.
+    const isFundos = d.saldo_tesouraria_evidencias.every(
+      (ev) => ev.fonte === "wh_posicao_cota_fundo",
+    )
+    const isCompromissada = d.saldo_tesouraria_evidencias.every(
+      (ev) => ev.fonte === "wh_posicao_compromissada",
+    )
+    if (isFundos) {
+      sublabel = n === 1 ? "1 fundo" : `${n} fundos`
+    } else if (isCompromissada) {
+      sublabel = n === 1 ? "1 operação" : `${n} operações`
+    } else {
+      sublabel = n === 1 ? "1 conta" : `${n} contas`
+    }
   }
 
   // Fallback de sublabel pra drivers sem evidencia rica: usar a formula
@@ -1135,11 +1228,19 @@ export function buildDriverFromDriverResultOut(d: DriverResultOut): DriverInput 
     delta: d.valor_brl,
     sublabel,
     evidencias,
+    operationalEvents: operationalEvents.length > 0 ? operationalEvents : undefined,
     // Driver indeterminado por dado: marca como placeholder (ainda nao
     // computado por falta de fonte) — UI mostra "Em construcao".
     placeholder: d.indeterminado_por_dado,
     // Driver implementado mas dia trivial (sem evento) — UI mostra
-    // "Sem movimentacao no dia".
-    empty: !d.indeterminado_por_dado && d.valor_brl === 0 && evidencias.length === 0,
+    // "Sem movimentacao no dia". Se evidencias estao indisponiveis por
+    // dado upstream ausente (evidencias_indisponiveis_motivo), NAO marca
+    // como empty — driver tem valor_brl real, so o granular faltou.
+    empty:
+      !d.indeterminado_por_dado
+      && d.valor_brl === 0
+      && evidencias.length === 0
+      && !d.evidencias_indisponiveis_motivo,
+    evidenciasIndisponiveisMotivo: d.evidencias_indisponiveis_motivo ?? undefined,
   }
 }

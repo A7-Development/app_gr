@@ -136,7 +136,37 @@ class DriverResultOut(BaseModel):
     )
     movimento_carteira_evidencias: list[MovimentoCarteiraEvidencia] = Field(
         default_factory=list,
-        description="Papeis adquiridos/liquidados entre D-1 e D0 com valor > R$ 100. So preenchido para driver Apropriacao DC.",
+        description=(
+            "Papeis adquiridos/liquidados entre D-1 e D0 com valor > R$ 100. "
+            "Driver Apropriacao DC: INFORMACIONAL (não compõe valor_brl). "
+            "Frontend renderiza como sub-secao 'Atividade do dia'."
+        ),
+    )
+    saldo_tesouraria_evidencias: list[SaldoTesourariaEvidencia] = Field(
+        default_factory=list,
+        description=(
+            "1 linha por conta que compoe o saldo de tesouraria do fundo "
+            "(D-1 → D0). So preenchido para driver Tesouraria. "
+            "Σ deltas = valor_brl do driver."
+        ),
+    )
+    apropriacao_dc_evidencias: list[ApropriacaoDcEvidencia] = Field(
+        default_factory=list,
+        description=(
+            "4 inputs da fórmula Apropriação = ΔEstoque - Aq + Liq. "
+            "So preenchido para driver Apropriacao DC. "
+            "Σ valor_brl = valor_brl do driver."
+        ),
+    )
+    evidencias_indisponiveis_motivo: str | None = Field(
+        default=None,
+        description=(
+            "Quando o granular (papel-a-papel) nao pode ser computado por dado "
+            "upstream ausente (ex.: wh_estoque_recebivel vazio em D-1 ou D0), "
+            "este campo carrega uma explicacao curta. Driver continua valido "
+            "(vem do consolidado MEC); evidencias_*[] ficam vazias. Frontend "
+            "renderiza este texto no lugar da lista."
+        ),
     )
 
 
@@ -543,6 +573,55 @@ class MovimentoCarteiraExplanation(BaseModel):
         description="Top N papeis movidos no dia, ordenados por |valor_brl| DESC"
     )
     cosif_origin:          list[CosifOrigem] = Field(default_factory=list)
+
+
+# ── Saldo Tesouraria (driver Tesouraria, 2026-05-19) ────────────────────────
+
+
+class SaldoTesourariaEvidencia(BaseModel):
+    """1 conta que compõe o saldo de tesouraria do fundo (D-1 → D0).
+
+    Reflete o "estoque" no fim do dia, não o fluxo. Cada evidência é uma
+    fonte: `wh_saldo_tesouraria` (cash residual da QiTech por classe) ou
+    `wh_saldo_conta_corrente` (contas bancárias reais).
+
+    Σ deltas dessas evidências = valor_brl do driver Tesouraria.
+
+    Exclusões aplicadas (em sintonia com `_sum_tesouraria`):
+      - `wh_saldo_tesouraria` MEZANINO/SENIOR (só Sub entra no driver Sub)
+      - `wh_saldo_conta_corrente` codigo='CONCILIA' (conta transitória)
+    """
+
+    fonte:        str       = Field(description="wh_saldo_tesouraria | wh_saldo_conta_corrente")
+    descricao:    str       = Field(description="Nome da conta (ex.: 'Saldo em Tesouraria', 'CC - BRADESCO')")
+    codigo:       str | None = Field(default=None, description="Codigo da conta corrente (BRADESCO, SOCOPA, etc) quando aplicavel")
+    valor_d_prev: Decimal   = Field(description="Saldo em D-1")
+    valor_d0:     Decimal   = Field(description="Saldo em D0")
+    delta:        Decimal   = Field(description="valor_d0 - valor_d_prev")
+
+
+# ── Apropriação DC (driver Apropriação de DC, 2026-05-19) ───────────────────
+
+
+class ApropriacaoDcEvidencia(BaseModel):
+    """1 input da fórmula `Apropriação = ΔEstoque - Aquisições + Liquidações`.
+
+    São 4 evidências por bloco (a_vencer + vencidos, sem duplicar inputs
+    quando coincidem). Σ valor_brl dessas evidências = valor_brl do driver
+    Apropriação DC.
+
+    Sinais coerentes com a fórmula:
+      - bloco='a_vencer' / 'vencidos': valor_brl = ΔEstoque (pode ser + ou -)
+      - bloco='aquisicoes': valor_brl = -Aquisições (negativo, sai do caixa)
+      - bloco='liquidados': valor_brl = +Liquidações (positivo, retorna ao caixa)
+    """
+
+    label:        str   = Field(description="Ex.: 'Estoque a vencer', 'Aquisições do dia'")
+    fonte:        str   = Field(description="wh_estoque_recebivel | wh_aquisicao_recebivel | wh_liquidacao_recebivel")
+    bloco:        Literal["a_vencer", "vencidos", "aquisicoes", "liquidados"]
+    valor_d_prev: Decimal | None = Field(default=None, description="Estoque em D-1 (só para 'a_vencer'/'vencidos')")
+    valor_d0:     Decimal | None = Field(default=None, description="Estoque em D0 (só para 'a_vencer'/'vencidos')")
+    valor_brl:    Decimal = Field(description="Valor que entra na soma da fórmula (com sinal coerente)")
 
 
 # ── Marcacao a mercado (categoria 4.1) ───────────────────────────────────────

@@ -71,8 +71,8 @@ async def _run_date(db: AsyncSession, tenant_id, ua_id, d0: date) -> None:
     print(f"Soma drv:   R$ {result.soma_drivers:>20,.2f}")
     print(f"Residuo:    R$ {result.residuo:>20,.2f}")
     print()
-    print(f"{'Driver':<28} {'valor_brl':>16}  PDD MtM CPR Rmn MvC  Indt")
-    print("-" * 80)
+    print(f"{'Driver':<28} {'valor_brl':>16}  PDD MtM CPR Rmn MvC ApD STe  Indt")
+    print("-" * 88)
     for d in result.drivers:
         flags = (
             f" {len(d.pdd_evidencias):>3d}"
@@ -80,9 +80,26 @@ async def _run_date(db: AsyncSession, tenant_id, ua_id, d0: date) -> None:
             f" {len(d.cpr_evidencias):>3d}"
             f" {len(d.remuneracao_evidencias):>3d}"
             f" {len(d.movimento_carteira_evidencias):>3d}"
+            f" {len(d.apropriacao_dc_evidencias):>3d}"
+            f" {len(d.saldo_tesouraria_evidencias):>3d}"
         )
         indt = " IND" if d.indeterminado_por_dado else "   ."
         print(f"{d.label:<28} {float(d.valor_brl):>16,.2f} {flags}  {indt}")
+
+        if d.evidencias_indisponiveis_motivo:
+            print(f"    motivo: {d.evidencias_indisponiveis_motivo}")
+
+        # Verifica Sum evidencias dos novos campos = valor_brl
+        if d.apropriacao_dc_evidencias:
+            soma = sum(float(e.valor_brl) for e in d.apropriacao_dc_evidencias)
+            diff = soma - float(d.valor_brl)
+            marker = "OK" if abs(diff) < 0.01 else f"FAIL diff={diff:+.2f}"
+            print(f"    sum apropriacao_dc_evidencias = {soma:>16,.2f} [{marker}]")
+        if d.saldo_tesouraria_evidencias:
+            soma = sum(float(e.delta) for e in d.saldo_tesouraria_evidencias)
+            diff = soma - float(d.valor_brl)
+            marker = "OK" if abs(diff) < 0.01 else f"FAIL diff={diff:+.2f}"
+            print(f"    sum saldo_tesouraria_evidencias = {soma:>14,.2f} [{marker}]")
     print()
 
 

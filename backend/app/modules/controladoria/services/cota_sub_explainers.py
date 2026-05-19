@@ -76,6 +76,74 @@ ZERO = Decimal("0")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Guard: estoque granular disponivel pra ambas as datas?
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def _estoque_disponivel(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    fundo_doc: str,
+    data: date,
+) -> bool:
+    """True se wh_estoque_recebivel tem ao menos 1 linha pra (fundo, data).
+
+    Usado como guard antes de FULL OUTER JOIN entre 2 datas — quando uma
+    delas esta vazia (fidc-estoque ainda nao publicado pela QiTech, ou
+    job EMPTY), o JOIN converte os papeis da data presente em pseudo-
+    evidencias de "papel sumiu" — distorce a leitura. Melhor retornar
+    [] + motivo do que servir evidencias falsas.
+    """
+    stmt = (
+        select(func.count())
+        .select_from(EstoqueRecebivel)
+        .where(EstoqueRecebivel.tenant_id == tenant_id)
+        .where(EstoqueRecebivel.fundo_doc == fundo_doc)
+        .where(EstoqueRecebivel.data_referencia == data)
+    )
+    count = (await db.execute(stmt)).scalar_one() or 0
+    return count > 0
+
+
+async def _check_estoque_disponibilidade(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    fundo_doc: str,
+    data_d0: date,
+    data_d1: date,
+) -> str | None:
+    """Valida disponibilidade de wh_estoque_recebivel nas 2 datas.
+
+    Retorna `None` quando ambas estao OK (segue o diff normal).
+    Retorna motivo humano quando uma ou ambas vazias (caller retorna
+    evidencias=[] + motivo).
+    """
+    d0_ok = await _estoque_disponivel(
+        db, tenant_id=tenant_id, fundo_doc=fundo_doc, data=data_d0,
+    )
+    d1_ok = await _estoque_disponivel(
+        db, tenant_id=tenant_id, fundo_doc=fundo_doc, data=data_d1,
+    )
+    if d0_ok and d1_ok:
+        return None
+
+    faltam: list[str] = []
+    if not d0_ok:
+        faltam.append(data_d0.strftime("%d/%m"))
+    if not d1_ok:
+        faltam.append(data_d1.strftime("%d/%m"))
+
+    return (
+        f"Estoque granular ainda nao publicado pela QiTech em {', '.join(faltam)} "
+        f"(report market.fidc_estoque). Driver continua confiavel — vem do "
+        f"consolidado MEC/posicoes. Evidencias papel-a-papel ficarao disponiveis "
+        f"quando o relatorio for publicado."
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # PDD (categoria 3.2)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -88,14 +156,27 @@ async def _pdd_diff(
     data_d0: date,
     data_d1: date,
     threshold_brl: Decimal,
-) -> list[PddEvidencia]:
+) -> tuple[list[PddEvidencia], str | None]:
     """Cruza estoque D-1 vs D0 por papel; devolve so onde |Δ valor_pdd| > threshold.
+
+    Retorno: (evidencias, motivo_indisponibilidade).
+        - Caminho normal: (lista, None).
+        - Quando estoque ausente em D-1 OU D0: ([], motivo) — FULL OUTER JOIN
+          produziria pseudo-evidencias com sinal trocado (todos os papeis da
+          data presente virariam "papel sumiu" -> reversao fake). Guard previne.
 
     FULL OUTER JOIN porque papel pode:
       - existir nos dois dias → diff direto
       - existir so em D-1 → liquidou/baixou (Δ = -valor_pdd_d1, reversao)
       - existir so em D0 → novo papel (Δ = +valor_pdd_d0, constituicao)
     """
+    motivo = await _check_estoque_disponibilidade(
+        db, tenant_id=tenant_id, fundo_doc=fundo_doc,
+        data_d0=data_d0, data_d1=data_d1,
+    )
+    if motivo is not None:
+        return [], motivo
+
     # Subqueries por dia
     d1q = (
         select(EstoqueRecebivel)
@@ -149,7 +230,7 @@ async def _pdd_diff(
     )
 
     rows = (await db.execute(stmt)).all()
-    return [
+    evidencias = [
         PddEvidencia(
             cedente_doc=r.cedente_doc,
             cedente_nome=r.cedente_nome,
@@ -168,6 +249,7 @@ async def _pdd_diff(
         )
         for r in rows
     ]
+    return evidencias, None
 
 
 def _fmt_brl(valor: Decimal) -> str:
@@ -219,7 +301,7 @@ async def compute_pdd_explanation(
     top_n: int,
 ) -> PddExplanation | None:
     """Constroi a explanation de PDD. Devolve None se Δ total < threshold."""
-    evidencias_all = await _pdd_diff(
+    evidencias_all, _motivo = await _pdd_diff(
         db,
         tenant_id=tenant_id,
         fundo_doc=fundo_doc,
@@ -262,7 +344,7 @@ async def _cpr_diff_by_descricao(
     ua_id: UUID,
     data_d0: date,
     data_d1: date,
-    descricao_filters: list,
+    descricao_filters: list | None,
     threshold_brl: Decimal,
 ) -> list[EvidenciaCprLinha]:
     """Diff CPR D-1 vs D0 agrupando por `descricao` (mesma linha de CPR).
@@ -273,10 +355,15 @@ async def _cpr_diff_by_descricao(
 
     `descricao_filters` e uma lista de clauses SQLAlchemy (LIKE/ILIKE) que
     sao ORadas. A funcao garante que o filtro casa em D-1 OU D0 (FULL JOIN).
+    Quando `None` ou lista vazia, retorna TODAS as rubricas (sem filtro) —
+    usado pelo driver CPR (ΔSaldo simples) que precisa de Σ evidencias ≡
+    valor_brl.
     """
     from sqlalchemy import or_
 
-    descricao_clause = or_(*descricao_filters)
+    descricao_clause = (
+        or_(*descricao_filters) if descricao_filters else None
+    )
 
     d1q = (
         select(
@@ -287,10 +374,13 @@ async def _cpr_diff_by_descricao(
         .where(CprMovimento.tenant_id == tenant_id)
         .where(CprMovimento.unidade_administrativa_id == ua_id)
         .where(CprMovimento.data_posicao == data_d1)
-        .where(descricao_clause)
-        .group_by(CprMovimento.descricao, CprMovimento.historico_traduzido)
-        .subquery()
     )
+    if descricao_clause is not None:
+        d1q = d1q.where(descricao_clause)
+    d1q = d1q.group_by(
+        CprMovimento.descricao, CprMovimento.historico_traduzido,
+    ).subquery()
+
     d0q = (
         select(
             CprMovimento.descricao,
@@ -300,10 +390,12 @@ async def _cpr_diff_by_descricao(
         .where(CprMovimento.tenant_id == tenant_id)
         .where(CprMovimento.unidade_administrativa_id == ua_id)
         .where(CprMovimento.data_posicao == data_d0)
-        .where(descricao_clause)
-        .group_by(CprMovimento.descricao, CprMovimento.historico_traduzido)
-        .subquery()
     )
+    if descricao_clause is not None:
+        d0q = d0q.where(descricao_clause)
+    d0q = d0q.group_by(
+        CprMovimento.descricao, CprMovimento.historico_traduzido,
+    ).subquery()
 
     valor_d1 = func.coalesce(d1q.c.valor, ZERO)
     valor_d0 = func.coalesce(d0q.c.valor, ZERO)
@@ -716,17 +808,29 @@ async def _movimento_carteira_diff(
     data_d0: date,
     data_d1: date,
     threshold_brl: Decimal,
-) -> tuple[list[MovimentoCarteiraEvidencia], Decimal, Decimal, int, int]:
+) -> tuple[list[MovimentoCarteiraEvidencia], Decimal, Decimal, int, int, str | None]:
     """Diff `wh_estoque_recebivel` D-1 vs D0 por (seu_numero, numero_documento).
 
-    Devolve (evidencias, total_liquidado, total_adquirido, qtd_liq, qtd_adq).
+    Devolve (evidencias, total_liquidado, total_adquirido, qtd_liq, qtd_adq,
+    motivo_indisponibilidade).
 
     Critério:
       - papel em D-1 e NAO em D0 -> liquidado (saiu da carteira)
       - papel em D0 e NAO em D-1 -> adquirido (entrou na carteira)
       - papel em ambos -> sem movimento (continua aging)
       - threshold filtra papeis com valor_presente < threshold_brl
+
+    Guard: quando estoque ausente em D-1 ou D0, retorna (vazio, zeros, zeros,
+    0, 0, motivo) — evita FULL OUTER JOIN pintar todos os papeis da data
+    presente como "liquidados/adquiridos" fake. Mesma logica do `_pdd_diff`.
     """
+    motivo = await _check_estoque_disponibilidade(
+        db, tenant_id=tenant_id, fundo_doc=fundo_doc,
+        data_d0=data_d0, data_d1=data_d1,
+    )
+    if motivo is not None:
+        return [], ZERO, ZERO, 0, 0, motivo
+
     d1q = (
         select(EstoqueRecebivel)
         .where(EstoqueRecebivel.tenant_id == tenant_id)
@@ -810,7 +914,7 @@ async def _movimento_carteira_diff(
     # Ordena por |valor| DESC pra tops aparecerem primeiro
     evidencias.sort(key=lambda e: abs(e.valor_brl), reverse=True)
 
-    return evidencias, total_liquidado, total_adquirido, qtd_liquidados, qtd_adquiridos
+    return evidencias, total_liquidado, total_adquirido, qtd_liquidados, qtd_adquiridos, None
 
 
 def _build_movimento_carteira_narrative(
@@ -853,7 +957,7 @@ async def compute_movimento_carteira_explanation(
     Bucket informacional: `delta_brl = 0` sempre (movimento patrimonial
     neutro). Devolve None se nao houve papel girado acima do threshold.
     """
-    evidencias_all, total_liq, total_adq, qtd_liq, qtd_adq = await _movimento_carteira_diff(
+    evidencias_all, total_liq, total_adq, qtd_liq, qtd_adq, _motivo = await _movimento_carteira_diff(
         db,
         tenant_id=tenant_id,
         fundo_doc=fundo_doc,
@@ -894,6 +998,8 @@ async def _mtm_diff(
     data_d0: date,
     data_d1: date,
     threshold_brl: Decimal,
+    driver_filter: str | None = None,
+    require_qtd_estavel: bool = True,
 ) -> list[MtmEvidencia]:
     """Diff `wh_posicao_renda_fixa` D-1 vs D0 agregando por `codigo_lastro`.
 
@@ -905,9 +1011,36 @@ async def _mtm_diff(
     so os papeis com posicao liquida real (NTN-B Tesouro, NCs, debentures de
     terceiros).
 
-    Devolve lastros com `Δqtd_agregada = 0` E `|Δvalor_agregado| > threshold`.
-    Metadados (nome, emitente, codigo) vem do lado ativo (qtd > 0).
+    Devolve lastros com `|Δvalor_agregado| > threshold`. Metadados (nome,
+    emitente, codigo) vem do lado ativo (qtd > 0).
+
+    `driver_filter`: quando passado (ex.: 'titulos_publicos' ou 'op_estruturadas'),
+    filtra evidencias pela classificacao COSIF do papel via
+    `_driver_gestor_for_cosif` (mesmo mecanismo de `_sum_renda_fixa_por_driver`).
+    Sem isso, NCs aparecem como evidencia de TPF e vice-versa (mistura no card).
+
+    `require_qtd_estavel` (default True — uso legacy do COSIF-bucket model):
+    quando True, exige Δqtd_agregada=0 (so MtM puro). Quando False, inclui
+    papeis adquiridos/liquidados entre os dois dias (composicao completa).
+    Os drivers TPF/Op Estr (modelo ΔSaldo) usam False + threshold=0.01 para
+    que Σ evidencias ≡ valor_brl.
     """
+    from app.modules.controladoria.services.cosif.classifier import (
+        classify,
+        load_overrides,
+        load_rules_cache,
+    )
+    from app.modules.controladoria.services.cota_sub import (
+        _driver_gestor_for_cosif,
+    )
+
+    rules_cache = await load_rules_cache(db) if driver_filter else None
+    overrides = (
+        await load_overrides(db, tenant_id=tenant_id, fundo_id=ua_id)
+        if driver_filter
+        else None
+    )
+
     # 1) Carrega TODAS as posicoes dos 2 dias (sem agregar SQL) e agrupa
     #    em Python por codigo_lastro. Volumetria pequena (~50 papeis/dia
     #    pra REALINVEST) — agregar em Python e mais simples que SQL filter.
@@ -918,6 +1051,29 @@ async def _mtm_diff(
         .where(PosicaoRendaFixa.data_posicao.in_([data_d1, data_d0]))
     )
     rows = (await db.execute(stmt)).scalars().all()
+
+    # 1.a) Filtro por driver via COSIF (quando aplicavel). Mantemos somente
+    #      linhas cujo papel mapeia pro driver pedido. `codigo_lastro` agrega
+    #      pares espelhados ATIVO/PASSIVO (mesma classificacao COSIF do lado
+    #      ativo — passivo herda no agregado).
+    if driver_filter:
+        filtered = []
+        for r in rows:
+            row_dict: dict[str, object] = {
+                "codigo":         r.codigo,
+                "nome_do_papel":  r.nome_do_papel,
+                "codigo_lastro":  r.codigo_lastro,
+                "quantidade":     r.quantidade,
+            }
+            resolution = classify(
+                silver_origin="wh_posicao_renda_fixa",
+                row=row_dict,
+                rules_cache=rules_cache,
+                overrides=overrides,
+            )
+            if _driver_gestor_for_cosif(resolution.cosif) == driver_filter:
+                filtered.append(r)
+        rows = filtered
 
     # Agrupa por (data, codigo_lastro): acumula qtd, valor, e guarda lado ativo
     by_lastro: dict[date, dict[str, dict[str, object]]] = {data_d1: {}, data_d0: {}}
@@ -950,22 +1106,37 @@ async def _mtm_diff(
 
     # 2) Diff por lastro: para cada lastro presente em D-1 OU D0, calcula
     #    delta agregado. Pares pegados tem soma ~0 dos 2 lados; ficam filtrados.
+    _ZERO_AGG: dict[str, object] = {
+        "qtd_total":         ZERO,
+        "valor_total":       ZERO,
+        "codigo_ativo":      None,
+        "nome_do_papel":     None,
+        "emitente":          None,
+        "indexador":         None,
+        "data_vencimento":   None,
+        "pu_ativo":          ZERO,
+        "qtd_ativo":         ZERO,
+    }
     all_lastros = set(by_lastro[data_d1].keys()) | set(by_lastro[data_d0].keys())
     out: list[MtmEvidencia] = []
     for lastro in all_lastros:
         d1 = by_lastro[data_d1].get(lastro)
         d0 = by_lastro[data_d0].get(lastro)
-        if d1 is None or d0 is None:
-            # Papel entrou ou saiu da carteira — NAO e MtM (e movimento de carteira)
+
+        if require_qtd_estavel and (d1 is None or d0 is None):
+            # Modo MtM puro: papel entrou/saiu nao se aplica.
             continue
+        # Modo composicao completa: papel ausente vira saldo zero do lado.
+        d1 = d1 if d1 is not None else _ZERO_AGG
+        d0 = d0 if d0 is not None else _ZERO_AGG
 
         qtd_d1_total = d1["qtd_total"]
         qtd_d0_total = d0["qtd_total"]
         valor_d1_total = d1["valor_total"]
         valor_d0_total = d0["valor_total"]
 
-        # Qtd liquida estavel (MtM puro)?
-        if qtd_d1_total != qtd_d0_total:
+        # Qtd liquida estavel (MtM puro)? Skipa no modo MtM-only.
+        if require_qtd_estavel and qtd_d1_total != qtd_d0_total:
             continue
 
         delta_valor = Decimal(valor_d0_total) - Decimal(valor_d1_total)  # type: ignore[arg-type]

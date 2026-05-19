@@ -2291,6 +2291,33 @@ export type CprDetalhado = {
  * Espelha backend `cota_sub_drivers.compute.DriverResult` +
  * `schemas/cota_sub.py::DriverResultOut`.
  */
+export type SaldoTesourariaEvidencia = {
+  /** "wh_saldo_tesouraria" | "wh_saldo_conta_corrente". */
+  fonte:        string
+  /** Nome da conta (ex.: "Saldo em Tesouraria", "CC - BRADESCO"). */
+  descricao:    string
+  /** Codigo da conta corrente (BRADESCO, SOCOPA) quando aplicavel. */
+  codigo:       string | null
+  valor_d_prev: number
+  valor_d0:     number
+  /** valor_d0 - valor_d_prev. */
+  delta:        number
+}
+
+export type ApropriacaoDcEvidencia = {
+  /** Ex.: "Estoque a vencer", "Aquisições do dia". */
+  label:        string
+  /** wh_estoque_recebivel | wh_aquisicao_recebivel | wh_liquidacao_recebivel. */
+  fonte:        string
+  bloco:        "a_vencer" | "vencidos" | "aquisicoes" | "liquidados"
+  /** Estoque em D-1 (só para 'a_vencer'/'vencidos'). */
+  valor_d_prev: number | null
+  /** Estoque em D0 (só para 'a_vencer'/'vencidos'). */
+  valor_d0:     number | null
+  /** Valor que entra na fórmula (com sinal coerente: ΔEstoque ou -Aq/-Liq_neg). */
+  valor_brl:    number
+}
+
 export type DriverResultOut = {
   metric_global_id:       string  // ex.: "controladoria.cota_sub.driver.pdd"
   label:                  string
@@ -2310,7 +2337,17 @@ export type DriverResultOut = {
   mtm_evidencias:                 MtmEvidencia[]                 // driver Titulos Publicos
   cpr_evidencias:                 EvidenciaCprLinha[]            // driver Apropriacao Despesas
   remuneracao_evidencias:         RemuneracaoSrMezEvidencia[]    // drivers Senior / Mezanino
-  movimento_carteira_evidencias:  MovimentoCarteiraEvidencia[]   // driver Apropriacao DC
+  /** Apropriação DC: INFORMACIONAL (sub-seção "Atividade do dia", não compõe valor_brl). */
+  movimento_carteira_evidencias:  MovimentoCarteiraEvidencia[]
+  saldo_tesouraria_evidencias:    SaldoTesourariaEvidencia[]     // driver Tesouraria
+  apropriacao_dc_evidencias:      ApropriacaoDcEvidencia[]       // driver Apropriação DC
+  /**
+   * Quando o granular nao pode ser computado por dado upstream ausente
+   * (ex.: wh_estoque_recebivel vazio em D-1 ou D0), carrega explicacao curta.
+   * Driver continua valido (vem do consolidado MEC); evidencias_*[] ficam vazias.
+   * Frontend renderiza este texto no lugar da lista.
+   */
+  evidencias_indisponiveis_motivo: string | null
 }
 
 export type VariacaoDiariaResponse = {
@@ -2599,6 +2636,37 @@ function _coerceLinha(l: ApropriacaoDcLinha): ApropriacaoDcLinha {
 function _coerceCprItem(i: CprMovimentoItem): CprMovimentoItem {
   return { ...i, valor: Number(i.valor) }
 }
+function _coerceSaldoTesourariaEvidencia(e: SaldoTesourariaEvidencia): SaldoTesourariaEvidencia {
+  return {
+    ...e,
+    valor_d_prev: Number(e.valor_d_prev),
+    valor_d0:     Number(e.valor_d0),
+    delta:        Number(e.delta),
+  }
+}
+function _coerceApropriacaoDcEvidencia(e: ApropriacaoDcEvidencia): ApropriacaoDcEvidencia {
+  return {
+    ...e,
+    valor_d_prev: e.valor_d_prev === null ? null : Number(e.valor_d_prev),
+    valor_d0:     e.valor_d0 === null ? null : Number(e.valor_d0),
+    valor_brl:    Number(e.valor_brl),
+  }
+}
+function _coerceDriverResultOut(d: DriverResultOut): DriverResultOut {
+  return {
+    ...d,
+    valor_brl:                     Number(d.valor_brl),
+    valor_d_prev:                  d.valor_d_prev === null ? null : Number(d.valor_d_prev),
+    valor_d0:                      d.valor_d0 === null ? null : Number(d.valor_d0),
+    pdd_evidencias:                d.pdd_evidencias.map(_coercePddEvidencia),
+    mtm_evidencias:                d.mtm_evidencias.map(_coerceMtmEvidencia),
+    cpr_evidencias:                d.cpr_evidencias.map(_coerceCprEvidencia),
+    remuneracao_evidencias:        d.remuneracao_evidencias.map(_coerceRemuneracaoSrMezEvidencia),
+    movimento_carteira_evidencias: d.movimento_carteira_evidencias.map(_coerceMovimentoCarteiraEvidencia),
+    saldo_tesouraria_evidencias:   (d.saldo_tesouraria_evidencias ?? []).map(_coerceSaldoTesourariaEvidencia),
+    apropriacao_dc_evidencias:     (d.apropriacao_dc_evidencias ?? []).map(_coerceApropriacaoDcEvidencia),
+  }
+}
 function _coerceVariacao(r: VariacaoDiariaResponse): VariacaoDiariaResponse {
   return {
     ...r,
@@ -2624,6 +2692,9 @@ function _coerceVariacao(r: VariacaoDiariaResponse): VariacaoDiariaResponse {
       total_d0:   Number(r.cpr_detalhado.total_d0),
       variacao:   Number(r.cpr_detalhado.variacao),
     },
+    drivers:        r.drivers.map(_coerceDriverResultOut),
+    soma_drivers:   Number(r.soma_drivers),
+    residuo_modelo: Number(r.residuo_modelo),
   }
 }
 

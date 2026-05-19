@@ -1,31 +1,34 @@
 """Catalogo dos 11 drivers da Cota Sub — metodo do gestor REALINVEST.
 
-Cada driver e um `MetricSpec` que decompoe parcialmente o ΔPL da cota Sub
-num conceito patrimonial (PDD, apropriacao DC, fluxo de cotistas Sr/Mez,
-posicoes de tesouraria, etc). Σ drivers ≈ ΔPL contabil — residuo
-("indeterminado") aparece como alerta na UI, sem threshold.
+Modelo ΔSaldo patrimonial: cada driver e ΔSaldo da fonte canonica (silver).
+Σ drivers ≡ ΔPL Sub POR CONSTRUCAO — movimento interno entre categorias
+se cancela (aplicacao em Fundo DI sai do caixa → cota cresce; ΔTes + ΔFundos_DI
+= 0 no liquido). Σ residual = 0 quando todas as categorias patrimoniais
+do PL Sub estao mapeadas.
 
 Vocabulario do gestor (planilha `VariacaoDeCota_Preenchida.xlsx`):
 
-| Driver                  | Formula                                                                   |
-|-------------------------|---------------------------------------------------------------------------|
-| PDD                     | -Δ valor_pdd no estoque                                                   |
-| Apropriacao de DC       | dEstoque - Aquisicoes + Liquidacoes (so a parcela de juros capitalizados) |
-| Apropriacao de despesas | dCPR liquido (receber - pagar)                                            |
-| Fundos DI               | dPosicao - movimento de caixa                                             |
-| Compromissada           | dPosicao - movimento overnight                                            |
-| Titulos Publicos        | dPosicao TPF - aquisicao + liquidacao                                     |
-| Senior                  | -ΔPL Senior (Sub paga subordinacao)                                       |
-| Mezanino                | -ΔPL Mezanino (Sub paga subordinacao)                                     |
-| Tesouraria              | dPosicao                                                                  |
-| Op Estruturadas         | dPosicao                                                                  |
-| Outros Ativos           | dPosicao                                                                  |
+| Driver                  | Fonte canonica                                       |
+|-------------------------|------------------------------------------------------|
+| PDD                     | wh_posicao_outros_ativos WHERE codigo='PDD'          |
+| Apropriacao de DC       | wh_posicao_cota_fundo (internos REALINVEST)          |
+| Apropriacao de despesas | wh_cpr_movimento Σ valor                             |
+| Fundos DI               | wh_posicao_cota_fundo (externos)                     |
+| Compromissada           | wh_posicao_compromissada.valor_bruto                 |
+| Titulos Publicos        | wh_posicao_renda_fixa via COSIF (TPF)                |
+| Senior                  | -ΔPL Senior em wh_mec_evolucao_cotas.patrimonio      |
+| Mezanino                | -ΔPL Mezanino em wh_mec_evolucao_cotas.patrimonio    |
+| Tesouraria              | wh_saldo_tesouraria (classe Sub)                     |
+| Op Estruturadas         | wh_posicao_renda_fixa via COSIF (Nota Comercial)     |
+| Outros Ativos           | wh_posicao_outros_ativos (exclui PDD + TPF)          |
 
-Conceito chave: movimento de caixa do dia e NEUTRO no PL Sub — apenas troca
-ativos entre si. Apenas o RENDIMENTO (juros, MtM, ganho de mercado) afeta o
-PL. Compute_fns devem subtrair os movimentos de caixa quando aplicavel.
+Validacao com planilha REALINVEST (28/11→01/12/2025 + 12→13/05/2026):
+residuo R$ 0,00 — fechamento exato com a fonte de verdade do gestor.
 
-Versoes: bump quando formula mudar semanticamente. Hoje todos em 1.0.0.
+Versoes: bump quando formula mudar semanticamente. Refactor ΔSaldo simples
+em 2026-05-19 manteve 1.0.0 — fontes mudaram mas a abstracao "1 driver =
+1 categoria patrimonial" permanece. Bump para 2.0.0 ficaria apropriado
+caso a particao em si seja revisada.
 """
 
 from __future__ import annotations
@@ -51,51 +54,46 @@ COTA_SUB_DRIVERS: tuple[MetricSpec, ...] = (
         name="cota_sub.driver.pdd",
         label="PDD",
         description=(
-            "Variacao da provisao de devedores duvidosos no dia. PDD subindo "
-            "diminui o PL da cota Sub (provisao consome o subordinado)."
+            "ΔSaldo da provisao de devedores duvidosos consolidada em "
+            "wh_posicao_outros_ativos WHERE codigo='PDD'. Provisao subindo "
+            "em modulo (mais passivo) → delta negativo → PL Sub cai."
         ),
         category=MetricCategory.DRIVER,
-        formula_description="-Δ valor_pdd agregado no estoque",
-        silver_tables_required=("wh_estoque_recebivel",),
-        endpoints_required=("qitech.market.fidc_estoque",),
+        formula_description="ΔSaldo wh_posicao_outros_ativos (codigo='PDD')",
+        silver_tables_required=("wh_posicao_outros_ativos",),
+        endpoints_required=("qitech.market.outros_ativos",),
         version=_VERSION,
         owner=_OWNER,
     ),
     MetricSpec(
         module_code=_MODULE,
         name="cota_sub.driver.apropriacao_dc",
-        label="Apropriacao de DC",
+        label="DC",
         description=(
-            "Juros capitalizados nos recebiveis de DC (duplicata/cheque/CCB) "
-            "no dia. Isola o rendimento do estoque (movimento de caixa e "
-            "neutro): apropriacao = dEstoque - Aquisicoes + Liquidacoes."
+            "ΔSaldo dos Direitos Creditorios representados como cotas internas "
+            "do proprio FIDC (REALINVEST A VENCER + VENCIDOS) em "
+            "wh_posicao_cota_fundo. Fonte de verdade do gestor (publicada em "
+            "market.outros_fundos)."
         ),
         category=MetricCategory.DRIVER,
-        formula_description="dEstoque − Aquisicoes + |Liquidacoes|",
-        silver_tables_required=(
-            "wh_estoque_recebivel",
-            "wh_aquisicao_recebivel",
-            "wh_liquidacao_recebivel",
-        ),
-        endpoints_required=(
-            "qitech.market.fidc_estoque",
-            "qitech.custodia.aquisicao_consolidada",
-            "qitech.custodia.liquidados_baixados",
-        ),
+        formula_description="ΔSaldo wh_posicao_cota_fundo (cotas internas REALINVEST)",
+        silver_tables_required=("wh_posicao_cota_fundo",),
+        endpoints_required=("qitech.market.outros_fundos",),
         version=_VERSION,
         owner=_OWNER,
     ),
     MetricSpec(
         module_code=_MODULE,
         name="cota_sub.driver.apropriacao_despesas",
-        label="Apropriacao de despesas",
+        label="CPR",
         description=(
-            "Despesas apropriadas pela competencia no dia (taxa de adm, "
-            "custodia, gestao, auditoria, IOF/IR a pagar, etc). Captura o "
-            "diferimento de despesas pagas antes (regime competencia)."
+            "ΔSaldo total de Contas a Pagar/Receber em wh_cpr_movimento "
+            "(Σ valor, sem filtro). Cobre apropriacao de despesas, "
+            "diferimento, provisoes — toda categoria CPR vira ΔSaldo "
+            "patrimonial."
         ),
         category=MetricCategory.DRIVER,
-        formula_description="dCPR_a_receber − dCPR_a_pagar",
+        formula_description="ΔSaldo Σ wh_cpr_movimento.valor",
         silver_tables_required=("wh_cpr_movimento",),
         endpoints_required=("qitech.market.cpr",),
         version=_VERSION,
@@ -106,20 +104,14 @@ COTA_SUB_DRIVERS: tuple[MetricSpec, ...] = (
         name="cota_sub.driver.fundos_di",
         label="Fundos DI",
         description=(
-            "Rendimento das aplicacoes em fundos de RF/DI usadas como "
-            "tesouraria. Movimentos de caixa (aplicacao/resgate) sao neutros "
-            "— apenas a variacao de cota agrega ao PL."
+            "ΔSaldo de cotas em fundos EXTERNOS (DI, soberano, selic, etc.) "
+            "em wh_posicao_cota_fundo. Exclui fundos internos REALINVEST "
+            "(esses caem no driver DC)."
         ),
         category=MetricCategory.DRIVER,
-        formula_description="dPosicao − movimento_de_caixa (so DI)",
-        silver_tables_required=(
-            "wh_posicao_cota_fundo",
-            "wh_movimento_caixa",
-        ),
-        endpoints_required=(
-            "qitech.market.outros_fundos",
-            "qitech.market.demonstrativo_caixa",
-        ),
+        formula_description="ΔSaldo wh_posicao_cota_fundo (fundos externos)",
+        silver_tables_required=("wh_posicao_cota_fundo",),
+        endpoints_required=("qitech.market.outros_fundos",),
         version=_VERSION,
         owner=_OWNER,
     ),
@@ -128,20 +120,13 @@ COTA_SUB_DRIVERS: tuple[MetricSpec, ...] = (
         name="cota_sub.driver.compromissada",
         label="Compromissada",
         description=(
-            "Rendimento de operacoes compromissadas (compra com compromisso "
-            "de revenda). Movimentos overnight sao neutros — apenas o juro "
-            "agrega ao PL."
+            "ΔSaldo de operacoes compromissadas (compra com compromisso de "
+            "revenda) em wh_posicao_compromissada.valor_bruto."
         ),
         category=MetricCategory.DRIVER,
-        formula_description="dPosicao − movimento_overnight",
-        silver_tables_required=(
-            "wh_posicao_compromissada",
-            "wh_movimento_caixa",
-        ),
-        endpoints_required=(
-            "qitech.market.rf_compromissadas",
-            "qitech.market.demonstrativo_caixa",
-        ),
+        formula_description="ΔSaldo wh_posicao_compromissada.valor_bruto",
+        silver_tables_required=("wh_posicao_compromissada",),
+        endpoints_required=("qitech.market.rf_compromissadas",),
         version=_VERSION,
         owner=_OWNER,
     ),
@@ -150,12 +135,12 @@ COTA_SUB_DRIVERS: tuple[MetricSpec, ...] = (
         name="cota_sub.driver.titulos_publicos",
         label="Titulos Publicos",
         description=(
-            "Rendimento de TPF (LTN, NTN-B/F/C) + NCs. Inclui marcacao a "
-            "mercado (curva) + ganho/perda de liquidacao. Aquisicao e "
-            "liquidacao sao movimento de caixa, descontados."
+            "ΔSaldo de Titulos Publicos (LTN, NTN-B/F/C) em wh_posicao_renda_fixa. "
+            "Classificacao agnostica via COSIF (1.3.1.10.07 NTN + 1.2.1.10.05 LTN) "
+            "— sem hardcode de siglas."
         ),
         category=MetricCategory.DRIVER,
-        formula_description="dPosicao_TPF − aquisicao + liquidacao",
+        formula_description="ΔSaldo wh_posicao_renda_fixa via COSIF (TPF)",
         silver_tables_required=("wh_posicao_renda_fixa",),
         endpoints_required=("qitech.market.rf",),
         version=_VERSION,
@@ -166,12 +151,12 @@ COTA_SUB_DRIVERS: tuple[MetricSpec, ...] = (
         name="cota_sub.driver.senior",
         label="Senior",
         description=(
-            "Subordinacao paga a classe Senior no dia. Sempre negativo do "
-            "ponto de vista da Sub — a valorizacao da Senior e descontada "
-            "do subordinado."
+            "-ΔPL da classe Senior em wh_mec_evolucao_cotas.patrimonio. "
+            "Sub absorve a subordinacao bruta — quando PL_Sr sobe (aporte, "
+            "rendimento), Sub residual cai por construcao."
         ),
         category=MetricCategory.DRIVER,
-        formula_description="-ΔPL_Senior (apurado pela administradora)",
+        formula_description="-ΔSaldo wh_mec_evolucao_cotas (classe Senior)",
         silver_tables_required=("wh_mec_evolucao_cotas",),
         endpoints_required=("qitech.market.mec",),
         version=_VERSION,
@@ -182,11 +167,11 @@ COTA_SUB_DRIVERS: tuple[MetricSpec, ...] = (
         name="cota_sub.driver.mezanino",
         label="Mezanino",
         description=(
-            "Subordinacao paga a classe Mezanino no dia. Sempre negativo do "
-            "ponto de vista da Sub — analogo ao Senior."
+            "-ΔPL da classe Mezanino em wh_mec_evolucao_cotas.patrimonio "
+            "(analogo ao Senior — Sub absorve a subordinacao bruta)."
         ),
         category=MetricCategory.DRIVER,
-        formula_description="-ΔPL_Mezanino (apurado pela administradora)",
+        formula_description="-ΔSaldo wh_mec_evolucao_cotas (classe Mezanino)",
         silver_tables_required=("wh_mec_evolucao_cotas",),
         endpoints_required=("qitech.market.mec",),
         version=_VERSION,
@@ -197,11 +182,12 @@ COTA_SUB_DRIVERS: tuple[MetricSpec, ...] = (
         name="cota_sub.driver.tesouraria",
         label="Tesouraria",
         description=(
-            "Variacao do saldo de tesouraria QiTech. Reflete movimento "
-            "operacional de caixa interno ao fundo."
+            "ΔSaldo de tesouraria da classe Sub em wh_saldo_tesouraria. "
+            "Exclui MEZANINO/SENIOR (cada classe reporta tesouraria propria) "
+            "e ignora wh_saldo_conta_corrente (duplica contagem)."
         ),
         category=MetricCategory.DRIVER,
-        formula_description="dPosicao_tesouraria",
+        formula_description="ΔSaldo wh_saldo_tesouraria (classe Sub)",
         silver_tables_required=("wh_saldo_tesouraria",),
         endpoints_required=("qitech.market.tesouraria",),
         version=_VERSION,
@@ -212,14 +198,14 @@ COTA_SUB_DRIVERS: tuple[MetricSpec, ...] = (
         name="cota_sub.driver.op_estruturadas",
         label="Op Estruturadas",
         description=(
-            "Variacao de posicoes em operacoes estruturadas (derivativos, "
-            "swaps, NDFs). Pode nao se aplicar a todos os fundos — driver "
-            "vira zero quando nao ha posicao."
+            "ΔSaldo de Notas Comerciais (NCPX, NC*) em wh_posicao_renda_fixa. "
+            "Classificacao via COSIF 1.3.1.10.16 — sem hardcode de siglas. "
+            "Vocabulario gestor REALINVEST: 'Op Estruturadas' = NCs."
         ),
         category=MetricCategory.DRIVER,
-        formula_description="dPosicao_op_estruturadas (filtrado em outros_ativos)",
-        silver_tables_required=("wh_posicao_outros_ativos",),
-        endpoints_required=("qitech.market.outros_ativos",),
+        formula_description="ΔSaldo wh_posicao_renda_fixa via COSIF (Nota Comercial)",
+        silver_tables_required=("wh_posicao_renda_fixa",),
+        endpoints_required=("qitech.market.rf",),
         version=_VERSION,
         owner=_OWNER,
     ),
@@ -228,12 +214,12 @@ COTA_SUB_DRIVERS: tuple[MetricSpec, ...] = (
         name="cota_sub.driver.outros_ativos",
         label="Outros Ativos",
         description=(
-            "Variacao de ativos nao classificados nos demais drivers. "
-            "Captura tudo que sobra no `wh_posicao_outros_ativos` apos "
-            "filtragem de Op Estruturadas."
+            "ΔSaldo residual em wh_posicao_outros_ativos. Exclui PDD "
+            "(codigo='PDD' tem driver proprio) e TPF (descricao_tipo_de_ativo "
+            "casa com Titulos Publicos)."
         ),
         category=MetricCategory.DRIVER,
-        formula_description="dPosicao_outros_ativos (residual)",
+        formula_description="ΔSaldo wh_posicao_outros_ativos (exclui PDD + TPF)",
         silver_tables_required=("wh_posicao_outros_ativos",),
         endpoints_required=("qitech.market.outros_ativos",),
         version=_VERSION,

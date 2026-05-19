@@ -3,20 +3,19 @@
 /**
  * StatusHeadlineCompact — banda Z1 compacta da aba "Eventos do dia".
  *
- * Layout (refinado 2026-05-17):
+ * Layout (refactor 2026-05-19):
  *
- *   [PL Cota Sub D0]  |  [Δ apurado (MEC)]  |  [Δ calculado (contábil)]  |  [Não-explicado]  ...chips
+ *   [PL Cota Sub D0]  |  [Δ apurado (MEC)]  |  [Σ drivers]  |  [Não-explicado]  ...chips
  *
- * Os 3 deltas tornam visivel a qualidade da analise. Atencao a nomenclatura
- * do backend (balancete_diario.py:484-485) — "real" no schema = MEC apurado;
- * "esperado" = inferencia contabil. Aqui na UI os papeis sao expressos por
- * "apurado" e "calculado" para deixar mais claro pro usuario.
+ * Os 3 deltas tornam visivel a qualidade da analise:
  *  - **Apurado (MEC)**: ΔPL Sub vindo de `wh_mec_evolucao_cotas` —
- *    `recon.delta_pl_cota_sub_real`. E a "verdade" do administrador.
- *  - **Calculado (contábil)**: ΔPL Sub resolvido pelo balancete COSIF —
- *    `recon.delta_pl_cota_sub_esperado` (ΔTotal − ΔSr − ΔMez).
- *  - **Não-explicado**: residuo (`real − esperado`) + % da variacao apurada.
- *    Verde se |residuo|/|baseD1| < 0.1%, amber 0.1-0.5%, red >0.5%.
+ *    `recon.delta_pl_cota_sub_real`. E a "verdade" do administrador (Singulare).
+ *  - **Σ drivers**: soma dos 11 drivers do metodo gestor (variacao patrimonial
+ *    por categoria) — `variacao_diaria.soma_drivers`. Quando o modelo fecha,
+ *    Σ drivers ≡ Apurado MEC.
+ *  - **Não-explicado**: residuo (`Apurado − Σ drivers`) + % da variacao apurada.
+ *    `variacao_diaria.residuo_modelo`. Verde se |residuo|/|baseD1| < 0.1%,
+ *    amber 0.1-0.5%, red >0.5%.
  *
  * Tone do numero primary (PL D0): vira `neutral` quando ha pendente COSIF OU
  * `data_quality.comparable=false`. Coerente com CLAUDE.md §14 explicabilidade
@@ -53,15 +52,15 @@ export type StatusHeadlineCompactProps = {
   dataD0?: string
   /** PL Cota Sub em D0. Quando indefinido, mostra "—". */
   plSubD0?: number
-  /** Δ R$ apurado pelo MEC (= recon.delta_pl_cota_sub_esperado). */
+  /** Δ R$ apurado pelo MEC (= recon.delta_pl_cota_sub_real). */
   deltaApuradoMec?: number
-  /** Δ % apurado pelo MEC (= deltaApuradoMec / pl_d-1). */
+  /** Δ % apurado pelo MEC (= recon.delta_pct_sobre_d1). */
   deltaApuradoPct?: number
-  /** Δ R$ calculado pelo balancete COSIF (= recon.delta_pl_cota_sub_real). */
-  deltaCalculadoReal?: number
-  /** Δ % calculado pelo balancete COSIF (= recon.delta_pct_sobre_d1). */
-  deltaCalculadoPct?: number
-  /** Residuo R$ = real − esperado (= recon.residuo). */
+  /** Σ R$ dos 11 drivers do metodo gestor (= variacao_diaria.soma_drivers). */
+  somaDrivers?: number
+  /** Σ % dos drivers (= soma_drivers / pl_d-1 * 100). */
+  somaDriversPct?: number
+  /** Residuo R$ = apurado MEC − Σ drivers (= variacao_diaria.residuo_modelo). */
   residuo?: number
   /** Base de comparacao para classificar o residuo (= pl_cota_sub_d1). */
   baseResiduo?: number
@@ -78,8 +77,8 @@ export function StatusHeadlineCompact({
   plSubD0,
   deltaApuradoMec,
   deltaApuradoPct,
-  deltaCalculadoReal,
-  deltaCalculadoPct,
+  somaDrivers,
+  somaDriversPct,
   residuo,
   baseResiduo,
   forceNeutral = false,
@@ -134,11 +133,11 @@ export function StatusHeadlineCompact({
         divider
       />
 
-      {/* Coluna 3: Calculado (contábil) */}
+      {/* Coluna 3: Σ dos drivers do metodo gestor */}
       <DeltaCol
-        label="Variação calculada · contábil"
-        valor={deltaCalculadoReal}
-        pct={deltaCalculadoPct}
+        label="Soma dos drivers"
+        valor={somaDrivers}
+        pct={somaDriversPct}
         loading={loading}
         divider
       />

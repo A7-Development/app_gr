@@ -116,7 +116,10 @@ export function EventosDiaTab({
   )
 
   // ─── Chips do header ────────────────────────────────────────────────────
-  // Ordem: snapshot parcial (prioritario) -> reconciliacao -> cobertura.
+  // Ordem: snapshot parcial (prioritario) -> reconciliacao (MEC vs Σ drivers) -> cobertura.
+  // Refactor 2026-05-19: chip "Reconciliado" usa residuo do metodo gestor
+  // (variacao_diaria.residuo_modelo = MEC − Σ drivers), nao mais o residuo
+  // contabil do balancete COSIF.
   const headerChips = React.useMemo<StatusHeadlineChip[]>(() => {
     const out: StatusHeadlineChip[] = []
     if (!recon || !cob) return out
@@ -128,23 +131,24 @@ export function EventosDiaTab({
       })
     }
 
+    const residuoModelo = variacaoDiaria.data?.residuo_modelo ?? 0
     const residuoPp =
       recon.pl_cota_sub_d1 !== 0
-        ? Math.abs(recon.residuo) / Math.abs(recon.pl_cota_sub_d1)
+        ? Math.abs(residuoModelo) / Math.abs(recon.pl_cota_sub_d1)
         : 0
     if (residuoPp <= 0.001) {
       out.push({
-        label: `Reconciliado · resíduo ${fmtBRLCompact.format(Math.abs(recon.residuo))}`,
+        label: `Reconciliado · resíduo ${fmtBRLCompact.format(Math.abs(residuoModelo))}`,
         tone:  "ok",
       })
     } else if (residuoPp <= 0.01) {
       out.push({
-        label: `Resíduo ${fmtBRLCompact.format(Math.abs(recon.residuo))}`,
+        label: `Resíduo ${fmtBRLCompact.format(Math.abs(residuoModelo))}`,
         tone:  "warn",
       })
     } else {
       out.push({
-        label: `Resíduo ${fmtBRLCompact.format(Math.abs(recon.residuo))} acima da tolerância`,
+        label: `Resíduo ${fmtBRLCompact.format(Math.abs(residuoModelo))} acima da tolerância`,
         tone:  "error",
       })
     }
@@ -159,7 +163,7 @@ export function EventosDiaTab({
     }
 
     return out
-  }, [recon, cob, dq, pendentesCount])
+  }, [recon, cob, dq, pendentesCount, variacaoDiaria.data])
 
   // ─── Drivers para o BridgeCard + DriversCard ────────────────────────────
   // Fase 4c (2026-05-19): 11 drivers canonicos do metodo gestor REALINVEST,
@@ -174,7 +178,41 @@ export function EventosDiaTab({
   // DriversCard (BridgeCategoryId + DriverEvidence[]).
   const driverInputs = React.useMemo<DriverInput[]>(() => {
     const drivers = variacaoDiaria.data?.drivers ?? []
-    return drivers.map(buildDriverFromDriverResultOut)
+    const mapped = drivers.map(buildDriverFromDriverResultOut)
+
+    // Merge Senior + Mezanino num unico driver "remuneracao_sr_mez". Backend
+    // mantem 2 drivers granulares (auditoria); UI colapsa em 1 linha do
+    // waterfall + 1 card no rail. Detalhe (expand) lista as duas classes
+    // como evidencias separadas, preservando rastreabilidade.
+    const sr  = mapped.find((d) => d.id === "senior")
+    const mez = mapped.find((d) => d.id === "mezanino")
+    const rest = mapped.filter((d) => d.id !== "senior" && d.id !== "mezanino")
+    if (!sr && !mez) return mapped
+
+    const parts = [sr, mez].filter((x): x is DriverInput => x !== undefined)
+    const evidencias = parts.flatMap((d) => d.evidencias ?? [])
+    const delta = parts.reduce((acc, d) => acc + d.delta, 0)
+    const allPlaceholder = parts.length > 0 && parts.every((d) => d.placeholder)
+    const allEmpty = parts.length > 0 && parts.every(
+      (d) => d.empty || (d.delta === 0 && (d.evidencias?.length ?? 0) === 0),
+    )
+
+    const combined: DriverInput = {
+      id:          "remuneracao_sr_mez",
+      delta,
+      sublabel:    allPlaceholder
+        ? undefined
+        : allEmpty
+          ? undefined
+          : evidencias.length > 0
+            ? `${evidencias.length === 1 ? "1 classe" : `${evidencias.length} classes`} subordinadas`
+            : undefined,
+      evidencias,
+      placeholder: allPlaceholder,
+      empty:       allEmpty,
+    }
+
+    return [...rest, combined]
   }, [variacaoDiaria.data])
 
   // BridgeDrivers — converte DriverInput pro shape do waterfall.
@@ -193,7 +231,8 @@ export function EventosDiaTab({
         placeholder:  input.placeholder || input.empty,
       }
     }
-    // Ordem canonica dos drivers (igual ao catalog backend).
+    // Ordem canonica dos drivers (igual ao catalog backend, com Sr+Mez
+    // colapsados em remuneracao_sr_mez por decisao de UX 2026-05-19).
     const ORDER: BridgeCategoryId[] = [
       "pdd",
       "apropriacao_dc",
@@ -201,8 +240,7 @@ export function EventosDiaTab({
       "fundos_di",
       "compromissada",
       "titulos_publicos",
-      "senior",
-      "mezanino",
+      "remuneracao_sr_mez",
       "tesouraria",
       "op_estruturadas",
       "outros_ativos",
@@ -281,27 +319,25 @@ export function EventosDiaTab({
         </div>
       )}
 
-      {/* 1. Status headline compacto (Z1) — 3 deltas.
-            ATENCAO a nomenclatura do backend (balancete_diario.py:484-485):
-              - `delta_pl_cota_sub_real`     = MEC direto (verdade do administrador)
-              - `delta_pl_cota_sub_esperado` = derivado contabil (ΔTotal − Sr − Mez)
-            "Real" no schema = MEC apurado; "Esperado" = inferencia contabil.
-            UI mostra:
-              - Variacao apurada (MEC) ← delta_pl_cota_sub_real
-              - Variacao calculada (contabil) ← delta_pl_cota_sub_esperado
-              - Nao-explicado ← residuo = real − esperado. */}
+      {/* 1. Status headline compacto (Z1) — 3 deltas (refactor 2026-05-19).
+            - Variacao apurada (MEC) ← recon.delta_pl_cota_sub_real
+              (verdade do administrador via wh_mec_evolucao_cotas).
+            - Soma dos drivers ← variacao_diaria.soma_drivers
+              (Σ dos 11 drivers do metodo gestor; modelo ΔSaldo patrimonial).
+            - Nao-explicado ← variacao_diaria.residuo_modelo
+              (= MEC − Σ drivers; zero quando o modelo fecha por construcao). */}
       <StatusHeadlineCompact
         dataD0={balancete?.data_d_zero}
         plSubD0={recon?.pl_cota_sub_d0}
         deltaApuradoMec={recon?.delta_pl_cota_sub_real}
         deltaApuradoPct={recon?.delta_pct_sobre_d1}
-        deltaCalculadoReal={recon?.delta_pl_cota_sub_esperado}
-        deltaCalculadoPct={
-          recon && recon.pl_cota_sub_d1 !== 0
-            ? (recon.delta_pl_cota_sub_esperado / recon.pl_cota_sub_d1) * 100
+        somaDrivers={variacaoDiaria.data?.soma_drivers}
+        somaDriversPct={
+          variacaoDiaria.data && recon && recon.pl_cota_sub_d1 !== 0
+            ? (variacaoDiaria.data.soma_drivers / recon.pl_cota_sub_d1) * 100
             : undefined
         }
-        residuo={recon?.residuo}
+        residuo={variacaoDiaria.data?.residuo_modelo}
         baseResiduo={recon?.pl_cota_sub_d1}
         forceNeutral={forceNeutral}
         chips={headerChips}

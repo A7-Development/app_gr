@@ -34,6 +34,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -42,11 +43,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.cadastros.public import UnidadeAdministrativa
 from app.modules.controladoria.schemas.cota_sub import (
     ApropriacaoDc,
+    ApropriacaoDcEvidencia,
     ApropriacaoDcLinha,
     CprDetalhado,
     CprMovimentoItem,
     DecomposicaoItem,
     PlCategoria,
+    SaldoTesourariaEvidencia,
     VariacaoDiariaResponse,
 )
 from app.modules.integracoes.public import dia_util_anterior_qitech
@@ -56,10 +59,15 @@ from app.warehouse.estoque_recebivel import EstoqueRecebivel
 from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel
 from app.warehouse.mec_evolucao_cotas import MecEvolucaoCotas
 from app.warehouse.movimento_caixa import MovimentoCaixa
+from app.modules.controladoria.services.cosif.classifier import (
+    classify,
+    load_overrides,
+    load_rules_cache,
+)
 from app.warehouse.posicao_compromissada import PosicaoCompromissada
 from app.warehouse.posicao_cota_fundo import PosicaoCotaFundo
 from app.warehouse.posicao_outros_ativos import PosicaoOutrosAtivos
-from app.warehouse.saldo_conta_corrente import SaldoContaCorrente
+from app.warehouse.posicao_renda_fixa import PosicaoRendaFixa
 from app.warehouse.saldo_tesouraria import SaldoTesouraria
 
 ZERO = Decimal("0")
@@ -301,30 +309,147 @@ async def _mec_classes_fluxo_caixa(
     return out
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Renda fixa: classificacao via COSIF para roteamento por driver gestor
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Mapping COSIF (prefixo) -> driver do metodo gestor. COSIF e padrao
+# CVM/BACEN global e estavel — justifica constante em codigo. Curadoria
+# acontece em `cosif_rule` (regras de papel -> cosif) e
+# `tenant_papel_classificacao` (overrides por tenant) — esses sim DB-backed.
+#
+# Valor `None` = driver implicito (excluir do somatorio):
+#   - 3.9.9.* (compensacao interna) = cotas internas do proprio fundo,
+#     pareadas positivo+negativo somando zero
+#   - 6.1.* (cotas emitidas) = passivo da subordinacao, ja captado via MEC
+#     nos drivers Senior / Mezanino
+COSIF_TO_DRIVER_GESTOR: dict[str, str | None] = {
+    # TPF (Notas e Letras do Tesouro Nacional)
+    "1.3.1.10.07": "titulos_publicos",  # NTN
+    "1.2.1.10.05": "titulos_publicos",  # LTN
+    # Notas Comerciais = Op Estruturadas (metodo gestor REALINVEST)
+    "1.3.1.10.16": "op_estruturadas",
+    # Cotas de fundo RF (raro vir aqui — geralmente vai em wh_posicao_cota_fundo)
+    "1.3.1.15.30": "fundos_di",
+    # Compensacao interna (cotas internas pareadas) — exclui
+    "3.9.9.30.50": None,
+    # Cotas emitidas (passivo, capturado via MEC nos drivers Sr/Mez) — exclui
+    "6.1.1.70.30": None,
+}
+
+
+def _driver_gestor_for_cosif(cosif: str | None) -> str | None:
+    """Mapeia codigo COSIF -> driver gestor por prefixo (match mais especifico).
+
+    Retorna None quando COSIF e classificado como excluivel (compensacao
+    interna ou cota emitida) OU quando nao bate com nenhum prefixo
+    conhecido. Quando o classifier devolve `cosif=None` (papel pendente),
+    tambem retorna None — papel pendente nao contribui pra nenhum driver
+    ate ser classificado.
+    """
+    if not cosif:
+        return None
+    # Match pelo prefixo mais longo (caso adicionem hierarquias futuramente).
+    best: tuple[int, str | None] = (0, None)
+    for prefix, driver in COSIF_TO_DRIVER_GESTOR.items():
+        if cosif.startswith(prefix) and len(prefix) > best[0]:
+            best = (len(prefix), driver)
+    return best[1]
+
+
+async def _sum_renda_fixa_por_driver(
+    db: AsyncSession, tenant_id: UUID, ua_id: UUID, data: date,
+) -> dict[str, Decimal]:
+    """Soma wh_posicao_renda_fixa agrupado por driver gestor.
+
+    Aplica classificacao COSIF (cosif_rule + tenant_papel_classificacao) em
+    cada papel, mapeia COSIF -> driver via `COSIF_TO_DRIVER_GESTOR`, e
+    acumula `valor_bruto` por driver. Papeis nao classificados ou em
+    categorias excluidas (compensacao/cota emitida) NAO entram em nenhum
+    driver — ficam invisiveis do somatorio (residuo do metodo).
+
+    Returns:
+        dict[driver_name, Decimal] — drivers sem papel ficam ausentes.
+    """
+    rules_cache = await load_rules_cache(db)
+    overrides = await load_overrides(db, tenant_id=tenant_id, fundo_id=ua_id)
+
+    stmt = (
+        select(
+            PosicaoRendaFixa.codigo,
+            PosicaoRendaFixa.nome_do_papel,
+            PosicaoRendaFixa.codigo_lastro,
+            PosicaoRendaFixa.quantidade,
+            PosicaoRendaFixa.valor_bruto,
+        )
+        .where(PosicaoRendaFixa.tenant_id == tenant_id)
+        .where(PosicaoRendaFixa.unidade_administrativa_id == ua_id)
+        .where(PosicaoRendaFixa.data_posicao == data)
+    )
+    rows = (await db.execute(stmt)).all()
+
+    totais: dict[str, Decimal] = {}
+    for codigo, nome_do_papel, codigo_lastro, quantidade, valor_bruto in rows:
+        row_dict: dict[str, Any] = {
+            "codigo": codigo,
+            "nome_do_papel": nome_do_papel,
+            "codigo_lastro": codigo_lastro,
+            "quantidade": quantidade,
+        }
+        resolution = classify(
+            silver_origin="wh_posicao_renda_fixa",
+            row=row_dict,
+            rules_cache=rules_cache,
+            overrides=overrides,
+        )
+        driver = _driver_gestor_for_cosif(resolution.cosif)
+        if driver is None:
+            continue
+        totais[driver] = totais.get(driver, ZERO) + Decimal(valor_bruto or 0)
+    return totais
+
+
 async def _sum_titulos_publicos(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID, data: date
 ) -> Decimal:
-    stmt = (
-        select(
-            PosicaoOutrosAtivos.descricao_tipo_de_ativo,
-            PosicaoOutrosAtivos.valor_total,
-        )
-        .where(PosicaoOutrosAtivos.tenant_id == tenant_id)
-        .where(PosicaoOutrosAtivos.unidade_administrativa_id == ua_id)
-        .where(PosicaoOutrosAtivos.data_posicao == data)
-    )
-    rows = (await db.execute(stmt)).all()
-    total = ZERO
-    for tipo, valor in rows:
-        if _is_titulo_publico(tipo or ""):
-            total += Decimal(valor or 0)
-    return total
+    """Titulos Publicos = Σ wh_posicao_renda_fixa classificado como TPF via COSIF.
+
+    Refactor 2026-05-19: antes lia de `wh_posicao_outros_ativos` filtrando
+    por `descricao_tipo_de_ativo` (que nao trazia TPF na pratica). Agora
+    le de `wh_posicao_renda_fixa` e usa a classificacao COSIF para
+    identificar TPF (NTN, LTN) — agnostico, sem hardcode de siglas.
+    """
+    totais = await _sum_renda_fixa_por_driver(db, tenant_id, ua_id, data)
+    return totais.get("titulos_publicos", ZERO)
+
+
+async def _sum_op_estruturadas(
+    db: AsyncSession, tenant_id: UUID, ua_id: UUID, data: date
+) -> Decimal:
+    """Op Estruturadas = Σ wh_posicao_renda_fixa classificado como Nota Comercial via COSIF.
+
+    Vocabulario gestor REALINVEST: "Op Estruturadas" = Notas Comerciais
+    (NCPX, NC*, etc.). Identificacao agnostica via cosif_rule (regra
+    `rf.nota_comercial` -> cosif 1.3.1.10.16.*).
+    """
+    totais = await _sum_renda_fixa_por_driver(db, tenant_id, ua_id, data)
+    return totais.get("op_estruturadas", ZERO)
 
 
 async def _sum_outros_ativos_nao_tpf(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID, data: date
 ) -> Decimal:
-    """Outros ativos + Op Estruturadas (planilha trata juntos no MVP)."""
+    """Outros ativos + Op Estruturadas (planilha trata juntos no MVP).
+
+    Exclusoes:
+      - TPF (`_is_titulo_publico` no `descricao_tipo_de_ativo`) — pertence
+        ao driver Titulos Publicos.
+      - PDD (`codigo='PDD'`) — bug double-counting (2026-05-19): a QiTech
+        reporta PDD em DUAS fontes — `wh_estoque_recebivel.valor_pdd`
+        (granular) e `wh_posicao_outros_ativos` (consolidado, 1 linha
+        com codigo='PDD'). O driver PDD ja consome a fonte granular;
+        se nao excluir aqui, PDD vai pra dois drivers (PDD + Outros Ativos).
+    """
     stmt = (
         select(
             PosicaoOutrosAtivos.descricao_tipo_de_ativo,
@@ -333,6 +458,7 @@ async def _sum_outros_ativos_nao_tpf(
         .where(PosicaoOutrosAtivos.tenant_id == tenant_id)
         .where(PosicaoOutrosAtivos.unidade_administrativa_id == ua_id)
         .where(PosicaoOutrosAtivos.data_posicao == data)
+        .where(PosicaoOutrosAtivos.codigo != "PDD")
     )
     rows = (await db.execute(stmt)).all()
     total = ZERO
@@ -370,31 +496,61 @@ async def _sum_fundos_di(
 
 
 async def _sum_dc(
-    db: AsyncSession, tenant_id: UUID, fundo_doc: str, data: date
+    db: AsyncSession, tenant_id: UUID, ua_id: UUID, ua_nome: str, data: date,
 ) -> Decimal:
-    """DC = sum(valor_presente) sobre estoque (ja liquido de PDD)."""
+    """DC = Σ wh_posicao_cota_fundo dos fundos INTERNOS do FIDC.
+
+    Refactor 2026-05-19 (metodo gestor REALINVEST, ΔSaldo simples):
+    a planilha do gestor decompoe o PL Sub em 11 categorias patrimoniais
+    e usa "Direitos Creditorios" = saldo das cotas internas do proprio
+    FIDC (representacao alternativa da carteira DC) em
+    `wh_posicao_cota_fundo`. Antes lia `wh_estoque_recebivel.valor_presente`
+    (DC granular papel-a-papel), mas o gestor fecha pelos saldos consolidados
+    publicados na MEC/Tesouraria — fechamento exato com a fonte certa.
+
+    Identificacao do fundo interno: `_is_fundo_externo == False` (prefixo da
+    UA aparece no nome do papel — `REALINVEST FIDC` → `REALINVEST A VENCER` /
+    `REALINVEST VENCIDOS`).
+    """
     stmt = (
-        select(func.coalesce(func.sum(EstoqueRecebivel.valor_presente), ZERO))
-        .where(EstoqueRecebivel.tenant_id == tenant_id)
-        .where(EstoqueRecebivel.fundo_doc == fundo_doc)
-        .where(EstoqueRecebivel.data_referencia == data)
+        select(
+            PosicaoCotaFundo.ativo_nome,
+            PosicaoCotaFundo.valor_liquido,
+        )
+        .where(PosicaoCotaFundo.tenant_id == tenant_id)
+        .where(PosicaoCotaFundo.unidade_administrativa_id == ua_id)
+        .where(PosicaoCotaFundo.data_posicao == data)
     )
-    return Decimal((await db.execute(stmt)).scalar() or 0)
+    rows = (await db.execute(stmt)).all()
+    total = ZERO
+    for nome, valor in rows:
+        if not _is_fundo_externo(nome or "", ua_nome):
+            total += Decimal(valor or 0)
+    return total
 
 
 async def _sum_pdd(
-    db: AsyncSession, tenant_id: UUID, fundo_doc: str, data: date
+    db: AsyncSession, tenant_id: UUID, ua_id: UUID, data: date,
 ) -> Decimal:
-    """PDD = sum(valor_pdd) — convencao da planilha exibe como negativo."""
+    """PDD = saldo consolidado em `wh_posicao_outros_ativos` WHERE codigo='PDD'.
+
+    Refactor 2026-05-19 (metodo gestor REALINVEST, ΔSaldo simples): antes
+    somava `wh_estoque_recebivel.valor_pdd` (granular papel-a-papel), mas o
+    gestor le o PDD consolidado em uma unica linha publicada pela QiTech em
+    `market.outros_ativos` (mesma fonte de Outros Ativos). Mantemos a fonte
+    granular para `pdd_evidencias` (papel-a-papel, informativo); calculo do
+    delta vem da consolidada.
+
+    PDD e contabilmente passivo — `valor_total` ja vem negativo na QiTech.
+    """
     stmt = (
-        select(func.coalesce(func.sum(EstoqueRecebivel.valor_pdd), ZERO))
-        .where(EstoqueRecebivel.tenant_id == tenant_id)
-        .where(EstoqueRecebivel.fundo_doc == fundo_doc)
-        .where(EstoqueRecebivel.data_referencia == data)
+        select(func.coalesce(func.sum(PosicaoOutrosAtivos.valor_total), ZERO))
+        .where(PosicaoOutrosAtivos.tenant_id == tenant_id)
+        .where(PosicaoOutrosAtivos.unidade_administrativa_id == ua_id)
+        .where(PosicaoOutrosAtivos.data_posicao == data)
+        .where(PosicaoOutrosAtivos.codigo == "PDD")
     )
-    raw = Decimal((await db.execute(stmt)).scalar() or 0)
-    # Se o adapter grava sempre positivo, normalizamos para negativo (passivo).
-    return -abs(raw)
+    return Decimal((await db.execute(stmt)).scalar() or 0)
 
 
 async def _sum_cpr_snapshot(
@@ -412,25 +568,229 @@ async def _sum_cpr_snapshot(
 async def _sum_tesouraria(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID, data: date
 ) -> Decimal:
-    """Tesouraria = wh_saldo_tesouraria + wh_saldo_conta_corrente.
+    """Tesouraria do driver Sub = `wh_saldo_tesouraria` classe Sub apenas.
 
-    Convencao: somamos os dois (planilha trata como uma unica linha).
+    Refactor 2026-05-19 (metodo gestor REALINVEST, ΔSaldo simples): antes
+    somava `wh_saldo_tesouraria` + `wh_saldo_conta_corrente`, mas o gestor
+    publica "Tesouraria" como uma unica linha consolidada em
+    `market.tesouraria`. SaldoContaCorrente cobre o mesmo dinheiro de outro
+    angulo (visao da conta, nao do fundo) — duplica contagem na otica do
+    PL Sub. Mantemos apenas `wh_saldo_tesouraria` da classe Sub (exclui
+    MEZANINO/SENIOR — cada classe reporta seu saldo separadamente).
     """
     s_tes = (
         select(func.coalesce(func.sum(SaldoTesouraria.valor), ZERO))
         .where(SaldoTesouraria.tenant_id == tenant_id)
         .where(SaldoTesouraria.unidade_administrativa_id == ua_id)
         .where(SaldoTesouraria.data_posicao == data)
+        .where(SaldoTesouraria.carteira_cliente_nome.notilike("%MEZANINO%"))
+        .where(SaldoTesouraria.carteira_cliente_nome.notilike("%SENIOR%"))
     )
-    s_cc = (
-        select(func.coalesce(func.sum(SaldoContaCorrente.valor_total), ZERO))
-        .where(SaldoContaCorrente.tenant_id == tenant_id)
-        .where(SaldoContaCorrente.unidade_administrativa_id == ua_id)
-        .where(SaldoContaCorrente.data_posicao == data)
+    return Decimal((await db.execute(s_tes)).scalar() or 0)
+
+
+async def _saldo_tesouraria_evidencias(
+    db: AsyncSession, tenant_id: UUID, ua_id: UUID, d_prev: date, d0: date,
+) -> tuple[SaldoTesourariaEvidencia, ...]:
+    """Composicao do saldo de tesouraria por descricao (D-1 → D0).
+
+    Refactor 2026-05-19: pareada com `_sum_tesouraria`, le APENAS
+    `wh_saldo_tesouraria` da classe Sub. Σ deltas = valor_brl do driver
+    Tesouraria.
+    """
+    stmt_tes = (
+        select(
+            SaldoTesouraria.descricao,
+            SaldoTesouraria.data_posicao,
+            func.coalesce(func.sum(SaldoTesouraria.valor), ZERO).label("valor"),
+        )
+        .where(SaldoTesouraria.tenant_id == tenant_id)
+        .where(SaldoTesouraria.unidade_administrativa_id == ua_id)
+        .where(SaldoTesouraria.data_posicao.in_([d_prev, d0]))
+        .where(SaldoTesouraria.carteira_cliente_nome.notilike("%MEZANINO%"))
+        .where(SaldoTesouraria.carteira_cliente_nome.notilike("%SENIOR%"))
+        .group_by(SaldoTesouraria.descricao, SaldoTesouraria.data_posicao)
     )
-    v_tes = Decimal((await db.execute(s_tes)).scalar() or 0)
-    v_cc = Decimal((await db.execute(s_cc)).scalar() or 0)
-    return v_tes + v_cc
+    rows_tes = (await db.execute(stmt_tes)).all()
+    tes_pivot: dict[tuple[str, date], Decimal] = {}
+    tes_descricoes: set[str] = set()
+    for desc, dpos, val in rows_tes:
+        desc = desc or "Saldo em Tesouraria"
+        tes_pivot[(desc, dpos)] = Decimal(val or 0)
+        tes_descricoes.add(desc)
+
+    evid: list[SaldoTesourariaEvidencia] = []
+    for desc in sorted(tes_descricoes):
+        v_prev = tes_pivot.get((desc, d_prev), ZERO)
+        v_d0 = tes_pivot.get((desc, d0), ZERO)
+        evid.append(
+            SaldoTesourariaEvidencia(
+                fonte="wh_saldo_tesouraria",
+                descricao=desc,
+                codigo=None,
+                valor_d_prev=v_prev,
+                valor_d0=v_d0,
+                delta=v_d0 - v_prev,
+            )
+        )
+    return tuple(evid)
+
+
+async def _composicao_compromissada_evidencias(
+    db: AsyncSession,
+    tenant_id: UUID,
+    ua_id: UUID,
+    d_prev: date,
+    d0: date,
+) -> tuple[SaldoTesourariaEvidencia, ...]:
+    """Composicao do saldo de Compromissadas por operacao (D-1 → D0).
+
+    1 evidencia por `codigo` (= 1 operacao compromissada) presente em D-1
+    OU D0. Σ deltas = valor_brl do driver. Descricao traz papel + taxa +
+    janela (aquisicao → resgate) pra dar contexto.
+
+    Reaproveita `SaldoTesourariaEvidencia` (shape generico).
+    """
+    stmt = (
+        select(
+            PosicaoCompromissada.codigo,
+            PosicaoCompromissada.papel,
+            PosicaoCompromissada.taxa_ano,
+            PosicaoCompromissada.data_aquisicao,
+            PosicaoCompromissada.data_resgate,
+            PosicaoCompromissada.data_posicao,
+            func.coalesce(
+                func.sum(PosicaoCompromissada.valor_bruto), ZERO,
+            ).label("valor"),
+        )
+        .where(PosicaoCompromissada.tenant_id == tenant_id)
+        .where(PosicaoCompromissada.unidade_administrativa_id == ua_id)
+        .where(PosicaoCompromissada.data_posicao.in_([d_prev, d0]))
+        .group_by(
+            PosicaoCompromissada.codigo,
+            PosicaoCompromissada.papel,
+            PosicaoCompromissada.taxa_ano,
+            PosicaoCompromissada.data_aquisicao,
+            PosicaoCompromissada.data_resgate,
+            PosicaoCompromissada.data_posicao,
+        )
+    )
+    rows = (await db.execute(stmt)).all()
+
+    pivot: dict[tuple[str, date], Decimal] = {}
+    # Metadata da operacao (papel/taxa/datas) — preferencia D0; fallback D-1.
+    meta: dict[str, dict[str, object]] = {}
+    for codigo, papel, taxa, dt_aq, dt_rg, dpos, val in rows:
+        codigo = codigo or "(sem codigo)"
+        pivot[(codigo, dpos)] = Decimal(val or 0)
+        # Atualiza metadata: D0 sobrescreve D-1 (mais recente).
+        if codigo not in meta or dpos == d0:
+            meta[codigo] = {
+                "papel":         papel or "",
+                "taxa_ano":      taxa,
+                "data_aquisicao": dt_aq,
+                "data_resgate":  dt_rg,
+            }
+
+    evid: list[SaldoTesourariaEvidencia] = []
+    for codigo, m in meta.items():
+        v_prev = pivot.get((codigo, d_prev), ZERO)
+        v_d0 = pivot.get((codigo, d0), ZERO)
+        # Filtro: ignora operacoes zeradas nos 2 dias.
+        if v_prev == ZERO and v_d0 == ZERO:
+            continue
+        # Monta descricao: "LTNO @ 13,80%aa · 11/05→12/05".
+        parts: list[str] = []
+        if m["papel"]:
+            parts.append(str(m["papel"]))
+        if m["taxa_ano"] is not None:
+            taxa_str = f"{float(m['taxa_ano']):.2f}".replace(".", ",")  # type: ignore[arg-type]
+            parts.append(f"@ {taxa_str}%aa")
+        if m["data_aquisicao"] and m["data_resgate"]:
+            dt_aq = m["data_aquisicao"]
+            dt_rg = m["data_resgate"]
+            parts.append(
+                f"{dt_aq.strftime('%d/%m')}→{dt_rg.strftime('%d/%m')}",  # type: ignore[union-attr]
+            )
+        descricao = " · ".join(parts) if parts else codigo
+
+        evid.append(
+            SaldoTesourariaEvidencia(
+                fonte="wh_posicao_compromissada",
+                descricao=descricao,
+                codigo=codigo,
+                valor_d_prev=v_prev,
+                valor_d0=v_d0,
+                delta=v_d0 - v_prev,
+            )
+        )
+    evid.sort(key=lambda e: abs(e.delta), reverse=True)
+    return tuple(evid)
+
+
+async def _composicao_fundos_di_evidencias(
+    db: AsyncSession,
+    tenant_id: UUID,
+    ua_id: UUID,
+    ua_nome: str,
+    d_prev: date,
+    d0: date,
+) -> tuple[SaldoTesourariaEvidencia, ...]:
+    """Composicao do saldo de Fundos DI por fundo externo (D-1 → D0).
+
+    1 evidencia por fundo externo presente em D-1 OU D0 (FULL JOIN). Σ
+    deltas = valor_brl do driver. Pareada com `_sum_fundos_di` (exclui
+    fundos internos REALINVEST A VENCER / VENCIDOS).
+
+    Reaproveita `SaldoTesourariaEvidencia` — shape generico (descricao +
+    saldos D-1/D0 + delta). Nome do tipo e historico (criado pro driver
+    Tesouraria); pode acabar renomeado pra `ComposicaoSaldoEvidencia` em
+    refactor futuro.
+    """
+    stmt = (
+        select(
+            PosicaoCotaFundo.ativo_nome,
+            PosicaoCotaFundo.data_posicao,
+            func.coalesce(
+                func.sum(PosicaoCotaFundo.valor_liquido), ZERO,
+            ).label("valor"),
+        )
+        .where(PosicaoCotaFundo.tenant_id == tenant_id)
+        .where(PosicaoCotaFundo.unidade_administrativa_id == ua_id)
+        .where(PosicaoCotaFundo.data_posicao.in_([d_prev, d0]))
+        .group_by(PosicaoCotaFundo.ativo_nome, PosicaoCotaFundo.data_posicao)
+    )
+    rows = (await db.execute(stmt)).all()
+
+    pivot: dict[tuple[str, date], Decimal] = {}
+    nomes_externos: set[str] = set()
+    for nome, dpos, val in rows:
+        nome = nome or "(sem nome)"
+        if not _is_fundo_externo(nome, ua_nome):
+            continue
+        pivot[(nome, dpos)] = Decimal(val or 0)
+        nomes_externos.add(nome)
+
+    evid: list[SaldoTesourariaEvidencia] = []
+    for nome in sorted(nomes_externos):
+        v_prev = pivot.get((nome, d_prev), ZERO)
+        v_d0 = pivot.get((nome, d0), ZERO)
+        # Filtro: ignora fundos que ficaram zerados nos 2 dias (poluiria UI).
+        if v_prev == ZERO and v_d0 == ZERO:
+            continue
+        evid.append(
+            SaldoTesourariaEvidencia(
+                fonte="wh_posicao_cota_fundo",
+                descricao=nome,
+                codigo=None,
+                valor_d_prev=v_prev,
+                valor_d0=v_d0,
+                delta=v_d0 - v_prev,
+            )
+        )
+    # Ordena por |delta| desc — destaque pra fundos que mexeram mais.
+    evid.sort(key=lambda e: abs(e.delta), reverse=True)
+    return tuple(evid)
 
 
 async def _pl_sub_jr(
@@ -565,6 +925,63 @@ async def _apropriacao_dc(
     )
 
 
+def _apropriacao_dc_evidencias(
+    apr: ApropriacaoDc, d_prev: date, d0: date,
+) -> tuple[ApropriacaoDcEvidencia, ...]:
+    """4 inputs do calculo `Apropriacao = ΔEstoque - Aq + Liq` (consolidados).
+
+    Cada evidencia traz o valor com sinal coerente com a formula — Σ
+    valor_brl das 4 evidencias = `apr.total` do driver.
+
+    Labels carregam as datas dinamicamente pra evitar ambiguidade ("do dia"
+    nao deixa claro qual dia). Aquisicoes/liquidacoes acontecem em D0
+    (intervalo (d_prev, d0] em `_aquisicoes` / `_liquidados`).
+
+    Convencao do source (em `_liquidados`): valor_pago retorna NEGATIVO
+    (saida do estoque). Logo, `-Liq` no codigo equivale a `+|Liq|`
+    conceitualmente — caixa retorna ao fundo, apropriacao positiva
+    quando o estoque caiu por liquidacao.
+    """
+    delta_a_vencer = apr.a_vencer.estoque_d0 - apr.a_vencer.estoque_d1
+    delta_vencidos = apr.vencidos.estoque_d0 - apr.vencidos.estoque_d1
+    aquisicoes_total = apr.a_vencer.aquisicoes + apr.vencidos.aquisicoes
+    liquidados_total = apr.a_vencer.liquidados + apr.vencidos.liquidados
+
+    fmt_prev = d_prev.strftime("%d/%m")
+    fmt_d0 = d0.strftime("%d/%m")
+
+    return (
+        ApropriacaoDcEvidencia(
+            label=f"Estoque a vencer · {fmt_prev} → {fmt_d0}",
+            fonte="wh_estoque_recebivel",
+            bloco="a_vencer",
+            valor_d_prev=apr.a_vencer.estoque_d1,
+            valor_d0=apr.a_vencer.estoque_d0,
+            valor_brl=delta_a_vencer,
+        ),
+        ApropriacaoDcEvidencia(
+            label=f"Estoque vencidos · {fmt_prev} → {fmt_d0}",
+            fonte="wh_estoque_recebivel",
+            bloco="vencidos",
+            valor_d_prev=apr.vencidos.estoque_d1,
+            valor_d0=apr.vencidos.estoque_d0,
+            valor_brl=delta_vencidos,
+        ),
+        ApropriacaoDcEvidencia(
+            label=f"Aquisições em {fmt_d0}",
+            fonte="wh_aquisicao_recebivel",
+            bloco="aquisicoes",
+            valor_brl=-aquisicoes_total,
+        ),
+        ApropriacaoDcEvidencia(
+            label=f"Liquidações em {fmt_d0}",
+            fonte="wh_liquidacao_recebivel",
+            bloco="liquidados",
+            valor_brl=-liquidados_total,
+        ),
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CPR detalhado
 # ─────────────────────────────────────────────────────────────────────────────
@@ -678,10 +1095,12 @@ async def compute_variacao_diaria(
     outros_d0 = await _sum_outros_ativos_nao_tpf(db, tenant_id, ua_id, data_d0)
     fundos_di_d1 = await _sum_fundos_di(db, tenant_id, ua_id, ua.nome, d1)
     fundos_di_d0 = await _sum_fundos_di(db, tenant_id, ua_id, ua.nome, data_d0)
-    dc_d1 = await _sum_dc(db, tenant_id, fundo_doc, d1)
-    dc_d0 = await _sum_dc(db, tenant_id, fundo_doc, data_d0)
-    pdd_d1 = await _sum_pdd(db, tenant_id, fundo_doc, d1)
-    pdd_d0 = await _sum_pdd(db, tenant_id, fundo_doc, data_d0)
+    op_estr_d1 = await _sum_op_estruturadas(db, tenant_id, ua_id, d1)
+    op_estr_d0 = await _sum_op_estruturadas(db, tenant_id, ua_id, data_d0)
+    dc_d1 = await _sum_dc(db, tenant_id, ua_id, ua.nome, d1)
+    dc_d0 = await _sum_dc(db, tenant_id, ua_id, ua.nome, data_d0)
+    pdd_d1 = await _sum_pdd(db, tenant_id, ua_id, d1)
+    pdd_d0 = await _sum_pdd(db, tenant_id, ua_id, data_d0)
     cpr_snap_d1 = await _sum_cpr_snapshot(db, tenant_id, ua_id, d1)
     cpr_snap_d0 = await _sum_cpr_snapshot(db, tenant_id, ua_id, data_d0)
     teso_d1 = await _sum_tesouraria(db, tenant_id, ua_id, d1)
@@ -702,14 +1121,14 @@ async def compute_variacao_diaria(
         _categoria("compromissada",    "Compromissada",    compromissada_d1, compromissada_d0, "wh_posicao_compromissada"),
         _categoria("mezanino",         "Mezanino",         mezanino_d1,      mezanino_d0,      "wh_mec_evolucao_cotas (classe Mez x -1)"),
         _categoria("senior",           "Senior",           senior_d1,        senior_d0,        "wh_mec_evolucao_cotas (classe Sr x -1)"),
-        _categoria("titulos_publicos", "Titulos Publicos", titulos_d1,       titulos_d0,       "wh_posicao_outros_ativos (TPF)"),
-        _categoria("fundos_di",        "Fundos DI",        fundos_di_d1,     fundos_di_d0,     "wh_posicao_cota_fundo (DI)"),
-        _categoria("dc",               "DC",               dc_d1,            dc_d0,            "wh_estoque_recebivel.valor_presente"),
-        _categoria("op_estruturadas",  "Op Estruturadas",  ZERO,             ZERO,             "wh_posicao_outros_ativos (segregacao TODO)"),
-        _categoria("outros_ativos",    "Outros Ativos",    outros_d1,        outros_d0,        "wh_posicao_outros_ativos (demais)"),
-        _categoria("pdd",              "PDD",              pdd_d1,           pdd_d0,           "wh_estoque_recebivel.valor_pdd"),
+        _categoria("titulos_publicos", "Titulos Publicos", titulos_d1,       titulos_d0,       "wh_posicao_renda_fixa (COSIF TPF)"),
+        _categoria("fundos_di",        "Fundos DI",        fundos_di_d1,     fundos_di_d0,     "wh_posicao_cota_fundo (externos)"),
+        _categoria("dc",               "DC",               dc_d1,            dc_d0,            "wh_posicao_cota_fundo (internos REALINVEST)"),
+        _categoria("op_estruturadas",  "Op Estruturadas",  op_estr_d1,       op_estr_d0,       "wh_posicao_renda_fixa (COSIF Nota Comercial)"),
+        _categoria("outros_ativos",    "Outros Ativos",    outros_d1,        outros_d0,        "wh_posicao_outros_ativos (exclui PDD + TPF)"),
+        _categoria("pdd",              "PDD",              pdd_d1,           pdd_d0,           "wh_posicao_outros_ativos (codigo='PDD')"),
         _categoria("cpr",              "CPR",              cpr_snap_d1,      cpr_snap_d0,      "wh_cpr_movimento (sum valor)"),
-        _categoria("tesouraria",       "Tesouraria",       teso_d1,          teso_d0,          "wh_saldo_tesouraria + wh_saldo_conta_corrente"),
+        _categoria("tesouraria",       "Tesouraria",       teso_d1,          teso_d0,          "wh_saldo_tesouraria (classe Sub)"),
     ]
 
     # Apropriacao DC + CPR detalhado
@@ -747,6 +1166,8 @@ async def compute_variacao_diaria(
             cpr_evidencias=list(d.cpr_evidencias),
             remuneracao_evidencias=list(d.remuneracao_evidencias),
             movimento_carteira_evidencias=list(d.movimento_carteira_evidencias),
+            saldo_tesouraria_evidencias=list(d.saldo_tesouraria_evidencias),
+            apropriacao_dc_evidencias=list(d.apropriacao_dc_evidencias),
         )
         for d in driver_computation.drivers
     ]

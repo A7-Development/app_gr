@@ -196,11 +196,21 @@ export function useCosifRows(
 // segundos. Quando o user dispara backfill, invalidar manualmente via
 // `useCreateBackfill` ja faz o refetch.
 
-/** Reports QiTech que alimentam a pagina Cota Sub. Ordem = display order. */
+/** Reports QiTech que alimentam a pagina Cota Sub. Ordem = display order.
+ *
+ * `advisory: true` marca reports que NAO bloqueiam o render quando ausentes.
+ * O strip mostra o estado de saude para o user, mas `allReady` e `blocking`
+ * ignoram esses entries. Uso atual: `market.fidc_estoque` e assincrono
+ * (job + callback) e frequentemente atrasa em relacao aos market.* sincronos;
+ * quando ausente, os drivers consolidados (PDD, DC) ainda renderizam com
+ * valor correto vindo do MEC/posicoes — apenas as evidencias granulares
+ * papel-a-papel ficam vazias. Bloquear a pagina toda seria forte demais.
+ */
 export const COTA_SUB_REPORTS: ReadonlyArray<{
   name:       string
   shortLabel: string
   fullLabel:  string
+  advisory?:  boolean
 }> = [
   { name: "market.tesouraria",        shortLabel: "Tesouraria",  fullLabel: "Tesouraria"                },
   { name: "market.conta_corrente",    shortLabel: "Conta corr.", fullLabel: "Conta-corrente"            },
@@ -210,6 +220,12 @@ export const COTA_SUB_REPORTS: ReadonlyArray<{
   { name: "market.outros_ativos",     shortLabel: "Out. ativos", fullLabel: "Outros ativos"             },
   { name: "market.cpr",               shortLabel: "CPR",         fullLabel: "CPR (movimentacoes)"       },
   { name: "market.mec",               shortLabel: "MEC",         fullLabel: "MEC (evolucao cotas)"      },
+  {
+    name:       "market.fidc_estoque",
+    shortLabel: "Carteira",
+    fullLabel:  "Estoque do FIDC (carteira granular)",
+    advisory:   true,
+  },
 ] as const
 
 export type CotaSubReadiness = {
@@ -269,8 +285,19 @@ export function useCotaSubReadiness(
     )
   }, [cov.data, data])
 
-  const allReady = entries.every(isCoverageStripEntryHealthy)
-  const blocking = entries.filter((e) => !isCoverageStripEntryHealthy(e))
+  // Advisory reports (ex.: market.fidc_estoque) aparecem no strip mas nao
+  // bloqueiam o render — quando ausentes, drivers consolidados continuam
+  // corretos; apenas evidencias granulares ficam vazias.
+  const advisoryNames = React.useMemo(
+    () => new Set(COTA_SUB_REPORTS.filter((r) => r.advisory).map((r) => r.name)),
+    [],
+  )
+  const allReady = entries.every(
+    (e) => advisoryNames.has(e.name) || isCoverageStripEntryHealthy(e),
+  )
+  const blocking = entries.filter(
+    (e) => !advisoryNames.has(e.name) && !isCoverageStripEntryHealthy(e),
+  )
 
   return {
     entries,

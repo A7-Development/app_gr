@@ -1,30 +1,34 @@
-"""Compute functions dos 11 drivers da Cota Sub — Fase 3b do refactor.
+"""Compute functions dos 11 drivers da Cota Sub — modelo ΔSaldo simples.
 
-Cada driver e uma funcao pura `(db, tenant_id, ua_id, fundo_doc, ua_nome,
-d_prev, d0) -> DriverResult`. As queries vem do `cota_sub.py` ja existente
-(helpers `_sum_*` / `_mec_classes` / `_apropriacao_dc` / `_cpr_detalhado`).
+Refactor 2026-05-19 (metodo gestor REALINVEST, ΔSaldo patrimonial):
+cada driver retorna `valor = saldo_d0 - saldo_d_prev` da fonte correta.
+Σ drivers ≡ ΔPL Sub POR CONSTRUCAO — movimento interno de caixa entre
+categorias se cancela naturalmente (caixa sai de Fundos DI → entra em
+Tesouraria → ΔFundos_DI + ΔTesouraria = 0).
 
-## Aritmetica vs metodo do gestor
+Categorias patrimoniais e fontes silver:
 
-| Driver           | Formula            | Fase 3b                | Refinamento (Fase 3c)              |
-|------------------|--------------------|------------------------|------------------------------------|
-| pdd              | -ΔPDD              | implementado completo  | -                                  |
-| apropriacao_dc   | dEstoque-Aq+Liq    | implementado completo  | -                                  |
-| apropr_despesas  | dCPR liquido       | implementado completo  | -                                  |
-| fundos_di        | dPos − caixa       | dPos bruta             | subtrair mov caixa por descricao   |
-| compromissada    | dPos − overnight   | dPos bruta             | subtrair mov caixa por descricao   |
-| titulos_publicos | dPos − aq + liq    | dPos bruta             | subtrair aquisicao + liquidacao    |
-| senior           | -(ΔPL_Sr − caixa)  | -(ΔPL_Sr − caixa) (3c-A) | -                                  |
-| mezanino         | -(ΔPL_Mz − caixa)  | -(ΔPL_Mz − caixa) (3c-A) | -                                  |
-| tesouraria       | dPos (literal)     | implementado completo  | -                                  |
-| op_estruturadas  | dPos (filtrado)    | zero hardcoded         | filtro por descricao_tipo_de_ativo |
-| outros_ativos    | dPos residual      | implementado completo  | -                                  |
+| Driver           | Formula              | Fonte silver canonica                            |
+|------------------|----------------------|--------------------------------------------------|
+| pdd              | ΔSaldo               | wh_posicao_outros_ativos WHERE codigo='PDD'      |
+| apropriacao_dc   | ΔSaldo               | wh_posicao_cota_fundo (internos REALINVEST)      |
+| apropriacao_dsp  | ΔSaldo               | wh_cpr_movimento Σ valor                         |
+| fundos_di        | ΔSaldo               | wh_posicao_cota_fundo (externos)                 |
+| compromissada    | ΔSaldo               | wh_posicao_compromissada.valor_bruto             |
+| titulos_publicos | ΔSaldo               | wh_posicao_renda_fixa via COSIF (TPF)            |
+| senior           | -ΔPL_Sr (sem fluxo)  | wh_mec_evolucao_cotas.patrimonio (Senior) × -1   |
+| mezanino         | -ΔPL_Mz (sem fluxo)  | wh_mec_evolucao_cotas.patrimonio (Mez) × -1      |
+| tesouraria       | ΔSaldo               | wh_saldo_tesouraria (classe Sub)                 |
+| op_estruturadas  | ΔSaldo               | wh_posicao_renda_fixa via COSIF (Nota Comercial) |
+| outros_ativos    | ΔSaldo               | wh_posicao_outros_ativos (exclui PDD + TPF)      |
 
-Decisao 2026-05-18: subtracao de movimento de caixa em fundos_di / compromissada /
-titulos_publicos exige heuristica em `wh_movimento_caixa.historico_traduzido`
-(qual movimento foi pra qual destino). Adiado pra Fase 3c (~3h). MVP entrega
-dPosicao bruta nesses 3 drivers — residuo aceito como tech debt visivel.
-Tesouraria mantida literal ao memo do gestor (dPosicao sem subtracao).
+Validacao com planilha do gestor REALINVEST (28/11→01/12/2025 e
+12→13/05/2026): residuo R$ 0,00 — modelo fecha por construcao.
+
+A formula complexa "Apropriacao DC = ΔEstoque - Aq + Liq" foi DESCONTINUADA
+como decomposicao principal (deferida pra analise complementar). Helpers
+`_apropriacao_dc` / `_aquisicoes` / `_liquidados` continuam vivos pra
+populacao de evidencias informacionais (subseccao 'Atividade do dia').
 """
 
 from __future__ import annotations
@@ -50,13 +54,15 @@ from app.modules.integracoes.public import dia_util_anterior_qitech
 # essas queries migram pra cota_sub_drivers/_queries.py — refactor pos-Fase 3c.
 from app.modules.controladoria.services.cota_sub import (  # noqa: I001 - circular OK aqui
     ZERO,
-    _apropriacao_dc,
+    _composicao_compromissada_evidencias,
+    _composicao_fundos_di_evidencias,
     _cpr_detalhado,
     _mec_classes,
-    _mec_classes_fluxo_caixa,
+    _saldo_tesouraria_evidencias,
     _sum_compromissada,
+    _sum_dc,
     _sum_fundos_di,
-    _sum_mov_caixa_fundo_externo,
+    _sum_op_estruturadas,
     _sum_outros_ativos_nao_tpf,
     _sum_pdd,
     _sum_tesouraria,
@@ -125,6 +131,12 @@ class DriverResult:
     indeterminado_por_dado: bool = False
     motivo_indeterminado: str | None = None
     endpoints_unavailable: tuple[str, ...] = ()
+    # Evidencias granulares indisponiveis por dado upstream ausente (ex.: PDD
+    # / Apropriacao DC quando wh_estoque_recebivel esta vazio porque QiTech
+    # ainda nao publicou fidc-estoque). Driver continua confiavel (valor_brl
+    # vem do consolidado MEC/posicoes); apenas as evidencias papel-a-papel
+    # ficam vazias. Frontend exibe o motivo em vez de evidencias falsas.
+    evidencias_indisponiveis_motivo: str | None = None
     # Evidencias especializadas por tipo. Fase 4b (2026-05-18): 5 campos,
     # 1 por shape de evidencia. Cada compute_fn popula 0-1 dos campos.
     # Quando o numero crescer demais, refactor pra discriminated union.
@@ -132,7 +144,9 @@ class DriverResult:
     mtm_evidencias: tuple = ()                 # Titulos Publicos driver
     cpr_evidencias: tuple = ()                 # Apropriacao Despesas (mescla apropriacao + diferimento)
     remuneracao_evidencias: tuple = ()         # Senior / Mezanino drivers
-    movimento_carteira_evidencias: tuple = ()  # Apropriacao DC driver
+    movimento_carteira_evidencias: tuple = ()  # Apropriacao DC: INFORMACIONAL (sub-secao)
+    saldo_tesouraria_evidencias: tuple = ()    # Tesouraria driver
+    apropriacao_dc_evidencias: tuple = ()      # Apropriacao DC driver (4 inputs do calculo)
 
 
 # Tipo do compute_fn — assinatura uniforme para o dispatcher.
@@ -174,17 +188,18 @@ async def compute_pdd(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """PDD = -Δvalor_pdd (PDD sobe -> Sub cai).
+    """PDD = ΔSaldo `wh_posicao_outros_ativos` WHERE codigo='PDD'.
 
-    Fase 4 do refactor de proveniencia: heuristica de _pdd_diff
-    (cota_sub_explainers.py) populada como `pdd_evidencias` — papel-a-papel
-    onde |Δvalor_pdd| > R$ 100. Frontend usa pra mostrar cedente/sacado/
-    valor que justificam o numero.
+    `_sum_pdd` foi refatorado pra ler do consolidado (mesma fonte do gestor
+    REALINVEST). Valor ja vem com sinal contabil natural — PDD aumentando
+    em modulo (mais passivo) → delta negativo → Sub cai.
+
+    `pdd_evidencias` (papel-a-papel via `_pdd_diff` em `wh_estoque_recebivel`)
+    continua INFORMACIONAL — Σ evidencias pode divergir do `valor_brl` (fonte
+    granular vs consolidada), mas explica QUAIS cedentes/sacados moveram.
     """
-    pdd_prev = await _sum_pdd(db, tenant_id, fundo_doc, d_prev)
-    pdd_d0 = await _sum_pdd(db, tenant_id, fundo_doc, d0)
-    # _sum_pdd ja retorna o valor negativado (PDD eh tratado como passivo
-    # na implementacao atual). Delta direto: -(|PDD_d0| - |PDD_d_prev|).
+    pdd_prev = await _sum_pdd(db, tenant_id, ua_id, d_prev)
+    pdd_d0 = await _sum_pdd(db, tenant_id, ua_id, d0)
     delta = pdd_d0 - pdd_prev
 
     # Enriquecer com evidencias papel-a-papel. Lazy import pra evitar
@@ -193,7 +208,7 @@ async def compute_pdd(
         _pdd_diff,
     )
 
-    pdd_evid = await _pdd_diff(
+    pdd_evid, motivo = await _pdd_diff(
         db,
         tenant_id=tenant_id,
         fundo_doc=fundo_doc,
@@ -201,7 +216,6 @@ async def compute_pdd(
         data_d1=d_prev,
         threshold_brl=Decimal("100"),
     )
-    # Top 20 evidencias por |delta| desc (ja vem ordenado de _pdd_diff).
     top_evid = tuple(pdd_evid[:20])
 
     return _result(
@@ -210,6 +224,7 @@ async def compute_pdd(
         valor_d_prev=pdd_prev,
         valor_d0=pdd_d0,
         pdd_evidencias=top_evid,
+        evidencias_indisponiveis_motivo=motivo,
     )
 
 
@@ -217,21 +232,31 @@ async def compute_apropriacao_dc(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Apropriacao DC = dEstoque - Aquisicoes + Liquidacoes (a_vencer + vencidos).
+    """DC = ΔSaldo `wh_posicao_cota_fundo` cotas internas REALINVEST.
 
-    Fase 4b: evidencias via `_movimento_carteira_diff` — papel-a-papel
-    adquirido/liquidado entre D-1 e D0 (giro de carteira). Movimento
-    patrimonial e neutro em si (caixa <-> DC); evidencias justificam a
-    parcela de apropriacao da curva no estoque.
+    Refactor 2026-05-19 (metodo gestor REALINVEST): a carteira de Direitos
+    Creditorios e contabilizada como cotas internas do proprio FIDC
+    (REALINVEST A VENCER + REALINVEST VENCIDOS). O gestor le esses saldos
+    diretos da posicao publicada em `market.outros_fundos` — fechamento
+    exato com a fonte de verdade.
+
+    A formula complexa "Apropriacao = ΔEstoque - Aq + Liq" foi descontinuada
+    como decomposicao principal. `movimento_carteira_evidencias` (papeis
+    adquiridos/liquidados em `wh_estoque_recebivel`) continua populado como
+    sub-secao informacional 'Atividade do dia'.
+
+    `metric_global_id` mantido como `cota_sub.driver.apropriacao_dc` por
+    compatibilidade com o frontend; label/description atualizados no catalog.
     """
-    apr = await _apropriacao_dc(db, tenant_id, ua_id, fundo_doc, d_prev, d0)
+    prev = await _sum_dc(db, tenant_id, ua_id, ua_nome, d_prev)
+    d_0 = await _sum_dc(db, tenant_id, ua_id, ua_nome, d0)
 
-    # Evidencias de movimento de carteira (Fase 4b). Lazy import.
+    # Movimento de carteira (informacional). Lazy import.
     from app.modules.controladoria.services.cota_sub_explainers import (
         _movimento_carteira_diff,
     )
 
-    mc_evid, _tot_liq, _tot_adq, _n_liq, _n_adq = await _movimento_carteira_diff(
+    mc_evid, _tot_liq, _tot_adq, _n_liq, _n_adq, motivo = await _movimento_carteira_diff(
         db,
         tenant_id=tenant_id,
         fundo_doc=fundo_doc,
@@ -242,8 +267,11 @@ async def compute_apropriacao_dc(
 
     return _result(
         "cota_sub.driver.apropriacao_dc",
-        valor=apr.total,
+        valor=d_0 - prev,
+        valor_d_prev=prev,
+        valor_d0=d_0,
         movimento_carteira_evidencias=tuple(mc_evid[:20]),
+        evidencias_indisponiveis_motivo=motivo,
     )
 
 
@@ -251,75 +279,42 @@ async def compute_apropriacao_despesas(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Apropriacao despesas = Σ ΔCPR FILTRADO por items de apropriacao real.
+    """CPR = ΔSaldo total `wh_cpr_movimento` (Σ valor, sem filtro).
 
-    Frente 2 fix (2026-05-18): antes usavamos `_cpr_detalhado.variacao`
-    (ΔCPR cru = total_d0 - total_d1), mas o CPR carrega TAMBEM movimentos
-    de caixa (`LIQUIDADOS TOTAL - PROV`, `Aporte`, `Devolucao`) que sao
-    neutros pro PL Sub (so trocam ativo→caixa). REALINVEST 13/05 tinha
-    `LIQUIDADOS` caindo R$ 182k num dia (papel liquidado, caixa recebido)
-    → driver inflava pra -R$ 188k em vez do real ~-R$ 5,8k.
+    Refactor 2026-05-19: ΔSaldo direto cobre TODAS as rubricas (apropriacao,
+    diferimento, LIQUIDADOS, Aporte, etc.) — quando uma linha CPR vira caixa
+    em outra categoria, a soma das duas se cancela naturalmente. Filtrar
+    dentro do CPR quebra a particao.
 
-    Agora `valor_brl` = soma `delta_brl` dos 2 explainers ja existentes
-    que JA filtram corretamente:
-    - `compute_apropriacao_explanation`: Taxa Apropriada, Despesa de %,
-      Despesas com %, a Pagar em %, IOF, IR, REGISTRADORA.
-    - `compute_diferimento_explanation`: 'Diferimento de despesa%'.
+    `cpr_evidencias` agora lista TODAS as rubricas que mexeram entre D-1 e
+    D0 (sem filtro de apropriacao/diferimento). Σ evidencias = valor_brl
+    (modulo rubricas abaixo do threshold de R$ 100, somadas em outros_brl).
 
-    Items NAO captados (LIQUIDADOS, Aporte, etc) sao movimento de caixa
-    e pertencem a outros drivers (Apropriacao DC, fluxo de caixa). Caem
-    em "Outros Ativos" / "Tesouraria" naturalmente quando o saldo do
-    fundo se ajusta.
-
-    `valor_d_prev` e `valor_d0` continuam mostrando o saldo CPR total
-    (informativo para a UI), mas o `valor_brl` reflete so apropriacoes.
+    `metric_global_id` mantido por compatibilidade; label/description
+    atualizados no catalog.
     """
     cpr = await _cpr_detalhado(db, tenant_id, ua_id, d_prev, d0)
 
-    # Enriquecer com evidencias (Fase 4b). Lazy import pra evitar circular.
+    # Diff de TODAS as rubricas (sem filtro). Lazy import pra evitar circular.
     from app.modules.controladoria.services.cota_sub_explainers import (
-        compute_apropriacao_explanation,
-        compute_diferimento_explanation,
+        _cpr_diff_by_descricao,
     )
 
-    apropriacao_exp = await compute_apropriacao_explanation(
+    cpr_evid_all = await _cpr_diff_by_descricao(
         db,
         tenant_id=tenant_id,
         ua_id=ua_id,
         data_d0=d0,
         data_d1=d_prev,
-        threshold_brl=Decimal("100"),
-        top_n=20,
+        descricao_filters=None,  # sem filtro: todas as rubricas
+        threshold_brl=Decimal("0.01"),  # 1 cent — Σ evidencias ≡ valor_brl
     )
-    diferimento_exp = await compute_diferimento_explanation(
-        db,
-        tenant_id=tenant_id,
-        ua_id=ua_id,
-        data_d0=d0,
-        data_d1=d_prev,
-        threshold_brl=Decimal("100"),
-        top_n=20,
-    )
-
-    # valor_brl = soma das apropriacoes reais (NAO o ΔCPR cru).
-    delta_apropriacao = ZERO
-    if apropriacao_exp is not None:
-        delta_apropriacao += apropriacao_exp.delta_brl
-    if diferimento_exp is not None:
-        delta_apropriacao += diferimento_exp.delta_brl
-
-    # Mescla evidencias dos dois e re-ordena por |Δ| desc. Top 20.
-    cpr_evid: list = []
-    if apropriacao_exp is not None:
-        cpr_evid.extend(apropriacao_exp.evidencias)
-    if diferimento_exp is not None:
-        cpr_evid.extend(diferimento_exp.evidencias)
-    cpr_evid.sort(key=lambda e: abs(e.delta_valor), reverse=True)
-    cpr_evid = cpr_evid[:20]
+    # Top 20 por |delta| desc (ja vem ordenado).
+    cpr_evid = cpr_evid_all[:20]
 
     return _result(
         "cota_sub.driver.apropriacao_despesas",
-        valor=delta_apropriacao,
+        valor=cpr.total_d0 - cpr.total_d1,
         valor_d_prev=cpr.total_d1,
         valor_d0=cpr.total_d0,
         cpr_evidencias=tuple(cpr_evid),
@@ -330,34 +325,29 @@ async def compute_fundos_di(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Fundos DI = (ΔPos posicao_cota_fundo externo) + net_caixa_fundos_dia.
+    """Fundos DI = ΔSaldo `wh_posicao_cota_fundo` (fundos externos).
 
-    Fase 3c-C (2026-05-18): subtrai movimento de caixa do dia pra isolar
-    APENAS rendimento (curva/MtM). Antes retornava ΔPos bruta — em dia
-    com aplicacao/resgate (ex.: REALINVEST 13/05 resgate R$ 318k do ITAU
-    SOBERANO) o driver indicava -R$ 318k de perda, mas era movimento
-    patrimonial neutro pro PL Sub (caixa entrou, fundo saiu — net 0).
+    Refactor 2026-05-19 (metodo gestor REALINVEST, ΔSaldo simples): antes
+    subtraia movimento de caixa pra isolar rendimento. Na otica patrimonial
+    com 11 categorias particionando o PL, isso e desnecessario — aplicacao
+    em fundo DI sai do caixa (ΔTes negativo) e entra na cota (ΔFundos_DI
+    positivo); soma das duas categorias = 0 naturalmente.
 
-    Convencao de sinal:
-      - Aplicacao no fundo: ΔPos > 0 (cresce), caixa < 0 (sai). Soma = 0.
-      - Resgate do fundo:   ΔPos < 0 (cai),   caixa > 0 (entra). Soma = 0.
-      - Rendimento (curva, MtM): ΔPos > 0, caixa = 0. Soma = ΔPos.
-
-    Fonte do estoque: `_sum_fundos_di` (filtra wh_posicao_cota_fundo por
-    fundos EXTERNOS — exclui internos REALINVEST A VENCER / VENCIDOS).
-    Fonte do caixa: `_sum_mov_caixa_fundo_externo` (filtra wh_movimento_caixa
-    por descricao 'Aplicacao'/'Resgate' em fundo externo).
+    Evidencias: composicao por fundo externo (1 linha por fundo). Σ deltas
+    = valor_brl. Reaproveita o shape `SaldoTesourariaEvidencia` (generico)
+    via `saldo_tesouraria_evidencias`.
     """
     prev = await _sum_fundos_di(db, tenant_id, ua_id, ua_nome, d_prev)
     d_0 = await _sum_fundos_di(db, tenant_id, ua_id, ua_nome, d0)
-    caixa_dia = await _sum_mov_caixa_fundo_externo(
-        db, tenant_id, ua_id, ua_nome, d0,
+    evid = await _composicao_fundos_di_evidencias(
+        db, tenant_id, ua_id, ua_nome, d_prev, d0,
     )
     return _result(
         "cota_sub.driver.fundos_di",
-        valor=(d_0 - prev) + caixa_dia,
+        valor=d_0 - prev,
         valor_d_prev=prev,
         valor_d0=d_0,
+        saldo_tesouraria_evidencias=evid,
     )
 
 
@@ -365,17 +355,23 @@ async def compute_compromissada(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Compromissada = dPosicao (subtracao de overnight em Fase 3c).
+    """Compromissada = ΔSaldo `wh_posicao_compromissada.valor_bruto`.
 
-    TECH DEBT (Fase 3c): subtrair movimento overnight.
+    Evidencias: 1 linha por operacao (codigo) presente em D-1 ou D0, com
+    papel + taxa + janela (aquisicao→resgate). Σ deltas = valor_brl.
+    Reaproveita o shape `SaldoTesourariaEvidencia` via `saldo_tesouraria_evidencias`.
     """
     prev = await _sum_compromissada(db, tenant_id, ua_id, d_prev)
     d_0 = await _sum_compromissada(db, tenant_id, ua_id, d0)
+    evid = await _composicao_compromissada_evidencias(
+        db, tenant_id, ua_id, d_prev, d0,
+    )
     return _result(
         "cota_sub.driver.compromissada",
         valor=d_0 - prev,
         valor_d_prev=prev,
         valor_d0=d_0,
+        saldo_tesouraria_evidencias=evid,
     )
 
 
@@ -383,20 +379,17 @@ async def compute_titulos_publicos(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Titulos Publicos = dPosicao TPF (subtracao de aq+liq em Fase 3c).
+    """Titulos Publicos = ΔSaldo wh_posicao_renda_fixa via COSIF (TPF).
 
-    TECH DEBT (Fase 3c): subtrair aquisicao + liquidacao pra isolar so curva.
-    Filtro de TPF e via descricao_tipo_de_ativo (_is_titulo_publico).
-
-    Fase 4b: evidencias via `_mtm_diff` (cota_sub_explainers.py) — papel-a-papel
-    em wh_posicao_renda_fixa com Δqtd_agregada=0 + |Δvalor|>R$100. Agrega
-    por codigo_lastro pra cancelar pares ativo/passivo de operacoes pegadas
-    internas (FIDC contabiliza isso isoladamente, mas soma zero).
+    Evidencias via `_mtm_diff` filtradas por `driver_filter='titulos_publicos'`
+    (classifier COSIF) — antes vinham TODOS os papeis de RF (TPF + NCs +
+    debentures), agora apenas TPF reais. Mesma classificacao usada em
+    `_sum_titulos_publicos`.
     """
     prev = await _sum_titulos_publicos(db, tenant_id, ua_id, d_prev)
     d_0 = await _sum_titulos_publicos(db, tenant_id, ua_id, d0)
 
-    # Evidencias MtM (Fase 4b). Lazy import pra evitar circular.
+    # Evidencias = composicao completa por papel (Σ ≡ valor_brl). Lazy import.
     from app.modules.controladoria.services.cota_sub_explainers import (
         _mtm_diff,
     )
@@ -407,7 +400,9 @@ async def compute_titulos_publicos(
         ua_id=ua_id,
         data_d0=d0,
         data_d1=d_prev,
-        threshold_brl=Decimal("100"),
+        threshold_brl=Decimal("0.01"),  # threshold minimo: cobre MtM pequeno
+        driver_filter="titulos_publicos",
+        require_qtd_estavel=False,  # inclui papeis adquiridos/liquidados
     )
 
     return _result(
@@ -452,30 +447,28 @@ async def compute_senior(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Senior = -(ΔPL_Sr - caixa_Sr).
+    """Senior = -ΔPL_Senior (Sub absorve a subordinacao bruta).
 
-    Fase 3c-A (2026-05-18): subtrai fluxo de caixa do dia (entradas - saidas
-    + aporte - retirada da classe Senior em d0) do ΔPL bruto, isolando
-    APENAS a remuneracao (rendimento da curva contratada). Cash flow vai
-    pro driver Sub_Jr (residual do MEC) se for aporte na Sub, ou e neutro
-    no PL Sub se for aporte/resgate na propria classe Sr.
+    Refactor 2026-05-19 (metodo gestor REALINVEST, ΔSaldo simples): antes
+    subtraia o fluxo de caixa da classe (entradas-saidas+aporte-retirada)
+    pra isolar APENAS o rendimento. Na otica patrimonial, aporte na Senior
+    e ABSORVIDO no PL Sub via equity (PL_Sub = Ativo - Passivo - PL_Sr - PL_Mz);
+    quando entra aporte em Sr, ΔPL_Sr+ + ΔAtivo (caixa)+ se anulam e o ΔPL_Sub
+    fica zero — particao se mantem sem precisar separar fluxo.
 
-    Fase 4b: evidencia rica via `compute_remuneracao_sr_mez_explanation`
-    (filtrada pra classe Senior).
+    `valor_brl` = -(PL_Sr_d0 - PL_Sr_d_prev). PL_Sr sobe → Sub paga → driver
+    negativo. `remuneracao_evidencias` traz pl_d0/pl_d1/valor_cota da classe
+    (informacional).
     """
     classes_prev = await _mec_classes(db, tenant_id, ua_id, ua_nome, d_prev)
     classes_d0 = await _mec_classes(db, tenant_id, ua_id, ua_nome, d0)
-    fluxo_d0 = await _mec_classes_fluxo_caixa(db, tenant_id, ua_id, ua_nome, d0)
-    # ΔPL bruto inclui rendimento + caixa. Rendimento = bruto - caixa.
-    # PL_Sr rendimento -> Sub paga -> driver negativo.
-    delta_pl_sr_bruto = classes_d0["senior"] - classes_prev["senior"]
-    delta_pl_sr_remuneracao = delta_pl_sr_bruto - fluxo_d0["senior"]
+    delta_pl_sr = classes_d0["senior"] - classes_prev["senior"]
     rem_evid = await _remuneracao_evidencias_por_classe(
         db, tenant_id, ua_id, ua_nome, d_prev, d0, classe="senior"
     )
     return _result(
         "cota_sub.driver.senior",
-        valor=-delta_pl_sr_remuneracao,
+        valor=-delta_pl_sr,
         valor_d_prev=classes_prev["senior"],
         valor_d0=classes_d0["senior"],
         remuneracao_evidencias=rem_evid,
@@ -486,21 +479,16 @@ async def compute_mezanino(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Mezanino = -(ΔPL_Mz - caixa_Mz) (analogo a Senior — ver Fase 3c-A).
-
-    Fase 4b: evidencia rica filtrada pra classe Mezanino.
-    """
+    """Mezanino = -ΔPL_Mezanino (analogo a Senior, ΔSaldo simples)."""
     classes_prev = await _mec_classes(db, tenant_id, ua_id, ua_nome, d_prev)
     classes_d0 = await _mec_classes(db, tenant_id, ua_id, ua_nome, d0)
-    fluxo_d0 = await _mec_classes_fluxo_caixa(db, tenant_id, ua_id, ua_nome, d0)
-    delta_pl_mz_bruto = classes_d0["mezanino"] - classes_prev["mezanino"]
-    delta_pl_mz_remuneracao = delta_pl_mz_bruto - fluxo_d0["mezanino"]
+    delta_pl_mz = classes_d0["mezanino"] - classes_prev["mezanino"]
     rem_evid = await _remuneracao_evidencias_por_classe(
         db, tenant_id, ua_id, ua_nome, d_prev, d0, classe="mezanino"
     )
     return _result(
         "cota_sub.driver.mezanino",
-        valor=-delta_pl_mz_remuneracao,
+        valor=-delta_pl_mz,
         valor_d_prev=classes_prev["mezanino"],
         valor_d0=classes_d0["mezanino"],
         remuneracao_evidencias=rem_evid,
@@ -511,18 +499,26 @@ async def compute_tesouraria(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Tesouraria = dPosicao (literal ao memo, sem subtrair caixa).
+    """Tesouraria = dPosicao (saldo Sub apenas, sem CONCILIA).
 
-    Decisao 2026-05-18: seguir o memo a risca, aceitando que transferencias
-    internas Tesouraria↔Fundos podem gerar residuo (vai pro indeterminado).
+    Refactor 2026-05-19: `_sum_tesouraria` filtra so classe Sub
+    em `wh_saldo_tesouraria` (exclui MEZANINO/SENIOR) e exclui
+    `CONCILIA` (conta transitoria) em `wh_saldo_conta_corrente`.
+
+    Evidencias: composicao do saldo por conta (D-1 → D0). Σ deltas das
+    evidencias = valor_brl do driver. Permite ao usuario ver de onde
+    vem o saldo (Tesouraria QiTech + Bradesco + Socopa) e o que mexeu
+    entre D-1 e D0.
     """
     prev = await _sum_tesouraria(db, tenant_id, ua_id, d_prev)
     d_0 = await _sum_tesouraria(db, tenant_id, ua_id, d0)
+    evid = await _saldo_tesouraria_evidencias(db, tenant_id, ua_id, d_prev, d0)
     return _result(
         "cota_sub.driver.tesouraria",
         valor=d_0 - prev,
         valor_d_prev=prev,
         valor_d0=d_0,
+        saldo_tesouraria_evidencias=evid,
     )
 
 
@@ -530,18 +526,40 @@ async def compute_op_estruturadas(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     fundo_doc: str, ua_nome: str, d_prev: date, d0: date,
 ) -> DriverResult:
-    """Op Estruturadas = 0 hardcoded.
+    """Op Estruturadas = ΔSaldo wh_posicao_renda_fixa via COSIF (Nota Comercial).
 
-    TECH DEBT (Fase 3c): segregar de wh_posicao_outros_ativos via filtro
-    em descricao_tipo_de_ativo. REALINVEST nao tem posicao em estruturadas
-    hoje, entao zero e seguro pra esse fundo. Quando outro fundo entrar com
-    posicao real, ajustar.
+    Vocabulario gestor REALINVEST: "Op Estruturadas" = NCPX, NC*. Classificacao
+    via COSIF 1.3.1.10.16 (regra `rf.nota_comercial`) — agnostico, sem
+    hardcode de siglas.
+
+    Evidencias via `_mtm_diff` filtradas por `driver_filter='op_estruturadas'`
+    (mesma classificacao do somatorio).
     """
+    prev = await _sum_op_estruturadas(db, tenant_id, ua_id, d_prev)
+    d_0 = await _sum_op_estruturadas(db, tenant_id, ua_id, d0)
+
+    # Evidencias MtM filtradas por NC. Lazy import pra evitar circular.
+    from app.modules.controladoria.services.cota_sub_explainers import (
+        _mtm_diff,
+    )
+
+    mtm_evid = await _mtm_diff(
+        db,
+        tenant_id=tenant_id,
+        ua_id=ua_id,
+        data_d0=d0,
+        data_d1=d_prev,
+        threshold_brl=Decimal("0.01"),  # threshold minimo
+        driver_filter="op_estruturadas",
+        require_qtd_estavel=False,  # inclui papeis adquiridos/liquidados
+    )
+
     return _result(
         "cota_sub.driver.op_estruturadas",
-        valor=ZERO,
-        valor_d_prev=ZERO,
-        valor_d0=ZERO,
+        valor=d_0 - prev,
+        valor_d_prev=prev,
+        valor_d0=d_0,
+        mtm_evidencias=tuple(mtm_evid[:20]),
     )
 
 
