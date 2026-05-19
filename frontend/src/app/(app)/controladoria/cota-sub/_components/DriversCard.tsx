@@ -304,8 +304,6 @@ export function DriversCard({ drivers, base, onInvestigate }: DriversCardProps) 
     return Math.abs(b.delta) - Math.abs(a.delta)
   })
 
-  const maxAbs = Math.max(...sorted.map((d) => Math.abs(d.delta)), 1)
-
   const firstWithImpact = sorted.findIndex(
     (d) => !d.placeholder && !d.empty && d.delta !== 0,
   )
@@ -340,7 +338,6 @@ export function DriversCard({ drivers, base, onInvestigate }: DriversCardProps) 
             empty={d.empty}
             unexplained={d.unexplained}
             base={base}
-            maxAbs={maxAbs}
             firstInList={i === 0}
             expanded={expandedId === d.meta.id}
             onToggle={() =>
@@ -362,7 +359,6 @@ function DriverItem({
   empty,
   unexplained,
   base,
-  maxAbs,
   firstInList,
   expanded,
   onToggle,
@@ -375,14 +371,12 @@ function DriverItem({
   empty:       boolean
   unexplained: boolean
   base?:       number
-  maxAbs:      number
   firstInList: boolean
   expanded:    boolean
   onToggle:    () => void
   onInvestigate?: () => void
 }) {
   const Icon = meta.icon
-  const barPct = (Math.abs(delta) / maxAbs) * 100
 
   // 3 estados visuais:
   //  - placeholder: categoria nao implementada — "Em construcao", cinza
@@ -458,17 +452,6 @@ function DriverItem({
             <span className="shrink-0 text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
               {isNeutral ? "—" : fmtPp(delta, base ?? 0)}
             </span>
-          </div>
-          {/* Mini bar */}
-          <div className="mt-2 h-1 overflow-hidden rounded-sm bg-gray-100 dark:bg-gray-800">
-            <div
-              className="h-full"
-              style={{
-                width:      `${Math.max(barPct, isNeutral ? 0 : 2)}%`,
-                background: isNeutral ? "#D1D5DB" : meta.barHex,
-                opacity:    isNeutral ? 0.45 : 0.85,
-              }}
-            />
           </div>
         </div>
         <span className="mt-1 text-gray-400 dark:text-gray-600">
