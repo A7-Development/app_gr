@@ -7,7 +7,7 @@ Endpoints (CLAUDE.md §19 — capability transversal de IA):
 
 Etapa 1: provider fixo em Anthropic. A escolha aqui muda apenas o `model`
 e o `fallback_model` que o runtime do Specialist Agent vai usar
-(`app.shared.agents.runtime._invoke_with_validation`).
+(`app.agentic.engine.runtime._invoke_with_validation`).
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ from app.core.enums import Module, Permission
 from app.core.module_guard import require_module
 from app.core.system_maintainer_guard import require_system_maintainer
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
-from app.shared.agents.catalog import CATALOG
-from app.shared.agents.model_resolver import (
+from app.agentic.engine.catalog import CATALOG
+from app.agentic.engine.model_resolver import (
     AVAILABLE_MODELS,
     is_supported_model,
     list_agents_with_defaults,

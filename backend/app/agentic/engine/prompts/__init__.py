@@ -13,14 +13,14 @@ Migration that seeded the 4 initial prompts:
     `7c2dffe119a4_ai_prompt_db_managed.py`
 """
 
-from app.shared.ai.prompts import repository
-from app.shared.ai.prompts._base import (
+from app.agentic.engine.prompts import repository
+from app.agentic.engine.prompts._base import (
     CacheStrategy,
     Message,
     MessageContent,
     Prompt,
 )
-from app.shared.ai.prompts.repository import PromptNotFoundError
+from app.agentic.engine.prompts.repository import PromptNotFoundError
 
 __all__ = [
     "CacheStrategy",

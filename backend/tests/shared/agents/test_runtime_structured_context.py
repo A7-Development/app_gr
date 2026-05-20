@@ -20,9 +20,9 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from app.shared.agents.catalog import CATALOG, AgentInput, SpecialistAgentSpec
-from app.shared.agents.output_schemas import FinancialAnalysis
-from app.shared.agents.runtime import _render_context_for_prompt
+from app.agentic.engine.catalog import CATALOG, AgentInput, SpecialistAgentSpec
+from app.agentic.engine.output_schemas import FinancialAnalysis
+from app.agentic.engine.runtime import _render_context_for_prompt
 from app.shared.workflow.nodes._base import NodeContext, VarType
 from app.shared.workflow.nodes.specialist_agent import SpecialistAgentNode
 

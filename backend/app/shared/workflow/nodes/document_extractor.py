@@ -37,8 +37,8 @@ class DocumentExtractorNode(BaseNode):
     async def execute(self, ctx: NodeContext, db: AsyncSession) -> NodeOutput:
         # Late import to avoid circular reference.
         from app.modules.credito.models.document import CreditDossierDocument
-        from app.shared.agents.catalog import CATALOG
-        from app.shared.agents.runtime import run_document_extraction
+        from app.agentic.engine.catalog import CATALOG
+        from app.agentic.engine.runtime import run_document_extraction
 
         dossier_id = ctx.trigger_data.get("dossier_id")
         if dossier_id is None:

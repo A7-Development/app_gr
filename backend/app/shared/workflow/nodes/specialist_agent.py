@@ -1,6 +1,6 @@
 """SpecialistAgentNode — runs an IA specialist agent (catalog-driven).
 
-This is the integration point with `app.shared.agents.runtime`. The node's
+This is the integration point with `app.agentic.engine.runtime`. The node's
 config picks an agent by name; the runtime resolves the agent spec from
 the catalog (system prompt versioned in `ai_prompt`, allowed tools,
 output schema), invokes Claude via the Anthropic Messages API (official
@@ -11,7 +11,7 @@ Config schema:
         "agent": "social_contract_analyst" | "financial_analyst" | ...
     }
 
-The agent name MUST exist in `app.shared.agents.catalog.CATALOG`.
+The agent name MUST exist in `app.agentic.engine.catalog.CATALOG`.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ class SpecialistAgentNode(BaseNode):
                 "(name of a registered SpecialistAgentSpec)"
             )
         # Late import to avoid circular ref at module load:
-        from app.shared.agents.catalog import CATALOG
+        from app.agentic.engine.catalog import CATALOG
 
         if agent_name not in CATALOG:
             raise ValueError(
@@ -65,7 +65,7 @@ class SpecialistAgentNode(BaseNode):
         if not agent_name:
             return []
         try:
-            from app.shared.agents.catalog import CATALOG
+            from app.agentic.engine.catalog import CATALOG
         except ImportError:
             return []
         spec = CATALOG.get(agent_name)
@@ -113,7 +113,7 @@ class SpecialistAgentNode(BaseNode):
         if not agent_name:
             return {}
         try:
-            from app.shared.agents.catalog import CATALOG
+            from app.agentic.engine.catalog import CATALOG
         except ImportError:
             return {}
         spec = CATALOG.get(agent_name)
@@ -136,8 +136,8 @@ class SpecialistAgentNode(BaseNode):
         return out
 
     async def execute(self, ctx: NodeContext, db: AsyncSession) -> NodeOutput:
-        from app.shared.agents.catalog import CATALOG
-        from app.shared.agents.runtime import run_specialist_agent
+        from app.agentic.engine.catalog import CATALOG
+        from app.agentic.engine.runtime import run_specialist_agent
 
         spec = CATALOG[self.config["agent"]]
         result = await run_specialist_agent(

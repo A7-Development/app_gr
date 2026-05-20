@@ -41,7 +41,7 @@ from app.modules.integracoes.adapters.llm.anthropic.version import (
 )
 from app.shared.ai.models.message import MessageRole
 from app.shared.ai.models.subscription import TenantAISubscription
-from app.shared.ai.prompts import Message, MessageContent, Prompt, repository
+from app.agentic.engine.prompts import Message, MessageContent, Prompt, repository
 from app.shared.ai.services import audit, conversation, metering, rate_limit, redaction
 from app.shared.ai.services.metering import UsageRecord
 

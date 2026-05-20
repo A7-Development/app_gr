@@ -2,7 +2,7 @@
 
 Phase B1 of structured-context migration: the editor needs to render the
 slot-binding UI for specialist_agent nodes, which requires the
-`inputs: AgentInput[]` declared per-agent in `app.shared.agents.catalog`.
+`inputs: AgentInput[]` declared per-agent in `app.agentic.engine.catalog`.
 """
 
 from __future__ import annotations

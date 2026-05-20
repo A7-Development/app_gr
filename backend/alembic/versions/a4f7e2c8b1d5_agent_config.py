@@ -7,7 +7,7 @@ Create Date: 2026-05-02 17:00:00.000000
 Cria tabela `agent_config` que permite ao mantenedor escolher o modelo
 Anthropic de cada Specialist Agent (etapa 1 — provider fixo Anthropic).
 Seed inicial replica os valores hardcoded em
-`app.shared.agents.catalog.CATALOG` para que comportamento nao mude
+`app.agentic.engine.catalog.CATALOG` para que comportamento nao mude
 imediatamente apos a migration.
 """
 

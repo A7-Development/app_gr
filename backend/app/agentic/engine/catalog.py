@@ -3,7 +3,7 @@
 Each entry in `CATALOG` maps an agent name to a `SpecialistAgentSpec` that
 fully describes how the agent runs:
 - Which prompt (versioned in `ai_prompt`)
-- Which tools it can call (subset of `app.shared.agents.tools`)
+- Which tools it can call (subset of `app.agentic.engine.tools`)
 - Which Pydantic schema validates its output
 - Model preference, thinking budget, timeout
 
@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from app.shared.agents.output_schemas import (
+from app.agentic.engine.output_schemas import (
     CommercialVisitAnalysis,
     CrossReferenceAnalysis,
     DocumentExtraction,

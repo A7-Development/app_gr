@@ -6,7 +6,7 @@ row.
 
 This is the ONLY way services should obtain prompts:
 
-    from app.shared.ai.prompts import repository
+    from app.agentic.engine.prompts import repository
     prompt = await repository.resolve(db, name="chat.fidc_geral")
     messages = prompt.render(context={"page": "BI · Carteira"})
 """
@@ -16,9 +16,9 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agentic.engine.prompts._base import CacheStrategy, Prompt
 from app.shared.ai.models.prompt import AIPrompt
 from app.shared.ai.models.prompt_active import AIPromptActive
-from app.shared.ai.prompts._base import CacheStrategy, Prompt
 
 
 class PromptNotFoundError(LookupError):

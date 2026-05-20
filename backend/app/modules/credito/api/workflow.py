@@ -436,9 +436,9 @@ async def get_agent_catalog(
     (`inputs: [{name, type, description, optional}]`) so the frontend can
     render the slot-binding UI.
 
-    Source of truth: `app.shared.agents.catalog.CATALOG`.
+    Source of truth: `app.agentic.engine.catalog.CATALOG`.
     """
-    from app.shared.agents.catalog import CATALOG
+    from app.agentic.engine.catalog import CATALOG
 
     return [
         {

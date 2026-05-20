@@ -34,8 +34,8 @@ from app.core.system_maintainer_guard import require_system_maintainer
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.shared.ai.models.prompt import AIPrompt, CacheStrategy
 from app.shared.ai.models.prompt_active import AIPromptActive
-from app.shared.ai.prompts import repository
-from app.shared.ai.prompts._base import Prompt as PromptDTO
+from app.agentic.engine.prompts import repository
+from app.agentic.engine.prompts._base import Prompt as PromptDTO
 from app.shared.ai.schemas import (
     PromptActivate,
     PromptCreate,

@@ -14,7 +14,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.shared.agents.tools._base import AgentTool
+from app.agentic.engine.tools._base import AgentTool
 
 
 def make_reference_tools(

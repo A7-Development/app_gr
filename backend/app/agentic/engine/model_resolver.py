@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.shared.agents.catalog import CATALOG, SpecialistAgentSpec
+from app.agentic.engine.catalog import CATALOG, SpecialistAgentSpec
 from app.shared.ai.models.agent_config import AgentConfig
 
 

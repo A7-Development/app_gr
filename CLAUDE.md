@@ -189,8 +189,9 @@ Tremor Raw e referencia, nao cela. Quando "fazer como o Tremor faz" conflitar co
 | LLM gateway (backend) | adapter proprio em `app/modules/integracoes/adapters/llm/<provider>/`; LiteLLM aceito por baixo se virar multi-provider real | chamadas diretas ao SDK do provider em codigo de dominio que NAO seja o adapter |
 | PII redaction (backend) | regex CPF/CNPJ com check digit (MVP) → `presidio-analyzer` + `presidio-anonymizer` na Fase 2 | enviar payload bruto a LLM externo |
 | Cache + rate limit (backend) | em-processo no MVP; Redis em Phase 2 (tenant token bucket multi-dim TPM/RPM/BRL/dia) | `threading.Timer`, sleeps, locks ad-hoc |
-| Specialist agents (backend) | `anthropic >= 0.71` (SDK oficial Anthropic Messages API com tool use + prompt caching nativos). Usado em `app/shared/agents/runtime.py` para invocar agentes especialistas via HTTP direto. | reimplementar tool loop a mao com httpx; usar subprocess do Claude Code CLI (quebra em `SelectorEventLoop` no Windows) |
-| Workflow visual editor (frontend) | `@xyflow/react` (React Flow v12+) — autorizado 2026-04-30 para editor de workflow do modulo credito | reimplementar canvas drag-and-drop manualmente; libs alternativas (rete, dagre standalone) |
+| Specialist agents / motor agentico (backend) | `anthropic >= 0.71` (SDK oficial Anthropic Messages API com tool use + prompt caching nativos). Mora HOJE em `app/shared/agents/runtime.py`; migra para `app/agentic/engine/runtime.py` quando o refator de §19 acontecer. | reimplementar tool loop a mao com httpx; usar subprocess do Claude Code CLI (quebra em `SelectorEventLoop` no Windows) |
+| Playbook engine (backend) | Graph declarativo imutavel + variable bindings tipados — vive HOJE em `app/modules/credito/workflows/` (rebatizado de "workflow"), **promove a `app/agentic/playbooks/` como primitivo horizontal** (decisao 2026-05-20). Ver §19.10. | codigo imperativo passo-a-passo; reimplementar grafo a mao |
+| Workflow / playbook visual editor (frontend) | `@xyflow/react` (React Flow v12+) — autorizado 2026-04-30. Usado pelo editor de playbooks (renderiza `StrataNode`, `AgentInputBindingsField`, chips de `producedVars`). | reimplementar canvas drag-and-drop manualmente; libs alternativas (rete, dagre standalone) |
 
 Instalar qualquer biblioteca fora desta tabela exige autorizacao explicita do usuario no chat.
 
@@ -520,6 +521,8 @@ O GR e **modular** em 4 dimensoes simultaneas (UI, codigo, permissao, licenciame
 
 Adicionar um decimo modulo exige **autorizacao explicita** + atualizacao deste documento + atualizacao do enum `Module` em `app/core/enums.py`.
 
+**Agentes nao sao um decimo modulo.** Vivem em `app/agentic/` como **camada horizontal estrutural** — ver §19. O enum `Module` continua fechado em 9. Cada `AgentDefinition` / `PlaybookDefinition` / tool carrega `module: Module` como **tag** (RBAC, scope, billing, metricas agrupam por isso), nunca como pasta de modulo.
+
 ### 11.2 Estrutura fisica (bounded contexts)
 
 ```
@@ -557,6 +560,7 @@ app/
 - Modulo nao deve depender de mais de 1-2 outros modulos. Se depender de 3+, provavelmente precisa de shared kernel ou event bus.
 - **BI** le do `warehouse` (dado canonico), nao importa de outros modulos.
 - **Integracoes** popula warehouse; outros modulos leem warehouse, nunca chamam integracoes.
+- **Tools de modulo X invocadas por agente de modulo Y** vao via `ToolRegistry.get_available(scope)`, **nunca via import direto**. Modulo X nao precisa expor tools no seu `public.py` — o registry filtra dinamicamente por `ScopedContext(tenant, empresa, user, module, permissions)`. Mesma regra vale para playbooks invocados cross-modulo (via `PlaybookRegistry`). Ver §19.
 
 ### 11.4 Estrutura de rotas do frontend
 
@@ -1007,25 +1011,94 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] Registro correspondente adicionado em `source_catalog`?
 - [ ] Teste de integracao com fonte (mock ou sandbox) existe?
 
-### Endpoint / feature de IA (§19)
+### Endpoint / feature de IA / camada agentica (§19)
+
+**Basico (todo endpoint de IA):**
 
 - [ ] Endpoint sob `/api/v1/ai/*` usa `require_ai(AICapability.X)` (NAO `require_module`)?
-- [ ] Endpoint admin global (gestao de keys, tier, prompts) usa **`require_system_maintainer` + `require_module(Module.ADMIN, Permission.ADMIN)`** combinados?
+- [ ] Endpoint admin global (gestao de keys, tier, prompts, agentes, playbooks) usa **`require_system_maintainer` + `require_module(Module.ADMIN, Permission.ADMIN)`** combinados?
 - [ ] Toda chamada de IA grava em `decision_log` (via `services/audit.py`) e `ai_usage_event` (via `services/metering.py`)?
 - [ ] Mensagem do usuario passa por `services/redaction.py` antes de subir ao LLM (CPF/CNPJ redactados)?
-- [ ] Prompt template usado e versionado (`<categoria>/<nome>_vN.py`) e registra `prompt_template_version` no metering?
 - [ ] Adapter LLM usado tem `ADAPTER_VERSION` e suas credenciais sao lidas de `ai_provider_credential` (cifradas via envelope Fernet)?
 - [ ] Frontend chama via SSE com `fetch` + `ReadableStream` (nao `EventSource` -- nao passa Bearer token)?
 - [ ] Markdown nas respostas IA renderiza via `react-markdown` + `remark-gfm` (nao texto plano)?
 - [ ] Saldo de creditos exibido no frontend e via `<AIQuotaIndicator />` (nunca token-count cru)?
 
+**Camada agentica — vocabulario canonico (§19.0):**
+
+- [ ] **Vocabulario respeitado?** Codigo/tabela/endpoint/comentario usa `agents` / `tools` / `playbooks` / `memory` — NUNCA "skill" para playbook agentico (skill = comando Claude Code).
+- [ ] **Cada bloco no lugar certo?** Agente em `app/agentic/agents/catalog/<modulo>_<agente>.py` (tag de modulo, nao pasta de modulo). Tool em `app/agentic/tools/<modulo>/`. Playbook em `app/agentic/playbooks/catalog/`. Memoria em `app/agentic/memory/`.
+
+**Agente novo (§19.12):**
+
+- [ ] `AgentDefinition` instanciada em `app/agentic/agents/catalog/` com `module: Module` como tag (nao pasta)?
+- [ ] Seed em `agent_definition` + ativacao em `agent_definition_active` via migration?
+- [ ] Persona reaproveitada de `agent_persona` (nao duplicar texto entre agentes do mesmo papel)?
+- [ ] Prompt task em `ai_prompt` versionado (nome `<modulo>.<agente>`)?
+- [ ] `allowed_tools` declarado (subset do registry filtrado por `module + shared`)?
+- [ ] `output_schema` Pydantic class definido quando aplicavel (specialist agents validados)?
+- [ ] `memory_scopes` declarado (`[SESSION, TENANT]` tipico; `GLOBAL` so com aprovacao juridica)?
+- [ ] `cross_module=true` apenas com justificativa explicita + auditoria reforcada?
+
+**Tool nova (§19.0):**
+
+- [ ] Decorada com `@register_tool(module=Module.X, min_permission=Permission.Y, cost_hint=...)`?
+- [ ] Mora em `app/agentic/tools/<modulo>/` (tool de dominio) ou `app/agentic/tools/shared/` (cross-modulo) — nao em modulo de negocio?
+- [ ] Recebe `ScopedContext` como parametro (nao usa closure global para tenant/empresa/db)?
+- [ ] Filtragem por modulo + permissao + tenant acontece automaticamente via registry (nao codada na tool)?
+- [ ] Custom tool por tenant (futuro) registrada em `tenant_tool_registration` com `tenant_id NOT NULL`?
+
+**Playbook novo (§19.10):**
+
+- [ ] Declarativo (graph JSONB em `playbook_definition`), nao codigo imperativo?
+- [ ] Versionamento + active pointer (`playbook_definition_active`) espelha `ai_prompt`?
+- [ ] Tag `module: Module` no metadata (nao pasta)?
+- [ ] Endpoint que dispara usa `POST /api/v1/playbooks/{name}/run` generico (nao endpoint per-modulo ad-hoc)?
+- [ ] Dry-run testado via `POST /api/v1/playbooks/{id}/dry-run` antes de ativar versao nova?
+- [ ] Validacao semantica (`/_validate`) passa sem erros?
+- [ ] Cada execucao gera `playbook_run` + `playbook_run_step` + entrada em `decision_log`?
+
+**Memoria (§19.11):**
+
+- [ ] Invocacao de agente passa por `AnalysisSession` (working memory + step cache + step trace) — nunca single-shot fora de testes?
+- [ ] Leitura de session/tenant memory **filtra por `tenant_id`** antes de qualquer outra operacao?
+- [ ] Memoria de modulo X nao e visivel a agente de modulo Y sem `cross_module=true`?
+- [ ] Trace de tool_use vai por SSE em tempo real (chat) ou para `agent_session_step` / `playbook_run_step` (batch)?
+- [ ] Pgvector usado so com caso de uso concreto + tabela tem `embedding vector(1536)` declarado explicitamente?
+
+**Cross-module (§11.3):**
+
+- [ ] Tools de modulo X invocadas por agente de modulo Y vao via `ToolRegistry.get_available(scope)`, **nunca via import direto**?
+- [ ] Mesma regra para playbooks invocados cross-modulo (via `PlaybookRegistry`)?
+
 Se qualquer item reprovar, **nao corrija pontualmente** — pare e revise a mudanca inteira.
 
 ---
 
-## 19. IA -- Capability transversal
+## 19. Camada agentica -- arquitetura horizontal estrutural
 
-A IA (chat + insights automaticos) e uma **capability transversal**, NAO um decimo modulo. Decisao tomada no plano de 2026-04-30 (`vamos-fazer-uso-de-jiggly-bonbon.md`). Mantem o enum `Module` fechado (§11.1).
+> Strata e plataforma agentica. A camada agentica — **motor + tools + playbooks + memoria + agentes** — e horizontal e atravessa todos os 9 modulos. Os modulos sao "pacotes de dominio" que registram tools e playbooks proprios; o motor de agente e unico. Telas e relatorios sao interfaces sobre o nucleo, nao o nucleo. Implementacao que parecer "modulo X com chatbot dentro" esta errada — pare e revise.
+>
+> Decisao 2026-04-30: IA tratada como capability transversal (nao decimo modulo) — mantem enum `Module` fechado (§11.1). Decisao 2026-05-20: a "capability IA" e reposicionada como **camada agentica estrutural** com vocabulario canonico (agents, tools, playbooks, memory) — ver §19.0.
+
+### 19.0 Vocabulario canonico e blocos da camada agentica
+
+Quatro blocos. Use **exatamente** esses termos em codigo, tabela, endpoint, doc e comentario. Implementacao que invente nome novo (ex.: "skill" para playbook, "ferramenta" para tool, "habilidade" para playbook) deve ser refeita.
+
+| Bloco | Definicao | Onde mora |
+|---|---|---|
+| **Agents** | Motor de raciocinio com persona + politica + escopo. Cada agente carrega `module: Module` como tag (nao como pasta). | `app/agentic/agents/catalog/` (codigo) + `agent_definition` + `agent_definition_active` (DB) |
+| **Tools** | Funcoes atomicas — queries SQL pre-produzidas, calculos, equacoes regulatorias, APIs externas (Serasa, Quod, BACEN), MCPs, geradores de relatorio | `app/agentic/tools/<modulo>/` com decorator `@register_tool(module=, min_permission=, cost_hint=)` |
+| **Playbooks** | Workflows declarativos versionados (graph JSONB imutavel + `playbook_definition_active` apontando versao). Substitui o termo "skill" do mercado. | `app/agentic/playbooks/catalog/` (codigo de templates) + `playbook_definition` + `playbook_definition_active` (DB) |
+| **Memory** | Tres camadas: **session** (curto prazo, durante 1 analise) + **tenant** (medio prazo, preferencias + padroes) + **global** anonimizada (longo prazo, **futuro** com parecer juridico) | `app/agentic/memory/` |
+
+**Vocabulario duro:**
+
+- "**Skill**" no projeto = comando Claude Code (audit-page-consistency, create-list-page, etc — invocado via `Skill` tool). **NAO usar "skill" para playbook agentico** — sempre **"playbook"**.
+- "**Persona**" = papel de negocio reutilizavel ("Controller Senior", "Analista de Credito FIDC"). Vive em `agent_persona` separada de `ai_prompt` para reuso entre agentes.
+- "**Tag de modulo**" em agente/playbook nao limita invocacao; define o **scope default** (RBAC + tools disponiveis + persona). Chamada cross-modulo e explicita (`cross_module=true` + auditoria).
+
+**Principio chave:** o motor nao conhece os agentes nem as tools. Em runtime, recebe `AgentDefinition` + `ScopedContext(tenant, empresa, user, module, permissions, db)` + objetivo, executa. Adicionar agente/tool/playbook novo = arquivo + seed em DB. **Zero mudanca no engine.**
 
 ### 19.1 Estrutura paralela ao modulo
 
@@ -1041,6 +1114,8 @@ Coluna boolean com **partial unique index** garantindo no maximo 1 tenant marcad
 ### 19.3 Adapter LLM (segue §13)
 
 Provedores externos (Anthropic, OpenAI) sao adapters versionados em `app/modules/integracoes/adapters/llm/<provider>/`, cada um com seu `ADAPTER_VERSION`. **Credenciais sao globais** (tabela `ai_provider_credential`, sem `tenant_id`) e cifradas com envelope Fernet (`app.shared.crypto`). ZDR contratado e exigido em prod (coluna `zdr_enabled` bloqueia chamada quando false em ambiente de producao).
+
+> **Plano de migracao**: os adapters LLM migram de `app/modules/integracoes/adapters/llm/` para `app/agentic/engine/llm/` quando o refator do §19 acontecer (junto com `runtime.py` → `app/agentic/engine/`). LLM e infra estrutural do motor agentico — encaixa melhor sob `app/agentic/` que sob "integracoes" (que e dominio: ERPs, bureaus, ETL). Manter agnostico continua sendo principio nao-negociavel.
 
 **Dois caminhos de invocacao Anthropic** (escolha por caso de uso):
 
@@ -1093,3 +1168,136 @@ UI nunca expoe token-count -- expoe **creditos**. 1 chat ~= `tokens_input/1000 +
 ### 19.9 LGPD / dados pessoais
 
 PII (CPF, CNPJ, conta-agencia, email) e redactada antes de subir ao LLM via `services/redaction.py` (regex + check digit no MVP, Microsoft Presidio na Fase 2). Mensagens armazenam `text_redacted` + `text_encrypted` (versao com PII original cifrada via envelope Fernet, acesso restrito a auditoria com trilha em `decision_log`).
+
+### 19.10 Playbooks (workflows declarativos)
+
+**Decisao 2026-05-20:** o "workflow builder" que vive em `app/modules/credito/workflows/` e a implementacao atual do conceito **playbook** e sera promovida a **primitivo horizontal em `app/agentic/playbooks/`**. Cada modulo registra seus templates; o engine de playbook e unico.
+
+**Vocabulario:** "playbook" (NAO "skill" — ver §19.0). "Workflow" continua valido como sinonimo informal quando se discute editor visual (`@xyflow/react`), mas em codigo, tabela, endpoint, doc — **sempre playbook**.
+
+**Modelagem:**
+
+- **`playbook_definition`** (rebatizada de `workflow_definition`): id, name, version, module, tenant_id NULL=global, graph JSONB (nodes + edges + variable bindings), created_by, created_at, archived_at. `(name, version)` UNIQUE. Imutavel — toda edicao cria nova versao.
+- **`playbook_definition_active`**: uma linha por `(tenant_id, name)`, FK para `playbook_definition_id`. Rollback de 1 click sem deploy (espelha `ai_prompt_active`).
+- **Tipos de node** ja existentes (a migrar): `specialist_agent`, `bureau_query`, `consolidator`, `join` (fan-in com `join_mode=all|any`), `conditional_branch`, `human_input`, `sub_playbook` (pendente, ex-`sub_workflow`).
+- **Edges** com `condition` opcional via template (`{{node.X.output.value}} >= 700`).
+- **Input bindings** tipados: `config.input_bindings = {slot_name: "node.X.output.Y"}` resolvidos via template resolver em `_render_context_for_prompt`.
+- **Imutabilidade + versionamento**: graph JSONB imutavel; modulo edita = nova versao. Active pointer troca em 1 UPDATE.
+
+**Engine:**
+
+- Endpoint generico **`POST /api/v1/playbooks/{name}/run`** substitui endpoints per-modulo. Modulo informa via `module: Module` na URL ou body (ainda a definir).
+- Engine resolve `playbook_definition_active.{tenant, name}`, instancia nodes, invoca cada um com `NodeContext` (tenant_id, empresa_id, trigger_data, previous_outputs).
+- `specialist_agent` node chama `runtime.run_specialist_agent(spec, ctx, db)` (motor unico do §19.3).
+- Cada execucao gera `playbook_run` (estado) + `playbook_run_step` (trace per-node) + entrada em `decision_log` + serie de `ai_usage_event`.
+
+**Dry-run:** **`POST /api/v1/playbooks/{id}/dry-run`** executa em sandbox com mocks (sem DB write, sem API paga). Usado pelo editor visual antes de ativar versao nova.
+
+**Validacao semantica:** **`POST /api/v1/playbooks/_validate`** retorna lista de erros + `produced_by_node` (variaveis que cada node publica). Frontend `StrataNode` consome para renderizar chips de `producedVars` e alimentar o picker do `AgentInputBindingsField`.
+
+**Custom playbooks por tenant:** linhas com `tenant_id NOT NULL` em `playbook_definition`. Globais = `tenant_id IS NULL`. Marketplace/upsell (§9 da filosofia agentica) nasce naturalmente desse modelo.
+
+**Quando NAO usar playbook:** chat conversacional simples (sem orquestracao) — usa motor de agente direto com `playbook=None`. Insight pontual (1 tool call + sintese) — mesma coisa. Playbook e para **orquestracao multi-step com grafo**, nao para qualquer chamada de IA.
+
+### 19.11 Memoria de sessao (bloqueador atual)
+
+**Estado: a implementar.** Hoje cada `run_specialist_agent()` e **single-shot** — sem memoria entre invocacoes. Isso impede casos como "analisar exposicao top-5 cedentes" (cedente A precisa lembrar enquanto investiga B-E e cruzar tudo na sintese). **Sem memoria de sessao, agente multi-step e inviavel.**
+
+**Tres camadas (vocabulario canonico §19.0):**
+
+| Camada | Escopo | Implementacao | Status |
+|---|---|---|---|
+| **Session** (curto prazo) | 1 analise / 1 dossie / 1 turn agentico | `AnalysisSession` in-process; persiste em DB so se durar > N segundos | A IMPLEMENTAR |
+| **Tenant** (medio prazo) | Preferencias do tenant + padroes aprendidos + limites internos | `tenant_memory` table + `ai_conversation_summary` ja existente | PARCIAL (skeleton) |
+| **Global** (longo prazo) | Padroes anonimizados aprendidos cross-tenant | A definir + **parecer juridico LGPD/BACEN obrigatorio antes** | DEFERIDO |
+
+**`AnalysisSession` proposta** (a viver em `app/agentic/memory/session.py`):
+
+- **Working memory**: observacoes intermediarias do agente ("Cedente A: score 412, 2 protestos")
+- **Scratchpad**: textual, agent-writeable, sobrevive entre tools dentro da mesma session
+- **Step cache**: resultado de tool ja executada com mesmos parametros nao reexecuta (economia de tokens + custo de bureau)
+- **Step trace**: lista ordenada de tool_use + tool_result + duracao + tokens — alimenta `AgentLiveStatus` no frontend
+
+**SSE em tempo real:** durante o tool loop, motor emite frames `tool_use` / `tool_result` no stream. Frontend renderiza via `AgentLiveStatus` (componente ja existente, hoje so usado em dossie de credito). Quando chat virar agentico (usar tools), o mesmo componente cobre.
+
+**Persistencia:** session in-process por padrao. Se exceder N segundos OU se for **conversa multi-turn** (chat), persiste em DB em tabela `agent_session_step` (append-only, particionada por tenant + data, paralela ao `decision_log`).
+
+**Isolamento (regra dura):**
+
+- Toda leitura de session/tenant memory **filtra por `tenant_id`** antes de qualquer outra operacao. Vazamento entre tenants = falha critica de compliance.
+- Memoria de modulo X nao e visivel a agente de modulo Y, exceto quando agente tem `cross_module=true`.
+- Expiracao: session expira ao fim da analise (default 1h). Tenant memory persiste indefinidamente mas auditavel.
+
+**Retrieval semantico:** quando virar prioridade, tabela ganha `embedding vector(1536)` (pgvector ja instalado, hoje nao usado em IA). Service `app/agentic/memory/semantic.py` faz busca por similaridade. **Nao implementar ate caso de uso concreto pedir.**
+
+### 19.12 Catalogo central de agentes
+
+Agentes sao **centralizados** em `app/agentic/agents/catalog/`, **nao espalhados por modulo**. Cada `AgentDefinition` carrega `module: Module` como **tag** no metadata — RBAC, tools disponiveis, persona, billing, metricas agrupam por essa tag.
+
+**Por que centralizar (decisao 2026-05-20):**
+
+- Camada agentica e horizontal por tese (§19.0) — espalhar fisicamente contradiz.
+- `ai_prompt` ja e central (flat, namespace `<categoria>.<nome>`) — replicar mantem governanca coesa.
+- UI admin `/admin/ia/agents` lista flat com filtro por modulo — codigo espalhado obrigaria agregar de N pastas.
+- Marketplace de custom agents por tenant exige catalogo central por natureza.
+- Reuso cross-modulo: agente pensado pra risco pode ser invocado por controladoria via `cross_module=true`.
+
+**Modelagem hibrida (estrutura em codigo + texto em DB):**
+
+- **Em codigo** (`app/agentic/agents/catalog/<modulo>_<agente>.py`): `AgentDefinition` instance — name, module, allowed_tools pattern, allowed_playbooks pattern, modelo default, `output_schema` Python class quando ha (specialist agents validados via Pydantic).
+- **Em DB** (`agent_definition` + `agent_definition_active`): persona_id (FK pra `agent_persona`), prompt_id (FK pra `ai_prompt`), overrides de modelo/temperature/max_tokens (opcionais), memory_scopes, credit_hint, cross_module bool, tenant_id NULL=global, archived_at.
+- **Persona separada** (`agent_persona`): id, name (ex.: "Controller Senior"), description, role_block (bloco textual injetado no prompt), expertise_domains, versionamento espelhando `ai_prompt`. Reusavel — mesma persona serve N agentes do mesmo papel.
+
+**Layout fisico:**
+
+```
+app/agentic/
+├── engine/                          # runtime unico + LLM adapter + SSE streaming
+│   ├── runtime.py
+│   ├── llm/                         # ex-modules/integracoes/adapters/llm/
+│   └── streaming.py
+├── agents/
+│   ├── registry.py                  # AgentRegistry.get(name, scope)
+│   ├── _base.py                     # AgentDefinition, ScopedContext
+│   ├── personas/                    # personas reutilizaveis
+│   └── catalog/                     # flat, todos os agentes do produto
+│       ├── credito_analista_dossie.py        # module=CREDITO
+│       ├── credito_analista_financial.py     # module=CREDITO
+│       ├── risco_top_cedentes.py             # module=RISCO
+│       ├── controladoria_variacao_cota.py    # module=CONTROLADORIA
+│       └── bi_chat_fidc_geral.py             # module=BI
+├── playbooks/
+│   ├── engine.py                    # ex-modules/credito/workflows/engine.py
+│   ├── registry.py                  # PlaybookRegistry
+│   ├── _base.py                     # PlaybookDefinition
+│   └── catalog/                     # templates declarativos por modulo (flat)
+├── tools/
+│   ├── registry.py                  # ToolRegistry.get_available(scope)
+│   ├── _base.py                     # AgentTool, decorator @register_tool
+│   ├── credito/                     # tools de dominio do credito
+│   ├── risco/
+│   ├── controladoria/
+│   └── shared/                      # tools cross-modulo (calc, reference)
+└── memory/
+    ├── session.py                   # AnalysisSession
+    ├── tenant.py                    # TenantMemory
+    └── semantic.py                  # pgvector retrieval (futuro)
+```
+
+**Invocacao tipica:**
+
+```python
+# Em qualquer endpoint/service que precisa rodar agente:
+agent = AgentRegistry.get(
+    name="credito.analista_dossie",
+    scope=ScopedContext(tenant, empresa, user, module, permissions, db),
+)
+result = await engine.run(agent, objective="...", context={"dossier_id": X})
+# Engine resolve persona + prompt + tools filtrados + session memory.
+# Trace de tool_use vai por SSE em tempo real para frontend.
+# Audit grava decision_log + ai_usage_event.
+```
+
+**`decision_log.rule_or_model_version`** vira `<agent.full_id>+<prompt.full_id>+<persona.full_id>` — uma string conta toda a historia da decisao.
+
+**Tabela `tenant_agent_override`** (futuro, opcional): permite tenant ajustar modelo/temperature/max_tokens sem fork de codigo. So system maintainer ou tenant ADMIN pode editar.

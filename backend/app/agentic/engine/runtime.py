@@ -40,11 +40,7 @@ from anthropic import AsyncAnthropic
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.integracoes.adapters.llm.anthropic.config import (
-    CredentialNotFoundError,
-    get_active_anthropic_credential,
-)
-from app.shared.agents.catalog import (
+from app.agentic.engine.catalog import (
     TOOL_DOC_GET,
     TOOL_DOC_LIST,
     TOOL_DOSSIER_FLAG,
@@ -54,9 +50,13 @@ from app.shared.agents.catalog import (
     TOOL_REF_COMPARE,
     SpecialistAgentSpec,
 )
-from app.shared.agents.model_resolver import ResolvedModels, resolve_models_for_agent
-from app.shared.agents.tools._base import AgentTool
-from app.shared.ai.prompts import repository as prompt_repo
+from app.agentic.engine.model_resolver import ResolvedModels, resolve_models_for_agent
+from app.agentic.engine.prompts import repository as prompt_repo
+from app.agentic.engine.tools._base import AgentTool
+from app.modules.integracoes.adapters.llm.anthropic.config import (
+    CredentialNotFoundError,
+    get_active_anthropic_credential,
+)
 from app.shared.workflow.services.resolver import resolve_templates
 
 if TYPE_CHECKING:
@@ -250,9 +250,9 @@ def _build_tools_for_agent(
     The factories close over `(tenant_id, dossier_id, db)` so each
     handler queries with the right scope without trusting agent-supplied IDs.
     """
-    from app.shared.agents.tools.document_tools import make_document_tools
-    from app.shared.agents.tools.dossier_tools import make_dossier_tools
-    from app.shared.agents.tools.reference_tools import make_reference_tools
+    from app.agentic.engine.tools.document_tools import make_document_tools
+    from app.agentic.engine.tools.dossier_tools import make_dossier_tools
+    from app.agentic.engine.tools.reference_tools import make_reference_tools
 
     selected: list[AgentTool] = []
     requested = set(spec.tools)

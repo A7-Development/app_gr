@@ -27,7 +27,7 @@ from app.modules.integracoes.adapters.llm.anthropic.config import (
 from app.modules.integracoes.adapters.llm.anthropic.version import (
     ADAPTER_VERSION as ANTHROPIC_ADAPTER_VERSION,
 )
-from app.shared.ai.prompts import repository
+from app.agentic.engine.prompts import repository
 from app.shared.ai.services import audit, metering
 from app.shared.ai.services.metering import UsageRecord
 

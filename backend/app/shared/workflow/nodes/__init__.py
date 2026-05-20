@@ -10,7 +10,7 @@ Catalog of node types (MVP, see plan):
 - document_request     — pauses for analyst to upload required documents
 - document_extractor   — runs Claude Vision multimodal to structure a doc
 - bureau_query         — calls a bureau adapter (Serasa, BigData, etc)
-- specialist_agent     — runs a SpecialistAgent from app.shared.agents.catalog
+- specialist_agent     — runs a SpecialistAgent from app.agentic.engine.catalog
 - human_review         — pauses for analyst to validate before continuing
 - output_generator     — produces final artifact (PDF, JSON)
 

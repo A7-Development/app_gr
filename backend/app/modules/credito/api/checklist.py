@@ -2,7 +2,7 @@
 
 Each tenant defines its own checklist of items the IA agents must evaluate.
 Items with `tenant_id IS NULL` are starter packs from Strata. The runtime
-of specialist agents (`app.shared.agents.runtime`) reads the relevant items
+of specialist agents (`app.agentic.engine.runtime`) reads the relevant items
 in real time and injects them into the agent's prompt — prompts stay generic.
 """
 

@@ -1,6 +1,6 @@
 """AgentConfig: model override per specialist agent.
 
-Each row maps `agent_name` (key in `app.shared.agents.catalog.CATALOG`) to
+Each row maps `agent_name` (key in `app.agentic.engine.catalog.CATALOG`) to
 the Anthropic model picked by the system maintainer. Lets the maintainer
 swap an agent's model without touching code (etapa 1 — provider locked to
 Anthropic).
