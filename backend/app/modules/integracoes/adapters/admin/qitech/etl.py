@@ -144,19 +144,23 @@ async def _upsert_raw(
     payload: dict[str, Any],
     http_status: int,
     unidade_administrativa_id: UUID | None = None,
-) -> None:
+) -> tuple[UUID, str | None]:
     """Grava 1 linha em `wh_qitech_raw_relatorio` (idempotente por UQ).
+
+    Retorna `(raw_id, completeness)` — `raw_id` eh o UUID da row raw
+    (mesma id em re-upsert porque UQ bate). `completeness` eh o resultado
+    de `assess_completeness` (`complete | partial | empty` ou None).
+
+    O par eh consumido pelo `_replace_canonical_partition` (Fase 1.3,
+    refactor "espelho fiel" 2026-05-20): `raw_id` vira a partition key
+    do DELETE+INSERT no silver, e `completeness` decide se o write eh
+    strict (so substitui em complete).
 
     Re-roda o mesmo dia substitui payload + atualiza `fetched_at` e
     `payload_sha256` — preserva historico apenas se conteudo mudou (sha bate).
 
     Multi-UA (Phase F): UQ inclui `unidade_administrativa_id`, entao 2 UAs
     do mesmo tenant podem fetchar o mesmo (tipo, data) sem colidir.
-
-    Completeness (Opcao A, 2026-05-13): resolve o nome da UA via SELECT
-    e chama `assess_completeness` pra classificar o payload em
-    `complete | partial | empty` antes do upsert. A coluna alimenta a aba
-    Cobertura com a 3a cor (partial) — ver `completeness.py`.
     """
     ua_nome = await _resolve_ua_nome(
         db,
@@ -192,8 +196,9 @@ async def _upsert_raw(
             "fetched_by_version": stmt.excluded.fetched_by_version,
             "completeness": stmt.excluded.completeness,
         },
-    )
-    await db.execute(stmt)
+    ).returning(QiTechRawRelatorio.__table__.c.id)
+    raw_id = (await db.execute(stmt)).scalar_one()
+    return raw_id, completeness
 
 
 # ---- Persistencia canonica ----------------------------------------------
@@ -289,6 +294,9 @@ async def _persist_error_raw(
     """
     try:
         async with AsyncSessionLocal() as db:
+            # Sentinel 4xx — descartamos raw_id e completeness retornados.
+            # Nao ha rows canonicas pra gravar (payload eh sentinel de erro),
+            # entao replace-by-partition nao se aplica aqui.
             await _upsert_raw(
                 db,
                 tenant_id=tenant_id,
@@ -395,6 +403,11 @@ async def _sync_endpoint(
     step["raw_http_status"] = _infer_http_status(payload, tipo_de_mercado)
 
     # --- 2. Persiste raw (transacao isolada) ----------------------------
+    # Captura raw_id + completeness pra usar na fase 4 (replace-by-partition
+    # strict). Em re-upsert do mesmo (tenant, tipo, data, ua), o raw_id eh
+    # o mesmo da row pre-existente (UQ bate -> DO UPDATE com RETURNING).
+    raw_id: UUID | None = None
+    raw_completeness: str | None = None
     if not isinstance(payload, dict):
         step["errors"].append(
             f"raw: payload com shape inesperado ({type(payload).__name__}); raw nao gravada"
@@ -402,7 +415,7 @@ async def _sync_endpoint(
     else:
         try:
             async with AsyncSessionLocal() as db:
-                await _upsert_raw(
+                raw_id, raw_completeness = await _upsert_raw(
                     db,
                     tenant_id=tenant_id,
                     tipo_de_mercado=tipo_de_mercado,
@@ -413,6 +426,8 @@ async def _sync_endpoint(
                 )
                 await db.commit()
             step["raw_persisted"] = True
+            step["raw_id"] = str(raw_id)
+            step["raw_completeness"] = raw_completeness
         except Exception as e:
             step["errors"].append(f"raw: {type(e).__name__}: {e}")
 
@@ -429,6 +444,9 @@ async def _sync_endpoint(
         return step
 
     # --- 4. Persiste canonico (transacao isolada) -----------------------
+    # Fase 1.3 (proximo refactor) substitui esta chamada por
+    # _replace_canonical_partition(raw_id=raw_id, completeness=raw_completeness, ...)
+    # com politica strict (so substitui em complete) + DELETE de orfaos.
     if canonical_rows:
         try:
             async with AsyncSessionLocal() as db:

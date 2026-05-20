@@ -81,7 +81,15 @@ async def _upsert_raw_balance(
     data_posicao: date,
     payload: Any,
     http_status: int,
-) -> None:
+) -> UUID:
+    """Retorna o `raw_id` (UUID) da row raw. Mesmo id em re-upsert porque
+    a UQ bate. Consumido pelo `_replace_canonical_partition` (Fase 1.3)
+    como partition key do DELETE+INSERT no silver wh_saldo_bancario_diario.
+
+    Sem coluna `completeness` aqui — endpoints bank_account nao tem perfil
+    de completeness implementado em `completeness.py`. O caller assume
+    'complete' por default (HTTP 200 = payload completo neste endpoint).
+    """
     payload_json = _wrap_payload(payload)
     row = {
         "tenant_id": tenant_id,
@@ -105,8 +113,8 @@ async def _upsert_raw_balance(
             "fetched_at": stmt.excluded.fetched_at,
             "fetched_by_version": stmt.excluded.fetched_by_version,
         },
-    )
-    await db.execute(stmt)
+    ).returning(QiTechRawBankAccountBalance.__table__.c.id)
+    return (await db.execute(stmt)).scalar_one()
 
 
 async def _upsert_raw_statement(
@@ -120,7 +128,17 @@ async def _upsert_raw_statement(
     periodo_fim: date,
     payload: Any,
     http_status: int,
-) -> None:
+) -> UUID:
+    """Retorna o `raw_id` (UUID) da row raw. Mesmo id em re-upsert porque
+    a UQ bate (UQ inclui `periodo_inicio`/`periodo_fim`, entao re-fetch do
+    mesmo periodo bate). Consumido pelo `_replace_canonical_partition`
+    (Fase 1.3) como partition key do DELETE+INSERT no silver wh_extrato_bancario.
+
+    Granularidade do raw eh por PERIODO (nao por dia) — extrato bancario
+    eh tipicamente puxado por janela. Reprocessar "dia X" puxa o periodo
+    que cobre X; o replace-by-partition opera no periodo inteiro, nao no
+    dia. UI deve sinalizar isso ao usuario.
+    """
     payload_json = _wrap_payload(payload)
     row = {
         "tenant_id": tenant_id,
@@ -145,8 +163,8 @@ async def _upsert_raw_statement(
             "fetched_at": stmt.excluded.fetched_at,
             "fetched_by_version": stmt.excluded.fetched_by_version,
         },
-    )
-    await db.execute(stmt)
+    ).returning(QiTechRawBankAccountStatement.__table__.c.id)
+    return (await db.execute(stmt)).scalar_one()
 
 
 # ─── Sync orchestrators ─────────────────────────────────────────────────────
@@ -207,9 +225,10 @@ async def sync_balance(
         return step
 
     # 2. Raw + 4. Canonico (numa transacao so pra atomicidade)
+    # raw_id capturado pra ser usado em Fase 1.3 (_replace_canonical_partition).
     try:
         async with AsyncSessionLocal() as db:
-            await _upsert_raw_balance(
+            raw_id = await _upsert_raw_balance(
                 db,
                 tenant_id=tenant_id,
                 unidade_administrativa_id=unidade_administrativa_id,
@@ -220,6 +239,7 @@ async def sync_balance(
                 http_status=status,
             )
             step["raw_persisted"] = True
+            step["raw_id"] = str(raw_id)
 
             # 3. Map
             canonical_rows = map_bank_account_balance(
@@ -232,6 +252,9 @@ async def sync_balance(
             )
 
             # 4. Canonical
+            # Fase 1.3 substitui esta chamada por _replace_canonical_partition
+            # com raw_id=raw_id e completeness='complete' (bank_account.balance
+            # nao tem perfil partial — HTTP 200 = complete).
             if canonical_rows:
                 count = await _bulk_upsert_canonical(
                     db,
@@ -322,7 +345,10 @@ async def sync_statement(
 
     try:
         async with AsyncSessionLocal() as db:
-            await _upsert_raw_statement(
+            # raw_id capturado pra uso em Fase 1.3 (_replace_canonical_partition).
+            # Granularidade: 1 raw_id por (ua, agencia, conta, periodo) — todas
+            # as silver rows de movimentos no periodo apontam pro mesmo raw_id.
+            raw_id = await _upsert_raw_statement(
                 db,
                 tenant_id=tenant_id,
                 unidade_administrativa_id=unidade_administrativa_id,
@@ -334,6 +360,7 @@ async def sync_statement(
                 http_status=status,
             )
             step["raw_persisted"] = True
+            step["raw_id"] = str(raw_id)
 
             canonical_rows = map_bank_account_statement(
                 payload=payload,
@@ -343,6 +370,10 @@ async def sync_statement(
                 conta=conta,
             )
 
+            # Fase 1.3 substitui esta chamada por _replace_canonical_partition
+            # com raw_id=raw_id e completeness='complete'. Re-fetch do mesmo
+            # periodo -> mesmo raw_id -> replace-by-partition deleta orfaos
+            # do mesmo periodo (movimentos que sumiram do payload novo).
             if canonical_rows:
                 count = await _bulk_upsert_canonical(
                     db,

@@ -138,6 +138,9 @@ async def _persist_raw(
         payload_json = {"value": payload}
 
     async with AsyncSessionLocal() as db:
+        # Fase 1.2: _upsert_raw retorna (raw_id, completeness); descartamos
+        # aqui — este helper sera reescrito em Fase 1.3 pra propagar raw_id
+        # ao caller (pra o _replace_canonical_partition saber o partition key).
         await _upsert_raw(
             db,
             tenant_id=tenant_id,
@@ -201,6 +204,9 @@ async def _persist_raw_split_by_window(
         items_dia = by_date.get(cur, [])
         payload_dia: dict[str, Any] = {items_field: items_dia}
         async with AsyncSessionLocal() as db:
+            # Fase 1.2: descarta (raw_id, completeness) retornados — Fase 1.3
+            # vai mudar este helper pra retornar um dict {date: raw_id} pra
+            # que o caller possa fazer _replace_canonical_partition por dia.
             await _upsert_raw(
                 db,
                 tenant_id=tenant_id,
