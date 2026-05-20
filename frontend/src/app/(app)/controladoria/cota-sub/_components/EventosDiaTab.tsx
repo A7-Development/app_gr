@@ -12,7 +12,6 @@
  *   if Resumo:
  *     grid 1.42fr/1fr:
  *       left:  [BridgeCard]      <- waterfall por categoria
- *              [ReconStatusCard] <- strip de reconciliacao + stats
  *       right: [DriversCard]     <- 4 categorias com expand+evidencias
  *   if Detalhe:
  *     [BalanceteDiarioTable]     <- arvore COSIF hierarquica (preservada)
@@ -48,7 +47,6 @@ import {
   DriversCard,
   type DriverInput,
 } from "./DriversCard"
-import { ReconStatusCard } from "./ReconStatusCard"
 import {
   StatusHeadlineCompact,
   type StatusHeadlineChip,
@@ -373,10 +371,6 @@ export function EventosDiaTab({
               unit={unit}
               onUnitChange={setUnit}
               height={360}
-            />
-            <ReconStatusCard
-              reconciliacao={recon}
-              nodes={nodes}
             />
           </div>
           <div className="min-w-0">
