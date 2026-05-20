@@ -31,20 +31,36 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.integracoes.adapters.admin.qitech.payload_summary import (
+    PayloadSummary,
+    summarize_payload,
+)
+
 
 class CoverageRow(NamedTuple):
-    """Uma linha de cobertura: (data, http_status, completeness, fetched_at).
+    """Uma linha de cobertura: (data, http_status, completeness, fetched_at, ...).
 
     `http_status=None` quando nao existe linha raw — a UI decide se eh gap,
     weekend, etc. `completeness` so se aplica a tabelas raw que tem a coluna
     (hoje so `wh_qitech_raw_relatorio`); demais tabelas devolvem None.
     `fetched_at` quando a linha raw existe — usado pelo refresher (2026-05-16)
-    pra decidir se vale re-buscar baseado na idade da ultima coleta."""
+    pra decidir se vale re-buscar baseado na idade da ultima coleta.
+
+    Campos extras (2026-05-20) — sinais de qualidade para o tooltip do
+    `QiTechCoverageStrip`. So populados em `wh_qitech_raw_relatorio` (per-day
+    com payload JSONB); outras tabelas devolvem `None`:
+    - `fetched_by_version`: versao do adapter QiTech que rodou o fetch.
+    - `payload_sha256_short`: 8 primeiros chars do hash bruto do payload.
+    - `summary`: sumario semantico do payload (carteiras, papeis, flags).
+    """
 
     data_posicao: date
     http_status: int | None
     completeness: str | None = None
     fetched_at: datetime | None = None
+    fetched_by_version: str | None = None
+    payload_sha256_short: str | None = None
+    summary: PayloadSummary | None = None
 
 
 # Per-day endpoints: { endpoint_name: (tabela, type_col, type_value) }.
@@ -93,6 +109,32 @@ def qitech_endpoint_supports_coverage(endpoint_name: str) -> bool:
     )
 
 
+async def _resolve_ua_nome(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    unidade_administrativa_id: UUID | None,
+) -> str | None:
+    """Resolve o nome cru da UA (ex.: 'REALINVEST FIDC') para alimentar
+    `payload_summary.summarize_payload` (classificacao Sub/Mez/Sen via
+    nome). Retorna None quando UA nao foi passada — summary degrada
+    sem classificar carteiras."""
+    if unidade_administrativa_id is None:
+        return None
+    sql = text(
+        """
+        SELECT nome FROM cadastros_unidade_administrativa
+        WHERE tenant_id = :tenant_id AND id = :ua_id
+        """
+    )
+    row = (
+        await db.execute(
+            sql, {"tenant_id": tenant_id, "ua_id": unidade_administrativa_id}
+        )
+    ).first()
+    return row[0] if row else None
+
+
 async def fetch_qitech_coverage(
     db: AsyncSession,
     *,
@@ -102,15 +144,30 @@ async def fetch_qitech_coverage(
     start_date: date,
     end_date: date,
 ) -> list[CoverageRow]:
-    """Devolve linhas (data, http_status) cobertas pra um endpoint QiTech."""
+    """Devolve linhas (data, http_status, ...) cobertas pra um endpoint QiTech.
+
+    Para endpoints em `wh_qitech_raw_relatorio` (per-day com payload JSONB),
+    cada linha tambem carrega `fetched_by_version`, `payload_sha256_short` e
+    `summary` (sinais para o tooltip do strip).
+    """
     if endpoint_name in _PER_DAY_ENDPOINTS:
+        spec = _PER_DAY_ENDPOINTS[endpoint_name]
+        ua_nome: str | None = None
+        # Resolve ua_nome apenas para tabela com payload (summarizer precisa).
+        if spec[0] == "wh_qitech_raw_relatorio":
+            ua_nome = await _resolve_ua_nome(
+                db,
+                tenant_id=tenant_id,
+                unidade_administrativa_id=unidade_administrativa_id,
+            )
         return await _fetch_per_day(
             db,
-            spec=_PER_DAY_ENDPOINTS[endpoint_name],
+            spec=spec,
             tenant_id=tenant_id,
             unidade_administrativa_id=unidade_administrativa_id,
             start_date=start_date,
             end_date=end_date,
+            ua_nome=ua_nome,
         )
     if endpoint_name in _RANGE_OVERLAP_ENDPOINTS:
         return await _fetch_range_overlap(
@@ -166,6 +223,7 @@ async def _fetch_per_day(
     unidade_administrativa_id: UUID | None,
     start_date: date,
     end_date: date,
+    ua_nome: str | None = None,
 ) -> list[CoverageRow]:
     table, type_col, type_val = spec
     where = ["tenant_id = :tenant_id", "data_posicao BETWEEN :start AND :end"]
@@ -181,30 +239,66 @@ async def _fetch_per_day(
         where.append("unidade_administrativa_id = :ua_id")
         params["ua_id"] = unidade_administrativa_id
 
-    # `completeness` so existe em wh_qitech_raw_relatorio (migration
-    # e4a7b2c9d031). Para outras tabelas (ex.: wh_qitech_raw_bank_account_*)
-    # devolvemos NULL — UI trata como "sem semantica de completeness".
-    select_completeness = (
-        "completeness" if table == "wh_qitech_raw_relatorio" else "NULL"
-    )
-    sql = text(
-        f"""
-        SELECT data_posicao, http_status, {select_completeness} AS completeness,
-               fetched_at
-        FROM {table}
-        WHERE {" AND ".join(where)}
-        """
-    )
-    result = await db.execute(sql, params)
-    return [
-        CoverageRow(
-            data_posicao=r[0],
-            http_status=r[1],
-            completeness=r[2],
-            fetched_at=r[3],
+    # `completeness`, `payload`, `payload_sha256` e `fetched_by_version` so
+    # existem em `wh_qitech_raw_relatorio` (migration e4a7b2c9d031 +
+    # base do Auditable). Para outras tabelas devolvemos NULL — UI trata
+    # como "sem semantica de completeness/summary".
+    is_relatorio = table == "wh_qitech_raw_relatorio"
+    if is_relatorio:
+        sql = text(
+            f"""
+            SELECT data_posicao, http_status, completeness, fetched_at,
+                   fetched_by_version, payload_sha256, payload,
+                   {f"'{type_val}'" if type_val else "tipo_de_mercado"} AS tipo
+            FROM {table}
+            WHERE {" AND ".join(where)}
+            """
         )
-        for r in result.all()
-    ]
+    else:
+        sql = text(
+            f"""
+            SELECT data_posicao, http_status, NULL AS completeness,
+                   fetched_at, NULL AS fetched_by_version,
+                   NULL AS payload_sha256, NULL AS payload, NULL AS tipo
+            FROM {table}
+            WHERE {" AND ".join(where)}
+            """
+        )
+
+    result = await db.execute(sql, params)
+    rows: list[CoverageRow] = []
+    for r in result.all():
+        (
+            data_posicao,
+            http_status,
+            completeness,
+            fetched_at,
+            fetched_by_version,
+            payload_sha256,
+            payload,
+            tipo,
+        ) = r
+        summary = None
+        if is_relatorio and tipo is not None:
+            summary = summarize_payload(
+                tipo_de_mercado=tipo,
+                payload=payload,
+                ua_nome=ua_nome,
+                http_status=http_status,
+            )
+        sha_short = payload_sha256[:8] if isinstance(payload_sha256, str) else None
+        rows.append(
+            CoverageRow(
+                data_posicao=data_posicao,
+                http_status=http_status,
+                completeness=completeness,
+                fetched_at=fetched_at,
+                fetched_by_version=fetched_by_version,
+                payload_sha256_short=sha_short,
+                summary=summary,
+            )
+        )
+    return rows
 
 
 async def _fetch_range_overlap(

@@ -30,6 +30,9 @@ from app.modules.integracoes.adapters.admin.qitech.coverage import (
     fetch_qitech_first_data_date,
     qitech_endpoint_supports_coverage,
 )
+from app.modules.integracoes.adapters.admin.qitech.payload_summary import (
+    PayloadSummary,
+)
 from app.modules.integracoes.models.tenant_source_endpoint_config import (
     TenantSourceEndpointConfig,
 )
@@ -70,6 +73,14 @@ class CoverageDay:
     # para OK / PARTIAL / WEEKEND / HOLIDAY / etc. fica None. Front usa
     # essa info pra pintar amber/red e exibir tooltip explicativo.
     tolerance_state: PublicationState | None = None
+    # Sinais de qualidade do payload (2026-05-20) — alimentam o tooltip
+    # enriquecido do `QiTechCoverageStrip`. So populados em endpoints
+    # `wh_qitech_raw_relatorio` (per-day com payload JSONB); demais
+    # tabelas devolvem None e o frontend degrada graciosamente.
+    fetched_at: datetime | None = None
+    fetched_by_version: str | None = None
+    payload_sha256_short: str | None = None
+    summary: PayloadSummary | None = None
 
 
 @dataclass(frozen=True)
@@ -392,6 +403,9 @@ async def get_source_coverage(
         # Indexa por data
         raw_by_date: dict[date, int | None] = {r.data_posicao: r.http_status for r in raw_rows}
         compl_by_date: dict[date, str | None] = {r.data_posicao: r.completeness for r in raw_rows}
+        # Metadados extras (2026-05-20) — usados pelo tooltip enriquecido.
+        # Mantemos a row inteira indexada para nao multiplicar dicts.
+        row_by_date: dict[date, CoverageRow] = {r.data_posicao: r for r in raw_rows}
         first_data = min(raw_by_date.keys()) if raw_by_date else None
 
         # Resolve janela efetiva (override do tenant OR default do catalogo).
@@ -431,6 +445,7 @@ async def get_source_coverage(
                 business_days_set=business_days_set,
                 window=window,
             )
+            extra = row_by_date.get(cursor)
             days.append(
                 CoverageDay(
                     data=cursor,
@@ -438,6 +453,14 @@ async def get_source_coverage(
                     http_status=raw_by_date.get(cursor),
                     completeness=compl_by_date.get(cursor),
                     tolerance_state=tolerance_state,
+                    fetched_at=extra.fetched_at if extra else None,
+                    fetched_by_version=(
+                        extra.fetched_by_version if extra else None
+                    ),
+                    payload_sha256_short=(
+                        extra.payload_sha256_short if extra else None
+                    ),
+                    summary=extra.summary if extra else None,
                 )
             )
             if status == CoverageStatus.OK:

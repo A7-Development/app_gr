@@ -17,6 +17,7 @@ Todos exigem `require_module(Module.INTEGRACOES, Permission.ADMIN)`.
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -743,6 +744,33 @@ async def list_active_backfills(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+class ItemSummaryOut(BaseModel):
+    """Linha do sumario do payload (carteira, papel, conta, movimento).
+
+    `value` e `delta_pct` sao opcionais — Decimal serializado como string
+    para preservar precisao (frontend usa Number() quando precisa formatar).
+    Para tipos sem semantica de valor (ex.: job_id de CSV), `value=None` e
+    o frontend exibe so o `name`.
+    """
+
+    name: str
+    value: Decimal | None = None
+    delta_pct: Decimal | None = None
+    suspicious: bool = False
+    suspicious_reason: str | None = None
+
+
+class PayloadSummaryOut(BaseModel):
+    """Sumario do payload bruto, populado em endpoints com payload JSONB
+    em `wh_qitech_raw_relatorio`. Outros endpoints (bank_account.*) devolvem
+    `None` no field do dia."""
+
+    total_items: int
+    expected_items: int | None = None
+    suspicious_count: int = 0
+    items: list[ItemSummaryOut] = Field(default_factory=list)
+
+
 class CoverageDayOut(BaseModel):
     data: date
     status: str = Field(description=", ".join(s.value for s in CoverageStatus))
@@ -757,6 +785,13 @@ class CoverageDayOut(BaseModel):
         default=None,
         description=", ".join(s.value for s in PublicationState),
     )
+    # Sinais de qualidade (2026-05-20) — visiveis no tooltip do
+    # `QiTechCoverageStrip`. So populados em endpoints com payload JSONB
+    # (`wh_qitech_raw_relatorio`); demais devolvem None.
+    fetched_at: datetime | None = None
+    fetched_by_version: str | None = None
+    payload_sha256_short: str | None = None
+    summary: PayloadSummaryOut | None = None
 
 
 class EndpointCoverageOut(BaseModel):
@@ -836,6 +871,28 @@ async def source_coverage(
                         tolerance_state=(
                             d.tolerance_state.value
                             if d.tolerance_state is not None
+                            else None
+                        ),
+                        fetched_at=d.fetched_at,
+                        fetched_by_version=d.fetched_by_version,
+                        payload_sha256_short=d.payload_sha256_short,
+                        summary=(
+                            PayloadSummaryOut(
+                                total_items=d.summary.total_items,
+                                expected_items=d.summary.expected_items,
+                                suspicious_count=d.summary.suspicious_count,
+                                items=[
+                                    ItemSummaryOut(
+                                        name=it.name,
+                                        value=it.value,
+                                        delta_pct=it.delta_pct,
+                                        suspicious=it.suspicious,
+                                        suspicious_reason=it.suspicious_reason,
+                                    )
+                                    for it in d.summary.items
+                                ],
+                            )
+                            if d.summary is not None
                             else None
                         ),
                     )

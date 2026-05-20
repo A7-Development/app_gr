@@ -2158,6 +2158,33 @@ export type CoverageStatus =
  */
 export type Completeness = "complete" | "partial" | "empty"
 
+/** Linha do sumario semantico do payload de um raw (2026-05-20).
+ *
+ * Carteira, papel, conta ou movimento — generico para todos os tipos. UI
+ * mostra `name` sempre, `value` formatado quando presente, badge de Δ
+ * quando `delta_pct` existe, icone amber + tooltip quando `suspicious`.
+ *
+ * `value` vem do backend como string (Decimal serializado) ou null.
+ * Frontend faz Number(value) so na hora de formatar.
+ */
+export type ItemSummary = {
+  name: string
+  /** Decimal serializado como string. */
+  value: string | null
+  /** Decimal serializado como string. */
+  delta_pct: string | null
+  suspicious: boolean
+  suspicious_reason: string | null
+}
+
+/** Sumario do payload bruto — alimenta o tooltip do `QiTechCoverageStrip`. */
+export type PayloadSummary = {
+  total_items: number
+  expected_items: number | null
+  suspicious_count: number
+  items: ItemSummary[]
+}
+
 export type CoverageDay = {
   data: string // ISO date
   status: CoverageStatus
@@ -2166,6 +2193,13 @@ export type CoverageDay = {
   // Estado de tolerância (2026-05-15) — null quando não aplicável
   // (dia OK/PARTIAL/WEEKEND/HOLIDAY/etc).
   tolerance_state: PublicationState | null
+  // Sinais de qualidade (2026-05-20) — alimentam tooltip enriquecido do
+  // strip. So populados em endpoints com payload JSONB
+  // (`wh_qitech_raw_relatorio`); demais vem null e UI degrada.
+  fetched_at: string | null
+  fetched_by_version: string | null
+  payload_sha256_short: string | null
+  summary: PayloadSummary | null
 }
 
 export type EndpointCoverage = {

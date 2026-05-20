@@ -45,6 +45,7 @@ import type {
   Completeness,
   CoverageDay,
   CoverageStatus,
+  PayloadSummary,
   PublicationState,
 } from "@/lib/api-client"
 
@@ -77,6 +78,14 @@ export type CoverageStripEntry = {
     toleranceState: PublicationState | null
     httpStatus: number | null
   }
+  /** Sinais de qualidade do raw (2026-05-20) — alimentam o tooltip
+   * enriquecido. Vem do backend so quando o endpoint tem payload JSONB
+   * (`wh_qitech_raw_relatorio`); para outros (bank_account.*) sera
+   * undefined e a secao de itens some do popover. */
+  fetchedAt?: string | null
+  fetchedByVersion?: string | null
+  payloadSha256Short?: string | null
+  summary?: PayloadSummary | null
 }
 
 export type QiTechCoverageStripProps = {
@@ -135,6 +144,10 @@ export function buildEntry(args: {
       toleranceState: day.tolerance_state,
       httpStatus: day.http_status,
     },
+    fetchedAt: day.fetched_at,
+    fetchedByVersion: day.fetched_by_version,
+    payloadSha256Short: day.payload_sha256_short,
+    summary: day.summary,
   }
 }
 
@@ -343,7 +356,7 @@ function EntryChip({
           </span>
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" sideOffset={6} className="w-72 p-3">
+      <PopoverContent align="start" sideOffset={6} className="w-80 p-3">
         <div className="flex items-start justify-between gap-2">
           <div>
             <div className="flex items-center gap-1.5">
@@ -408,6 +421,39 @@ function EntryChip({
           </dl>
         )}
 
+        {(entry.fetchedAt || entry.fetchedByVersion || entry.payloadSha256Short) && (
+          <dl className="mt-3 grid grid-cols-[78px_1fr] gap-x-3 gap-y-1 text-[11px]">
+            {entry.fetchedAt && (
+              <>
+                <dt className="text-gray-500 dark:text-gray-400">Coletado</dt>
+                <dd className="font-mono text-gray-700 dark:text-gray-200">
+                  {formatFetchedAtBR(entry.fetchedAt)}
+                </dd>
+              </>
+            )}
+            {entry.fetchedByVersion && (
+              <>
+                <dt className="text-gray-500 dark:text-gray-400">Adapter</dt>
+                <dd className="truncate font-mono text-gray-700 dark:text-gray-200">
+                  {entry.fetchedByVersion}
+                </dd>
+              </>
+            )}
+            {entry.payloadSha256Short && (
+              <>
+                <dt className="text-gray-500 dark:text-gray-400">Hash</dt>
+                <dd className="font-mono text-gray-500 dark:text-gray-400">
+                  {entry.payloadSha256Short}…
+                </dd>
+              </>
+            )}
+          </dl>
+        )}
+
+        {entry.summary && entry.summary.total_items > 0 && (
+          <SummaryBlock summary={entry.summary} />
+        )}
+
         {inProgressJob && (
           <div className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-blue-700 dark:text-blue-300">
             <RiLoader4Line className="size-3.5 animate-spin" aria-hidden="true" />
@@ -451,4 +497,123 @@ function formatBR(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
   if (!m) return iso
   return `${m[3]}/${m[2]}/${m[1]}`
+}
+
+// ─── Formatadores do bloco de qualidade ────────────────────────────────────
+
+/** Fetched_at chega como ISO string UTC. Exibe como "DD/MM HH:mm" no fuso
+ * local do navegador (tipico SP). Fallback para a string crua quando o
+ * parse falhar. */
+function formatFetchedAtBR(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const dd = String(d.getDate()).padStart(2, "0")
+  const mm = String(d.getMonth() + 1).padStart(2, "0")
+  const hh = String(d.getHours()).padStart(2, "0")
+  const mi = String(d.getMinutes()).padStart(2, "0")
+  return `${dd}/${mm} ${hh}:${mi}`
+}
+
+const _moedaCompacta = new Intl.NumberFormat("pt-BR", {
+  style:                "currency",
+  currency:             "BRL",
+  notation:             "compact",
+  maximumFractionDigits: 2,
+})
+const _moedaPlena = new Intl.NumberFormat("pt-BR", {
+  style:                "currency",
+  currency:             "BRL",
+  maximumFractionDigits: 2,
+})
+const _percentual = new Intl.NumberFormat("pt-BR", {
+  maximumFractionDigits: 2,
+  minimumFractionDigits: 2,
+})
+
+/** Formata valor decimal (string vinda do backend). Compacta acima de 10k
+ * (R$ 12,5 mi), expande abaixo (R$ 927,64). */
+function formatValueBR(value: string | null): string {
+  if (value === null) return "—"
+  const n = Number(value)
+  if (!Number.isFinite(n)) return value
+  if (Math.abs(n) >= 10_000) return _moedaCompacta.format(n)
+  return _moedaPlena.format(n)
+}
+
+function formatDeltaBR(delta: string | null): string | null {
+  if (delta === null) return null
+  const n = Number(delta)
+  if (!Number.isFinite(n)) return null
+  const sign = n > 0 ? "+" : ""
+  return `${sign}${_percentual.format(n)}%`
+}
+
+// ─── Bloco "Itens detectados" ──────────────────────────────────────────────
+
+function SummaryBlock({ summary }: { summary: PayloadSummary }) {
+  const { total_items, expected_items, suspicious_count, items } = summary
+  const overflow = total_items - items.length
+  const headerLabel = expected_items !== null
+    ? `${total_items} item${total_items === 1 ? "" : "s"} (esperado ${expected_items})`
+    : `${total_items} item${total_items === 1 ? "" : "s"}`
+
+  return (
+    <div className="mt-3 border-t border-gray-100 pt-2.5 dark:border-gray-800">
+      <div className="flex items-center justify-between gap-2 text-[11px]">
+        <span className="font-semibold uppercase tracking-[0.04em] text-gray-500 dark:text-gray-400">
+          Itens · {headerLabel}
+        </span>
+        {suspicious_count > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-sm bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+            <RiAlertLine className="size-3" aria-hidden="true" />
+            {suspicious_count} suspeito{suspicious_count === 1 ? "" : "s"}
+          </span>
+        )}
+      </div>
+
+      <ul className="mt-1.5 space-y-0.5">
+        {items.map((it, i) => {
+          const delta = formatDeltaBR(it.delta_pct)
+          return (
+            <li
+              key={`${it.name}-${i}`}
+              className={cx(
+                "flex items-center justify-between gap-2 text-[11px]",
+                it.suspicious && "text-amber-700 dark:text-amber-300",
+              )}
+              title={it.suspicious_reason ?? undefined}
+            >
+              <span className="flex min-w-0 items-center gap-1 truncate">
+                {it.suspicious && (
+                  <RiAlertLine className="size-3 shrink-0 text-amber-500" aria-hidden="true" />
+                )}
+                <span className="truncate text-gray-700 dark:text-gray-200">
+                  {it.name}
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-1.5 font-mono text-gray-700 dark:text-gray-200 tabular-nums">
+                {it.value !== null && <span>{formatValueBR(it.value)}</span>}
+                {delta !== null && (
+                  <span className={cx(
+                    "text-[10px]",
+                    Number(it.delta_pct) >= 0
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-red-600 dark:text-red-400",
+                  )}>
+                    Δ {delta}
+                  </span>
+                )}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+
+      {overflow > 0 && (
+        <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+          + {overflow} item{overflow === 1 ? "" : "s"} adicionais nao listados
+        </p>
+      )}
+    </div>
+  )
 }
