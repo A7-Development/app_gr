@@ -110,6 +110,16 @@ class EstoqueRecebivel(Auditable, Base):
         nullable=False,
         index=True,
     )
+    # raw_id -- FK pra wh_qitech_raw_relatorio. Nullable inicial pra permitir
+    # backfill assincrono (Fase 1.6). Identifica o raw payload que originou
+    # esta linha -- usado como partition key no _replace_canonical_partition
+    # (Fase 1.3 do refactor "espelho fiel QiTech", 2026-05-20).
+    raw_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("wh_qitech_raw_relatorio.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
 
     # ---- Quando ----
     data_referencia: Mapped[date] = mapped_column(
