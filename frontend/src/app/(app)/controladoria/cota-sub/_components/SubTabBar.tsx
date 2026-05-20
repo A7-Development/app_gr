@@ -28,6 +28,13 @@ export type SubTabBarProps = {
   contasCount?: number
   /** Texto a direita (ex.: "Ultima atualizacao: ha 4 min · QiTech"). */
   trailing?: React.ReactNode
+  /**
+   * Quando true, o tab "Detalhe contabil" fica disabled visualmente
+   * (cinza + cursor-not-allowed) e nao dispara onChange. Tooltip explica
+   * o motivo. Usado durante o periodo de suspensao do balancete (ver
+   * [[project_balancete_cosif_abandono_temporario]], 2026-05-19).
+   */
+  detalheDisabled?: boolean
 }
 
 export function SubTabBar({
@@ -35,6 +42,7 @@ export function SubTabBar({
   onChange,
   contasCount,
   trailing,
+  detalheDisabled = false,
 }: SubTabBarProps) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -60,13 +68,24 @@ export function SubTabBar({
           Resumo narrativo
         </SegmentButton>
         <SegmentButton
-          active={value === "detalhe"}
-          onClick={() => onChange("detalhe")}
+          active={value === "detalhe" && !detalheDisabled}
+          onClick={() => {
+            if (detalheDisabled) return
+            onChange("detalhe")
+          }}
+          disabled={detalheDisabled}
+          title={
+            detalheDisabled
+              ? "Temporariamente indisponível — balancete suspenso como diretriz (2026-05-19). Cota Sub usa método gestor (ΔSaldo). Aba reativa quando balancete voltar."
+              : undefined
+          }
           icon={
             <RiTableLine
               className={cx(
                 "size-3.5 shrink-0",
-                value === "detalhe"
+                detalheDisabled
+                  ? "text-gray-400 dark:text-gray-600"
+                  : value === "detalhe"
                   ? "text-blue-700 dark:text-blue-300"
                   : "text-gray-500 dark:text-gray-400",
               )}
@@ -75,10 +94,16 @@ export function SubTabBar({
           }
         >
           Detalhe contábil
-          {contasCount != null && (
+          {detalheDisabled ? (
             <span className="ml-1 font-normal text-gray-400 dark:text-gray-600">
-              (COSIF · {contasCount} contas)
+              (indisponível)
             </span>
+          ) : (
+            contasCount != null && (
+              <span className="ml-1 font-normal text-gray-400 dark:text-gray-600">
+                (COSIF · {contasCount} contas)
+              </span>
+            )
           )}
         </SegmentButton>
       </div>
@@ -97,21 +122,30 @@ function SegmentButton({
   onClick,
   icon,
   children,
+  disabled,
+  title,
 }: {
-  active:   boolean
-  onClick:  () => void
-  icon?:    React.ReactNode
-  children: React.ReactNode
+  active:    boolean
+  onClick:   () => void
+  icon?:     React.ReactNode
+  children:  React.ReactNode
+  disabled?: boolean
+  title?:    string
 }) {
   return (
     <button
       type="button"
       role="tab"
       aria-selected={active}
+      aria-disabled={disabled}
       onClick={onClick}
+      disabled={disabled}
+      title={title}
       className={cx(
         "inline-flex items-center gap-1.5 rounded px-3 py-1 text-[12.5px] font-medium leading-tight transition-colors",
-        active
+        disabled
+          ? "cursor-not-allowed text-gray-400 dark:text-gray-600"
+          : active
           ? "bg-white text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.06)] dark:bg-gray-800 dark:text-gray-50"
           : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200",
         focusRing,

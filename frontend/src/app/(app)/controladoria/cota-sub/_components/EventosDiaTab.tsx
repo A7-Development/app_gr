@@ -81,6 +81,15 @@ export function EventosDiaTab({
   const [subTab, setSubTab] = React.useState<SubTabKey>("resumo")
   const [unit, setUnit] = React.useState<"R$" | "pp">("pp")
 
+  // Aba "Detalhe contabil" desativada enquanto balancete estiver suspenso
+  // ([[project_balancete_cosif_abandono_temporario]], 2026-05-19). Cota Sub
+  // ja migrou pra metodo gestor (ΔSaldo direto). Reativar quando balancete
+  // voltar como diretriz.
+  const DETALHE_DISABLED = true
+  React.useEffect(() => {
+    if (DETALHE_DISABLED && subTab === "detalhe") setSubTab("resumo")
+  }, [subTab])
+
   const recon = balancete?.reconciliacao
   const cob   = balancete?.cobertura
   const dq    = balancete?.data_quality
@@ -346,6 +355,7 @@ export function EventosDiaTab({
         value={subTab}
         onChange={setSubTab}
         contasCount={contasFolha}
+        detalheDisabled={DETALHE_DISABLED}
         trailing={
           balancete?.data_d_zero
             ? `Snapshot · ${formatBR(balancete.data_d_zero)}`
@@ -377,7 +387,9 @@ export function EventosDiaTab({
             <DriversCard
               drivers={driverInputs}
               base={recon?.pl_cota_sub_d1}
-              onInvestigate={() => setSubTab("detalhe")}
+              onInvestigate={
+                DETALHE_DISABLED ? undefined : () => setSubTab("detalhe")
+              }
             />
           </div>
         </div>
