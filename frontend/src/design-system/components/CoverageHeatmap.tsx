@@ -3,13 +3,27 @@
 import * as React from "react"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { RiInformationLine, RiLoader4Line, RiPlayLine } from "@remixicon/react"
+import {
+  RiAddLine,
+  RiAlertLine,
+  RiCloseLine,
+  RiInformationLine,
+  RiLoader4Line,
+  RiPlayLine,
+  RiRefreshLine,
+} from "@remixicon/react"
 
 import { Button } from "@/components/tremor/Button"
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "@/components/tremor/Popover"
 import { cx } from "@/lib/utils"
 import type {
   BackfillJob,
   Completeness,
+  CoverageDay,
   CoverageStatus,
   EndpointCoverage,
   PublicationState,
@@ -123,6 +137,12 @@ const LABEL_COL = "minmax(220px, 280px)"
  * datas em `dates_pending` daquele job sao pintadas como "processando"
  * (azul claro, animado).
  */
+/**
+ * Identificador de uma celula no heatmap. Usado como anchor do Popover e
+ * como elemento da selecao de range (Shift+click) / avulsa (Cmd+click).
+ */
+type CellKey = { endpoint: string; date: string }
+
 export function CoverageHeatmap({
   endpoints,
   startDate,
@@ -155,8 +175,143 @@ export function CoverageHeatmap({
   const enableScroll = totalDays > 365
   const cellMinWidth = enableScroll ? "3px" : "0"
 
+  // ─── Selecao multi-celula (Fase 3.3) ─────────────────────────────────
+  // Selecao eh por endpoint -- Set<dateIso>. Reprocessamento agrupa por
+  // endpoint na hora de chamar onBackfill.
+  const [selected, setSelected] = React.useState<Record<string, Set<string>>>(
+    {},
+  )
+  // Ultima celula clicada por endpoint -- ancora do Shift+click (range).
+  const [lastClicked, setLastClicked] = React.useState<Record<string, string>>(
+    {},
+  )
+  // Popover aberto (open-state controlado -- soh 1 popover ativo por vez).
+  const [popoverCell, setPopoverCell] = React.useState<CellKey | null>(null)
+
+  const addToSelection = React.useCallback(
+    (endpoint: string, dates: string[]) => {
+      setSelected((prev) => {
+        const cur = new Set(prev[endpoint] ?? [])
+        for (const d of dates) cur.add(d)
+        return { ...prev, [endpoint]: cur }
+      })
+    },
+    [],
+  )
+
+  const toggleInSelection = React.useCallback(
+    (endpoint: string, date: string) => {
+      setSelected((prev) => {
+        const cur = new Set(prev[endpoint] ?? [])
+        if (cur.has(date)) {
+          cur.delete(date)
+        } else {
+          cur.add(date)
+        }
+        if (cur.size === 0) {
+          const next = { ...prev }
+          delete next[endpoint]
+          return next
+        }
+        return { ...prev, [endpoint]: cur }
+      })
+    },
+    [],
+  )
+
+  const selectRangeOnRow = React.useCallback(
+    (endpoint: string, fromIso: string, toIso: string, allDays: CoverageDay[]) => {
+      const iFrom = allDays.findIndex((d) => d.data === fromIso)
+      const iTo = allDays.findIndex((d) => d.data === toIso)
+      if (iFrom < 0 || iTo < 0) return
+      const [lo, hi] = iFrom <= iTo ? [iFrom, iTo] : [iTo, iFrom]
+      const range: string[] = []
+      for (let i = lo; i <= hi; i++) range.push(allDays[i].data)
+      addToSelection(endpoint, range)
+    },
+    [addToSelection],
+  )
+
+  const clearSelection = React.useCallback(() => setSelected({}), [])
+
+  const handleCellClick = React.useCallback(
+    (
+      ep: EndpointCoverage,
+      date: string,
+      mods: { shift: boolean; meta: boolean },
+    ) => {
+      // Cmd/Ctrl+click: toggle avulso. Nao abre popover.
+      if (mods.meta) {
+        toggleInSelection(ep.name, date)
+        setLastClicked((p) => ({ ...p, [ep.name]: date }))
+        return
+      }
+      // Shift+click: estende range a partir da ultima clicada na MESMA linha.
+      if (mods.shift && lastClicked[ep.name]) {
+        selectRangeOnRow(ep.name, lastClicked[ep.name], date, ep.days)
+        setLastClicked((p) => ({ ...p, [ep.name]: date }))
+        return
+      }
+      // Click simples: abre popover (toggle se mesma celula).
+      setPopoverCell((cur) =>
+        cur && cur.endpoint === ep.name && cur.date === date
+          ? null
+          : { endpoint: ep.name, date },
+      )
+      setLastClicked((p) => ({ ...p, [ep.name]: date }))
+    },
+    [lastClicked, selectRangeOnRow, toggleInSelection],
+  )
+
+  const handleReprocessAndAdd = React.useCallback(
+    async (ep: string, date: string) => {
+      if (!onBackfill) return
+      await onBackfill(ep, [date])
+      setPopoverCell(null)
+    },
+    [onBackfill],
+  )
+
+  const handleAddToSelectionFromPopover = React.useCallback(
+    (ep: string, date: string) => {
+      addToSelection(ep, [date])
+      setPopoverCell(null)
+    },
+    [addToSelection],
+  )
+
+  const handleReprocessSelection = React.useCallback(async () => {
+    if (!onBackfill) return
+    const entries = Object.entries(selected).filter(([, s]) => s.size > 0)
+    for (const [ep, dateSet] of entries) {
+      const dates = Array.from(dateSet).sort()
+      await onBackfill(ep, dates)
+    }
+    clearSelection()
+  }, [onBackfill, selected, clearSelection])
+
+  const selectedCount = React.useMemo(() => {
+    let n = 0
+    for (const s of Object.values(selected)) n += s.size
+    return n
+  }, [selected])
+
+  const selectedEndpointCount = React.useMemo(
+    () => Object.values(selected).filter((s) => s.size > 0).length,
+    [selected],
+  )
+
   return (
     <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-[#090E1A]">
+      {selectedCount > 0 && onBackfill && (
+        <SelectionBar
+          count={selectedCount}
+          endpointCount={selectedEndpointCount}
+          onReprocess={handleReprocessSelection}
+          onClear={clearSelection}
+        />
+      )}
+
       <Legend />
 
       <div className={cx("mt-4", enableScroll && "overflow-x-auto")}>
@@ -193,6 +348,12 @@ export function CoverageHeatmap({
               cellMinWidth={cellMinWidth}
               onBackfill={onBackfill}
               activeJob={activeJobByEndpoint[ep.name]}
+              selectedDates={selected[ep.name] ?? EMPTY_SET}
+              onCellClick={handleCellClick}
+              popoverCell={popoverCell}
+              onPopoverClose={() => setPopoverCell(null)}
+              onReprocessOne={handleReprocessAndAdd}
+              onAddToSelection={handleAddToSelectionFromPopover}
             />
           ))}
         </div>
@@ -209,12 +370,61 @@ export function CoverageHeatmap({
           <span className="font-medium">
             {format(parseISO(endDate), "dd/MMM/yyyy", { locale: ptBR })}
           </span>
-          . As cores resumem a <strong>saúde do dado em cada dia</strong>:
-          pronto, pode mudar, sistema cuidando, bloqueado, ou não-aplicável.
-          Detalhes técnicos (HTTP, status, janela de tolerância) aparecem no
-          tooltip de cada célula. Janela configurável na aba Endpoints.
+          . Clique numa célula pra ver detalhes e ações;{" "}
+          <kbd className="rounded border border-gray-300 px-1 text-[10px] dark:border-gray-700">Shift</kbd>
+          +click estende o range na mesma linha;{" "}
+          <kbd className="rounded border border-gray-300 px-1 text-[10px] dark:border-gray-700">Cmd</kbd>
+          /
+          <kbd className="rounded border border-gray-300 px-1 text-[10px] dark:border-gray-700">Ctrl</kbd>
+          +click adiciona célula avulsa à seleção.
         </span>
       </p>
+    </div>
+  )
+}
+
+const EMPTY_SET: ReadonlySet<string> = new Set()
+
+function SelectionBar({
+  count,
+  endpointCount,
+  onReprocess,
+  onClear,
+}: {
+  count: number
+  endpointCount: number
+  onReprocess: () => void
+  onClear: () => void
+}) {
+  return (
+    <div className="mb-3 flex items-center justify-between rounded border border-blue-200 bg-blue-50 px-3 py-2 dark:border-blue-900/50 dark:bg-blue-500/10">
+      <p className="text-[12px] text-blue-900 dark:text-blue-200">
+        <span className="font-medium">{count}</span>{" "}
+        dia{count > 1 ? "s" : ""} selecionado{count > 1 ? "s" : ""}
+        {endpointCount > 1 ? (
+          <>
+            {" "}em{" "}
+            <span className="font-medium">{endpointCount}</span>{" "}endpoints
+          </>
+        ) : null}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          className="h-7 px-2 text-[11px] text-gray-700 dark:text-gray-300"
+          onClick={onClear}
+        >
+          <RiCloseLine className="size-3 mr-1" aria-hidden />
+          Limpar
+        </Button>
+        <Button
+          className="h-7 px-3 text-[11px]"
+          onClick={onReprocess}
+        >
+          <RiRefreshLine className="size-3 mr-1" aria-hidden />
+          Reprocessar {count}
+        </Button>
+      </div>
     </div>
   )
 }
@@ -224,11 +434,27 @@ function EndpointRow({
   cellMinWidth,
   onBackfill,
   activeJob,
+  selectedDates,
+  onCellClick,
+  popoverCell,
+  onPopoverClose,
+  onReprocessOne,
+  onAddToSelection,
 }: {
   ep: EndpointCoverage
   cellMinWidth: string
   onBackfill?: (endpointName: string, dates: string[]) => void
   activeJob?: BackfillJob
+  selectedDates: ReadonlySet<string>
+  onCellClick: (
+    ep: EndpointCoverage,
+    date: string,
+    mods: { shift: boolean; meta: boolean },
+  ) => void
+  popoverCell: CellKey | null
+  onPopoverClose: () => void
+  onReprocessOne: (endpoint: string, date: string) => void
+  onAddToSelection: (endpoint: string, date: string) => void
 }) {
   // Datas em estados retentaveis pelo reconciler (Fix A, 2026-05-16):
   // gap + partial + not_published que ainda nao viraram FURO_DEFINITIVO.
@@ -343,33 +569,204 @@ function EndpointRow({
         {ep.days.map((d) => {
           const isProcessing = pendingSet.has(d.data)
           const wasProcessed = processingSet.has(d.data) && !isProcessing
+          const isSelected = selectedDates.has(d.data)
           const health = deriveHealth(d.status, d.tolerance_state, d.completeness)
           const cellBg = isProcessing
             ? "bg-blue-300 animate-pulse"
             : wasProcessed
             ? HEALTH_STYLES.ready.bg
             : HEALTH_STYLES[health].bg
+          const isPopoverOpen =
+            popoverCell?.endpoint === ep.name && popoverCell?.date === d.data
           return (
-            <div
+            <Cell
               key={d.data}
-              title={renderTooltip(
-                d.data,
-                d.status,
-                d.http_status,
-                d.completeness,
-                d.tolerance_state,
-                health,
-                isProcessing,
-              )}
-              className={cx(
-                "h-6 rounded-[1px] cursor-default transition-opacity hover:opacity-70",
-                cellBg,
-              )}
+              ep={ep}
+              day={d}
+              health={health}
+              isProcessing={isProcessing}
+              isSelected={isSelected}
+              cellBg={cellBg}
+              onClick={(mods) => onCellClick(ep, d.data, mods)}
+              isPopoverOpen={isPopoverOpen}
+              onPopoverClose={onPopoverClose}
+              onReprocessOne={() => onReprocessOne(ep.name, d.data)}
+              onAddToSelection={() => onAddToSelection(ep.name, d.data)}
+              canReprocess={Boolean(onBackfill)}
             />
           )
         })}
       </div>
     </>
+  )
+}
+
+function Cell({
+  ep,
+  day,
+  health,
+  isProcessing,
+  isSelected,
+  cellBg,
+  onClick,
+  isPopoverOpen,
+  onPopoverClose,
+  onReprocessOne,
+  onAddToSelection,
+  canReprocess,
+}: {
+  ep: EndpointCoverage
+  day: CoverageDay
+  health: DataHealth
+  isProcessing: boolean
+  isSelected: boolean
+  cellBg: string
+  onClick: (mods: { shift: boolean; meta: boolean }) => void
+  isPopoverOpen: boolean
+  onPopoverClose: () => void
+  onReprocessOne: () => void
+  onAddToSelection: () => void
+  canReprocess: boolean
+}) {
+  return (
+    <Popover open={isPopoverOpen} onOpenChange={(o) => !o && onPopoverClose()}>
+      <PopoverAnchor asChild>
+        <button
+          type="button"
+          aria-label={`${ep.label} · ${day.data}`}
+          title={renderTooltip(
+            day.data,
+            day.status,
+            day.http_status,
+            day.completeness,
+            day.tolerance_state,
+            health,
+            isProcessing,
+          )}
+          onClick={(e) =>
+            onClick({ shift: e.shiftKey, meta: e.metaKey || e.ctrlKey })
+          }
+          className={cx(
+            "h-6 rounded-[1px] cursor-pointer transition-opacity hover:opacity-70 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
+            cellBg,
+            isSelected &&
+              "ring-2 ring-blue-500 ring-offset-1 ring-offset-white dark:ring-offset-[#090E1A]",
+          )}
+        />
+      </PopoverAnchor>
+      <PopoverContent
+        side="top"
+        align="center"
+        className="w-72 p-3"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <CellPopoverContent
+          ep={ep}
+          day={day}
+          health={health}
+          onReprocessOne={onReprocessOne}
+          onAddToSelection={onAddToSelection}
+          canReprocess={canReprocess}
+        />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function CellPopoverContent({
+  ep,
+  day,
+  health,
+  onReprocessOne,
+  onAddToSelection,
+  canReprocess,
+}: {
+  ep: EndpointCoverage
+  day: CoverageDay
+  health: DataHealth
+  onReprocessOne: () => void
+  onAddToSelection: () => void
+  canReprocess: boolean
+}) {
+  const style = HEALTH_STYLES[health]
+  const dataFmt = format(parseISO(day.data), "EEE dd/MMM/yyyy", { locale: ptBR })
+  const why = describeWhy(health, day.status, day.completeness, day.tolerance_state)
+  const technical = describeTechnical(
+    day.status,
+    day.http_status,
+    day.completeness,
+    day.tolerance_state,
+  )
+  // Avisos visuais condicionais
+  const isReady = health === "ready"
+  const payloadDegraded =
+    day.completeness === "partial" || day.completeness === "empty"
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-start gap-2">
+        <span
+          className={cx("mt-0.5 inline-block size-3 rounded-[2px] shrink-0", style.bg)}
+          aria-hidden
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            {ep.label}
+          </p>
+          <p className="text-[13px] font-medium text-gray-900 dark:text-gray-100">
+            {dataFmt}
+          </p>
+          <p className="text-[11px] text-gray-600 dark:text-gray-400">
+            {style.label} · {why}
+          </p>
+          {technical && (
+            <p className="mt-1 font-mono text-[10px] text-gray-500 dark:text-gray-500">
+              {technical}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {isReady && canReprocess && (
+        <div className="flex items-start gap-1.5 rounded border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900 dark:border-amber-900/50 dark:bg-amber-500/10 dark:text-amber-200">
+          <RiAlertLine className="size-3.5 shrink-0" aria-hidden />
+          <span>
+            Vai sobrescrever dado consolidado. QiTech publicou correção
+            retroativa?
+          </span>
+        </div>
+      )}
+
+      {payloadDegraded && canReprocess && (
+        <div className="flex items-start gap-1.5 rounded border border-blue-200 bg-blue-50 p-2 text-[11px] text-blue-900 dark:border-blue-900/50 dark:bg-blue-500/10 dark:text-blue-200">
+          <RiInformationLine className="size-3.5 shrink-0" aria-hidden />
+          <span>
+            Último payload veio <strong>{day.completeness}</strong>. Re-sync
+            preserva o silver se a fonte ainda estiver degradada.
+          </span>
+        </div>
+      )}
+
+      {canReprocess && (
+        <div className="flex flex-col gap-1.5">
+          <Button
+            className="h-7 justify-start px-2 text-[11px]"
+            onClick={onReprocessOne}
+          >
+            <RiRefreshLine className="size-3.5 mr-1.5" aria-hidden />
+            Reprocessar este dia
+          </Button>
+          <Button
+            variant="ghost"
+            className="h-7 justify-start px-2 text-[11px] text-gray-700 dark:text-gray-300"
+            onClick={onAddToSelection}
+          >
+            <RiAddLine className="size-3.5 mr-1.5" aria-hidden />
+            Adicionar à seleção
+          </Button>
+        </div>
+      )}
+    </div>
   )
 }
 
