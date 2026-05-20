@@ -44,6 +44,9 @@ from app.modules.cadastros.public import UnidadeAdministrativa
 from app.modules.integracoes.adapters.admin.qitech.completeness import (
     assess_completeness,
 )
+from app.modules.integracoes.adapters.admin.qitech.critical_fields import (
+    get_critical_fields,
+)
 from app.modules.integracoes.adapters.admin.qitech.config import QiTechConfig
 from app.modules.integracoes.adapters.admin.qitech.connection import (
     build_async_client,
@@ -728,7 +731,9 @@ async def _sync_endpoint(
                         tenant_id=tenant_id,
                         endpoint_name=f"market.{tipo_de_mercado}",
                         data_referencia=data_posicao,
-                        critical_fields_for_audit=[],  # Fase 1.4 preenche
+                        critical_fields_for_audit=get_critical_fields(
+                            model.__tablename__
+                        ),
                         unidade_administrativa_id=unidade_administrativa_id,
                     )
                     step["canonical_rows_upserted"] = result["inserted"]

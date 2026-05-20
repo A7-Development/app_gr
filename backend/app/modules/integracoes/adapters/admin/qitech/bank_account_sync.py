@@ -38,6 +38,9 @@ from app.modules.integracoes.adapters.admin.qitech.connection import (
     build_async_client,
 )
 from app.modules.integracoes.adapters.admin.qitech.errors import QiTechHttpError
+from app.modules.integracoes.adapters.admin.qitech.critical_fields import (
+    get_critical_fields,
+)
 from app.modules.integracoes.adapters.admin.qitech.etl import (
     _replace_canonical_partition,
 )
@@ -272,7 +275,9 @@ async def sync_balance(
                     tenant_id=tenant_id,
                     endpoint_name="bank_account.balance",
                     data_referencia=data,
-                    critical_fields_for_audit=[],  # Fase 1.4 preenche
+                    critical_fields_for_audit=get_critical_fields(
+                        SaldoBancarioDiario.__tablename__
+                    ),
                     unidade_administrativa_id=unidade_administrativa_id,
                 )
                 step["canonical_rows_upserted"] = result["inserted"]
@@ -403,7 +408,9 @@ async def sync_statement(
                     tenant_id=tenant_id,
                     endpoint_name="bank_account.statement",
                     data_referencia=inicio,  # data inicial do periodo (audit)
-                    critical_fields_for_audit=[],  # Fase 1.4 preenche
+                    critical_fields_for_audit=get_critical_fields(
+                        ExtratoBancario.__tablename__
+                    ),
                     unidade_administrativa_id=unidade_administrativa_id,
                 )
                 step["canonical_rows_upserted"] = result["inserted"]
