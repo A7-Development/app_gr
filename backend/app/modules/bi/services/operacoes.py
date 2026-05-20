@@ -274,3 +274,327 @@ async def _produto_sigla_to_nome_map(
     )
     rows = (await db.execute(stmt)).all()
     return {row.sigla: row.nome for row in rows}
+
+
+# ─── operacoes4 (Mes Corrente · controladoria) — receita por bucket ────────
+#
+# Os helpers abaixo expoem agregacoes de RECEITA em REGIME CAIXA usando
+# wh_operacao (4 buckets: desagio, tarifa_cessao, tarifas_operacionais,
+# outras). Sao consumidos por `services/operacoes4.py` (endpoint
+# /lens-receitas) e por `services/operacoes2.py` (enriquece colunas de
+# Receita/Yield nas tabelas L5 e L7 das paginas de mes corrente).
+#
+# IOF (`total_de_iof`) NAO entra nos buckets — e passthrough, fica fora do
+# yield e da composicao. Multa, mora, cobranca e aditivo NAO existem em
+# wh_operacao; sao eventos pos-cessao em wh_dre_mensal (regime competencia).
+# Ver CLAUDE.md banner operacoes4 + handoff SPEC.
+
+
+def _receita_desagio_expr() -> ColumnElement[Any]:
+    """SQL expr do bucket desagio."""
+    return func.coalesce(func.sum(Operacao.total_de_juros), 0)
+
+
+def _receita_tarifa_cessao_expr() -> ColumnElement[Any]:
+    """SQL expr do bucket tarifa de cessao."""
+    return func.coalesce(func.sum(Operacao.total_dos_comunicados_de_cessao), 0)
+
+
+def _receita_tarifas_operacionais_expr() -> ColumnElement[Any]:
+    """SQL expr do bucket tarifas operacionais (CF+CFI+RB+DD)."""
+    return func.coalesce(
+        func.sum(
+            Operacao.total_das_consultas_financeiras
+            + Operacao.total_das_consultas_fiscais
+            + Operacao.total_dos_registros_bancarios
+            + Operacao.total_dos_documentos_digitais
+        ),
+        0,
+    )
+
+
+def _receita_outras_expr() -> ColumnElement[Any]:
+    """SQL expr do bucket outras (ad_valorem + rebate; zero em prod hoje)."""
+    return func.coalesce(
+        func.sum(Operacao.total_de_ad_valorem + Operacao.total_de_rebate),
+        0,
+    )
+
+
+def _receita_total_expr() -> ColumnElement[Any]:
+    """SQL expr da receita total (soma dos 4 buckets, REGIME CAIXA).
+
+    Bate com o calculo de `_agg_kpi.receita` em `services/operacoes2.py`
+    (juros + cf + cfi + rb + cc + dd). Ad_valorem e rebate sao zero hoje
+    em prod mas entram pra robustez quando comecarem a aparecer.
+    """
+    return func.coalesce(
+        func.sum(
+            Operacao.total_de_juros
+            + Operacao.total_dos_comunicados_de_cessao
+            + Operacao.total_das_consultas_financeiras
+            + Operacao.total_das_consultas_fiscais
+            + Operacao.total_dos_registros_bancarios
+            + Operacao.total_dos_documentos_digitais
+            + Operacao.total_de_ad_valorem
+            + Operacao.total_de_rebate
+        ),
+        0,
+    )
+
+
+async def _calcular_receita_composicao(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+    parity_filters: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Retorna receita por bucket no MTD + paridade DU + shares e deltas.
+
+    Output:
+      {
+        "desagio": {valor, parity, share_pct, delta_pct},
+        "tarifa_cessao": {...},
+        "tarifas_operacionais": {...},
+        "outras": {...},
+        "_total": {valor, parity, delta_pct},
+      }
+
+    `filters` = janela MTD. `parity_filters` = janela equivalente nos mesmos
+    N DUs do mes anterior. Ambos passam por `_apply_filters` (regra dura
+    CLAUDE.md §7.2).
+    """
+    base_select = select(
+        _receita_desagio_expr().label("desagio"),
+        _receita_tarifa_cessao_expr().label("tarifa_cessao"),
+        _receita_tarifas_operacionais_expr().label("tarifas_operacionais"),
+        _receita_outras_expr().label("outras"),
+    )
+
+    mtd_stmt = _apply_filters(base_select, tenant_id=tenant_id, **filters)
+    mtd = (await db.execute(mtd_stmt)).one()
+
+    par_stmt = _apply_filters(base_select, tenant_id=tenant_id, **parity_filters)
+    par = (await db.execute(par_stmt)).one()
+
+    buckets = ("desagio", "tarifa_cessao", "tarifas_operacionais", "outras")
+
+    mtd_vals = {b: _as_float(getattr(mtd, b)) for b in buckets}
+    par_vals = {b: _as_float(getattr(par, b)) for b in buckets}
+
+    total_mtd = sum(mtd_vals.values())
+    total_par = sum(par_vals.values())
+
+    out: dict[str, dict[str, Any]] = {}
+    for b in buckets:
+        share = (mtd_vals[b] / total_mtd * 100.0) if total_mtd > 0 else 0.0
+        delta = _safe_pct_change(mtd_vals[b], par_vals[b])
+        out[b] = {
+            "valor": mtd_vals[b],
+            "parity": par_vals[b],
+            "share_pct": share,
+            "delta_pct": delta,
+        }
+
+    out["_total"] = {
+        "valor": total_mtd,
+        "parity": total_par,
+        "delta_pct": _safe_pct_change(total_mtd, total_par),
+    }
+    return out
+
+
+async def _calcular_yield_du(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+    parity_filters: dict[str, Any],
+) -> dict[str, Any]:
+    """Yield (receita/vop) por DU do mes corrente + paridade DU do mes ant.
+
+    Output:
+      {
+        "yield_mtd_por_data": {date: (receita, vop, yield_pct_or_None)},
+        "yield_par_por_data": {date: (receita, vop, yield_pct_or_None)},
+        "yield_wavg":        float,
+        "yield_parity_wavg": float,
+        "yield_delta_pp":    float | None,
+      }
+
+    Frontend (ou service consumidor) faz o pareamento DU-a-DU usando
+    `wh_dim_dia_util`. Aqui retornamos so o dado bruto por data calendario
+    — desacopla o yield da disponibilidade do calendario.
+    """
+    base_select = select(
+        cast(Operacao.data_de_efetivacao, Date).label("data"),
+        _receita_total_expr().label("receita"),
+        func.coalesce(func.sum(Operacao.total_bruto), 0).label("vop"),
+    ).group_by(cast(Operacao.data_de_efetivacao, Date))
+
+    mtd_stmt = _apply_filters(base_select, tenant_id=tenant_id, **filters)
+    par_stmt = _apply_filters(base_select, tenant_id=tenant_id, **parity_filters)
+
+    def _index(rows: Any) -> dict[date, tuple[float, float, float | None]]:
+        out: dict[date, tuple[float, float, float | None]] = {}
+        for r in rows:
+            rec = _as_float(r.receita)
+            vop = _as_float(r.vop)
+            y = (rec / vop * 100.0) if vop > 0 else None
+            out[r.data] = (rec, vop, y)
+        return out
+
+    mtd_rows = (await db.execute(mtd_stmt)).all()
+    par_rows = (await db.execute(par_stmt)).all()
+
+    mtd_idx = _index(mtd_rows)
+    par_idx = _index(par_rows)
+
+    # Yield wavg ponderado por VOP no MTD
+    sum_rec_mtd = sum(rec for rec, _vop, _y in mtd_idx.values())
+    sum_vop_mtd = sum(vop for _rec, vop, _y in mtd_idx.values())
+    yield_wavg = (sum_rec_mtd / sum_vop_mtd * 100.0) if sum_vop_mtd > 0 else 0.0
+
+    sum_rec_par = sum(rec for rec, _vop, _y in par_idx.values())
+    sum_vop_par = sum(vop for _rec, vop, _y in par_idx.values())
+    yield_parity_wavg = (
+        (sum_rec_par / sum_vop_par * 100.0) if sum_vop_par > 0 else 0.0
+    )
+
+    yield_delta_pp: float | None = (
+        yield_wavg - yield_parity_wavg if sum_vop_par > 0 else None
+    )
+
+    return {
+        "yield_mtd_por_data": mtd_idx,
+        "yield_par_por_data": par_idx,
+        "yield_wavg": yield_wavg,
+        "yield_parity_wavg": yield_parity_wavg,
+        "yield_delta_pp": yield_delta_pp,
+    }
+
+
+async def _calcular_receita_por_dia(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+) -> dict[date, tuple[float, float | None]]:
+    """Retorna {data: (receita, yield_pct)} para enriquecer L7 (tabela diaria).
+
+    yield_pct = receita/vop em % a.m. None quando vop=0 no dia. Aplica
+    `_apply_filters` — escopo de tenant + filtros globais respeitados.
+    """
+    stmt = _apply_filters(
+        select(
+            cast(Operacao.data_de_efetivacao, Date).label("data"),
+            _receita_total_expr().label("receita"),
+            func.coalesce(func.sum(Operacao.total_bruto), 0).label("vop"),
+        ).group_by(cast(Operacao.data_de_efetivacao, Date)),
+        tenant_id=tenant_id,
+        **filters,
+    )
+    rows = (await db.execute(stmt)).all()
+    out: dict[date, tuple[float, float | None]] = {}
+    for r in rows:
+        rec = _as_float(r.receita)
+        vop = _as_float(r.vop)
+        y = (rec / vop * 100.0) if vop > 0 else None
+        out[r.data] = (rec, y)
+    return out
+
+
+async def _calcular_receita_e_vop_por_op(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+) -> dict[Any, tuple[float, float]]:
+    """Retorna {operacao_id: (receita, vop_bruto)} para alocacao proporcional.
+
+    Granularidade necessaria pra alocar receita por cedente — uma operacao
+    pode ter N titulos de M cedentes; receita do cedente = receita_op *
+    (volume_titulos_cedente / volume_total_op).
+    """
+    stmt = _apply_filters(
+        select(
+            Operacao.operacao_id.label("op_id"),
+            func.coalesce(Operacao.total_bruto, 0).label("vop"),
+            (
+                func.coalesce(Operacao.total_de_juros, 0)
+                + func.coalesce(Operacao.total_dos_comunicados_de_cessao, 0)
+                + func.coalesce(Operacao.total_das_consultas_financeiras, 0)
+                + func.coalesce(Operacao.total_das_consultas_fiscais, 0)
+                + func.coalesce(Operacao.total_dos_registros_bancarios, 0)
+                + func.coalesce(Operacao.total_dos_documentos_digitais, 0)
+                + func.coalesce(Operacao.total_de_ad_valorem, 0)
+                + func.coalesce(Operacao.total_de_rebate, 0)
+            ).label("receita"),
+        ),
+        tenant_id=tenant_id,
+        **filters,
+    )
+    rows = (await db.execute(stmt)).all()
+    return {r.op_id: (_as_float(r.receita), _as_float(r.vop)) for r in rows}
+
+
+def _alocar_receita_por_cedente(
+    titulos: list[dict[str, Any]],
+    receita_e_vop_por_op: dict[Any, tuple[float, float]],
+) -> dict[str, tuple[float, float]]:
+    """Aloca a receita de cada operacao proporcionalmente aos seus cedentes.
+
+    Logica: uma operacao pode conter N titulos de M cedentes. A receita da
+    op (4 buckets somados) e alocada para cada cedente proporcional ao
+    `valor_base` de seus titulos dentro da op.
+
+    Args:
+        titulos: lista de dicts com chaves ['op_id', 'cedente_nome',
+            'valor_base'] — output canonico de
+            `services/operacoes2.py::_titulos_por_cedente_periodo`.
+        receita_e_vop_por_op: {op_id: (receita_op, vop_op)} — output de
+            `_calcular_receita_e_vop_por_op` no mesmo periodo.
+
+    Returns:
+        {cedente_nome: (receita_alocada, volume_mtd)} — yield calculado pelo
+        caller (receita / volume_mtd em %). Cedentes sem volume nao aparecem.
+
+    Edge cases:
+      - Op nao encontrada em receita_e_vop_por_op: receita 0 alocada.
+      - vop_op == 0 (raro, op anulada apos efetivacao): receita 0 alocada.
+    """
+    acumulado_receita: dict[str, float] = {}
+    acumulado_volume: dict[str, float] = {}
+
+    # Agrega por (op, cedente) primeiro para evitar reprocessamento.
+    por_op_cedente: dict[tuple[Any, str], float] = {}
+    for t in titulos:
+        key = (t["op_id"], t["cedente_nome"])
+        por_op_cedente[key] = por_op_cedente.get(key, 0.0) + t["valor_base"]
+
+    # Volume total por op (para denominador da alocacao).
+    volume_total_por_op: dict[Any, float] = {}
+    for (op_id, _cedente), valor in por_op_cedente.items():
+        volume_total_por_op[op_id] = (
+            volume_total_por_op.get(op_id, 0.0) + valor
+        )
+
+    # Aloca proporcional.
+    for (op_id, cedente_nome), valor_cedente in por_op_cedente.items():
+        receita_op, _vop_op = receita_e_vop_por_op.get(op_id, (0.0, 0.0))
+        vol_total = volume_total_por_op.get(op_id, 0.0)
+        alocacao = (
+            0.0 if vol_total <= 0 else receita_op * (valor_cedente / vol_total)
+        )
+        acumulado_receita[cedente_nome] = (
+            acumulado_receita.get(cedente_nome, 0.0) + alocacao
+        )
+        acumulado_volume[cedente_nome] = (
+            acumulado_volume.get(cedente_nome, 0.0) + valor_cedente
+        )
+
+    return {
+        nome: (acumulado_receita[nome], acumulado_volume[nome])
+        for nome in acumulado_receita
+    }

@@ -2,7 +2,13 @@
 
 from fastapi import APIRouter
 
-from app.modules.bi.api import benchmark, benchmark2, metadata, operacoes2
+from app.modules.bi.api import (
+    benchmark,
+    benchmark2,
+    metadata,
+    operacoes2,
+    operacoes4,
+)
 
 router = APIRouter()
 
@@ -11,6 +17,11 @@ router = APIRouter()
 # Cedentes & Concentracao). Pagina vive em `/bi/operacoes2` no frontend
 # (rename pasta -> /bi/operacoes pendente: tech debt).
 router.include_router(operacoes2.router)
+
+# L2 Operacoes4 — pagina /bi/operacoes4 (Mes Corrente · controladoria,
+# regime caixa). Lente alternativa de operacoes3 com foco em composicao
+# da receita + yield por DU. Ver CLAUDE.md banner operacoes4.
+router.include_router(operacoes4.router)
 
 # L2 Benchmark (CVM FIDC via postgres_fdw — CLAUDE.md 13.1).
 # Pre-requisito runtime: schema `cvm_remote.*` configurado no gr_db.

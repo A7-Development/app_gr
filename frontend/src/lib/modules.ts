@@ -122,8 +122,21 @@ export const MODULES: ModuleDefinition[] = [
     permission: "admin",
     basePath: "/bi",
     sections: [
-      { name: "Operacoes", href: "/bi/operacoes2", enabled: true, icon: RiDashboard3Line, groupLabel: "Visao geral" },
-      { name: "Mês corrente (novo)", href: "/bi/operacoes3", enabled: true, icon: RiDashboard3Line, groupLabel: "Visao geral" },
+      // Parent expand-only agrupando as variantes de "Mes corrente" (CLAUDE.md
+      // §11.6 regra 2). `href: "#operacoes"` e identificador semantico — nao
+      // navega quando clicado, so abre/fecha. Filhos sao L2 logicamente.
+      {
+        name: "Operações",
+        href: "#operacoes",
+        enabled: true,
+        icon: RiDashboard3Line,
+        groupLabel: "Visao geral",
+        children: [
+          { name: "Mês corrente · antigo", href: "/bi/operacoes2", enabled: true },
+          { name: "Mês corrente · novo", href: "/bi/operacoes3", enabled: true },
+          { name: "Mês corrente · operações", href: "/bi/operacoes4", enabled: true },
+        ],
+      },
       { name: "Pagina padrao", href: "/bi/padrao", enabled: true, icon: RiBookOpenLine, groupLabel: "Templates" },
       { name: "Carteira", href: "/bi/carteira", enabled: false, icon: RiWallet3Line, groupLabel: "Operacao" },
       { name: "Comportamento", href: "/bi/comportamento", enabled: false, icon: RiUserStarLine, groupLabel: "Operacao" },

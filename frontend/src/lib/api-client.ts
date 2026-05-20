@@ -1087,6 +1087,10 @@ export type Operacoes2VopDiarioPonto = {
   vop: number | null
   eh_dia_util: boolean
   eh_futuro: boolean
+  /** Receita do dia (regime caixa, 4 buckets). Opt-in via operacoes4. */
+  receita?: number | null
+  /** receita/vop em % a.m. Opt-in via operacoes4. */
+  yield_pct?: number | null
 }
 
 /**
@@ -1265,6 +1269,10 @@ export type Operacoes2CedenteMtdItem = {
   taxa_media: number | null
   primeira_op: string | null
   ultima_op: string | null
+  /** Receita alocada ao cedente (regime caixa). Opt-in via operacoes4. */
+  receita_total?: number | null
+  /** receita_total / volume_mtd em % a.m. Opt-in via operacoes4. */
+  yield_pct?: number | null
 }
 
 export type Operacoes2CedentesMtdData = {
@@ -1333,6 +1341,94 @@ export const biOperacoes2 = {
   cedentesMtd: (f: BIFilters) =>
     apiClient.get<BIResponse<Operacoes2CedentesMtdData>>(
       `/bi/operacoes2/cedentes-mtd${filtersToQueryString(f)}`,
+    ),
+}
+
+// ── Operacoes4 (Mes Corrente · controladoria) — pagina /bi/operacoes4 ────────
+//
+// Lente alternativa de operacoes3 em REGIME CAIXA (wh_operacao). Responde
+// perguntas que chegam da equipe de controladoria sobre o mes em curso.
+// Espelho do backend `app/modules/bi/api/operacoes4.py`. Detalhes em
+// CLAUDE.md banner operacoes4 + handoff SPEC.
+
+export type Operacoes4ReceitaTipo =
+  | "desagio"
+  | "tarifa_cessao"
+  | "tarifas_operacionais"
+  | "outras"
+
+export type Operacoes4ReceitaComposicaoItem = {
+  tipo: Operacoes4ReceitaTipo
+  /** Valor MTD do bucket em BRL (Decimal serializado como string ou number). */
+  valor: string | number
+  share_pct: number
+  delta_pct: number | null
+  flag_atypical: boolean
+}
+
+export type Operacoes4YieldPonto = {
+  du: number
+  yield_pct: number
+  yield_parity_pct: number | null
+  today: boolean
+}
+
+export type Operacoes4Mover = {
+  tipo: Operacoes4ReceitaTipo
+  delta_pct: number
+  valor: string | number
+}
+
+export type Operacoes4Movers = {
+  cresceu: Operacoes4Mover | null
+  caiu: Operacoes4Mover | null
+}
+
+export type Operacoes4LensReceitasData = {
+  total_mtd: string | number
+  total_parity: string | number
+  delta_pct: number | null
+  composicao: Operacoes4ReceitaComposicaoItem[]
+  yield_du: Operacoes4YieldPonto[]
+  yield_wavg: number
+  yield_delta_pp: number | null
+  yield_parity_wavg: number
+  movers: Operacoes4Movers
+  mes_label: string
+  du_decorridos: number
+  du_totais_mes: number
+  du_disponivel: boolean
+}
+
+export type Operacoes4DiariaPonto = {
+  du: number
+  data: string
+  vop: number
+  receita: number
+  yield_pct: number | null
+  today: boolean
+  delta_par_pct: number | null
+  outlier: boolean
+}
+
+export type Operacoes4DiariaData = {
+  pontos: Operacoes4DiariaPonto[]
+  mes_label: string
+  mes_inicio: string
+  mes_fim: string
+  du_decorridos: number
+  du_totais_mes: number
+  du_disponivel: boolean
+}
+
+export const biOperacoes4 = {
+  lensReceitas: (f: BIFilters) =>
+    apiClient.get<BIResponse<Operacoes4LensReceitasData>>(
+      `/bi/operacoes4/lens-receitas${filtersToQueryString(f)}`,
+    ),
+  diaria: (f: BIFilters) =>
+    apiClient.get<BIResponse<Operacoes4DiariaData>>(
+      `/bi/operacoes4/diaria${filtersToQueryString(f)}`,
     ),
 }
 

@@ -219,6 +219,16 @@ class VopDiarioPonto(BaseModel):
         description="True quando o dia e util (dim_dia_util). False = sab/dom/feriado."
     )
     eh_futuro: bool = Field(description="True para dias > hoje (sem VOP apurado).")
+    # Campos opt-in de operacoes4 (regime caixa). None quando service nao
+    # enriqueceu o ponto (paginas /bi/operacoes3 etc continuam sem custo).
+    receita: float | None = Field(
+        default=None,
+        description="Receita do dia (regime caixa: 4 buckets de wh_operacao).",
+    )
+    yield_pct: float | None = Field(
+        default=None,
+        description="receita / vop_bruto do dia em % a.m. None se vop=0.",
+    )
 
 
 class VopMtdPorUa(BaseModel):
@@ -1008,6 +1018,23 @@ class CedenteMtdItem(BaseModel):
     )
     ultima_op: date | None = Field(
         description="Data da ultima operacao historica do cedente."
+    )
+    # Campos opt-in de operacoes4 (regime caixa). None quando service nao
+    # enriqueceu o item — preserva backwards compat com /bi/operacoes3.
+    receita_total: float | None = Field(
+        default=None,
+        description=(
+            "Receita MTD alocada ao cedente proporcional ao seu volume "
+            "(regime caixa: 4 buckets de wh_operacao). None quando "
+            "'sumido' ou nao enriquecido."
+        ),
+    )
+    yield_pct: float | None = Field(
+        default=None,
+        description=(
+            "receita_total / volume_mtd em % a.m. None quando 'sumido' "
+            "ou nao enriquecido."
+        ),
     )
 
 
