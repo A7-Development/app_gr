@@ -117,7 +117,7 @@ const CATEGORY_META: readonly CategoryMeta[] = [
   },
   {
     id:      "apropriacao_despesas",
-    label:   "Apropriação de despesas",
+    label:   "CPR · Contas a Pagar/Receber",
     icon:    RiFileList3Line,
     iconCls: "text-violet-600 dark:text-violet-400",
     bgCls:   "bg-violet-50 dark:bg-violet-500/10",
@@ -672,7 +672,7 @@ function defaultSublabel(id: CategoryMeta["id"]): string {
     // Drivers do metodo gestor (Fase 4c)
     case "pdd":                  return "Constituição ou reversão de provisão de crédito"
     case "apropriacao_dc":       return "Apropriação de juros do estoque DC (dEstoque − Aq + Liq)"
-    case "apropriacao_despesas": return "Apropriação de despesas e taxas operacionais via CPR"
+    case "apropriacao_despesas": return "ΔSaldo de Contas a Pagar/Receber (CPR) — apropriações, diferimentos e provisões"
     case "fundos_di":            return "Rendimento de cotas de fundos externos (DI, Selic, CDI)"
     case "compromissada":        return "Rendimento de operações compromissadas"
     case "titulos_publicos":     return "Marcação a mercado de TPF (LTN, NTN, LFT)"
@@ -695,7 +695,7 @@ function defaultNarrative(id: CategoryMeta["id"]): string {
     // Drivers do metodo gestor (Fase 4c)
     case "pdd":                  return "Mudança de faixa de provisão dos direitos creditórios — Sub absorve PDD, então constituição reduz o PL Sub e reversão aumenta."
     case "apropriacao_dc":       return "Apropriação dos juros embutidos no estoque DC: Apropriação = Estoque_D0 − (Estoque_D−1 + Aquisições − Liquidações). Carrego diário da curva contratada de cada recebível."
-    case "apropriacao_despesas": return "Apropriação de despesas e taxas operacionais (Adm, Custódia, Gestão, Auditoria, IOF, Cobrança, Registradora, etc.) e diferimentos sendo amortizados. Sub absorve direto."
+    case "apropriacao_despesas": return "ΔSaldo de todo o CPR (Contas a Pagar/Receber): apropriações de despesa (Adm, Custódia, Gestão, Auditoria, IOF, Cobrança, Registradora), diferimentos sendo amortizados, provisões (ex.: devolução de aporte engaiolado), e ajustes. Sub absorve direto — toda categoria CPR é ΔSaldo patrimonial."
     case "fundos_di":            return "Rendimento diário de cotas de fundos externos (Itaú Soberano, BB Fix, etc.). Δposição menos movimento de caixa do dia (aplicação/resgate é neutro pro PL)."
     case "compromissada":        return "Rendimento de operações compromissadas (overnight ou prazo) — Δposição da carteira de compromissadas. Comum em FIDCs que parquerizam caixa entre giros."
     case "titulos_publicos":     return "Marcação a mercado de Títulos Públicos Federais (TPF: LTN, NTN-B, NTN-F, LFT). Variação do PU pela curva do dia. Não conta resgate/aquisição (esses são movimento de caixa)."
