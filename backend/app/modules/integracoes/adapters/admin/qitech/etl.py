@@ -32,8 +32,6 @@ from itertools import islice
 from typing import Any
 from uuid import UUID
 
-from decimal import Decimal
-
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,6 +68,7 @@ from app.modules.integracoes.adapters.admin.qitech.reports import (
 )
 from app.modules.integracoes.adapters.admin.qitech.version import ADAPTER_VERSION
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
+from app.shared.audit_log.helpers import log_silver_replacement
 from app.warehouse.cpr_movimento import CprMovimento
 from app.warehouse.dia_util_qitech import DiaUtilQitech
 from app.warehouse.mec_evolucao_cotas import MecEvolucaoCotas
@@ -275,76 +274,6 @@ async def _bulk_upsert_canonical(
 # ---- Replace-by-partition (Fase 1.3, "espelho fiel QiTech") ------------
 
 
-def _json_safe(value: Any) -> Any:
-    """Converte Decimal/UUID/date/datetime pra str — caber em JSONB."""
-    if value is None or isinstance(value, (bool, int, float, str)):
-        return value
-    if isinstance(value, Decimal):
-        return str(value)
-    if isinstance(value, (UUID, datetime, date)):
-        return value.isoformat() if hasattr(value, "isoformat") else str(value)
-    return str(value)
-
-
-async def _log_silver_replacement(
-    db: AsyncSession,
-    *,
-    tenant_id: UUID,
-    endpoint_name: str,
-    table_name: str,
-    raw_id: UUID,
-    data_referencia: date,
-    unidade_administrativa_id: UUID | None,
-    orphan_rows: list[dict[str, Any]],
-    conflict_columns: list[str],
-    triggered_by: str,
-    reason: str,
-) -> None:
-    """Grava 1 entry DATA_CORRECTION no decision_log com snapshot das orfas.
-
-    Trilha de auditoria do que sumiu do warehouse via replace-by-partition.
-    Reusa o schema do decision_log (CLAUDE.md secao 14). Snapshot e os
-    business keys das orfas vao em `output.snapshot_critical_fields` e
-    `output.business_keys` (JSON-safe).
-
-    Helper inline aqui na Fase 1.3 — Fase 1.5 promove pra
-    `app/shared/audit_log/helpers.py` se ficar util pra outros adapters.
-    """
-    serializable_orphans = [
-        {k: _json_safe(v) for k, v in row.items()} for row in orphan_rows
-    ]
-    business_keys = [
-        {c: snap.get(c) for c in conflict_columns} for snap in serializable_orphans
-    ]
-    entry = DecisionLog(
-        tenant_id=tenant_id,
-        decision_type=DecisionType.DATA_CORRECTION,
-        endpoint_name=endpoint_name,
-        rule_or_model="qitech_adapter",
-        rule_or_model_version=ADAPTER_VERSION,
-        inputs_ref={
-            "raw_id": str(raw_id),
-            "table_name": table_name,
-            "data_referencia": data_referencia.isoformat(),
-            "ua_id": str(unidade_administrativa_id) if unidade_administrativa_id else None,
-        },
-        output={
-            "reason": reason,
-            "removed_count": len(orphan_rows),
-            "business_keys": business_keys,
-            "snapshot_critical_fields": serializable_orphans,
-        },
-        explanation=(
-            f"Replace-by-partition removeu {len(orphan_rows)} row(s) orfa(s) "
-            f"do silver {table_name} (raw_id={raw_id}). Estes registros "
-            f"existiam no warehouse mas sumiram do payload QiTech em re-sync "
-            f"— provavel correcao retroativa pela fonte."
-        ),
-        triggered_by=triggered_by,
-    )
-    db.add(entry)
-
-
 async def _replace_canonical_partition(
     db: AsyncSession,
     model: Any,
@@ -429,9 +358,11 @@ async def _replace_canonical_partition(
         )
         orphans = [dict(r) for r in result.mappings().all()]
         if orphans:
-            await _log_silver_replacement(
+            await log_silver_replacement(
                 db,
                 tenant_id=tenant_id,
+                adapter_name="qitech_adapter",
+                adapter_version=ADAPTER_VERSION,
                 endpoint_name=endpoint_name,
                 table_name=table_name,
                 raw_id=raw_id,
@@ -500,9 +431,11 @@ async def _replace_canonical_partition(
     orphans = [dict(r) for r in result.mappings().all()]
 
     if orphans:
-        await _log_silver_replacement(
+        await log_silver_replacement(
             db,
             tenant_id=tenant_id,
+            adapter_name="qitech_adapter",
+            adapter_version=ADAPTER_VERSION,
             endpoint_name=endpoint_name,
             table_name=table_name,
             raw_id=raw_id,
