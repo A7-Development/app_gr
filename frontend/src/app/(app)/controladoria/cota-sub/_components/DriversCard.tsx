@@ -78,14 +78,6 @@ const fmtBRL = new Intl.NumberFormat("pt-BR", {
   minimumFractionDigits: 2, maximumFractionDigits: 2,
 })
 
-const fmtBRLk = (v: number) => {
-  const abs = Math.abs(v)
-  const sign = v < 0 ? "−" : ""
-  if (abs >= 1_000_000) return `${sign}R$ ${(abs / 1_000_000).toFixed(2).replace(".", ",")}M`
-  if (abs >= 1_000)     return `${sign}R$ ${(abs / 1_000).toFixed(1).replace(".", ",")}k`
-  return `${sign}R$ ${abs.toFixed(0)}`
-}
-
 const fmtPp = (deltaBrl: number, base: number): string => {
   if (!base) return "—"
   const pp = (deltaBrl / base) * 100
@@ -1150,7 +1142,7 @@ export function buildDriverFromDriverResultOut(d: DriverResultOut): DriverInput 
   // valor_brl); o 2o e atividade do dia (informacional). Renderizamos
   // o 1o como evidencias principais e o 2o como operationalEvents (sub-secao).
   let evidencias: DriverEvidence[] = []
-  let operationalEvents: OperationalEvent[] = []
+  const operationalEvents: OperationalEvent[] = []
   let sublabel: string | undefined
 
   if (d.pdd_evidencias.length > 0) {

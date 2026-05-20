@@ -79,11 +79,6 @@ import {
 // Formatters
 // ───────────────────────────────────────────────────────────────────────────
 
-const fmtBRL = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL",
-  maximumFractionDigits: 0,
-})
 const fmtBRLCompact = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",

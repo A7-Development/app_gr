@@ -71,6 +71,20 @@ export function StepNoteEditor({
   const [view, setView] = React.useState<"write" | "preview">("write")
   const [submitting, setSubmitting] = React.useState(false)
 
+  // Auto-save (opcional). Debounce 500ms.
+  // Precisa estar ANTES do early return de mode="read" pra respeitar
+  // a regra de hooks (chamadas em ordem fixa em todo render).
+  React.useEffect(() => {
+    if (!autoSave || !onSave || mode === "create" || mode === "read") return
+    if (body.trim() === initialValue.trim()) return
+    const id = setTimeout(() => {
+      if (body.trim().length > 0 && body.length <= 10000) {
+        void onSave(body.trim(), pinned)
+      }
+    }, 500)
+    return () => clearTimeout(id)
+  }, [body, pinned, autoSave, onSave, mode, initialValue])
+
   if (mode === "read") {
     return (
       <div className={cx(MARKDOWN_CLASS, className)}>
@@ -96,18 +110,6 @@ export function StepNoteEditor({
       setSubmitting(false)
     }
   }
-
-  // Auto-save (opcional). Debounce 500ms.
-  React.useEffect(() => {
-    if (!autoSave || !onSave || mode === "create") return
-    if (body.trim() === initialValue.trim()) return
-    const id = setTimeout(() => {
-      if (body.trim().length > 0 && body.length <= 10000) {
-        void onSave(body.trim(), pinned)
-      }
-    }, 500)
-    return () => clearTimeout(id)
-  }, [body, pinned, autoSave, onSave, mode, initialValue])
 
   return (
     <div className={cx("space-y-2", className)}>

@@ -470,7 +470,6 @@ type BuildStackedOptionArgs = {
 
 function buildStackedOption({
   data,
-  title,
   series,
   valueFormatter,
   axisFmt,

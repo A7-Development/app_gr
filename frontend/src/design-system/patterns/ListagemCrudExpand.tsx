@@ -488,7 +488,7 @@ export function ListagemCrudExpand() {
   const [search, setSearch] = React.useState("")
   const [segment, setSegment] = React.useState<Segment>("todos")
   // Estado de expand (controlado p/ permitir auto-expand quando ha busca).
-  const [expanded, setExpanded] = React.useState<ExpandedState>({})
+  const [, setExpanded] = React.useState<ExpandedState>({})
 
   // ── Filtragem hierarquica ───────────────────────────────────────────────
   // Predicado combina segment + busca em codigo/nome. Pai persiste se algum

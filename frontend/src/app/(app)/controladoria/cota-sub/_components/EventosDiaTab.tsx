@@ -26,7 +26,6 @@
 import * as React from "react"
 import { RiAlertLine, RiArrowDownLine, RiCalendarLine } from "@remixicon/react"
 
-import { cx } from "@/lib/utils"
 import { Button } from "@/components/tremor/Button"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"

@@ -46,7 +46,6 @@ import {
   ProvenanceFooter,
   type ProvenanceSource,
 } from "@/design-system/components/ProvenanceFooter"
-import { tokens } from "@/design-system/tokens"
 import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 import { useUAs } from "@/lib/hooks/cadastros"
 import { cx } from "@/lib/utils"
@@ -67,7 +66,6 @@ const SLUG = "qitech-estoque-carteira"
 const TABS = [{ key: "carteira", label: "Carteira" }] as const
 type TabKey = (typeof TABS)[number]["key"]
 
-const CHART_COLORS = tokens.colors.chart
 // Paleta sequencial para faixa PDD (Bacen Resol. 2682 A→H, baixo→alto risco).
 const FAIXA_COLORS = [
   "#10B981", // A
@@ -146,77 +144,6 @@ function buildFaixaPddOption(items: BreakdownItem[]): EChartsOption {
             color: FAIXA_COLORS[i % FAIXA_COLORS.length],
             borderRadius: [3, 3, 0, 0],
           },
-        })),
-      },
-    ],
-  }
-}
-
-function buildHorizontalBarOption(items: BreakdownItem[]): EChartsOption {
-  const reversed = [...items].reverse()
-  const labels = reversed.map((i) => i.label)
-  const values = reversed.map((i) => Number(i.valor_nominal))
-  return {
-    grid: { top: 8, right: 24, bottom: 28, left: 140 },
-    xAxis: { type: "value", axisLabel: { formatter: (v: number) => brlMi(v) } },
-    yAxis: {
-      type: "category",
-      data: labels,
-      axisTick: { show: false },
-      axisLabel: {
-        formatter: (v: string) => (v.length > 18 ? `${v.slice(0, 18)}…` : v),
-      },
-    },
-    tooltip: {
-      trigger: "axis",
-      axisPointer: { type: "shadow" },
-      formatter: (params: unknown) => {
-        const arr = params as Array<{ name: string; value: number }>
-        const p = arr[0]
-        const item = reversed.find((i) => i.label === p.name)
-        if (!item) return ""
-        return `<b>${item.label}</b><br/>${brl(p.value)} · ${item.qtd_titulos} titulos · ${pct(item.pct_do_total)}`
-      },
-    },
-    series: [
-      {
-        type: "bar",
-        barMaxWidth: 18,
-        data: values.map((v, i) => ({
-          value: v,
-          itemStyle: {
-            color: CHART_COLORS[i % CHART_COLORS.length],
-            borderRadius: [0, 3, 3, 0],
-          },
-        })),
-      },
-    ],
-  }
-}
-
-function buildSituacaoOption(items: BreakdownItem[]): EChartsOption {
-  return {
-    tooltip: {
-      trigger: "item",
-      formatter: (params: unknown) => {
-        const p = params as { name: string; value: number; percent: number }
-        const item = items.find((i) => i.label === p.name)
-        const qtd = item ? `${item.qtd_titulos} titulos` : ""
-        return `<b>${p.name}</b><br/>${brl(p.value)}<br/>${pct(p.percent, 1)} · ${qtd}`
-      },
-    },
-    legend: { bottom: 0, type: "scroll", textStyle: { fontSize: 11 } },
-    series: [
-      {
-        type: "pie",
-        radius: ["45%", "70%"],
-        center: ["50%", "42%"],
-        avoidLabelOverlap: true,
-        label: { show: false },
-        data: items.map((i, idx) => ({
-          name: i.label,
-          value: Number(i.valor_nominal),
-          itemStyle: { color: CHART_COLORS[idx % CHART_COLORS.length] },
         })),
       },
     ],

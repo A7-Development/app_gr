@@ -676,7 +676,6 @@ export type KpiStripCols = 3 | 4 | 5 | 6
 
 export function KpiStrip({
   children,
-  cols: _cols = 5,
   className,
 }: {
   children: React.ReactNode

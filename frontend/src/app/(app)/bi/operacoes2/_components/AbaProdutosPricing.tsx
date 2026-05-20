@@ -33,7 +33,6 @@ import { cardTokens } from "@/design-system/tokens/card"
 import { tableTokens } from "@/design-system/tokens/table"
 import {
   biOperacoes2,
-  type Operacoes2AbaProdutosPricingData,
   type Operacoes2HistogramaProdutoBucket,
   type Operacoes2HistogramaTaxasResumo,
   type Operacoes2HistogramaPrazosResumo,

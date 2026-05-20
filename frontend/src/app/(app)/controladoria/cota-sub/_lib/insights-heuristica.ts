@@ -28,7 +28,6 @@ export function gerarInsights(agg: BucketsAgregados): InsightHeuristico[] {
 
   // 1. Resultado do dia — direcao + magnitude
   const sinal = agg.delta_cota_sub >= 0 ? "positivo" : "negativo"
-  const valorAbs = Math.abs(agg.delta_cota_sub)
   const pct =
     agg.cota_sub_d1 !== 0
       ? (agg.delta_cota_sub / Math.abs(agg.cota_sub_d1)) * 100

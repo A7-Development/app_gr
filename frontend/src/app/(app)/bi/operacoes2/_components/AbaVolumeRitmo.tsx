@@ -87,20 +87,12 @@ const fmtBRLFull = new Intl.NumberFormat("pt-BR", {
 })
 const fmtInt = new Intl.NumberFormat("pt-BR")
 const fmtPct1 = (v: number) => `${v.toFixed(1).replace(".", ",")}%`
-const fmtBRLNumeric = (v: number) => fmtBRL.format(v)
 // Formatador fixo em milhoes (sempre "X,XX mi") — usado quando a tabela
 // precisa que TODAS as linhas tenham a mesma unidade, mesmo que isso resulte
 // em "0,86 mi" para valores < 1 milhao. `notation: compact` adapta a unidade
 // linha-a-linha ("864 mil" + "4,03 mi") e quebra a comparacao visual.
 const fmtBRLMi = (v: number) =>
   `R$ ${(v / 1_000_000).toFixed(2).replace(".", ",")} mi`
-
-function fmtMonthShort(iso: string): string {
-  const [y, m] = iso.split("-").map(Number)
-  return new Date(y, (m ?? 1) - 1, 1)
-    .toLocaleString("pt-BR", { month: "short", year: "2-digit" })
-    .replace(".", "")
-}
 
 /**
  * Linha de tendencia por regressao linear (minimos quadrados).
@@ -627,33 +619,6 @@ function PaceMomBadge({ value }: { value: number | null }) {
       {isUp ? "+" : ""}
       {fmtPct1(value)}
     </span>
-  )
-}
-
-function DeltaTextRow({
-  value,
-  label,
-}: {
-  value: number | null
-  label: string
-}) {
-  if (value == null) {
-    return (
-      <p className="text-[11px] text-gray-400 dark:text-gray-600">— · {label}</p>
-    )
-  }
-  const isUp = value >= 0
-  const colorClass = isUp
-    ? "text-emerald-600 dark:text-emerald-400"
-    : "text-red-600 dark:text-red-400"
-  return (
-    <p className="text-[11px] text-gray-500 dark:text-gray-400">
-      <span className={cx("font-medium tabular-nums", colorClass)}>
-        {isUp ? "+" : ""}
-        {fmtPct1(value)}
-      </span>{" "}
-      · {label}
-    </p>
   )
 }
 

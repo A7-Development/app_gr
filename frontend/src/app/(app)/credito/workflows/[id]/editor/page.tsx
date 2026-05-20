@@ -23,7 +23,6 @@ import {
   ConnectionMode,
   Controls,
   MarkerType,
-  MiniMap,
   type Connection,
   type Edge,
   type EdgeMouseHandler,
@@ -99,6 +98,7 @@ import { TestRunDrawer } from "./_components/TestRunDrawer"
 import { VariablesPill } from "./_components/VariablesPill"
 import { glossary } from "./_lib/glossary"
 import {
+  type JourneyCategory,
   type PaletteEntry,
   buildPaletteEntries,
   groupByJourney,
@@ -1230,7 +1230,7 @@ function Palette({
           ) && (
             <div className="rounded-md border border-dashed border-gray-200 bg-gray-50 p-4 text-center text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
               Nenhuma etapa bate com{" "}
-              <span className="font-mono">"{filterRaw}"</span>.
+              <span className="font-mono">&quot;{filterRaw}&quot;</span>.
             </div>
           )}
       </div>

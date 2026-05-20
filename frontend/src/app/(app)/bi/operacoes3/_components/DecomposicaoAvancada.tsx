@@ -38,7 +38,6 @@ import { cx } from "@/lib/utils"
 
 export function DecomposicaoAvancada({
   receita,
-  receitaProjecao: _receitaProjecao,
   taxa,
   prazo,
   mix,
