@@ -439,7 +439,7 @@ function labelFromCategoryId(id: BridgeDriver["id"]): string {
     // Drivers do metodo gestor (Fase 4c)
     case "pdd":                  return "PDD"
     case "apropriacao_dc":       return "Apropriação DC"
-    case "apropriacao_despesas": return "Apropriação despesas"
+    case "apropriacao_despesas": return "CPR · Contas a Pagar/Receber"
     case "fundos_di":            return "Fundos DI"
     case "compromissada":        return "Compromissada"
     case "titulos_publicos":     return "Títulos Públicos"
@@ -464,7 +464,7 @@ function shortLabelFromCategoryId(id: BridgeDriver["id"]): ShortAxisLabel {
     // Drivers do metodo gestor (Fase 4c)
     case "pdd":                  return { line1: "PDD" }
     case "apropriacao_dc":       return { line1: "Apropriação", line2: "DC" }
-    case "apropriacao_despesas": return { line1: "Apropriação", line2: "despesas" }
+    case "apropriacao_despesas": return { line1: "CPR" }
     case "fundos_di":            return { line1: "Fundos DI" }
     case "compromissada":        return { line1: "Comprom." }
     case "titulos_publicos":     return { line1: "Títulos",     line2: "Públicos" }
