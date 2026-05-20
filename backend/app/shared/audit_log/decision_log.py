@@ -24,6 +24,12 @@ class DecisionType(enum.StrEnum):
     SCORE = "score"
     RECONCILIATION_CHECK = "reconciliation_check"
     RULE_EVALUATION = "rule_evaluation"
+    # Registro de substituicao destrutiva no warehouse silver
+    # (replace-by-partition removeu rows orfas porque sumiram do payload novo).
+    # Inputs_ref: {raw_id, endpoint, data_referencia, ua_id}.
+    # Output: {removed_count, business_keys, snapshot_critical_fields}.
+    # Ver CLAUDE.md 14 + refactor "espelho fiel QiTech" (2026-05-20).
+    DATA_CORRECTION = "data_correction"
 
 
 class DecisionLog(Base):

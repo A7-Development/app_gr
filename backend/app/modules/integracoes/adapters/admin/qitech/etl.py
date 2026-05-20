@@ -32,7 +32,9 @@ from itertools import islice
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from decimal import Decimal
+
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -267,6 +269,256 @@ async def _bulk_upsert_canonical(
     return total
 
 
+# ---- Replace-by-partition (Fase 1.3, "espelho fiel QiTech") ------------
+
+
+def _json_safe(value: Any) -> Any:
+    """Converte Decimal/UUID/date/datetime pra str — caber em JSONB."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, (UUID, datetime, date)):
+        return value.isoformat() if hasattr(value, "isoformat") else str(value)
+    return str(value)
+
+
+async def _log_silver_replacement(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    endpoint_name: str,
+    table_name: str,
+    raw_id: UUID,
+    data_referencia: date,
+    unidade_administrativa_id: UUID | None,
+    orphan_rows: list[dict[str, Any]],
+    conflict_columns: list[str],
+    triggered_by: str,
+    reason: str,
+) -> None:
+    """Grava 1 entry DATA_CORRECTION no decision_log com snapshot das orfas.
+
+    Trilha de auditoria do que sumiu do warehouse via replace-by-partition.
+    Reusa o schema do decision_log (CLAUDE.md secao 14). Snapshot e os
+    business keys das orfas vao em `output.snapshot_critical_fields` e
+    `output.business_keys` (JSON-safe).
+
+    Helper inline aqui na Fase 1.3 — Fase 1.5 promove pra
+    `app/shared/audit_log/helpers.py` se ficar util pra outros adapters.
+    """
+    serializable_orphans = [
+        {k: _json_safe(v) for k, v in row.items()} for row in orphan_rows
+    ]
+    business_keys = [
+        {c: snap.get(c) for c in conflict_columns} for snap in serializable_orphans
+    ]
+    entry = DecisionLog(
+        tenant_id=tenant_id,
+        decision_type=DecisionType.DATA_CORRECTION,
+        endpoint_name=endpoint_name,
+        rule_or_model="qitech_adapter",
+        rule_or_model_version=ADAPTER_VERSION,
+        inputs_ref={
+            "raw_id": str(raw_id),
+            "table_name": table_name,
+            "data_referencia": data_referencia.isoformat(),
+            "ua_id": str(unidade_administrativa_id) if unidade_administrativa_id else None,
+        },
+        output={
+            "reason": reason,
+            "removed_count": len(orphan_rows),
+            "business_keys": business_keys,
+            "snapshot_critical_fields": serializable_orphans,
+        },
+        explanation=(
+            f"Replace-by-partition removeu {len(orphan_rows)} row(s) orfa(s) "
+            f"do silver {table_name} (raw_id={raw_id}). Estes registros "
+            f"existiam no warehouse mas sumiram do payload QiTech em re-sync "
+            f"— provavel correcao retroativa pela fonte."
+        ),
+        triggered_by=triggered_by,
+    )
+    db.add(entry)
+
+
+async def _replace_canonical_partition(
+    db: AsyncSession,
+    model: Any,
+    rows: list[dict[str, Any]],
+    conflict_columns: list[str],
+    *,
+    raw_id: UUID,
+    completeness: str | None,
+    tenant_id: UUID,
+    endpoint_name: str,
+    data_referencia: date,
+    critical_fields_for_audit: list[str] | None = None,
+    unidade_administrativa_id: UUID | None = None,
+    triggered_by: str = "qitech_adapter",
+) -> dict[str, Any]:
+    """Replace-by-partition strict no scope `raw_id` -- "espelho fiel QiTech".
+
+    Substitui `_bulk_upsert_canonical` na Fase 1.3. Politica do refactor
+    "espelho fiel" (2026-05-20):
+
+        completeness == 'complete'  -> UPSERT + DELETE de orfas na partition
+        completeness != 'complete'  -> no-op no silver (raw ja foi gravado
+                                       fora; silver preserva o que tinha)
+
+    A partition do silver eh `WHERE raw_id = :raw_id`. Re-fetch do mesmo
+    (tenant, endpoint, data, ua) gera o mesmo raw_id (UQ bate -> UPSERT
+    in-place na raw), entao todas as silver rows projetadas daquele raw
+    sao re-avaliadas no contexto do payload novo:
+
+      1. Rows com mesma business key -> UPDATE (sobrescreve)
+      2. Rows novas -> INSERT (com raw_id=raw_id)
+      3. Rows que SUMIRAM do payload novo -> DELETE (orfas) + audit
+
+    Auditoria das orfas (CLAUDE.md secao 14, decisao 2026-05-20 audit nivel
+    (ii) — "keys + campos criticos"): cada DELETE em massa grava 1 entry
+    `DATA_CORRECTION` no `decision_log` com:
+      - inputs_ref: {raw_id, endpoint, data, ua}
+      - output: {removed_count, business_keys, snapshot_critical_fields}
+      - explanation: texto em pt-BR
+
+    `critical_fields_for_audit` define quais colunas da silver vao no
+    snapshot. Tipicamente sao os campos de valor/status que importam pra
+    reconstrucao forense ("quanto valia o titulo que sumiu"). Definido
+    por mapper na Fase 1.4.
+
+    Returns dict com:
+      - mode: 'replace' | 'noop'
+      - reason: motivo do mode
+      - inserted: int (rows inseridas/atualizadas)
+      - orphans_count: int
+    """
+    if completeness != "complete":
+        # Politica strict: payload precisa estar complete pra disparar
+        # qualquer mutacao no silver. Outras states (partial, empty, None)
+        # significam que a fonte esta degradada -- preservamos o silver.
+        return {
+            "mode": "noop",
+            "reason": f"completeness={completeness!r}",
+            "inserted": 0,
+            "orphans_count": 0,
+        }
+
+    critical_fields_for_audit = critical_fields_for_audit or []
+    table_name = model.__tablename__
+    all_columns = [c.name for c in model.__table__.columns if c.name != "id"]
+    has_ua_column = "unidade_administrativa_id" in all_columns
+
+    # Snapshot columns pro audit -- filtra apenas as que existem no model.
+    snapshot_col_names = ["id", *conflict_columns, *critical_fields_for_audit]
+    snapshot_col_names = list(dict.fromkeys(snapshot_col_names))  # dedup mantendo ordem
+    snapshot_columns = [
+        model.__table__.c[c] for c in snapshot_col_names if c in model.__table__.c
+    ]
+
+    if not rows:
+        # Payload complete vazio: tudo no partition sumiu da fonte.
+        # DELETE all + audit.
+        result = await db.execute(
+            delete(model.__table__)
+            .where(model.__table__.c.raw_id == raw_id)
+            .returning(*snapshot_columns)
+        )
+        orphans = [dict(r) for r in result.mappings().all()]
+        if orphans:
+            await _log_silver_replacement(
+                db,
+                tenant_id=tenant_id,
+                endpoint_name=endpoint_name,
+                table_name=table_name,
+                raw_id=raw_id,
+                data_referencia=data_referencia,
+                unidade_administrativa_id=unidade_administrativa_id,
+                orphan_rows=orphans,
+                conflict_columns=conflict_columns,
+                triggered_by=triggered_by,
+                reason="empty_complete_payload",
+            )
+        return {
+            "mode": "replace",
+            "reason": "empty_complete_payload",
+            "inserted": 0,
+            "orphans_count": len(orphans),
+        }
+
+    # Normaliza rows: injeta UA + raw_id sempre. raw_id eh injetado em
+    # TODAS as rows -- distinguir de _bulk_upsert_canonical que nao tinha
+    # essa coluna.
+    normalized: list[dict[str, Any]] = []
+    for row in rows:
+        norm = {col: row.get(col) for col in all_columns}
+        if (
+            has_ua_column
+            and unidade_administrativa_id is not None
+            and norm.get("unidade_administrativa_id") is None
+        ):
+            norm["unidade_administrativa_id"] = unidade_administrativa_id
+        norm["raw_id"] = raw_id
+        normalized.append(norm)
+
+    # Dedup defensivo por business key (mesma logica do _bulk).
+    seen: dict[tuple, dict[str, Any]] = {}
+    for r in normalized:
+        seen[tuple(r[c] for c in conflict_columns)] = r
+    deduped = list(seen.values())
+
+    # UPSERT em chunks. RETURNING id acumula ids inseridos/atualizados
+    # pra construir o NOT IN do DELETE depois.
+    chunk_size = max(1, min(CHUNK_SIZE, MAX_PG_PARAMS // len(all_columns)))
+    update_cols_names = [
+        c.name
+        for c in model.__table__.columns
+        if c.name not in {"id", *conflict_columns, "ingested_at"}
+    ]
+
+    inserted_ids: list[Any] = []
+    for chunk in _chunked(deduped, chunk_size):
+        stmt = pg_insert(model.__table__).values(chunk)
+        update_set = {name: stmt.excluded[name] for name in update_cols_names}
+        stmt = stmt.on_conflict_do_update(
+            index_elements=conflict_columns, set_=update_set
+        ).returning(model.__table__.c.id)
+        res = await db.execute(stmt)
+        inserted_ids.extend(res.scalars().all())
+
+    # DELETE de orfas: rows com mesmo raw_id que NAO foram tocadas pelo INSERT.
+    delete_stmt = (
+        delete(model.__table__)
+        .where(model.__table__.c.raw_id == raw_id)
+        .where(model.__table__.c.id.not_in(inserted_ids))
+        .returning(*snapshot_columns)
+    )
+    result = await db.execute(delete_stmt)
+    orphans = [dict(r) for r in result.mappings().all()]
+
+    if orphans:
+        await _log_silver_replacement(
+            db,
+            tenant_id=tenant_id,
+            endpoint_name=endpoint_name,
+            table_name=table_name,
+            raw_id=raw_id,
+            data_referencia=data_referencia,
+            unidade_administrativa_id=unidade_administrativa_id,
+            orphan_rows=orphans,
+            conflict_columns=conflict_columns,
+            triggered_by=triggered_by,
+            reason="upsert_with_orphan_delete",
+        )
+
+    return {
+        "mode": "replace",
+        "reason": "upsert_with_orphan_delete",
+        "inserted": len(inserted_ids),
+        "orphans_count": len(orphans),
+    }
+
+
 # ---- 4xx-as-row helper -------------------------------------------------
 
 
@@ -444,21 +696,46 @@ async def _sync_endpoint(
         return step
 
     # --- 4. Persiste canonico (transacao isolada) -----------------------
-    # Fase 1.3 (proximo refactor) substitui esta chamada por
-    # _replace_canonical_partition(raw_id=raw_id, completeness=raw_completeness, ...)
-    # com politica strict (so substitui em complete) + DELETE de orfaos.
+    # Fase 1.3 (refactor "espelho fiel QiTech", 2026-05-20): substituido
+    # _bulk_upsert_canonical por _replace_canonical_partition. Politica:
+    #   - completeness == 'complete' -> UPSERT + DELETE de orfaos da partition
+    #   - outros (partial, empty, None) -> no-op no silver (preserva)
+    # raw_id eh capturado da Fase 2 acima; fallback pro path legado quando
+    # raw_id eh None (payload com shape ruim — raw nao foi gravado).
     if canonical_rows:
         try:
             async with AsyncSessionLocal() as db:
-                count = await _bulk_upsert_canonical(
-                    db,
-                    model,
-                    canonical_rows,
-                    conflict_columns,
-                    unidade_administrativa_id=unidade_administrativa_id,
-                )
+                if raw_id is None:
+                    # Fallback: payload com shape ruim; raw nao foi gravado.
+                    # Usa UPSERT puro (legado) — nao temos partition key.
+                    count = await _bulk_upsert_canonical(
+                        db,
+                        model,
+                        canonical_rows,
+                        conflict_columns,
+                        unidade_administrativa_id=unidade_administrativa_id,
+                    )
+                    step["canonical_rows_upserted"] = count
+                    step["canonical_mode"] = "upsert_legacy_no_raw_id"
+                else:
+                    result = await _replace_canonical_partition(
+                        db,
+                        model,
+                        canonical_rows,
+                        conflict_columns,
+                        raw_id=raw_id,
+                        completeness=raw_completeness,
+                        tenant_id=tenant_id,
+                        endpoint_name=f"market.{tipo_de_mercado}",
+                        data_referencia=data_posicao,
+                        critical_fields_for_audit=[],  # Fase 1.4 preenche
+                        unidade_administrativa_id=unidade_administrativa_id,
+                    )
+                    step["canonical_rows_upserted"] = result["inserted"]
+                    step["canonical_mode"] = result["mode"]
+                    step["canonical_reason"] = result["reason"]
+                    step["canonical_orphans_removed"] = result["orphans_count"]
                 await db.commit()
-            step["canonical_rows_upserted"] = count
         except Exception as e:
             step["errors"].append(f"canonical: {type(e).__name__}: {e}")
             step["elapsed_seconds"] = round(time.monotonic() - t0, 2)

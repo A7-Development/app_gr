@@ -39,7 +39,7 @@ from app.modules.integracoes.adapters.admin.qitech.connection import (
 )
 from app.modules.integracoes.adapters.admin.qitech.errors import QiTechHttpError
 from app.modules.integracoes.adapters.admin.qitech.etl import (
-    _bulk_upsert_canonical,
+    _replace_canonical_partition,
 )
 from app.modules.integracoes.adapters.admin.qitech.hashing import sha256_of_row
 from app.modules.integracoes.adapters.admin.qitech.mappers import (
@@ -252,11 +252,13 @@ async def sync_balance(
             )
 
             # 4. Canonical
-            # Fase 1.3 substitui esta chamada por _replace_canonical_partition
-            # com raw_id=raw_id e completeness='complete' (bank_account.balance
-            # nao tem perfil partial — HTTP 200 = complete).
+            # Fase 1.3: replace-by-partition strict no scope raw_id.
+            # bank_account.balance nao tem perfil partial em completeness.py
+            # (HTTP 200 = complete implicito), entao passamos 'complete' direto
+            # — qualquer falha de fetch ja retornou step["errors"] acima e nao
+            # chegou aqui. NA mesma transacao do raw, entao tudo ou nada.
             if canonical_rows:
-                count = await _bulk_upsert_canonical(
+                result = await _replace_canonical_partition(
                     db,
                     SaldoBancarioDiario,
                     canonical_rows,
@@ -265,9 +267,17 @@ async def sync_balance(
                         "tenant_id", "unidade_administrativa_id",
                         "agencia", "conta", "data_posicao",
                     ],
+                    raw_id=raw_id,
+                    completeness="complete",
+                    tenant_id=tenant_id,
+                    endpoint_name="bank_account.balance",
+                    data_referencia=data,
+                    critical_fields_for_audit=[],  # Fase 1.4 preenche
                     unidade_administrativa_id=unidade_administrativa_id,
                 )
-                step["canonical_rows_upserted"] = count
+                step["canonical_rows_upserted"] = result["inserted"]
+                step["canonical_mode"] = result["mode"]
+                step["canonical_orphans_removed"] = result["orphans_count"]
 
             await db.commit()
     except Exception as e:
@@ -370,12 +380,15 @@ async def sync_statement(
                 conta=conta,
             )
 
-            # Fase 1.3 substitui esta chamada por _replace_canonical_partition
-            # com raw_id=raw_id e completeness='complete'. Re-fetch do mesmo
-            # periodo -> mesmo raw_id -> replace-by-partition deleta orfaos
-            # do mesmo periodo (movimentos que sumiram do payload novo).
+            # Fase 1.3: replace-by-partition strict no scope raw_id.
+            # Re-fetch do mesmo periodo -> mesmo raw_id -> replace-by-partition
+            # deleta movimentos que sumiram do payload novo. Importante: a
+            # granularidade aqui eh por PERIODO (nao por dia). Re-sync de
+            # "dia X" puxa o periodo que cobre X; o replace opera no periodo
+            # inteiro — movimentos de OUTROS dias do mesmo periodo tambem
+            # sao reavaliados. Ver _upsert_raw_statement.
             if canonical_rows:
-                count = await _bulk_upsert_canonical(
+                result = await _replace_canonical_partition(
                     db,
                     ExtratoBancario,
                     canonical_rows,
@@ -385,9 +398,17 @@ async def sync_statement(
                         "agencia", "conta", "data_lancamento",
                         "valor", "tipo", "descricao", "contrapartida_doc",
                     ],
+                    raw_id=raw_id,
+                    completeness="complete",
+                    tenant_id=tenant_id,
+                    endpoint_name="bank_account.statement",
+                    data_referencia=inicio,  # data inicial do periodo (audit)
+                    critical_fields_for_audit=[],  # Fase 1.4 preenche
                     unidade_administrativa_id=unidade_administrativa_id,
                 )
-                step["canonical_rows_upserted"] = count
+                step["canonical_rows_upserted"] = result["inserted"]
+                step["canonical_mode"] = result["mode"]
+                step["canonical_orphans_removed"] = result["orphans_count"]
 
             await db.commit()
     except Exception as e:
