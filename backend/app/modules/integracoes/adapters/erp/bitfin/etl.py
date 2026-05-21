@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import UTC, date, datetime
+from decimal import Decimal, InvalidOperation
 from itertools import islice
 from typing import Any
 from uuid import UUID
@@ -373,6 +374,35 @@ def _silver_source_id(
     )
 
 
+_ZERO = Decimal("0")
+
+
+def _to_decimal(value: Any) -> Decimal:
+    """Coerce bronze JSONB value (string ou number) em Decimal de forma defensiva.
+
+    pyodbc serializa colunas SQL Server NUMERIC/DECIMAL como `Decimal` em
+    Python; quando o payload bronze e gravado como JSONB, esses Decimals
+    viram **strings** ("1500.00000"). Quaisquer operacoes aritmeticas
+    posteriores sobre o valor cru (ex.: `-valor`) lancam
+    `TypeError: bad operand type for unary -: 'str'`. Este helper normaliza:
+
+    - None / "" / lista / dict -> Decimal("0")
+    - string numerica          -> Decimal(value)
+    - int / float / Decimal    -> Decimal(str(value))
+
+    Em casos de string mal-formada, retorna 0 (fail-soft) — preferimos um
+    silver-row com valor zero a derrubar o sync inteiro de uma competencia.
+    """
+    if value is None or value == "":
+        return _ZERO
+    if isinstance(value, Decimal):
+        return value
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return _ZERO
+
+
 def _bronze_row_to_silver(
     *,
     tipo_origem: str,
@@ -411,10 +441,10 @@ def _bronze_row_to_silver(
             "produto_id": produto_id,
             "unidade_administrativa_id": ua_id,
             "fonte": fonte,
-            "receita": bronze_row.get("total_apurado") or 0,
-            "custo": bronze_row.get("total_do_custo") or 0,
-            "resultado": bronze_row.get("resultado") or 0,
-            "quantidade": bronze_row.get("quantidade") or 0,
+            "receita": _to_decimal(bronze_row.get("total_apurado")),
+            "custo": _to_decimal(bronze_row.get("total_do_custo")),
+            "resultado": _to_decimal(bronze_row.get("resultado")),
+            "quantidade": int(bronze_row.get("quantidade") or 0),
             "_source_id": _silver_source_id(
                 competencia=bronze_row["competencia"],
                 grupo_dre=cls.grupo_dre,
@@ -438,7 +468,7 @@ def _bronze_row_to_silver(
         cls = classifier.classify(fonte, categoria)
         if cls is None or not cls.ativo:
             return None
-        valor = bronze_row.get("valor") or 0
+        valor = _to_decimal(bronze_row.get("valor"))
         ua_id = bronze_row.get("unidade_administrativa_id")
         return {
             "ano": bronze_row["ano"],
@@ -454,9 +484,9 @@ def _bronze_row_to_silver(
             "produto_id": None,
             "unidade_administrativa_id": ua_id,
             "fonte": fonte,
-            "receita": 0,
+            "receita": _ZERO,
             "custo": valor,
-            "resultado": -valor if valor else 0,
+            "resultado": -valor,
             "quantidade": 1,
             "_source_id": _silver_source_id(
                 competencia=bronze_row["competencia"],
@@ -473,8 +503,8 @@ def _bronze_row_to_silver(
         # Bloco 3 -- ComissaoComercialFechamento. vw_DRE block 3 filtra
         # `Comissao > 0` -- preservamos. Categoria e SEMPRE "Comissao de
         # Consultor" (hardcoded na vw_DRE block 3).
-        comissao = bronze_row.get("comissao") or 0
-        if comissao <= 0:
+        comissao = _to_decimal(bronze_row.get("comissao"))
+        if comissao <= _ZERO:
             return None
         categoria = "Comissao de Consultor"
         cls = classifier.classify(fonte, categoria)
@@ -495,7 +525,7 @@ def _bronze_row_to_silver(
             "produto_id": None,
             "unidade_administrativa_id": ua_id,
             "fonte": fonte,
-            "receita": 0,
+            "receita": _ZERO,
             "custo": comissao,
             "resultado": -comissao,
             "quantidade": 1,
