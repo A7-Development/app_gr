@@ -16,6 +16,9 @@ import {
   adminAI,
   type AIAgentConfigRead,
   type AIAgentConfigUpdatePayload,
+  type AIAgentDefinitionCreatePayload,
+  type AIAgentDefinitionDetail,
+  type AIAgentDefinitionUpdatePayload,
   type AIExpertiseCreatePayload,
   type AIExpertiseDetail,
   type AIExpertiseUpdatePayload,
@@ -310,6 +313,106 @@ export function useArchiveExpertise() {
     mutationFn: (id: string) => adminAI.expertises.archive(id),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["admin", "ai", "expertises"] }),
+  })
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Agent Definitions (F2.c.3 — CLAUDE.md §19.12)
+// ───────────────────────────────────────────────────────────────────────────
+
+const AGENT_DEFINITION_KEYS = {
+  list: (opts: { includeArchived: boolean; module?: string }) =>
+    ["admin", "ai", "agent-definitions", opts] as const,
+  detail: (id: string) =>
+    ["admin", "ai", "agent-definitions", id] as const,
+}
+
+export function useAgentDefinitions(
+  opts: { includeArchived?: boolean; module?: string } = {},
+) {
+  const includeArchived = opts.includeArchived ?? false
+  const module = opts.module
+  return useQuery({
+    queryKey: AGENT_DEFINITION_KEYS.list({ includeArchived, module }),
+    queryFn: () =>
+      adminAI.agentDefinitions.list({ includeArchived, module }),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useAgentDefinitionDetail(id: string | null) {
+  return useQuery({
+    queryKey: AGENT_DEFINITION_KEYS.detail(id ?? ""),
+    queryFn: () => adminAI.agentDefinitions.get(id!),
+    enabled: !!id,
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useCreateAgentDefinition() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: AIAgentDefinitionCreatePayload) =>
+      adminAI.agentDefinitions.create(payload),
+    onSuccess: () =>
+      qc.invalidateQueries({
+        queryKey: ["admin", "ai", "agent-definitions"],
+      }),
+  })
+}
+
+export function useUpdateAgentDefinition() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: string
+      payload: AIAgentDefinitionUpdatePayload
+    }) => adminAI.agentDefinitions.update(id, payload),
+    onSuccess: (created: AIAgentDefinitionDetail) => {
+      qc.invalidateQueries({
+        queryKey: ["admin", "ai", "agent-definitions"],
+      })
+      qc.invalidateQueries({
+        queryKey: AGENT_DEFINITION_KEYS.detail(created.id),
+      })
+    },
+  })
+}
+
+export function useActivateAgentDefinitionVersion() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      name,
+      versionId,
+    }: {
+      name: string
+      versionId: string
+    }) => adminAI.agentDefinitions.activate(name, versionId),
+    onSuccess: () =>
+      qc.invalidateQueries({
+        queryKey: ["admin", "ai", "agent-definitions"],
+      }),
+  })
+}
+
+export function useArchiveAgentDefinition() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => adminAI.agentDefinitions.archive(id),
+    onSuccess: () =>
+      qc.invalidateQueries({
+        queryKey: ["admin", "ai", "agent-definitions"],
+      }),
+  })
+}
+
+export function usePreviewAgentDefinition() {
+  return useMutation({
+    mutationFn: (id: string) => adminAI.agentDefinitions.preview(id),
   })
 }
 

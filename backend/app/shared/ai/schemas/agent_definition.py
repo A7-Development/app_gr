@@ -1,0 +1,181 @@
+"""Pydantic schemas (DTOs) para endpoints de /admin/ia/agents.
+
+AgentDefinition = composto persona + expertises + prompt + modelo +
+governance que define um agente Strata (CLAUDE.md §19.12).
+
+Endpoints REST (em `app/modules/admin/api/ai_agent_definitions.py`):
+    GET    /admin/ia/agents              lista (com is_active + usage)
+    GET    /admin/ia/agents/{id}         detalhe (com persona/expertises/prompt expandidos)
+    POST   /admin/ia/agents              cria nova familia (vira v1, ativa)
+    PUT    /admin/ia/agents/{id}         cria nova versao copiando + patches
+    PUT    /admin/ia/agents/{name}/active  promove versao
+    POST   /admin/ia/agents/{id}/archive   soft-delete
+    POST   /admin/ia/agents/{id}/preview   renderiza system_text composto (XML)
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
+
+# ─── Sub-objetos pra Detail/Preview (expansoes) ───────────────────────────
+
+
+class AgentPersonaRef(BaseModel):
+    """Resumo de persona referenciada (id + name + display + version)."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    name: str
+    display_name: str
+    version: int
+
+
+class AgentExpertiseRef(BaseModel):
+    """Resumo de expertise referenciada."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    name: str
+    display_name: str
+    domain: str
+    version: int
+
+
+class AgentPromptRef(BaseModel):
+    """Resumo de prompt referenciado."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    name: str
+    version: str  # ai_prompt.version e string "v1", "v2"
+
+
+# ─── Read DTOs ────────────────────────────────────────────────────────────
+
+
+class AgentDefinitionVersionInfo(BaseModel):
+    """Linha enxuta pra listagens."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    name: str
+    version: int
+    module: str
+    persona_name: str | None = None  # resolved at server
+    expertise_count: int = 0
+    prompt_name: str
+    model: str | None = None  # override; None = catalog default
+    is_active: bool
+    cross_module: bool
+    tenant_id: UUID | None  # NULL = global
+    created_at: datetime
+    archived_at: datetime | None = None
+
+
+class AgentDefinitionDetail(BaseModel):
+    """Detalhe completo de uma versao — usado no editor."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    name: str
+    version: int
+    module: str
+    persona: AgentPersonaRef | None = None
+    expertises: list[AgentExpertiseRef] = []
+    prompt: AgentPromptRef | None = None  # None se prompt_name nao existe (raro)
+    prompt_name: str  # raw — pra editor mostrar mesmo se prompt nao foi resolvido
+    model: str | None = None
+    fallback_model: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    cross_module: bool
+    credit_hint: int | None = None
+    tenant_id: UUID | None
+    is_active: bool
+    created_at: datetime
+    archived_at: datetime | None = None
+
+
+# ─── Write DTOs ───────────────────────────────────────────────────────────
+
+
+class AgentDefinitionCreate(BaseModel):
+    """Cria nova familia de agente. Vira v1 e e ativada automaticamente."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Convencao canonica: <modulo>.<nome>, lowercase + dots + underscores.
+    name: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[a-z0-9]+(\.[a-z0-9_]+)*$",
+    )
+    module: str = Field(
+        min_length=1,
+        max_length=32,
+        pattern=r"^[a-z0-9_]+$",
+    )
+    persona_id: UUID | None = None
+    expertise_ids: list[UUID] | None = None
+    prompt_name: str = Field(min_length=1, max_length=128)
+    model: str | None = None
+    fallback_model: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    cross_module: bool = False
+    credit_hint: int | None = None
+
+
+class AgentDefinitionUpdate(BaseModel):
+    """Cria nova versao. Campos nao informados sao herdados da base.
+
+    A nova versao NAO e ativada automaticamente.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    persona_id: UUID | None = None
+    expertise_ids: list[UUID] | None = None
+    prompt_name: str | None = None
+    model: str | None = None
+    fallback_model: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    cross_module: bool | None = None
+    credit_hint: int | None = None
+
+
+class AgentDefinitionActivate(BaseModel):
+    """Promove uma versao a ativa pra `name`."""
+
+    model_config = ConfigDict(extra="forbid")
+    version_id: UUID
+
+
+# ─── Preview ──────────────────────────────────────────────────────────────
+
+
+class AgentDefinitionPreviewResponse(BaseModel):
+    """Resultado do preview — renderiza o system_text composto que seria
+    enviado ao LLM em runtime, exatamente como `compose_system_text` produz.
+
+    Util pra debug: voce ve o XML final antes de ativar a versao.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    version: int
+    system_text: str  # bloco XML completo (<persona>...<expertise>...<task>...)
+    persona_full_id: str | None = None
+    expertise_full_ids: list[str] = []
+    prompt_full_id: str
+    model: str
+    fallback_model: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
