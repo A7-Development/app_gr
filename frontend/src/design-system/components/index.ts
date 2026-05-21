@@ -28,6 +28,10 @@ export {
   type KpiHeadlineDiagnostic, type KpiHeadlineTone, type DiagnosticTone,
 } from "./KpiHeadline"
 export {
+  KpiBand,
+  type KpiBandProps, type KpiBandItem, type KpiBandTone,
+} from "./KpiBand"
+export {
   FilterBar, FilterSearch, FilterChip, RemovableChip,
   MoreFiltersButton, SavedViewsDropdown,
   type SavedView,

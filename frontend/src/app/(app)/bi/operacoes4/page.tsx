@@ -42,11 +42,8 @@ import {
   MoreFiltersButton,
 } from "@/design-system/components/FilterBar"
 import { InsightStrip } from "@/design-system/components/InsightStrip"
-import { KpiHeadline } from "@/design-system/components"
-import type {
-  KpiHeadlineDiagnostic,
-  KpiHeadlineTone,
-} from "@/design-system/components"
+import { KpiBand } from "@/design-system/components"
+import type { KpiBandItem, KpiBandTone } from "@/design-system/components"
 import {
   AIPanel,
   useAIPanel,
@@ -379,36 +376,16 @@ export default function Operacoes4Page() {
             )}
             {bundle && (
               <>
-                {/* L1 — KpiHeadline canonico (handoff 2026-05-21 + decisao 2026-05-21):
-                    VOP e o KPI dominante; Taxa, Prazo e Receita viram chips de
-                    diagnostico ao lado. Pattern oficial do DS — anti tile-syndrome. */}
-                <KpiHeadline
-                  statement={`MÊS CORRENTE · OPERAÇÕES · ${bundle.termometro.vop.mes_label.toUpperCase()}`}
-                  primary={{
-                    value: formatKpiValor(bundle.termometro.vop),
-                    // Decisao Ricardo 2026-05-21: valor SEMPRE neutral (preto),
-                    // apenas o delta carrega cor.
-                    tone: "neutral",
-                    delta:
-                      bundle.termometro.vop.delta_vop_du_pct != null
-                        ? {
-                            value: formatDeltaPctSigned(
-                              bundle.termometro.vop.delta_vop_du_pct,
-                            ),
-                            tone: primaryToneFromDelta(
-                              bundle.termometro.vop.delta_vop_du_pct,
-                            ),
-                          }
-                        : undefined,
-                    sub:
-                      bundle.termometro.vop.delta_vop_du_pct != null
-                        ? "VOP-DU vs mês ant."
-                        : undefined,
-                  }}
-                  diagnostics={[
-                    diagnosticFromKpi("Taxa", bundle.termometro.taxa),
-                    diagnosticFromKpi("Prazo", bundle.termometro.prazo),
-                    diagnosticFromKpi("Receita", bundle.termometro.receita),
+                {/* L1 — KpiBand (handoff 2026-05-21 + iteracao 2026-05-21):
+                    banda horizontal de 4 KPIs equivalentes (VOP, Receita,
+                    Taxa, Prazo), separados por divider vertical parcial.
+                    Pattern oficial do DS — value preto, apenas delta colorido. */}
+                <KpiBand
+                  items={[
+                    kpiBandItemFromCell("VOP", bundle.termometro.vop, "VOP-DU vs mês ant."),
+                    kpiBandItemFromCell("RECEITA", bundle.termometro.receita, "VOP-DU vs mês ant."),
+                    kpiBandItemFromCell("TAXA", bundle.termometro.taxa, "VOP-DU vs mês ant."),
+                    kpiBandItemFromCell("PRAZO", bundle.termometro.prazo, "VOP-DU vs mês ant."),
                   ]}
                 />
                 {bundle.termometro.vop.valor === 0 && (
@@ -600,34 +577,41 @@ function formatDeltaPctSigned(pct: number): string {
   return `${sign}${Math.abs(pct).toFixed(2).replace(".", ",")}%`
 }
 
-function primaryToneFromDelta(
+function deltaToneFromValue(
   pct: number | null | undefined,
-): KpiHeadlineTone {
+): KpiBandTone {
   if (pct == null) return "neutral"
   return pct >= 0 ? "positive" : "negative"
 }
 
-// Pattern decision: cada chip mostra o KPI com label curto + valor + delta
-// inline. Tone reflete sinal do delta (ok=verde quando >=0, warning=amber
-// quando <0). Polaridade nao e invertida pra Prazo/Taxa pra simplificar a
-// leitura — o numero fala por si.
-function diagnosticFromKpi(
+/**
+ * Monta 1 item da KpiBand a partir de uma `Operacoes2MesCorrenteKpiCell`.
+ * Eyebrow: "<label> · <mes>"  (ex.: "VOP · MAI/26")
+ * Value: formatKpiValor (BRL/% / dias segundo unidade)
+ * Delta: signed pct (only when delta_vop_du_pct nao-null) colorido por sinal
+ * Sub: deltaSub passado (typicamente "VOP-DU vs mês ant.")
+ */
+function kpiBandItemFromCell(
   label: string,
-  cell: { valor: number; unidade: string; delta_vop_du_pct: number | null },
-): KpiHeadlineDiagnostic {
-  const valor = formatKpiValor(cell)
-  const deltaText =
-    cell.delta_vop_du_pct != null
-      ? ` ${formatDeltaPctSigned(cell.delta_vop_du_pct)}`
-      : ""
+  cell: {
+    valor: number
+    unidade: string
+    delta_vop_du_pct: number | null
+    mes_label: string
+  },
+  sub: string,
+): KpiBandItem {
   return {
-    label: `${label} ${valor}${deltaText}`,
-    tone:
-      cell.delta_vop_du_pct == null
-        ? "info"
-        : cell.delta_vop_du_pct >= 0
-          ? "ok"
-          : "warning",
+    eyebrow: `${label} · ${cell.mes_label.toUpperCase()}`,
+    value: formatKpiValor(cell),
+    delta:
+      cell.delta_vop_du_pct != null
+        ? {
+            value: formatDeltaPctSigned(cell.delta_vop_du_pct),
+            tone: deltaToneFromValue(cell.delta_vop_du_pct),
+          }
+        : undefined,
+    sub: cell.delta_vop_du_pct != null ? sub : undefined,
   }
 }
 
