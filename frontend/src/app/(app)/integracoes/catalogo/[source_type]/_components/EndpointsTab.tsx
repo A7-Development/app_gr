@@ -41,6 +41,7 @@ import { Switch } from "@/components/tremor/Switch"
 import { Badge } from "@/components/tremor/Badge"
 import { DataTableShell } from "@/design-system/components/DataTableShell"
 import { LastSyncCell } from "@/design-system/components/LastSyncCell"
+import { NextSyncCell } from "@/design-system/components/NextSyncCell"
 import { SegmentSwitch } from "@/design-system/components/SegmentSwitch"
 import { tableTokens } from "@/design-system/tokens/table"
 import { cx } from "@/lib/utils"
@@ -202,6 +203,16 @@ export function EndpointsTab({
             finishedAt={row.original.last_sync_finished_at}
             status={row.original.last_sync_status}
             errorMessage={row.original.last_sync_error}
+          />
+        ),
+      },
+      {
+        id: "next_sync",
+        header: "Próximo sync",
+        cell: ({ row }) => (
+          <NextSyncCell
+            iso={row.original.next_sync_at}
+            source={row.original.next_sync_source}
           />
         ),
       },

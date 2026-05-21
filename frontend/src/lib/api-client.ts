@@ -2124,6 +2124,16 @@ export type EndpointDetail = {
   effective_expected_lag_business_days: number
   effective_tolerance_business_days: number
   effective_give_up_business_days: number
+
+  // Próximo sync agendado (ISO 8601 UTC). Quando `next_sync_source ===
+  // "state_machine"`, vem de MIN(endpoint_date_state.next_attempt_at) —
+  // próxima retentativa adaptativa ou TTL de refresh-complete. Quando
+  // "schedule", é derivado de schedule_kind/value + last_sync_started_at
+  // (próximo HH:MM do daily_at ou last + intervalo do interval). Quando
+  // "manual_only" ou null, endpoint é on_demand ou não tem cadência —
+  // só sincroniza via "Sincronizar agora".
+  next_sync_at: string | null
+  next_sync_source: "state_machine" | "schedule" | "manual_only" | null
 }
 
 /** Estado de tolerância de publicação — graduação por tempo decorrido.

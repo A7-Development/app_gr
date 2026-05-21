@@ -16,7 +16,7 @@ Todos exigem `require_module(Module.INTEGRACOES, Permission.ADMIN)`.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -48,6 +48,13 @@ from app.modules.integracoes.services.coverage import (
     CoverageStatus,
     PublicationState,
     get_source_coverage,
+)
+from app.modules.integracoes.services.endpoint_routing import (
+    is_state_machine_enabled,
+)
+from app.modules.integracoes.services.endpoint_scheduling import (
+    compute_next_sync_legacy,
+    load_state_machine_next_attempts,
 )
 from app.modules.integracoes.services.source_config import list_configs
 from app.modules.integracoes.services.tolerance import resolve_tolerance_window
@@ -113,6 +120,18 @@ class EndpointDetail(BaseModel):
     effective_expected_lag_business_days: int
     effective_tolerance_business_days: int
     effective_give_up_business_days: int
+
+    # Proximo sync agendado (UTC). Fonte da informacao:
+    # - Endpoints `state_machine_enabled=True`: MIN(next_attempt_at) de
+    #   endpoint_date_state — cobre proxima retentativa adaptativa + TTL
+    #   de refresh-complete.
+    # - Endpoints legados: derivado de schedule_kind/value + last_sync_started_at
+    #   (proximo HH:MM do daily_at ou last + intervalo do interval).
+    # - on_demand ou nunca configurado: None.
+    next_sync_at: datetime | None = None
+    next_sync_source: Literal["state_machine", "schedule", "manual_only"] | None = (
+        None
+    )
 
 
 class EndpointConfigPayload(BaseModel):
@@ -332,7 +351,80 @@ async def list_endpoints(
         if spec.name in overrides_by_name:
             detail = _merge_override(detail, overrides_by_name[spec.name])
         out.append(detail)
+
+    # Injeta next_sync_at agora que ja temos overrides resolvidos. Batch:
+    # 1 query SQL pro state machine cobrindo todos endpoints state-machine-enabled,
+    # 0 SQL pros legados (calculo puro a partir do schedule + last_sync_started_at).
+    await _populate_next_sync(
+        out,
+        db=db,
+        tenant_id=principal.tenant_id,
+        source_type=source_type,
+        environment=environment,
+        unidade_administrativa_id=unidade_administrativa_id,
+    )
+
     return out
+
+
+async def _populate_next_sync(
+    details: list[EndpointDetail],
+    *,
+    db: AsyncSession,
+    tenant_id: UUID,
+    source_type: SourceType,
+    environment: Environment,
+    unidade_administrativa_id: UUID | None,
+) -> None:
+    """Preenche `next_sync_at` + `next_sync_source` in-place em cada detail.
+
+    Para endpoints state-machine-enabled: usa MIN(next_attempt_at) de
+    endpoint_date_state. Para legados: deriva de schedule + last_sync_started_at.
+    on_demand fica com None + source="manual_only".
+    """
+    sm_endpoints = [
+        d.name for d in details
+        if is_state_machine_enabled(source_type, d.name)
+    ]
+    sm_next = await load_state_machine_next_attempts(
+        db,
+        tenant_id=tenant_id,
+        source_type=source_type,
+        environment=environment,
+        unidade_administrativa_id=unidade_administrativa_id,
+        endpoint_names=sm_endpoints,
+    )
+    now = datetime.now(UTC)
+    for d in details:
+        if is_state_machine_enabled(source_type, d.name):
+            next_at = sm_next.get(d.name)
+            # State machine cuida do retry mesmo quando nao tem row ainda
+            # (seeder nightly insere). Sem row no dict = sem proximo agendado
+            # ate o seeder rodar — UI vai mostrar "—" e o usuario entende
+            # que e estado transitorio.
+            d.next_sync_at = next_at
+            d.next_sync_source = "state_machine"
+            continue
+
+        # Legado: deriva do schedule. Se TSEC nao existe (schedule_kind None),
+        # cai no default do catalogo (nao deveria acontecer pra QiTech pq a
+        # migration ja seedou, mas defensivo).
+        kind = d.schedule_kind or d.default_schedule_kind
+        value = (
+            d.schedule_value if d.schedule_kind is not None
+            else d.default_schedule_value
+        )
+        if kind == "on_demand":
+            d.next_sync_at = None
+            d.next_sync_source = "manual_only"
+            continue
+        d.next_sync_at = compute_next_sync_legacy(
+            schedule_kind=kind,
+            schedule_value=value,
+            last_started_at=d.last_sync_started_at,
+            now=now,
+        )
+        d.next_sync_source = "schedule" if d.next_sync_at else "manual_only"
 
 
 @router.get(
@@ -377,6 +469,14 @@ async def get_endpoint(
     row = (await db.execute(stmt)).scalar_one_or_none()
     if row is not None:
         detail = _merge_override(detail, row)
+    await _populate_next_sync(
+        [detail],
+        db=db,
+        tenant_id=principal.tenant_id,
+        source_type=source_type,
+        environment=environment,
+        unidade_administrativa_id=unidade_administrativa_id,
+    )
     return detail
 
 
@@ -493,6 +593,14 @@ async def update_endpoint(
 
     tenant_slug = await _resolve_tenant_slug(db, principal.tenant_id)
     detail = _merge_override(_spec_to_detail(spec, tenant_slug), row)
+    await _populate_next_sync(
+        [detail],
+        db=db,
+        tenant_id=principal.tenant_id,
+        source_type=source_type,
+        environment=payload.environment,
+        unidade_administrativa_id=payload.unidade_administrativa_id,
+    )
     return detail
 
 
