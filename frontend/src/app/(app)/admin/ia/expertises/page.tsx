@@ -28,11 +28,7 @@ import {
 } from "@remixicon/react"
 import { formatDistanceToNow, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import {
-  type ColumnDef,
-  getCoreRowModel,
-  useReactTable,
-} from "@tanstack/react-table"
+import { type ColumnDef } from "@tanstack/react-table"
 
 import { Badge } from "@/components/tremor/Badge"
 import { Button } from "@/components/tremor/Button"
@@ -430,12 +426,6 @@ export default function ExpertisesAdminPage() {
     [],
   )
 
-  const table = useReactTable({
-    data: filtered,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  })
-
   // ── Render ────────────────────────────────────────────────────────────
   if (expertisesQuery.isError) {
     return (
@@ -448,7 +438,14 @@ export default function ExpertisesAdminPage() {
         <ErrorState
           title="Nao foi possivel carregar as expertises"
           description={(expertisesQuery.error as Error).message}
-          onRetry={() => expertisesQuery.refetch()}
+          action={
+            <Button
+              variant="secondary"
+              onClick={() => expertisesQuery.refetch()}
+            >
+              Tentar novamente
+            </Button>
+          }
         />
       </div>
     )
@@ -472,7 +469,7 @@ export default function ExpertisesAdminPage() {
         <div className="flex flex-wrap items-center gap-3">
           <FilterSearch
             value={search}
-            onChange={setSearch}
+            onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por nome, display ou dominio..."
             className="min-w-[280px] flex-1"
           />
@@ -516,7 +513,7 @@ export default function ExpertisesAdminPage() {
           </div>
         ) : filtered.length === 0 ? (
           <EmptyState
-            icon={<RiBookOpenLine className="size-8" />}
+            icon={RiBookOpenLine}
             title={
               expertisesQuery.data?.length === 0
                 ? "Nenhuma expertise cadastrada"
@@ -529,7 +526,11 @@ export default function ExpertisesAdminPage() {
             }
           />
         ) : (
-          <DataTable table={table} onRowClick={(row) => openDetail(row.id)} />
+          <DataTable
+            data={filtered}
+            columns={columns}
+            onRowClick={(row) => openDetail(row.id)}
+          />
         )}
       </Card>
 
