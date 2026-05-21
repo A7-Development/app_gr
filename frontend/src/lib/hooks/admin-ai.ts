@@ -331,11 +331,19 @@ export function useAgentDefinitions(
   opts: { includeArchived?: boolean; module?: string } = {},
 ) {
   const includeArchived = opts.includeArchived ?? false
-  const module = opts.module
+  // Next.js bloqueia `module` como nome de variavel (regra
+  // `@next/next/no-assign-module-variable`). Renomeado pra moduleFilter.
+  const moduleFilter = opts.module
   return useQuery({
-    queryKey: AGENT_DEFINITION_KEYS.list({ includeArchived, module }),
+    queryKey: AGENT_DEFINITION_KEYS.list({
+      includeArchived,
+      module: moduleFilter,
+    }),
     queryFn: () =>
-      adminAI.agentDefinitions.list({ includeArchived, module }),
+      adminAI.agentDefinitions.list({
+        includeArchived,
+        module: moduleFilter,
+      }),
     staleTime: 30 * 1000,
   })
 }
