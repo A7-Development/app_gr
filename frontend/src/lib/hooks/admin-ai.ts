@@ -16,6 +16,12 @@ import {
   adminAI,
   type AIAgentConfigRead,
   type AIAgentConfigUpdatePayload,
+  type AIExpertiseCreatePayload,
+  type AIExpertiseDetail,
+  type AIExpertiseUpdatePayload,
+  type AIPersonaCreatePayload,
+  type AIPersonaDetail,
+  type AIPersonaUpdatePayload,
   type AIPromptCreatePayload,
   type AIPromptDetail,
   type AIPromptUpdatePayload,
@@ -153,6 +159,157 @@ export function usePreviewPrompt() {
   return useMutation({
     mutationFn: ({ id, context }: { id: string; context: Record<string, string> }) =>
       adminAI.prompts.preview(id, context),
+  })
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Personas (F2.c.1 — CLAUDE.md §19.12)
+// ───────────────────────────────────────────────────────────────────────────
+
+const PERSONA_KEYS = {
+  list: (includeArchived: boolean) =>
+    ["admin", "ai", "personas", { includeArchived }] as const,
+  detail: (id: string) => ["admin", "ai", "personas", id] as const,
+}
+
+export function usePersonas(opts: { includeArchived?: boolean } = {}) {
+  const includeArchived = opts.includeArchived ?? false
+  return useQuery({
+    queryKey: PERSONA_KEYS.list(includeArchived),
+    queryFn: () => adminAI.personas.list(includeArchived),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function usePersonaDetail(id: string | null) {
+  return useQuery({
+    queryKey: PERSONA_KEYS.detail(id ?? ""),
+    queryFn: () => adminAI.personas.get(id!),
+    enabled: !!id,
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useCreatePersona() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: AIPersonaCreatePayload) =>
+      adminAI.personas.create(payload),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "personas"] }),
+  })
+}
+
+export function useUpdatePersona() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: string
+      payload: AIPersonaUpdatePayload
+    }) => adminAI.personas.update(id, payload),
+    onSuccess: (created: AIPersonaDetail) => {
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "personas"] })
+      qc.invalidateQueries({ queryKey: PERSONA_KEYS.detail(created.id) })
+    },
+  })
+}
+
+export function useActivatePersonaVersion() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name, versionId }: { name: string; versionId: string }) =>
+      adminAI.personas.activate(name, versionId),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "personas"] }),
+  })
+}
+
+export function useArchivePersona() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => adminAI.personas.archive(id),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "personas"] }),
+  })
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Expertises (F2.c.2 — CLAUDE.md §19.12)
+// ───────────────────────────────────────────────────────────────────────────
+
+const EXPERTISE_KEYS = {
+  list: (opts: { includeArchived: boolean; domain?: string }) =>
+    ["admin", "ai", "expertises", opts] as const,
+  detail: (id: string) => ["admin", "ai", "expertises", id] as const,
+}
+
+export function useExpertises(
+  opts: { includeArchived?: boolean; domain?: string } = {},
+) {
+  const includeArchived = opts.includeArchived ?? false
+  const domain = opts.domain
+  return useQuery({
+    queryKey: EXPERTISE_KEYS.list({ includeArchived, domain }),
+    queryFn: () => adminAI.expertises.list({ includeArchived, domain }),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useExpertiseDetail(id: string | null) {
+  return useQuery({
+    queryKey: EXPERTISE_KEYS.detail(id ?? ""),
+    queryFn: () => adminAI.expertises.get(id!),
+    enabled: !!id,
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useCreateExpertise() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: AIExpertiseCreatePayload) =>
+      adminAI.expertises.create(payload),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "expertises"] }),
+  })
+}
+
+export function useUpdateExpertise() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: string
+      payload: AIExpertiseUpdatePayload
+    }) => adminAI.expertises.update(id, payload),
+    onSuccess: (created: AIExpertiseDetail) => {
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "expertises"] })
+      qc.invalidateQueries({ queryKey: EXPERTISE_KEYS.detail(created.id) })
+    },
+  })
+}
+
+export function useActivateExpertiseVersion() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name, versionId }: { name: string; versionId: string }) =>
+      adminAI.expertises.activate(name, versionId),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "expertises"] }),
+  })
+}
+
+export function useArchiveExpertise() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => adminAI.expertises.archive(id),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "expertises"] }),
   })
 }
 
