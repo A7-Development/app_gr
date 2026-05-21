@@ -140,6 +140,11 @@ export function ExpertiseCreateForm({
           {...register("name")}
           placeholder="ex: contabilidade.fidc"
           autoComplete="off"
+          // HTML5 pattern: feedback visual em tempo real no browser
+          // (alem do Zod schema que valida no submit). Sem espacos,
+          // sem maiusculas, sem caracteres especiais.
+          pattern="^[a-z0-9]+(\.[a-z0-9_]+)*$"
+          title="Use minusculas, digitos, pontos e underscores. Sem espacos. Ex: contabilidade.fidc"
         />
         <FieldHint>
           Formato: <code>dominio.topico</code>. Minusculas, pontos e

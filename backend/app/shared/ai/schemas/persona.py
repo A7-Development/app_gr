@@ -67,7 +67,16 @@ class PersonaCreate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(min_length=1, max_length=128)
+    # Nome canonico: lowercase + digits + `.` (entre segmentos) + `_`
+    # (dentro de segmento). SEM espacos, SEM maiusculas, SEM caracteres
+    # especiais. Pattern e validacao em DB (defesa em profundidade —
+    # frontend tem Zod mas curl direto poderia contornar).
+    # Ex valido: "credito.analista_financial", "controladoria.controller_senior"
+    name: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[a-z0-9]+(\.[a-z0-9_]+)*$",
+    )
     display_name: str = Field(min_length=1, max_length=200)
     role_block: str = Field(min_length=1)  # markdown
     description: str | None = None

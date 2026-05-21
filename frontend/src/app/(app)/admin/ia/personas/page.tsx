@@ -261,14 +261,18 @@ export default function PersonasAdminPage() {
         accessorKey: "name",
         header: "Nome canonico",
         cell: ({ row }) => (
-          <div className="flex flex-col">
-            <span className={cx(tableTokens.cellStrong, "font-mono")}>
-              {row.original.name}
-            </span>
-            <span className={tableTokens.cellMuted}>
-              v{row.original.version}
-            </span>
-          </div>
+          <span className={cx(tableTokens.cellStrong, "font-mono")}>
+            {row.original.name}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "version",
+        header: "Versao",
+        cell: ({ row }) => (
+          <span className={tableTokens.cellSecondary}>
+            v{row.original.version}
+          </span>
         ),
       },
       {
