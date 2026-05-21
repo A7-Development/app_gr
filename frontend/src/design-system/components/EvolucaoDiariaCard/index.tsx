@@ -486,7 +486,10 @@ function buildOption({
       ? overlayLines.map((o) => ({
           name: o.name,
           type: "line" as const,
-          smooth: true,
+          // Linhas segmentadas, sem suavizacao (decisao Ricardo 2026-05-21).
+          // Spline distorce a leitura de acumulados — preferimos os trechos
+          // planos (dias sem movimento) visiveis como horizontais retas.
+          smooth: false,
           symbol: "none" as const,
           data: o.values,
           yAxisIndex: hasSecondaryAxis ? 1 : 0,
