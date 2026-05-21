@@ -441,7 +441,7 @@ export function AgentEditForm({
 // ───────────────────────────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function CompositionFields({ control, register, errors, personas, expertises, prompts }: any) {
+function CompositionFields({ control, errors, personas, expertises, prompts }: any) {
   return (
     <section className="flex flex-col gap-4">
       <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
