@@ -31,6 +31,9 @@ from app.core.enums import Environment
 from app.modules.integracoes.models.tenant_source_endpoint_config import (
     TenantSourceEndpointConfig,
 )
+from app.modules.integracoes.services.endpoint_routing import (
+    is_state_machine_enabled,
+)
 
 # Timezone do schedule daily_at — todos os HH:MM viajam em America/Sao_Paulo
 # (alinhado com o scheduler em `app/scheduler/scheduler.py`).
@@ -124,6 +127,13 @@ async def list_due_endpoints(
 
     due: list[TenantSourceEndpointConfig] = []
     for row in rows:
+        # State machine gate (F3, 2026-05-21): endpoints com
+        # `state_machine_enabled=True` no catalogo sao processados pelo
+        # `state_machine_dispatcher` — caminho legado pula pra nao causar
+        # double-fetch (rate limit + custo duplicado).
+        if is_state_machine_enabled(row.source_type, row.endpoint_name):
+            continue
+
         # Zombi vivo: em_progresso recente — pula (sync ainda em curso).
         if (
             row.last_sync_status == "em_progresso"

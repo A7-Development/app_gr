@@ -71,6 +71,9 @@ from app.modules.integracoes.services.backfill_service import (
     create_backfill_job,
     list_active_backfill_jobs,
 )
+from app.modules.integracoes.services.endpoint_routing import (
+    is_state_machine_enabled,
+)
 from app.warehouse.dim_dia_util import DimDiaUtil
 
 logger = logging.getLogger("gr.scheduler.recent_complete_refresher")
@@ -195,6 +198,12 @@ async def _scan_group(
 
     for cfg in cfgs:
         if not qitech_endpoint_supports_coverage(cfg.endpoint_name):
+            continue
+        # State machine gate (F3, 2026-05-21): endpoints com
+        # `state_machine_enabled=True` no catalogo tem refresh complete
+        # via `refresh_complete_window_business_days` no proprio
+        # state_machine_dispatcher — refresher legado pula.
+        if is_state_machine_enabled(cfg.source_type, cfg.endpoint_name):
             continue
         # Reusa o resolver do adapter — ja faz JOIN com completeness e
         # devolve so as colunas que precisamos.

@@ -76,6 +76,9 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_value="07:00",
         canonical_table="wh_posicao_cota_fundo",
         payload_shape_doc_relpath=_shape("market.outros_fundos"),
+        # F3, 2026-05-21 — ligado junto com os demais market.* sincronos
+        # apos validacao do piloto em market.conta_corrente.
+        state_machine_enabled=True,
     ),
     EndpointSpec(
         admin_code="qitech",
@@ -104,6 +107,7 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_value="07:30",
         canonical_table="wh_saldo_tesouraria",
         payload_shape_doc_relpath=_shape("market.tesouraria"),
+        state_machine_enabled=True,  # F3, 2026-05-21
     ),
     EndpointSpec(
         admin_code="qitech",
@@ -114,6 +118,7 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_value="08:00",
         canonical_table="wh_posicao_outros_ativos",
         payload_shape_doc_relpath=_shape("market.outros_ativos"),
+        state_machine_enabled=True,  # F3, 2026-05-21
     ),
     EndpointSpec(
         admin_code="qitech",
@@ -124,6 +129,7 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_value="08:00",
         canonical_table="wh_movimento_caixa",
         payload_shape_doc_relpath=_shape("market.demonstrativo_caixa"),
+        state_machine_enabled=True,  # F3, 2026-05-21
     ),
     EndpointSpec(
         admin_code="qitech",
@@ -134,6 +140,7 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_value="08:30",
         canonical_table="wh_cpr_movimento",
         payload_shape_doc_relpath=_shape("market.cpr"),
+        state_machine_enabled=True,  # F3, 2026-05-21
     ),
     EndpointSpec(
         admin_code="qitech",
@@ -144,6 +151,7 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_value="08:30",
         canonical_table="wh_mec_evolucao_cotas",
         payload_shape_doc_relpath=_shape("market.mec"),
+        state_machine_enabled=True,  # F3, 2026-05-21
     ),
     EndpointSpec(
         admin_code="qitech",
@@ -154,6 +162,7 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_value="09:00",
         canonical_table="wh_rentabilidade_fundo",
         payload_shape_doc_relpath=_shape("market.rentabilidade"),
+        state_machine_enabled=True,  # F3, 2026-05-21
     ),
     EndpointSpec(
         admin_code="qitech",
@@ -164,6 +173,7 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_value="08:00",
         canonical_table="wh_posicao_renda_fixa",
         payload_shape_doc_relpath=_shape("market.rf"),
+        state_machine_enabled=True,  # F3, 2026-05-21
     ),
     EndpointSpec(
         admin_code="qitech",
@@ -174,6 +184,7 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_value="08:00",
         canonical_table="wh_posicao_compromissada",
         payload_shape_doc_relpath=_shape("market.rf_compromissadas"),
+        state_machine_enabled=True,  # F3, 2026-05-21
     ),
     # Estoque do FIDC (carteira de recebiveis cedidos) — fluxo assincrono via
     # job + webhook callback. POST /v2/queue/scheduler/report/fidc-estoque
@@ -228,6 +239,7 @@ _CUSTODIA_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_value="09:30",
         canonical_table="wh_aquisicao_recebivel",
         payload_shape_doc_relpath=_shape("custodia.aquisicao_consolidada"),
+        state_machine_enabled=True,  # F3, 2026-05-21
     ),
     EndpointSpec(
         admin_code="qitech",
@@ -238,6 +250,7 @@ _CUSTODIA_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_value="09:45",
         canonical_table="wh_liquidacao_recebivel",
         payload_shape_doc_relpath=_shape("custodia.liquidados_baixados"),
+        state_machine_enabled=True,  # F3, 2026-05-21
     ),
     EndpointSpec(
         admin_code="qitech",
@@ -248,6 +261,7 @@ _CUSTODIA_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_value="10:00",
         canonical_table="wh_movimento_aberto",
         payload_shape_doc_relpath=_shape("custodia.movimento_aberto"),
+        state_machine_enabled=True,  # F3, 2026-05-21
     ),
     EndpointSpec(
         admin_code="qitech",
@@ -258,6 +272,7 @@ _CUSTODIA_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_value="10:00",
         canonical_table="wh_operacao_remessa",
         payload_shape_doc_relpath=_shape("custodia.detalhes_operacoes"),
+        state_machine_enabled=True,  # F3, 2026-05-21
     ),
 )
 
