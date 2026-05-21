@@ -30,11 +30,7 @@ import {
 } from "@remixicon/react"
 import { formatDistanceToNow, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import {
-  type ColumnDef,
-  getCoreRowModel,
-  useReactTable,
-} from "@tanstack/react-table"
+import { type ColumnDef } from "@tanstack/react-table"
 
 import { Badge } from "@/components/tremor/Badge"
 import { Button } from "@/components/tremor/Button"
@@ -394,12 +390,6 @@ export default function PersonasAdminPage() {
     [],
   )
 
-  const table = useReactTable({
-    data: filtered,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  })
-
   // ── Render ────────────────────────────────────────────────────────────
   if (personasQuery.isError) {
     return (
@@ -412,7 +402,11 @@ export default function PersonasAdminPage() {
         <ErrorState
           title="Nao foi possivel carregar as personas"
           description={(personasQuery.error as Error).message}
-          onRetry={() => personasQuery.refetch()}
+          action={
+            <Button variant="secondary" onClick={() => personasQuery.refetch()}>
+              Tentar novamente
+            </Button>
+          }
         />
       </div>
     )
@@ -436,7 +430,7 @@ export default function PersonasAdminPage() {
         <div className="flex flex-wrap items-center gap-3">
           <FilterSearch
             value={search}
-            onChange={setSearch}
+            onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por nome ou display..."
             className="min-w-[280px] flex-1"
           />
@@ -462,7 +456,7 @@ export default function PersonasAdminPage() {
           </div>
         ) : filtered.length === 0 ? (
           <EmptyState
-            icon={<RiUserStarLine className="size-8" />}
+            icon={RiUserStarLine}
             title={
               personasQuery.data?.length === 0
                 ? "Nenhuma persona cadastrada"
@@ -475,7 +469,11 @@ export default function PersonasAdminPage() {
             }
           />
         ) : (
-          <DataTable table={table} onRowClick={(row) => openDetail(row.id)} />
+          <DataTable
+            data={filtered}
+            columns={columns}
+            onRowClick={(row) => openDetail(row.id)}
+          />
         )}
       </Card>
 
