@@ -386,13 +386,24 @@ export default function Operacoes4Page() {
                   statement={`MÊS CORRENTE · OPERAÇÕES · ${bundle.termometro.vop.mes_label.toUpperCase()}`}
                   primary={{
                     value: formatKpiValor(bundle.termometro.vop),
+                    // Decisao Ricardo 2026-05-21: valor SEMPRE neutral (preto),
+                    // apenas o delta carrega cor.
+                    tone: "neutral",
+                    delta:
+                      bundle.termometro.vop.delta_vop_du_pct != null
+                        ? {
+                            value: formatDeltaPctSigned(
+                              bundle.termometro.vop.delta_vop_du_pct,
+                            ),
+                            tone: primaryToneFromDelta(
+                              bundle.termometro.vop.delta_vop_du_pct,
+                            ),
+                          }
+                        : undefined,
                     sub:
                       bundle.termometro.vop.delta_vop_du_pct != null
-                        ? `${formatDeltaPctSigned(bundle.termometro.vop.delta_vop_du_pct)} VOP-DU vs mês ant.`
+                        ? "VOP-DU vs mês ant."
                         : undefined,
-                    tone: primaryToneFromDelta(
-                      bundle.termometro.vop.delta_vop_du_pct,
-                    ),
                   }}
                   diagnostics={[
                     diagnosticFromKpi("Taxa", bundle.termometro.taxa),

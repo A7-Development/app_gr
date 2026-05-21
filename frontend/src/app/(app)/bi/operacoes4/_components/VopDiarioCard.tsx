@@ -45,19 +45,29 @@ const fmtBRLFull = new Intl.NumberFormat("pt-BR", {
 })
 
 /**
- * Formatter do eixo Y + dataLabels do VOP Diário — converte BRL pra milhoes
- * compactos: "0,5", "1,0", "2,4". Sem prefixo "R$" e sem sufixo "M" porque
- * a unidade fica implicita no contexto do card ("VOP DIÁRIO" no header,
- * tooltip mostra BRL full). Economiza espaco horizontal vs Intl compact
- * que renderiza "R$ 500K" / "R$ 1,0M".
+ * Formatter do eixo Y do VOP Diário — converte BRL pra milhoes compactos:
+ * "0,5", "1,0", "2,4". Sem prefixo "R$" e sem sufixo "M" porque a unidade
+ * fica implicita no contexto do card ("VOP DIÁRIO" no header, tooltip
+ * mostra BRL full). Economiza espaco horizontal vs Intl compact que
+ * renderiza "R$ 500K" / "R$ 1,0M".
  *
- * 0 vira "0" (nao "0,0") pra reduzir ruido na origem do eixo. Negativos
- * preservam sinal (caso raro mas possivel com ajustes).
+ * 0 vira "0" (nao "0,0") pra reduzir ruido na origem do eixo.
  */
 function fmtMilhoesAxis(v: number): string {
   if (v === 0) return "0"
   const milhoes = v / 1_000_000
   return milhoes.toFixed(1).replace(".", ",")
+}
+
+/**
+ * Formatter dos dataLabels no topo das barras — mesma escala do eixo Y mas
+ * **suprime zero**. Dias sem operacao (fim de semana, feriado, dia util sem
+ * efetivacao) renderizariam "0" colado no eixo X, ruido visual sem
+ * informacao. Decisao Ricardo 2026-05-21 + AC #14 do handoff.
+ */
+function fmtMilhoesLabel(v: number): string {
+  if (!v) return ""
+  return fmtMilhoesAxis(v)
 }
 
 const _MESES_LONGO_PT = [
@@ -188,7 +198,7 @@ export function VopDiarioCard({
       }}
       valueFormatter={(v) => fmtBRLFull.format(v)}
       axisFormatter={fmtMilhoesAxis}
-      dataLabelFormatter={fmtMilhoesAxis}
+      dataLabelFormatter={fmtMilhoesLabel}
       height={260}
       onPointClick={onPointClick}
       actions={
