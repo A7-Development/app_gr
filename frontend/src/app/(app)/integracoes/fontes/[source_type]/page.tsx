@@ -5,9 +5,15 @@
 //
 // Hierarquia (CLAUDE.md 11.6):
 //   L1 Integracoes > L2 Fontes > (pagina detalhe)
-//     L3 (TabNavigation): Credenciais | Endpoints | Cobertura | (Contas) | Testar | Historico
+//     L3 (TabNavigation): Configuracao | Endpoints | Cobertura | (Contas) | Diagnostico
 //
 // Deep-link: /integracoes/fontes/[source_type]?tab=<aba>&environment=<env>
+//
+// PR 3 (2026-05-21):
+//   - Rename "credenciais" → "configuracao" (label "Configuracao")
+//   - Fusao "testar" + "historico" → "diagnostico" (SegmentSwitch interno)
+//   - Aliases retrocompat: ?tab=credenciais → configuracao; ?tab=testar →
+//     diagnostico&view=testar; ?tab=historico → diagnostico&view=historico
 
 import Link from "next/link"
 import * as React from "react"
@@ -35,9 +41,8 @@ import type { Environment, SourceTypeId } from "@/lib/api-client"
 import { CredenciaisTab } from "./_components/CredenciaisTab"
 import { ContasBancariasTab } from "./_components/ContasBancariasTab"
 import { CoberturaTab } from "./_components/CoberturaTab"
+import { DiagnosticoTab } from "./_components/DiagnosticoTab"
 import { EndpointsTab } from "./_components/EndpointsTab"
-import { TestarTab } from "./_components/TestarTab"
-import { HistoricoTab } from "./_components/HistoricoTab"
 
 // Source types que tem familia de "Contas bancarias" (admin:qitech usa
 // /v2/bank-account/* — saldo + extrato por agencia+conta da UA dona da
@@ -54,35 +59,45 @@ const SOURCES_WITH_ENDPOINT_CATALOG = new Set<SourceTypeId>([
 ])
 
 const TABS_BASE = [
-  { key: "credenciais", label: "Credenciais" },
+  { key: "configuracao", label: "Configuracao" },
   { key: "endpoints", label: "Endpoints" },
   { key: "cobertura", label: "Cobertura" },
-  { key: "testar", label: "Testar" },
-  { key: "historico", label: "Historico" },
+  { key: "diagnostico", label: "Diagnostico" },
 ] as const
 const TABS_WITH_BANK_ACCOUNTS = [
-  { key: "credenciais", label: "Credenciais" },
+  { key: "configuracao", label: "Configuracao" },
   { key: "endpoints", label: "Endpoints" },
   { key: "cobertura", label: "Cobertura" },
   { key: "contas-bancarias", label: "Contas bancarias" },
-  { key: "testar", label: "Testar" },
-  { key: "historico", label: "Historico" },
+  { key: "diagnostico", label: "Diagnostico" },
 ] as const
 const TABS_NO_ENDPOINTS = [
-  { key: "credenciais", label: "Credenciais" },
-  { key: "testar", label: "Testar" },
-  { key: "historico", label: "Historico" },
+  { key: "configuracao", label: "Configuracao" },
+  { key: "diagnostico", label: "Diagnostico" },
 ] as const
 type TabKey =
   | (typeof TABS_BASE)[number]["key"]
   | (typeof TABS_WITH_BANK_ACCOUNTS)[number]["key"]
   | (typeof TABS_NO_ENDPOINTS)[number]["key"]
 
+// Mapa de aliases retrocompat. Tabs antigas (credenciais/testar/historico)
+// continuam aceitas via ?tab= por bookmarks/links externos — sao resolvidas
+// pra as novas. `testar` e `historico` viraram sub-views do Diagnostico
+// (resolvidas pela DiagnosticoTab via ?view=).
+const TAB_ALIAS: Record<string, { tab: TabKey; view?: string }> = {
+  credenciais: { tab: "configuracao" },
+  testar: { tab: "diagnostico", view: "testar" },
+  historico: { tab: "diagnostico", view: "historico" },
+}
+
 function useActiveTab(tabs: ReadonlyArray<{ key: string }>): TabKey {
   const sp = useSearchParams()
-  const t = sp.get("tab")
-  if (t && tabs.some((x) => x.key === t)) return t as TabKey
-  return "credenciais"
+  const raw = sp.get("tab")
+  if (!raw) return tabs[0].key as TabKey
+  if (tabs.some((x) => x.key === raw)) return raw as TabKey
+  const alias = TAB_ALIAS[raw]
+  if (alias && tabs.some((x) => x.key === alias.tab)) return alias.tab
+  return tabs[0].key as TabKey
 }
 
 function buildHref(
@@ -90,11 +105,13 @@ function buildHref(
   tab: TabKey,
   environment: Environment,
   uaId?: string | null,
+  view?: string | null,
 ): string {
   const qs = new URLSearchParams()
   qs.set("tab", tab)
   qs.set("environment", environment)
   if (uaId) qs.set("ua", uaId)
+  if (view) qs.set("view", view)
   return `/integracoes/fontes/${encodeURIComponent(sourceType)}?${qs.toString()}`
 }
 
@@ -113,6 +130,19 @@ export default function SourceDetailPage() {
   const environment: Environment =
     sp.get("environment") === "sandbox" ? "sandbox" : "production"
   const uaIdParam = sp.get("ua")
+
+  // Normaliza URL quando o usuario entra por alias retrocompat
+  // (?tab=credenciais|testar|historico). Re-escreve pra forma canonica nova
+  // preservando view do diagnostico — sem quebrar deep-link de bookmarks.
+  React.useEffect(() => {
+    const rawTab = sp.get("tab")
+    if (!rawTab) return
+    const alias = TAB_ALIAS[rawTab]
+    if (!alias) return
+    router.replace(
+      buildHref(sourceType, alias.tab, environment, uaIdParam, alias.view),
+    )
+  }, [sp, router, sourceType, environment, uaIdParam])
 
   const { data, isLoading, isError, refetch } = useSource(
     sourceType,
@@ -195,7 +225,7 @@ export default function SourceDetailPage() {
             <div className="h-40 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
           )}
 
-          {!isLoading && data && activeTab === "credenciais" && (
+          {!isLoading && data && activeTab === "configuracao" && (
             <CredenciaisTab detail={data} sourceType={sourceType} />
           )}
           {!isLoading && data && activeTab === "endpoints" && (
@@ -215,11 +245,8 @@ export default function SourceDetailPage() {
           {!isLoading && data && activeTab === "contas-bancarias" && (
             <ContasBancariasTab detail={data} sourceType={sourceType} />
           )}
-          {!isLoading && data && activeTab === "testar" && (
-            <TestarTab detail={data} sourceType={sourceType} />
-          )}
-          {!isLoading && data && activeTab === "historico" && (
-            <HistoricoTab sourceType={sourceType} />
+          {!isLoading && data && activeTab === "diagnostico" && (
+            <DiagnosticoTab detail={data} sourceType={sourceType} />
           )}
         </>
       )}
