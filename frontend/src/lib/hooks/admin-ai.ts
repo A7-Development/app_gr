@@ -16,6 +16,9 @@ import {
   adminAI,
   type AIAgentConfigRead,
   type AIAgentConfigUpdatePayload,
+  type AIPersonaCreatePayload,
+  type AIPersonaDetail,
+  type AIPersonaUpdatePayload,
   type AIPromptCreatePayload,
   type AIPromptDetail,
   type AIPromptUpdatePayload,
@@ -153,6 +156,80 @@ export function usePreviewPrompt() {
   return useMutation({
     mutationFn: ({ id, context }: { id: string; context: Record<string, string> }) =>
       adminAI.prompts.preview(id, context),
+  })
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Personas (F2.c.1 — CLAUDE.md §19.12)
+// ───────────────────────────────────────────────────────────────────────────
+
+const PERSONA_KEYS = {
+  list: (includeArchived: boolean) =>
+    ["admin", "ai", "personas", { includeArchived }] as const,
+  detail: (id: string) => ["admin", "ai", "personas", id] as const,
+}
+
+export function usePersonas(opts: { includeArchived?: boolean } = {}) {
+  const includeArchived = opts.includeArchived ?? false
+  return useQuery({
+    queryKey: PERSONA_KEYS.list(includeArchived),
+    queryFn: () => adminAI.personas.list(includeArchived),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function usePersonaDetail(id: string | null) {
+  return useQuery({
+    queryKey: PERSONA_KEYS.detail(id ?? ""),
+    queryFn: () => adminAI.personas.get(id!),
+    enabled: !!id,
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useCreatePersona() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: AIPersonaCreatePayload) =>
+      adminAI.personas.create(payload),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "personas"] }),
+  })
+}
+
+export function useUpdatePersona() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: string
+      payload: AIPersonaUpdatePayload
+    }) => adminAI.personas.update(id, payload),
+    onSuccess: (created: AIPersonaDetail) => {
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "personas"] })
+      qc.invalidateQueries({ queryKey: PERSONA_KEYS.detail(created.id) })
+    },
+  })
+}
+
+export function useActivatePersonaVersion() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name, versionId }: { name: string; versionId: string }) =>
+      adminAI.personas.activate(name, versionId),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "personas"] }),
+  })
+}
+
+export function useArchivePersona() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => adminAI.personas.archive(id),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "personas"] }),
   })
 }
 

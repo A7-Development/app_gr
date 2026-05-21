@@ -497,7 +497,70 @@ export const adminAI = {
         payload,
       ),
   },
+  // F2.c.1 — CRUD versionado de personas (CLAUDE.md §19.12).
+  personas: {
+    list: (includeArchived = false) =>
+      apiClient.get<AIPersonaVersionInfo[]>(
+        `/admin/ia/personas${includeArchived ? "?include_archived=true" : ""}`,
+      ),
+    get: (id: string) =>
+      apiClient.get<AIPersonaDetail>(`/admin/ia/personas/${id}`),
+    create: (payload: AIPersonaCreatePayload) =>
+      apiClient.post<AIPersonaDetail>("/admin/ia/personas", payload),
+    update: (id: string, payload: AIPersonaUpdatePayload) =>
+      apiClient.put<AIPersonaDetail>(`/admin/ia/personas/${id}`, payload),
+    activate: (name: string, versionId: string) =>
+      apiClient.put<AIPersonaVersionInfo>(
+        `/admin/ia/personas/${encodeURIComponent(name)}/active`,
+        { version_id: versionId },
+      ),
+    archive: (id: string) =>
+      apiClient.post<AIPersonaDetail>(`/admin/ia/personas/${id}/archive`),
+  },
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Tipos do admin de personas
+// ───────────────────────────────────────────────────────────────────────────
+
+export type AIPersonaVersionInfo = {
+  id: string
+  name: string
+  version: number
+  display_name: string
+  is_active: boolean
+  expertise_domains: string[] | null
+  description: string | null
+  usage_count: number
+  created_at: string
+  archived_at: string | null
+}
+
+export type AIPersonaDetail = {
+  id: string
+  name: string
+  version: number
+  display_name: string
+  role_block: string
+  description: string | null
+  expertise_domains: string[] | null
+  is_active: boolean
+  usage_count: number
+  created_at: string
+  archived_at: string | null
+}
+
+export type AIPersonaCreatePayload = {
+  name: string
+  display_name: string
+  role_block: string
+  description?: string
+  expertise_domains?: string[]
+}
+
+export type AIPersonaUpdatePayload = Partial<
+  Omit<AIPersonaCreatePayload, "name">
+>
 
 // ───────────────────────────────────────────────────────────────────────────
 // Tipos do admin de prompts
