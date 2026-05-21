@@ -8,7 +8,7 @@ import { useSyncHealthSummary } from "@/lib/hooks/system"
 
 /**
  * Badge mostrado no header sticky do app shell quando ha endpoints com
- * `last_sync_status='erro'`. Click navega pra `/integracoes/sync`.
+ * `last_sync_status='erro'`. Click navega pra `/integracoes/operacao/status`.
  *
  * Quando nada esta falhando, renderiza null (zero ruido visual).
  */
@@ -39,7 +39,7 @@ export function SyncHealthBadge() {
       side="bottom"
     >
       <Link
-        href="/integracoes/sync"
+        href="/integracoes/operacao/status"
         className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-900 ring-1 ring-inset ring-red-600/20 transition-colors hover:bg-red-100 dark:bg-red-400/10 dark:text-red-400 dark:ring-red-400/20 dark:hover:bg-red-400/20"
         aria-label={`${label}. Clique para ver detalhes.`}
       >

@@ -20,14 +20,16 @@ import {
   RiFlowChart,
   RiFolderUserLine,
   RiHandCoinLine,
+  RiHistoryLine,
   RiKey2Line,
   RiLineChartLine,
   RiMoneyDollarBoxLine,
   RiPieChart2Line,
-  RiRefreshLine,
+  RiPulseLine,
   RiRobot2Line,
   RiSettings3Line,
   RiShieldCheckLine,
+  RiSignalTowerLine,
   RiStackLine,
   RiUserLine,
   RiUserStarLine,
@@ -353,8 +355,25 @@ export const MODULES: ModuleDefinition[] = [
     permission: "admin",
     basePath: "/integracoes",
     sections: [
-      { name: "Catalogo", href: "/integracoes/catalogo", enabled: true, icon: RiBookOpenLine },
-      { name: "Sync", href: "/integracoes/sync", enabled: true, icon: RiRefreshLine },
+      // Fontes — listagem + drill por fonte (config, endpoints, cobertura,
+      // contas, diagnostico). Rename de "Catalogo" em 2026-05-21 (PR 1).
+      { name: "Fontes", href: "/integracoes/fontes", enabled: true, icon: RiStackLine },
+      // Operacao — visao operacional cross-source. Parent expand-only
+      // (CLAUDE.md §11.6 regra 2). `href` e prefixo de active-state, nao
+      // navega quando clicado. Auto-expand quando filho casa com pathname.
+      {
+        name: "Operacao",
+        href: "#operacao",
+        enabled: true,
+        icon: RiPulseLine,
+        children: [
+          // Status — antigo /sync. Agregado cross-source com filtros
+          // (Todas/Configuradas/Habilitadas) — migrados pra SegmentSwitch em PR 2.
+          { name: "Status", href: "/integracoes/operacao/status", enabled: true, icon: RiSignalTowerLine },
+          // Historico — decision_log cross-source unificado (PR 4).
+          { name: "Historico", href: "/integracoes/operacao/historico", enabled: true, icon: RiHistoryLine },
+        ],
+      },
     ],
   },
   {
