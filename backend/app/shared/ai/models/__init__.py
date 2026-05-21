@@ -1,6 +1,9 @@
 """SQLAlchemy models for the AI capability."""
 
 from app.shared.ai.models.agent_config import AgentConfig
+from app.shared.ai.models.agent_definition import AgentDefinition, AgentDefinitionActive
+from app.shared.ai.models.agent_expertise import AgentExpertise, AgentExpertiseActive
+from app.shared.ai.models.agent_persona import AgentPersona, AgentPersonaActive
 from app.shared.ai.models.conversation import AIConversation, AIConversationSummary
 from app.shared.ai.models.credit_balance import AICreditBalance
 from app.shared.ai.models.message import AIMessage
@@ -21,6 +24,12 @@ __all__ = [
     "AIProviderCredential",
     "AIUsageEvent",
     "AgentConfig",
+    "AgentDefinition",
+    "AgentDefinitionActive",
+    "AgentExpertise",
+    "AgentExpertiseActive",
+    "AgentPersona",
+    "AgentPersonaActive",
     "CacheStrategy",
     "TenantAISubscription",
     "UserAIPermission",
