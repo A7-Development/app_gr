@@ -46,6 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # `_build_tools_for_agent` consulta.
 import app.agentic.tools  # noqa: F401
 from app.agentic._scope import ScopedContext
+from app.agentic.agents import AgentRegistry, ResolvedAgent, compose_system_text
 from app.agentic.engine.catalog import (
     SpecialistAgentSpec,
 )
@@ -317,14 +318,55 @@ async def run_specialist_agent(
 ) -> AgentRunResult:
     """Run a Specialist Agent and return its validated output.
 
-    On output schema validation failure, retries once with a correction prompt.
-    On second failure, raises ValueError (the workflow node will mark FAILED).
+    F2.b.2: Resolve a definicao do agente via `AgentRegistry.get()`
+    (DB-first, CATALOG fallback). O `system_text` enviado ao LLM e
+    composto com XML tags + markdown:
+
+        <persona>{role_block}</persona>
+        <expertise name="X">{knowledge_text}</expertise>
+        <task>{prompt.system_text}</task>
+
+    Quando agent_definition_active nao tem entry pra este `spec.name`
+    (dev sem migration aplicada, teste, agente novo em codigo), o
+    registry cai em fallback CATALOG — persona/expertises ficam vazios
+    e o composer omite os blocos correspondentes. Garante backward
+    compat: nada quebra.
+
+    `prompt_full_id` no AgentRunResult retorna `audit_version`
+    (composto agent+persona+expertises+prompt) — vira
+    `decision_log.rule_or_model_version` permitindo audit completo.
+
+    On output schema validation failure, retries once with a correction
+    prompt. On second failure, raises ValueError (the workflow node
+    will mark FAILED).
     """
-    # Resolve versioned prompt.
-    prompt = await prompt_repo.resolve(db, name=spec.prompt_name)
+    # F2.b.2: scope construido cedo pra alimentar registry; e tambem
+    # reaproveitado pelo `_invoke_with_validation` (via ctx).
+    from app.core.enums import Module as _Module
+
+    scope_for_registry = ScopedContext(
+        tenant_id=ctx.tenant_id,
+        empresa_id=None,
+        user_id=ctx.initiated_by,
+        module=_Module.CREDITO,
+        permissions={},
+        db=db,
+        extras={},
+    )
+
+    resolved = await AgentRegistry.get(db, name=spec.name, scope=scope_for_registry)
+    prompt = resolved.prompt
+
     rendered = prompt.render(context={"page": "credito.dossie", "period": "", "filters": ""})
-    system_text = "\n\n".join(
+    prompt_system_text = "\n\n".join(
         block.text for msg in rendered if msg.role == "system" for block in msg.content
+    )
+
+    # XML-tagged system_text (persona + expertises + task).
+    system_text = compose_system_text(
+        persona=resolved.persona,
+        expertises=resolved.expertises,
+        prompt_system_text=prompt_system_text,
     )
 
     # Inject checklist items defined by the tenant for this agent's section.
@@ -348,12 +390,13 @@ async def run_specialist_agent(
     )
     user_text = "\n\n".join(user_parts)
 
-    output_data, usage, _resolved = await _invoke_with_validation(
+    output_data, usage, _resolved_models = await _invoke_with_validation(
         spec=spec,
         system_text=system_text,
         user_text=user_text,
         ctx=ctx,
         db=db,
+        resolved=resolved,
     )
 
     return AgentRunResult(
@@ -364,7 +407,7 @@ async def run_specialist_agent(
         tokens_cache_read=usage.tokens_cache_read,
         tokens_cache_creation=usage.tokens_cache_creation,
         cost_brl=Decimal("0"),  # billing layer computes via FX rate
-        prompt_full_id=prompt.full_id,
+        prompt_full_id=resolved.audit_version,
     )
 
 
@@ -420,7 +463,7 @@ async def run_document_extraction(
     )
     user_text = "\n\n".join(user_parts)
 
-    output_data, usage, resolved = await _invoke_with_validation(
+    output_data, usage, resolved_models = await _invoke_with_validation(
         spec=spec,
         system_text=system_text,
         user_text=user_text,
@@ -430,7 +473,7 @@ async def run_document_extraction(
     )
 
     document.ai_extraction = output_data
-    document.ai_model_used = resolved.model
+    document.ai_model_used = resolved_models.model
     document.ai_prompt_version = prompt.full_id
     await db.flush()
 
@@ -532,12 +575,21 @@ async def _invoke_with_validation(
     ctx: NodeContext,
     db: AsyncSession,
     tools_override: list[AgentTool] | None = None,
+    resolved: ResolvedAgent | None = None,
 ) -> tuple[dict[str, Any], _Usage, ResolvedModels]:
     """Invoke the agent and validate output, retrying once on schema failure.
 
     Implementacao via Anthropic Messages API direta (sem subprocess).
-    Resolve o modelo a usar via `agent_config` (DB) com fallback no
-    catalog default — permite ao mantenedor trocar modelo sem deploy.
+
+    Modelo resolvido em ordem de override (F2.b.2):
+        1. `resolved.model` (passed by run_specialist_agent via AgentRegistry —
+           reflete override em `agent_definition.model`)
+        2. `agent_config.model` (via `resolve_models_for_agent` — overrride
+           legado pre-F2.b)
+        3. `spec.preferred_model` (CATALOG default em codigo)
+
+    Quando `resolved` e None (run_document_extraction, testes), cai pro
+    pattern legado (agent_config + CATALOG default) — backward compat.
     """
     # Resolve credencial Anthropic ativa.
     try:
@@ -548,8 +600,16 @@ async def _invoke_with_validation(
             "esta cadastrada. Cadastre uma em /admin/ia/providers (mantenedor)."
         ) from e
 
-    # Resolve modelo via DB override (com fallback ao catalog default).
-    resolved = await resolve_models_for_agent(db, spec)
+    # Modelo: F2.b.2 prefere override do agent_definition, senao usa o
+    # caminho legado (agent_config -> CATALOG).
+    if resolved is not None:
+        resolved_models = ResolvedModels(
+            model=resolved.model,
+            fallback_model=resolved.fallback_model,
+            source="agent_definition",
+        )
+    else:
+        resolved_models = await resolve_models_for_agent(db, spec)
 
     # Construir ScopedContext a partir do NodeContext (CLAUDE.md §19.0).
     # F2.a: module hardcoded em CREDITO (todos os specialist agents hoje
@@ -582,8 +642,8 @@ async def _invoke_with_validation(
         raw_text, usage = await _run_tool_loop(
             client=client,
             spec=spec,
-            model=resolved.model,
-            fallback_model=resolved.fallback_model,
+            model=resolved_models.model,
+            fallback_model=resolved_models.fallback_model,
             system_text=system_text,
             user_text=user_text,
             tools=tools,
@@ -593,7 +653,7 @@ async def _invoke_with_validation(
         try:
             parsed = _extract_json_object(raw_text)
             validated = spec.output_schema.model_validate(parsed)
-            return validated.model_dump(mode="json"), usage, resolved
+            return validated.model_dump(mode="json"), usage, resolved_models
         except (ValidationError, ValueError, json.JSONDecodeError) as e:
             logger.warning(
                 "Agent %s produced invalid output, retrying once: %s",
@@ -613,8 +673,8 @@ async def _invoke_with_validation(
         raw_text2, usage2 = await _run_tool_loop(
             client=client,
             spec=spec,
-            model=resolved.model,
-            fallback_model=resolved.fallback_model,
+            model=resolved_models.model,
+            fallback_model=resolved_models.fallback_model,
             system_text=system_text,
             user_text=correction_prompt,
             tools=tools,
@@ -636,7 +696,7 @@ async def _invoke_with_validation(
                 f"Erro final: {e2}"
             ) from e2
 
-        return validated2.model_dump(mode="json"), usage, resolved
+        return validated2.model_dump(mode="json"), usage, resolved_models
     finally:
         await client.close()
 
