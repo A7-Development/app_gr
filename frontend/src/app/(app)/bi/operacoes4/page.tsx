@@ -23,6 +23,7 @@
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
+  RiCalendarEventLine,
   RiCalendarLine,
   RiCheckLine,
   RiRefreshLine,
@@ -41,6 +42,7 @@ import {
   MoreFiltersButton,
 } from "@/design-system/components/FilterBar"
 import { InsightStrip } from "@/design-system/components/InsightStrip"
+import { KpiCard, KpiStrip } from "@/design-system/components"
 import {
   AIPanel,
   useAIPanel,
@@ -65,20 +67,17 @@ import type {
 // enquanto operacoes4 e a iteracao "controladoria-aware". Quando uma das
 // duas paginas mudar de forma incompativel, promovemos os shared a
 // `src/app/(app)/bi/_components/` ou ao design-system.
-import { HeroVopMes } from "../operacoes3/_components/HeroVopMes"
 import { TabelaCedentesMtd } from "../operacoes3/_components/TabelaCedentesMtd"
+
+import { L3CardsRow } from "./_components/L3CardsRow"
+import { MixDeProdutosCard } from "./_components/MixDeProdutosCard"
+import { VopDiarioCard } from "./_components/VopDiarioCard"
 
 import { DrillDownSheet } from "@/design-system/components/DrillDownSheet"
 
-import { DailyTable } from "./_components/DailyTable"
-import { DecomposicaoAvancada4 } from "./_components/DecomposicaoAvancada4"
 import { DrillOperacoesDoDia } from "../operacoes3/_components/DrillOperacoesDoDia"
 import { DrillMovimentoContent, DrillReceitaTipoContent } from "./_components/DrillSheets"
-import { KpiStrip4 } from "./_components/KpiStrip4"
-import { MixProdutoSection } from "./_components/MixProdutoSection"
 import { MovementStack } from "./_components/MovementStack"
-import { PricingSection } from "./_components/PricingSection"
-import { ReceitasSection } from "./_components/ReceitasSection"
 
 const PRESET_OPTIONS: ReadonlyArray<{ key: PresetKey; label: string }> = [
   { key: "ytd", label: "Ano até hoje" },
@@ -131,9 +130,12 @@ export default function Operacoes4Page() {
     [produtosQuery.data],
   )
 
-  const [dimension, setDimension] = React.useState<Operacoes2Dimension>("produto")
+  // Em PR1 dimension fica fixa em "produto". PR2 reintroduz SegmentSwitch
+  // Produto|UA dentro do DrillDrivers drawer (em vez de no hero L2).
+  const dimension: Operacoes2Dimension = "produto"
 
-  // Bundle v3 — alimenta L1 (termometro -> 4 KPIs), L2 (hero), L5 (decomp).
+  // Bundle v3 — alimenta L1 (termometro -> 4 KPIs), L2 (VOP + Mix),
+  // L3 card 4 (composicao via lensReceitas separada).
   const q = useQuery({
     queryKey: ["bi", "operacoes4", "aba3", filtersWithFocus, dimension],
     queryFn: () => biOperacoes2.abaMesCorrenteV3(filtersWithFocus, dimension),
@@ -238,9 +240,12 @@ export default function Operacoes4Page() {
           <PageHeader
             title="BI · Mês corrente · operações"
             info='Lente alternativa do mes corrente reorientada para perguntas da controladoria. Regime caixa (wh_operacao) — 4 buckets de receita, yield efetivo por DU. Multa, mora, cobranca e aditivo nao aparecem aqui (sao pos-cessao).'
-            subtitle="BI · Mês corrente · operações"
+            subtitle={pageHeaderSubtitle(bundle)}
             actions={
               <div className="flex items-center gap-2">
+                {bundle?.termometro?.vop?.mes_label && (
+                  <MesReferenciaPill mesLabel={bundle.termometro.vop.mes_label} />
+                )}
                 <AIQuotaIndicator
                   quota={quotaQ.data}
                   loading={quotaQ.isLoading}
@@ -370,32 +375,78 @@ export default function Operacoes4Page() {
             )}
             {bundle && (
               <>
-                {/* L1 — 4 KPIs (sem Potencial) */}
-                <KpiStrip4
-                  data={bundle.termometro}
-                  emptyMtd={bundle.termometro.vop.valor === 0}
-                />
+                {/* L1 — 4 KPIs compact (canonico, ver handoff 2026-05-21) */}
+                <KpiStrip cols={4}>
+                  <KpiCard
+                    variant="compact"
+                    label="VOP"
+                    value={formatKpiValor(bundle.termometro.vop)}
+                    sub={bundle.termometro.vop.mes_label}
+                    delta={kpiDelta(bundle.termometro.vop.delta_vop_du_pct)}
+                    deltaSub="VOP-DU"
+                  />
+                  <KpiCard
+                    variant="compact"
+                    label="Receita"
+                    value={formatKpiValor(bundle.termometro.receita)}
+                    sub={bundle.termometro.receita.mes_label}
+                    delta={kpiDelta(bundle.termometro.receita.delta_vop_du_pct)}
+                    deltaSub="VOP-DU"
+                  />
+                  <KpiCard
+                    variant="compact"
+                    label="Taxa média"
+                    value={formatKpiValor(bundle.termometro.taxa)}
+                    sub={bundle.termometro.taxa.mes_label}
+                    delta={kpiDelta(bundle.termometro.taxa.delta_vop_du_pct)}
+                    deltaSub="VOP-DU"
+                  />
+                  <KpiCard
+                    variant="compact"
+                    label="Prazo médio"
+                    value={formatKpiValor(bundle.termometro.prazo)}
+                    sub={bundle.termometro.prazo.mes_label}
+                    delta={kpiDelta(bundle.termometro.prazo.delta_vop_du_pct)}
+                    deltaSub="VOP-DU"
+                  />
+                </KpiStrip>
+                {bundle.termometro.vop.valor === 0 && (
+                  <p className="text-[11px] italic text-gray-500 dark:text-gray-400">
+                    Aguardando primeiros DUs do mês — KPIs ainda zerados.
+                  </p>
+                )}
 
-                {/* L2 — Hero VOP do mes (reuso de operacoes3) */}
-                <HeroVopMes
-                  vopDiario={bundle.vop_diario}
-                  vopDiarioPorUa={bundle.vop_diario_por_ua}
-                  vopMtdPorUa={bundle.vop_mtd_por_ua}
-                  vop={bundle.vop}
-                  dimension={dimension}
-                  onDimensionChange={setDimension}
-                />
+                {/* L2 — 50/50: VOP Diário (esq) + Mix de produtos (dir) */}
+                <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <VopDiarioCard
+                    vopDiario={bundle.vop_diario}
+                    vopDiarioPorUa={bundle.vop_diario_por_ua}
+                    vopMtdPorUa={bundle.vop_mtd_por_ua}
+                    vop={bundle.vop}
+                    duDecorridos={bundle.du_decorridos}
+                    duTotais={bundle.du_totais_mes}
+                    onPointClick={(dataISO) =>
+                      setDrill({ kind: "dia", dataISO })
+                    }
+                  />
+                  <MixDeProdutosCard mix={bundle.mix} />
+                </section>
 
-                {/* L3 — Composicao da receita + Yield efetivo (NOVO) */}
-                <ReceitasSection
+                {/* L3 — 4 cards 25% (Hist Taxas · Bar Taxa/produto · Hist Prazo · Composição) */}
+                <L3CardsRow
                   filters={filtersWithFocus}
-                  onBucketClick={handleBucketClick}
+                  onBucketTaxasClick={(bucketIdx) =>
+                    // PR1 stub — bucket drill drawer entra em PR2.
+                    // Reusa estrutura de receita pra abrir DrillDownSheet generico.
+                    handleBucketClick(
+                      ["desagio", "tarifa_cessao", "tarifas_operacionais", "outras"][
+                        Math.min(bucketIdx, 3)
+                      ] as never,
+                    )
+                  }
                 />
 
-                {/* L4 — Mix de produtos 75/25 */}
-                <MixProdutoSection filters={filtersWithFocus} />
-
-                {/* L5 — Cedentes 75/25 (tabela + MovementStack lateral) */}
+                {/* L4 — Cedentes 75/25 (sem mudancas vs producao) */}
                 <section className="grid grid-cols-1 gap-4 xl:grid-cols-4">
                   <div className="xl:col-span-3">
                     <TabelaCedentesMtd />
@@ -409,23 +460,6 @@ export default function Operacoes4Page() {
                     />
                   </div>
                 </section>
-
-                {/* L6 — Pricing 50/50 (NOVO) */}
-                <PricingSection filters={filtersWithFocus} />
-
-                {/* L7 — Tabela narrativa diaria (NOVO) */}
-                <DailyTable
-                  filters={filtersWithFocus}
-                  onRowClick={(dataISO) => setDrill({ kind: "dia", dataISO })}
-                />
-
-                {/* L8 — Decomposicao avancada (4 cards, sem VOP nem Mix) */}
-                <DecomposicaoAvancada4
-                  receita={bundle.receita}
-                  taxa={bundle.taxa}
-                  prazo={bundle.prazo}
-                  concentracao={bundle.concentracao}
-                />
 
                 {/* Footer com metadata de comparacao */}
                 <p className="text-[11px] text-gray-500 dark:text-gray-500">
@@ -474,6 +508,96 @@ export default function Operacoes4Page() {
       </DrillDownSheet>
     </div>
   )
+}
+
+// ─── PageHeader pill + subtitle helpers ────────────────────────────────────
+
+function MesReferenciaPill({ mesLabel }: { mesLabel: string }) {
+  // Converte "mai/26" → "Maio/2026" pra exibição na pill canônica.
+  const displayLabel = formatMesReferenciaLabel(mesLabel)
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 dark:border-blue-500/30 dark:bg-blue-500/10"
+      title="Mês de referência dos KPIs"
+    >
+      <RiCalendarEventLine
+        className="size-3 text-blue-600 dark:text-blue-400"
+        aria-hidden
+      />
+      <span className="text-[10px] font-medium uppercase tracking-wider text-blue-600/80 dark:text-blue-400/80">
+        Mês de referência
+      </span>
+      <span className="text-[12px] font-semibold tabular-nums text-blue-700 dark:text-blue-300">
+        {displayLabel}
+      </span>
+    </span>
+  )
+}
+
+const _MESES_LONGO_PT = [
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
+]
+function formatMesReferenciaLabel(mesLabel: string): string {
+  // Aceita "mai/26", "mai/2026", "MAR/26" — converte para "Maio/2026".
+  const match = mesLabel.match(/^([a-z]{3,})\.?\/(\d{2,4})$/i)
+  if (!match) return mesLabel
+  const mes3 = match[1].toLowerCase()
+  const anoStr = match[2]
+  const idx = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"].indexOf(mes3)
+  if (idx < 0) return mesLabel
+  const ano = anoStr.length === 2 ? `20${anoStr}` : anoStr
+  return `${_MESES_LONGO_PT[idx]}/${ano}`
+}
+
+function pageHeaderSubtitle(
+  bundle: { du_decorridos: number; du_totais_mes: number } | undefined,
+): string {
+  if (!bundle) return ""
+  const dec = bundle.du_decorridos
+  const tot = bundle.du_totais_mes
+  const falta = Math.max(0, tot - dec)
+  return `${dec} DU${dec === 1 ? "" : "s"} decorridos de ${tot} · faltam ${falta} DU${falta === 1 ? "" : "s"}`
+}
+
+// ─── KPI helpers (L1) ──────────────────────────────────────────────────────
+
+const _fmtBRL = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  notation: "compact",
+  maximumFractionDigits: 2,
+})
+
+function formatKpiValor(
+  cell: { valor: number; unidade: string },
+): string {
+  switch (cell.unidade) {
+    case "BRL":
+      return _fmtBRL.format(cell.valor)
+    case "%":
+      return `${cell.valor.toFixed(1).replace(".", ",")}%`
+    case "dias":
+      return `${cell.valor.toFixed(1).replace(".", ",")} d`
+    default:
+      return String(cell.valor)
+  }
+}
+
+function kpiDelta(
+  pct: number | null | undefined,
+): { value: number; suffix: string } | undefined {
+  return pct == null ? undefined : { value: pct, suffix: "%" }
 }
 
 // ─── Skeleton ──────────────────────────────────────────────────────────────
