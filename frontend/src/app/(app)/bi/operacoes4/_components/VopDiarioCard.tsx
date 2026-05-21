@@ -44,6 +44,22 @@ const fmtBRLFull = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 0,
 })
 
+/**
+ * Formatter do eixo Y + dataLabels do VOP Diário — converte BRL pra milhoes
+ * compactos: "0,5", "1,0", "2,4". Sem prefixo "R$" e sem sufixo "M" porque
+ * a unidade fica implicita no contexto do card ("VOP DIÁRIO" no header,
+ * tooltip mostra BRL full). Economiza espaco horizontal vs Intl compact
+ * que renderiza "R$ 500K" / "R$ 1,0M".
+ *
+ * 0 vira "0" (nao "0,0") pra reduzir ruido na origem do eixo. Negativos
+ * preservam sinal (caso raro mas possivel com ajustes).
+ */
+function fmtMilhoesAxis(v: number): string {
+  if (v === 0) return "0"
+  const milhoes = v / 1_000_000
+  return milhoes.toFixed(1).replace(".", ",")
+}
+
 const _MESES_LONGO_PT = [
   "Janeiro",
   "Fevereiro",
@@ -171,6 +187,8 @@ export function VopDiarioCard({
         deltaSub: "VOP-DU",
       }}
       valueFormatter={(v) => fmtBRLFull.format(v)}
+      axisFormatter={fmtMilhoesAxis}
+      dataLabelFormatter={fmtMilhoesAxis}
       height={260}
       onPointClick={onPointClick}
       actions={
