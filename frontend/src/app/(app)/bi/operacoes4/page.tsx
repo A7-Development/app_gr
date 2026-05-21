@@ -42,7 +42,11 @@ import {
   MoreFiltersButton,
 } from "@/design-system/components/FilterBar"
 import { InsightStrip } from "@/design-system/components/InsightStrip"
-import { KpiCard, KpiStrip } from "@/design-system/components"
+import { KpiHeadline } from "@/design-system/components"
+import type {
+  KpiHeadlineDiagnostic,
+  KpiHeadlineTone,
+} from "@/design-system/components"
 import {
   AIPanel,
   useAIPanel,
@@ -375,41 +379,27 @@ export default function Operacoes4Page() {
             )}
             {bundle && (
               <>
-                {/* L1 — 4 KPIs compact (canonico, ver handoff 2026-05-21) */}
-                <KpiStrip cols={4}>
-                  <KpiCard
-                    variant="compact"
-                    label="VOP"
-                    value={formatKpiValor(bundle.termometro.vop)}
-                    sub={bundle.termometro.vop.mes_label}
-                    delta={kpiDelta(bundle.termometro.vop.delta_vop_du_pct)}
-                    deltaSub="VOP-DU"
-                  />
-                  <KpiCard
-                    variant="compact"
-                    label="Receita"
-                    value={formatKpiValor(bundle.termometro.receita)}
-                    sub={bundle.termometro.receita.mes_label}
-                    delta={kpiDelta(bundle.termometro.receita.delta_vop_du_pct)}
-                    deltaSub="VOP-DU"
-                  />
-                  <KpiCard
-                    variant="compact"
-                    label="Taxa média"
-                    value={formatKpiValor(bundle.termometro.taxa)}
-                    sub={bundle.termometro.taxa.mes_label}
-                    delta={kpiDelta(bundle.termometro.taxa.delta_vop_du_pct)}
-                    deltaSub="VOP-DU"
-                  />
-                  <KpiCard
-                    variant="compact"
-                    label="Prazo médio"
-                    value={formatKpiValor(bundle.termometro.prazo)}
-                    sub={bundle.termometro.prazo.mes_label}
-                    delta={kpiDelta(bundle.termometro.prazo.delta_vop_du_pct)}
-                    deltaSub="VOP-DU"
-                  />
-                </KpiStrip>
+                {/* L1 — KpiHeadline canonico (handoff 2026-05-21 + decisao 2026-05-21):
+                    VOP e o KPI dominante; Taxa, Prazo e Receita viram chips de
+                    diagnostico ao lado. Pattern oficial do DS — anti tile-syndrome. */}
+                <KpiHeadline
+                  statement={`MÊS CORRENTE · OPERAÇÕES · ${bundle.termometro.vop.mes_label.toUpperCase()}`}
+                  primary={{
+                    value: formatKpiValor(bundle.termometro.vop),
+                    sub:
+                      bundle.termometro.vop.delta_vop_du_pct != null
+                        ? `${formatDeltaPctSigned(bundle.termometro.vop.delta_vop_du_pct)} VOP-DU vs mês ant.`
+                        : undefined,
+                    tone: primaryToneFromDelta(
+                      bundle.termometro.vop.delta_vop_du_pct,
+                    ),
+                  }}
+                  diagnostics={[
+                    diagnosticFromKpi("Taxa", bundle.termometro.taxa),
+                    diagnosticFromKpi("Prazo", bundle.termometro.prazo),
+                    diagnosticFromKpi("Receita", bundle.termometro.receita),
+                  ]}
+                />
                 {bundle.termometro.vop.valor === 0 && (
                   <p className="text-[11px] italic text-gray-500 dark:text-gray-400">
                     Aguardando primeiros DUs do mês — KPIs ainda zerados.
@@ -594,10 +584,40 @@ function formatKpiValor(
   }
 }
 
-function kpiDelta(
+function formatDeltaPctSigned(pct: number): string {
+  const sign = pct >= 0 ? "+" : "−"
+  return `${sign}${Math.abs(pct).toFixed(2).replace(".", ",")}%`
+}
+
+function primaryToneFromDelta(
   pct: number | null | undefined,
-): { value: number; suffix: string } | undefined {
-  return pct == null ? undefined : { value: pct, suffix: "%" }
+): KpiHeadlineTone {
+  if (pct == null) return "neutral"
+  return pct >= 0 ? "positive" : "negative"
+}
+
+// Pattern decision: cada chip mostra o KPI com label curto + valor + delta
+// inline. Tone reflete sinal do delta (ok=verde quando >=0, warning=amber
+// quando <0). Polaridade nao e invertida pra Prazo/Taxa pra simplificar a
+// leitura — o numero fala por si.
+function diagnosticFromKpi(
+  label: string,
+  cell: { valor: number; unidade: string; delta_vop_du_pct: number | null },
+): KpiHeadlineDiagnostic {
+  const valor = formatKpiValor(cell)
+  const deltaText =
+    cell.delta_vop_du_pct != null
+      ? ` ${formatDeltaPctSigned(cell.delta_vop_du_pct)}`
+      : ""
+  return {
+    label: `${label} ${valor}${deltaText}`,
+    tone:
+      cell.delta_vop_du_pct == null
+        ? "info"
+        : cell.delta_vop_du_pct >= 0
+          ? "ok"
+          : "warning",
+  }
 }
 
 // ─── Skeleton ──────────────────────────────────────────────────────────────
