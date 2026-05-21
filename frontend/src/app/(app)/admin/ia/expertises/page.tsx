@@ -284,17 +284,33 @@ export default function ExpertisesAdminPage() {
   const columns = React.useMemo<ColumnDef<AIExpertiseVersionInfo>[]>(
     () => [
       {
+        accessorKey: "id",
+        header: "ID",
+        cell: ({ row }) => (
+          <span
+            className={cx(tableTokens.cellMuted, "font-mono text-[11px]")}
+            title={row.original.id}
+          >
+            {row.original.id.slice(0, 8)}
+          </span>
+        ),
+      },
+      {
         accessorKey: "name",
         header: "Nome canonico",
         cell: ({ row }) => (
-          <div className="flex flex-col">
-            <span className={cx(tableTokens.cellStrong, "font-mono")}>
-              {row.original.name}
-            </span>
-            <span className={tableTokens.cellMuted}>
-              v{row.original.version}
-            </span>
-          </div>
+          <span className={cx(tableTokens.cellStrong, "font-mono")}>
+            {row.original.name}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "version",
+        header: "Versao",
+        cell: ({ row }) => (
+          <span className={tableTokens.cellSecondary}>
+            v{row.original.version}
+          </span>
         ),
       },
       {
