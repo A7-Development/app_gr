@@ -517,7 +517,80 @@ export const adminAI = {
     archive: (id: string) =>
       apiClient.post<AIPersonaDetail>(`/admin/ia/personas/${id}/archive`),
   },
+  // F2.c.2 — CRUD versionado de expertises (CLAUDE.md §19.12).
+  expertises: {
+    list: (opts: { includeArchived?: boolean; domain?: string } = {}) => {
+      const params = new URLSearchParams()
+      if (opts.includeArchived) params.set("include_archived", "true")
+      if (opts.domain) params.set("domain", opts.domain)
+      const qs = params.toString()
+      return apiClient.get<AIExpertiseVersionInfo[]>(
+        `/admin/ia/expertises${qs ? `?${qs}` : ""}`,
+      )
+    },
+    get: (id: string) =>
+      apiClient.get<AIExpertiseDetail>(`/admin/ia/expertises/${id}`),
+    create: (payload: AIExpertiseCreatePayload) =>
+      apiClient.post<AIExpertiseDetail>("/admin/ia/expertises", payload),
+    update: (id: string, payload: AIExpertiseUpdatePayload) =>
+      apiClient.put<AIExpertiseDetail>(`/admin/ia/expertises/${id}`, payload),
+    activate: (name: string, versionId: string) =>
+      apiClient.put<AIExpertiseVersionInfo>(
+        `/admin/ia/expertises/${encodeURIComponent(name)}/active`,
+        { version_id: versionId },
+      ),
+    archive: (id: string) =>
+      apiClient.post<AIExpertiseDetail>(`/admin/ia/expertises/${id}/archive`),
+  },
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Tipos do admin de expertises
+// ───────────────────────────────────────────────────────────────────────────
+
+export type AIExpertiseReference = {
+  url: string
+  label: string
+  kind?: string
+}
+
+export type AIExpertiseVersionInfo = {
+  id: string
+  name: string
+  version: number
+  display_name: string
+  domain: string
+  is_active: boolean
+  usage_count: number
+  created_at: string
+  archived_at: string | null
+}
+
+export type AIExpertiseDetail = {
+  id: string
+  name: string
+  version: number
+  display_name: string
+  domain: string
+  knowledge_text: string
+  reference_urls: AIExpertiseReference[] | null
+  is_active: boolean
+  usage_count: number
+  created_at: string
+  archived_at: string | null
+}
+
+export type AIExpertiseCreatePayload = {
+  name: string
+  display_name: string
+  domain: string
+  knowledge_text: string
+  reference_urls?: AIExpertiseReference[]
+}
+
+export type AIExpertiseUpdatePayload = Partial<
+  Omit<AIExpertiseCreatePayload, "name">
+>
 
 // ───────────────────────────────────────────────────────────────────────────
 // Tipos do admin de personas

@@ -13,6 +13,7 @@ from fastapi import APIRouter
 
 from app.modules.admin.api import (
     ai_agents,
+    ai_expertises,
     ai_personas,
     ai_prompts,
     ai_provider_credentials,
@@ -27,5 +28,6 @@ router.include_router(ai_subscriptions.router)
 router.include_router(ai_prompts.router)
 router.include_router(ai_agents.router)
 router.include_router(ai_personas.router)
+router.include_router(ai_expertises.router)
 router.include_router(tenants.router)
 router.include_router(users.router)

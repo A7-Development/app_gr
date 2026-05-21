@@ -16,6 +16,9 @@ import {
   adminAI,
   type AIAgentConfigRead,
   type AIAgentConfigUpdatePayload,
+  type AIExpertiseCreatePayload,
+  type AIExpertiseDetail,
+  type AIExpertiseUpdatePayload,
   type AIPersonaCreatePayload,
   type AIPersonaDetail,
   type AIPersonaUpdatePayload,
@@ -230,6 +233,83 @@ export function useArchivePersona() {
     mutationFn: (id: string) => adminAI.personas.archive(id),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["admin", "ai", "personas"] }),
+  })
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Expertises (F2.c.2 — CLAUDE.md §19.12)
+// ───────────────────────────────────────────────────────────────────────────
+
+const EXPERTISE_KEYS = {
+  list: (opts: { includeArchived: boolean; domain?: string }) =>
+    ["admin", "ai", "expertises", opts] as const,
+  detail: (id: string) => ["admin", "ai", "expertises", id] as const,
+}
+
+export function useExpertises(
+  opts: { includeArchived?: boolean; domain?: string } = {},
+) {
+  const includeArchived = opts.includeArchived ?? false
+  const domain = opts.domain
+  return useQuery({
+    queryKey: EXPERTISE_KEYS.list({ includeArchived, domain }),
+    queryFn: () => adminAI.expertises.list({ includeArchived, domain }),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useExpertiseDetail(id: string | null) {
+  return useQuery({
+    queryKey: EXPERTISE_KEYS.detail(id ?? ""),
+    queryFn: () => adminAI.expertises.get(id!),
+    enabled: !!id,
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useCreateExpertise() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: AIExpertiseCreatePayload) =>
+      adminAI.expertises.create(payload),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "expertises"] }),
+  })
+}
+
+export function useUpdateExpertise() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: string
+      payload: AIExpertiseUpdatePayload
+    }) => adminAI.expertises.update(id, payload),
+    onSuccess: (created: AIExpertiseDetail) => {
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "expertises"] })
+      qc.invalidateQueries({ queryKey: EXPERTISE_KEYS.detail(created.id) })
+    },
+  })
+}
+
+export function useActivateExpertiseVersion() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name, versionId }: { name: string; versionId: string }) =>
+      adminAI.expertises.activate(name, versionId),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "expertises"] }),
+  })
+}
+
+export function useArchiveExpertise() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => adminAI.expertises.archive(id),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "expertises"] }),
   })
 }
 
