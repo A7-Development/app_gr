@@ -40,19 +40,21 @@ from anthropic import AsyncAnthropic
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# Import do pacote `app.agentic.tools` carrega `_base.AgentTool` E forca
+# os decorators `@register_tool` nas tools de cada subdir (CLAUDE.md §19.0).
+# Sem este import o `ToolRegistry` fica vazio no momento em que
+# `_build_tools_for_agent` consulta.
+import app.agentic.tools  # noqa: F401
+from app.agentic._scope import ScopedContext
+from app.agentic.agents import AgentRegistry, ResolvedAgent, compose_system_text
 from app.agentic.engine.catalog import (
-    TOOL_DOC_GET,
-    TOOL_DOC_LIST,
-    TOOL_DOSSIER_FLAG,
-    TOOL_DOSSIER_READ,
-    TOOL_DOSSIER_SAVE,
-    TOOL_REF_CALC,
-    TOOL_REF_COMPARE,
     SpecialistAgentSpec,
 )
 from app.agentic.engine.model_resolver import ResolvedModels, resolve_models_for_agent
 from app.agentic.engine.prompts import repository as prompt_repo
-from app.agentic.engine.tools._base import AgentTool
+from app.agentic.tools._base import AgentTool
+from app.agentic.tools.registry import ToolRegistry
+from app.core.enums import Module
 from app.modules.integracoes.adapters.llm.anthropic.config import (
     CredentialNotFoundError,
     get_active_anthropic_credential,
@@ -241,38 +243,26 @@ async def _render_checklist_block(
 
 def _build_tools_for_agent(
     spec: SpecialistAgentSpec,
-    tenant_id: Any,
-    dossier_id: Any,
-    db: AsyncSession,
+    scope: ScopedContext,
 ) -> list[AgentTool]:
-    """Instantiate AgentTools for this agent based on `spec.tools`.
+    """Resolve tools via ToolRegistry filtrado por scope + allowed list.
 
-    The factories close over `(tenant_id, dossier_id, db)` so each
-    handler queries with the right scope without trusting agent-supplied IDs.
+    Substituiu as factories closure-based em F2.a (CLAUDE.md §19.0). Tools
+    sao registradas dinamicamente via `@register_tool` no momento da
+    importacao de `app.agentic.tools.*`. Adicionar tool nova = novo
+    arquivo com decorator, zero mudanca aqui.
+
+    `cross_module=True` enquanto F2.b nao trouxer o user-level RBAC
+    completo do invocador: hoje specialist agents sao chamados por nodes
+    do workflow Credito, que ja foram autorizados pela camada acima
+    (require_module). Quando AgentDefinition + permissions reais do user
+    chegarem, removemos o cross_module e a filtragem fica fina.
     """
-    from app.agentic.engine.tools.document_tools import make_document_tools
-    from app.agentic.engine.tools.dossier_tools import make_dossier_tools
-    from app.agentic.engine.tools.reference_tools import make_reference_tools
-
-    selected: list[AgentTool] = []
-    requested = set(spec.tools)
-
-    if requested & {TOOL_DOSSIER_READ, TOOL_DOSSIER_FLAG, TOOL_DOSSIER_SAVE}:
-        for t in make_dossier_tools(tenant_id, dossier_id, db):
-            if t.name in requested:
-                selected.append(t)
-
-    if requested & {TOOL_DOC_GET, TOOL_DOC_LIST}:
-        for t in make_document_tools(tenant_id, dossier_id, db):
-            if t.name in requested:
-                selected.append(t)
-
-    if requested & {TOOL_REF_COMPARE, TOOL_REF_CALC}:
-        for t in make_reference_tools(tenant_id, dossier_id, db):
-            if t.name in requested:
-                selected.append(t)
-
-    return selected
+    return ToolRegistry.get_available(
+        scope,
+        allowed=list(spec.tools),
+        cross_module=True,
+    )
 
 
 # ─── JSON extraction ──────────────────────────────────────────────────────
@@ -328,14 +318,55 @@ async def run_specialist_agent(
 ) -> AgentRunResult:
     """Run a Specialist Agent and return its validated output.
 
-    On output schema validation failure, retries once with a correction prompt.
-    On second failure, raises ValueError (the workflow node will mark FAILED).
+    F2.b.2: Resolve a definicao do agente via `AgentRegistry.get()`
+    (DB-first, CATALOG fallback). O `system_text` enviado ao LLM e
+    composto com XML tags + markdown:
+
+        <persona>{role_block}</persona>
+        <expertise name="X">{knowledge_text}</expertise>
+        <task>{prompt.system_text}</task>
+
+    Quando agent_definition_active nao tem entry pra este `spec.name`
+    (dev sem migration aplicada, teste, agente novo em codigo), o
+    registry cai em fallback CATALOG — persona/expertises ficam vazios
+    e o composer omite os blocos correspondentes. Garante backward
+    compat: nada quebra.
+
+    `prompt_full_id` no AgentRunResult retorna `audit_version`
+    (composto agent+persona+expertises+prompt) — vira
+    `decision_log.rule_or_model_version` permitindo audit completo.
+
+    On output schema validation failure, retries once with a correction
+    prompt. On second failure, raises ValueError (the workflow node
+    will mark FAILED).
     """
-    # Resolve versioned prompt.
-    prompt = await prompt_repo.resolve(db, name=spec.prompt_name)
+    # F2.b.2: scope construido cedo pra alimentar registry; e tambem
+    # reaproveitado pelo `_invoke_with_validation` (via ctx).
+    from app.core.enums import Module as _Module
+
+    scope_for_registry = ScopedContext(
+        tenant_id=ctx.tenant_id,
+        empresa_id=None,
+        user_id=ctx.initiated_by,
+        module=_Module.CREDITO,
+        permissions={},
+        db=db,
+        extras={},
+    )
+
+    resolved = await AgentRegistry.get(db, name=spec.name, scope=scope_for_registry)
+    prompt = resolved.prompt
+
     rendered = prompt.render(context={"page": "credito.dossie", "period": "", "filters": ""})
-    system_text = "\n\n".join(
+    prompt_system_text = "\n\n".join(
         block.text for msg in rendered if msg.role == "system" for block in msg.content
+    )
+
+    # XML-tagged system_text (persona + expertises + task).
+    system_text = compose_system_text(
+        persona=resolved.persona,
+        expertises=resolved.expertises,
+        prompt_system_text=prompt_system_text,
     )
 
     # Inject checklist items defined by the tenant for this agent's section.
@@ -359,12 +390,13 @@ async def run_specialist_agent(
     )
     user_text = "\n\n".join(user_parts)
 
-    output_data, usage, _resolved = await _invoke_with_validation(
+    output_data, usage, _resolved_models = await _invoke_with_validation(
         spec=spec,
         system_text=system_text,
         user_text=user_text,
         ctx=ctx,
         db=db,
+        resolved=resolved,
     )
 
     return AgentRunResult(
@@ -375,7 +407,7 @@ async def run_specialist_agent(
         tokens_cache_read=usage.tokens_cache_read,
         tokens_cache_creation=usage.tokens_cache_creation,
         cost_brl=Decimal("0"),  # billing layer computes via FX rate
-        prompt_full_id=prompt.full_id,
+        prompt_full_id=resolved.audit_version,
     )
 
 
@@ -431,7 +463,7 @@ async def run_document_extraction(
     )
     user_text = "\n\n".join(user_parts)
 
-    output_data, usage, resolved = await _invoke_with_validation(
+    output_data, usage, resolved_models = await _invoke_with_validation(
         spec=spec,
         system_text=system_text,
         user_text=user_text,
@@ -441,7 +473,7 @@ async def run_document_extraction(
     )
 
     document.ai_extraction = output_data
-    document.ai_model_used = resolved.model
+    document.ai_model_used = resolved_models.model
     document.ai_prompt_version = prompt.full_id
     await db.flush()
 
@@ -543,12 +575,21 @@ async def _invoke_with_validation(
     ctx: NodeContext,
     db: AsyncSession,
     tools_override: list[AgentTool] | None = None,
+    resolved: ResolvedAgent | None = None,
 ) -> tuple[dict[str, Any], _Usage, ResolvedModels]:
     """Invoke the agent and validate output, retrying once on schema failure.
 
     Implementacao via Anthropic Messages API direta (sem subprocess).
-    Resolve o modelo a usar via `agent_config` (DB) com fallback no
-    catalog default — permite ao mantenedor trocar modelo sem deploy.
+
+    Modelo resolvido em ordem de override (F2.b.2):
+        1. `resolved.model` (passed by run_specialist_agent via AgentRegistry —
+           reflete override em `agent_definition.model`)
+        2. `agent_config.model` (via `resolve_models_for_agent` — overrride
+           legado pre-F2.b)
+        3. `spec.preferred_model` (CATALOG default em codigo)
+
+    Quando `resolved` e None (run_document_extraction, testes), cai pro
+    pattern legado (agent_config + CATALOG default) — backward compat.
     """
     # Resolve credencial Anthropic ativa.
     try:
@@ -559,15 +600,40 @@ async def _invoke_with_validation(
             "esta cadastrada. Cadastre uma em /admin/ia/providers (mantenedor)."
         ) from e
 
-    # Resolve modelo via DB override (com fallback ao catalog default).
-    resolved = await resolve_models_for_agent(db, spec)
+    # Modelo: F2.b.2 prefere override do agent_definition, senao usa o
+    # caminho legado (agent_config -> CATALOG).
+    if resolved is not None:
+        resolved_models = ResolvedModels(
+            model=resolved.model,
+            fallback_model=resolved.fallback_model,
+            source="agent_definition",
+        )
+    else:
+        resolved_models = await resolve_models_for_agent(db, spec)
+
+    # Construir ScopedContext a partir do NodeContext (CLAUDE.md §19.0).
+    # F2.a: module hardcoded em CREDITO (todos os specialist agents hoje
+    # vivem em workflows do Credito); permissions vazias com
+    # cross_module=True na chamada do registry. F2.b vai trazer module
+    # via AgentDefinition + permissions reais do user invocador.
+    scope = ScopedContext(
+        tenant_id=ctx.tenant_id,
+        empresa_id=None,
+        user_id=ctx.initiated_by,
+        module=Module.CREDITO,
+        permissions={},
+        db=db,
+        extras={
+            "dossier_id": ctx.trigger_data.get("dossier_id"),
+            "run_id": ctx.run_id,
+            "node_id": ctx.node_id,
+        },
+    )
 
     tools = (
         tools_override
         if tools_override is not None
-        else _build_tools_for_agent(
-            spec, ctx.tenant_id, ctx.trigger_data.get("dossier_id"), db
-        )
+        else _build_tools_for_agent(spec, scope)
     )
 
     client = AsyncAnthropic(api_key=credential.api_key)
@@ -576,17 +642,18 @@ async def _invoke_with_validation(
         raw_text, usage = await _run_tool_loop(
             client=client,
             spec=spec,
-            model=resolved.model,
-            fallback_model=resolved.fallback_model,
+            model=resolved_models.model,
+            fallback_model=resolved_models.fallback_model,
             system_text=system_text,
             user_text=user_text,
             tools=tools,
+            scope=scope,
         )
 
         try:
             parsed = _extract_json_object(raw_text)
             validated = spec.output_schema.model_validate(parsed)
-            return validated.model_dump(mode="json"), usage, resolved
+            return validated.model_dump(mode="json"), usage, resolved_models
         except (ValidationError, ValueError, json.JSONDecodeError) as e:
             logger.warning(
                 "Agent %s produced invalid output, retrying once: %s",
@@ -606,11 +673,12 @@ async def _invoke_with_validation(
         raw_text2, usage2 = await _run_tool_loop(
             client=client,
             spec=spec,
-            model=resolved.model,
-            fallback_model=resolved.fallback_model,
+            model=resolved_models.model,
+            fallback_model=resolved_models.fallback_model,
             system_text=system_text,
             user_text=correction_prompt,
             tools=tools,
+            scope=scope,
         )
 
         # Acumula tokens das duas chamadas.
@@ -628,7 +696,7 @@ async def _invoke_with_validation(
                 f"Erro final: {e2}"
             ) from e2
 
-        return validated2.model_dump(mode="json"), usage, resolved
+        return validated2.model_dump(mode="json"), usage, resolved_models
     finally:
         await client.close()
 
@@ -642,6 +710,7 @@ async def _run_tool_loop(
     system_text: str,
     user_text: str,
     tools: list[AgentTool],
+    scope: ScopedContext | None = None,
 ) -> tuple[str, _Usage]:
     """Roda o loop tool_use ate o modelo encerrar com texto final.
 
@@ -752,8 +821,22 @@ async def _run_tool_loop(
                 )
                 continue
 
+            if scope is None:
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": (
+                            f"Erro: tool '{block.name}' requer ScopedContext mas "
+                            "_run_tool_loop foi chamado sem scope. Provavel bug "
+                            "no caller — abra issue."
+                        ),
+                        "is_error": True,
+                    }
+                )
+                continue
             try:
-                result_text = await tool.handler(dict(block.input or {}))
+                result_text = await tool.handler(scope, dict(block.input or {}))
             except Exception as exc:
                 logger.exception(
                     "Tool %s falhou no agente %s: %s", block.name, spec.name, exc
