@@ -58,11 +58,23 @@ export type KpiHeadlineDiagnostic = {
 }
 
 export type KpiHeadlinePrimary = {
-  /** Numero/string principal (ex.: "+0,31%"). */
+  /** Numero/string principal (ex.: "R$ 21,7 mi"). */
   value: string
-  /** Texto secundario logo apos (ex.: "+R$ 36.942 vs D-1"). */
+  /**
+   * Delta inline opcional renderizado entre o `value` e o `sub`. Quando
+   * presente, recebe sua propria cor (`tone`) — useful quando o caller
+   * quer `value` em preto/neutro e apenas o delta colorido. Renderiza
+   * com peso medio + tabular-nums + mesmo size do sub (13px).
+   *
+   * Ex.: { value: "+3,28%", tone: "positive" } → "+3,28%" em emerald.
+   */
+  delta?: {
+    value: string
+    tone?: KpiHeadlineTone
+  }
+  /** Texto secundario logo apos (ex.: "vs mês ant."). Sempre gray. */
   sub?:  string
-  /** Cor do numero. Default: derivada da string (sinal); pode override. */
+  /** Cor do numero principal. Default: derivada da string (sinal); pode override. */
   tone?: KpiHeadlineTone
 }
 
@@ -196,9 +208,19 @@ export function KpiHeadline({
           >
             {primary.value}
           </span>
+          {primary.delta && (
+            <span
+              className={cx(
+                "text-[13px] font-medium tabular-nums",
+                PRIMARY_TONE[primary.delta.tone ?? "neutral"],
+              )}
+            >
+              {primary.delta.value}
+            </span>
+          )}
           {primary.sub && (
             <span className="text-[13px] text-gray-500 dark:text-gray-400">
-              ({primary.sub})
+              {primary.sub}
             </span>
           )}
         </div>

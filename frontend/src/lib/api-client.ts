@@ -2198,6 +2198,29 @@ export type RunEntry = {
   output: Record<string, unknown> | null
 }
 
+// CrossSourceRunEntry — espelha o backend (routers/operacao.py). Identica a
+// RunEntry + campo `source_type` derivado de rule_or_model. Usada pela pagina
+// /integracoes/operacao/historico (PR 4, 2026-05-21).
+export type CrossSourceRunEntry = {
+  id: string
+  occurred_at: string
+  source_type: SourceTypeId
+  rule_or_model: string
+  rule_or_model_version: string | null
+  triggered_by: string
+  explanation: string | null
+  output: Record<string, unknown> | null
+}
+
+export type CrossSourceRunsFilters = {
+  source_type?: SourceTypeId[]
+  since?: string | null   // YYYY-MM-DD
+  until?: string | null   // YYYY-MM-DD
+  status?: "ok" | "error" | null
+  triggered_by?: string | null
+  limit?: number
+}
+
 /** Cadência por endpoint (CLAUDE.md §13 — refactor 2026-05-05).
  *
  * Granularidade fina: cada source pode ter N endpoints, cada um com cadência
@@ -2260,6 +2283,16 @@ export type EndpointDetail = {
   effective_expected_lag_business_days: number
   effective_tolerance_business_days: number
   effective_give_up_business_days: number
+
+  // Próximo sync agendado (ISO 8601 UTC). Quando `next_sync_source ===
+  // "state_machine"`, vem de MIN(endpoint_date_state.next_attempt_at) —
+  // próxima retentativa adaptativa ou TTL de refresh-complete. Quando
+  // "schedule", é derivado de schedule_kind/value + last_sync_started_at
+  // (próximo HH:MM do daily_at ou last + intervalo do interval). Quando
+  // "manual_only" ou null, endpoint é on_demand ou não tem cadência —
+  // só sincroniza via "Sincronizar agora".
+  next_sync_at: string | null
+  next_sync_source: "state_machine" | "schedule" | "manual_only" | null
 }
 
 /** Estado de tolerância de publicação — graduação por tempo decorrido.
@@ -2505,6 +2538,23 @@ export const integracoes = {
     apiClient.get<RunEntry[]>(
       `/integracoes/sources/${sourceType}/runs?limit=${limit}`,
     ),
+
+  // Historico cross-source (PR 4). Filtros opcionais por fonte (multi), janela
+  // de tempo, status (ok/error) e quem disparou. Mora em /integracoes/operacao/
+  // (router separado pra nao colidir com /sources/{source_type}/runs).
+  crossRuns: (filters: CrossSourceRunsFilters = {}) => {
+    const qs = new URLSearchParams()
+    for (const st of filters.source_type ?? []) qs.append("source_type", st)
+    if (filters.since) qs.set("since", filters.since)
+    if (filters.until) qs.set("until", filters.until)
+    if (filters.status) qs.set("status", filters.status)
+    if (filters.triggered_by) qs.set("triggered_by", filters.triggered_by)
+    if (filters.limit !== undefined) qs.set("limit", String(filters.limit))
+    const s = qs.toString()
+    return apiClient.get<CrossSourceRunEntry[]>(
+      s ? `/integracoes/operacao/runs?${s}` : `/integracoes/operacao/runs`,
+    )
+  },
 
   // Cadência por endpoint (CLAUDE.md §13). encodeURIComponent no endpoint_name
   // porque pode conter "." (ex.: "market.outros_fundos") — o backend usa

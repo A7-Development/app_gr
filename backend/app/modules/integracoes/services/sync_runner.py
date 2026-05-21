@@ -471,8 +471,13 @@ async def run_sync_endpoint(
         )
         raise
 
-    ok = bool(summary.get("ok"))
     errors = summary.get("errors") or []
+    # Adapters mais antigos (ex.: Bitfin v2.0.0) nao incluem a chave "ok"
+    # explicita no summary — apenas a lista de erros. Derivar de errors
+    # quando ausente. Adapters que setam "ok" explicito (QiTech) tem
+    # precedencia (ok=True com errors=[]; ok=False com errors=[] tambem
+    # respeitado).
+    ok = bool(summary.get("ok", not errors))
     error_msg = None if ok else "; ".join(str(e) for e in errors[:3])
     await _mark_endpoint_sync_finished(
         tenant_id,

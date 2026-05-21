@@ -399,6 +399,53 @@ def test_endpoint_spec_rejects_give_up_below_tolerance():
         )
 
 
+def test_qitech_state_machine_enabled_set():
+    """Documenta o conjunto exato de endpoints sob state machine (F3, 2026-05-21).
+
+    Trocar este conjunto exige batalha consciente — ligar/desligar endpoint
+    na state machine afeta o caminho de sync (legado vs state_machine_dispatcher).
+    Ver `project_qitech_sync_state_machine` memory.
+
+    Excluidos por desenho:
+    - `market.fidc_estoque`: fluxo assincrono job+webhook (callback). Modelo
+      polling da state machine nao casa direto — precisa tratamento proprio.
+    - `bank_account.balance`: DAILY_AT 19:00 com expected_lag=0. Candidato
+      futuro; nao incluido na F3 inicial.
+    - `bank_account.statement`: INTERVAL 60min. Coverage UNSUPPORTED, fluxo
+      diferente. Nao se aplica.
+    """
+    enabled = {ep.name for ep in QITECH_ENDPOINTS if ep.state_machine_enabled}
+    expected = {
+        # Piloto F1.5 (2026-05-19)
+        "market.conta_corrente",
+        # F3 rollout (2026-05-21): 9 market.* sincronos restantes
+        "market.outros_fundos",
+        "market.tesouraria",
+        "market.outros_ativos",
+        "market.demonstrativo_caixa",
+        "market.cpr",
+        "market.mec",
+        "market.rentabilidade",
+        "market.rf",
+        "market.rf_compromissadas",
+        # F3 rollout (2026-05-21): 4 custodia.*
+        "custodia.aquisicao_consolidada",
+        "custodia.liquidados_baixados",
+        "custodia.movimento_aberto",
+        "custodia.detalhes_operacoes",
+    }
+    assert enabled == expected, (
+        f"State machine set divergiu: enabled={enabled} expected={expected}"
+    )
+
+
+def test_qitech_fidc_estoque_not_in_state_machine():
+    """fidc_estoque tem fluxo assincrono job+webhook — fora da state machine
+    ate ter tratamento proprio para callback (ver §19 do CLAUDE.md)."""
+    spec = QITECH_ENDPOINTS_BY_NAME["market.fidc_estoque"]
+    assert spec.state_machine_enabled is False
+
+
 def test_qitech_catalog_tolerance_overrides():
     """Endpoints com tolerancia customizada — mantem o desvio explicito.
 

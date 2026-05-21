@@ -63,6 +63,25 @@ export type EvolucaoDiariaSerie = {
   values: Array<number | null>
 }
 
+/**
+ * Linha sobreposta as barras (single mode). Util pra mostrar acumulados,
+ * paridade, projecao — em geral series de magnitude diferente das barras.
+ * Por isso renderiza no `yAxis[1]` (eixo secundario, lado direito) quando
+ * `secondaryAxisFormatter` esta presente. Sem ele, compartilha o yAxis
+ * primario (pode achatar as barras se a escala for muito diferente).
+ */
+export type EvolucaoDiariaOverlay = {
+  name: string
+  /** Valores na ordem de `data[]`. null nao renderiza no ponto. */
+  values: Array<number | null>
+  /** Linha pontilhada (dashed). Default: false (solid). */
+  dashed?: boolean
+  /** Cor hex. Default: #6b7280 (gray-500). */
+  color?: string
+  /** Largura da linha. Default: 1.5. */
+  width?: number
+}
+
 export type EvolucaoDiariaCardProps = {
   /** Titulo do card (ex.: "VOP DIÁRIO"). */
   title: string
@@ -105,6 +124,31 @@ export type EvolucaoDiariaCardProps = {
    * do ponto. Cliques em dias futuros (valor null) sao ignorados.
    */
   onPointClick?: (dataISO: string) => void
+  /**
+   * Espaco horizontal reservado pra label do eixo Y (px). Default: 64,
+   * cabe valores BRL compact tipo "R$ 500K". Use 36-40 quando o
+   * axisFormatter retornar strings curtas tipo "0,5" / "1,0".
+   */
+  gridLeft?: number
+  /**
+   * fontSize do label do eixo Y (px). Default: 12 (ECharts default).
+   * Use 10 pra leitura mais densa quando os labels sao curtos.
+   */
+  axisLabelFontSize?: number
+  /**
+   * Linhas sobrepostas as barras (single mode). Ex.: VOP acumulado MTD
+   * solido + paridade pontilhada. Cada overlay vira uma serie type:line.
+   * No modo stacked sao ignoradas.
+   */
+  overlayLines?: EvolucaoDiariaOverlay[]
+  /**
+   * Formatter do eixo Y secundario (yAxis[1], lado direito). Quando
+   * presente, as overlayLines renderizam neste eixo — usar quando a
+   * escala das linhas e diferente da escala das barras (ex.: acumulado
+   * MTD ~13x maior que VOP diario). Sem este formatter, overlays
+   * compartilham o yAxis primario das barras.
+   */
+  secondaryAxisFormatter?: (v: number) => string
 }
 
 // ─── Cores (hex inline — excecao §4, Tailwind nao alcanca canvas ECharts) ──
@@ -205,6 +249,10 @@ export function EvolucaoDiariaCard({
   onRetry,
   actions,
   onPointClick,
+  gridLeft = 64,
+  axisLabelFontSize,
+  overlayLines,
+  secondaryAxisFormatter,
 }: EvolucaoDiariaCardProps) {
   const axisFmt = axisFormatter ?? valueFormatter
   const dataLabelFmt = dataLabelFormatter ?? axisFmt
@@ -242,6 +290,8 @@ export function EvolucaoDiariaCard({
             series: seriesStacked,
             valueFormatter,
             axisFmt,
+            gridLeft,
+            axisLabelFontSize,
           })
         : buildOption({
             data,
@@ -252,6 +302,10 @@ export function EvolucaoDiariaCard({
             valueFormatter,
             axisFmt,
             dataLabelFmt,
+            gridLeft,
+            axisLabelFontSize,
+            overlayLines,
+            secondaryAxisFormatter,
           }),
     [
       data,
@@ -264,6 +318,10 @@ export function EvolucaoDiariaCard({
       valueFormatter,
       axisFmt,
       dataLabelFmt,
+      gridLeft,
+      axisLabelFontSize,
+      overlayLines,
+      secondaryAxisFormatter,
     ],
   )
 
@@ -313,6 +371,10 @@ type BuildOptionArgs = {
   valueFormatter: (v: number) => string
   axisFmt: (v: number) => string
   dataLabelFmt: (v: number) => string
+  gridLeft: number
+  axisLabelFontSize?: number
+  overlayLines?: EvolucaoDiariaOverlay[]
+  secondaryAxisFormatter?: (v: number) => string
 }
 
 function buildOption({
@@ -324,6 +386,10 @@ function buildOption({
   valueFormatter,
   axisFmt,
   dataLabelFmt,
+  gridLeft,
+  axisLabelFontSize,
+  overlayLines,
+  secondaryAxisFormatter,
 }: BuildOptionArgs): EChartsOption {
   const labels = data.map((p) => fmtDayShort(p.data))
   const valores = data.map((p) => p.valor)
@@ -378,18 +444,64 @@ function buildOption({
     },
   }
 
-  const yAxis: EChartsOption["yAxis"] = {
-    type: "value",
-    axisLabel: { formatter: axisFmt },
+  // yAxis pode ser single (barras) ou dual (barras + overlay com escala
+  // diferente — typical case: VOP diario vs VOP acumulado).
+  const hasSecondaryAxis =
+    overlayLines != null &&
+    overlayLines.length > 0 &&
+    secondaryAxisFormatter != null
+  const primaryYAxis = {
+    type: "value" as const,
+    axisLabel: {
+      formatter: axisFmt,
+      ...(axisLabelFontSize != null && { fontSize: axisLabelFontSize }),
+    },
     axisPointer: { label: { show: false } },
   }
+  const yAxis: EChartsOption["yAxis"] = hasSecondaryAxis
+    ? [
+        primaryYAxis,
+        {
+          type: "value",
+          axisLabel: {
+            formatter: secondaryAxisFormatter,
+            ...(axisLabelFontSize != null && { fontSize: axisLabelFontSize }),
+            color: COLOR_AXIS_LABEL_DEFAULT,
+          },
+          splitLine: { show: false }, // evita duplicar grid lines com o eixo primario
+          axisPointer: { label: { show: false } },
+        },
+      ]
+    : primaryYAxis
 
   const grid: EChartsOption["grid"] = {
     top: 16,
-    right: 12,
+    right: hasSecondaryAxis ? 44 : 12, // espaco pro yAxis secundario na direita
     bottom: 28,
-    left: 64,
+    left: gridLeft,
   }
+
+  const overlaySeries =
+    overlayLines && overlayLines.length > 0
+      ? overlayLines.map((o) => ({
+          name: o.name,
+          type: "line" as const,
+          // Linhas segmentadas, sem suavizacao (decisao Ricardo 2026-05-21).
+          // Spline distorce a leitura de acumulados — preferimos os trechos
+          // planos (dias sem movimento) visiveis como horizontais retas.
+          smooth: false,
+          symbol: "none" as const,
+          data: o.values,
+          yAxisIndex: hasSecondaryAxis ? 1 : 0,
+          lineStyle: {
+            color: o.color ?? "#6b7280",
+            width: o.width ?? 1.5,
+            type: (o.dashed ? "dashed" : "solid") as "dashed" | "solid",
+          },
+          connectNulls: false,
+          z: 5, // acima das barras
+        }))
+      : []
 
   const trendSeries =
     showTrendLine && trend
@@ -454,6 +566,7 @@ function buildOption({
         }),
       },
       ...trendSeries,
+      ...overlaySeries,
     ],
   }
 }
@@ -466,6 +579,8 @@ type BuildStackedOptionArgs = {
   series: EvolucaoDiariaSerie[]
   valueFormatter: (v: number) => string
   axisFmt: (v: number) => string
+  gridLeft: number
+  axisLabelFontSize?: number
 }
 
 function buildStackedOption({
@@ -473,6 +588,8 @@ function buildStackedOption({
   series,
   valueFormatter,
   axisFmt,
+  gridLeft,
+  axisLabelFontSize,
 }: BuildStackedOptionArgs): EChartsOption {
   const labels = data.map((p) => fmtDayShort(p.data))
   const axisLabelColors = data.map((p) =>
@@ -528,7 +645,10 @@ function buildStackedOption({
 
   const yAxis: EChartsOption["yAxis"] = {
     type: "value",
-    axisLabel: { formatter: axisFmt },
+    axisLabel: {
+      formatter: axisFmt,
+      ...(axisLabelFontSize != null && { fontSize: axisLabelFontSize }),
+    },
     axisPointer: { label: { show: false } },
   }
 
@@ -536,7 +656,7 @@ function buildStackedOption({
     top: 16,
     right: 12,
     bottom: 40,
-    left: 64,
+    left: gridLeft,
   }
 
   return {

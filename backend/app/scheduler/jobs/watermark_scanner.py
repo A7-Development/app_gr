@@ -47,6 +47,9 @@ from app.modules.integracoes.services.coverage import (
     CoverageStatus,
     get_source_coverage,
 )
+from app.modules.integracoes.services.endpoint_routing import (
+    is_state_machine_enabled,
+)
 
 logger = logging.getLogger("gr.scheduler.watermark_scanner")
 
@@ -159,6 +162,12 @@ async def _scan_group(
     coverage_by_name = {e.name: e for e in coverage.endpoints}
 
     for cfg in cfgs:
+        # State machine gate (F3, 2026-05-21): endpoints com
+        # `state_machine_enabled=True` no catalogo sao processados pelo
+        # `state_machine_dispatcher` — watermark_scanner pula pra nao
+        # enfileirar backfill_job redundante.
+        if is_state_machine_enabled(cfg.source_type, cfg.endpoint_name):
+            continue
         summary["endpoints_scanned"] += 1
         try:
             created = await _maybe_enqueue(

@@ -490,13 +490,6 @@ function EndpointRow({
   const isJobActive =
     activeJob?.status === "pending" || activeJob?.status === "running"
 
-  // Sub-titulo: janela efetiva legivel. Se o endpoint nao suporta coverage
-  // (unsupported), os campos sao null e nao mostramos legenda.
-  const hasWindow =
-    ep.expected_lag_business_days !== null &&
-    ep.tolerance_business_days !== null &&
-    ep.give_up_business_days !== null
-
   // Botoes:
   // - "Reabrir N" para FURO_DEFINITIVO (sistema desistiu — acao consciente)
   // - "Forçar N" para qualquer dia retentavel (sistema ainda tenta — acelera)
@@ -520,16 +513,6 @@ function EndpointRow({
           >
             {ep.label}
           </div>
-          {hasWindow && (
-            <div
-              className="text-[10px] text-gray-500 dark:text-gray-400"
-              title="Janela efetiva (override do tenant ou default do catálogo)"
-            >
-              esperado D+{ep.expected_lag_business_days} · atrasado D+
-              {(ep.tolerance_business_days as number) + 1} · suspeito até D+
-              {ep.give_up_business_days}
-            </div>
-          )}
         </div>
         {hasFurosDefinitivos && onBackfill && !isJobActive && (
           <Button

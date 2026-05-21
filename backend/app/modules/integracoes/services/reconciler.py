@@ -61,6 +61,9 @@ from app.modules.integracoes.services.coverage import (
     get_source_coverage,
 )
 from app.modules.integracoes.services.eligibility import list_enabled_configs
+from app.modules.integracoes.services.endpoint_routing import (
+    is_state_machine_enabled,
+)
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 
 logger = logging.getLogger("gr.integracoes.reconciler")
@@ -332,6 +335,12 @@ async def find_qitech_gaps_to_heal(
 
         for ep in cov.endpoints:
             if not ep.supported:
+                continue
+            # State machine gate (F3, 2026-05-21): endpoints com
+            # `state_machine_enabled=True` no catalogo sao curados pelo
+            # `state_machine_dispatcher` — reconciler pula pra nao causar
+            # double-fetch.
+            if is_state_machine_enabled(SourceType.ADMIN_QITECH, ep.name):
                 continue
             retryable_total = (
                 ep.count_gap + ep.count_partial + ep.count_not_published

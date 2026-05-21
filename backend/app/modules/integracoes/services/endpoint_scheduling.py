@@ -22,14 +22,19 @@ from __future__ import annotations
 
 from datetime import datetime, time, timedelta
 from typing import Any
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import Environment
+from app.core.enums import Environment, SourceType
+from app.modules.integracoes.models.endpoint_date_state import EndpointDateState
 from app.modules.integracoes.models.tenant_source_endpoint_config import (
     TenantSourceEndpointConfig,
+)
+from app.modules.integracoes.services.endpoint_routing import (
+    is_state_machine_enabled,
 )
 
 # Timezone do schedule daily_at — todos os HH:MM viajam em America/Sao_Paulo
@@ -124,6 +129,13 @@ async def list_due_endpoints(
 
     due: list[TenantSourceEndpointConfig] = []
     for row in rows:
+        # State machine gate (F3, 2026-05-21): endpoints com
+        # `state_machine_enabled=True` no catalogo sao processados pelo
+        # `state_machine_dispatcher` — caminho legado pula pra nao causar
+        # double-fetch (rate limit + custo duplicado).
+        if is_state_machine_enabled(row.source_type, row.endpoint_name):
+            continue
+
         # Zombi vivo: em_progresso recente — pula (sync ainda em curso).
         if (
             row.last_sync_status == "em_progresso"
@@ -157,6 +169,122 @@ async def list_due_endpoints(
             due.append(row)
 
     return due
+
+
+def compute_next_sync_legacy(
+    *,
+    schedule_kind: str | None,
+    schedule_value: str | None,
+    last_started_at: datetime | None,
+    now: datetime,
+) -> datetime | None:
+    """Proximo sync esperado para endpoint NO REGIME LEGADO.
+
+    Para endpoints em `state_machine_enabled=True`, use
+    `load_state_machine_next_attempts` — o "proximo" la e MIN(next_attempt_at)
+    em endpoint_date_state, nao derivado de schedule.
+
+    Regras:
+        - `on_demand` ou kind ausente: None (sem agendamento automatico).
+        - `interval`: max(last_started_at + minutes, now).
+        - `daily_at`: hoje SP HH:MM se ainda nao rodou hoje, senao amanha SP HH:MM.
+
+    Retorna datetime em UTC.
+    """
+    if schedule_kind == "on_demand" or schedule_kind is None:
+        return None
+    if not schedule_value:
+        return None
+
+    if schedule_kind == "interval":
+        try:
+            minutes = int(schedule_value)
+        except ValueError:
+            return None
+        if last_started_at is None:
+            return now
+        candidate = last_started_at + timedelta(minutes=minutes)
+        # Se o intervalo ja passou, proximo tick processa agora.
+        return max(candidate, now)
+
+    if schedule_kind == "daily_at":
+        try:
+            hh, mm = schedule_value.split(":")
+            target_time = time(hour=int(hh), minute=int(mm))
+        except (ValueError, TypeError):
+            return None
+        now_sp = now.astimezone(SP_TZ)
+        today_sp = now_sp.date()
+        target_today_sp = datetime.combine(today_sp, target_time, tzinfo=SP_TZ)
+        # Ja rodou hoje? proximo e amanha SP HH:MM.
+        if last_started_at is not None:
+            last_sp = last_started_at.astimezone(SP_TZ)
+            if last_sp.date() >= today_sp:
+                target_tomorrow_sp = target_today_sp + timedelta(days=1)
+                return target_tomorrow_sp.astimezone(now.tzinfo or SP_TZ)
+        # Nao rodou hoje. Se o horario ja passou, eh agora; senao, hoje SP HH:MM.
+        if now_sp >= target_today_sp:
+            return now
+        return target_today_sp.astimezone(now.tzinfo or SP_TZ)
+
+    return None
+
+
+async def load_state_machine_next_attempts(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    source_type: SourceType,
+    environment: Environment,
+    unidade_administrativa_id: UUID | None,
+    endpoint_names: list[str],
+) -> dict[str, datetime | None]:
+    """MIN(next_attempt_at) por endpoint em `endpoint_date_state`, filtrado
+    a TRABALHO PENDENTE REAL.
+
+    Considera apenas datas em estados RETENTAVEIS (not_started, empty,
+    partial, not_published) — i.e., quando o sistema realmente precisa
+    sincronizar algo que ainda nao deu certo.
+
+    NAO inclui:
+    - `complete`: TTL de refresh-complete (re-fetch silencioso pra detectar
+      republicacao). E proxima chamada a API, sim, mas a UI ficava confusa
+      ("se deu certo, por que vai tentar de novo?"). UI cai no fallback
+      do schedule (`compute_next_sync_legacy`) que mostra a proxima janela
+      programada do daily_at, mais legivel.
+    - `in_flight`: workers ja estao processando.
+    - `abandoned`: terminal, sistema desistiu.
+
+    Retorna dict {endpoint_name -> proxima_data}. Endpoints sem trabalho
+    pendente ficam ausentes do dict — caller cai no schedule do TSEC.
+    """
+    if not endpoint_names:
+        return {}
+    stmt = (
+        select(
+            EndpointDateState.endpoint_name,
+            func.min(EndpointDateState.next_attempt_at).label("next_attempt"),
+        )
+        .where(
+            EndpointDateState.tenant_id == tenant_id,
+            EndpointDateState.source_type == source_type,
+            EndpointDateState.environment == environment,
+            EndpointDateState.endpoint_name.in_(endpoint_names),
+            EndpointDateState.next_attempt_at.is_not(None),
+            EndpointDateState.state.in_(
+                ("not_started", "empty", "partial", "not_published")
+            ),
+        )
+        .group_by(EndpointDateState.endpoint_name)
+    )
+    if unidade_administrativa_id is None:
+        stmt = stmt.where(EndpointDateState.unidade_administrativa_id.is_(None))
+    else:
+        stmt = stmt.where(
+            EndpointDateState.unidade_administrativa_id == unidade_administrativa_id
+        )
+    rows = (await db.execute(stmt)).all()
+    return {row[0]: row[1] for row in rows}
 
 
 async def list_endpoint_configs_for_source(

@@ -17,6 +17,7 @@ import {
   type BackfillCreatePayload,
   type BackfillJob,
   type ConfigUpdatePayload,
+  type CrossSourceRunsFilters,
   type EndpointConfigPayload,
   type EndpointDetail,
   type Environment,
@@ -29,6 +30,17 @@ const KEYS = {
     ["integracoes", "source", st, env, ua ?? null] as const,
   runs: (st: SourceTypeId, limit: number) =>
     ["integracoes", "runs", st, limit] as const,
+  crossRuns: (filters: CrossSourceRunsFilters) =>
+    [
+      "integracoes",
+      "cross-runs",
+      filters.source_type?.slice().sort().join(",") ?? "all",
+      filters.since ?? null,
+      filters.until ?? null,
+      filters.status ?? null,
+      filters.triggered_by ?? null,
+      filters.limit ?? 100,
+    ] as const,
   endpoints: (st: SourceTypeId, env: Environment, ua?: string | null) =>
     ["integracoes", "endpoints", st, env, ua ?? null] as const,
   coverage: (st: SourceTypeId, rangeDays: number, ua?: string | null) =>
@@ -138,6 +150,15 @@ export function useSourceRuns(sourceType: SourceTypeId | null, limit = 50) {
       : ["integracoes", "runs", "none"],
     queryFn: () => integracoes.runs(sourceType!, limit),
     enabled: !!sourceType,
+  })
+}
+
+// Historico cross-source — PR 4 (2026-05-21). Pagina:
+// /integracoes/operacao/historico
+export function useCrossSourceRuns(filters: CrossSourceRunsFilters) {
+  return useQuery({
+    queryKey: KEYS.crossRuns(filters),
+    queryFn: () => integracoes.crossRuns(filters),
   })
 }
 

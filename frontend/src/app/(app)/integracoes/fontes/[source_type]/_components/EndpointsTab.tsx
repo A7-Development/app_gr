@@ -41,6 +41,7 @@ import { Switch } from "@/components/tremor/Switch"
 import { Badge } from "@/components/tremor/Badge"
 import { DataTableShell } from "@/design-system/components/DataTableShell"
 import { LastSyncCell } from "@/design-system/components/LastSyncCell"
+import { NextSyncCell } from "@/design-system/components/NextSyncCell"
 import { SegmentSwitch } from "@/design-system/components/SegmentSwitch"
 import { tableTokens } from "@/design-system/tokens/table"
 import { cx } from "@/lib/utils"
@@ -78,7 +79,7 @@ function formatScheduleSummary(detail: EndpointDetail): string {
   const kind = effectiveKind(detail)
   const value = effectiveValue(detail)
   if (kind === "interval") return value ? `A cada ${value} min` : "—"
-  if (kind === "daily_at") return value ? `Diário às ${value}` : "—"
+  if (kind === "daily_at") return value ? `Âncora diária às ${value}` : "—"
   return "Sob demanda"
 }
 
@@ -92,7 +93,7 @@ function kindBadgeVariant(
 
 function kindBadgeLabel(kind: ScheduleKind): string {
   if (kind === "interval") return "Intervalo"
-  if (kind === "daily_at") return "Diário"
+  if (kind === "daily_at") return "Âncora diária"
   return "Sob demanda"
 }
 
@@ -202,6 +203,16 @@ export function EndpointsTab({
             finishedAt={row.original.last_sync_finished_at}
             status={row.original.last_sync_status}
             errorMessage={row.original.last_sync_error}
+          />
+        ),
+      },
+      {
+        id: "next_sync",
+        header: "Próximo sync",
+        cell: ({ row }) => (
+          <NextSyncCell
+            iso={row.original.next_sync_at}
+            source={row.original.next_sync_source}
           />
         ),
       },
@@ -383,7 +394,7 @@ function EndpointStateBadge({
 
 const KIND_OPTIONS: ReadonlyArray<{ value: ScheduleKind; label: string }> = [
   { value: "interval", label: "Intervalo" },
-  { value: "daily_at", label: "Diário às" },
+  { value: "daily_at", label: "Âncora diária" },
   { value: "on_demand", label: "Sob demanda" },
 ]
 
@@ -613,7 +624,9 @@ function EndpointEditorDialog({
 
           {kind === "daily_at" && (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="daily-input">Horário (HH:MM, São Paulo)</Label>
+              <Label htmlFor="daily-input">
+                Início do ciclo diário (HH:MM, São Paulo)
+              </Label>
               <Input
                 id="daily-input"
                 type="time"
@@ -621,8 +634,10 @@ function EndpointEditorDialog({
                 onChange={(e) => setDailyAtValue(e.currentTarget.value)}
               />
               <p className={cx(tableTokens.cellSecondary, "leading-snug")}>
-                Roda uma vez por dia no horário configurado. Default do
-                catálogo:{" "}
+                Inicia o ciclo do dia neste horário. Continua tentando dentro
+                do dia (cadência adaptativa por estado — ver{" "}
+                <strong>Como tentamos buscar</strong> abaixo) até retorno OK
+                ou furo definitivo. Default do catálogo:{" "}
                 {endpoint.default_schedule_kind === "daily_at"
                   ? endpoint.default_schedule_value
                   : "diferente do modo atual"}

@@ -4,7 +4,7 @@
 // PromptForm — formulario de prompt LLM (admin IA, DB-backed).
 //
 // Padrao espelhado de:
-//   - src/app/(app)/integracoes/catalogo/[source_type]/_components/CredenciaisTab.tsx
+//   - src/app/(app)/integracoes/fontes/[source_type]/_components/CredenciaisTab.tsx
 //   - src/app/(app)/admin/ia/providers/_components/ProviderForm.tsx
 //
 // Diferencas pra ProviderForm:

@@ -28,6 +28,10 @@ export {
   type KpiHeadlineDiagnostic, type KpiHeadlineTone, type DiagnosticTone,
 } from "./KpiHeadline"
 export {
+  KpiBand,
+  type KpiBandProps, type KpiBandItem, type KpiBandTone,
+} from "./KpiBand"
+export {
   FilterBar, FilterSearch, FilterChip, RemovableChip,
   MoreFiltersButton, SavedViewsDropdown,
   type SavedView,
@@ -96,6 +100,7 @@ export {
   type EvolucaoDiariaCardProps,
   type EvolucaoDiariaPonto,
   type EvolucaoDiariaSerie,
+  type EvolucaoDiariaOverlay,
 } from "./EvolucaoDiariaCard"
 export {
   AIPanel, AIToggleButton, useAIPanel, AI_PANEL_STORAGE_KEY,
