@@ -517,6 +517,42 @@ export const adminAI = {
     archive: (id: string) =>
       apiClient.post<AIPersonaDetail>(`/admin/ia/personas/${id}/archive`),
   },
+  // F2.c.3 — CRUD versionado de agent definitions (CLAUDE.md §19.12).
+  // Em /admin/ia/agents (portugues, novo) — paralelo ao legado em
+  // /admin/ai/agents (ingles, agent_config override) que continua de pe.
+  agentDefinitions: {
+    list: (opts: { includeArchived?: boolean; module?: string } = {}) => {
+      const params = new URLSearchParams()
+      if (opts.includeArchived) params.set("include_archived", "true")
+      if (opts.module) params.set("module", opts.module)
+      const qs = params.toString()
+      return apiClient.get<AIAgentDefinitionVersionInfo[]>(
+        `/admin/ia/agents${qs ? `?${qs}` : ""}`,
+      )
+    },
+    get: (id: string) =>
+      apiClient.get<AIAgentDefinitionDetail>(`/admin/ia/agents/${id}`),
+    create: (payload: AIAgentDefinitionCreatePayload) =>
+      apiClient.post<AIAgentDefinitionDetail>("/admin/ia/agents", payload),
+    update: (id: string, payload: AIAgentDefinitionUpdatePayload) =>
+      apiClient.put<AIAgentDefinitionDetail>(
+        `/admin/ia/agents/${id}`,
+        payload,
+      ),
+    activate: (name: string, versionId: string) =>
+      apiClient.put<AIAgentDefinitionVersionInfo>(
+        `/admin/ia/agents/${encodeURIComponent(name)}/active`,
+        { version_id: versionId },
+      ),
+    archive: (id: string) =>
+      apiClient.post<AIAgentDefinitionDetail>(
+        `/admin/ia/agents/${id}/archive`,
+      ),
+    preview: (id: string) =>
+      apiClient.post<AIAgentDefinitionPreview>(
+        `/admin/ia/agents/${id}/preview`,
+      ),
+  },
   // F2.c.2 — CRUD versionado de expertises (CLAUDE.md §19.12).
   expertises: {
     list: (opts: { includeArchived?: boolean; domain?: string } = {}) => {
@@ -591,6 +627,99 @@ export type AIExpertiseCreatePayload = {
 export type AIExpertiseUpdatePayload = Partial<
   Omit<AIExpertiseCreatePayload, "name">
 >
+
+// ───────────────────────────────────────────────────────────────────────────
+// Tipos do admin de agent definitions (F2.c.3)
+// ───────────────────────────────────────────────────────────────────────────
+
+export type AIAgentPersonaRef = {
+  id: string
+  name: string
+  display_name: string
+  version: number
+}
+
+export type AIAgentExpertiseRef = {
+  id: string
+  name: string
+  display_name: string
+  domain: string
+  version: number
+}
+
+export type AIAgentPromptRef = {
+  id: string
+  name: string
+  version: string
+}
+
+export type AIAgentDefinitionVersionInfo = {
+  id: string
+  name: string
+  version: number
+  module: string
+  persona_name: string | null
+  expertise_count: number
+  prompt_name: string
+  model: string | null
+  is_active: boolean
+  cross_module: boolean
+  tenant_id: string | null
+  created_at: string
+  archived_at: string | null
+}
+
+export type AIAgentDefinitionDetail = {
+  id: string
+  name: string
+  version: number
+  module: string
+  persona: AIAgentPersonaRef | null
+  expertises: AIAgentExpertiseRef[]
+  prompt: AIAgentPromptRef | null
+  prompt_name: string
+  model: string | null
+  fallback_model: string | null
+  temperature: number | null
+  max_tokens: number | null
+  cross_module: boolean
+  credit_hint: number | null
+  tenant_id: string | null
+  is_active: boolean
+  created_at: string
+  archived_at: string | null
+}
+
+export type AIAgentDefinitionCreatePayload = {
+  name: string
+  module: string
+  persona_id?: string | null
+  expertise_ids?: string[] | null
+  prompt_name: string
+  model?: string | null
+  fallback_model?: string | null
+  temperature?: number | null
+  max_tokens?: number | null
+  cross_module?: boolean
+  credit_hint?: number | null
+}
+
+export type AIAgentDefinitionUpdatePayload = Partial<
+  Omit<AIAgentDefinitionCreatePayload, "name" | "module">
+>
+
+export type AIAgentDefinitionPreview = {
+  name: string
+  version: number
+  system_text: string
+  persona_full_id: string | null
+  expertise_full_ids: string[]
+  prompt_full_id: string
+  model: string
+  fallback_model: string | null
+  temperature: number | null
+  max_tokens: number | null
+}
 
 // ───────────────────────────────────────────────────────────────────────────
 // Tipos do admin de personas

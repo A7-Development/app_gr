@@ -12,6 +12,7 @@ Mounted at `/admin` from `api/v1/router.py`.
 from fastapi import APIRouter
 
 from app.modules.admin.api import (
+    ai_agent_definitions,
     ai_agents,
     ai_expertises,
     ai_personas,
@@ -26,8 +27,9 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 router.include_router(ai_provider_credentials.router)
 router.include_router(ai_subscriptions.router)
 router.include_router(ai_prompts.router)
-router.include_router(ai_agents.router)
+router.include_router(ai_agents.router)  # legado: /ai/agents (agent_config override)
 router.include_router(ai_personas.router)
 router.include_router(ai_expertises.router)
+router.include_router(ai_agent_definitions.router)  # novo: /ia/agents (catalogo central)
 router.include_router(tenants.router)
 router.include_router(users.router)
