@@ -163,6 +163,11 @@ export function PersonaCreateForm({
           {...register("name")}
           placeholder="ex: credito.analista_financial"
           autoComplete="off"
+          // HTML5 pattern: feedback visual em tempo real no browser
+          // (alem do Zod schema que valida no submit). Sem espacos,
+          // sem maiusculas, sem caracteres especiais.
+          pattern="^[a-z0-9]+(\.[a-z0-9_]+)*$"
+          title="Use minusculas, digitos, pontos e underscores. Sem espacos. Ex: credito.analista_financial"
         />
         <FieldHint>
           Formato: <code>modulo.nome_papel</code>. Minusculas, pontos e

@@ -82,9 +82,24 @@ class ExpertiseCreate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(min_length=1, max_length=128)
+    # Nome canonico: lowercase + digits + `.` (entre segmentos) + `_`
+    # (dentro de segmento). SEM espacos, SEM maiusculas, SEM caracteres
+    # especiais. Defesa em profundidade — frontend tem Zod, este pattern
+    # garante que curl direto tambem nao passa.
+    # Ex valido: "contabilidade.fidc", "regulatorio.cmn_4966"
+    name: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[a-z0-9]+(\.[a-z0-9_]+)*$",
+    )
     display_name: str = Field(min_length=1, max_length=200)
-    domain: str = Field(min_length=1, max_length=64)
+    # Dominio segue mesma convencao (lowercase, sem espacos) — pra
+    # filtros e badges consistentes.
+    domain: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9_]+$",
+    )
     knowledge_text: str = Field(min_length=1)
     reference_urls: list[ExpertiseReference] | None = None
 
