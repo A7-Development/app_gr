@@ -3,7 +3,7 @@
 Each entry in `CATALOG` maps an agent name to a `SpecialistAgentSpec` that
 fully describes how the agent runs:
 - Which prompt (versioned in `ai_prompt`)
-- Which tools it can call (subset of `app.agentic.engine.tools`)
+- Which tools it can call (subset of `app.agentic.tools` registered via `@register_tool`)
 - Which Pydantic schema validates its output
 - Model preference, thinking budget, timeout
 
