@@ -191,7 +191,7 @@ function AtivoBadge({ ativo }: { ativo: boolean }) {
 // ───────────────────────────────────────────────────────────────────────────
 // FORMS MOCK — troque por seus _components/<X>Form.tsx reais
 // (siga padrao react-hook-form + zod conforme CLAUDE.md §6 +
-//  src/app/(app)/integracoes/catalogo/[source_type]/_components/CredenciaisTab.tsx)
+//  src/app/(app)/integracoes/fontes/[source_type]/_components/CredenciaisTab.tsx)
 // ───────────────────────────────────────────────────────────────────────────
 
 function MockCreateForm({

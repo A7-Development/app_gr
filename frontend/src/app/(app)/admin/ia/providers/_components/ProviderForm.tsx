@@ -3,7 +3,7 @@
 //
 // ProviderForm — formulario compartilhado para cadastrar/editar credenciais
 // LLM (admin IA). Espelha o padrao estabelecido em
-// `src/app/(app)/integracoes/catalogo/[source_type]/_components/CredenciaisTab.tsx`:
+// `src/app/(app)/integracoes/fontes/[source_type]/_components/CredenciaisTab.tsx`:
 //
 //   - react-hook-form + zod (CLAUDE.md §6).
 //   - Primitivos Tremor: Input, Label, Select, Switch, Textarea, Button.

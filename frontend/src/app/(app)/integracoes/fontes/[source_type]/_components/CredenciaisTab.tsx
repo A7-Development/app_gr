@@ -342,7 +342,7 @@ function FrequenciaInfoCard({
   qs.set("tab", "endpoints")
   qs.set("environment", environment)
   if (uaId) qs.set("ua", uaId)
-  const href = `/integracoes/catalogo/${encodeURIComponent(sourceType)}?${qs.toString()}`
+  const href = `/integracoes/fontes/${encodeURIComponent(sourceType)}?${qs.toString()}`
 
   return (
     <Card>
