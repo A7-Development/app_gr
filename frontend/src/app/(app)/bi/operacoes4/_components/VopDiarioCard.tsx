@@ -162,11 +162,14 @@ export function VopDiarioCard({
 
   const mediaPorDu = duDecorridos > 0 ? kpiValor / duDecorridos : 0
 
-  // Overlay 1: VOP acumulado MTD — cumsum do chartData. Null pra futuros
-  // ou nao-DU (mantem o eixo X mas nao adiciona ponto).
+  // Overlay 1: VOP acumulado MTD — cumsum do chartData. Em dias sem dado
+  // (fim de semana, feriado, dia util sem operacao) a linha NAO some — ela
+  // anda de lado, repetindo o ultimo acc. Null apenas para dias futuros.
   // Overlay 2: paridade acumulada — projecao LINEAR sobre os DUs decorridos,
-  // pace medio = prior_anchor_value / duDecorridos. TODO_PR3: backend
-  // expor serie real dia-a-dia do mes anterior pros mesmos DUs.
+  // pace medio = prior_anchor_value / duDecorridos. Mesma logica de
+  // continuidade: anda de lado em fim de semana/feriado, null no futuro.
+  // TODO_PR3: backend expor serie real dia-a-dia do mes anterior pros
+  // mesmos DUs (substitui paridade linear).
   const overlayLines = React.useMemo<EvolucaoDiariaOverlay[]>(() => {
     if (chartData.length === 0 || duDecorridos === 0) return []
     const acumuladoMtd: Array<number | null> = []
@@ -175,17 +178,23 @@ export function VopDiarioCard({
     let acc = 0
     let duCount = 0
     for (const p of chartData) {
-      const isDuPassado = p.ehDiaUtil !== false && !p.ehFuturo
-      if (isDuPassado) {
-        duCount += 1
-        if (p.valor != null) acc += p.valor
-        acumuladoMtd.push(acc)
-        paridade.push(paceParidade * duCount)
-      } else {
-        // Fim de semana / feriado / futuro — linha NAO avanca.
+      if (p.ehFuturo) {
+        // Futuro — linha quebra (connectNulls=false). Nao adivinhar.
         acumuladoMtd.push(null)
         paridade.push(null)
+        continue
       }
+      const isDu = p.ehDiaUtil !== false
+      if (isDu && p.valor != null) {
+        // DU executado com dado — acc + duCount avancam.
+        acc += p.valor
+        duCount += 1
+      }
+      // Para TODO dia passado (DU ou nao, com ou sem dado) repete o acc/
+      // duCount atual — a linha anda de lado quando nao ha movimento e
+      // sobe quando ha. Continuidade visual sem "buracos".
+      acumuladoMtd.push(acc)
+      paridade.push(paceParidade * duCount)
     }
     return [
       {
