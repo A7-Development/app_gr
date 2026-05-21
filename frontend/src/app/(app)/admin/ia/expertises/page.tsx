@@ -165,10 +165,11 @@ function StatusBadge({
 // Page
 // ───────────────────────────────────────────────────────────────────────────
 
+// sheetState.kind=="edit" nunca e retornado pelo useMemo (edit e controlado
+// por `editingId` separado, nao via URL). Removido do union pra TS strict.
 type SheetState =
   | { kind: "closed" }
   | { kind: "view"; id: string }
-  | { kind: "edit"; id: string }
   | { kind: "create" }
 
 export default function ExpertisesAdminPage() {
@@ -193,12 +194,10 @@ export default function ExpertisesAdminPage() {
     includeArchived,
     domain: domainFilter || undefined,
   })
+  // Abrir detail query pra: (a) o id sendo editado (se houver), (b) o id
+  // selecionado via URL ?selected=, ou (c) null (sheet fechada/create).
   const detailQuery = useExpertiseDetail(
-    sheetState.kind === "view" || sheetState.kind === "edit"
-      ? sheetState.kind === "edit"
-        ? editingId
-        : sheetState.id
-      : null,
+    editingId ?? (sheetState.kind === "view" ? sheetState.id : null),
   )
 
   const createMut = useCreateExpertise()
@@ -536,7 +535,7 @@ export default function ExpertisesAdminPage() {
 
       {/* Detail sheet */}
       <DrillDownSheet
-        open={sheetState.kind === "view" || sheetState.kind === "edit"}
+        open={sheetState.kind === "view" || editingId !== null}
         onClose={closeSheet}
         title={
           editingId

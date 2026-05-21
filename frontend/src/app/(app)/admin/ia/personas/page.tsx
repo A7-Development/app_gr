@@ -139,10 +139,11 @@ function DomainsCell({ domains }: { domains: string[] | null }) {
 // Page
 // ───────────────────────────────────────────────────────────────────────────
 
+// sheetState.kind=="edit" nunca e retornado pelo useMemo (edit e controlado
+// por `editingId` separado, nao via URL). Removido do union pra TS strict.
 type DetailSheetState =
   | { kind: "closed" }
   | { kind: "view"; id: string }
-  | { kind: "edit"; id: string }
   | { kind: "create" }
 
 export default function PersonasAdminPage() {
@@ -164,12 +165,10 @@ export default function PersonasAdminPage() {
   const [search, setSearch] = React.useState("")
 
   const personasQuery = usePersonas({ includeArchived })
+  // Abrir detail query pra: (a) o id sendo editado (se houver), (b) o id
+  // selecionado via URL ?selected=, ou (c) null (sheet fechada/create).
   const detailQuery = usePersonaDetail(
-    sheetState.kind === "view" || sheetState.kind === "edit"
-      ? sheetState.kind === "edit"
-        ? editingId
-        : sheetState.id
-      : null,
+    editingId ?? (sheetState.kind === "view" ? sheetState.id : null),
   )
 
   const createMut = useCreatePersona()
@@ -482,7 +481,7 @@ export default function PersonasAdminPage() {
 
       {/* Detail sheet */}
       <DrillDownSheet
-        open={sheetState.kind === "view" || sheetState.kind === "edit"}
+        open={sheetState.kind === "view" || editingId !== null}
         onClose={closeSheet}
         title={
           editingId
