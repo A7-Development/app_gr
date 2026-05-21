@@ -20,6 +20,7 @@ import {
   EvolucaoDiariaCard,
   FilterChip,
   SegmentSwitch,
+  type EvolucaoDiariaOverlay,
   type EvolucaoDiariaPonto,
   type EvolucaoDiariaSerie,
   type SegmentDef,
@@ -161,6 +162,49 @@ export function VopDiarioCard({
 
   const mediaPorDu = duDecorridos > 0 ? kpiValor / duDecorridos : 0
 
+  // Overlay 1: VOP acumulado MTD — cumsum do chartData. Null pra futuros
+  // ou nao-DU (mantem o eixo X mas nao adiciona ponto).
+  // Overlay 2: paridade acumulada — projecao LINEAR sobre os DUs decorridos,
+  // pace medio = prior_anchor_value / duDecorridos. TODO_PR3: backend
+  // expor serie real dia-a-dia do mes anterior pros mesmos DUs.
+  const overlayLines = React.useMemo<EvolucaoDiariaOverlay[]>(() => {
+    if (chartData.length === 0 || duDecorridos === 0) return []
+    const acumuladoMtd: Array<number | null> = []
+    const paridade: Array<number | null> = []
+    const paceParidade = vop.prior_anchor_value / Math.max(1, duDecorridos)
+    let acc = 0
+    let duCount = 0
+    for (const p of chartData) {
+      const isDuPassado = p.ehDiaUtil !== false && !p.ehFuturo
+      if (isDuPassado) {
+        duCount += 1
+        if (p.valor != null) acc += p.valor
+        acumuladoMtd.push(acc)
+        paridade.push(paceParidade * duCount)
+      } else {
+        // Fim de semana / feriado / futuro — linha NAO avanca.
+        acumuladoMtd.push(null)
+        paridade.push(null)
+      }
+    }
+    return [
+      {
+        name: "VOP acumulado MTD",
+        values: acumuladoMtd,
+        color: "#3B82F6", // blue-500
+        width: 2,
+      },
+      {
+        // TODO_PR3: substituir por serie real dia-a-dia do mes anterior.
+        name: "Paridade (mês ant. linear)",
+        values: paridade,
+        color: "#9CA3AF", // gray-400
+        dashed: true,
+        width: 1.5,
+      },
+    ]
+  }, [chartData, duDecorridos, vop.prior_anchor_value])
+
   const presetLabel =
     vopDiario.length > 0 ? presetLabelFromIso(vopDiario[0].data) : ""
   const caption = `${presetLabel} · ${duDecorridos} DU${duDecorridos === 1 ? "" : "s"} executados de ${duTotais}`
@@ -199,6 +243,10 @@ export function VopDiarioCard({
       valueFormatter={(v) => fmtBRLFull.format(v)}
       axisFormatter={fmtMilhoesAxis}
       dataLabelFormatter={fmtMilhoesLabel}
+      gridLeft={36}
+      axisLabelFontSize={10}
+      overlayLines={overlayLines}
+      secondaryAxisFormatter={fmtMilhoesAxis}
       height={260}
       onPointClick={onPointClick}
       actions={

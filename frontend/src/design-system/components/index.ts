@@ -100,6 +100,7 @@ export {
   type EvolucaoDiariaCardProps,
   type EvolucaoDiariaPonto,
   type EvolucaoDiariaSerie,
+  type EvolucaoDiariaOverlay,
 } from "./EvolucaoDiariaCard"
 export {
   AIPanel, AIToggleButton, useAIPanel, AI_PANEL_STORAGE_KEY,
