@@ -396,24 +396,44 @@ async def _populate_next_sync(
     )
     now = datetime.now(UTC)
     for d in details:
-        if is_state_machine_enabled(source_type, d.name):
-            next_at = sm_next.get(d.name)
-            # State machine cuida do retry mesmo quando nao tem row ainda
-            # (seeder nightly insere). Sem row no dict = sem proximo agendado
-            # ate o seeder rodar — UI vai mostrar "—" e o usuario entende
-            # que e estado transitorio.
-            d.next_sync_at = next_at
-            d.next_sync_source = "state_machine"
-            continue
-
-        # Legado: deriva do schedule. Se TSEC nao existe (schedule_kind None),
-        # cai no default do catalogo (nao deveria acontecer pra QiTech pq a
-        # migration ja seedou, mas defensivo).
+        # Schedule do tenant (override OR default) — usado tanto como
+        # fallback quando state machine nao tem trabalho pendente, quanto
+        # como caminho principal pros endpoints legados.
         kind = d.schedule_kind or d.default_schedule_kind
         value = (
             d.schedule_value if d.schedule_kind is not None
             else d.default_schedule_value
         )
+
+        if is_state_machine_enabled(source_type, d.name):
+            # State machine pendente = ha data retentavel (not_started, empty,
+            # partial, not_published). TTL de refresh-complete (state=complete)
+            # NAO entra aqui pra nao confundir UI com "Próximo sync em X" pra
+            # dia ja saudavel.
+            pending_at = sm_next.get(d.name)
+            if pending_at is not None:
+                d.next_sync_at = pending_at
+                d.next_sync_source = "state_machine"
+                continue
+            # Sem trabalho pendente — proximo sync e a proxima janela
+            # programada do schedule (ex.: amanha SP 09:45 pro daily_at).
+            # Semantica: "tudo em dia, proximo ciclo normal sai em X".
+            if kind == "on_demand":
+                d.next_sync_at = None
+                d.next_sync_source = "manual_only"
+                continue
+            d.next_sync_at = compute_next_sync_legacy(
+                schedule_kind=kind,
+                schedule_value=value,
+                last_started_at=d.last_sync_started_at,
+                now=now,
+            )
+            d.next_sync_source = "schedule" if d.next_sync_at else "manual_only"
+            continue
+
+        # Legado: deriva do schedule. Se TSEC nao existe (schedule_kind None),
+        # cai no default do catalogo (nao deveria acontecer pra QiTech pq a
+        # migration ja seedou, mas defensivo).
         if kind == "on_demand":
             d.next_sync_at = None
             d.next_sync_source = "manual_only"

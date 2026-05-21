@@ -239,15 +239,24 @@ async def load_state_machine_next_attempts(
     unidade_administrativa_id: UUID | None,
     endpoint_names: list[str],
 ) -> dict[str, datetime | None]:
-    """MIN(next_attempt_at) por endpoint em `endpoint_date_state`.
+    """MIN(next_attempt_at) por endpoint em `endpoint_date_state`, filtrado
+    a TRABALHO PENDENTE REAL.
 
-    Considera TODAS as datas com next_attempt_at NOT NULL — cobre datas
-    retentaveis (not_started/empty/partial/not_published) e datas em
-    COMPLETE com TTL futuro (re-fetch pra detectar republicacao do vendor).
-    ABANDONED tem next_attempt_at IS NULL — filtrado naturalmente.
+    Considera apenas datas em estados RETENTAVEIS (not_started, empty,
+    partial, not_published) — i.e., quando o sistema realmente precisa
+    sincronizar algo que ainda nao deu certo.
 
-    Retorna dict {endpoint_name -> proxima_data}. Endpoints sem row no
-    state machine ficam ausentes do dict (caller usa fallback legado).
+    NAO inclui:
+    - `complete`: TTL de refresh-complete (re-fetch silencioso pra detectar
+      republicacao). E proxima chamada a API, sim, mas a UI ficava confusa
+      ("se deu certo, por que vai tentar de novo?"). UI cai no fallback
+      do schedule (`compute_next_sync_legacy`) que mostra a proxima janela
+      programada do daily_at, mais legivel.
+    - `in_flight`: workers ja estao processando.
+    - `abandoned`: terminal, sistema desistiu.
+
+    Retorna dict {endpoint_name -> proxima_data}. Endpoints sem trabalho
+    pendente ficam ausentes do dict — caller cai no schedule do TSEC.
     """
     if not endpoint_names:
         return {}
@@ -262,6 +271,9 @@ async def load_state_machine_next_attempts(
             EndpointDateState.environment == environment,
             EndpointDateState.endpoint_name.in_(endpoint_names),
             EndpointDateState.next_attempt_at.is_not(None),
+            EndpointDateState.state.in_(
+                ("not_started", "empty", "partial", "not_published")
+            ),
         )
         .group_by(EndpointDateState.endpoint_name)
     )
