@@ -32,7 +32,6 @@ import { type ColumnDef } from "@tanstack/react-table"
 
 import { Badge } from "@/components/tremor/Badge"
 import { Button } from "@/components/tremor/Button"
-import { Card } from "@/components/tremor/Card"
 import {
   Dialog,
   DialogContent,
@@ -50,14 +49,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/tremor/DropdownMenu"
 import {
-  DataTable,
+  DataTableShell,
   DrillDownSheet,
-  EmptyState,
-  ErrorState,
-  FilterSearch,
   PageHeader,
 } from "@/design-system/components"
-import { cardTokens } from "@/design-system/tokens/card"
 import { tableTokens } from "@/design-system/tokens/table"
 import type {
   AIExpertiseDetail,
@@ -182,14 +177,13 @@ export default function ExpertisesAdminPage() {
 
   const [editingId, setEditingId] = React.useState<string | null>(null)
   const [archivingId, setArchivingId] = React.useState<string | null>(null)
-  const [includeArchived, setIncludeArchived] = React.useState(false)
-  const [domainFilter, setDomainFilter] = React.useState<string>("")
+  const [segment, setSegment] = React.useState<"todas" | "ativas" | "inativas" | "arquivadas">("todas")
   const [search, setSearch] = React.useState("")
 
-  const expertisesQuery = useExpertises({
-    includeArchived,
-    domain: domainFilter || undefined,
-  })
+  // Quando segment "arquivadas" e selecionado, precisamos incluir
+  // arquivadas no fetch — DataTableShell filtra client-side em cima.
+  const includeArchived = segment === "arquivadas"
+  const expertisesQuery = useExpertises({ includeArchived })
   // Abrir detail query pra: (a) o id sendo editado (se houver), (b) o id
   // selecionado via URL ?selected=, ou (c) null (sheet fechada/create).
   const detailQuery = useExpertiseDetail(
@@ -201,25 +195,10 @@ export default function ExpertisesAdminPage() {
   const activateMut = useActivateExpertiseVersion()
   const archiveMut = useArchiveExpertise()
 
-  // Lista de dominios visiveis (dos dados atuais) pro filtro.
-  const availableDomains = React.useMemo(() => {
-    const set = new Set<string>()
-    for (const r of expertisesQuery.data ?? []) set.add(r.domain)
-    return Array.from(set).sort()
-  }, [expertisesQuery.data])
-
-  // Filtra client-side por busca textual.
-  const filtered = React.useMemo(() => {
-    const rows = expertisesQuery.data ?? []
-    if (!search.trim()) return rows
-    const q = search.toLowerCase()
-    return rows.filter(
-      (r) =>
-        r.name.toLowerCase().includes(q) ||
-        r.display_name.toLowerCase().includes(q) ||
-        r.domain.toLowerCase().includes(q),
-    )
-  }, [expertisesQuery.data, search])
+  const expertisesData = React.useMemo(
+    () => expertisesQuery.data ?? [],
+    [expertisesQuery.data],
+  )
 
   // ── URL helpers ───────────────────────────────────────────────────────
   const closeSheet = React.useCallback(() => {
@@ -427,112 +406,72 @@ export default function ExpertisesAdminPage() {
   )
 
   // ── Render ────────────────────────────────────────────────────────────
-  if (expertisesQuery.isError) {
-    return (
-      <div className="space-y-6">
-        <PageHeader
-          title="Expertises de IA"
-          subtitle="Admin · IA · Expertises"
-          info="Knowledge pack injetado no system prompt do agente. Versionado, ativado em 1 click."
-        />
-        <ErrorState
-          title="Nao foi possivel carregar as expertises"
-          description={(expertisesQuery.error as Error).message}
-          action={
-            <Button
-              variant="secondary"
-              onClick={() => expertisesQuery.refetch()}
-            >
-              Tentar novamente
-            </Button>
-          }
-        />
-      </div>
-    )
-  }
-
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6 px-6 pt-5 pb-6">
       <PageHeader
         title="Expertises de IA"
-        subtitle="Admin · IA · Expertises"
+        subtitle="Inteligencia Artificial · Administracao"
         info="Knowledge pack injetado no system prompt do agente (CLAUDE.md §19.12). Define O QUE o agente sabe — embasamento teorico aplicado, vocabulario tecnico, normas. Versionado: editar cria nova versao."
         actions={
-          <Button onClick={openCreate}>
-            <RiAddLine className="mr-1.5 size-4" />
+          <Button
+            variant="primary"
+            onClick={openCreate}
+            disabled={expertisesQuery.isLoading}
+          >
+            <RiAddLine className="mr-1 size-4" aria-hidden />
             Nova expertise
           </Button>
         }
       />
 
-      <Card className={cardTokens.body}>
-        <div className="flex flex-wrap items-center gap-3">
-          <FilterSearch
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nome, display ou dominio..."
-            className="min-w-[280px] flex-1"
-          />
-          {availableDomains.length > 0 && (
-            <select
-              value={domainFilter}
-              onChange={(e) => setDomainFilter(e.target.value)}
-              className={cx(
-                "h-[30px] rounded border px-2.5 text-[13px]",
-                "border-gray-200 bg-white text-gray-900",
-                "dark:border-gray-800 dark:bg-gray-950 dark:text-gray-100",
-              )}
-            >
-              <option value="">Todos os dominios</option>
-              {availableDomains.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          )}
-          <label className="flex items-center gap-2 text-[13px] text-gray-600 dark:text-gray-400">
-            <input
-              type="checkbox"
-              checked={includeArchived}
-              onChange={(e) => setIncludeArchived(e.target.checked)}
-              className="size-4 rounded border-gray-300 dark:border-gray-700"
-            />
-            Incluir arquivadas
-          </label>
-          <span className="ml-auto text-[13px] text-gray-500 dark:text-gray-400">
-            {filtered.length} de {expertisesQuery.data?.length ?? 0}
-          </span>
-        </div>
-
-        <Divider className="my-4" />
-
-        {expertisesQuery.isLoading ? (
-          <div className="py-12 text-center text-[13px] text-gray-500 dark:text-gray-400">
-            Carregando expertises...
-          </div>
-        ) : filtered.length === 0 ? (
-          <EmptyState
-            icon={RiBookOpenLine}
-            title={
-              expertisesQuery.data?.length === 0
-                ? "Nenhuma expertise cadastrada"
-                : "Nenhuma expertise casa com os filtros"
-            }
-            description={
-              expertisesQuery.data?.length === 0
-                ? "Crie sua primeira expertise (knowledge pack) para enriquecer o system prompt dos agentes."
-                : "Tente outro termo ou limpe os filtros."
-            }
-          />
-        ) : (
-          <DataTable
-            data={filtered}
-            columns={columns}
-            onRowClick={(row) => openDetail(row.id)}
-          />
-        )}
-      </Card>
+      <DataTableShell<AIExpertiseVersionInfo>
+        data={expertisesData}
+        columns={columns}
+        loading={expertisesQuery.isLoading}
+        error={expertisesQuery.error}
+        onRetry={() => expertisesQuery.refetch()}
+        search={{
+          value: search,
+          onChange: setSearch,
+          placeholder: "Buscar por nome, display ou dominio...",
+        }}
+        segments={{
+          value: segment,
+          onChange: (v) => setSegment(v as typeof segment),
+          options: [
+            { value: "todas", label: "Todas", filter: () => true },
+            {
+              value: "ativas",
+              label: "Ativas",
+              filter: (e) => e.is_active && e.archived_at === null,
+            },
+            {
+              value: "inativas",
+              label: "Inativas",
+              filter: (e) => !e.is_active && e.archived_at === null,
+            },
+            {
+              value: "arquivadas",
+              label: "Arquivadas",
+              filter: (e) => e.archived_at !== null,
+            },
+          ],
+        }}
+        itemNoun={{ singular: "expertise", plural: "expertises" }}
+        onRowClick={(row) => openDetail(row.id)}
+        emptyState={{
+          icon: RiBookOpenLine,
+          title: "Nenhuma expertise cadastrada",
+          description:
+            "Crie a primeira expertise (knowledge pack) para enriquecer o system prompt dos agentes.",
+          action: (
+            <Button variant="primary" onClick={openCreate}>
+              <RiAddLine className="mr-1 size-4" aria-hidden />
+              Cadastrar expertise
+            </Button>
+          ),
+        }}
+      />
 
       {/* Detail sheet */}
       <DrillDownSheet
@@ -545,29 +484,32 @@ export default function ExpertisesAdminPage() {
               ? detailQuery.data.display_name
               : "Expertise"
         }
+        size="lg"
       >
-        {detailQuery.isLoading ? (
-          <div className="py-8 text-center text-[13px] text-gray-500">
-            Carregando...
-          </div>
-        ) : detailQuery.data ? (
-          editingId === detailQuery.data.id ? (
-            <ExpertiseEditForm
-              expertise={detailQuery.data}
-              onSubmit={handleEdit}
-              onCancel={() => setEditingId(null)}
-              submitting={updateMut.isPending}
-            />
-          ) : (
-            <ExpertiseDetailView
-              expertise={detailQuery.data}
-              onEdit={() => setEditingId(detailQuery.data!.id)}
-              onActivate={() => handleActivate(detailQuery.data!)}
-              onArchive={() => setArchivingId(detailQuery.data!.id)}
-              activating={activateMut.isPending}
-            />
-          )
-        ) : null}
+        <div className="p-6">
+          {detailQuery.isLoading ? (
+            <div className="py-8 text-center text-[13px] text-gray-500">
+              Carregando...
+            </div>
+          ) : detailQuery.data ? (
+            editingId === detailQuery.data.id ? (
+              <ExpertiseEditForm
+                expertise={detailQuery.data}
+                onSubmit={handleEdit}
+                onCancel={() => setEditingId(null)}
+                submitting={updateMut.isPending}
+              />
+            ) : (
+              <ExpertiseDetailView
+                expertise={detailQuery.data}
+                onEdit={() => setEditingId(detailQuery.data!.id)}
+                onActivate={() => handleActivate(detailQuery.data!)}
+                onArchive={() => setArchivingId(detailQuery.data!.id)}
+                activating={activateMut.isPending}
+              />
+            )
+          ) : null}
+        </div>
       </DrillDownSheet>
 
       {/* Create sheet */}
@@ -575,12 +517,15 @@ export default function ExpertisesAdminPage() {
         open={sheetState.kind === "create"}
         onClose={closeSheet}
         title="Nova expertise"
+        size="lg"
       >
-        <ExpertiseCreateForm
-          onSubmit={handleCreate}
-          onCancel={closeSheet}
-          submitting={createMut.isPending}
-        />
+        <div className="p-6">
+          <ExpertiseCreateForm
+            onSubmit={handleCreate}
+            onCancel={closeSheet}
+            submitting={createMut.isPending}
+          />
+        </div>
       </DrillDownSheet>
 
       {/* Archive confirmation */}
