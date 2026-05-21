@@ -377,6 +377,27 @@ def _silver_source_id(
 _ZERO = Decimal("0")
 
 
+def _to_date(value: Any) -> date:
+    """Coerce bronze JSONB date value em `date`.
+
+    pyodbc serializa SQL Server DATE/DATETIME como `date`/`datetime` em
+    Python; ao gravar no payload JSONB do bronze, viram strings ISO
+    ("YYYY-MM-DD" ou "YYYY-MM-DDTHH:MM:SS..."). asyncpg recusa string em
+    coluna DATE (`'str' object has no attribute 'toordinal'`).
+
+    Fail-hard quando o tipo nao bate — `competencia` e estrutural (chave
+    de proveniencia + indice na silver), nao pode virar default silencioso.
+    """
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        # Aceita "YYYY-MM-DD" ou ISO datetime com sufixo de hora/timezone.
+        return date.fromisoformat(value[:10])
+    raise TypeError(
+        f"competencia bronze tem tipo inesperado: {type(value).__name__}={value!r}"
+    )
+
+
 def _to_decimal(value: Any) -> Decimal:
     """Coerce bronze JSONB value (string ou number) em Decimal de forma defensiva.
 
@@ -430,7 +451,7 @@ def _bronze_row_to_silver(
         return {
             "ano": bronze_row["ano"],
             "mes": bronze_row["mes"],
-            "competencia": bronze_row["competencia"],
+            "competencia": _to_date(bronze_row["competencia"]),
             "ordem_grupo": cls.ordem_grupo,
             "grupo_dre": cls.grupo_dre,
             "subgrupo": cls.subgrupo,
@@ -446,7 +467,7 @@ def _bronze_row_to_silver(
             "resultado": _to_decimal(bronze_row.get("resultado")),
             "quantidade": int(bronze_row.get("quantidade") or 0),
             "_source_id": _silver_source_id(
-                competencia=bronze_row["competencia"],
+                competencia=_to_date(bronze_row["competencia"]),
                 grupo_dre=cls.grupo_dre,
                 subgrupo=cls.subgrupo,
                 descricao=descricao,
@@ -473,7 +494,7 @@ def _bronze_row_to_silver(
         return {
             "ano": bronze_row["ano"],
             "mes": bronze_row["mes"],
-            "competencia": bronze_row["competencia"],
+            "competencia": _to_date(bronze_row["competencia"]),
             "ordem_grupo": cls.ordem_grupo,
             "grupo_dre": cls.grupo_dre,
             "subgrupo": cls.subgrupo,
@@ -489,7 +510,7 @@ def _bronze_row_to_silver(
             "resultado": -valor,
             "quantidade": 1,
             "_source_id": _silver_source_id(
-                competencia=bronze_row["competencia"],
+                competencia=_to_date(bronze_row["competencia"]),
                 grupo_dre=cls.grupo_dre,
                 subgrupo=cls.subgrupo,
                 descricao=categoria,
@@ -514,7 +535,7 @@ def _bronze_row_to_silver(
         return {
             "ano": bronze_row["ano"],
             "mes": bronze_row["mes"],
-            "competencia": bronze_row["competencia"],
+            "competencia": _to_date(bronze_row["competencia"]),
             "ordem_grupo": cls.ordem_grupo,
             "grupo_dre": cls.grupo_dre,
             "subgrupo": cls.subgrupo,
@@ -530,7 +551,7 @@ def _bronze_row_to_silver(
             "resultado": -comissao,
             "quantidade": 1,
             "_source_id": _silver_source_id(
-                competencia=bronze_row["competencia"],
+                competencia=_to_date(bronze_row["competencia"]),
                 grupo_dre=cls.grupo_dre,
                 subgrupo=cls.subgrupo,
                 descricao=categoria,
