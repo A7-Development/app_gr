@@ -256,6 +256,7 @@ export function VopDiarioCard({
       axisLabelFontSize={10}
       overlayLines={overlayLines}
       secondaryAxisFormatter={fmtMilhoesAxis}
+      showTrendLine={false}
       height={260}
       onPointClick={onPointClick}
       actions={
