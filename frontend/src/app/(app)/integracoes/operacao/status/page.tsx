@@ -9,7 +9,12 @@
 //
 // Hierarquia (CLAUDE.md 11.6):
 //   L1 Integracoes > L2 Operacao > Status
-//     L3 (TabNavigation): Todas | Configuradas | Habilitadas (PR 2 migra para SegmentSwitch)
+//
+// Filtros (PR 2 — 2026-05-21): Todas / Configuradas / Habilitadas viraram
+// SegmentSwitch numa FilterBar canonica (CLAUDE.md §7.1 — Card branco em faixa
+// cinza-50). Antes eram TabNavigation, mas filtros de listagem fingindo ser
+// tabs e anti-pattern: tab L3 e "perspectiva diferente do mesmo dado", filtro
+// e "subset filtrado". URL param `?tab=` preservado por retrocompat.
 //
 // Granularidade fina (CLAUDE.md §13 — refactor 2026-05-05): a linha do source
 // e o ponto de entrada; a expansion mostra os endpoints daquela fonte com
@@ -38,7 +43,9 @@ import {
 } from "@/design-system/components/AdapterStatusBadge"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
+import { FilterBar } from "@/design-system/components/FilterBar"
 import { LastSyncCell } from "@/design-system/components/LastSyncCell"
+import { SegmentSwitch } from "@/design-system/components/SegmentSwitch"
 import { Badge } from "@/components/tremor/Badge"
 import { Button } from "@/components/tremor/Button"
 import {
@@ -48,10 +55,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/tremor/Select"
-import {
-  TabNavigation,
-  TabNavigationLink,
-} from "@/components/tremor/TabNavigation"
 import {
   Table,
   TableBody,
@@ -80,12 +83,14 @@ import type {
 const PAGE_INFO =
   "Visao consolidada de sincronizacoes por fonte. Expanda uma fonte para ver os endpoints e suas cadencias."
 
-const TABS = [
-  { key: "todas", label: "Todas" },
-  { key: "configuradas", label: "Configuradas" },
-  { key: "habilitadas", label: "Habilitadas" },
+// Segments do SegmentSwitch (PR 2). Param de URL mantido como `?tab=` por
+// retrocompat de bookmarks/links externos — internamente e segment, nao tab.
+const SEGMENTS = [
+  { value: "todas", label: "Todas" },
+  { value: "configuradas", label: "Configuradas" },
+  { value: "habilitadas", label: "Habilitadas" },
 ] as const
-type TabKey = (typeof TABS)[number]["key"]
+type SegmentKey = (typeof SEGMENTS)[number]["value"]
 
 // Sources sem catalogo de endpoints — bureaus, parsers de documento, etc.
 // Manter sincronizado com `_CATALOG_BY_SOURCE` em backend public.py.
@@ -94,9 +99,9 @@ const SOURCES_WITH_ENDPOINT_CATALOG = new Set<SourceTypeId>([
   "erp:bitfin",
 ])
 
-function filterByTab(rows: SourceListItem[], tab: TabKey): SourceListItem[] {
-  if (tab === "configuradas") return rows.filter((r) => r.configured)
-  if (tab === "habilitadas") return rows.filter((r) => r.configured && r.enabled)
+function filterBySegment(rows: SourceListItem[], seg: SegmentKey): SourceListItem[] {
+  if (seg === "configuradas") return rows.filter((r) => r.configured)
+  if (seg === "habilitadas") return rows.filter((r) => r.configured && r.enabled)
   return rows
 }
 
@@ -105,8 +110,8 @@ export default function SyncPage() {
   const router = useRouter()
   const environment: Environment =
     sp.get("environment") === "sandbox" ? "sandbox" : "production"
-  const activeTab: TabKey = (TABS.find((t) => t.key === sp.get("tab"))?.key ??
-    "todas") as TabKey
+  const activeSegment: SegmentKey =
+    (SEGMENTS.find((s) => s.value === sp.get("tab"))?.value ?? "todas") as SegmentKey
 
   const { data, isLoading, isError, refetch } = useSources(environment)
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set())
@@ -130,7 +135,18 @@ export default function SyncPage() {
     router.replace(s ? `/integracoes/operacao/status?${s}` : "/integracoes/operacao/status")
   }
 
-  const filtered = data ? filterByTab(data, activeTab) : []
+  // Contagens por segment — exibidas como `count` em cada pill (UX: o usuario
+  // ve quantas fontes caem em cada filtro sem precisar clicar).
+  const counts = React.useMemo(() => {
+    const rows = data ?? []
+    return {
+      todas: rows.length,
+      configuradas: rows.filter((r) => r.configured).length,
+      habilitadas: rows.filter((r) => r.configured && r.enabled).length,
+    }
+  }, [data])
+
+  const filtered = data ? filterBySegment(data, activeSegment) : []
 
   return (
     <div className="flex flex-col gap-6 px-12 py-6 pb-28">
@@ -180,33 +196,29 @@ export default function SyncPage() {
 
       {!isError && (
         <>
-          <TabNavigation>
-            {TABS.map((t) => (
-              <TabNavigationLink
-                key={t.key}
-                asChild
-                active={activeTab === t.key}
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSearch({ tab: t.key === "todas" ? null : t.key })
-                  }
-                >
-                  {t.label}
-                </button>
-              </TabNavigationLink>
-            ))}
-          </TabNavigation>
+          <FilterBar>
+            <SegmentSwitch<SegmentKey>
+              ariaLabel="Filtrar fontes por configuracao"
+              value={activeSegment}
+              options={SEGMENTS.map((s) => ({
+                value: s.value,
+                label: s.label,
+                count: counts[s.value],
+              }))}
+              onChange={(next) =>
+                setSearch({ tab: next === "todas" ? null : next })
+              }
+            />
+          </FilterBar>
 
           {!isLoading && filtered.length === 0 && (
             <EmptyState
               icon={RiStackLine}
               title="Nenhuma fonte nesta visao"
               description={
-                activeTab === "habilitadas"
-                  ? "Nenhuma fonte habilitada no momento. Habilite no catalogo."
-                  : activeTab === "configuradas"
+                activeSegment === "habilitadas"
+                  ? "Nenhuma fonte habilitada no momento. Habilite em Fontes."
+                  : activeSegment === "configuradas"
                     ? "Nenhuma fonte configurada ainda."
                     : "O catalogo de fontes esta vazio."
               }
