@@ -22,6 +22,7 @@ import {
   RiHandCoinLine,
   RiHistoryLine,
   RiKey2Line,
+  RiLightbulbLine,
   RiLineChartLine,
   RiMoneyDollarBoxLine,
   RiPieChart2Line,
@@ -434,6 +435,20 @@ export const MODULES: ModuleDefinition[] = [
         href: "/admin/ia/prompts",
         enabled: true,
         icon: RiBookOpenLine,
+        groupLabel: "Inteligencia Artificial",
+      },
+      {
+        name: "Personas",
+        href: "/admin/ia/personas",
+        enabled: true,
+        icon: RiUserStarLine,
+        groupLabel: "Inteligencia Artificial",
+      },
+      {
+        name: "Expertises",
+        href: "/admin/ia/expertises",
+        enabled: true,
+        icon: RiLightbulbLine,
         groupLabel: "Inteligencia Artificial",
       },
       {
