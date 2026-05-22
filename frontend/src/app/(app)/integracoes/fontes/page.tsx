@@ -66,12 +66,17 @@ export default function CatalogoPage() {
         accessorKey: "label",
         header: "Fonte",
         cell: ({ row }) => (
-          <div className="flex flex-col">
-            <span className={tableTokens.cellStrong}>{row.original.label}</span>
-            <span className={cx(tableTokens.cellTextMono, tableTokens.cellSecondary)}>
-              {row.original.source_type}
-            </span>
-          </div>
+          <span className={tableTokens.cellStrong}>{row.original.label}</span>
+        ),
+      },
+      {
+        id: "tipo",
+        accessorKey: "source_type",
+        header: "Tipo",
+        cell: ({ row }) => (
+          <span className={cx(tableTokens.cellTextMono, tableTokens.cellSecondary)}>
+            {row.original.source_type}
+          </span>
         ),
       },
       {
