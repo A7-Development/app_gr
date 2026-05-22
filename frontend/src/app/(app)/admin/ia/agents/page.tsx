@@ -174,6 +174,44 @@ function StatusBadge({
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// Header sticky (reutilizavel) — fixa contexto enquanto usuario rola form
+// ───────────────────────────────────────────────────────────────────────────
+
+function SheetHeader({
+  title,
+  subtitle,
+  mono = false,
+}: {
+  title: string
+  subtitle?: string
+  mono?: boolean
+}) {
+  return (
+    <div
+      className={cx(
+        "sticky top-0 z-10 border-b px-6 py-4",
+        "border-gray-200 bg-white",
+        "dark:border-gray-800 dark:bg-[#090E1A]",
+      )}
+    >
+      <h2
+        className={cx(
+          "text-base font-semibold text-gray-900 dark:text-gray-50",
+          mono && "font-mono",
+        )}
+      >
+        {title}
+      </h2>
+      {subtitle && (
+        <p className="mt-0.5 text-[13px] text-gray-500 dark:text-gray-400">
+          {subtitle}
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Page
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -540,35 +578,56 @@ export default function AgentsAdminPage() {
         }
         size="lg"
       >
-        <div className="flex-1 overflow-y-auto p-6">
-          {detailQuery.isLoading ? (
-            <div className="py-8 text-center text-[13px] text-gray-500">
-              Carregando...
-            </div>
-          ) : detailQuery.data ? (
-            editingId === detailQuery.data.id ? (
-              <AgentEditForm
-                agent={detailQuery.data}
-                personas={personasQuery.data ?? []}
-                expertises={expertisesQuery.data ?? []}
-                prompts={promptsQuery.data ?? []}
-                models={modelsQuery.data ?? []}
-                onSubmit={handleEdit}
-                onCancel={() => setEditingId(null)}
-                submitting={updateMut.isPending}
-              />
-            ) : (
-              <AgentDetailView
-                agent={detailQuery.data}
-                onEdit={() => setEditingId(detailQuery.data!.id)}
-                onActivate={() => handleActivate(detailQuery.data!)}
-                onArchive={() => setArchivingId(detailQuery.data!.id)}
-                onPreview={() => handlePreview(detailQuery.data!.id)}
-                activating={activateMut.isPending}
-                previewing={previewMut.isPending}
-              />
-            )
-          ) : null}
+        <div className="flex flex-1 flex-col overflow-y-auto">
+          <SheetHeader
+            title={
+              editingId
+                ? "Editar agente"
+                : detailQuery.data
+                  ? detailQuery.data.name
+                  : "Agente"
+            }
+            subtitle={
+              editingId
+                ? `${detailQuery.data?.name ?? ""} · cria nova versao (v${
+                    (detailQuery.data?.version ?? 0) + 1
+                  })`
+                : detailQuery.data
+                  ? `${detailQuery.data.module} · v${detailQuery.data.version} · detalhe e historico`
+                  : "Detalhe do agente"
+            }
+            mono={!editingId && !!detailQuery.data}
+          />
+          <div className="p-6">
+            {detailQuery.isLoading ? (
+              <div className="py-8 text-center text-[13px] text-gray-500">
+                Carregando...
+              </div>
+            ) : detailQuery.data ? (
+              editingId === detailQuery.data.id ? (
+                <AgentEditForm
+                  agent={detailQuery.data}
+                  personas={personasQuery.data ?? []}
+                  expertises={expertisesQuery.data ?? []}
+                  prompts={promptsQuery.data ?? []}
+                  models={modelsQuery.data ?? []}
+                  onSubmit={handleEdit}
+                  onCancel={() => setEditingId(null)}
+                  submitting={updateMut.isPending}
+                />
+              ) : (
+                <AgentDetailView
+                  agent={detailQuery.data}
+                  onEdit={() => setEditingId(detailQuery.data!.id)}
+                  onActivate={() => handleActivate(detailQuery.data!)}
+                  onArchive={() => setArchivingId(detailQuery.data!.id)}
+                  onPreview={() => handlePreview(detailQuery.data!.id)}
+                  activating={activateMut.isPending}
+                  previewing={previewMut.isPending}
+                />
+              )
+            ) : null}
+          </div>
         </div>
       </DrillDownSheet>
 
@@ -579,16 +638,22 @@ export default function AgentsAdminPage() {
         title="Novo agente"
         size="lg"
       >
-        <div className="flex-1 overflow-y-auto p-6">
-          <AgentCreateForm
-            personas={personasQuery.data ?? []}
-            expertises={expertisesQuery.data ?? []}
-            prompts={promptsQuery.data ?? []}
-            models={modelsQuery.data ?? []}
-            onSubmit={handleCreate}
-            onCancel={closeSheet}
-            submitting={createMut.isPending}
+        <div className="flex flex-1 flex-col overflow-y-auto">
+          <SheetHeader
+            title="Novo agente"
+            subtitle="Componha persona + expertises + prompt task + modelo. Vira v1 e e ativado automaticamente."
           />
+          <div className="p-6">
+            <AgentCreateForm
+              personas={personasQuery.data ?? []}
+              expertises={expertisesQuery.data ?? []}
+              prompts={promptsQuery.data ?? []}
+              models={modelsQuery.data ?? []}
+              onSubmit={handleCreate}
+              onCancel={closeSheet}
+              submitting={createMut.isPending}
+            />
+          </div>
         </div>
       </DrillDownSheet>
 

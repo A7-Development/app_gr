@@ -153,6 +153,44 @@ function StatusBadge({
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// Header sticky do sheet — fixa contexto enquanto usuario rola form
+// ───────────────────────────────────────────────────────────────────────────
+
+function SheetHeader({
+  title,
+  subtitle,
+  mono = false,
+}: {
+  title: string
+  subtitle?: string
+  mono?: boolean
+}) {
+  return (
+    <div
+      className={cx(
+        "sticky top-0 z-10 border-b px-6 py-4",
+        "border-gray-200 bg-white",
+        "dark:border-gray-800 dark:bg-[#090E1A]",
+      )}
+    >
+      <h2
+        className={cx(
+          "text-base font-semibold text-gray-900 dark:text-gray-50",
+          mono && "font-mono",
+        )}
+      >
+        {title}
+      </h2>
+      {subtitle && (
+        <p className="mt-0.5 text-[13px] text-gray-500 dark:text-gray-400">
+          {subtitle}
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Page
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -490,29 +528,50 @@ export default function ExpertisesAdminPage() {
         }
         size="lg"
       >
-        <div className="flex-1 overflow-y-auto p-6">
-          {detailQuery.isLoading ? (
-            <div className="py-8 text-center text-[13px] text-gray-500">
-              Carregando...
-            </div>
-          ) : detailQuery.data ? (
-            editingId === detailQuery.data.id ? (
-              <ExpertiseEditForm
-                expertise={detailQuery.data}
-                onSubmit={handleEdit}
-                onCancel={() => setEditingId(null)}
-                submitting={updateMut.isPending}
-              />
-            ) : (
-              <ExpertiseDetailView
-                expertise={detailQuery.data}
-                onEdit={() => setEditingId(detailQuery.data!.id)}
-                onActivate={() => handleActivate(detailQuery.data!)}
-                onArchive={() => setArchivingId(detailQuery.data!.id)}
-                activating={activateMut.isPending}
-              />
-            )
-          ) : null}
+        <div className="flex flex-1 flex-col overflow-y-auto">
+          <SheetHeader
+            title={
+              editingId
+                ? "Editar expertise"
+                : detailQuery.data
+                  ? detailQuery.data.display_name
+                  : "Expertise"
+            }
+            subtitle={
+              editingId
+                ? `${detailQuery.data?.name ?? ""} · cria nova versao (v${
+                    (detailQuery.data?.version ?? 0) + 1
+                  })`
+                : detailQuery.data
+                  ? `${detailQuery.data.name} · v${detailQuery.data.version} · ${detailQuery.data.domain}`
+                  : "Detalhe da expertise"
+            }
+            mono={!editingId && !!detailQuery.data}
+          />
+          <div className="p-6">
+            {detailQuery.isLoading ? (
+              <div className="py-8 text-center text-[13px] text-gray-500">
+                Carregando...
+              </div>
+            ) : detailQuery.data ? (
+              editingId === detailQuery.data.id ? (
+                <ExpertiseEditForm
+                  expertise={detailQuery.data}
+                  onSubmit={handleEdit}
+                  onCancel={() => setEditingId(null)}
+                  submitting={updateMut.isPending}
+                />
+              ) : (
+                <ExpertiseDetailView
+                  expertise={detailQuery.data}
+                  onEdit={() => setEditingId(detailQuery.data!.id)}
+                  onActivate={() => handleActivate(detailQuery.data!)}
+                  onArchive={() => setArchivingId(detailQuery.data!.id)}
+                  activating={activateMut.isPending}
+                />
+              )
+            ) : null}
+          </div>
         </div>
       </DrillDownSheet>
 
@@ -523,12 +582,18 @@ export default function ExpertisesAdminPage() {
         title="Nova expertise"
         size="lg"
       >
-        <div className="flex-1 overflow-y-auto p-6">
-          <ExpertiseCreateForm
-            onSubmit={handleCreate}
-            onCancel={closeSheet}
-            submitting={createMut.isPending}
+        <div className="flex flex-1 flex-col overflow-y-auto">
+          <SheetHeader
+            title="Nova expertise"
+            subtitle="Cria knowledge pack reusavel (markdown). Vira v1 e e ativada automaticamente."
           />
+          <div className="p-6">
+            <ExpertiseCreateForm
+              onSubmit={handleCreate}
+              onCancel={closeSheet}
+              submitting={createMut.isPending}
+            />
+          </div>
         </div>
       </DrillDownSheet>
 

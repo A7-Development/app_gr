@@ -127,6 +127,44 @@ function DomainsCell({ domains }: { domains: string[] | null }) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// Header sticky do sheet — fixa contexto enquanto usuario rola form
+// ───────────────────────────────────────────────────────────────────────────
+
+function SheetHeader({
+  title,
+  subtitle,
+  mono = false,
+}: {
+  title: string
+  subtitle?: string
+  mono?: boolean
+}) {
+  return (
+    <div
+      className={cx(
+        "sticky top-0 z-10 border-b px-6 py-4",
+        "border-gray-200 bg-white",
+        "dark:border-gray-800 dark:bg-[#090E1A]",
+      )}
+    >
+      <h2
+        className={cx(
+          "text-base font-semibold text-gray-900 dark:text-gray-50",
+          mono && "font-mono",
+        )}
+      >
+        {title}
+      </h2>
+      {subtitle && (
+        <p className="mt-0.5 text-[13px] text-gray-500 dark:text-gray-400">
+          {subtitle}
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Page
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -466,29 +504,50 @@ export default function PersonasAdminPage() {
         }
         size="lg"
       >
-        <div className="flex-1 overflow-y-auto p-6">
-          {detailQuery.isLoading ? (
-            <div className="py-8 text-center text-[13px] text-gray-500">
-              Carregando...
-            </div>
-          ) : detailQuery.data ? (
-            editingId === detailQuery.data.id ? (
-              <PersonaEditForm
-                persona={detailQuery.data}
-                onSubmit={handleEdit}
-                onCancel={() => setEditingId(null)}
-                submitting={updateMut.isPending}
-              />
-            ) : (
-              <PersonaDetailView
-                persona={detailQuery.data}
-                onEdit={() => setEditingId(detailQuery.data!.id)}
-                onActivate={() => handleActivate(detailQuery.data!)}
-                onArchive={() => setArchivingId(detailQuery.data!.id)}
-                activating={activateMut.isPending}
-              />
-            )
-          ) : null}
+        <div className="flex flex-1 flex-col overflow-y-auto">
+          <SheetHeader
+            title={
+              editingId
+                ? "Editar persona"
+                : detailQuery.data
+                  ? detailQuery.data.display_name
+                  : "Persona"
+            }
+            subtitle={
+              editingId
+                ? `${detailQuery.data?.name ?? ""} · cria nova versao (v${
+                    (detailQuery.data?.version ?? 0) + 1
+                  })`
+                : detailQuery.data
+                  ? `${detailQuery.data.name} · v${detailQuery.data.version}`
+                  : "Detalhe da persona"
+            }
+            mono={!editingId && !!detailQuery.data}
+          />
+          <div className="p-6">
+            {detailQuery.isLoading ? (
+              <div className="py-8 text-center text-[13px] text-gray-500">
+                Carregando...
+              </div>
+            ) : detailQuery.data ? (
+              editingId === detailQuery.data.id ? (
+                <PersonaEditForm
+                  persona={detailQuery.data}
+                  onSubmit={handleEdit}
+                  onCancel={() => setEditingId(null)}
+                  submitting={updateMut.isPending}
+                />
+              ) : (
+                <PersonaDetailView
+                  persona={detailQuery.data}
+                  onEdit={() => setEditingId(detailQuery.data!.id)}
+                  onActivate={() => handleActivate(detailQuery.data!)}
+                  onArchive={() => setArchivingId(detailQuery.data!.id)}
+                  activating={activateMut.isPending}
+                />
+              )
+            ) : null}
+          </div>
         </div>
       </DrillDownSheet>
 
@@ -499,12 +558,18 @@ export default function PersonasAdminPage() {
         title="Nova persona"
         size="lg"
       >
-        <div className="flex-1 overflow-y-auto p-6">
-          <PersonaCreateForm
-            onSubmit={handleCreate}
-            onCancel={closeSheet}
-            submitting={createMut.isPending}
+        <div className="flex flex-1 flex-col overflow-y-auto">
+          <SheetHeader
+            title="Nova persona"
+            subtitle="Cria um papel reutilizavel pra agentes. Vira v1 e e ativada automaticamente."
           />
+          <div className="p-6">
+            <PersonaCreateForm
+              onSubmit={handleCreate}
+              onCancel={closeSheet}
+              submitting={createMut.isPending}
+            />
+          </div>
         </div>
       </DrillDownSheet>
 
