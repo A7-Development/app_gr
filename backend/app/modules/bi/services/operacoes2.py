@@ -100,9 +100,8 @@ from app.modules.bi.services.operacoes import (
 from app.warehouse.caixa_snapshot import CaixaSnapshot
 from app.warehouse.dim import DimUnidadeAdministrativa
 from app.warehouse.dim_dia_util import DimDiaUtil
-from app.warehouse.operacao import Operacao, OperacaoItem
+from app.warehouse.operacao import Operacao
 from app.warehouse.titulo import Titulo
-from app.warehouse.titulo_snapshot import TituloSnapshot
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Helpers especificos do operacoes2
@@ -3333,29 +3332,31 @@ async def get_operacoes_do_dia(
     aplicados via `_apply_filters` §7.2), KPIs do dia e quebra por
     produto/UA.
 
-    Cedente: `wh_operacao.cedente_nome` esta NULL no warehouse atual (etl
-    nao popula). Buscamos via join `wh_operacao_item` x `wh_titulo_snapshot`
-    (titulo_id -> snapshot_id). Uma op pode ter N titulos -> N cedentes; o
-    `cedente_principal` (ordenado por nome) e exibido + sufixo "+N" quando
-    a op tem >1 cedente distinto. Sem custo extra pro caller — feito em 2
-    queries em sequencia (a listagem + 1 lookup agregado por op_ids).
+    Cedente: le direto de `wh_operacao.cedente_nome`, populado pelo
+    adapter Bitfin v2.1.0+ via cadeia `Operacao.ContaOperacionalId ->
+    ContaOperacional.ClienteId -> Cliente.EntidadeId -> Entidade.Nome`.
+    Modelo 1:1 — cada op tem um cedente unico. Antes deste fix o codigo
+    fazia um lookup via `wh_operacao_item.titulo_id == wh_titulo_snapshot
+    .snapshot_id` que era SEMANTICAMENTE ERRADO (espacos numericos
+    diferentes — coincidencia trazia cedentes errados).
+
+    Ops antigas pre-v2.1.0 podem ter `cedente_nome IS NULL` ate o
+    Bitfin full_sync rodar. Quando NULL, exibimos None (frontend mostra "—").
     """
     op_data = cast(Operacao.data_de_efetivacao, Date)
     day_filters = {**filters, "periodo_inicio": dia, "periodo_fim": dia}
 
-    # 1. Lista de operacoes do dia.
+    # 1. Lista de operacoes do dia (cedente vem direto da tabela).
     stmt = _apply_filters(
         select(
             Operacao.id.label("op_id"),
-            # operacao_id (integer, chave de negocio) — necessario para o
-            # lookup de cedentes via wh_operacao_item.operacao_id.
-            Operacao.operacao_id.label("op_id_business"),
             Operacao.data_de_efetivacao,
             Operacao.unidade_administrativa_id.label("ua_id"),
             _produto_expr().label("produto_sigla"),
             Operacao.total_bruto,
             Operacao.taxa_de_juros,
             Operacao.prazo_medio_real,
+            Operacao.cedente_nome,
         )
         .where(op_data == dia)
         .order_by(Operacao.total_bruto.desc()),
@@ -3363,42 +3364,6 @@ async def get_operacoes_do_dia(
         **day_filters,
     )
     rows = (await db.execute(stmt)).all()
-
-    # 1b. Lookup de cedentes por (operacao_id) — via op_item x titulo_snapshot.
-    # Uma op tem N titulos -> N cedentes potenciais. Agregamos por op_id:
-    # menor nome alfabetico como "principal" + count distinct para sufixo "+N".
-    op_id_business_list = [
-        int(r.op_id_business) for r in rows if r.op_id_business is not None
-    ]
-    cedente_por_op: dict[int, tuple[str, int]] = {}
-    if op_id_business_list:
-        ced_stmt = (
-            select(
-                OperacaoItem.operacao_id.label("op_id"),
-                func.min(TituloSnapshot.cedente_nome).label("cedente_principal"),
-                func.count(func.distinct(TituloSnapshot.cedente_nome)).label("n_cedentes"),
-            )
-            .select_from(OperacaoItem)
-            .join(
-                TituloSnapshot,
-                and_(
-                    TituloSnapshot.tenant_id == OperacaoItem.tenant_id,
-                    TituloSnapshot.snapshot_id == OperacaoItem.titulo_id,
-                ),
-            )
-            .where(
-                and_(
-                    OperacaoItem.tenant_id == tenant_id,
-                    OperacaoItem.operacao_id.in_(op_id_business_list),
-                    TituloSnapshot.cedente_nome.is_not(None),
-                )
-            )
-            .group_by(OperacaoItem.operacao_id)
-        )
-        ced_rows = (await db.execute(ced_stmt)).all()
-        cedente_por_op = {
-            int(r.op_id): (r.cedente_principal, int(r.n_cedentes)) for r in ced_rows
-        }
 
     # 2. Resolvers para nomes (UA, produto)
     ua_nomes_map = await _ua_id_to_nome_map(db, tenant_id)
@@ -3417,17 +3382,6 @@ async def get_operacoes_do_dia(
             por_produto[sigla] = por_produto.get(sigla, 0.0) + valor
         if r.ua_id is not None:
             por_ua[r.ua_id] = por_ua.get(r.ua_id, 0.0) + valor
-        # Resolve cedente: principal + sufixo "+N" quando op tem >1 cedente.
-        cedente_info = (
-            cedente_por_op.get(int(r.op_id_business))
-            if r.op_id_business is not None
-            else None
-        )
-        if cedente_info is not None:
-            principal, n_ced = cedente_info
-            cedente_display = principal if n_ced <= 1 else f"{principal} +{n_ced - 1}"
-        else:
-            cedente_display = None
 
         operacoes.append(
             OperacaoDoDiaItem(
@@ -3435,7 +3389,7 @@ async def get_operacoes_do_dia(
                 data_de_efetivacao=r.data_de_efetivacao.date()
                 if hasattr(r.data_de_efetivacao, "date")
                 else r.data_de_efetivacao,
-                cedente=cedente_display,
+                cedente=r.cedente_nome,
                 produto_sigla=sigla,
                 produto_nome=produto_nomes_map.get(sigla) if sigla else None,
                 ua_id=r.ua_id,
@@ -3520,80 +3474,62 @@ async def _titulos_por_cedente_periodo(
     periodo_inicio: date,
     periodo_fim: date,
 ) -> list[Any]:
-    """Granularidade por titulo: cada row = 1 titulo de 1 op com cedente.
+    """Lista de ops do periodo agregadas por cedente.
 
-    Retorna: cedente_nome, cedente_id, valor_base (do titulo), op_id, data
-    da op, taxa (da op — homogenea para todos os titulos da mesma op).
+    A partir do adapter bitfin v2.1.0 cada op tem 1 cedente unico
+    (modelo 1:1 validado em 9269/9269 ops). Le `wh_operacao.cedente_nome`
+    direto — antes esse codigo usava um lookup via OperacaoItem x
+    TituloSnapshot que era SEMANTICAMENTE ERRADO (espacos numericos
+    diferentes — coincidencia trazia cedentes errados na maioria das ops).
+
+    Retorna lista de dicts com chaves: cedente_nome, cedente_id,
+    valor_base, op_id, data_de_efetivacao, taxa. Nome `valor_base`
+    mantido por compat com o caller `get_cedentes_mtd` — no modelo
+    refatorado, valor_base = total_bruto da op (era a soma dos titulos
+    que tinham aquele cedente; com 1 cedente por op, e o total inteiro).
 
     Aplica `_apply_filters` na consulta as ops do periodo.
+    Ops com `cedente_nome IS NULL` (pre-v2.1.0, ate full_sync rodar)
+    sao filtradas — frontend ja exibe "(n/d)" via fallback.
     """
     op_data = cast(Operacao.data_de_efetivacao, Date)
     win_filters = {**filters, "periodo_inicio": periodo_inicio, "periodo_fim": periodo_fim}
 
-    # 1. Ops do periodo (apos filtros globais)
-    ops_stmt = _apply_filters(
+    stmt = _apply_filters(
         select(
             Operacao.operacao_id.label("op_id"),
             Operacao.data_de_efetivacao,
             Operacao.taxa_de_juros,
-        ).where(op_data.between(periodo_inicio, periodo_fim)),
+            Operacao.total_bruto,
+            Operacao.cedente_id,
+            Operacao.cedente_nome,
+        )
+        .where(
+            and_(
+                op_data.between(periodo_inicio, periodo_fim),
+                Operacao.cedente_nome.is_not(None),
+            )
+        ),
         tenant_id=tenant_id,
         **win_filters,
     )
-    ops_rows = (await db.execute(ops_stmt)).all()
-    if not ops_rows:
-        return []
-    op_meta: dict[int, tuple[date, float | None]] = {}
-    for r in ops_rows:
+    rows = (await db.execute(stmt)).all()
+
+    enriched: list[Any] = []
+    for r in rows:
         if r.op_id is None:
             continue
-        d = (
+        data_op = (
             r.data_de_efetivacao.date()
             if hasattr(r.data_de_efetivacao, "date")
             else r.data_de_efetivacao
         )
         taxa = _as_float(r.taxa_de_juros) if r.taxa_de_juros is not None else None
-        op_meta[int(r.op_id)] = (d, taxa)
-
-    # 2. Titulos dessas ops com cedente
-    op_ids = list(op_meta.keys())
-    item_stmt = (
-        select(
-            OperacaoItem.operacao_id.label("op_id"),
-            OperacaoItem.valor_base,
-            TituloSnapshot.cedente_nome,
-            TituloSnapshot.cedente_cliente_id,
-        )
-        .select_from(OperacaoItem)
-        .join(
-            TituloSnapshot,
-            and_(
-                TituloSnapshot.tenant_id == OperacaoItem.tenant_id,
-                TituloSnapshot.snapshot_id == OperacaoItem.titulo_id,
-            ),
-        )
-        .where(
-            and_(
-                OperacaoItem.tenant_id == tenant_id,
-                OperacaoItem.operacao_id.in_(op_ids),
-                TituloSnapshot.cedente_nome.is_not(None),
-            )
-        )
-    )
-    item_rows = (await db.execute(item_stmt)).all()
-
-    enriched: list[Any] = []
-    for r in item_rows:
-        op_id = int(r.op_id)
-        meta = op_meta.get(op_id)
-        if meta is None:
-            continue
-        data_op, taxa = meta
         enriched.append({
             "cedente_nome": r.cedente_nome,
-            "cedente_id": r.cedente_cliente_id,
-            "valor_base": _as_float(r.valor_base) if r.valor_base is not None else 0.0,
-            "op_id": op_id,
+            "cedente_id": r.cedente_id,
+            "valor_base": _as_float(r.total_bruto) if r.total_bruto is not None else 0.0,
+            "op_id": int(r.op_id),
             "data_de_efetivacao": data_op,
             "taxa": taxa,
         })
@@ -3675,36 +3611,23 @@ async def get_cedentes_mtd(
     nomes_envolvidos = set(mtd_agg.keys()) | set(ant_agg.keys())
     historico: dict[str, tuple[date, date]] = {}
     if nomes_envolvidos:
+        # Le cedente_nome direto de wh_operacao (populado pelo adapter bitfin
+        # v2.1.0+). Modelo 1:1 — uma op tem um cedente.
         hist_stmt = (
             select(
-                TituloSnapshot.cedente_nome,
+                Operacao.cedente_nome,
                 func.min(cast(Operacao.data_de_efetivacao, Date)).label("primeira"),
                 func.max(cast(Operacao.data_de_efetivacao, Date)).label("ultima"),
-            )
-            .select_from(Operacao)
-            .join(
-                OperacaoItem,
-                and_(
-                    OperacaoItem.tenant_id == Operacao.tenant_id,
-                    OperacaoItem.operacao_id == Operacao.operacao_id,
-                ),
-            )
-            .join(
-                TituloSnapshot,
-                and_(
-                    TituloSnapshot.tenant_id == OperacaoItem.tenant_id,
-                    TituloSnapshot.snapshot_id == OperacaoItem.titulo_id,
-                ),
             )
             .where(
                 and_(
                     Operacao.tenant_id == tenant_id,
                     Operacao.efetivada.is_(True),
                     Operacao.data_de_efetivacao.is_not(None),
-                    TituloSnapshot.cedente_nome.in_(list(nomes_envolvidos)),
+                    Operacao.cedente_nome.in_(list(nomes_envolvidos)),
                 )
             )
-            .group_by(TituloSnapshot.cedente_nome)
+            .group_by(Operacao.cedente_nome)
         )
         for r in (await db.execute(hist_stmt)).all():
             historico[r.cedente_nome] = (r.primeira, r.ultima)

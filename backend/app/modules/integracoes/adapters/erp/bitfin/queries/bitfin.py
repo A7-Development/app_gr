@@ -152,10 +152,23 @@ SELECT
     r.TotalDosComunicadosDeCessao AS total_dos_comunicados_de_cessao,
     r.TotalDosDocumentosDigitais AS total_dos_documentos_digitais,
     r.TotalDosDescontosOuAbatimentos AS total_dos_descontos_ou_abatimentos,
-    r.DataDoUltimoVencimento AS data_do_ultimo_vencimento
+    r.DataDoUltimoVencimento AS data_do_ultimo_vencimento,
+    -- Cedente (= Cliente, no vocabulario Bitfin). Resolvido via
+    -- ContaOperacional (modelo 1:1, validado em 2026-05-22: 9269/9269
+    -- ops historicas resolveram). Documento e o CNPJ/CPF formatado
+    -- como string (sem mascara — exatamente como Bitfin armazena).
+    cli.ClienteId AS cedente_id,
+    ent.Nome AS cedente_nome,
+    ent.Documento AS cedente_documento
 FROM dbo.Operacao o
 LEFT JOIN dbo.OperacaoResultado r
     ON r.ResultadoDaOperacaoId = o.ResultadoDaOperacaoId
+LEFT JOIN dbo.ContaOperacional co
+    ON co.ContaOperacionalId = o.ContaOperacionalId
+LEFT JOIN dbo.Cliente cli
+    ON cli.ClienteId = co.ClienteId
+LEFT JOIN dbo.Entidade ent
+    ON ent.EntidadeId = cli.EntidadeId
 WHERE o.DataDeCadastro > ?
 """
 
