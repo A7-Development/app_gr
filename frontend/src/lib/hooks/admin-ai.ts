@@ -425,6 +425,21 @@ export function usePreviewAgentDefinition() {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// Tools (F2.c.4 — read-only, CLAUDE.md §19.0)
+// ───────────────────────────────────────────────────────────────────────────
+
+export function useTools(opts: { module?: string; cost?: string } = {}) {
+  const moduleFilter = opts.module
+  const costFilter = opts.cost
+  return useQuery({
+    queryKey: ["admin", "ai", "tools", { moduleFilter, costFilter }] as const,
+    queryFn: () =>
+      adminAI.tools.list({ module: moduleFilter, cost: costFilter }),
+    staleTime: 60 * 1000, // tools mudam so via deploy
+  })
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Specialist Agents — model override por agente
 // ───────────────────────────────────────────────────────────────────────────
 

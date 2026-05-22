@@ -32,6 +32,7 @@ import {
   RiShieldCheckLine,
   RiSignalTowerLine,
   RiStackLine,
+  RiToolsLine,
   RiUserLine,
   RiUserStarLine,
   RiWallet3Line,
@@ -456,6 +457,13 @@ export const MODULES: ModuleDefinition[] = [
         href: "/admin/ia/agents",
         enabled: true,
         icon: RiCpuLine,
+        groupLabel: "Inteligencia Artificial",
+      },
+      {
+        name: "Tools",
+        href: "/admin/ia/tools",
+        enabled: true,
+        icon: RiToolsLine,
         groupLabel: "Inteligencia Artificial",
       },
       {
