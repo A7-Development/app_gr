@@ -13,6 +13,7 @@ import Link from "next/link"
 import * as React from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { RiArrowLeftLine } from "@remixicon/react"
+import { useQuery } from "@tanstack/react-query"
 
 import { PageHeader } from "@/design-system/components/PageHeader"
 import { AdapterStatusBadge, statusFrom } from "@/design-system/components/AdapterStatusBadge"
@@ -30,6 +31,7 @@ import {
   TabNavigationLink,
 } from "@/components/tremor/TabNavigation"
 import { useSource } from "@/lib/hooks/integracoes"
+import { cadastros } from "@/lib/api-client"
 import type { Environment, SourceTypeId } from "@/lib/api-client"
 
 import { CredenciaisTab } from "./_components/CredenciaisTab"
@@ -120,8 +122,34 @@ export default function SourceDetailPage() {
     uaIdParam,
   )
 
+  // UAs ativas do tenant. UA escopa endpoints/cobertura/contas-bancarias —
+  // sem UA na URL, o backend filtra TSEC por `unidade_administrativa_id IS NULL`
+  // e nao retorna overrides quando todas as linhas tem UA preenchida.
+  // Habilitamos o seletor so pras fontes com aba Endpoints (QiTech, Bitfin).
+  const uasQuery = useQuery({
+    queryKey: ["cadastros", "uas", { ativa: true }],
+    queryFn: () => cadastros.listUAs({ ativa: true }),
+    enabled: hasEndpoints,
+  })
+  const uas = React.useMemo(() => uasQuery.data ?? [], [uasQuery.data])
+
+  // Auto-selecao: se ha apenas 1 UA ativa e a URL nao traz `?ua=`, propaga.
+  // Resolve o caso de tenant single-fundo entrando direto na rota da fonte —
+  // se nao selecionar, todas as abas mostram "Aguardando + agora" porque o
+  // backend nao acha override.
+  React.useEffect(() => {
+    if (!hasEndpoints) return
+    if (uaIdParam) return
+    if (uas.length !== 1) return
+    router.replace(buildHref(sourceType, activeTab, environment, uas[0].id))
+  }, [hasEndpoints, uaIdParam, uas, sourceType, activeTab, environment, router])
+
   function setEnvironment(e: Environment) {
     router.replace(buildHref(sourceType, activeTab, e, uaIdParam))
+  }
+
+  function setUa(nextUaId: string | null) {
+    router.replace(buildHref(sourceType, activeTab, environment, nextUaId))
   }
 
   return (
@@ -140,6 +168,32 @@ export default function SourceDetailPage() {
               <AdapterStatusBadge
                 status={statusFrom(data.configured, data.enabled)}
               />
+            )}
+            {hasEndpoints && (
+              <Select
+                value={uaIdParam ?? ""}
+                onValueChange={(v) => setUa(v || null)}
+                disabled={uasQuery.isLoading || uas.length === 0}
+              >
+                <SelectTrigger className="w-56">
+                  <SelectValue
+                    placeholder={
+                      uasQuery.isLoading
+                        ? "Carregando UAs..."
+                        : uas.length === 0
+                          ? "Nenhuma UA cadastrada"
+                          : "Selecione a UA"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {uas.map((ua) => (
+                    <SelectItem key={ua.id} value={ua.id}>
+                      {ua.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
             <Select
               value={environment}
