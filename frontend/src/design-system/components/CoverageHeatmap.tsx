@@ -6,6 +6,7 @@ import { ptBR } from "date-fns/locale"
 import {
   RiAddLine,
   RiAlertLine,
+  RiCalendar2Line,
   RiCloseLine,
   RiInformationLine,
   RiLoader4Line,
@@ -148,6 +149,7 @@ export function CoverageHeatmap({
   startDate,
   endDate,
   onBackfill,
+  onBulkSync,
   activeJobByEndpoint = {},
 }: {
   endpoints: EndpointCoverage[]
@@ -155,6 +157,9 @@ export function CoverageHeatmap({
   endDate: string
   /** Quando undefined, oculta os botoes de backfill (modo somente-leitura). */
   onBackfill?: (endpointName: string, dates: string[]) => void
+  /** Abre Sheet de sync em massa pro endpoint (escolha de periodo + filtros).
+   *  Quando undefined, oculta o botao. */
+  onBulkSync?: (endpoint: EndpointCoverage) => void
   /** Job ativo por endpoint_name. Usado pra pintar celulas em processamento. */
   activeJobByEndpoint?: Record<string, BackfillJob>
 }) {
@@ -347,6 +352,7 @@ export function CoverageHeatmap({
               ep={ep}
               cellMinWidth={cellMinWidth}
               onBackfill={onBackfill}
+              onBulkSync={onBulkSync}
               activeJob={activeJobByEndpoint[ep.name]}
               selectedDates={selected[ep.name] ?? EMPTY_SET}
               onCellClick={handleCellClick}
@@ -433,6 +439,7 @@ function EndpointRow({
   ep,
   cellMinWidth,
   onBackfill,
+  onBulkSync,
   activeJob,
   selectedDates,
   onCellClick,
@@ -444,6 +451,7 @@ function EndpointRow({
   ep: EndpointCoverage
   cellMinWidth: string
   onBackfill?: (endpointName: string, dates: string[]) => void
+  onBulkSync?: (endpoint: EndpointCoverage) => void
   activeJob?: BackfillJob
   selectedDates: ReadonlySet<string>
   onCellClick: (
@@ -534,6 +542,17 @@ function EndpointRow({
           >
             <RiPlayLine className="size-3 mr-1" aria-hidden />
             Forçar {retryableDates.length}
+          </Button>
+        )}
+        {onBulkSync && !isJobActive && (
+          <Button
+            variant="ghost"
+            className="h-6 shrink-0 px-2 text-[11px] text-gray-600"
+            onClick={() => onBulkSync(ep)}
+            title="Sincroniza um período inteiro de uma vez — escolhe data inicial e final."
+          >
+            <RiCalendar2Line className="size-3 mr-1" aria-hidden />
+            Sync em massa
           </Button>
         )}
         {isJobActive && (
