@@ -253,13 +253,13 @@ function TabelaOperacoes({
   const columns = React.useMemo<ColumnDef<Operacoes2OperacaoDoDiaItem, unknown>[]>(
     () => [
       {
-        // Cedente ocupa ~50% da largura disponivel; demais colunas tem
-        // width fixo. DrillDownSheet `lg` = 720px - paddings ~= 670px uteis.
-        // Soma: 320 + 95 + 60 + 110 + 70 + 70 = 725px (proximo do limite,
-        // com truncate na cedente garantindo zero scroll horizontal).
+        // Cedente ocupa ~55% da largura disponivel; demais colunas tem
+        // width fixo. DrillDownSheet `xl` = 880px - paddings ~= 830px uteis.
+        // Soma: 460 + 95 + 60 + 110 + 70 + 70 = 865px (cabe sem scroll,
+        // com truncate na cedente apenas em nomes muito longos).
         accessorKey: "cedente",
         header: "Cedente",
-        size: 320,
+        size: 460,
         cell: ({ row }) => (
           <div
             className={cx(tableTokens.cellText, "block w-full truncate")}
