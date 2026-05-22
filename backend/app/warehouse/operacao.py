@@ -62,12 +62,15 @@ class Operacao(Auditable, Base):
     conta_operacional_id: Mapped[int] = mapped_column(Integer, nullable=False)
     unidade_administrativa_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
 
-    # Cedente (desnormalizado da cadeia Bitfin: ContaOperacional → Cliente → Empresa).
-    # Nullable porque o re-mapeamento que popula esses campos roda fora de banda
-    # (mapper bitfin estendido). Linhas existentes ficam NULL ate o ETL rodar.
-    # Quando NULL, agregacoes por cedente devem fazer fallback ou exibir "(n/d)".
+    # Cedente (desnormalizado da cadeia Bitfin: Operacao.ContaOperacionalId ->
+    # ContaOperacional.ClienteId -> Cliente.EntidadeId -> Entidade). Modelo
+    # 1:1 — cada op tem exatamente um cedente (validado 9269/9269 em 2026-05-22).
+    # `cedente_documento` e CNPJ/CPF sem mascara (como o Bitfin armazena).
+    # Nullable porque ops antigas (pre-adapter v2.1.0) podem ficar NULL ate
+    # o full sync rodar. Quando NULL, exibir "(n/d)".
     cedente_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     cedente_nome: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    cedente_documento: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
 
     # OperacaoResultado — metricas consolidadas
     prazo_medio_real: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False, default=0)

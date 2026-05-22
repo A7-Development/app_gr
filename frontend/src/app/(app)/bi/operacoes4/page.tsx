@@ -459,29 +459,52 @@ export default function Operacoes4Page() {
         sendMessage={send}
       />
 
-      {/* DrillDownSheet unico — conteudo dinamico por kind. */}
+      {/* DrillDownSheet unico — conteudo dinamico por kind.
+          Header canonico (breadcrumb + close + KPI hero) renderizado pela
+          propria page: cada kind tem seu titulo/contexto, e os Drill*Content
+          ficam responsaveis so pelo conteudo de baixo. */}
       <DrillDownSheet
         open={drill !== null}
         onClose={() => setDrill(null)}
-        size="lg"
+        size="xl"
         title={drillTitle}
       >
         {drill?.kind === "dia" && (
-          <DrillOperacoesDoDia dataISO={drill.dataISO} />
+          <>
+            <DrillDownSheet.Header
+              breadcrumb={["Operações do dia", formatDataBRLong(drill.dataISO)]}
+            />
+            <DrillOperacoesDoDia dataISO={drill.dataISO} />
+          </>
         )}
         {drill?.kind === "receita" &&
           lensReceitasQ.data?.data?.composicao[drill.bucketIdx] && (
-            <DrillReceitaTipoContent
-              bucket={lensReceitasQ.data.data.composicao[drill.bucketIdx]}
-              total_mtd={drill.total_mtd}
-              total_parity={drill.total_parity}
-            />
+            <>
+              <DrillDownSheet.Header
+                breadcrumb={[
+                  "Receita MTD",
+                  receitaTipoLabel(
+                    lensReceitasQ.data.data.composicao[drill.bucketIdx].tipo,
+                  ),
+                ]}
+              />
+              <DrillReceitaTipoContent
+                bucket={lensReceitasQ.data.data.composicao[drill.bucketIdx]}
+                total_mtd={drill.total_mtd}
+                total_parity={drill.total_parity}
+              />
+            </>
           )}
         {drill?.kind === "movimento" && (
-          <DrillMovimentoContent
-            categoria={drill.categoria}
-            items={drill.items}
-          />
+          <>
+            <DrillDownSheet.Header
+              breadcrumb={["Cedentes", movimentoLabel(drill.categoria)]}
+            />
+            <DrillMovimentoContent
+              categoria={drill.categoria}
+              items={drill.items}
+            />
+          </>
         )}
       </DrillDownSheet>
     </div>
@@ -680,6 +703,75 @@ function hasFiltrosAtivos(
   if (filtros.produtoSigla && filtros.produtoSigla.length > 0) return true
   if (filtros.uaId && filtros.uaId.length > 0) return true
   return false
+}
+
+// ─── Drill breadcrumb helpers ──────────────────────────────────────────────
+//
+// Cada kind do drill gera um breadcrumb proprio no header do Sheet:
+//   - dia:        ["Operações do dia", "Quinta · 22 de maio de 2026"]
+//   - receita:    ["Receita MTD", "Deságio"]
+//   - movimento:  ["Cedentes", "Cedentes novos no mês"]
+//
+// O segundo item vira destaque mono no header — por isso preferimos texto
+// curto + capitalizado pt-BR (nao ISO).
+
+const _DIAS_LONGO_PT = [
+  "Domingo",
+  "Segunda",
+  "Terça",
+  "Quarta",
+  "Quinta",
+  "Sexta",
+  "Sábado",
+]
+
+const _MESES_LONGO_PT_FULL = [
+  "janeiro",
+  "fevereiro",
+  "março",
+  "abril",
+  "maio",
+  "junho",
+  "julho",
+  "agosto",
+  "setembro",
+  "outubro",
+  "novembro",
+  "dezembro",
+]
+
+function formatDataBRLong(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number)
+  if (!y || !m || !d) return iso
+  // Construi como local — date.getDay() retorna o dia da semana correto.
+  const dt = new Date(y, m - 1, d)
+  const dia_semana = _DIAS_LONGO_PT[dt.getDay()]
+  const mes_long = _MESES_LONGO_PT_FULL[m - 1] ?? ""
+  return `${dia_semana} · ${d} de ${mes_long} de ${y}`
+}
+
+function receitaTipoLabel(tipo: Operacoes4ReceitaTipo): string {
+  switch (tipo) {
+    case "desagio":
+      return "Deságio"
+    case "tarifa_cessao":
+      return "Tarifa de cessão"
+    case "tarifas_operacionais":
+      return "Tarifas operacionais"
+    case "outras":
+      return "Outras"
+  }
+}
+
+function movimentoLabel(categoria: "novos" | "sumidos" | "movers"): string {
+  switch (categoria) {
+    case "novos":
+      return "Cedentes novos no mês"
+    case "sumidos":
+      return "Cedentes sumidos"
+    case "movers":
+      return "Top movers do mês"
+  }
 }
 
 function MultiCheckList({
