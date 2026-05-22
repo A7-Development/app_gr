@@ -770,3 +770,88 @@ class ExplicacaoVariacaoResponse(BaseModel):
         description="Buckets COSIF particionados. Σ delta_brl ≡ delta_pl_sub_contabil."
     )
     indeterminado_brl:         Decimal   = Field(description="Σ Δ folhas COSIF sem mapping (esperado: zero)")
+
+
+# ── Balanco patrimonial (F1 do redesign, 2026-05-22) ────────────────────────
+#
+# Shape dedicado pro Balance hero. Difere de VariacaoDiariaResponse em duas
+# dimensoes:
+#   1. Apresenta Ativos / Passivos separados (decomposicao patrimonial), nao
+#      uma lista monolitica de categorias.
+#   2. Sinais ABSOLUTOS: passivos (Mez, Sr, PDD) vem POSITIVOS no payload —
+#      a secao do balance comunica o sinal contabil. Endpoint legado
+#      /variacao-diaria mantem sinais invertidos por compatibilidade.
+
+
+CategoriaPatrimonialKey = Literal[
+    # Ativos
+    "compromissada",
+    "titulos_publicos",
+    "fundos_di",
+    "dc",
+    "op_estruturadas",
+    "outros_ativos",
+    "cpr",
+    "tesouraria",
+    "saldo_conta_corrente",
+    # Passivos / redutores
+    "mezanino",
+    "senior",
+    "pdd",
+]
+
+
+class CategoriaPatrimonial(BaseModel):
+    """Uma linha do balanco — categoria patrimonial com saldos D-1 / D0 / Δ."""
+
+    key:    CategoriaPatrimonialKey
+    label:  str       = Field(description="Label exibido na UI (pt-BR)")
+    tipo:   Literal["ativo", "passivo"]
+    d1:     Decimal   = Field(description="Saldo em D-1 (R$, sinal absoluto)")
+    d0:     Decimal   = Field(description="Saldo em D0 (R$, sinal absoluto)")
+    delta:  Decimal   = Field(description="d0 - d1 (com sinal natural)")
+    source: str       = Field(description="Tabela canonica origem + filtro aplicado")
+
+
+class BalancoPatrimonialResponse(BaseModel):
+    """Resposta do endpoint GET /controladoria/cota-sub/balanco-patrimonial.
+
+    Balanco patrimonial diario na otica do cotista subordinado, com identidade
+    contabil explicita:
+
+        PL Sub Jr (deduzido)    = Σ Ativos - Σ Passivos
+        PL Sub Jr (na fonte)    = wh_mec_evolucao_cotas, classe Sub
+        Residuo (consistencia)  = PL deduzido - PL na fonte  (esperado ~0)
+
+    Identidade fechando em zero = sistema em ordem. Residuo != 0 indica
+    desalinhamento entre o calculo do gestor REALINVEST (consolidado via 11
+    categorias) e o publicado pela QiTech no MEC. Frontend renderiza estado
+    de saude (✓ / ⚠ / ✗) baseado em `residuo_identidade`.
+    """
+
+    fundo_id:           str       = Field(description="UUID da Unidade Administrativa")
+    fundo_nome:         str
+    data:               date      = Field(description="D0 (dia analisado)")
+    data_anterior:      date      = Field(description="D-1 (dia util anterior)")
+
+    ativos:             list[CategoriaPatrimonial]
+    passivos:           list[CategoriaPatrimonial]
+
+    soma_ativos_d1:     Decimal
+    soma_ativos_d0:     Decimal
+    soma_ativos_delta:  Decimal
+
+    soma_passivos_d1:    Decimal
+    soma_passivos_d0:    Decimal
+    soma_passivos_delta: Decimal
+
+    pl_deduzido_d1:     Decimal   = Field(description="Σ Ativos - Σ Passivos em D-1")
+    pl_deduzido_d0:     Decimal   = Field(description="Σ Ativos - Σ Passivos em D0")
+    pl_deduzido_delta:  Decimal
+
+    pl_fonte_d1:        Decimal   = Field(description="PL Sub Jr lido de wh_mec (classe Sub) em D-1")
+    pl_fonte_d0:        Decimal   = Field(description="PL Sub Jr lido de wh_mec (classe Sub) em D0")
+    pl_fonte_delta:     Decimal
+
+    residuo_identidade_d1: Decimal = Field(description="pl_deduzido_d1 - pl_fonte_d1 (esperado ~0)")
+    residuo_identidade_d0: Decimal = Field(description="pl_deduzido_d0 - pl_fonte_d0 (esperado ~0)")

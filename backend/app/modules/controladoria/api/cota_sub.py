@@ -17,6 +17,7 @@ from app.modules.controladoria.schemas.balancete_diario import (
     CosifRowsResponseSchema,
 )
 from app.modules.controladoria.schemas.cota_sub import (
+    BalancoPatrimonialResponse,
     BalancoResponse,
     ExplicacaoVariacaoResponse,
     VariacaoDiariaResponse,
@@ -27,6 +28,9 @@ from app.modules.controladoria.services.balancete_diario import (
     compute_cosif_rows,
 )
 from app.modules.controladoria.services.balanco import compute_balanco
+from app.modules.controladoria.services.balanco_patrimonial import (
+    compute_balanco_patrimonial,
+)
 from app.modules.controladoria.services.cota_sub import compute_variacao_diaria
 from app.modules.controladoria.services.cota_sub_explainers import (
     compute_explicacao_variacao,
@@ -88,6 +92,38 @@ async def balanco(
     """
     try:
         return await compute_balanco(
+            db,
+            tenant_id=principal.tenant_id,
+            ua_id=fundo_id,
+            data_d0=data,
+            data_d1=data_anterior,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/balanco-patrimonial", response_model=BalancoPatrimonialResponse)
+async def balanco_patrimonial(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0). D-1 e calculado como dia util anterior.")],
+    data_anterior: Annotated[
+        date | None,
+        Query(description="Override opcional para D-1 (ex.: ignorar feriados nao mapeados)."),
+    ] = None,
+    _: None = _Guard,
+) -> BalancoPatrimonialResponse:
+    """Balanco patrimonial otica Sub Jr — fonte do Balance hero do redesign.
+
+    Apresenta Ativos / Passivos separados (sinais absolutos), PL deduzido
+    (Σ Ativos - Σ Passivos), PL na fonte (wh_mec classe Sub) e o residuo
+    de identidade contabil. Quando residuo != 0, sinaliza desalinhamento
+    entre o calculo do gestor e o publicado pela QiTech (snapshot parcial,
+    mutacao silenciosa, etc.).
+    """
+    try:
+        return await compute_balanco_patrimonial(
             db,
             tenant_id=principal.tenant_id,
             ua_id=fundo_id,

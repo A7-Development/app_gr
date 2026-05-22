@@ -69,8 +69,8 @@ import { Insight, InsightBar } from "@/design-system/components/Insight"
 import { useUAs } from "@/lib/hooks/cadastros"
 import {
   COTA_SUB_REPORTS,
-  useBalanceteDiario,
   useBalanco,
+  useBalancoPatrimonial,
   useCotaSubReadiness,
   useDatasDisponiveis,
 } from "@/lib/hooks/controladoria"
@@ -102,7 +102,12 @@ import { toast } from "sonner"
 
 import { ActiveBackfillJobsPanel } from "./_components/ActiveBackfillJobsPanel"
 import { BalanceTable } from "./_components/BalanceTable"
-import { EventosDiaTab } from "./_components/EventosDiaTab"
+import { BalancoPatrimonialHero } from "./_components/BalancoPatrimonialHero"
+// EventosDiaTab desativado em F1 do redesign (2026-05-22) — substituido pelo
+// BalancoPatrimonialHero na aba "eventos". F4 decide o destino final (apos
+// drills da F2/F3 estarem completos). Import + componente preservados no
+// codebase ate la pra rollback rapido.
+// import { EventosDiaTab } from "./_components/EventosDiaTab"
 
 // ───────────────────────────────────────────────────────────────────────────
 // Tipos + Mocks
@@ -639,9 +644,12 @@ export default function CotaSubPage() {
     return fundosQuery.data?.find((ua) => ua.nome === fundo)?.id ?? null
   }, [fundo, fundosQuery.data])
 
-  const dayIso         = React.useMemo(() => format(day, "yyyy-MM-dd"), [day])
-  const balanceQuery   = useBalanco(fundoId, dayIso)
-  const balanceteQuery = useBalanceteDiario(fundoId, dayIso)
+  const dayIso          = React.useMemo(() => format(day, "yyyy-MM-dd"), [day])
+  const balanceQuery    = useBalanco(fundoId, dayIso)
+  const balancoPatQuery = useBalancoPatrimonial(fundoId, dayIso)
+  // useBalanceteDiario removido em F1 do redesign (2026-05-22) — antes
+  // alimentava EventosDiaTab. F4 reintroduz se aposentar EventosDiaTab definitivamente
+  // ou usar outra tab secundaria. Por enquanto fica fora pra reduzir requests.
   const fundoSelecionado = fundoId !== null
 
   // Datas em que a QiTech publicou snapshot — Calendar bloqueia tudo o que nao
@@ -1023,16 +1031,33 @@ export default function CotaSubPage() {
               ) : (
                 <>
                   {activeTab === "eventos" && (
-                    <EventosDiaTab
-                      balancete={balanceteQuery.data}
-                      loading={balanceteQuery.isLoading}
-                      errorMessage={
-                        balanceteQuery.isError
-                          ? `Erro: ${(balanceteQuery.error as Error)?.message ?? "desconhecido"}`
-                          : undefined
-                      }
-                      onRetry={() => balanceteQuery.refetch()}
-                    />
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                      <BalancoPatrimonialHero
+                        data={balancoPatQuery.data}
+                        loading={balancoPatQuery.isLoading}
+                        errorMessage={
+                          balancoPatQuery.isError
+                            ? `Erro: ${(balancoPatQuery.error as Error)?.message ?? "desconhecido"}`
+                            : undefined
+                        }
+                        onRetry={() => balancoPatQuery.refetch()}
+                        // Drills DC + PDD + CPR sao ligados na F2. F1 deixa
+                        // placeholder via onDrillCategoria undefined — F2 vai
+                        // injetar o DrillDownSheet aqui.
+                      />
+                      {/* Placeholder pros outros 50% — F2/F3/F5 vao alocar
+                          aqui (drills, insights IA, mutacao silenciosa). Em
+                          telas < xl, balance ocupa 100% e este slot some. */}
+                      <div className="hidden rounded border border-dashed border-gray-200 p-6 dark:border-gray-800 xl:block">
+                        <p className="text-[12px] uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
+                          Reservado
+                        </p>
+                        <p className="mt-2 text-[13px] text-gray-500 dark:text-gray-400">
+                          Espaço para insights, drilldown ativo e o detector de
+                          mutação silenciosa (F2/F5 do redesign).
+                        </p>
+                      </div>
+                    </div>
                   )}
                   {activeTab === "balanco" && (
                     <BalancoTab

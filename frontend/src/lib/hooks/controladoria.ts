@@ -29,6 +29,8 @@ const KEYS = {
     ["controladoria", "cota-sub", "variacao-diaria", fundoId, data, dataAnterior ?? null] as const,
   balanco: (fundoId: string, data: string, dataAnterior?: string) =>
     ["controladoria", "cota-sub", "balanco", fundoId, data, dataAnterior ?? null] as const,
+  balancoPatrimonial: (fundoId: string, data: string, dataAnterior?: string) =>
+    ["controladoria", "cota-sub", "balanco-patrimonial", fundoId, data, dataAnterior ?? null] as const,
   balanceteDiario: (fundoId: string, data: string, dataAnterior?: string) =>
     ["controladoria", "cota-sub", "balancete-diario", fundoId, data, dataAnterior ?? null] as const,
   cosifRows: (fundoId: string, data: string, cosifCodigo: string) =>
@@ -90,6 +92,26 @@ export function useBalanco(
   return useQuery({
     queryKey: KEYS.balanco(fundoId ?? "", data ?? "", dataAnterior ?? undefined),
     queryFn: () => controladoria.cotaSubBalanco(
+      fundoId!,
+      data!,
+      dataAnterior ?? undefined,
+    ),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useBalancoPatrimonial(
+  fundoId: string | null | undefined,
+  data: string | null | undefined,
+  dataAnterior?: string | null,
+) {
+  // Balance hero do redesign (F1, 2026-05-22). Endpoint dedicado com sinais
+  // absolutos nos passivos + linha de Identidade contabil.
+  const enabled = !!fundoId && !!data
+  return useQuery({
+    queryKey: KEYS.balancoPatrimonial(fundoId ?? "", data ?? "", dataAnterior ?? undefined),
+    queryFn: () => controladoria.cotaSubBalancoPatrimonial(
       fundoId!,
       data!,
       dataAnterior ?? undefined,
