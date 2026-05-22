@@ -13,7 +13,6 @@ import {
   RiCpuLine,
   RiDashboard3Line,
   RiExchangeFundsLine,
-  RiFileChart2Line,
   RiFileChartLine,
   RiFileTextLine,
   RiFlaskLine,
@@ -24,7 +23,6 @@ import {
   RiKey2Line,
   RiLightbulbLine,
   RiLineChartLine,
-  RiMoneyDollarBoxLine,
   RiPieChart2Line,
   RiPulseLine,
   RiRobot2Line,
@@ -126,32 +124,40 @@ export const MODULES: ModuleDefinition[] = [
     permission: "admin",
     basePath: "/bi",
     sections: [
-      // Parent expand-only agrupando as variantes de "Mes corrente" (CLAUDE.md
-      // §11.6 regra 2). `href: "#operacoes"` e identificador semantico — nao
-      // navega quando clicado, so abre/fecha. Filhos sao L2 logicamente.
+      // IA reorganizada 2026-05-22: flat por pergunta de negocio. Cada parent
+      // ganha submenus expansiveis conforme as paginas forem nascendo. Itens
+      // sem pagina ficam enabled=false como placeholder visual. CLAUDE.md §11.6.
+      { name: "Visão geral", href: "/bi", enabled: true, icon: RiDashboard3Line },
+      // Originacao (ex-Operacoes) — VOP, ritmo, mix. Parent expand-only.
+      // URLs dos filhos mantidas (/bi/operacoes2/3/4) ate rename pra /bi/originacao/*.
       {
-        name: "Operações",
-        href: "#operacoes",
+        name: "Originação",
+        href: "#originacao",
         enabled: true,
-        icon: RiDashboard3Line,
-        groupLabel: "Visao geral",
+        icon: RiExchangeFundsLine,
         children: [
           { name: "Mês corrente · antigo", href: "/bi/operacoes2", enabled: true },
           { name: "Mês corrente · novo", href: "/bi/operacoes3", enabled: true },
           { name: "Mês corrente · operações", href: "/bi/operacoes4", enabled: true },
         ],
       },
-      { name: "Pagina padrao", href: "/bi/padrao", enabled: true, icon: RiBookOpenLine, groupLabel: "Templates" },
-      { name: "Carteira", href: "/bi/carteira", enabled: false, icon: RiWallet3Line, groupLabel: "Operacao" },
-      { name: "Comportamento", href: "/bi/comportamento", enabled: false, icon: RiUserStarLine, groupLabel: "Operacao" },
-      { name: "Receitas", href: "/bi/receitas", enabled: false, icon: RiMoneyDollarBoxLine, groupLabel: "Financeiro" },
-      { name: "Fluxo de caixa", href: "/bi/fluxo-caixa", enabled: false, icon: RiLineChartLine, groupLabel: "Financeiro" },
-      { name: "DRE", href: "/bi/dre", enabled: false, icon: RiFileChart2Line, groupLabel: "Financeiro" },
+      { name: "Carteira", href: "/bi/carteira", enabled: false, icon: RiWallet3Line },
+      { name: "Liquidações", href: "/bi/liquidacoes", enabled: false, icon: RiHandCoinLine },
+      { name: "Inadimplência", href: "/bi/inadimplencia", enabled: false, icon: RiPulseLine },
+      { name: "Concentração", href: "/bi/concentracao", enabled: false, icon: RiBarChartGroupedLine },
+      { name: "Rentabilidade", href: "/bi/rentabilidade", enabled: false, icon: RiLineChartLine },
       // Benchmark — dados publicos CVM FIDC via postgres_fdw.
       // Ver docs/integracao-cvm-fidc.md e CLAUDE.md §13.1.
-      { name: "Benchmark", href: "/bi/benchmark", enabled: true, icon: RiBarChartGroupedLine, groupLabel: "Analise" },
-      // Benchmark2 — listagem completa de fundos CVM via <DataTableShell>.
-      { name: "Benchmark2", href: "/bi/benchmark2", enabled: true, icon: RiBarChartGroupedLine, groupLabel: "Analise" },
+      {
+        name: "Benchmark",
+        href: "#benchmark",
+        enabled: true,
+        icon: RiBookOpenLine,
+        children: [
+          { name: "Benchmark", href: "/bi/benchmark", enabled: true },
+          { name: "Benchmark2", href: "/bi/benchmark2", enabled: true },
+        ],
+      },
     ],
   },
   {
