@@ -466,7 +466,7 @@ export default function PersonasAdminPage() {
         }
         size="lg"
       >
-        <div className="p-6">
+        <div className="flex-1 overflow-y-auto p-6">
           {detailQuery.isLoading ? (
             <div className="py-8 text-center text-[13px] text-gray-500">
               Carregando...
@@ -499,7 +499,7 @@ export default function PersonasAdminPage() {
         title="Nova persona"
         size="lg"
       >
-        <div className="p-6">
+        <div className="flex-1 overflow-y-auto p-6">
           <PersonaCreateForm
             onSubmit={handleCreate}
             onCancel={closeSheet}

@@ -540,7 +540,7 @@ export default function AgentsAdminPage() {
         }
         size="lg"
       >
-        <div className="p-6">
+        <div className="flex-1 overflow-y-auto p-6">
           {detailQuery.isLoading ? (
             <div className="py-8 text-center text-[13px] text-gray-500">
               Carregando...
@@ -579,7 +579,7 @@ export default function AgentsAdminPage() {
         title="Novo agente"
         size="lg"
       >
-        <div className="p-6">
+        <div className="flex-1 overflow-y-auto p-6">
           <AgentCreateForm
             personas={personasQuery.data ?? []}
             expertises={expertisesQuery.data ?? []}
