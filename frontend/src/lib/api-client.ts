@@ -517,6 +517,18 @@ export const adminAI = {
     archive: (id: string) =>
       apiClient.post<AIPersonaDetail>(`/admin/ia/personas/${id}/archive`),
   },
+  // F2.c.4 — Listagem read-only de tools registradas (@register_tool).
+  tools: {
+    list: (opts: { module?: string; cost?: string } = {}) => {
+      const params = new URLSearchParams()
+      if (opts.module) params.set("module", opts.module)
+      if (opts.cost) params.set("cost", opts.cost)
+      const qs = params.toString()
+      return apiClient.get<AIToolInfo[]>(
+        `/admin/ia/tools${qs ? `?${qs}` : ""}`,
+      )
+    },
+  },
   // F2.c.3 — CRUD versionado de agent definitions (CLAUDE.md §19.12).
   // Em /admin/ia/agents (portugues, novo) — paralelo ao legado em
   // /admin/ai/agents (ingles, agent_config override) que continua de pe.
@@ -707,6 +719,15 @@ export type AIAgentDefinitionCreatePayload = {
 export type AIAgentDefinitionUpdatePayload = Partial<
   Omit<AIAgentDefinitionCreatePayload, "name" | "module">
 >
+
+export type AIToolInfo = {
+  name: string
+  description: string
+  module: string
+  min_permission: string
+  cost_hint: string
+  input_schema: Record<string, unknown>
+}
 
 export type AIAgentDefinitionPreview = {
   name: string
