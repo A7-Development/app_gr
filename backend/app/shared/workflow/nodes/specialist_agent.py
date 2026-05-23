@@ -144,6 +144,7 @@ class SpecialistAgentNode(BaseNode):
             spec=spec,
             ctx=ctx,
             db=db,
+            session=ctx.session,
         )
         return NodeOutput(
             data=result.output_data,

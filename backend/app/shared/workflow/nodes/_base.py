@@ -41,10 +41,13 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from app.agentic.memory import AnalysisSession
 
 
 class VarType(StrEnum):
@@ -110,6 +113,13 @@ class NodeContext:
     # `config.input_bindings`) can do so without round-tripping through
     # the graph. Filled by `_execute_node` in the engine.
     node_config: dict[str, Any] = field(default_factory=dict)
+    # AnalysisSession do workflow run (F1.C2). Carrega scratchpad
+    # cross-agent + step trace + step cache. Filled by the engine for
+    # the whole run; nodes que invocam agentes (specialist_agent) leem
+    # daqui e propagam pra `run_specialist_agent(session=...)`. None
+    # quando o caller nao passa session — codigo legado continua
+    # funcionando (backward compat).
+    session: AnalysisSession | None = None
 
 
 @dataclass(slots=True)

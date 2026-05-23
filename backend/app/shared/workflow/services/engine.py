@@ -33,7 +33,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import NodeRunStatus, WorkflowRunStatus
+from app.agentic.memory import AnalysisSession, create_session
+from app.core.enums import Module, NodeRunStatus, WorkflowRunStatus
 from app.shared.workflow.models.definition import WorkflowDefinition
 from app.shared.workflow.models.run import WorkflowNodeRun, WorkflowRun
 from app.shared.workflow.nodes._base import NodeContext, NodeOutput
@@ -265,6 +266,27 @@ async def _execute_run(
         run.status = WorkflowRunStatus.RUNNING
         await db.flush()
 
+    # F1.C2: cria uma AnalysisSession por execucao de run. Vive enquanto
+    # _execute_run roda; nodes que invocam agentes (specialist_agent) leem
+    # daqui via NodeContext.session. tool_use/result viram steps na session;
+    # apos cada node, copiamos os steps deste node pra
+    # workflow_node_run.input_data["tools_log"] (consumido pelo
+    # AgentLiveStatus do frontend).
+    #
+    # Quando _execute_run e chamado em resume_run, criamos uma session
+    # nova — steps anteriores ja estao persistidos em input_data.tools_log
+    # dos nodes ja completos. Cross-agent scratchpad da execucao anterior
+    # nao reaparece — aceitavel pra MVP; persistencia C3 trara o cenario
+    # "session sobrevive entre resumes" via DB.
+    session = create_session(
+        tenant_id=run.tenant_id,
+        started_by_user_id=run.initiated_by,
+        # Workflow Credito por enquanto e o unico caller; quando outro modulo
+        # registrar workflows, derivamos do `definition.module` (futuro F3).
+        module=Module.CREDITO,
+        context_label=f"workflow:{definition.id}:{run.id}",
+    )
+
     # Identify nodes already completed/skipped in this run (used on resume).
     completed_rows = (
         await db.execute(
@@ -320,7 +342,7 @@ async def _execute_run(
 
         results = await asyncio.gather(
             *[
-                _execute_node(db, run, graph, _node_by_id(graph, nid))
+                _execute_node(db, run, graph, _node_by_id(graph, nid), session=session)
                 for nid in to_execute
             ],
             return_exceptions=True,
@@ -332,6 +354,7 @@ async def _execute_run(
                 run.error_detail = f"Node {nid} failed: {result}"
                 run.completed_at = datetime.now(UTC)
                 logger.exception("Node %s in run %s failed", nid, run.id)
+                session.end_session()
                 await db.flush()
                 return
             output: NodeOutput = result
@@ -351,12 +374,14 @@ async def _execute_run(
         if paused_anywhere:
             run.status = WorkflowRunStatus.PAUSED
             run.paused_at = datetime.now(UTC)
+            session.end_session()
             await db.flush()
             return
 
     # All levels processed without pause → completed.
     run.status = WorkflowRunStatus.COMPLETED
     run.completed_at = datetime.now(UTC)
+    session.end_session()
     await db.flush()
 
 
@@ -391,12 +416,20 @@ async def _execute_node(
     run: WorkflowRun,
     graph: WorkflowGraph,
     spec: Any,  # NodeSpec — type hint avoided to keep import surface small
+    *,
+    session: AnalysisSession | None = None,
 ) -> NodeOutput:
     """Instantiate and execute a single node. Persist its WorkflowNodeRun row.
 
     Resolves `{{node.X.output.field}}` and `{{trigger.field}}` templates in
     `spec.config` against the run context — n8n-style data flow between
     nodes. The resolved config is what the node implementation sees.
+
+    `session` (F1.C2) e propagada via NodeContext.session pra nodes que
+    invocam agentes. Apos a execucao, os steps que pertencem a este
+    node (slice de session.steps[start:end]) sao copiados pra
+    `node_run.input_data["tools_log"]` no shape AgentToolLogEntry —
+    frontend `AgentLiveStatus` consome direto.
     """
     cls = get_node_class(spec.type)
 
@@ -431,7 +464,12 @@ async def _execute_node(
         previous_outputs=run.context_data or {},
         trigger_data=run.trigger_data or {},
         node_config=resolved_config,
+        session=session,
     )
+
+    # Snapshot da posicao do session.steps antes da execucao deste node.
+    # Usado pra fatiar so os steps DESTE node ao popular tools_log.
+    steps_before = len(session.steps) if session is not None else 0
 
     try:
         output = await impl.execute(ctx, db)
@@ -442,6 +480,10 @@ async def _execute_node(
         node_run.duration_ms = int(
             (node_run.completed_at - started).total_seconds() * 1000
         )
+        # Mesmo em falha, captura o que houve no trace (alimenta o
+        # AgentLiveStatus em FailedView pra mostrar onde quebrou).
+        if session is not None:
+            _populate_tools_log(node_run, session, steps_before)
         await db.flush()
         raise
 
@@ -455,9 +497,33 @@ async def _execute_node(
     node_run.status = (
         NodeRunStatus.WAITING_INPUT if output.should_pause else NodeRunStatus.COMPLETED
     )
+    if session is not None:
+        _populate_tools_log(node_run, session, steps_before)
     await db.flush()
 
     return output
+
+
+def _populate_tools_log(
+    node_run: WorkflowNodeRun,
+    session: AnalysisSession,
+    steps_before: int,
+) -> None:
+    """Anexa o trace dos steps deste node em `node_run.input_data["tools_log"]`.
+
+    Shape compativel com `AgentToolLogEntry` do frontend (iso_at, kind,
+    tool_name, duration_ms, message). Frontend consome via
+    `WizardWorkspace` -> `AgentLiveStatus`.
+    """
+    sliced = session.steps[steps_before:]
+    if not sliced:
+        return
+    tools_log = [step.to_log_entry() for step in sliced]
+    # Reatribui o dict inteiro pra garantir que o SQLAlchemy detecte
+    # mutacao no JSONB (mutacao in-place pode passar despercebida).
+    new_input = dict(node_run.input_data or {})
+    new_input["tools_log"] = tools_log
+    node_run.input_data = new_input
 
 
 # ─── Cancel ───────────────────────────────────────────────────────────────
