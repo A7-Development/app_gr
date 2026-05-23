@@ -23,6 +23,11 @@ from app.modules.controladoria.schemas.cota_sub import (
     VariacaoDiariaResponse,
     VariacoesDiaResponse,
 )
+from app.modules.controladoria.schemas.cota_sub_drill import (
+    DrillCprResponse,
+    DrillDcResponse,
+    DrillPddResponse,
+)
 from app.modules.controladoria.services.balancete_diario import (
     compute_balancete_diario,
     compute_cosif_rows,
@@ -32,6 +37,9 @@ from app.modules.controladoria.services.balanco_patrimonial import (
     compute_balanco_patrimonial,
 )
 from app.modules.controladoria.services.cota_sub import compute_variacao_diaria
+from app.modules.controladoria.services.cota_sub_drill_cpr import compute_drill_cpr
+from app.modules.controladoria.services.cota_sub_drill_dc import compute_drill_dc
+from app.modules.controladoria.services.cota_sub_drill_pdd import compute_drill_pdd
 from app.modules.controladoria.services.cota_sub_explainers import (
     compute_explicacao_variacao,
 )
@@ -208,7 +216,7 @@ async def balancete_diario(
     silver em conta COSIF via cascata override -> regra -> pendente
     (CosifResolution). Calcula:
 
-      PL Cota Sub = Σ_silver_TOTAL − |Cotas Sr emitidas| − |Cotas Mez emitidas|
+      PL Cota Sub = Σ_silver_TOTAL - |Cotas Sr emitidas| - |Cotas Mez emitidas|
 
     Resposta inclui:
 
@@ -280,6 +288,113 @@ async def balancete_diario_cosif_rows(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
         ) from exc
     return CosifRowsResponseSchema.model_validate(result.to_dict())
+
+
+@router.get("/drill/dc", response_model=DrillDcResponse)
+async def drill_dc(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0). D-1 e calculado como dia util anterior.")],
+    data_anterior: Annotated[
+        date | None,
+        Query(description="Override opcional para D-1."),
+    ] = None,
+    _: None = _Guard,
+) -> DrillDcResponse:
+    """Drill da categoria DC (Direitos Creditorios) do Balance hero.
+
+    Decompoe o delta da linha DC em:
+      1. Aquisicoes do dia (wh_aquisicao_recebivel D0)
+      2. Liquidacoes por tipo_movimento (wh_liquidacao_recebivel D0)
+      3. Apropriacao derivada — formula:
+           Apropriacao = ΔEstoque + Liquidacoes - Aquisicoes
+    """
+    try:
+        return await compute_drill_dc(
+            db,
+            tenant_id=principal.tenant_id,
+            ua_id=fundo_id,
+            data_d0=data,
+            data_d1=data_anterior,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/drill/pdd", response_model=DrillPddResponse)
+async def drill_pdd(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0). D-1 e calculado como dia util anterior.")],
+    data_anterior: Annotated[
+        date | None,
+        Query(description="Override opcional para D-1."),
+    ] = None,
+    threshold_brl: Annotated[
+        Decimal,
+        Query(description="Threshold |Δ valor_pdd| pra entrar no top papeis. Default R$ 100."),
+    ] = Decimal("100"),
+    top_n: Annotated[
+        int,
+        Query(ge=1, le=200, description="Cap de papeis no top. Default 20."),
+    ] = 20,
+    _: None = _Guard,
+) -> DrillPddResponse:
+    """Drill da categoria PDD (Provisao para Devedores Duvidosos) do Balance hero.
+
+    Decompoe o delta da linha PDD em:
+      1. PDD consolidado D-1 / D0 / Δ (fonte do balanco)
+      2. PDD granular D-1 / D0 (Σ wh_estoque_recebivel.valor_pdd)
+      3. Matriz de migracao de faixa A/B/C/D/E/F/G/H ↔ WOP/NOVO
+      4. Papeis em write-off (WOP — saiu do estoque sem liquidacao registrada)
+      5. Top N papeis por |Δ valor_pdd|
+    """
+    try:
+        return await compute_drill_pdd(
+            db,
+            tenant_id=principal.tenant_id,
+            ua_id=fundo_id,
+            data_d0=data,
+            data_d1=data_anterior,
+            threshold_brl=threshold_brl,
+            top_n=top_n,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/drill/cpr", response_model=DrillCprResponse)
+async def drill_cpr(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0). D-1 e calculado como dia util anterior.")],
+    data_anterior: Annotated[
+        date | None,
+        Query(description="Override opcional para D-1."),
+    ] = None,
+    _: None = _Guard,
+) -> DrillCprResponse:
+    """Drill da categoria CPR (Contas a Pagar e Receber) do Balance hero.
+
+    Decompoe o delta da linha CPR em:
+      1. Totais D-1 / D0 / Δ
+      2. Agrupamento por natureza (diferimento, taxas, despesas, IOF/IR,
+         aporte/devolucao, outros)
+      3. Aportes engaiolados detectados (caso pedagogico REALINVEST 07-13/05)
+    """
+    try:
+        return await compute_drill_cpr(
+            db,
+            tenant_id=principal.tenant_id,
+            ua_id=fundo_id,
+            data_d0=data,
+            data_d1=data_anterior,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @router.get("/explicacao", response_model=ExplicacaoVariacaoResponse)

@@ -42,6 +42,14 @@ const KEYS = {
   explicacaoVariacao: (fundoId: string, data: string, dataAnterior?: string, thresholdBrl?: number, topN?: number) =>
     ["controladoria", "cota-sub", "explicacao", fundoId, data, dataAnterior ?? null, thresholdBrl ?? null, topN ?? null] as const,
 
+  // F2 drills (2026-05-23)
+  drillDc: (fundoId: string, data: string, dataAnterior?: string) =>
+    ["controladoria", "cota-sub", "drill", "dc", fundoId, data, dataAnterior ?? null] as const,
+  drillPdd: (fundoId: string, data: string, dataAnterior?: string, thresholdBrl?: number, topN?: number) =>
+    ["controladoria", "cota-sub", "drill", "pdd", fundoId, data, dataAnterior ?? null, thresholdBrl ?? null, topN ?? null] as const,
+  drillCpr: (fundoId: string, data: string, dataAnterior?: string) =>
+    ["controladoria", "cota-sub", "drill", "cpr", fundoId, data, dataAnterior ?? null] as const,
+
   dreCompetencias: (f: DreBaseFilters) =>
     ["controladoria", "dre", "competencias", f] as const,
   drePivot: (f: DrePivotFilters) =>
@@ -183,6 +191,67 @@ export function useExplicacaoVariacao(
       topN:         opts?.topN,
     }),
     enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+// ── Drills DC / PDD / CPR (F2 do redesign, 2026-05-23) ────────────────────
+
+export function useDrillDc(
+  fundoId: string | null | undefined,
+  data: string | null | undefined,
+  dataAnterior?: string | null,
+  enabled: boolean = true,
+) {
+  const ready = !!fundoId && !!data && enabled
+  return useQuery({
+    queryKey: KEYS.drillDc(fundoId ?? "", data ?? "", dataAnterior ?? undefined),
+    queryFn: () => controladoria.cotaSubDrillDc(fundoId!, data!, dataAnterior ?? undefined),
+    enabled: ready,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useDrillPdd(
+  fundoId: string | null | undefined,
+  data: string | null | undefined,
+  opts?: {
+    dataAnterior?: string | null
+    thresholdBrl?: number
+    topN?:         number
+    enabled?:      boolean
+  },
+) {
+  const ready = !!fundoId && !!data && (opts?.enabled ?? true)
+  return useQuery({
+    queryKey: KEYS.drillPdd(
+      fundoId ?? "",
+      data ?? "",
+      opts?.dataAnterior ?? undefined,
+      opts?.thresholdBrl,
+      opts?.topN,
+    ),
+    queryFn: () => controladoria.cotaSubDrillPdd(fundoId!, data!, {
+      dataAnterior: opts?.dataAnterior ?? undefined,
+      thresholdBrl: opts?.thresholdBrl,
+      topN:         opts?.topN,
+    }),
+    enabled: ready,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useDrillCpr(
+  fundoId: string | null | undefined,
+  data: string | null | undefined,
+  dataAnterior?: string | null,
+  enabled: boolean = true,
+) {
+  const ready = !!fundoId && !!data && enabled
+  return useQuery({
+    queryKey: KEYS.drillCpr(fundoId ?? "", data ?? "", dataAnterior ?? undefined),
+    queryFn: () => controladoria.cotaSubDrillCpr(fundoId!, data!, dataAnterior ?? undefined),
+    enabled: ready,
     staleTime: 5 * 60 * 1000,
   })
 }

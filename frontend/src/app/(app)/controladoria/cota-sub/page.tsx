@@ -103,6 +103,11 @@ import { toast } from "sonner"
 import { ActiveBackfillJobsPanel } from "./_components/ActiveBackfillJobsPanel"
 import { BalanceTable } from "./_components/BalanceTable"
 import { BalancoPatrimonialHero } from "./_components/BalancoPatrimonialHero"
+import { CategoriaDrillSheet } from "./_components/CategoriaDrillSheet"
+import { DrillCprContent } from "./_components/DrillCprContent"
+import { DrillDcContent } from "./_components/DrillDcContent"
+import { DrillPddContent } from "./_components/DrillPddContent"
+import type { CategoriaPatrimonialKey } from "@/lib/api-client"
 // EventosDiaTab desativado em F1 do redesign (2026-05-22) — substituido pelo
 // BalancoPatrimonialHero na aba "eventos". F4 decide o destino final (apos
 // drills da F2/F3 estarem completos). Import + componente preservados no
@@ -638,6 +643,10 @@ export default function CotaSubPage() {
 
   const [selected, setSelected] = React.useState<MovimentacaoRow | null>(null)
 
+  // Drill da F2 — abre Sheet lateral direito com DrillDcContent/PddContent/CprContent.
+  // Habilitado so pras 3 categorias da F2 via DRILL_ENABLED_F2 do BalancoPatrimonialHero.
+  const [drilledCategoria, setDrilledCategoria] = React.useState<CategoriaPatrimonialKey | null>(null)
+
   // Lookup do UUID da UA selecionada (endpoint backend exige fundo_id).
   const fundoId = React.useMemo(() => {
     if (fundo === "Todos") return null
@@ -1041,9 +1050,7 @@ export default function CotaSubPage() {
                             : undefined
                         }
                         onRetry={() => balancoPatQuery.refetch()}
-                        // Drills DC + PDD + CPR sao ligados na F2. F1 deixa
-                        // placeholder via onDrillCategoria undefined — F2 vai
-                        // injetar o DrillDownSheet aqui.
+                        onDrillCategoria={setDrilledCategoria}
                       />
                       {/* Placeholder pros outros 50% — F2/F3/F5 vao alocar
                           aqui (drills, insights IA, mutacao silenciosa). Em
@@ -1099,6 +1106,43 @@ export default function CotaSubPage() {
         context={aiContext}
         insights={MOCK_INSIGHTS}
       />
+
+      {/* DrillDown — F2: categoria do Balance hero (DC / PDD / CPR) */}
+      <CategoriaDrillSheet
+        open={drilledCategoria !== null}
+        onClose={() => setDrilledCategoria(null)}
+        categoria={
+          drilledCategoria === null || !balancoPatQuery.data
+            ? undefined
+            : [...balancoPatQuery.data.ativos, ...balancoPatQuery.data.passivos]
+                .find((c) => c.key === drilledCategoria)
+        }
+        fundoNome={balancoPatQuery.data?.fundo_nome ?? ""}
+        data={balancoPatQuery.data?.data ?? dayIso}
+        dataAnterior={balancoPatQuery.data?.data_anterior ?? ""}
+      >
+        {drilledCategoria === "dc" && fundoId && (
+          <DrillDcContent
+            fundoId={fundoId}
+            data={balancoPatQuery.data?.data ?? dayIso}
+            dataAnterior={balancoPatQuery.data?.data_anterior}
+          />
+        )}
+        {drilledCategoria === "pdd" && fundoId && (
+          <DrillPddContent
+            fundoId={fundoId}
+            data={balancoPatQuery.data?.data ?? dayIso}
+            dataAnterior={balancoPatQuery.data?.data_anterior}
+          />
+        )}
+        {drilledCategoria === "cpr" && fundoId && (
+          <DrillCprContent
+            fundoId={fundoId}
+            data={balancoPatQuery.data?.data ?? dayIso}
+            dataAnterior={balancoPatQuery.data?.data_anterior}
+          />
+        )}
+      </CategoriaDrillSheet>
 
       {/* DrillDown — movimentacao individual */}
       <DrillDownSheet
