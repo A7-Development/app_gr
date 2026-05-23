@@ -121,5 +121,5 @@ def test_session_label_includes_run_id() -> None:
     from app.shared.workflow.services.engine import _execute_run  # noqa: F401
 
     # Soh confirma que a string montada e human-readable; nao executa nada.
-    label = f"workflow:def-id:run-id"
+    label = "workflow:def-id:run-id"
     assert "workflow:" in label

@@ -33,7 +33,12 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agentic.memory import AnalysisSession, create_session
+from app.agentic.memory import (
+    AnalysisSession,
+    attach_persistence,
+    create_session,
+)
+from app.core.database import AsyncSessionLocal
 from app.core.enums import Module, NodeRunStatus, WorkflowRunStatus
 from app.shared.workflow.models.definition import WorkflowDefinition
 from app.shared.workflow.models.run import WorkflowNodeRun, WorkflowRun
@@ -286,6 +291,10 @@ async def _execute_run(
         module=Module.CREDITO,
         context_label=f"workflow:{definition.id}:{run.id}",
     )
+    # F1.C3: anexa persistencia hibrida — flush parcial apos 60s vivos
+    # + flush final em end_session(). Usa AsyncSessionLocal (sessao DB
+    # separada da request) pra nao colidir com `db` do caller.
+    attach_persistence(session, session_factory=AsyncSessionLocal)
 
     # Identify nodes already completed/skipped in this run (used on resume).
     completed_rows = (

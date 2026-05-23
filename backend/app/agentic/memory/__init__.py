@@ -32,10 +32,16 @@ from app.agentic.memory._base import (
     StepKind,
     create_session,
 )
+from app.agentic.memory.persistence import (
+    attach_persistence,
+    wait_for_pending_flushes,
+)
 
 __all__ = [
     "AnalysisSession",
     "SessionStep",
     "StepKind",
+    "attach_persistence",
     "create_session",
+    "wait_for_pending_flushes",
 ]

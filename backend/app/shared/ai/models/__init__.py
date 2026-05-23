@@ -4,6 +4,7 @@ from app.shared.ai.models.agent_config import AgentConfig
 from app.shared.ai.models.agent_definition import AgentDefinition, AgentDefinitionActive
 from app.shared.ai.models.agent_expertise import AgentExpertise, AgentExpertiseActive
 from app.shared.ai.models.agent_persona import AgentPersona, AgentPersonaActive
+from app.shared.ai.models.agent_session import AgentSession, AgentSessionStep
 from app.shared.ai.models.conversation import AIConversation, AIConversationSummary
 from app.shared.ai.models.credit_balance import AICreditBalance
 from app.shared.ai.models.message import AIMessage
@@ -30,6 +31,8 @@ __all__ = [
     "AgentExpertiseActive",
     "AgentPersona",
     "AgentPersonaActive",
+    "AgentSession",
+    "AgentSessionStep",
     "CacheStrategy",
     "TenantAISubscription",
     "UserAIPermission",
