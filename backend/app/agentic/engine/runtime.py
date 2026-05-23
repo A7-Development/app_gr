@@ -54,6 +54,7 @@ from app.agentic.engine.catalog import (
 from app.agentic.engine.model_resolver import ResolvedModels, resolve_models_for_agent
 from app.agentic.engine.prompts import repository as prompt_repo
 from app.agentic.memory import AnalysisSession
+from app.agentic.playbooks.services.resolver import resolve_templates
 from app.agentic.tools._base import AgentTool
 from app.agentic.tools.registry import ToolRegistry
 from app.core.enums import Module
@@ -61,10 +62,9 @@ from app.modules.integracoes.adapters.llm.anthropic.config import (
     CredentialNotFoundError,
     get_active_anthropic_credential,
 )
-from app.shared.workflow.services.resolver import resolve_templates
 
 if TYPE_CHECKING:
-    from app.shared.workflow.nodes._base import NodeContext
+    from app.agentic.playbooks.nodes._base import NodeContext
 
 logger = logging.getLogger(__name__)
 

@@ -25,13 +25,13 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agentic.playbooks.models.run import PlaybookRunStep
 from app.core.config import get_settings
 from app.core.enums import NodeRunStatus
 from app.modules.credito.models.dossier import CreditDossier
 from app.modules.credito.models.dossier_attachment import DossierAttachment
 from app.modules.credito.models.dossier_step_link import DossierStepLink
 from app.modules.credito.models.dossier_step_note import DossierStepNote
-from app.shared.workflow.models.run import PlaybookRunStep
 
 
 class EvidenceServiceError(RuntimeError):

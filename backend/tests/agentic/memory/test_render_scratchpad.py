@@ -14,8 +14,8 @@ from uuid import uuid4
 import pytest
 
 from app.agentic.memory import create_session
+from app.agentic.playbooks.nodes._base import NodeContext
 from app.core.enums import Module
-from app.shared.workflow.nodes._base import NodeContext
 
 # runtime.py importa anthropic — skip se ausente.
 pytestmark = pytest.mark.skipif(

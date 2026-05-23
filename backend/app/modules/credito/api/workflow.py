@@ -17,27 +17,27 @@ from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.enums import Module, Permission, PlaybookStatus
-from app.core.module_guard import require_module
-from app.core.tenant_middleware import RequestPrincipal, get_current_principal
-from app.shared.workflow.models.definition import (
+from app.agentic.playbooks.models.definition import (
     PlaybookDefinition,
     PlaybookDefinitionActive,
 )
-from app.shared.workflow.schemas.definition import (
+from app.agentic.playbooks.schemas.definition import (
     PlaybookActivatePayload,
     PlaybookDefinitionCreate,
     PlaybookDefinitionRead,
     PlaybookDefinitionUpdate,
     PlaybookGraph,
 )
-from app.shared.workflow.services.dry_run import dry_run_workflow
-from app.shared.workflow.services.engine import list_node_types_for_editor
-from app.shared.workflow.services.graph_validator import (
+from app.agentic.playbooks.services.dry_run import dry_run_workflow
+from app.agentic.playbooks.services.engine import list_node_types_for_editor
+from app.agentic.playbooks.services.graph_validator import (
     ValidationResult,
     validate_graph,
 )
+from app.core.database import get_db
+from app.core.enums import Module, Permission, PlaybookStatus
+from app.core.module_guard import require_module
+from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 
 router = APIRouter()
 

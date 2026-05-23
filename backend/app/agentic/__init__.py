@@ -7,10 +7,10 @@ o motor de agente e unico.
 
 Sub-camadas:
     engine/      Motor unico de agente (runtime, tool loop, catalog, prompts)
-    agents/      Catalogo central de agentes (futuro F2 — hoje vive em engine/catalog.py)
-    tools/       Registry dinamico de tools (futuro F2 — hoje vive em engine/tools/)
-    playbooks/   Workflows declarativos (futuro F3 — hoje vive em modules/credito/workflows/)
-    memory/      Sessao + tenant + global (futuro F1)
+    agents/      Catalogo central de agentes (F2 entregue — AgentRegistry + ResolvedAgent)
+    tools/       Registry dinamico de tools (F2 entregue — @register_tool + ToolRegistry)
+    playbooks/   Workflows declarativos versionados (F3.2 entregue — graph JSONB + engine)
+    memory/      Sessao + tenant + global (F1 entregue — AnalysisSession + persistence)
 
 Vocabulario canonico: agents, tools, playbooks, memory — usar exatamente
 esses termos. "Skill" NUNCA significa playbook agentico (skill = comando

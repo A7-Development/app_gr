@@ -35,7 +35,7 @@ from app.agentic.engine.output_schemas import (
     PleitoExtraction,
     SocialContractAnalysis,
 )
-from app.shared.workflow.nodes._base import VarType
+from app.agentic.playbooks.nodes._base import VarType
 
 if TYPE_CHECKING:
     pass

@@ -8,12 +8,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agentic.playbooks.models.definition import PlaybookDefinition
+from app.agentic.playbooks.models.run import PlaybookRun, PlaybookRunStep
+from app.agentic.playbooks.services import engine as workflow_engine
 from app.core.enums import DossierStatus, NodeRunStatus, PlaybookRunStatus
 from app.modules.credito.models.analysis import CreditDossierAnalysis
 from app.modules.credito.models.dossier import CreditDossier
-from app.shared.workflow.models.definition import PlaybookDefinition
-from app.shared.workflow.models.run import PlaybookRun, PlaybookRunStep
-from app.shared.workflow.services import engine as workflow_engine
 
 
 class DossierServiceError(RuntimeError):

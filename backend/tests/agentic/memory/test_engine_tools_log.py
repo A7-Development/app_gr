@@ -43,7 +43,7 @@ def _new_session():
 
 
 def test_populates_tools_log_from_slice() -> None:
-    from app.shared.workflow.services.engine import _populate_tools_log
+    from app.agentic.playbooks.services.engine import _populate_tools_log
 
     s = _new_session()
     s.record_tool_use(
@@ -69,7 +69,7 @@ def test_populates_tools_log_from_slice() -> None:
 
 def test_slice_isolates_each_node_run() -> None:
     """Dois nodes consecutivos: cada um so ve seus proprios steps."""
-    from app.shared.workflow.services.engine import _populate_tools_log
+    from app.agentic.playbooks.services.engine import _populate_tools_log
 
     s = _new_session()
 
@@ -104,7 +104,7 @@ def test_slice_isolates_each_node_run() -> None:
 
 
 def test_no_tools_log_key_when_node_did_not_emit_steps() -> None:
-    from app.shared.workflow.services.engine import _populate_tools_log
+    from app.agentic.playbooks.services.engine import _populate_tools_log
 
     s = _new_session()
     # Nada gravado entre antes e depois.
@@ -118,7 +118,7 @@ def test_no_tools_log_key_when_node_did_not_emit_steps() -> None:
 
 def test_session_label_includes_run_id() -> None:
     """Smoke do context_label que o engine cria."""
-    from app.shared.workflow.services.engine import _execute_run  # noqa: F401
+    from app.agentic.playbooks.services.engine import _execute_run  # noqa: F401
 
     # Soh confirma que a string montada e human-readable; nao executa nada.
     label = "workflow:def-id:run-id"

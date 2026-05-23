@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agentic.playbooks.models.run import PlaybookRun, PlaybookRunStep
+from app.agentic.playbooks.services import engine as workflow_engine
 from app.core.database import get_db
 from app.core.enums import DossierStatus, Module, NodeRunStatus, Permission
 from app.core.module_guard import require_module
@@ -25,8 +27,6 @@ from app.modules.credito.schemas.dossier import (
     NodeSubmitPayload,
 )
 from app.modules.credito.services import dossier as dossier_svc
-from app.shared.workflow.models.run import PlaybookRun, PlaybookRunStep
-from app.shared.workflow.services import engine as workflow_engine
 
 router = APIRouter()
 

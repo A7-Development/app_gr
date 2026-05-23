@@ -28,7 +28,7 @@ from app.modules.credito.models.dossier_step_note import DossierStepNote
 from app.shared.identity.tenant import Tenant
 from app.shared.identity.user import User
 from app.shared.identity.user_permission import UserModulePermission
-from app.shared.workflow.models.definition import PlaybookDefinition
+from app.agentic.playbooks.models.definition import PlaybookDefinition
 
 API_BASE = "/api/v1/credito"
 
