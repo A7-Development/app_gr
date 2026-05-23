@@ -29,7 +29,7 @@ from uuid import uuid4
 
 from app.shared.workflow.nodes._base import VarType
 from app.shared.workflow.nodes.registry import NODE_TYPES, get_node_class
-from app.shared.workflow.schemas.definition import NodeSpec, WorkflowGraph
+from app.shared.workflow.schemas.definition import NodeSpec, PlaybookGraph
 from app.shared.workflow.services.resolver import (
     evaluate_edge_condition,
     resolve_templates,
@@ -116,7 +116,7 @@ def _mock_value(vartype_str: str) -> Any:
 # ─── Topological walk (cópia leve do engine) ─────────────────────────────
 
 
-def _topological_order(graph: WorkflowGraph) -> list[NodeSpec]:
+def _topological_order(graph: PlaybookGraph) -> list[NodeSpec]:
     in_degree: dict[str, int] = defaultdict(int)
     children: dict[str, list[str]] = defaultdict(list)
     by_id: dict[str, NodeSpec] = {n.id: n for n in graph.nodes}
@@ -146,7 +146,7 @@ def _topological_order(graph: WorkflowGraph) -> list[NodeSpec]:
 
 
 def dry_run_workflow(
-    graph: WorkflowGraph,
+    graph: PlaybookGraph,
     *,
     trigger_data: dict[str, Any] | None = None,
 ) -> DryRunResult:

@@ -1,4 +1,4 @@
-"""WorkflowEngine — executes a workflow definition.
+"""PlaybookEngine — executes a playbook definition.
 
 Responsibilities:
 1. Start a run from a definition + trigger payload.
@@ -39,12 +39,12 @@ from app.agentic.memory import (
     create_session,
 )
 from app.core.database import AsyncSessionLocal
-from app.core.enums import Module, NodeRunStatus, WorkflowRunStatus
-from app.shared.workflow.models.definition import WorkflowDefinition
-from app.shared.workflow.models.run import WorkflowNodeRun, WorkflowRun
+from app.core.enums import Module, NodeRunStatus, PlaybookRunStatus
+from app.shared.workflow.models.definition import PlaybookDefinition
+from app.shared.workflow.models.run import PlaybookRun, PlaybookRunStep
 from app.shared.workflow.nodes._base import NodeContext, NodeOutput
 from app.shared.workflow.nodes.registry import NODE_TYPES, get_node_class
-from app.shared.workflow.schemas.definition import EdgeSpec, NodeSpec, WorkflowGraph
+from app.shared.workflow.schemas.definition import EdgeSpec, NodeSpec, PlaybookGraph
 from app.shared.workflow.services.resolver import (
     evaluate_edge_condition,
     resolve_templates,
@@ -53,14 +53,14 @@ from app.shared.workflow.services.resolver import (
 logger = logging.getLogger(__name__)
 
 
-class WorkflowEngineError(RuntimeError):
+class PlaybookEngineError(RuntimeError):
     """Engine-level error (graph cycle, missing definition, etc)."""
 
 
 # ─── Graph utilities ───────────────────────────────────────────────────────
 
 
-def _topological_levels(graph: WorkflowGraph) -> list[list[str]]:
+def _topological_levels(graph: PlaybookGraph) -> list[list[str]]:
     """Group node ids into levels where each level can run in parallel.
 
     Level 0 contains nodes with no incoming edges. Level k contains nodes
@@ -72,7 +72,7 @@ def _topological_levels(graph: WorkflowGraph) -> list[list[str]]:
 
     for e in graph.edges:
         if e.source not in all_ids or e.target not in all_ids:
-            raise WorkflowEngineError(
+            raise PlaybookEngineError(
                 f"Edge {e.id} references node not in graph "
                 f"(source={e.source}, target={e.target})"
             )
@@ -85,7 +85,7 @@ def _topological_levels(graph: WorkflowGraph) -> list[list[str]]:
     while remaining:
         current = [nid for nid, deg in remaining.items() if deg == 0]
         if not current:
-            raise WorkflowEngineError(
+            raise PlaybookEngineError(
                 f"Workflow graph has a cycle. Remaining nodes: {sorted(remaining.keys())}"
             )
         levels.append(sorted(current))
@@ -97,12 +97,12 @@ def _topological_levels(graph: WorkflowGraph) -> list[list[str]]:
     return levels
 
 
-def _node_by_id(graph: WorkflowGraph, node_id: str) -> Any:
+def _node_by_id(graph: PlaybookGraph, node_id: str) -> Any:
     """Return the NodeSpec with the given id."""
     for n in graph.nodes:
         if n.id == node_id:
             return n
-    raise WorkflowEngineError(f"Node id '{node_id}' not found in graph.")
+    raise PlaybookEngineError(f"Node id '{node_id}' not found in graph.")
 
 
 def should_skip_node(
@@ -173,26 +173,26 @@ async def start_run(
     trigger_type: str = "manual",
     trigger_data: dict[str, Any] | None = None,
     initiated_by: UUID | None = None,
-) -> WorkflowRun:
-    """Create a WorkflowRun row and execute it until it pauses or completes.
+) -> PlaybookRun:
+    """Create a PlaybookRun row and execute it until it pauses or completes.
 
     Returns the (refreshed) run. The caller commits.
     """
     definition = (
         await db.execute(
-            select(WorkflowDefinition).where(WorkflowDefinition.id == definition_id)
+            select(PlaybookDefinition).where(PlaybookDefinition.id == definition_id)
         )
     ).scalar_one_or_none()
     if definition is None:
-        raise WorkflowEngineError(f"WorkflowDefinition {definition_id} not found.")
+        raise PlaybookEngineError(f"PlaybookDefinition {definition_id} not found.")
 
-    run = WorkflowRun(
+    run = PlaybookRun(
         id=uuid4(),
         tenant_id=tenant_id,
         definition_id=definition_id,
         trigger_type=trigger_type,
         trigger_data=trigger_data or {},
-        status=WorkflowRunStatus.PENDING,
+        status=PlaybookRunStatus.PENDING,
         context_data={},
         initiated_by=initiated_by,
     )
@@ -208,7 +208,7 @@ async def resume_run(
     *,
     run_id: UUID,
     pending_inputs: dict[str, dict[str, Any]],
-) -> WorkflowRun:
+) -> PlaybookRun:
     """Resume a paused run with submitted input(s).
 
     `pending_inputs` is keyed by node_id. Each value is the data submitted
@@ -216,12 +216,12 @@ async def resume_run(
     review verdict of a human_review node).
     """
     run = (
-        await db.execute(select(WorkflowRun).where(WorkflowRun.id == run_id))
+        await db.execute(select(PlaybookRun).where(PlaybookRun.id == run_id))
     ).scalar_one_or_none()
     if run is None:
-        raise WorkflowEngineError(f"WorkflowRun {run_id} not found.")
-    if run.status != WorkflowRunStatus.PAUSED:
-        raise WorkflowEngineError(
+        raise PlaybookEngineError(f"PlaybookRun {run_id} not found.")
+    if run.status != PlaybookRunStatus.PAUSED:
+        raise PlaybookEngineError(
             f"Cannot resume run {run_id} in status {run.status.value}."
         )
 
@@ -231,13 +231,13 @@ async def resume_run(
         entry = ctx.setdefault(node_id, {})
         entry["pending_input"] = payload
     run.context_data = ctx
-    run.status = WorkflowRunStatus.RUNNING
+    run.status = PlaybookRunStatus.RUNNING
     run.paused_at = None
     await db.flush()
 
     definition = (
         await db.execute(
-            select(WorkflowDefinition).where(WorkflowDefinition.id == run.definition_id)
+            select(PlaybookDefinition).where(PlaybookDefinition.id == run.definition_id)
         )
     ).scalar_one()
 
@@ -250,8 +250,8 @@ async def resume_run(
 
 async def _execute_run(
     db: AsyncSession,
-    run: WorkflowRun,
-    definition: WorkflowDefinition,
+    run: PlaybookRun,
+    definition: PlaybookDefinition,
 ) -> None:
     """Walk the graph and execute nodes until completion or pause.
 
@@ -263,12 +263,12 @@ async def _execute_run(
     node typically has two outgoing edges with mirror conditions; only the
     matching branch's downstream nodes execute, the other branch is skipped.
     """
-    graph = WorkflowGraph.model_validate(definition.graph)
+    graph = PlaybookGraph.model_validate(definition.graph)
     levels = _topological_levels(graph)
 
     if run.started_at is None:
         run.started_at = datetime.now(UTC)
-        run.status = WorkflowRunStatus.RUNNING
+        run.status = PlaybookRunStatus.RUNNING
         await db.flush()
 
     # F1.C2: cria uma AnalysisSession por execucao de run. Vive enquanto
@@ -299,9 +299,9 @@ async def _execute_run(
     # Identify nodes already completed/skipped in this run (used on resume).
     completed_rows = (
         await db.execute(
-            select(WorkflowNodeRun).where(
-                WorkflowNodeRun.run_id == run.id,
-                WorkflowNodeRun.status.in_(
+            select(PlaybookRunStep).where(
+                PlaybookRunStep.run_id == run.id,
+                PlaybookRunStep.status.in_(
                     [NodeRunStatus.COMPLETED, NodeRunStatus.SKIPPED]
                 ),
             )
@@ -359,7 +359,7 @@ async def _execute_run(
 
         for nid, result in zip(to_execute, results, strict=True):
             if isinstance(result, Exception):
-                run.status = WorkflowRunStatus.FAILED
+                run.status = PlaybookRunStatus.FAILED
                 run.error_detail = f"Node {nid} failed: {result}"
                 run.completed_at = datetime.now(UTC)
                 logger.exception("Node %s in run %s failed", nid, run.id)
@@ -381,14 +381,14 @@ async def _execute_run(
         await db.flush()
 
         if paused_anywhere:
-            run.status = WorkflowRunStatus.PAUSED
+            run.status = PlaybookRunStatus.PAUSED
             run.paused_at = datetime.now(UTC)
             session.end_session()
             await db.flush()
             return
 
     # All levels processed without pause → completed.
-    run.status = WorkflowRunStatus.COMPLETED
+    run.status = PlaybookRunStatus.COMPLETED
     run.completed_at = datetime.now(UTC)
     session.end_session()
     await db.flush()
@@ -396,13 +396,13 @@ async def _execute_run(
 
 async def _persist_skipped_node(
     db: AsyncSession,
-    run: WorkflowRun,
+    run: PlaybookRun,
     spec: Any,
 ) -> None:
     """Record a SKIPPED node run (edge condition blocked) without executing."""
     now = datetime.now(UTC)
     db.add(
-        WorkflowNodeRun(
+        PlaybookRunStep(
             id=uuid4(),
             run_id=run.id,
             tenant_id=run.tenant_id,
@@ -422,13 +422,13 @@ async def _persist_skipped_node(
 
 async def _execute_node(
     db: AsyncSession,
-    run: WorkflowRun,
-    graph: WorkflowGraph,
+    run: PlaybookRun,
+    graph: PlaybookGraph,
     spec: Any,  # NodeSpec — type hint avoided to keep import surface small
     *,
     session: AnalysisSession | None = None,
 ) -> NodeOutput:
-    """Instantiate and execute a single node. Persist its WorkflowNodeRun row.
+    """Instantiate and execute a single node. Persist its PlaybookRunStep row.
 
     Resolves `{{node.X.output.field}}` and `{{trigger.field}}` templates in
     `spec.config` against the run context — n8n-style data flow between
@@ -450,7 +450,7 @@ async def _execute_node(
     impl = cls(config=resolved_config)
 
     started = datetime.now(UTC)
-    node_run = WorkflowNodeRun(
+    node_run = PlaybookRunStep(
         id=uuid4(),
         run_id=run.id,
         tenant_id=run.tenant_id,
@@ -514,7 +514,7 @@ async def _execute_node(
 
 
 def _populate_tools_log(
-    node_run: WorkflowNodeRun,
+    node_run: PlaybookRunStep,
     session: AnalysisSession,
     steps_before: int,
 ) -> None:
@@ -541,16 +541,16 @@ def _populate_tools_log(
 async def cancel_run(db: AsyncSession, *, run_id: UUID, tenant_id: UUID) -> None:
     """Mark a run as cancelled. Idempotent — safe to call on a finished run."""
     await db.execute(
-        update(WorkflowRun)
+        update(PlaybookRun)
         .where(
-            WorkflowRun.id == run_id,
-            WorkflowRun.tenant_id == tenant_id,
-            WorkflowRun.status.in_(
-                [WorkflowRunStatus.PENDING, WorkflowRunStatus.RUNNING, WorkflowRunStatus.PAUSED]
+            PlaybookRun.id == run_id,
+            PlaybookRun.tenant_id == tenant_id,
+            PlaybookRun.status.in_(
+                [PlaybookRunStatus.PENDING, PlaybookRunStatus.RUNNING, PlaybookRunStatus.PAUSED]
             ),
         )
         .values(
-            status=WorkflowRunStatus.CANCELLED,
+            status=PlaybookRunStatus.CANCELLED,
             completed_at=datetime.now(UTC),
         )
     )

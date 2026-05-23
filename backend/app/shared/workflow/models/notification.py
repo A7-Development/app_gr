@@ -1,4 +1,4 @@
-"""WorkflowNotification — record of notification dispatched by a workflow.
+"""PlaybookNotification — record of notification dispatched by a workflow.
 
 MVP: just persists the intent. Channels supported in MVP:
 - "log"   — written to decision_log (already-recorded) + this row
@@ -18,7 +18,7 @@ from sqlalchemy.sql import func
 from app.core.database import Base
 
 
-class WorkflowNotification(Base):
+class PlaybookNotification(Base):
     """One notification dispatched (or recorded) during a workflow run."""
 
     __tablename__ = "workflow_notification"
@@ -55,4 +55,4 @@ class WorkflowNotification(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<WorkflowNotification {self.channel} to={self.recipient!r}>"
+        return f"<PlaybookNotification {self.channel} to={self.recipient!r}>"

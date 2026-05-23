@@ -1,7 +1,7 @@
 """Graph validator — semantic validation of a workflow definition.
 
 Where structural validation lives:
-- Pydantic schema (`WorkflowGraph`) — required fields on `NodeSpec`/`EdgeSpec`.
+- Pydantic schema (`PlaybookGraph`) — required fields on `NodeSpec`/`EdgeSpec`.
 - `engine._topological_levels` — cycle detection + edge integrity.
 - `BaseNode.validate_config()` — per-node required config keys.
 
@@ -34,7 +34,7 @@ from typing import Any
 
 from app.shared.workflow.nodes._base import Requirement, VarType
 from app.shared.workflow.nodes.registry import get_node_class
-from app.shared.workflow.schemas.definition import NodeSpec, WorkflowGraph
+from app.shared.workflow.schemas.definition import NodeSpec, PlaybookGraph
 
 __all__ = [
     "ValidationError",
@@ -78,7 +78,7 @@ _NODE_PATH_RE = re.compile(
 )
 
 
-def _topological_order(graph: WorkflowGraph) -> list[NodeSpec]:
+def _topological_order(graph: PlaybookGraph) -> list[NodeSpec]:
     """Kahn's algorithm — same logic as engine._topological_levels but
     flattened to a single list. Returns nodes in execution order.
     """
@@ -161,7 +161,7 @@ def _types_compatible(expected: VarType, found: VarType) -> bool:
     return expected in (VarType.STRING, VarType.OBJECT, VarType.LIST)
 
 
-def validate_graph(graph: WorkflowGraph) -> ValidationResult:
+def validate_graph(graph: PlaybookGraph) -> ValidationResult:
     """Run all semantic checks. Returns errors+warnings; no exception."""
     errors: list[ValidationError] = []
 

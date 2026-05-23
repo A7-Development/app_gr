@@ -148,7 +148,7 @@ class Environment(enum.StrEnum):
 # laboratorio).
 
 
-class WorkflowStatus(enum.StrEnum):
+class PlaybookStatus(enum.StrEnum):
     """Lifecycle of a `workflow_definition` row."""
 
     DRAFT = "draft"
@@ -156,7 +156,7 @@ class WorkflowStatus(enum.StrEnum):
     ARCHIVED = "archived"
 
 
-class WorkflowRunStatus(enum.StrEnum):
+class PlaybookRunStatus(enum.StrEnum):
     """Status of an execution of a workflow (one row in `workflow_run`)."""
 
     PENDING = "pending"

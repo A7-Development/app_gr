@@ -1,7 +1,7 @@
-"""Pydantic schemas for WorkflowDefinition API + graph shape.
+"""Pydantic schemas for PlaybookDefinition API + graph shape.
 
 The `graph` JSONB column on `workflow_definition` is validated against
-`WorkflowGraph` on every write. This guarantees that any consumer reading
+`PlaybookGraph` on every write. This guarantees that any consumer reading
 from `definition.graph` can trust the structure without revalidating.
 
 Node `config` is a free-form dict — each node type defines its own config
@@ -17,7 +17,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.core.enums import WorkflowStatus
+from app.core.enums import PlaybookStatus
 
 JoinMode = Literal["any", "all"]
 
@@ -65,7 +65,7 @@ class EdgeSpec(BaseModel):
     condition: str | None = None
 
 
-class WorkflowGraph(BaseModel):
+class PlaybookGraph(BaseModel):
     """The full graph: nodes + edges + metadata."""
 
     model_config = ConfigDict(extra="forbid")
@@ -90,7 +90,7 @@ class WorkflowGraph(BaseModel):
         return v
 
 
-class WorkflowDefinitionCreate(BaseModel):
+class PlaybookDefinitionCreate(BaseModel):
     """Input to create a new workflow definition (v1).
 
     When `clone_from` is provided, the new workflow's graph is copied from
@@ -104,11 +104,11 @@ class WorkflowDefinitionCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
     description: str | None = None
     category: str | None = Field(None, min_length=1, max_length=64)
-    graph: WorkflowGraph | None = None
+    graph: PlaybookGraph | None = None
     clone_from: UUID | None = None
 
 
-class WorkflowActivatePayload(BaseModel):
+class PlaybookActivatePayload(BaseModel):
     """Input to activate a specific definition as the tenant's current version."""
 
     model_config = ConfigDict(extra="forbid")
@@ -116,16 +116,16 @@ class WorkflowActivatePayload(BaseModel):
     definition_id: UUID
 
 
-class WorkflowDefinitionUpdate(BaseModel):
+class PlaybookDefinitionUpdate(BaseModel):
     """Input to update a definition. Creates a new version row."""
 
     model_config = ConfigDict(extra="forbid")
 
     description: str | None = None
-    graph: WorkflowGraph
+    graph: PlaybookGraph
 
 
-class WorkflowDefinitionRead(BaseModel):
+class PlaybookDefinitionRead(BaseModel):
     """API output for a workflow definition row."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -137,7 +137,7 @@ class WorkflowDefinitionRead(BaseModel):
     description: str | None
     category: str
     graph: dict[str, Any]
-    status: WorkflowStatus
+    status: PlaybookStatus
     created_by: UUID | None
     created_at: datetime
     archived_at: datetime | None

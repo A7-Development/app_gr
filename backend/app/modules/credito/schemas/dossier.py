@@ -134,6 +134,6 @@ class DossierStateResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     dossier: DossierRead
-    run: dict | None  # serialized WorkflowRunRead (avoid forward ref headaches)
+    run: dict | None  # serialized PlaybookRunRead (avoid forward ref headaches)
     node_runs: list[dict]
     pending_node: dict | None  # the WAITING_INPUT node, if any (with form descriptor)

@@ -1,9 +1,9 @@
-"""WorkflowDefinition + WorkflowDefinitionActive.
+"""PlaybookDefinition + PlaybookDefinitionActive.
 
-A `WorkflowDefinition` is an immutable versioned record of a workflow graph
+A `PlaybookDefinition` is an immutable versioned record of a workflow graph
 (nodes + edges) stored as JSONB. Every edit creates a new version (new row)
 preserving full audit trail. The currently-active version per (name, tenant)
-is pointed to by `WorkflowDefinitionActive` — a single UPDATE flips the
+is pointed to by `PlaybookDefinitionActive` — a single UPDATE flips the
 active version (1-click rollback, no deploy needed).
 
 Multi-tenant model:
@@ -26,10 +26,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from app.core.database import Base
-from app.core.enums import WorkflowStatus
+from app.core.enums import PlaybookStatus
 
 
-class WorkflowDefinition(Base):
+class PlaybookDefinition(Base):
     """One immutable version of a workflow graph (nodes + edges in JSONB)."""
 
     __tablename__ = "workflow_definition"
@@ -54,15 +54,15 @@ class WorkflowDefinition(Base):
     # See `app/shared/workflow/schemas/definition.py` for the exact shape.
     graph: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
-    status: Mapped[WorkflowStatus] = mapped_column(
+    status: Mapped[PlaybookStatus] = mapped_column(
         SAEnum(
-            WorkflowStatus,
+            PlaybookStatus,
             name="workflow_status",
             native_enum=False,
             length=32,
         ),
         nullable=False,
-        default=WorkflowStatus.DRAFT,
+        default=PlaybookStatus.DRAFT,
     )
 
     created_by: Mapped[UUID | None] = mapped_column(
@@ -86,10 +86,10 @@ class WorkflowDefinition(Base):
 
     def __repr__(self) -> str:
         scope = f"tenant={self.tenant_id}" if self.tenant_id else "template"
-        return f"<WorkflowDefinition {self.name}@v{self.version} ({scope})>"
+        return f"<PlaybookDefinition {self.name}@v{self.version} ({scope})>"
 
 
-class WorkflowDefinitionActive(Base):
+class PlaybookDefinitionActive(Base):
     """Pointer to the currently-active version of a workflow per (name, tenant).
 
     Updating this row is the only way to "publish" a new version — atomic
@@ -138,4 +138,4 @@ class WorkflowDefinitionActive(Base):
 
     def __repr__(self) -> str:
         scope = f"tenant={self.tenant_id}" if self.tenant_id else "template"
-        return f"<WorkflowDefinitionActive {self.name} ({scope}) -> {self.active_definition_id}>"
+        return f"<PlaybookDefinitionActive {self.name} ({scope}) -> {self.active_definition_id}>"

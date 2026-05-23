@@ -1,6 +1,6 @@
 """NotificationNode — dispatches/records a notification during the workflow.
 
-MVP: persists a `WorkflowNotification` row + (future) integrates with email
+MVP: persists a `PlaybookNotification` row + (future) integrates with email
 provider. Right now `channel="log"` is the only one that actually does
 anything (record + log). `channel="email"` records the intent but does not
 send — wires up to SES/SMTP later.
@@ -24,7 +24,7 @@ from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.shared.workflow.models.notification import WorkflowNotification
+from app.shared.workflow.models.notification import PlaybookNotification
 from app.shared.workflow.nodes._base import BaseNode, NodeContext, NodeOutput
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class NotificationNode(BaseNode):
 
     async def execute(self, ctx: NodeContext, db: AsyncSession) -> NodeOutput:
         channel = (self.config.get("channel") or "log").lower()
-        notif = WorkflowNotification(
+        notif = PlaybookNotification(
             id=uuid4(),
             tenant_id=ctx.tenant_id,
             run_id=ctx.run_id,

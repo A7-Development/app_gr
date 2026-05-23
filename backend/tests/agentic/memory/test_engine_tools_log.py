@@ -2,7 +2,7 @@
 
 Pure-function test do helper que vive em
 app/shared/workflow/services/engine.py. Nao precisa de DB nem
-asyncpg — passa um objeto duck-typed no lugar do `WorkflowNodeRun`.
+asyncpg — passa um objeto duck-typed no lugar do `PlaybookRunStep`.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from app.agentic.memory import create_session
 from app.core.enums import Module
 
 # engine.py importa app.agentic.memory (que importamos OK) mas tambem
-# carrega WorkflowNodeRun (SQLAlchemy). Quando anthropic/SQLAlchemy
+# carrega PlaybookRunStep (SQLAlchemy). Quando anthropic/SQLAlchemy
 # nao estao instalados, skip o modulo inteiro.
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("anthropic") is None,
@@ -28,7 +28,7 @@ pytestmark = pytest.mark.skipif(
 
 @dataclass
 class _FakeNodeRun:
-    """Duck do WorkflowNodeRun, soh com o que _populate_tools_log toca."""
+    """Duck do PlaybookRunStep, soh com o que _populate_tools_log toca."""
 
     input_data: dict[str, Any] = field(default_factory=dict)
 

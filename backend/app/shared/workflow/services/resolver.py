@@ -167,7 +167,7 @@ def evaluate_edge_condition(
 
         # Single value — truthiness.
         return _to_bool(s.strip("'\""))
-    except Exception as e:  # noqa: BLE001 - graceful fallback
+    except Exception as e:
         logger.warning(
             "evaluate_edge_condition: error evaluating %r: %s. Defaulting to True.",
             condition,

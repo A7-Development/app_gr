@@ -3,25 +3,25 @@
 from app.shared.workflow.schemas.definition import (
     EdgeSpec,
     NodeSpec,
-    WorkflowActivatePayload,
-    WorkflowDefinitionCreate,
-    WorkflowDefinitionRead,
-    WorkflowDefinitionUpdate,
-    WorkflowGraph,
+    PlaybookActivatePayload,
+    PlaybookDefinitionCreate,
+    PlaybookDefinitionRead,
+    PlaybookDefinitionUpdate,
+    PlaybookGraph,
 )
 from app.shared.workflow.schemas.run import (
-    WorkflowNodeRunRead,
-    WorkflowRunRead,
+    PlaybookRunRead,
+    PlaybookRunStepRead,
 )
 
 __all__ = [
     "EdgeSpec",
     "NodeSpec",
-    "WorkflowActivatePayload",
-    "WorkflowDefinitionCreate",
-    "WorkflowDefinitionRead",
-    "WorkflowDefinitionUpdate",
-    "WorkflowGraph",
-    "WorkflowNodeRunRead",
-    "WorkflowRunRead",
+    "PlaybookActivatePayload",
+    "PlaybookDefinitionCreate",
+    "PlaybookDefinitionRead",
+    "PlaybookDefinitionUpdate",
+    "PlaybookGraph",
+    "PlaybookRunRead",
+    "PlaybookRunStepRead",
 ]

@@ -244,7 +244,7 @@ class AnalysisSession:
         """Steps que pertencem a uma invocacao de agente especifica.
 
         Usado pelo engine de workflow para popular
-        `WorkflowNodeRun.input_data['tools_log']` (C2/Task 7).
+        `PlaybookRunStep.input_data['tools_log']` (C2/Task 7).
         """
         return [s for s in self.steps if s.agent_full_id == agent_full_id]
 

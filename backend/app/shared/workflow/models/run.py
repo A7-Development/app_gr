@@ -1,10 +1,10 @@
-"""WorkflowRun + WorkflowNodeRun.
+"""PlaybookRun + PlaybookRunStep.
 
-`WorkflowRun` represents one execution of a `WorkflowDefinition`. It carries
+`PlaybookRun` represents one execution of a `PlaybookDefinition`. It carries
 the accumulated context (outputs from completed nodes) plus the lifecycle
 status (running, paused on human_review, completed, failed).
 
-`WorkflowNodeRun` is one row per node executed in this run. It captures
+`PlaybookRunStep` is one row per node executed in this run. It captures
 input, output, timing, tokens consumed, and errors. Append-only — re-runs
 of the same node create a new row with attempt_number incremented.
 
@@ -30,10 +30,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from app.core.database import Base
-from app.core.enums import NodeRunStatus, WorkflowRunStatus
+from app.core.enums import NodeRunStatus, PlaybookRunStatus
 
 
-class WorkflowRun(Base):
+class PlaybookRun(Base):
     """One execution of a workflow definition."""
 
     __tablename__ = "workflow_run"
@@ -59,15 +59,15 @@ class WorkflowRun(Base):
     trigger_type: Mapped[str] = mapped_column(String(32), nullable=False)  # 'manual', 'api', 'schedule'
     trigger_data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
-    status: Mapped[WorkflowRunStatus] = mapped_column(
+    status: Mapped[PlaybookRunStatus] = mapped_column(
         SAEnum(
-            WorkflowRunStatus,
+            PlaybookRunStatus,
             name="workflow_run_status",
             native_enum=False,
             length=32,
         ),
         nullable=False,
-        default=WorkflowRunStatus.PENDING,
+        default=PlaybookRunStatus.PENDING,
         index=True,
     )
 
@@ -94,10 +94,10 @@ class WorkflowRun(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<WorkflowRun id={self.id} status={self.status.value}>"
+        return f"<PlaybookRun id={self.id} status={self.status.value}>"
 
 
-class WorkflowNodeRun(Base):
+class PlaybookRunStep(Base):
     """Execution of a single node within a workflow run."""
 
     __tablename__ = "workflow_node_run"
@@ -153,6 +153,6 @@ class WorkflowNodeRun(Base):
 
     def __repr__(self) -> str:
         return (
-            f"<WorkflowNodeRun id={self.id} node={self.node_id} "
+            f"<PlaybookRunStep id={self.id} node={self.node_id} "
             f"type={self.node_type} status={self.status.value}>"
         )

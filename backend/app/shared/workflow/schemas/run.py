@@ -1,4 +1,4 @@
-"""Pydantic schemas for WorkflowRun + WorkflowNodeRun (API output).
+"""Pydantic schemas for PlaybookRun + PlaybookRunStep (API output).
 
 Inputs (start a run, pause, resume) live in `services/engine.py` as plain
 function arguments — the API layer wraps them.
@@ -13,10 +13,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from app.core.enums import NodeRunStatus, WorkflowRunStatus
+from app.core.enums import NodeRunStatus, PlaybookRunStatus
 
 
-class WorkflowNodeRunRead(BaseModel):
+class PlaybookRunStepRead(BaseModel):
     """Output: one node execution within a run."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -38,7 +38,7 @@ class WorkflowNodeRunRead(BaseModel):
     attempt_number: int
 
 
-class WorkflowRunRead(BaseModel):
+class PlaybookRunRead(BaseModel):
     """Output: a workflow run with its node runs."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -48,7 +48,7 @@ class WorkflowRunRead(BaseModel):
     definition_id: UUID
     trigger_type: str
     trigger_data: dict[str, Any]
-    status: WorkflowRunStatus
+    status: PlaybookRunStatus
     started_at: datetime | None
     completed_at: datetime | None
     paused_at: datetime | None
@@ -56,4 +56,4 @@ class WorkflowRunRead(BaseModel):
     error_detail: str | None
     initiated_by: UUID | None
     created_at: datetime
-    node_runs: list[WorkflowNodeRunRead] = []
+    node_runs: list[PlaybookRunStepRead] = []
