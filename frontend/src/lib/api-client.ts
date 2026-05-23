@@ -3553,6 +3553,128 @@ function _coerceBalanceRow(r: BalanceRowDTO): BalanceRow {
   }
 }
 
+// ── Balanco Patrimonial (Balance hero, F1 do redesign 2026-05-22) ──────────
+//
+// Endpoint /controladoria/cota-sub/balanco-patrimonial — shape dedicado ao
+// novo Balance hero. Sinais ABSOLUTOS: passivos vem positivos no payload.
+
+export type CategoriaPatrimonialKey =
+  | "compromissada"
+  | "titulos_publicos"
+  | "fundos_di"
+  | "dc"
+  | "op_estruturadas"
+  | "outros_ativos"
+  | "cpr"
+  | "tesouraria"
+  | "saldo_conta_corrente"
+  | "mezanino"
+  | "senior"
+  | "pdd"
+
+type CategoriaPatrimonialDTO = {
+  key:    CategoriaPatrimonialKey
+  label:  string
+  tipo:   "ativo" | "passivo"
+  d1:     number | string
+  d0:     number | string
+  delta:  number | string
+  source: string
+}
+
+export type CategoriaPatrimonial = {
+  key:    CategoriaPatrimonialKey
+  label:  string
+  tipo:   "ativo" | "passivo"
+  d1:     number
+  d0:     number
+  delta:  number
+  source: string
+}
+
+type BalancoPatrimonialResponseDTO = {
+  fundo_id:               string
+  fundo_nome:             string
+  data:                   string
+  data_anterior:          string
+  ativos:                 CategoriaPatrimonialDTO[]
+  passivos:               CategoriaPatrimonialDTO[]
+  soma_ativos_d1:         number | string
+  soma_ativos_d0:         number | string
+  soma_ativos_delta:      number | string
+  soma_passivos_d1:       number | string
+  soma_passivos_d0:       number | string
+  soma_passivos_delta:    number | string
+  pl_deduzido_d1:         number | string
+  pl_deduzido_d0:         number | string
+  pl_deduzido_delta:      number | string
+  pl_fonte_d1:            number | string
+  pl_fonte_d0:            number | string
+  pl_fonte_delta:         number | string
+  residuo_identidade_d1:  number | string
+  residuo_identidade_d0:  number | string
+}
+
+export type BalancoPatrimonialResponse = {
+  fundo_id:               string
+  fundo_nome:             string
+  data:                   string
+  data_anterior:          string
+  ativos:                 CategoriaPatrimonial[]
+  passivos:               CategoriaPatrimonial[]
+  soma_ativos_d1:         number
+  soma_ativos_d0:         number
+  soma_ativos_delta:      number
+  soma_passivos_d1:       number
+  soma_passivos_d0:       number
+  soma_passivos_delta:    number
+  pl_deduzido_d1:         number
+  pl_deduzido_d0:         number
+  pl_deduzido_delta:      number
+  pl_fonte_d1:            number
+  pl_fonte_d0:            number
+  pl_fonte_delta:         number
+  residuo_identidade_d1:  number
+  residuo_identidade_d0:  number
+}
+
+function _coerceCategoriaPatrimonial(c: CategoriaPatrimonialDTO): CategoriaPatrimonial {
+  return {
+    key:    c.key,
+    label:  c.label,
+    tipo:   c.tipo,
+    d1:     Number(c.d1),
+    d0:     Number(c.d0),
+    delta:  Number(c.delta),
+    source: c.source,
+  }
+}
+
+function _coerceBalancoPatrimonial(r: BalancoPatrimonialResponseDTO): BalancoPatrimonialResponse {
+  return {
+    fundo_id:               r.fundo_id,
+    fundo_nome:             r.fundo_nome,
+    data:                   r.data,
+    data_anterior:          r.data_anterior,
+    ativos:                 r.ativos.map(_coerceCategoriaPatrimonial),
+    passivos:               r.passivos.map(_coerceCategoriaPatrimonial),
+    soma_ativos_d1:         Number(r.soma_ativos_d1),
+    soma_ativos_d0:         Number(r.soma_ativos_d0),
+    soma_ativos_delta:      Number(r.soma_ativos_delta),
+    soma_passivos_d1:       Number(r.soma_passivos_d1),
+    soma_passivos_d0:       Number(r.soma_passivos_d0),
+    soma_passivos_delta:    Number(r.soma_passivos_delta),
+    pl_deduzido_d1:         Number(r.pl_deduzido_d1),
+    pl_deduzido_d0:         Number(r.pl_deduzido_d0),
+    pl_deduzido_delta:      Number(r.pl_deduzido_delta),
+    pl_fonte_d1:            Number(r.pl_fonte_d1),
+    pl_fonte_d0:            Number(r.pl_fonte_d0),
+    pl_fonte_delta:         Number(r.pl_fonte_delta),
+    residuo_identidade_d1:  Number(r.residuo_identidade_d1),
+    residuo_identidade_d0:  Number(r.residuo_identidade_d0),
+  }
+}
+
 // ── Balancete Patrimonial Diario COSIF (Fase 1 Cota Sub) ───────────────────
 //
 // Modelo agnostico multi-tenant — backend devolve arvore COSIF plana
@@ -3872,6 +3994,19 @@ export const controladoria = {
       ...raw,
       rows: raw.rows.map(_coerceBalanceRow),
     }
+  },
+
+  cotaSubBalancoPatrimonial: async (
+    fundoId: string,
+    data: string,           // YYYY-MM-DD
+    dataAnterior?: string,  // YYYY-MM-DD opcional (override de D-1)
+  ): Promise<BalancoPatrimonialResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    const raw = await apiClient.get<BalancoPatrimonialResponseDTO>(
+      `/controladoria/cota-sub/balanco-patrimonial?${params.toString()}`,
+    )
+    return _coerceBalancoPatrimonial(raw)
   },
 
   cotaSubVariacoesDia: async (
