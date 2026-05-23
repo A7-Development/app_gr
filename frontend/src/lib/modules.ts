@@ -211,7 +211,7 @@ export const MODULES: ModuleDefinition[] = [
         groupLabel: "Execucao",
       },
       {
-        name: "Workflows",
+        name: "Playbooks",
         href: "/credito/workflows",
         enabled: true,
         icon: RiFlowChart,

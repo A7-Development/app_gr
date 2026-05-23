@@ -150,7 +150,7 @@ export default function WorkflowsPage() {
   const createMutation = useMutation({
     mutationFn: (payload: WorkflowCreatePayload) => credito.workflows.create(payload),
     onSuccess: (newWorkflow) => {
-      toast.success(`Workflow "${newWorkflow.name}" criado.`)
+      toast.success(`Playbook "${newWorkflow.name}" criado.`)
       queryClient.invalidateQueries({ queryKey: ["credito", "workflows"] })
       closeSheet()
       router.push(`/credito/workflows/${newWorkflow.id}/editor`)
@@ -165,13 +165,13 @@ export default function WorkflowsPage() {
   return (
     <div className="flex flex-col gap-6 px-6 pt-5 pb-6">
       <PageHeader
-        title="Fluxos"
-        info="Templates Strata e fluxos do tenant. Cada análise executa um fluxo."
+        title="Playbooks"
+        info="Templates Strata e playbooks do tenant. Cada análise executa um playbook."
         subtitle="StrataFlow · Configuração"
         actions={
           <Button variant="primary" onClick={openNew} disabled={isLoading}>
             <RiAddLine className="mr-1 size-4" aria-hidden />
-            Novo workflow
+            Novo playbook
           </Button>
         }
       />
@@ -181,12 +181,12 @@ export default function WorkflowsPage() {
       ) : isEmpty ? (
         <EmptyState
           icon={RiFlowChart}
-          title="Nenhum workflow ainda"
-          description="Comece criando seu primeiro workflow ou clonando um template Strata."
+          title="Nenhum playbook ainda"
+          description="Comece criando seu primeiro playbook ou clonando um template Strata."
           action={
             <Button variant="primary" onClick={openNew}>
               <RiAddLine className="mr-1 size-4" aria-hidden />
-              Criar primeiro workflow
+              Criar primeiro playbook
             </Button>
           }
         />
@@ -216,7 +216,7 @@ export default function WorkflowsPage() {
               aria-live="polite"
             >
               {visible.length === counts.todos
-                ? `${visible.length} ${visible.length === 1 ? "workflow" : "workflows"}`
+                ? `${visible.length} ${visible.length === 1 ? "playbook" : "playbooks"}`
                 : `${visible.length} de ${counts.todos}`}
             </span>
           </Card>
@@ -254,7 +254,7 @@ export default function WorkflowsPage() {
       <DrillDownSheet
         open={action === "new"}
         onClose={closeSheet}
-        title="Novo workflow"
+        title="Novo playbook"
         size="md"
       >
         <div className="p-6">
@@ -311,7 +311,7 @@ const STATUS_META: Record<
 }
 
 /** Heuristica client-side de "workflow obviamente quebrado".
- *  Detecta: (a) zero ou 1 node — workflow nao roda, (b) zero edges com 2+ nodes
+ *  Detecta: (a) zero ou 1 node — playbook nao roda, (b) zero edges com 2+ nodes
  *  — nodes desconectados, (c) presenca de nodes com label vazio.
  *  Validacao semantica server-side (via /workflows/_validate) fica como backlog
  *  — exigiria chamada por card no list. */
@@ -322,10 +322,10 @@ function detectWorkflowIssues(wf: WorkflowDefinitionRead): {
   const nodeCount = wf.graph.nodes?.length ?? 0
   const edgeCount = wf.graph.edges?.length ?? 0
   if (nodeCount === 0) {
-    return { hasIssue: true, message: "Workflow vazio — sem nos" }
+    return { hasIssue: true, message: "Playbook vazio — sem nos" }
   }
   if (nodeCount === 1) {
-    return { hasIssue: true, message: "Workflow incompleto — apenas 1 no" }
+    return { hasIssue: true, message: "Playbook incompleto — apenas 1 no" }
   }
   if (edgeCount === 0) {
     return {
@@ -379,7 +379,7 @@ function WorkflowCard({
                   tableTokens.badge,
                   "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300",
                 )}
-                title={issues.message ?? "Workflow com problema estrutural"}
+                title={issues.message ?? "Playbook com problema estrutural"}
               >
                 <RiErrorWarningLine className="mr-1 inline size-3" aria-hidden />
                 {issues.message ?? "Com erro"}

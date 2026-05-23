@@ -39,7 +39,7 @@ export type AvailableField = {
 export type AvailableSource = {
   /** "trigger" ou node.id. */
   sourceId: string
-  /** "Inicio do fluxo" ou label da etapa. */
+  /** "Inicio do playbook" ou label da etapa. */
   sourceLabel: string
   /** Campos exposes no output. */
   fields: AvailableField[]
@@ -282,7 +282,7 @@ export function getAvailableSources(
   // Trigger sempre primeiro.
   sources.push({
     sourceId: "trigger",
-    sourceLabel: "Inicio do fluxo",
+    sourceLabel: "Inicio do playbook",
     fields: TRIGGER_FIELDS,
   })
 
