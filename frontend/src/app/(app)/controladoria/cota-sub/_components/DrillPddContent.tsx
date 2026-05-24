@@ -63,7 +63,11 @@ export type DrillPddContentProps = {
 }
 
 export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContentProps) {
-  const q = useDrillPdd(fundoId, data, { dataAnterior, thresholdBrl: 100, topN: 20 })
+  // Sem override de threshold/top_n — usa defaults do backend (0.01 / 1000).
+  // Confirmado 2026-05-24: detalhamento mostra TODOS os papeis com variacao,
+  // nao apenas top. Caso 13/05 REALINVEST: filtro >= R$ 100 escondia 49
+  // dos 51 papeis com Δ real.
+  const q = useDrillPdd(fundoId, data, { dataAnterior })
 
   if (q.isError) {
     return (
@@ -135,29 +139,30 @@ export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContent
         </section>
       )}
 
-      {/* ── Variacoes relevantes por papel (renomeado, era "Top papeis") ── */}
+      {/* ── Todos os papeis com variacao de PDD ── */}
       <section>
         <SectionTitle
           icon={RiBarChartHorizontalLine}
           label="Papéis com variação de PDD"
           counter={
             d.top_papeis_total_acima_threshold > d.top_papeis.length
-              ? `${d.top_papeis.length} listados · ${d.top_papeis_total_acima_threshold} acima de ${fmtBRL.format(d.top_papeis_threshold_brl)}`
+              ? `${d.top_papeis.length} listados · ${d.top_papeis_total_acima_threshold} no total`
               : `${d.top_papeis.length} papel(eis)`
           }
         />
         <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-          Todos os papéis com |Δ valor_pdd| acima de {fmtBRL.format(d.top_papeis_threshold_brl)} entre D-1 e D0
-          (excluindo write-off já listado acima). Ordenado por magnitude decrescente.
+          Todos os papéis ex-WOP cujo <code className="font-mono">valor_pdd</code>{" "}
+          mudou entre D-1 e D0 (write-off do dia já listado na seção anterior).
+          Ordenado por magnitude decrescente.
           {d.top_papeis_total_acima_threshold > d.top_papeis.length && (
-            <> Lista cortada nos {d.top_papeis.length} primeiros — há mais {d.top_papeis_total_acima_threshold - d.top_papeis.length} papéis abaixo desse nível.</>
+            <> Lista cortada nos {d.top_papeis.length} primeiros — há mais {d.top_papeis_total_acima_threshold - d.top_papeis.length} papéis com variação menor abaixo desse corte.</>
           )}
         </p>
         {d.top_papeis.length === 0 ? (
           <EmptyState
             icon={RiInboxLine}
-            title="Sem variação relevante"
-            description={`Nenhum papel teve |Δ PDD| > ${fmtBRL.format(d.top_papeis_threshold_brl)} entre D-1 e D0.`}
+            title="Sem variação"
+            description="Nenhum papel teve alteração de PDD entre D-1 e D0."
             className="mt-2"
           />
         ) : (
