@@ -3999,6 +3999,7 @@ export type CprNaturezaKey =
   | "apropriacao_taxa"
   | "apropriacao_despesa"
   | "iof_ir"
+  | "provisao_liquidacao"
   | "aporte_engaiolado"
   | "outros"
 
@@ -4035,19 +4036,21 @@ export type DrillCprNaturezaGroup = {
   top_linhas:   DrillCprLinha[]
 }
 
+export type AporteEngaioladoEstado = "entrou" | "devolvido" | "persiste"
+
 type DrillCprAporteEngaioladoDTO = {
-  descricao_aporte:             string
-  valor_aporte:                 number | string
-  descricao_provisao_devolucao: string | null
-  valor_provisao:               number | string | null
-  impacto_liquido:              number | string
+  descricao:    string
+  estado:       AporteEngaioladoEstado
+  valor_d1:     number | string
+  valor_d0:     number | string
+  delta_valor:  number | string
 }
 export type DrillCprAporteEngaiolado = {
-  descricao_aporte:             string
-  valor_aporte:                 number
-  descricao_provisao_devolucao: string | null
-  valor_provisao:               number | null
-  impacto_liquido:              number
+  descricao:    string
+  estado:       AporteEngaioladoEstado
+  valor_d1:     number
+  valor_d0:     number
+  delta_valor:  number
 }
 
 type DrillCprResponseDTO = {
@@ -4111,11 +4114,11 @@ function _coerceDrillCpr(r: DrillCprResponseDTO): DrillCprResponse {
     qtd_linhas_d0:   r.qtd_linhas_d0,
     naturezas:       r.naturezas.map(_coerceDrillCprNatureza),
     aportes_engaiolados: r.aportes_engaiolados.map((a) => ({
-      descricao_aporte:             a.descricao_aporte,
-      valor_aporte:                 Number(a.valor_aporte),
-      descricao_provisao_devolucao: a.descricao_provisao_devolucao,
-      valor_provisao:               a.valor_provisao === null ? null : Number(a.valor_provisao),
-      impacto_liquido:              Number(a.impacto_liquido),
+      descricao:    a.descricao,
+      estado:       a.estado,
+      valor_d1:     Number(a.valor_d1),
+      valor_d0:     Number(a.valor_d0),
+      delta_valor:  Number(a.delta_valor),
     })),
   }
 }

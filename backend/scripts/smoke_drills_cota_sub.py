@@ -108,13 +108,10 @@ async def _run_drill_cpr(db, *, tenant_id, ua_id, data_d0):
         print(f"\nAportes engaiolados detectados: {len(result.aportes_engaiolados)}")
         for ev in result.aportes_engaiolados:
             print(
-                f"  Aporte:   {ev.descricao_aporte[:60]:60s}  R$ {ev.valor_aporte:>+14,.2f}"
+                f"  [{ev.estado:>10s}] {ev.descricao[:40]:40s}  "
+                f"D-1={ev.valor_d1:>+14,.2f}  D0={ev.valor_d0:>+14,.2f}  "
+                f"Δ={ev.delta_valor:>+14,.2f}"
             )
-            if ev.descricao_provisao_devolucao:
-                print(
-                    f"  Provisao: {ev.descricao_provisao_devolucao[:60]:60s}  R$ {ev.valor_provisao or 0:>+14,.2f}"
-                )
-            print(f"  Impacto liquido: R$ {ev.impacto_liquido:>+14,.2f}")
 
 
 async def main() -> None:

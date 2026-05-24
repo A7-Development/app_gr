@@ -2,21 +2,32 @@
 
 Decompoe a categoria CPR (Contas a Pagar e Receber) do Balance hero em:
 
-  1. Totais D-1 / D0 / Δ                — Σ wh_cpr_movimento (sinal natural)
-  2. Agrupamento por natureza           — classifica cada rubrica em uma
-     de 6 buckets via regex sobre `descricao`/`historico_traduzido`:
-       · diferimento          — 'Diferimento de despesa%'
-       · apropriacao_taxa     — 'Taxa de % Apropriada'
-       · apropriacao_despesa  — 'Despesa de %', 'Despesas com %', '% a Pagar%', REGISTRADORA%
-       · iof_ir               — 'IOF a Recolher%', 'IR a Recolher%'
-       · aporte_engaiolado    — descricao iniciando em 'Aporte%' (sub-deteccao
-                                de provisao de devolucao no mesmo dia detecta
-                                o caso REALINVEST 07-13/05 documentado)
-       · outros               — residual (rubricas sem mapping)
-  3. Aportes engaiolados detectados     — pares (Aporte, Provisao Devolucao)
-                                          no mesmo dia com soma ~0
+  1. Totais D-1 / D0 / delta            - sum wh_cpr_movimento (sinal natural)
+  2. Agrupamento por natureza           - classifica cada rubrica em uma
+     de 7 buckets via regex sobre `descricao`/`historico_traduzido`:
+       . diferimento          - 'Diferimento de despesa%'
+       . apropriacao_taxa     - 'Taxa de % Apropriada'
+       . apropriacao_despesa  - 'Despesa de %', 'Despesas com %', '% a Pagar%',
+                                REGISTRADORA%
+       . iof_ir               - 'IOF a Recolher%', 'IR a Recolher%'
+       . provisao_liquidacao  - 'LIQUIDADOS TOTAL - PROV' (provisao de
+                                receita por liquidacoes do dia)
+       . aporte_engaiolado    - descricao iniciando em 'Aporte%'
+       . outros               - residual (rubricas sem mapping)
+  3. Aportes engaiolados rastreados     - listagem de aportes com transicao
+                                          (entrou, devolvido, persiste).
 
-Sub absorve todo movimento de CPR — sinais NAO sao invertidos aqui (despesa
+Refinamento 2026-05-23 pos-smoke (F2):
+  - Adicionada natureza `provisao_liquidacao` apos descobrir que
+    `LIQUIDADOS TOTAL - PROV` (caso pedagogico, ver memo redesign)
+    estava caindo em `Outros`.
+  - Detector de aporte engaiolado refeito: a heuristica antiga procurava
+    par (Aporte, Provisao Devolucao) no mesmo dia, mas a query empirica
+    confirmou que NAO existe rubrica de provisao pareada no CPR.  O que
+    de fato acontece e o aporte aparecer sozinho com valor negativo e
+    persistir por N dias uteis ate ser devolvido/integralizado.
+
+Sub absorve todo movimento de CPR - sinais NAO sao invertidos aqui (despesa
 no CPR vira negativo, receita positivo; UI interpreta).
 """
 
@@ -26,6 +37,7 @@ import re
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -45,7 +57,7 @@ from app.warehouse.cpr_movimento import CprMovimento
 ZERO = Decimal("0")
 
 _TOP_LINHAS_POR_NATUREZA = 10
-_THRESHOLD_APORTE_ENGAIOLADO_BRL = Decimal("100")  # tolerancia pra parear aporte/devolucao
+_THRESHOLD_APORTE_BRL = Decimal("100")  # magnitude minima pra rastrear aporte
 
 # Labels pt-BR exibidos na UI.
 _NATUREZA_LABEL: dict[CprNaturezaKey, str] = {
@@ -53,7 +65,8 @@ _NATUREZA_LABEL: dict[CprNaturezaKey, str] = {
     "apropriacao_taxa":    "Taxa apropriada (Adm/Custodia/Gestao)",
     "apropriacao_despesa": "Despesa apropriada (Auditoria/Consultoria/Cobranca)",
     "iof_ir":              "IOF / IR a recolher",
-    "aporte_engaiolado":   "Aporte / Devolucao",
+    "provisao_liquidacao": "Provisao de liquidacoes (LIQUIDADOS TOTAL - PROV)",
+    "aporte_engaiolado":   "Aporte engaiolado",
     "outros":              "Outros",
 }
 
@@ -63,6 +76,7 @@ _NATUREZA_ORDER: tuple[CprNaturezaKey, ...] = (
     "apropriacao_taxa",
     "apropriacao_despesa",
     "iof_ir",
+    "provisao_liquidacao",
     "aporte_engaiolado",
     "outros",
 )
@@ -76,8 +90,8 @@ _RX_REGISTRADORA = re.compile(r"^registradora", re.IGNORECASE)
 _RX_IOF = re.compile(r"^iof\s+a\s+recolher", re.IGNORECASE)
 _RX_IR = re.compile(r"^ir\s+a\s+recolher", re.IGNORECASE)
 _RX_APORTE = re.compile(r"^aporte\b", re.IGNORECASE)
-_RX_PROVISAO_DEVOLUCAO = re.compile(
-    r"(provisao|provisão|provisao\s+de)\s+devolucao", re.IGNORECASE,
+_RX_LIQUIDADOS_TOTAL_PROV = re.compile(
+    r"^liquidados\s+total\s*-\s*prov", re.IGNORECASE,
 )
 
 
@@ -89,11 +103,13 @@ def _classificar(descricao: str, historico_traduzido: str) -> CprNaturezaKey:
         return "diferimento"
     if _RX_IOF.search(texto) or _RX_IR.search(texto):
         return "iof_ir"
+    if _RX_LIQUIDADOS_TOTAL_PROV.search(texto):
+        return "provisao_liquidacao"
     if _RX_TAXA_APROP.search(texto):
         return "apropriacao_taxa"
     if _RX_DESPESA_DE.search(texto) or _RX_A_PAGAR.search(texto) or _RX_REGISTRADORA.search(texto):
         return "apropriacao_despesa"
-    if _RX_APORTE.search(texto) or _RX_PROVISAO_DEVOLUCAO.search(texto):
+    if _RX_APORTE.search(texto):
         return "aporte_engaiolado"
     return "outros"
 
@@ -175,63 +191,40 @@ async def _linhas_cpr_pivotadas(
 def _detectar_aportes_engaiolados(
     linhas: list[DrillCprLinha],
 ) -> list[DrillCprAporteEngaiolado]:
-    """Detecta pares aporte + provisao de devolucao com soma ~0 em D0.
+    """Rastreia rubricas `Aporte%` no CPR e classifica transicao D-1 -> D0.
 
-    Heuristica: encontra linhas (apenas em D0) com `descricao` iniciando em
-    'Aporte' e procura `Provisao Devolucao` com valor de magnitude similar
-    no mesmo dia (toleramos pequena diferenca via threshold).
+    Refatorado em 2026-05-23 apos validacao empirica em REALINVEST: NAO
+    existe rubrica `Provisao Devolucao` pareando o aporte no mesmo dia
+    (ver memo F2). O detector entao apenas rastreia a transicao da
+    rubrica `Aporte` em si:
+
+      - `entrou`     : magnitude > threshold em D0, < threshold em D-1
+      - `devolvido`  : magnitude > threshold em D-1, < threshold em D0
+      - `persiste`   : magnitude > threshold em ambos
     """
-    aportes = [
-        ln for ln in linhas
-        if _RX_APORTE.search(ln.descricao or "")
-        and abs(ln.valor_d0) > _THRESHOLD_APORTE_ENGAIOLADO_BRL
-    ]
-    provisoes = [
-        ln for ln in linhas
-        if _RX_PROVISAO_DEVOLUCAO.search(ln.descricao or "")
-        and abs(ln.valor_d0) > _THRESHOLD_APORTE_ENGAIOLADO_BRL
-    ]
-
     eventos: list[DrillCprAporteEngaiolado] = []
-    provisoes_consumidas: set[int] = set()
-
-    for aporte in aportes:
-        # Procura provisao mais proxima em magnitude (sinal oposto).
-        melhor_match: DrillCprLinha | None = None
-        melhor_diff = Decimal("Infinity")
-        melhor_idx = -1
-        for idx, prov in enumerate(provisoes):
-            if idx in provisoes_consumidas:
-                continue
-            soma = abs(aporte.valor_d0 + prov.valor_d0)
-            if soma < melhor_diff and soma < abs(aporte.valor_d0) * Decimal("0.05"):
-                melhor_diff = soma
-                melhor_match = prov
-                melhor_idx = idx
-
-        if melhor_match is not None and melhor_idx >= 0:
-            provisoes_consumidas.add(melhor_idx)
-            eventos.append(
-                DrillCprAporteEngaiolado(
-                    descricao_aporte=aporte.descricao,
-                    valor_aporte=aporte.valor_d0,
-                    descricao_provisao_devolucao=melhor_match.descricao,
-                    valor_provisao=melhor_match.valor_d0,
-                    impacto_liquido=aporte.valor_d0 + melhor_match.valor_d0,
-                )
-            )
+    for ln in linhas:
+        if not _RX_APORTE.search(ln.descricao or ""):
+            continue
+        em_d1 = abs(ln.valor_d1) > _THRESHOLD_APORTE_BRL
+        em_d0 = abs(ln.valor_d0) > _THRESHOLD_APORTE_BRL
+        if not em_d1 and not em_d0:
+            continue
+        if em_d0 and not em_d1:
+            estado: Literal["entrou", "devolvido", "persiste"] = "entrou"
+        elif em_d1 and not em_d0:
+            estado = "devolvido"
         else:
-            # Aporte sem provisao casada — registra com impacto liquido = valor cheio
-            eventos.append(
-                DrillCprAporteEngaiolado(
-                    descricao_aporte=aporte.descricao,
-                    valor_aporte=aporte.valor_d0,
-                    descricao_provisao_devolucao=None,
-                    valor_provisao=None,
-                    impacto_liquido=aporte.valor_d0,
-                )
+            estado = "persiste"
+        eventos.append(
+            DrillCprAporteEngaiolado(
+                descricao=ln.descricao,
+                estado=estado,
+                valor_d1=ln.valor_d1,
+                valor_d0=ln.valor_d0,
+                delta_valor=ln.delta_valor,
             )
-
+        )
     return eventos
 
 

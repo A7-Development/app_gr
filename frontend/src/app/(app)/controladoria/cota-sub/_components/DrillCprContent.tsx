@@ -43,8 +43,15 @@ const NATUREZA_DOT: Record<CprNaturezaKey, string> = {
   apropriacao_taxa:    "bg-indigo-500",
   apropriacao_despesa: "bg-blue-500",
   iof_ir:              "bg-amber-500",
+  provisao_liquidacao: "bg-emerald-500",
   aporte_engaiolado:   "bg-rose-500",
   outros:              "bg-gray-400",
+}
+
+const ESTADO_LABEL: Record<"entrou" | "devolvido" | "persiste", { label: string; tone: string }> = {
+  entrou:    { label: "Novo em D0",     tone: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" },
+  devolvido: { label: "Devolvido em D0", tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" },
+  persiste:  { label: "Persiste",        tone: "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300" },
 }
 
 export type DrillCprContentProps = {
@@ -103,50 +110,58 @@ export function DrillCprContent({ fundoId, data, dataAnterior }: DrillCprContent
         </div>
       </section>
 
-      {/* ── Aportes engaiolados detectados ── */}
+      {/* ── Aportes engaiolados ── */}
       {temAporteEngaiolado && (
         <section>
           <SectionTitle
             icon={RiInformationLine}
-            label="Aportes engaiolados detectados"
-            counter={`${d.aportes_engaiolados.length} par(es) aporte/devolução`}
+            label="Aportes engaiolados"
+            counter={`${d.aportes_engaiolados.length} rubrica(s) ativa(s)`}
           />
           <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-            Rubrica de aporte casada com provisão de devolução no mesmo dia. Impacto
-            líquido no PL Sub ≈ 0 (provisão neutraliza o caixa). Caso pedagógico
-            REALINVEST 07-13/05/2026.
+            Rubrica <code className="font-mono text-[10px]">Aporte</code> no CPR sinaliza
+            recurso recebido sem integralização em nenhuma classe — fica engaiolado
+            (pendente) por N dias até ser devolvido ou integralizado. Caso REALINVEST
+            07-14/05/2026: -R$ 124.500 persistiu por 5 dias úteis.
           </p>
           <div className="mt-2 flex flex-col gap-2">
-            {d.aportes_engaiolados.map((ev, idx) => (
-              <div
-                key={idx}
-                className="overflow-hidden rounded border border-rose-200 bg-rose-50/50 dark:border-rose-900/60 dark:bg-rose-950/20"
-              >
-                <div className="grid grid-cols-[1fr_140px] items-center gap-2 px-3 py-1.5 text-[12px]">
-                  <span className="truncate text-gray-700 dark:text-gray-200">{ev.descricao_aporte}</span>
-                  <span className="text-right font-medium tabular-nums text-gray-900 dark:text-gray-50">
-                    {fmtBRLSigned(ev.valor_aporte)}
-                  </span>
-                </div>
-                {ev.descricao_provisao_devolucao !== null && (
-                  <div className="grid grid-cols-[1fr_140px] items-center gap-2 border-t border-rose-200 px-3 py-1.5 text-[12px] dark:border-rose-900/60">
-                    <span className="truncate text-gray-700 dark:text-gray-200">{ev.descricao_provisao_devolucao}</span>
-                    <span className="text-right tabular-nums text-gray-700 dark:text-gray-300">
-                      {fmtBRLSigned(ev.valor_provisao ?? 0)}
+            {d.aportes_engaiolados.map((ev, idx) => {
+              const estadoMeta = ESTADO_LABEL[ev.estado]
+              return (
+                <div
+                  key={idx}
+                  className="overflow-hidden rounded border border-rose-200 bg-rose-50/40 dark:border-rose-900/60 dark:bg-rose-950/20"
+                >
+                  <div className="flex items-center justify-between gap-2 px-3 py-1.5">
+                    <span className="flex items-center gap-2 truncate text-[12px] text-gray-700 dark:text-gray-200">
+                      <span className={cx("inline-flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-[10px] font-medium", estadoMeta.tone)}>
+                        {estadoMeta.label}
+                      </span>
+                      <span className="truncate">{ev.descricao}</span>
                     </span>
                   </div>
-                )}
-                <div className="grid grid-cols-[1fr_140px] items-center gap-2 border-t border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] dark:border-rose-900/60 dark:bg-rose-950/40">
-                  <span className="font-medium uppercase tracking-[0.04em] text-rose-700 dark:text-rose-300">Impacto líquido</span>
-                  <span className={cx(
-                    "text-right font-semibold tabular-nums",
-                    Math.abs(ev.impacto_liquido) < 1
-                      ? "text-emerald-700 dark:text-emerald-400"
-                      : "text-rose-700 dark:text-rose-300",
-                  )}>{fmtBRLSigned(ev.impacto_liquido)}</span>
+                  <div className="grid grid-cols-3 gap-2 border-t border-rose-200 bg-rose-50/60 px-3 py-1 text-[11px] tabular-nums dark:border-rose-900/60 dark:bg-rose-950/30">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.04em] text-rose-700/70 dark:text-rose-300/70">D-1</p>
+                      <p className="text-gray-700 dark:text-gray-300">{fmtBRL.format(ev.valor_d1)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.04em] text-rose-700/70 dark:text-rose-300/70">D0</p>
+                      <p className="font-medium text-gray-900 dark:text-gray-50">{fmtBRL.format(ev.valor_d0)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.04em] text-rose-700/70 dark:text-rose-300/70">Δ</p>
+                      <p className={cx(
+                        "font-semibold",
+                        ev.delta_valor > 0 ? "text-emerald-700 dark:text-emerald-400"
+                          : ev.delta_valor < 0 ? "text-red-700 dark:text-red-400"
+                          : "text-gray-400 dark:text-gray-600",
+                      )}>{fmtBRLSigned(ev.delta_valor)}</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </section>
       )}

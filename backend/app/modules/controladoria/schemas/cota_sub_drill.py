@@ -228,6 +228,7 @@ CprNaturezaKey = Literal[
     "apropriacao_taxa",
     "apropriacao_despesa",
     "iof_ir",
+    "provisao_liquidacao",
     "aporte_engaiolado",
     "outros",
 ]
@@ -259,21 +260,33 @@ class DrillCprNaturezaGroup(BaseModel):
 
 
 class DrillCprAporteEngaiolado(BaseModel):
-    """Evento de aporte engaiolado detectado.
+    """Aporte engaiolado no CPR - rubrica `Aporte` com saldo nao-zero.
 
-    Caracteristica: linha de aporte (descricao iniciando em 'Aporte') aparece
-    em D0 + linha de provisao de devolucao no mesmo dia com valor de mesma
-    magnitude oposta — neutraliza o caixa. Caso REALINVEST 07-13/05/2026 e
-    o exemplo canonico.
+    Validacao empirica (2026-05-23, F2): NAO existe rubrica
+    `Provisao Devolucao Aporte` parando no mesmo dia no CPR. A memoria do
+    projeto descrevia esse pareamento mas o dado nao confirma. O que de
+    fato acontece em REALINVEST:
+
+      1. Rubrica `Aporte` aparece num dia com valor negativo (-R$ X)
+      2. Persiste no CPR por N dias uteis
+      3. Some quando aporte e devolvido OU integralizado em alguma classe
+
+    O detector rastreia 3 estados (transicoes entre D-1 e D0):
+
+      - `entrou`     -> apareceu em D0 sem existir em D-1 (saiu de zero)
+      - `devolvido`  -> existia em D-1 e sumiu em D0 (foi resolvido)
+      - `persiste`   -> esta em D-1 e D0 (continua engaiolado, informativo)
+
+    Impacto no PL Sub: neutro enquanto persiste (CPR ja entra como passivo
+    no balanco). Caso REALINVEST 07-14/05 e canonico: -R$ 124.500 persistiu
+    por 5 dias uteis e sumiu em 15/05.
     """
 
-    descricao_aporte:               str
-    valor_aporte:                   Decimal
-    descricao_provisao_devolucao:   str | None = None
-    valor_provisao:                 Decimal | None = None
-    impacto_liquido:                Decimal = Field(
-        description="valor_aporte + valor_provisao (esperado ~0)"
-    )
+    descricao:    str
+    estado:       Literal["entrou", "devolvido", "persiste"]
+    valor_d1:     Decimal = Field(description="Saldo no CPR em D-1")
+    valor_d0:     Decimal = Field(description="Saldo no CPR em D0")
+    delta_valor:  Decimal = Field(description="valor_d0 - valor_d1")
 
 
 class DrillCprResponse(BaseModel):
