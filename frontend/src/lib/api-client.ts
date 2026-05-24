@@ -3613,6 +3613,7 @@ type BalancoPatrimonialResponseDTO = {
   pl_fonte_delta:         number | string
   residuo_identidade_d1:  number | string
   residuo_identidade_d0:  number | string
+  residuo_identidade_delta: number | string
 }
 
 export type BalancoPatrimonialResponse = {
@@ -3636,6 +3637,7 @@ export type BalancoPatrimonialResponse = {
   pl_fonte_delta:         number
   residuo_identidade_d1:  number
   residuo_identidade_d0:  number
+  residuo_identidade_delta: number
 }
 
 function _coerceCategoriaPatrimonial(c: CategoriaPatrimonialDTO): CategoriaPatrimonial {
@@ -3672,6 +3674,7 @@ function _coerceBalancoPatrimonial(r: BalancoPatrimonialResponseDTO): BalancoPat
     pl_fonte_delta:         Number(r.pl_fonte_delta),
     residuo_identidade_d1:  Number(r.residuo_identidade_d1),
     residuo_identidade_d0:  Number(r.residuo_identidade_d0),
+    residuo_identidade_delta: Number(r.residuo_identidade_delta ?? 0),
   }
 }
 

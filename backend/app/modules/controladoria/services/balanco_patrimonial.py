@@ -236,4 +236,5 @@ async def compute_balanco_patrimonial(
         pl_fonte_delta=pl_fonte_d0 - pl_fonte_d1,
         residuo_identidade_d1=pl_deduzido_d1 - pl_fonte_d1,
         residuo_identidade_d0=pl_deduzido_d0 - pl_fonte_d0,
+        residuo_identidade_delta=(pl_deduzido_d0 - pl_deduzido_d1) - (pl_fonte_d0 - pl_fonte_d1),
     )

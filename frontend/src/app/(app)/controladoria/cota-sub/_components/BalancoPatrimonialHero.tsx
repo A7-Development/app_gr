@@ -119,7 +119,11 @@ export function BalancoPatrimonialHero({
     )
   }
 
-  const residuo = data.residuo_identidade_d0
+  // F4.8 (2026-05-24): usa residuo do DELTA DO DIA, nao snapshot acumulado.
+  // Snapshot D0 acumula arredondamento da QiTech ao longo do tempo (R$ 0,52
+  // em 13/05); delta-dos-deltas isola o erro do dia (R$ 0,05 em 13/05),
+  // que e o que importa pra avaliar fechamento.
+  const residuo = data.residuo_identidade_delta
   const residuoAbs = Math.abs(residuo)
   const residuoStatus: "ok" | "warn" | "error" =
     residuoAbs < RESIDUO_AMBER_BRL ? "ok"
@@ -198,7 +202,8 @@ export function BalancoPatrimonialHero({
         delta={data.pl_fonte_delta}
       />
       <IdentidadeRow
-        residuoD0={data.residuo_identidade_d0}
+        residuoDelta={data.residuo_identidade_delta}
+        residuoSnapshot={data.residuo_identidade_d0}
         status={residuoStatus}
       />
     </Card>
@@ -346,15 +351,22 @@ function PlRow({
 }
 
 function IdentidadeRow({
-  residuoD0, status,
+  residuoDelta, residuoSnapshot, status,
 }: {
-  residuoD0: number
-  status: "ok" | "warn" | "error"
+  residuoDelta:    number
+  residuoSnapshot: number
+  status:          "ok" | "warn" | "error"
 }) {
+  // Tooltip mostra o snapshot acumulado pra quem quiser ver o "ruido total"
+  // que se acumulou desde o inicio do fundo (geralmente centavos).
+  const tooltip = `Erro do dia (ΔPL calculado − ΔPL fonte MEC). Snapshot D0 acumulado: ${fmtBRLSigned(residuoSnapshot)}.`
   return (
     <div className="flex items-center justify-between gap-2 border-t border-gray-200 px-3 py-1 text-[10px] dark:border-gray-800">
-      <span className="uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
-        Resíduo identidade contábil
+      <span
+        className="cursor-help uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600"
+        title={tooltip}
+      >
+        Resíduo identidade contábil (dia)
       </span>
       <span
         className={cx(
@@ -363,8 +375,9 @@ function IdentidadeRow({
           status === "warn"  && "font-medium text-amber-700 dark:text-amber-400",
           status === "error" && "font-semibold text-red-700 dark:text-red-400",
         )}
+        title={tooltip}
       >
-        {fmtBRLSigned(residuoD0)}
+        {fmtBRLSigned(residuoDelta)}
       </span>
     </div>
   )
