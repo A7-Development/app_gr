@@ -126,7 +126,7 @@ async def _snapshot(
 
 
 _ATIVO_KEYS_LABELS_SOURCES: tuple[tuple[str, str, str], ...] = (
-    ("dc",                    "Direitos Creditórios",   "wh_posicao_cota_fundo (REALINVEST*)"),
+    ("dc",                    "Direitos Creditórios",   "wh_estoque_recebivel (Σ valor_presente, exclui WOP)"),
     ("titulos_publicos",      "Títulos Públicos",       "wh_posicao_renda_fixa (COSIF TPF)"),
     ("op_estruturadas",       "Op. Estruturadas",       "wh_posicao_renda_fixa (COSIF Nota Comercial)"),
     ("fundos_di",             "Fundos DI",              "wh_posicao_cota_fundo (externos)"),
@@ -141,7 +141,7 @@ _ATIVO_KEYS_LABELS_SOURCES: tuple[tuple[str, str, str], ...] = (
 _PASSIVO_KEYS_LABELS_SOURCES: tuple[tuple[str, str, str], ...] = (
     ("senior",   "Cota Senior",   "wh_mec_evolucao_cotas (classe Senior)"),
     ("mezanino", "Cota Mezanino", "wh_mec_evolucao_cotas (classe Mezanino)"),
-    ("pdd",      "PDD",           "wh_posicao_outros_ativos (codigo='PDD')"),
+    ("pdd",      "PDD",           "wh_estoque_recebivel (Σ valor_pdd, exclui WOP)"),
 )
 
 
@@ -236,4 +236,5 @@ async def compute_balanco_patrimonial(
         pl_fonte_delta=pl_fonte_d0 - pl_fonte_d1,
         residuo_identidade_d1=pl_deduzido_d1 - pl_fonte_d1,
         residuo_identidade_d0=pl_deduzido_d0 - pl_fonte_d0,
+        residuo_identidade_delta=(pl_deduzido_d0 - pl_deduzido_d1) - (pl_fonte_d0 - pl_fonte_d1),
     )

@@ -57,36 +57,38 @@ const fmtDate = (iso: string): string => {
   return m ? `${m[3]}/${m[2]}` : iso
 }
 
-// Identidade visual por categoria — dot pequeno do lado esquerdo. Modo
-// Iteracao de Design ativo permite paleta Tailwind alem da canonica
-// (CLAUDE.md banner). Promocao a token nomeado fica na varredura final.
-const DOT_BY_KEY: Record<CategoriaPatrimonialKey, string> = {
-  dc:                   "bg-blue-500",
-  titulos_publicos:     "bg-sky-500",
-  op_estruturadas:      "bg-violet-500",
-  fundos_di:            "bg-emerald-500",
-  compromissada:        "bg-teal-500",
-  outros_ativos:        "bg-amber-500",
-  cpr:                  "bg-indigo-500",
-  tesouraria:           "bg-slate-500",
-  saldo_conta_corrente: "bg-gray-500",
-  senior:               "bg-gray-700",
-  mezanino:             "bg-gray-500",
-  pdd:                  "bg-rose-500",
-}
-
 const DRILL_ENABLED_F2: ReadonlySet<CategoriaPatrimonialKey> = new Set<CategoriaPatrimonialKey>([
   "dc",
   "cpr",
   "pdd",
 ])
 
+// Tooltip amigavel por categoria — descreve a definicao/composicao
+// economica da linha (vs `categoria.source` do backend que descreve a
+// fonte tecnica). Aparece como tooltip nativo no `title` do label.
+const CATEGORIA_TOOLTIP: Partial<Record<CategoriaPatrimonialKey, string>> = {
+  dc:                   "Σ Valor Presente dos recebíveis em estoque (exclui WOP). Marcação na curva contratual.",
+  pdd:                  "Σ Provisão para Devedores Duvidosos constituída (faixas A-H, exclui WOP). Reduz o PL Sub Jr.",
+  cpr:                  "Contas a Pagar/Receber líquido. Despesas, taxas, aportes engaiolados, provisões.",
+  tesouraria:           "Saldo em tesouraria da classe Sub (exclui Mez/Sr).",
+  saldo_conta_corrente: "Saldo em conta corrente. Exclui linhas CONCILIA (contra-saldos que somam 0).",
+  compromissada:        "Operações compromissadas (overnight).",
+  titulos_publicos:     "Σ posição em títulos públicos (NTN-*, LFT, LTN).",
+  op_estruturadas:      "Σ posição em operações estruturadas (NCPX, VCNC).",
+  fundos_di:            "Σ cotas de fundos DI externos.",
+  outros_ativos:        "Outros ativos não classificados nas demais linhas (exclui PDD e TPF).",
+  senior:               "Patrimônio da Cota Sênior (passivo da Sub Jr).",
+  mezanino:             "Patrimônio da Cota Mezanino (passivo da Sub Jr).",
+}
+
 const RESIDUO_AMBER_BRL = 1
 const RESIDUO_RED_BRL = 1000
 
 // Grid de colunas — single source of truth pra alinhar header + rows.
-// Densidade compact: 4 colunas, valores 100px direita, chevron 14px.
-const GRID = "grid grid-cols-[1fr_100px_100px_100px_14px] items-center gap-2"
+// Label fixo em 180px (cabe ate "Saldo Conta Corrente"); 3 colunas numericas
+// dividem o restante em 1fr (evita encavalamento de valores grandes tipo
+// "R$ 24.436.232,09" + delta).
+const GRID = "grid grid-cols-[180px_1fr_1fr_1fr_14px] items-center gap-2"
 
 export type BalancoPatrimonialHeroProps = {
   data?:         BalancoPatrimonialResponse
@@ -135,7 +137,11 @@ export function BalancoPatrimonialHero({
     )
   }
 
-  const residuo = data.residuo_identidade_d0
+  // F4.8 (2026-05-24): usa residuo do DELTA DO DIA, nao snapshot acumulado.
+  // Snapshot D0 acumula arredondamento da QiTech ao longo do tempo (R$ 0,52
+  // em 13/05); delta-dos-deltas isola o erro do dia (R$ 0,05 em 13/05),
+  // que e o que importa pra avaliar fechamento.
+  const residuo = data.residuo_identidade_delta
   const residuoAbs = Math.abs(residuo)
   const residuoStatus: "ok" | "warn" | "error" =
     residuoAbs < RESIDUO_AMBER_BRL ? "ok"
@@ -198,23 +204,27 @@ export function BalancoPatrimonialHero({
         delta={data.soma_passivos_delta}
       />
 
-      {/* Seção FECHAMENTO */}
+      {/* Seção FECHAMENTO — reconciliação PL calculado vs MEC */}
       <PlRow
-        label="PL Sub Jr · deduzido"
-        sublabel="Σ Ativos − Σ Passivos"
+        label="PL Sub Jr · calculado"
+        sublabel="Σ Ativos − Σ Passivos (pelas fontes granulares)"
+        tooltip="PL Sub Jr construído de baixo pra cima: soma das categorias do Ativo menos soma das categorias do Passivo, todas calculadas a partir das tabelas silver granulares do warehouse."
         d1={data.pl_deduzido_d1}
         d0={data.pl_deduzido_d0}
         delta={data.pl_deduzido_delta}
         emphasize
       />
       <PlRow
-        label="PL Sub Jr · fonte (wh_mec)"
+        label="PL Sub Jr · fonte MEC"
+        sublabel="wh_mec_evolucao_cotas (classe Sub Jr)"
+        tooltip="PL Sub Jr lido diretamente do MEC (Movimento Estatístico Consolidado) publicado pela QiTech. Usado como check externo do cálculo acima."
         d1={data.pl_fonte_d1}
         d0={data.pl_fonte_d0}
         delta={data.pl_fonte_delta}
       />
       <IdentidadeRow
-        residuoD0={data.residuo_identidade_d0}
+        residuoDelta={data.residuo_identidade_delta}
+        residuoSnapshot={data.residuo_identidade_d0}
         status={residuoStatus}
       />
     </Card>
@@ -242,6 +252,14 @@ function BalanceRow({
   const isZero = Math.abs(categoria.delta) < 0.005
   const isEmpty = Math.abs(categoria.d0) < 0.005 && isZero
 
+  // Tooltip combinado: descricao amigavel + fonte tecnica + dica de drill.
+  const tooltipParts: string[] = []
+  const friendly = CATEGORIA_TOOLTIP[categoria.key]
+  if (friendly) tooltipParts.push(friendly)
+  if (categoria.source) tooltipParts.push(`Fonte: ${categoria.source}`)
+  if (drillEnabled) tooltipParts.push("Clique para detalhar")
+  const tooltip = tooltipParts.join("\n\n")
+
   return (
     <div
       className={cx(
@@ -254,14 +272,10 @@ function BalanceRow({
       onClick={drillEnabled ? () => onDrill(categoria.key) : undefined}
       role={drillEnabled ? "button" : undefined}
       tabIndex={drillEnabled ? 0 : undefined}
-      title={drillEnabled ? "Clique para detalhar" : undefined}
+      title={tooltip || undefined}
     >
-      <span className="flex items-center gap-2 min-w-0">
-        <span
-          className={cx("inline-block size-1.5 shrink-0 rounded-full", DOT_BY_KEY[categoria.key])}
-          aria-hidden="true"
-        />
-        <span className="truncate text-gray-700 dark:text-gray-200">
+      <span className="flex items-center min-w-0">
+        <span className="truncate text-gray-900 dark:text-gray-50">
           {categoria.label}
         </span>
       </span>
@@ -295,8 +309,8 @@ function TotalRow({
       GRID,
       "border-t border-gray-200 bg-gray-50/40 px-3 py-1.5 text-[12px] font-semibold tabular-nums dark:border-gray-800 dark:bg-gray-900/30",
     )}>
-      <span className="flex items-center gap-2 min-w-0 pl-3.5">
-        <span className="truncate text-gray-700 dark:text-gray-200">
+      <span className="flex items-center min-w-0">
+        <span className="truncate text-gray-900 dark:text-gray-50">
           {label}
         </span>
       </span>
@@ -313,28 +327,31 @@ function TotalRow({
 }
 
 function PlRow({
-  label, sublabel, d1, d0, delta, emphasize = false,
+  label, sublabel, tooltip, d1, d0, delta, emphasize = false,
 }: {
   label:     string
   sublabel?: string
+  tooltip?:  string
   d1: number; d0: number; delta: number
   emphasize?: boolean
 }) {
   return (
-    <div className={cx(
-      GRID,
-      "border-t px-3 py-1.5 tabular-nums",
-      emphasize
-        ? "border-gray-300 bg-blue-50/40 dark:border-gray-700 dark:bg-blue-950/10"
-        : "border-gray-100 dark:border-gray-800",
-    )}>
+    <div
+      className={cx(
+        GRID,
+        "border-t px-3 py-1.5 text-[12px] tabular-nums",
+        emphasize
+          ? "border-gray-300 bg-blue-50/40 dark:border-gray-700 dark:bg-blue-950/10"
+          : "border-gray-100 dark:border-gray-800",
+      )}
+      title={tooltip}
+    >
       <span className="flex flex-col min-w-0">
         <span
           className={cx(
-            "truncate",
-            emphasize
-              ? "text-[13px] font-semibold text-gray-900 dark:text-gray-50"
-              : "text-[12px] font-medium text-gray-700 dark:text-gray-300",
+            "truncate text-[12px] text-gray-900 dark:text-gray-50",
+            tooltip && "cursor-help",
+            emphasize ? "font-semibold" : "font-medium",
           )}
         >
           {label}
@@ -355,10 +372,8 @@ function PlRow({
       </span>
       <span
         className={cx(
-          "text-right",
-          emphasize
-            ? "text-[14px] font-bold text-gray-900 dark:text-gray-50"
-            : "text-[12px] font-medium text-gray-700 dark:text-gray-200",
+          "text-right text-[12px] text-gray-900 dark:text-gray-50",
+          emphasize ? "font-semibold" : "font-medium",
         )}
       >
         {fmtBRL.format(d0)}
@@ -370,15 +385,22 @@ function PlRow({
 }
 
 function IdentidadeRow({
-  residuoD0, status,
+  residuoDelta, residuoSnapshot, status,
 }: {
-  residuoD0: number
-  status: "ok" | "warn" | "error"
+  residuoDelta:    number
+  residuoSnapshot: number
+  status:          "ok" | "warn" | "error"
 }) {
+  // Tooltip mostra o snapshot acumulado pra quem quiser ver o "ruido total"
+  // que se acumulou desde o inicio do fundo (geralmente centavos).
+  const tooltip = `Erro do dia (ΔPL calculado − ΔPL fonte MEC). Snapshot D0 acumulado: ${fmtBRLSigned(residuoSnapshot)}.`
   return (
     <div className="flex items-center justify-between gap-2 border-t border-gray-200 px-3 py-1 text-[10px] dark:border-gray-800">
-      <span className="uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
-        Resíduo identidade contábil
+      <span
+        className="cursor-help uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600"
+        title={tooltip}
+      >
+        Resíduo identidade contábil (dia)
       </span>
       <span
         className={cx(
@@ -387,8 +409,9 @@ function IdentidadeRow({
           status === "warn"  && "font-medium text-amber-700 dark:text-amber-400",
           status === "error" && "font-semibold text-red-700 dark:text-red-400",
         )}
+        title={tooltip}
       >
-        {fmtBRLSigned(residuoD0)}
+        {fmtBRLSigned(residuoDelta)}
       </span>
     </div>
   )

@@ -102,6 +102,7 @@ import { toast } from "sonner"
 
 import { ActiveBackfillJobsPanel } from "./_components/ActiveBackfillJobsPanel"
 import { BalanceTable } from "./_components/BalanceTable"
+import { BalancoInspector } from "./_components/BalancoInspector"
 import { BalancoPatrimonialHero } from "./_components/BalancoPatrimonialHero"
 import { CategoriaDrillSheet } from "./_components/CategoriaDrillSheet"
 import { DrillCprContent } from "./_components/DrillCprContent"
@@ -268,6 +269,26 @@ const topCotistasOption: EChartsOption = {
     },
   ],
   tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, formatter: "{b}: {c}%" },
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// useMediaQuery — SSR-safe matchMedia hook
+//
+// First paint = false (SSR sem `window`); useEffect atualiza no client.
+// Em xl+ pode haver um flash do Sheet antes do Inspector aparecer; aceitavel
+// na pratica porque o drill so abre por interacao do usuario (clique).
+// ───────────────────────────────────────────────────────────────────────────
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = React.useState(false)
+  React.useEffect(() => {
+    const mq = window.matchMedia(query)
+    setMatches(mq.matches)
+    const handler = (e: MediaQueryListEvent) => setMatches(e.matches)
+    mq.addEventListener("change", handler)
+    return () => mq.removeEventListener("change", handler)
+  }, [query])
+  return matches
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -646,6 +667,11 @@ export default function CotaSubPage() {
   // Drill da F2 — abre Sheet lateral direito com DrillDcContent/PddContent/CprContent.
   // Habilitado so pras 3 categorias da F2 via DRILL_ENABLED_F2 do BalancoPatrimonialHero.
   const [drilledCategoria, setDrilledCategoria] = React.useState<CategoriaPatrimonialKey | null>(null)
+
+  // F3 redesign 2026-05-24: em telas >= xl o detalhamento renderiza no slot
+  // direito da grid (BalancoInspector); em telas menores cai pro Sheet.
+  // matchMedia com SSR-safe init (false no first paint, atualiza no useEffect).
+  const isXl = useMediaQuery("(min-width: 1280px)")
 
   // Lookup do UUID da UA selecionada (endpoint backend exige fundo_id).
   const fundoId = React.useMemo(() => {
@@ -1052,17 +1078,45 @@ export default function CotaSubPage() {
                         onRetry={() => balancoPatQuery.refetch()}
                         onDrillCategoria={setDrilledCategoria}
                       />
-                      {/* Placeholder pros outros 50% — F2/F3/F5 vao alocar
-                          aqui (drills, insights IA, mutacao silenciosa). Em
-                          telas < xl, balance ocupa 100% e este slot some. */}
-                      <div className="hidden rounded border border-dashed border-gray-200 p-6 dark:border-gray-800 xl:block">
-                        <p className="text-[12px] uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
-                          Reservado
-                        </p>
-                        <p className="mt-2 text-[13px] text-gray-500 dark:text-gray-400">
-                          Espaço para insights, drilldown ativo e o detector de
-                          mutação silenciosa (F2/F5 do redesign).
-                        </p>
+                      {/* F3 redesign 2026-05-24: slot direito vira BalancoInspector
+                          (in-layout, parte da grid). Em telas < xl o slot some
+                          (hidden) e o page.tsx cai pro CategoriaDrillSheet
+                          (overlay) controlado por isXl no render do Sheet. */}
+                      <div className="hidden xl:block">
+                        <BalancoInspector
+                          categoria={
+                            drilledCategoria === null || !balancoPatQuery.data
+                              ? undefined
+                              : [...balancoPatQuery.data.ativos, ...balancoPatQuery.data.passivos]
+                                  .find((c) => c.key === drilledCategoria)
+                          }
+                          fundoNome={balancoPatQuery.data?.fundo_nome ?? ""}
+                          data={balancoPatQuery.data?.data ?? dayIso}
+                          dataAnterior={balancoPatQuery.data?.data_anterior ?? ""}
+                          onClose={() => setDrilledCategoria(null)}
+                        >
+                          {drilledCategoria === "dc" && fundoId && (
+                            <DrillDcContent
+                              fundoId={fundoId}
+                              data={balancoPatQuery.data?.data ?? dayIso}
+                              dataAnterior={balancoPatQuery.data?.data_anterior}
+                            />
+                          )}
+                          {drilledCategoria === "pdd" && fundoId && (
+                            <DrillPddContent
+                              fundoId={fundoId}
+                              data={balancoPatQuery.data?.data ?? dayIso}
+                              dataAnterior={balancoPatQuery.data?.data_anterior}
+                            />
+                          )}
+                          {drilledCategoria === "cpr" && fundoId && (
+                            <DrillCprContent
+                              fundoId={fundoId}
+                              data={balancoPatQuery.data?.data ?? dayIso}
+                              dataAnterior={balancoPatQuery.data?.data_anterior}
+                            />
+                          )}
+                        </BalancoInspector>
                       </div>
                     </div>
                   )}
@@ -1107,9 +1161,11 @@ export default function CotaSubPage() {
         insights={MOCK_INSIGHTS}
       />
 
-      {/* DrillDown — F2: categoria do Balance hero (DC / PDD / CPR) */}
+      {/* DrillDown — F2: categoria do Balance hero (DC / PDD / CPR).
+          F3 redesign 2026-05-24: Sheet vira FALLBACK pra < xl. Em xl+ o slot
+          direito da grid renderiza o BalancoInspector com o mesmo conteudo. */}
       <CategoriaDrillSheet
-        open={drilledCategoria !== null}
+        open={drilledCategoria !== null && !isXl}
         onClose={() => setDrilledCategoria(null)}
         categoria={
           drilledCategoria === null || !balancoPatQuery.data

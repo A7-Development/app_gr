@@ -853,5 +853,18 @@ class BalancoPatrimonialResponse(BaseModel):
     pl_fonte_d0:        Decimal   = Field(description="PL Sub Jr lido de wh_mec (classe Sub) em D0")
     pl_fonte_delta:     Decimal
 
-    residuo_identidade_d1: Decimal = Field(description="pl_deduzido_d1 - pl_fonte_d1 (esperado ~0)")
-    residuo_identidade_d0: Decimal = Field(description="pl_deduzido_d0 - pl_fonte_d0 (esperado ~0)")
+    residuo_identidade_d1: Decimal = Field(
+        description="pl_deduzido_d1 - pl_fonte_d1 (snapshot acumulado; "
+                    "inclui arredondamentos historicos)",
+    )
+    residuo_identidade_d0: Decimal = Field(
+        description="pl_deduzido_d0 - pl_fonte_d0 (snapshot acumulado; "
+                    "inclui arredondamentos historicos)",
+    )
+    residuo_identidade_delta: Decimal = Field(
+        default=Decimal("0"),
+        description="(pl_deduzido_delta - pl_fonte_delta) -- ERRO DO DIA, "
+                    "isolado do acumulado historico. Esperado ~0; valores "
+                    "pequenos (<R$1) sao arredondamento da QiTech, valores "
+                    "altos (>R$10) sinalizam falha de calculo.",
+    )

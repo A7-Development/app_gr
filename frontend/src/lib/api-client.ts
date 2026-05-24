@@ -3613,6 +3613,7 @@ type BalancoPatrimonialResponseDTO = {
   pl_fonte_delta:         number | string
   residuo_identidade_d1:  number | string
   residuo_identidade_d0:  number | string
+  residuo_identidade_delta: number | string
 }
 
 export type BalancoPatrimonialResponse = {
@@ -3636,6 +3637,7 @@ export type BalancoPatrimonialResponse = {
   pl_fonte_delta:         number
   residuo_identidade_d1:  number
   residuo_identidade_d0:  number
+  residuo_identidade_delta: number
 }
 
 function _coerceCategoriaPatrimonial(c: CategoriaPatrimonialDTO): CategoriaPatrimonial {
@@ -3672,6 +3674,7 @@ function _coerceBalancoPatrimonial(r: BalancoPatrimonialResponseDTO): BalancoPat
     pl_fonte_delta:         Number(r.pl_fonte_delta),
     residuo_identidade_d1:  Number(r.residuo_identidade_d1),
     residuo_identidade_d0:  Number(r.residuo_identidade_d0),
+    residuo_identidade_delta: Number(r.residuo_identidade_delta ?? 0),
   }
 }
 
@@ -3764,6 +3767,102 @@ export type DrillDcApropriacao = {
   apropriacao:        number
 }
 
+// F2 redesign 2026-05-24: decomposicao do ΔDC em 5 buckets a partir do granular.
+type DrillDcDecomposicaoDTO = {
+  saldo_d1:                       number | string
+  saldo_d0:                       number | string
+  delta_saldo:                    number | string
+  aquisicoes_n:                   number
+  aquisicoes_total:               number | string
+  liquidacoes_n:                  number
+  liquidacoes_total:              number | string
+  migracao_wop_n:                 number
+  migracao_wop_total:             number | string
+  apropriacao_n:                  number
+  apropriacao_total:              number | string
+  mutacao_n:                      number
+  mutacao_total:                  number | string
+  residuo:                        number | string
+  cross_check_aquisicoes_evento:  (number | string) | null
+  cross_check_liquidacoes_evento: (number | string) | null
+  cross_check_diff_aquisicoes:    (number | string) | null
+  cross_check_diff_liquidacoes:   (number | string) | null
+}
+export type DrillDcDecomposicao = {
+  saldo_d1:                       number
+  saldo_d0:                       number
+  delta_saldo:                    number
+  aquisicoes_n:                   number
+  aquisicoes_total:               number
+  liquidacoes_n:                  number
+  liquidacoes_total:              number
+  migracao_wop_n:                 number
+  migracao_wop_total:             number
+  apropriacao_n:                  number
+  apropriacao_total:              number
+  mutacao_n:                      number
+  mutacao_total:                  number
+  residuo:                        number
+  cross_check_aquisicoes_evento:  number | null
+  cross_check_liquidacoes_evento: number | null
+  cross_check_diff_aquisicoes:    number | null
+  cross_check_diff_liquidacoes:   number | null
+}
+
+type DrillDcMutacaoPapelDTO = {
+  cedente_doc:        string
+  cedente_nome:       string
+  sacado_doc:         string
+  sacado_nome:        string
+  seu_numero:         string
+  numero_documento:   string
+  tipo_recebivel:     string
+  vp_d1:              number | string
+  vp_d0:              number | string
+  delta_vp:           number | string
+  vn_d1:              number | string
+  vn_d0:              number | string
+  taxa_d1:            number | string
+  taxa_d0:            number | string
+  venc_d1:            string | null
+  venc_d0:            string | null
+  mudou_vn:           boolean
+  mudou_taxa:         boolean
+  mudou_venc:         boolean
+}
+export type DrillDcMutacaoPapel = Omit<
+  DrillDcMutacaoPapelDTO,
+  "vp_d1" | "vp_d0" | "delta_vp" | "vn_d1" | "vn_d0" | "taxa_d1" | "taxa_d0"
+> & {
+  vp_d1:    number
+  vp_d0:    number
+  delta_vp: number
+  vn_d1:    number
+  vn_d0:    number
+  taxa_d1:  number
+  taxa_d0:  number
+}
+
+type DrillDcMigracaoWopPapelDTO = {
+  cedente_doc:        string
+  cedente_nome:       string
+  sacado_doc:         string
+  sacado_nome:        string
+  seu_numero:         string
+  numero_documento:   string
+  tipo_recebivel:     string
+  faixa_pdd_d1:       string
+  vp_d1:              number | string
+  valor_pdd_d1:       number | string
+}
+export type DrillDcMigracaoWopPapel = Omit<
+  DrillDcMigracaoWopPapelDTO,
+  "vp_d1" | "valor_pdd_d1"
+> & {
+  vp_d1:        number
+  valor_pdd_d1: number
+}
+
 type DrillDcResponseDTO = {
   fundo_id:               string
   fundo_nome:             string
@@ -3777,6 +3876,9 @@ type DrillDcResponseDTO = {
   liquidacoes_por_tipo:   DrillDcLiquidacaoPorTipoDTO[]
   liquidacoes_top:        DrillDcLiquidacaoLinhaDTO[]
   apropriacao:            DrillDcApropriacaoDTO
+  decomposicao:           DrillDcDecomposicaoDTO
+  mutacao_papeis:         DrillDcMutacaoPapelDTO[]
+  migracao_wop_papeis:    DrillDcMigracaoWopPapelDTO[]
 }
 export type DrillDcResponse = {
   fundo_id:               string
@@ -3791,6 +3893,9 @@ export type DrillDcResponse = {
   liquidacoes_por_tipo:   DrillDcLiquidacaoPorTipo[]
   liquidacoes_top:        DrillDcLiquidacaoLinha[]
   apropriacao:            DrillDcApropriacao
+  decomposicao:           DrillDcDecomposicao
+  mutacao_papeis:         DrillDcMutacaoPapel[]
+  migracao_wop_papeis:    DrillDcMigracaoWopPapel[]
 }
 
 function _coerceDrillDcAquisicao(a: DrillDcAquisicaoDTO): DrillDcAquisicao {
@@ -3825,6 +3930,51 @@ function _coerceDrillDcLiquidacaoLinha(l: DrillDcLiquidacaoLinhaDTO): DrillDcLiq
   }
 }
 
+function _coerceDrillDcDecomposicao(d: DrillDcDecomposicaoDTO): DrillDcDecomposicao {
+  const numOrNull = (v: (number | string) | null) => v === null ? null : Number(v)
+  return {
+    saldo_d1:                       Number(d.saldo_d1),
+    saldo_d0:                       Number(d.saldo_d0),
+    delta_saldo:                    Number(d.delta_saldo),
+    aquisicoes_n:                   d.aquisicoes_n,
+    aquisicoes_total:               Number(d.aquisicoes_total),
+    liquidacoes_n:                  d.liquidacoes_n,
+    liquidacoes_total:              Number(d.liquidacoes_total),
+    migracao_wop_n:                 d.migracao_wop_n,
+    migracao_wop_total:             Number(d.migracao_wop_total),
+    apropriacao_n:                  d.apropriacao_n,
+    apropriacao_total:              Number(d.apropriacao_total),
+    mutacao_n:                      d.mutacao_n,
+    mutacao_total:                  Number(d.mutacao_total),
+    residuo:                        Number(d.residuo),
+    cross_check_aquisicoes_evento:  numOrNull(d.cross_check_aquisicoes_evento),
+    cross_check_liquidacoes_evento: numOrNull(d.cross_check_liquidacoes_evento),
+    cross_check_diff_aquisicoes:    numOrNull(d.cross_check_diff_aquisicoes),
+    cross_check_diff_liquidacoes:   numOrNull(d.cross_check_diff_liquidacoes),
+  }
+}
+
+function _coerceDrillDcMutacaoPapel(p: DrillDcMutacaoPapelDTO): DrillDcMutacaoPapel {
+  return {
+    ...p,
+    vp_d1:    Number(p.vp_d1),
+    vp_d0:    Number(p.vp_d0),
+    delta_vp: Number(p.delta_vp),
+    vn_d1:    Number(p.vn_d1),
+    vn_d0:    Number(p.vn_d0),
+    taxa_d1:  Number(p.taxa_d1),
+    taxa_d0:  Number(p.taxa_d0),
+  }
+}
+
+function _coerceDrillDcMigracaoWopPapel(p: DrillDcMigracaoWopPapelDTO): DrillDcMigracaoWopPapel {
+  return {
+    ...p,
+    vp_d1:        Number(p.vp_d1),
+    valor_pdd_d1: Number(p.valor_pdd_d1),
+  }
+}
+
 function _coerceDrillDc(r: DrillDcResponseDTO): DrillDcResponse {
   return {
     fundo_id:               r.fundo_id,
@@ -3846,11 +3996,14 @@ function _coerceDrillDc(r: DrillDcResponseDTO): DrillDcResponse {
       liquidacoes_total: Number(r.apropriacao.liquidacoes_total),
       apropriacao:       Number(r.apropriacao.apropriacao),
     },
+    decomposicao:        _coerceDrillDcDecomposicao(r.decomposicao),
+    mutacao_papeis:      r.mutacao_papeis.map(_coerceDrillDcMutacaoPapel),
+    migracao_wop_papeis: r.migracao_wop_papeis.map(_coerceDrillDcMigracaoWopPapel),
   }
 }
 
 // ---- DRILL PDD ----
-export type PddFaixaKey = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "WOP" | "NOVO"
+export type PddFaixaKey = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "WOP" | "LIQUIDADO" | "NOVO"
 
 type DrillPddMigracaoCelulaDTO = {
   faixa_de:               PddFaixaKey
@@ -3912,6 +4065,10 @@ type DrillPddResponseDTO = {
   pdd_consolidado_delta:          number | string
   pdd_granular_d1:                number | string
   pdd_granular_d0:                number | string
+  pdd_granular_ex_wop_d1:         number | string
+  pdd_granular_ex_wop_d0:         number | string
+  pdd_granular_wop_d1:            number | string
+  pdd_granular_wop_d0:            number | string
   estoque_disponivel_d1:          boolean
   estoque_disponivel_d0:          boolean
   motivo_indisponivel:            string | null
@@ -3933,6 +4090,10 @@ export type DrillPddResponse = {
   pdd_consolidado_delta:          number
   pdd_granular_d1:                number
   pdd_granular_d0:                number
+  pdd_granular_ex_wop_d1:         number
+  pdd_granular_ex_wop_d0:         number
+  pdd_granular_wop_d1:            number
+  pdd_granular_wop_d0:            number
   estoque_disponivel_d1:          boolean
   estoque_disponivel_d0:          boolean
   motivo_indisponivel:            string | null
@@ -3980,6 +4141,10 @@ function _coerceDrillPdd(r: DrillPddResponseDTO): DrillPddResponse {
     pdd_consolidado_delta:          Number(r.pdd_consolidado_delta),
     pdd_granular_d1:                Number(r.pdd_granular_d1),
     pdd_granular_d0:                Number(r.pdd_granular_d0),
+    pdd_granular_ex_wop_d1:         Number(r.pdd_granular_ex_wop_d1 ?? 0),
+    pdd_granular_ex_wop_d0:         Number(r.pdd_granular_ex_wop_d0 ?? 0),
+    pdd_granular_wop_d1:            Number(r.pdd_granular_wop_d1 ?? 0),
+    pdd_granular_wop_d0:            Number(r.pdd_granular_wop_d0 ?? 0),
     estoque_disponivel_d1:          r.estoque_disponivel_d1,
     estoque_disponivel_d0:          r.estoque_disponivel_d0,
     motivo_indisponivel:            r.motivo_indisponivel,
