@@ -547,6 +547,127 @@ async def run_document_extraction(
     )
 
 
+async def run_standalone_agent(
+    *,
+    agent_name: str,
+    scope: ScopedContext,
+    user_context: dict[str, Any] | None = None,
+    db: AsyncSession,
+    session: AnalysisSession | None = None,
+) -> AgentRunResult:
+    """Run a specialist agent OUTSIDE the Credito workflow.
+
+    Unlike `run_specialist_agent` (acoplado ao NodeContext do playbook engine
+    e a Module.CREDITO hardcoded), este caminho permite invocar qualquer
+    agente do CATALOG passando scope + tenant + permissions explicitamente.
+
+    Use para agentes standalone (ex.: `controladoria.analista_variacao_cota`)
+    invocados via endpoint REST direto, smoke test, ou job agendado.
+
+    Args:
+        agent_name: nome canonico do agente (ex.: 'controladoria.analista_variacao_cota').
+            O AgentRegistry strip o prefixo de modulo pra match com CATALOG.
+        scope: ScopedContext ja populado pelo caller — tenant_id, user_id,
+            module, permissions, extras. Tools/permissions filtram baseado
+            nisso.
+        user_context: dict de variaveis pra renderizar o user_context_template
+            do ai_prompt (ex.: {fundo_nome, data_d0, data_anterior}).
+        db: AsyncSession.
+        session: AnalysisSession opcional (working memory + step trace).
+
+    Returns:
+        AgentRunResult com output validado contra spec.output_schema.
+    """
+    from app.agentic.engine.catalog import CATALOG
+    from app.agentic.playbooks.nodes._base import NodeContext
+
+    # Resolve catalog spec — strip prefixo de modulo se houver.
+    raw_name = agent_name.split(".", 1)[1] if "." in agent_name else agent_name
+    if raw_name not in CATALOG:
+        raise ValueError(f"Agente '{raw_name}' nao encontrado em CATALOG.")
+    spec = CATALOG[raw_name]
+
+    # Resolve definition (DB-first via AgentRegistry).
+    resolved = await AgentRegistry.get(db, name=agent_name, scope=scope)
+    prompt = resolved.prompt
+
+    # Renderiza prompt com context. user_context vira variaveis pra
+    # {placeholder} em user_context_template do ai_prompt.
+    render_context: dict[str, Any] = {
+        "page": f"{scope.module.value}.standalone",
+        "period": "",
+        "filters": "",
+    }
+    if user_context:
+        render_context.update(user_context)
+    rendered = prompt.render(context=render_context)
+
+    system_text_raw = "\n\n".join(
+        block.text for msg in rendered if msg.role == "system" for block in msg.content
+    )
+    system_text = compose_system_text(
+        persona=resolved.persona,
+        expertises=resolved.expertises,
+        prompt_system_text=system_text_raw,
+    )
+
+    user_text = "\n\n".join(
+        block.text for msg in rendered if msg.role == "user" for block in msg.content
+    )
+    if not user_text:
+        # Fallback se ai_prompt nao tem user_context_template.
+        user_text = (
+            "Produza a analise no formato JSON definido pelo schema da tarefa. "
+            "Inclua o objeto JSON dentro de um bloco ```json ... ```."
+        )
+
+    # NodeContext sintetico — necessario por causa do contrato existente
+    # de `_invoke_with_validation` (acoplado a ctx.tenant_id, ctx.initiated_by,
+    # ctx.run_id). Quando esse contrato for limpo, este shim some.
+    from uuid import uuid4
+    ctx = NodeContext(
+        run_id=uuid4(),
+        tenant_id=scope.tenant_id,
+        node_id="standalone",
+        initiated_by=scope.user_id,
+        previous_outputs={},
+        trigger_data={},
+        node_config={},
+        session=session,
+    )
+
+    agent_full_id = resolved.full_id
+
+    if session is not None:
+        session.record_observation(
+            agent_full_id=agent_full_id,
+            message=f"start {agent_full_id} (standalone)",
+        )
+
+    output_data, usage, resolved_models = await _invoke_with_validation(
+        spec=spec,
+        system_text=system_text,
+        user_text=user_text,
+        ctx=ctx,
+        db=db,
+        resolved=resolved,
+        session=session,
+        agent_full_id=agent_full_id,
+        scope_override=scope,  # Bypass do scope hardcoded CREDITO.
+    )
+
+    return AgentRunResult(
+        output_data=output_data,
+        output_schema_name=spec.output_schema.__name__,
+        tokens_input=usage.tokens_input,
+        tokens_output=usage.tokens_output,
+        tokens_cache_read=usage.tokens_cache_read,
+        tokens_cache_creation=usage.tokens_cache_creation,
+        cost_brl=Decimal("0"),
+        prompt_full_id=resolved.audit_version,
+    )
+
+
 async def _render_template_block(
     db: AsyncSession,
     *,
@@ -636,6 +757,7 @@ async def _invoke_with_validation(
     resolved: ResolvedAgent | None = None,
     session: AnalysisSession | None = None,
     agent_full_id: str | None = None,
+    scope_override: ScopedContext | None = None,
 ) -> tuple[dict[str, Any], _Usage, ResolvedModels]:
     """Invoke the agent and validate output, retrying once on schema failure.
 
@@ -676,19 +798,26 @@ async def _invoke_with_validation(
     # vivem em workflows do Credito); permissions vazias com
     # cross_module=True na chamada do registry. F2.b vai trazer module
     # via AgentDefinition + permissions reais do user invocador.
-    scope = ScopedContext(
-        tenant_id=ctx.tenant_id,
-        empresa_id=None,
-        user_id=ctx.initiated_by,
-        module=Module.CREDITO,
-        permissions={},
-        db=db,
-        extras={
-            "dossier_id": ctx.trigger_data.get("dossier_id"),
-            "run_id": ctx.run_id,
-            "node_id": ctx.node_id,
-        },
-    )
+    # `scope_override` (2026-05-24): permite agentes standalone (fora de
+    # workflow Credito) injetarem scope custom com module + permissions
+    # + extras adequados (ex.: agente de controladoria com Module.CONTROLADORIA
+    # + ua_id em extras).
+    if scope_override is not None:
+        scope = scope_override
+    else:
+        scope = ScopedContext(
+            tenant_id=ctx.tenant_id,
+            empresa_id=None,
+            user_id=ctx.initiated_by,
+            module=Module.CREDITO,
+            permissions={},
+            db=db,
+            extras={
+                "dossier_id": ctx.trigger_data.get("dossier_id"),
+                "run_id": ctx.run_id,
+                "node_id": ctx.node_id,
+            },
+        )
 
     tools = (
         tools_override
