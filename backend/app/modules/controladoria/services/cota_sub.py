@@ -498,57 +498,82 @@ async def _sum_fundos_di(
 async def _sum_dc(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID, ua_nome: str, data: date,
 ) -> Decimal:
-    """DC = Σ wh_posicao_cota_fundo dos fundos INTERNOS do FIDC.
+    """DC = Σ wh_estoque_recebivel.valor_presente, excluindo WOP.
 
-    Refactor 2026-05-19 (metodo gestor REALINVEST, ΔSaldo simples):
-    a planilha do gestor decompoe o PL Sub em 11 categorias patrimoniais
-    e usa "Direitos Creditorios" = saldo das cotas internas do proprio
-    FIDC (representacao alternativa da carteira DC) em
-    `wh_posicao_cota_fundo`. Antes lia `wh_estoque_recebivel.valor_presente`
-    (DC granular papel-a-papel), mas o gestor fecha pelos saldos consolidados
-    publicados na MEC/Tesouraria — fechamento exato com a fonte certa.
+    Refactor 2026-05-24 (metodo granular, Fase 1A do redesign cota-sub):
+    voltamos a ler granular ex-WOP, abandonando o consolidado
+    `wh_posicao_cota_fundo` que era a fonte desde 2026-05-19 (metodo gestor).
 
-    Identificacao do fundo interno: `_is_fundo_externo == False` (prefixo da
-    UA aparece no nome do papel — `REALINVEST FIDC` → `REALINVEST A VENCER` /
-    `REALINVEST VENCIDOS`).
+    Razao da volta ao granular: o consolidado QiTech (`valor_liquido` das
+    cotas internas tipo "REALINVEST A VENCER" / "REALINVEST VENCIDOS") tem
+    opacidade — qualquer ajuste interno (PDD, WOP, mutacao silenciosa) entra
+    no saldo sem trilha auditavel, e a Apropriacao deduzida por residual no
+    drill DC virava balde de ruido. O granular permite decompor o ΔDC em
+    5 buckets com fonte propria (aquisicao, liquidacao, migracao WOP,
+    apropriacao de juros, mutacao silenciosa).
+
+    WOP (write-off pendente) e excluido porque:
+      - PDD em 100% do VP → contribuicao liquida ao PL Sub Jr e zero
+      - QiTech segrega WOP da cota interna do estoque consolidado (offset
+        de R$ 118.046 que aparecia entre granular e A VENCER+VENCIDOS no
+        REALINVEST 11-12/05 e exatamente o saldo WOP)
+      - Excluindo de ambos os lados (DC e PDD) mantemos coerencia
+
+    Assinatura mantida — `ua_nome` continua no parametro por compatibilidade
+    com os callers existentes (nao usado mais nesta versao). O CNPJ do fundo
+    e resolvido via subquery a partir do `ua_id`.
+
+    Reconciliacao com consolidado MEC vira linha separada de auditoria
+    (Fase 4 do redesign), nao mais fonte de calculo.
     """
-    stmt = (
-        select(
-            PosicaoCotaFundo.ativo_nome,
-            PosicaoCotaFundo.valor_liquido,
-        )
-        .where(PosicaoCotaFundo.tenant_id == tenant_id)
-        .where(PosicaoCotaFundo.unidade_administrativa_id == ua_id)
-        .where(PosicaoCotaFundo.data_posicao == data)
+    fundo_doc_subq = (
+        select(UnidadeAdministrativa.cnpj)
+        .where(UnidadeAdministrativa.id == ua_id)
+        .scalar_subquery()
     )
-    rows = (await db.execute(stmt)).all()
-    total = ZERO
-    for nome, valor in rows:
-        if not _is_fundo_externo(nome or "", ua_nome):
-            total += Decimal(valor or 0)
-    return total
+    stmt = (
+        select(func.coalesce(func.sum(EstoqueRecebivel.valor_presente), ZERO))
+        .where(EstoqueRecebivel.tenant_id == tenant_id)
+        .where(EstoqueRecebivel.fundo_doc == fundo_doc_subq)
+        .where(EstoqueRecebivel.data_referencia == data)
+        .where(EstoqueRecebivel.faixa_pdd != "WOP")
+    )
+    return Decimal((await db.execute(stmt)).scalar() or 0)
 
 
 async def _sum_pdd(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID, data: date,
 ) -> Decimal:
-    """PDD = saldo consolidado em `wh_posicao_outros_ativos` WHERE codigo='PDD'.
+    """PDD = Σ wh_estoque_recebivel.valor_pdd, excluindo WOP.
 
-    Refactor 2026-05-19 (metodo gestor REALINVEST, ΔSaldo simples): antes
-    somava `wh_estoque_recebivel.valor_pdd` (granular papel-a-papel), mas o
-    gestor le o PDD consolidado em uma unica linha publicada pela QiTech em
-    `market.outros_ativos` (mesma fonte de Outros Ativos). Mantemos a fonte
-    granular para `pdd_evidencias` (papel-a-papel, informativo); calculo do
-    delta vem da consolidada.
+    Refactor 2026-05-24 (metodo granular, Fase 1B do redesign cota-sub):
+    pareada com `_sum_dc` (Fase 1A) — mesma fonte granular ex-WOP. Antes lia
+    `wh_posicao_outros_ativos.valor_total` filtrado por codigo='PDD'
+    (consolidado QiTech, vinha negativo).
 
-    PDD e contabilmente passivo — `valor_total` ja vem negativo na QiTech.
+    Granular retorna SEMPRE positivo (sem inversao). O consumer
+    (`balanco_patrimonial._snapshot_categorias`) ja faz `abs(pdd_raw)`
+    — segue no-op com valor positivo.
+
+    WOP excluido pelo mesmo motivo de `_sum_dc`: titulos em WOP estao 100%
+    provisionados, mas QiTech segrega tanto na DC quanto na PDD consolidada.
+    Excluindo de ambos os lados, mantemos a coerencia (efeito liquido zero
+    no PL Sub Jr).
+
+    Reconciliacao com PDD consolidado (`wh_posicao_outros_ativos`) vira
+    auditoria separada na Fase 4.
     """
+    fundo_doc_subq = (
+        select(UnidadeAdministrativa.cnpj)
+        .where(UnidadeAdministrativa.id == ua_id)
+        .scalar_subquery()
+    )
     stmt = (
-        select(func.coalesce(func.sum(PosicaoOutrosAtivos.valor_total), ZERO))
-        .where(PosicaoOutrosAtivos.tenant_id == tenant_id)
-        .where(PosicaoOutrosAtivos.unidade_administrativa_id == ua_id)
-        .where(PosicaoOutrosAtivos.data_posicao == data)
-        .where(PosicaoOutrosAtivos.codigo == "PDD")
+        select(func.coalesce(func.sum(EstoqueRecebivel.valor_pdd), ZERO))
+        .where(EstoqueRecebivel.tenant_id == tenant_id)
+        .where(EstoqueRecebivel.fundo_doc == fundo_doc_subq)
+        .where(EstoqueRecebivel.data_referencia == data)
+        .where(EstoqueRecebivel.faixa_pdd != "WOP")
     )
     return Decimal((await db.execute(stmt)).scalar() or 0)
 

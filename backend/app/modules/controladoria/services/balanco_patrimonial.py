@@ -126,7 +126,7 @@ async def _snapshot(
 
 
 _ATIVO_KEYS_LABELS_SOURCES: tuple[tuple[str, str, str], ...] = (
-    ("dc",                    "Direitos Creditórios",   "wh_posicao_cota_fundo (REALINVEST*)"),
+    ("dc",                    "Direitos Creditórios",   "wh_estoque_recebivel (Σ valor_presente, exclui WOP)"),
     ("titulos_publicos",      "Títulos Públicos",       "wh_posicao_renda_fixa (COSIF TPF)"),
     ("op_estruturadas",       "Op. Estruturadas",       "wh_posicao_renda_fixa (COSIF Nota Comercial)"),
     ("fundos_di",             "Fundos DI",              "wh_posicao_cota_fundo (externos)"),
@@ -141,7 +141,7 @@ _ATIVO_KEYS_LABELS_SOURCES: tuple[tuple[str, str, str], ...] = (
 _PASSIVO_KEYS_LABELS_SOURCES: tuple[tuple[str, str, str], ...] = (
     ("senior",   "Cota Senior",   "wh_mec_evolucao_cotas (classe Senior)"),
     ("mezanino", "Cota Mezanino", "wh_mec_evolucao_cotas (classe Mezanino)"),
-    ("pdd",      "PDD",           "wh_posicao_outros_ativos (codigo='PDD')"),
+    ("pdd",      "PDD",           "wh_estoque_recebivel (Σ valor_pdd, exclui WOP)"),
 )
 
 
