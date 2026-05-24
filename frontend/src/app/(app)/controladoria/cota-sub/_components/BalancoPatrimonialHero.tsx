@@ -63,6 +63,24 @@ const DRILL_ENABLED_F2: ReadonlySet<CategoriaPatrimonialKey> = new Set<Categoria
   "pdd",
 ])
 
+// Tooltip amigavel por categoria — descreve a definicao/composicao
+// economica da linha (vs `categoria.source` do backend que descreve a
+// fonte tecnica). Aparece como tooltip nativo no `title` do label.
+const CATEGORIA_TOOLTIP: Partial<Record<CategoriaPatrimonialKey, string>> = {
+  dc:                   "Σ Valor Presente dos recebíveis em estoque (exclui WOP). Marcação na curva contratual.",
+  pdd:                  "Σ Provisão para Devedores Duvidosos constituída (faixas A-H, exclui WOP). Reduz o PL Sub Jr.",
+  cpr:                  "Contas a Pagar/Receber líquido. Despesas, taxas, aportes engaiolados, provisões.",
+  tesouraria:           "Saldo em tesouraria da classe Sub (exclui Mez/Sr).",
+  saldo_conta_corrente: "Saldo em conta corrente. Exclui linhas CONCILIA (contra-saldos que somam 0).",
+  compromissada:        "Operações compromissadas (overnight).",
+  titulos_publicos:     "Σ posição em títulos públicos (NTN-*, LFT, LTN).",
+  op_estruturadas:      "Σ posição em operações estruturadas (NCPX, VCNC).",
+  fundos_di:            "Σ cotas de fundos DI externos.",
+  outros_ativos:        "Outros ativos não classificados nas demais linhas (exclui PDD e TPF).",
+  senior:               "Patrimônio da Cota Sênior (passivo da Sub Jr).",
+  mezanino:             "Patrimônio da Cota Mezanino (passivo da Sub Jr).",
+}
+
 const RESIDUO_AMBER_BRL = 1
 const RESIDUO_RED_BRL = 1000
 
@@ -186,17 +204,20 @@ export function BalancoPatrimonialHero({
         delta={data.soma_passivos_delta}
       />
 
-      {/* Seção FECHAMENTO */}
+      {/* Seção FECHAMENTO — reconciliação PL calculado vs MEC */}
       <PlRow
-        label="PL Sub Jr · deduzido"
-        sublabel="Σ Ativos − Σ Passivos"
+        label="PL Sub Jr · calculado"
+        sublabel="Σ Ativos − Σ Passivos (pelas fontes granulares)"
+        tooltip="PL Sub Jr construído de baixo pra cima: soma das categorias do Ativo menos soma das categorias do Passivo, todas calculadas a partir das tabelas silver granulares do warehouse."
         d1={data.pl_deduzido_d1}
         d0={data.pl_deduzido_d0}
         delta={data.pl_deduzido_delta}
         emphasize
       />
       <PlRow
-        label="PL Sub Jr · fonte (wh_mec)"
+        label="PL Sub Jr · fonte MEC"
+        sublabel="wh_mec_evolucao_cotas (classe Sub Jr)"
+        tooltip="PL Sub Jr lido diretamente do MEC (Movimento Estatístico Consolidado) publicado pela QiTech. Usado como check externo do cálculo acima."
         d1={data.pl_fonte_d1}
         d0={data.pl_fonte_d0}
         delta={data.pl_fonte_delta}
@@ -231,6 +252,14 @@ function BalanceRow({
   const isZero = Math.abs(categoria.delta) < 0.005
   const isEmpty = Math.abs(categoria.d0) < 0.005 && isZero
 
+  // Tooltip combinado: descricao amigavel + fonte tecnica + dica de drill.
+  const tooltipParts: string[] = []
+  const friendly = CATEGORIA_TOOLTIP[categoria.key]
+  if (friendly) tooltipParts.push(friendly)
+  if (categoria.source) tooltipParts.push(`Fonte: ${categoria.source}`)
+  if (drillEnabled) tooltipParts.push("Clique para detalhar")
+  const tooltip = tooltipParts.join("\n\n")
+
   return (
     <div
       className={cx(
@@ -243,7 +272,7 @@ function BalanceRow({
       onClick={drillEnabled ? () => onDrill(categoria.key) : undefined}
       role={drillEnabled ? "button" : undefined}
       tabIndex={drillEnabled ? 0 : undefined}
-      title={drillEnabled ? "Clique para detalhar" : undefined}
+      title={tooltip || undefined}
     >
       <span className="flex items-center min-w-0">
         <span className="truncate text-gray-900 dark:text-gray-50">
@@ -298,25 +327,30 @@ function TotalRow({
 }
 
 function PlRow({
-  label, sublabel, d1, d0, delta, emphasize = false,
+  label, sublabel, tooltip, d1, d0, delta, emphasize = false,
 }: {
   label:     string
   sublabel?: string
+  tooltip?:  string
   d1: number; d0: number; delta: number
   emphasize?: boolean
 }) {
   return (
-    <div className={cx(
-      GRID,
-      "border-t px-3 py-1.5 text-[12px] tabular-nums",
-      emphasize
-        ? "border-gray-300 bg-blue-50/40 dark:border-gray-700 dark:bg-blue-950/10"
-        : "border-gray-100 dark:border-gray-800",
-    )}>
+    <div
+      className={cx(
+        GRID,
+        "border-t px-3 py-1.5 text-[12px] tabular-nums",
+        emphasize
+          ? "border-gray-300 bg-blue-50/40 dark:border-gray-700 dark:bg-blue-950/10"
+          : "border-gray-100 dark:border-gray-800",
+      )}
+      title={tooltip}
+    >
       <span className="flex flex-col min-w-0">
         <span
           className={cx(
             "truncate text-[12px] text-gray-900 dark:text-gray-50",
+            tooltip && "cursor-help",
             emphasize ? "font-semibold" : "font-medium",
           )}
         >
