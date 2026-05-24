@@ -44,16 +44,25 @@ const fmtBRLSigned = (v: number): string => {
 
 // Cor de dot por faixa (paleta tailwind ad-hoc — Modo Iteracao de Design ativo).
 const FAIXA_DOT: Record<PddFaixaKey, string> = {
-  A:    "bg-emerald-500",
-  B:    "bg-lime-500",
-  C:    "bg-yellow-500",
-  D:    "bg-orange-500",
-  E:    "bg-red-500",
-  F:    "bg-red-700",
-  G:    "bg-red-800",
-  H:    "bg-rose-900",
-  WOP:  "bg-gray-500",
-  NOVO: "bg-blue-500",
+  A:         "bg-emerald-500",
+  B:         "bg-lime-500",
+  C:         "bg-yellow-500",
+  D:         "bg-orange-500",
+  E:         "bg-red-500",
+  F:         "bg-red-700",
+  G:         "bg-red-800",
+  H:         "bg-rose-900",
+  WOP:       "bg-gray-500",
+  LIQUIDADO: "bg-emerald-600",  // verde escuro — cobranca normal, evento positivo
+  NOVO:      "bg-blue-500",
+}
+
+// Rotulo amigavel pt-BR. PddFaixaKey vem do backend com strings cruas.
+const FAIXA_LABEL: Record<PddFaixaKey, string> = {
+  A: "A", B: "B", C: "C", D: "D", E: "E", F: "F", G: "G", H: "H",
+  WOP:       "WOP",
+  LIQUIDADO: "Liquidado",
+  NOVO:      "Novo",
 }
 
 export type DrillPddContentProps = {
@@ -261,10 +270,14 @@ function PapeisTable({ papeis, highlightDelta }: { papeis: DrillPddPapel[]; high
               <td className="px-3 py-1.5 text-center">
                 <span className="inline-flex items-center gap-1 text-[10px]">
                   <span className={cx("inline-block size-1.5 rounded-full", FAIXA_DOT[p.faixa_pdd_d1 ?? "NOVO"])} aria-hidden />
-                  <span className="text-gray-500">{p.faixa_pdd_d1 ?? "—"}</span>
+                  <span className="text-gray-500">{FAIXA_LABEL[p.faixa_pdd_d1 ?? "NOVO"]}</span>
                   <span className="text-gray-400">→</span>
                   <span className={cx("inline-block size-1.5 rounded-full", FAIXA_DOT[p.faixa_pdd_d0 ?? "WOP"])} aria-hidden />
-                  <span className="text-gray-900 dark:text-gray-50">{p.faixa_pdd_d0 ?? "WOP"}</span>
+                  <span className={cx(
+                    p.faixa_pdd_d0 === "LIQUIDADO"
+                      ? "font-medium text-emerald-700 dark:text-emerald-400"
+                      : "text-gray-900 dark:text-gray-50",
+                  )}>{FAIXA_LABEL[p.faixa_pdd_d0 ?? "WOP"]}</span>
                 </span>
               </td>
               <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(p.valor_nominal)}</td>

@@ -4003,7 +4003,7 @@ function _coerceDrillDc(r: DrillDcResponseDTO): DrillDcResponse {
 }
 
 // ---- DRILL PDD ----
-export type PddFaixaKey = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "WOP" | "NOVO"
+export type PddFaixaKey = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "WOP" | "LIQUIDADO" | "NOVO"
 
 type DrillPddMigracaoCelulaDTO = {
   faixa_de:               PddFaixaKey

@@ -84,9 +84,23 @@ def _normalize_faixa_d1(raw: str | None) -> PddFaixaKey:
     return raw if raw in _VALID_FAIXAS else "NOVO"  # type: ignore[return-value]
 
 
-def _normalize_faixa_d0(raw: str | None) -> PddFaixaKey:
-    """Faixa em D0; quando o papel sumiu entre D-1 e D0, retorna WOP."""
+def _normalize_faixa_d0(raw: str | None, seu_numero: str, liquidados_d0: set[str]) -> PddFaixaKey:
+    """Faixa em D0 com distincao entre LIQUIDADO e WOP.
+
+    Quando o papel sumiu entre D-1 e D0:
+      - Esta em `wh_liquidacao_recebivel` em D0 -> LIQUIDADO (cobranca normal,
+        PDD reverte por inteiro)
+      - NAO esta em liquidacao -> WOP (write-off real, PDD vira perda
+        definitiva)
+
+    Antes do fix 2026-05-24 ambos caiam em "WOP", o que fazia papeis
+    liquidados com PDD em D-1 sumirem invisivelmente do drill: nao entravam
+    no top (filtro `faixa_d0 != WOP`) nem no bucket `papeis_wop` (cross-check
+    com liquidados exclui).
+    """
     if raw is None:
+        if seu_numero in liquidados_d0:
+            return "LIQUIDADO"
         return "WOP"
     return raw if raw in _VALID_FAIXAS else "WOP"  # type: ignore[return-value]
 
@@ -248,7 +262,11 @@ async def _build_matriz_e_papeis(
 
     for r in rows:
         faixa_d1 = _normalize_faixa_d1(r.faixa_pdd_d1_raw)
-        faixa_d0 = _normalize_faixa_d0(r.faixa_pdd_d0_raw)
+        faixa_d0 = _normalize_faixa_d0(
+            r.faixa_pdd_d0_raw,
+            seu_numero=r.seu_numero or "",
+            liquidados_d0=liquidados_d0,
+        )
         delta_pdd = Decimal(r.valor_pdd_d0 or 0) - Decimal(r.valor_pdd_d1 or 0)
 
         # ---- Agrega na matriz ----
@@ -295,18 +313,20 @@ async def _build_matriz_e_papeis(
         # (a) faixa_d0 == "WOP"   — papel em write-off em D0
         # (b) faixa_d1 != "WOP"   — NAO estava em WOP em D-1 (evento do dia,
         #                           nao papel parado em WOP ha dias)
-        # (c) seu_numero ∉ liquidados_d0 — NAO foi liquidado normalmente
-        #                           (recompra/baixa/liquidacao = sumiu por outro motivo)
-        # (d) PDD relevante       — abs(valor_pdd_d1) > 0 (mantido do antigo)
+        # (c) PDD relevante       — abs(valor_pdd_d1) > 0 (mantido do antigo)
+        # Cross-check com liquidados_d0 agora vive no `_normalize_faixa_d0`:
+        # papel liquidado retorna LIQUIDADO (nao WOP), entao automaticamente
+        # nao entra aqui.
         if (
             faixa_d0 == "WOP"
             and faixa_d1 != "WOP"
-            and papel.seu_numero not in liquidados_d0
             and abs(papel.valor_pdd_d1) > 0
         ):
             papeis_wop.append(papel)
 
-        # Candidato a top N (excluindo WOP — ja listado acima)
+        # Lista "Papeis com variacao de PDD" (exclui apenas WOP novo, que
+        # ja tem destaque proprio acima). Inclui papeis LIQUIDADO no dia
+        # com PDD > 0 em D-1 (PDD reversa por cobranca normal).
         if faixa_d0 != "WOP" and abs(delta_pdd) > threshold_brl:
             total_acima_threshold += 1
             candidatos_top.append(papel)

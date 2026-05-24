@@ -263,9 +263,12 @@ class DrillDcResponse(BaseModel):
 # ── DRILL PDD ───────────────────────────────────────────────────────────────
 
 
-# Faixas BACEN Resolucao 2682. WOP = write-off (papel sumiu entre D-1 e D0).
-# NOVO = papel apareceu em D0 sem existir em D-1.
-PddFaixaKey = Literal["A", "B", "C", "D", "E", "F", "G", "H", "WOP", "NOVO"]
+# Faixas BACEN Resolucao 2682 + faixas sinteticas:
+# - WOP       = write-off real (papel sumiu sem aparecer em wh_liquidacao_recebivel)
+# - LIQUIDADO = papel sumiu PORQUE foi liquidado/recomprado/baixado normalmente
+#               (aparece em wh_liquidacao_recebivel). PDD reverte completamente.
+# - NOVO      = papel apareceu em D0 sem existir em D-1.
+PddFaixaKey = Literal["A", "B", "C", "D", "E", "F", "G", "H", "WOP", "LIQUIDADO", "NOVO"]
 
 
 class DrillPddMigracaoCelula(BaseModel):
