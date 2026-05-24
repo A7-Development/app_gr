@@ -112,6 +112,121 @@ class DrillDcApropriacao(BaseModel):
     apropriacao:         Decimal = Field(description="delta_estoque + liquidacoes_total - aquisicoes_total")
 
 
+class DrillDcMutacaoPapel(BaseModel):
+    """Papel da populacao constante com MUDANCA DE PARAMETRO entre D-1 e D0.
+
+    Mutacao silenciosa = title presente nos 2 dias (nao-WOP nos 2 dias) cujo
+    `valor_nominal`, `taxa_recebivel` ou `data_vencimento_ajustada` mudou
+    sem evento de liquidacao/aquisicao correspondente. Eh o sintoma que a
+    F5 (project_detector_mutacao_silenciosa) deveria detectar como
+    monitoria paralela — aqui passa a ser RESULTADO NATURAL da decomposicao.
+
+    Caso canonico: DID99746 (SYSTEMPACK->BPM) entre 10/04 e 13/04 teve
+    valor_nominal cair R$ 22.795 (-17,5%) sem evento.
+    """
+
+    cedente_doc:                str
+    cedente_nome:               str
+    sacado_doc:                 str
+    sacado_nome:                str
+    seu_numero:                 str
+    numero_documento:           str
+    tipo_recebivel:             str
+    vp_d1:                      Decimal
+    vp_d0:                      Decimal
+    delta_vp:                   Decimal = Field(description="vp_d0 - vp_d1")
+    vn_d1:                      Decimal
+    vn_d0:                      Decimal
+    taxa_d1:                    Decimal
+    taxa_d0:                    Decimal
+    venc_d1:                    date | None = None
+    venc_d0:                    date | None = None
+    mudou_vn:                   bool = Field(description="valor_nominal diferente entre D-1 e D0")
+    mudou_taxa:                 bool = Field(description="taxa_recebivel diferente")
+    mudou_venc:                 bool = Field(description="data_vencimento_ajustada diferente")
+
+
+class DrillDcMigracaoWopPapel(BaseModel):
+    """Papel que MIGROU PARA WOP entre D-1 e D0.
+
+    Em D-1 estava em faixa != 'WOP' (parte do estoque normal); em D0 esta
+    em 'WOP'. Saiu da DC consolidada porque WOP eh segregado (mas o papel
+    permanece no granular com PDD em 100% do VP). Efeito liquido no PL Sub
+    Jr eh zero (sai de DC + sai de PDD = neutralizam).
+    """
+
+    cedente_doc:        str
+    cedente_nome:       str
+    sacado_doc:         str
+    sacado_nome:        str
+    seu_numero:         str
+    numero_documento:   str
+    tipo_recebivel:     str
+    faixa_pdd_d1:       str = Field(description="Faixa de origem (A-H, exceto WOP)")
+    vp_d1:              Decimal = Field(description="VP em D-1 (sai do estoque)")
+    valor_pdd_d1:       Decimal = Field(description="PDD em D-1 (sai junto)")
+
+
+class DrillDcDecomposicao(BaseModel):
+    """Decomposicao do ΔDC entre D-1 e D0, calculada do granular ex-WOP.
+
+    Identidade contabil (deve sempre fechar, residuo ~0):
+
+        saldo_d0 = saldo_d1
+                 + aquisicoes_total      (entradas: papeis novos em D0)
+                 - liquidacoes_total     (saidas: papeis ausentes em D0, pelo VP_d1)
+                 - migracao_wop_total    (papeis que viraram WOP, saem do estoque)
+                 + apropriacao_total     (juros do dia, populacao constante sem mudanca)
+                 + mutacao_total         (delta VP de papeis com mudanca de parametro)
+                 + residuo               (deve ser ~0; se != 0 alerta de pipeline)
+
+    Cross-check informativo com `wh_aquisicao_recebivel` e
+    `wh_liquidacao_recebivel`: a diferenca entre o granular (calculado
+    aqui) e os eventos publicados pela QiTech em endpoints proprios deve
+    ser ~0. Quando diverge, sinaliza desalinhamento entre o snapshot
+    estoque e os eventos do dia.
+    """
+
+    saldo_d1:                       Decimal = Field(description="Σ VP granular ex-WOP em D-1")
+    saldo_d0:                       Decimal = Field(description="Σ VP granular ex-WOP em D0")
+    delta_saldo:                    Decimal = Field(description="saldo_d0 - saldo_d1")
+
+    aquisicoes_n:                   int
+    aquisicoes_total:               Decimal = Field(description="Σ VP_d0 dos papeis em D0 \\ D-1")
+
+    liquidacoes_n:                  int
+    liquidacoes_total:              Decimal = Field(description="Σ VP_d1 dos papeis em D-1 \\ D0")
+
+    migracao_wop_n:                 int
+    migracao_wop_total:             Decimal = Field(description="Σ VP_d1 dos papeis que viraram WOP")
+
+    apropriacao_n:                  int
+    apropriacao_total:              Decimal = Field(description="Σ ΔVP da populacao constante sem mudanca de parametro (= juros + valorizacao MtM)")
+
+    mutacao_n:                      int
+    mutacao_total:                  Decimal = Field(description="Σ ΔVP da populacao constante COM mudanca de parametro (valor_nominal/taxa/venc) — F5 implicito")
+
+    residuo:                        Decimal = Field(description="Esperado ~0; > R$ 1 indica desalinhamento")
+
+    # Cross-check informativo
+    cross_check_aquisicoes_evento:  Decimal | None = Field(
+        default=None,
+        description="Σ valor_compra de wh_aquisicao_recebivel (publicado pela QiTech)",
+    )
+    cross_check_liquidacoes_evento: Decimal | None = Field(
+        default=None,
+        description="Σ valor_aquisicao de wh_liquidacao_recebivel (publicado pela QiTech)",
+    )
+    cross_check_diff_aquisicoes:    Decimal | None = Field(
+        default=None,
+        description="granular - evento; ~0 esperado",
+    )
+    cross_check_diff_liquidacoes:   Decimal | None = Field(
+        default=None,
+        description="granular - evento; ~0 esperado",
+    )
+
+
 class DrillDcResponse(BaseModel):
     """Drill da categoria DC (Direitos Creditorios)."""
 
@@ -129,7 +244,20 @@ class DrillDcResponse(BaseModel):
     liquidacoes_por_tipo:  list[DrillDcLiquidacaoPorTipo]
     liquidacoes_top:     list[DrillDcLiquidacaoLinha]
 
+    # Apropriacao residual (legacy) — mantida para compat com UI antiga.
+    # UI nova consome `decomposicao` abaixo (calculo direto pelo granular).
     apropriacao:         DrillDcApropriacao
+
+    # F2 redesign 2026-05-24: decomposicao em 5 buckets a partir do granular.
+    decomposicao:        DrillDcDecomposicao
+    mutacao_papeis:      list[DrillDcMutacaoPapel] = Field(
+        default_factory=list,
+        description="Detalhe do bucket Mutacao (top N por |delta_vp|)",
+    )
+    migracao_wop_papeis: list[DrillDcMigracaoWopPapel] = Field(
+        default_factory=list,
+        description="Detalhe do bucket Migracao WOP",
+    )
 
 
 # ── DRILL PDD ───────────────────────────────────────────────────────────────
