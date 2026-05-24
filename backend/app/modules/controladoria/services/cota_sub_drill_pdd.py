@@ -68,13 +68,13 @@ _VALID_FAIXAS = {"A", "B", "C", "D", "E", "F", "G", "H", "WOP"}
 
 # Defaults atualizados 2026-05-24: Ricardo confirmou que o detalhamento
 # deve mostrar TODOS os papeis com variacao de PDD (nao apenas top por
-# threshold). Caso 13/05 REALINVEST: filtro >= R$ 100 cortava 49 dos 51
-# papeis, escondendo R$ 268 de variacao agregada. Threshold = R$ 0,01
-# elimina apenas papeis com Δ matematicamente zero (sem variacao real).
-# Cap de 1000 papeis e seguranca pra carteira atipica; carteira REALINVEST
-# tipica tem < 100 papeis com variacao por dia.
+# threshold). Threshold = R$ 0 + filtro `> threshold` inclui qualquer
+# variacao centavos pra cima. Em 13/05 REALINVEST: 51 papeis, soma
+# -R$ 620,37 (= delta agregado da PDD ex-WOP). Cap de 1000 papeis e
+# seguranca pra carteira atipica; carteira REALINVEST tipica tem < 100
+# papeis com variacao por dia.
 _DEFAULT_TOP_N = 1000
-_DEFAULT_THRESHOLD_BRL = Decimal("0.01")
+_DEFAULT_THRESHOLD_BRL = Decimal("0")
 
 
 def _normalize_faixa_d1(raw: str | None) -> PddFaixaKey:
