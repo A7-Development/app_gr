@@ -72,6 +72,7 @@ class AgentTool:
     module: Module
     min_permission: Permission
     cost_hint: CostHint = "cheap"
+    cacheable: bool = False
 
     def to_api_definition(self) -> dict[str, Any]:
         """Shape esperado por `messages.create(tools=[...])` do Anthropic."""
@@ -90,6 +91,7 @@ def register_tool(
     module: Module,
     min_permission: Permission = Permission.READ,
     cost_hint: CostHint = "cheap",
+    cacheable: bool = False,
 ) -> Callable[[ToolHandler], ToolHandler]:
     """Decorator que registra uma tool no ToolRegistry global.
 
@@ -102,6 +104,7 @@ def register_tool(
             module=Module.CREDITO,
             min_permission=Permission.READ,
             cost_hint="cheap",
+            cacheable=False,
         )
         async def read_dossier_section(scope: ScopedContext, args: dict) -> str:
             ...
@@ -109,6 +112,12 @@ def register_tool(
     O handler decorado e devolvido inalterado — voce pode chama-lo direto
     em testes unitarios sem precisar do registry. O efeito colateral e
     apenas registrar a tool no `ToolRegistry` na importacao do modulo.
+
+    `cacheable=True` autoriza o runtime a memoizar o output na
+    AnalysisSession (StepCache). So marque True quando a tool e pura ou
+    o TTL natural do dado e maior que a duracao tipica de uma analise.
+    Tools com side effect (writes, mutacoes em DB, calls com cobranca por
+    consulta) ficam em False.
     """
     # Import tardio pra evitar circular import:
     # _base.py -> registry.py -> _base.py.
@@ -123,6 +132,7 @@ def register_tool(
             module=module,
             min_permission=min_permission,
             cost_hint=cost_hint,
+            cacheable=cacheable,
         )
         ToolRegistry.register(tool)
         return handler

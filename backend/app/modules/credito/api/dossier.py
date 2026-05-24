@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agentic.playbooks.models.run import PlaybookRun, PlaybookRunStep
+from app.agentic.playbooks.services import engine as workflow_engine
 from app.core.database import get_db
 from app.core.enums import DossierStatus, Module, NodeRunStatus, Permission
 from app.core.module_guard import require_module
@@ -25,8 +27,6 @@ from app.modules.credito.schemas.dossier import (
     NodeSubmitPayload,
 )
 from app.modules.credito.services import dossier as dossier_svc
-from app.shared.workflow.models.run import WorkflowNodeRun, WorkflowRun
-from app.shared.workflow.services import engine as workflow_engine
 
 router = APIRouter()
 
@@ -170,7 +170,7 @@ async def get_dossie_state(
     if dossier.workflow_run_id is not None:
         run_row = (
             await db.execute(
-                select(WorkflowRun).where(WorkflowRun.id == dossier.workflow_run_id)
+                select(PlaybookRun).where(PlaybookRun.id == dossier.workflow_run_id)
             )
         ).scalar_one_or_none()
         if run_row is not None:
@@ -187,9 +187,9 @@ async def get_dossie_state(
 
             nr_rows = (
                 await db.execute(
-                    select(WorkflowNodeRun)
-                    .where(WorkflowNodeRun.run_id == run_row.id)
-                    .order_by(WorkflowNodeRun.started_at.asc().nulls_last())
+                    select(PlaybookRunStep)
+                    .where(PlaybookRunStep.run_id == run_row.id)
+                    .order_by(PlaybookRunStep.started_at.asc().nulls_last())
                 )
             ).scalars().all()
 
@@ -256,10 +256,10 @@ async def submit_node_input(
     # Validate the run is paused and node is awaiting input.
     waiting = (
         await db.execute(
-            select(WorkflowNodeRun).where(
-                WorkflowNodeRun.run_id == dossier.workflow_run_id,
-                WorkflowNodeRun.node_id == node_id,
-                WorkflowNodeRun.status == NodeRunStatus.WAITING_INPUT,
+            select(PlaybookRunStep).where(
+                PlaybookRunStep.run_id == dossier.workflow_run_id,
+                PlaybookRunStep.node_id == node_id,
+                PlaybookRunStep.status == NodeRunStatus.WAITING_INPUT,
             )
         )
     ).scalar_one_or_none()

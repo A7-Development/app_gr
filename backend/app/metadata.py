@@ -5,6 +5,15 @@ can auto-detect them during migration generation.
 """
 
 # Core base
+# Workflow engine (shared kernel — modulo credito o consome, futuros modulos
+# como Risco e Laboratorio tambem virao a usar).
+from app.agentic.playbooks.models import (  # noqa: F401
+    PlaybookDefinition,
+    PlaybookDefinitionActive,
+    PlaybookNotification,
+    PlaybookRun,
+    PlaybookRunStep,
+)
 from app.core.database import Base
 from app.modules.bi.models.user_fund_favorite import UserFundFavorite  # noqa: F401
 
@@ -34,6 +43,7 @@ from app.modules.integracoes.models.tenant_source_config import TenantSourceConf
 
 # Shared kernel
 from app.shared.ai.models import (  # noqa: F401
+    AgentConfig,
     AIConversation,
     AIConversationSummary,
     AICreditBalance,
@@ -42,11 +52,12 @@ from app.shared.ai.models import (  # noqa: F401
     AIPromptActive,
     AIProviderCredential,
     AIUsageEvent,
-    AgentConfig,
     TenantAISubscription,
     UserAIPermission,
 )
 from app.shared.audit_log.decision_log import DecisionLog  # noqa: F401
+from app.shared.audit_log.premise_set import PremiseSet  # noqa: F401
+from app.shared.catalog.source_catalog import SourceCatalog  # noqa: F401
 from app.shared.data_providers.models import (  # noqa: F401
     DataProvider,
     DataProviderCatalogSyncRun,
@@ -54,22 +65,10 @@ from app.shared.data_providers.models import (  # noqa: F401
     DataProviderDataset,
     DataProviderDatasetPriceHistory,
 )
-from app.shared.audit_log.premise_set import PremiseSet  # noqa: F401
-from app.shared.catalog.source_catalog import SourceCatalog  # noqa: F401
 from app.shared.identity.subscription import TenantModuleSubscription  # noqa: F401
 from app.shared.identity.tenant import Tenant  # noqa: F401
 from app.shared.identity.user import User  # noqa: F401
 from app.shared.identity.user_permission import UserModulePermission  # noqa: F401
-
-# Workflow engine (shared kernel — modulo credito o consome, futuros modulos
-# como Risco e Laboratorio tambem virao a usar).
-from app.shared.workflow.models import (  # noqa: F401
-    WorkflowDefinition,
-    WorkflowDefinitionActive,
-    WorkflowNodeRun,
-    WorkflowNotification,
-    WorkflowRun,
-)
 from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel  # noqa: F401
 from app.warehouse.cpr_movimento import CprMovimento  # noqa: F401
 
@@ -77,6 +76,7 @@ from app.warehouse.cpr_movimento import CprMovimento  # noqa: F401
 from app.warehouse.dim import DimDreClassificacao, DimMes  # noqa: F401
 from app.warehouse.dre import DreMensal  # noqa: F401
 from app.warehouse.estoque_recebivel import EstoqueRecebivel  # noqa: F401
+from app.warehouse.extrato_bancario import ExtratoBancario  # noqa: F401
 from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel  # noqa: F401
 from app.warehouse.mec_evolucao_cotas import MecEvolucaoCotas  # noqa: F401
 from app.warehouse.movimento_aberto import MovimentoAberto  # noqa: F401
@@ -87,7 +87,6 @@ from app.warehouse.posicao_compromissada import PosicaoCompromissada  # noqa: F4
 from app.warehouse.posicao_cota_fundo import PosicaoCotaFundo  # noqa: F401
 from app.warehouse.posicao_outros_ativos import PosicaoOutrosAtivos  # noqa: F401
 from app.warehouse.posicao_renda_fixa import PosicaoRendaFixa  # noqa: F401
-from app.warehouse.extrato_bancario import ExtratoBancario  # noqa: F401
 from app.warehouse.qitech_raw_bank_account_balance import (  # noqa: F401
     QiTechRawBankAccountBalance,
 )

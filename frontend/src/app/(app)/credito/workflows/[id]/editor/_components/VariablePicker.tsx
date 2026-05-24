@@ -140,7 +140,7 @@ export function VariablePicker({
         <div className="max-h-72 overflow-y-auto py-1">
           {noVars && (
             <p className="px-3 py-4 text-center text-xs text-gray-500 dark:text-gray-400">
-              Nenhuma variável upstream — este nó é a raiz do fluxo.
+              Nenhuma variável upstream — este nó é a raiz do playbook.
             </p>
           )}
           {noMatches && (

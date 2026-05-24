@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -52,6 +53,8 @@ from app.agentic.engine.catalog import (
 )
 from app.agentic.engine.model_resolver import ResolvedModels, resolve_models_for_agent
 from app.agentic.engine.prompts import repository as prompt_repo
+from app.agentic.memory import AnalysisSession
+from app.agentic.playbooks.services.resolver import resolve_templates
 from app.agentic.tools._base import AgentTool
 from app.agentic.tools.registry import ToolRegistry
 from app.core.enums import Module
@@ -59,10 +62,9 @@ from app.modules.integracoes.adapters.llm.anthropic.config import (
     CredentialNotFoundError,
     get_active_anthropic_credential,
 )
-from app.shared.workflow.services.resolver import resolve_templates
 
 if TYPE_CHECKING:
-    from app.shared.workflow.nodes._base import NodeContext
+    from app.agentic.playbooks.nodes._base import NodeContext
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +131,12 @@ def _render_context_for_prompt(
         resolved = _resolve_input_bindings(spec, bindings, ctx)
         lines.append("[Dados disponiveis para sua analise]")
         lines.append(json.dumps(resolved, ensure_ascii=False, indent=2))
+        # Scratchpad cross-agent (F1.C2): observacoes de agentes anteriores
+        # da mesma analise. Vazio quando session ausente ou primeiro agente.
+        scratchpad_text = _render_scratchpad(ctx)
+        if scratchpad_text:
+            lines.append("")
+            lines.append(scratchpad_text)
         return "\n".join(lines)
 
     # Legacy fallback: full dump, truncated.
@@ -146,7 +154,25 @@ def _render_context_for_prompt(
                 serialized = str(output)[:2000]
             lines.append(f"--- {nid} ---")
             lines.append(serialized)
+    scratchpad_text = _render_scratchpad(ctx)
+    if scratchpad_text:
+        lines.append("")
+        lines.append(scratchpad_text)
     return "\n".join(lines)
+
+
+def _render_scratchpad(ctx: NodeContext) -> str:
+    """Return rendered scratchpad block when session has cross-agent notes.
+
+    Empty string when no session, or session.scratchpad is empty. The block
+    starts with a header `[Observacoes de agentes anteriores nesta analise]`
+    making it discoverable for the model without inflating the prompt when
+    irrelevant.
+    """
+    session = getattr(ctx, "session", None)
+    if session is None:
+        return ""
+    return session.scratchpad.render()
 
 
 def _resolve_input_bindings(
@@ -315,6 +341,7 @@ async def run_specialist_agent(
     spec: SpecialistAgentSpec,
     ctx: NodeContext,
     db: AsyncSession,
+    session: AnalysisSession | None = None,
 ) -> AgentRunResult:
     """Run a Specialist Agent and return its validated output.
 
@@ -390,6 +417,16 @@ async def run_specialist_agent(
     )
     user_text = "\n\n".join(user_parts)
 
+    # F1.C2: instrumenta `session.steps` quando session presente. Rotula
+    # cada step pelo identificador curto do agente (ex.: 'credito.financial_analyst@v1').
+    agent_full_id = resolved.full_id
+
+    if session is not None:
+        session.record_observation(
+            agent_full_id=agent_full_id,
+            message=f"start {agent_full_id}",
+        )
+
     output_data, usage, _resolved_models = await _invoke_with_validation(
         spec=spec,
         system_text=system_text,
@@ -397,7 +434,28 @@ async def run_specialist_agent(
         ctx=ctx,
         db=db,
         resolved=resolved,
+        session=session,
+        agent_full_id=agent_full_id,
     )
+
+    if session is not None:
+        # Auto-anexa um summary do output ao scratchpad para o proximo
+        # agente da sessao ler. Truncado em 1500 chars — folga sem
+        # explodir tokens em sessions com varios agentes.
+        try:
+            summary_text = json.dumps(
+                output_data, ensure_ascii=False, default=str
+            )[:1500]
+        except (TypeError, ValueError):
+            summary_text = str(output_data)[:1500]
+        session.scratchpad.append(agent_name=resolved.raw_name, text=summary_text)
+        session.record_scratchpad_write(
+            agent_full_id=agent_full_id, text=summary_text
+        )
+        session.record_observation(
+            agent_full_id=agent_full_id,
+            message=f"end {agent_full_id}",
+        )
 
     return AgentRunResult(
         output_data=output_data,
@@ -576,6 +634,8 @@ async def _invoke_with_validation(
     db: AsyncSession,
     tools_override: list[AgentTool] | None = None,
     resolved: ResolvedAgent | None = None,
+    session: AnalysisSession | None = None,
+    agent_full_id: str | None = None,
 ) -> tuple[dict[str, Any], _Usage, ResolvedModels]:
     """Invoke the agent and validate output, retrying once on schema failure.
 
@@ -648,6 +708,8 @@ async def _invoke_with_validation(
             user_text=user_text,
             tools=tools,
             scope=scope,
+            session=session,
+            agent_full_id=agent_full_id,
         )
 
         try:
@@ -679,6 +741,8 @@ async def _invoke_with_validation(
             user_text=correction_prompt,
             tools=tools,
             scope=scope,
+            session=session,
+            agent_full_id=agent_full_id,
         )
 
         # Acumula tokens das duas chamadas.
@@ -711,12 +775,21 @@ async def _run_tool_loop(
     user_text: str,
     tools: list[AgentTool],
     scope: ScopedContext | None = None,
+    session: AnalysisSession | None = None,
+    agent_full_id: str | None = None,
 ) -> tuple[str, _Usage]:
     """Roda o loop tool_use ate o modelo encerrar com texto final.
 
     `model` e `fallback_model` vem ja resolvidos do DB override
     (via `resolve_models_for_agent`); o caller nao deve mais ler
     `spec.preferred_model` direto.
+
+    Quando `session` e passada (F1.C2), cada tool_use/tool_result e
+    registrado em `session.steps` (alimenta `AgentLiveStatus` no
+    frontend) e tools marcadas `cacheable=True` consultam/inserem
+    em `session.step_cache` — repeticao com mesmos args dentro da
+    sessao acerta o cache. `agent_full_id` rotula os steps (ex.:
+    'credito.financial_analyst@v1').
 
     Retorna o texto da ultima resposta (sem blocos `tool_use`) + usage
     acumulado.
@@ -835,12 +908,60 @@ async def _run_tool_loop(
                     }
                 )
                 continue
+
+            tool_args = dict(block.input or {})
+            tool_label = agent_full_id or spec.name
+
+            # Cache check: so tools `cacheable=True` + sessao ativa.
+            cached_output: str | None = None
+            if session is not None and tool.cacheable:
+                cached_output = session.step_cache.get(block.name, tool_args)
+
+            if cached_output is not None:
+                # Hit: registra trace e devolve direto, sem invocar handler.
+                session.record_tool_use(  # type: ignore[union-attr]
+                    agent_full_id=tool_label,
+                    tool_name=block.name,
+                    input_args=tool_args,
+                )
+                session.record_tool_result(  # type: ignore[union-attr]
+                    agent_full_id=tool_label,
+                    tool_name=block.name,
+                    output=cached_output,
+                    duration_ms=0,
+                    from_cache=True,
+                )
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": cached_output,
+                    }
+                )
+                continue
+
+            # Miss (ou nao-cacheable, ou sem sessao): registra tool_use e
+            # executa handler.
+            if session is not None:
+                session.record_tool_use(
+                    agent_full_id=tool_label,
+                    tool_name=block.name,
+                    input_args=tool_args,
+                )
+
+            tool_started = time.monotonic()
             try:
-                result_text = await tool.handler(scope, dict(block.input or {}))
+                result_text = await tool.handler(scope, tool_args)
             except Exception as exc:
                 logger.exception(
                     "Tool %s falhou no agente %s: %s", block.name, spec.name, exc
                 )
+                if session is not None:
+                    session.record_error(
+                        agent_full_id=tool_label,
+                        tool_name=block.name,
+                        error=str(exc),
+                    )
                 tool_results.append(
                     {
                         "type": "tool_result",
@@ -850,6 +971,19 @@ async def _run_tool_loop(
                     }
                 )
                 continue
+
+            duration_ms = int((time.monotonic() - tool_started) * 1000)
+            if session is not None:
+                session.record_tool_result(
+                    agent_full_id=tool_label,
+                    tool_name=block.name,
+                    output=result_text,
+                    duration_ms=duration_ms,
+                    from_cache=False,
+                )
+                # Insere no cache pos-call quando a tool autorizar.
+                if tool.cacheable:
+                    session.step_cache.put(block.name, tool_args, result_text)
 
             tool_results.append(
                 {

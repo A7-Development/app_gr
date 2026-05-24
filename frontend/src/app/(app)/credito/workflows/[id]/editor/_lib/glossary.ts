@@ -39,7 +39,7 @@ export const glossary = {
   publish: "Publicar",
   activate: "Publicar (usar a partir de agora)",
   deactivate: "Voltar para rascunho",
-  testFlow: "Testar fluxo",
+  testFlow: "Testar playbook",
   back: "Voltar",
 
   // ── Estados da UI ──────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ export const glossary = {
 // language. Quando um novo tipo for adicionado no backend, adicione aqui.
 
 export const ETAPA_LABEL: Record<string, string> = {
-  trigger: "Inicio do fluxo",
+  trigger: "Inicio do playbook",
   human_input: "Pedir dados ao analista",
   document_request: "Pedir documentos",
   document_extractor: "Ler documentos com IA",

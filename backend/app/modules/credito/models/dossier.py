@@ -1,6 +1,6 @@
 """CreditDossier — root entity of the credit analysis module.
 
-A dossier is bound 1-1 to a `WorkflowRun` from the workflow engine. The
+A dossier is bound 1-1 to a `PlaybookRun` from the workflow engine. The
 engine drives execution; the dossier owns the domain data (companies,
 people, documents, analyses, opinion).
 
@@ -71,7 +71,7 @@ class CreditDossier(Base):
         index=True,
     )
 
-    # Workflow binding (1-1 with WorkflowRun)
+    # Workflow binding (1-1 with PlaybookRun)
     workflow_definition_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("workflow_definition.id", ondelete="RESTRICT"),

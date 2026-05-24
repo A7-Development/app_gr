@@ -114,7 +114,7 @@ export function AgentInputBindingsField({
           {agent.inputs.length === 1 ? "" : "s"})
         </p>
         <p className={cx(tableTokens.cellSecondary, "mt-0.5")}>
-          Liga cada dado que o agente precisa receber a uma etapa anterior do fluxo.
+          Liga cada dado que o agente precisa receber a uma etapa anterior do playbook.
         </p>
       </div>
 
