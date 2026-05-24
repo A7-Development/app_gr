@@ -39,7 +39,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.cadastros.public import UnidadeAdministrativa
@@ -91,7 +91,7 @@ async def _sum_pdd_granular(
     fundo_doc: str,
     data: date,
 ) -> Decimal:
-    """Σ wh_estoque_recebivel.valor_pdd para a data (granular)."""
+    """Σ wh_estoque_recebivel.valor_pdd para a data (granular, TOTAL inclui WOP)."""
     stmt = (
         select(func.coalesce(func.sum(EstoqueRecebivel.valor_pdd), ZERO))
         .where(EstoqueRecebivel.tenant_id == tenant_id)
@@ -99,6 +99,47 @@ async def _sum_pdd_granular(
         .where(EstoqueRecebivel.data_referencia == data)
     )
     return Decimal((await db.execute(stmt)).scalar() or 0)
+
+
+async def _sum_pdd_granular_por_bucket(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    fundo_doc: str,
+    data: date,
+) -> tuple[Decimal, Decimal]:
+    """Σ valor_pdd separado em (ex_wop, wop) para a data.
+
+    - ex_wop = faixas A-H (= contribuicao real ao PL Sub Jr)
+    - wop    = faixa WOP (= ja fora do PL, informativo)
+    """
+    stmt = (
+        select(
+            func.coalesce(
+                func.sum(
+                    case(
+                        (EstoqueRecebivel.faixa_pdd != "WOP", EstoqueRecebivel.valor_pdd),
+                        else_=ZERO,
+                    )
+                ),
+                ZERO,
+            ).label("ex_wop"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (EstoqueRecebivel.faixa_pdd == "WOP", EstoqueRecebivel.valor_pdd),
+                        else_=ZERO,
+                    )
+                ),
+                ZERO,
+            ).label("wop"),
+        )
+        .where(EstoqueRecebivel.tenant_id == tenant_id)
+        .where(EstoqueRecebivel.fundo_doc == fundo_doc)
+        .where(EstoqueRecebivel.data_referencia == data)
+    )
+    row = (await db.execute(stmt)).one()
+    return Decimal(row.ex_wop or 0), Decimal(row.wop or 0)
 
 
 async def _liquidados_seu_numero_set(
@@ -331,9 +372,15 @@ async def compute_drill_pdd(
     pdd_cons_d0 = abs(pdd_cons_d0_raw)
     pdd_cons_delta = pdd_cons_d0 - pdd_cons_d1
 
-    # Granular — informativo, exibe divergencia vs consolidado.
+    # Granular — total + separado por bucket (ex-WOP vs WOP).
     pdd_gran_d1 = await _sum_pdd_granular(db, tenant_id=tenant_id, fundo_doc=fundo_doc, data=d1)
     pdd_gran_d0 = await _sum_pdd_granular(db, tenant_id=tenant_id, fundo_doc=fundo_doc, data=data_d0)
+    pdd_gran_ex_wop_d1, pdd_gran_wop_d1 = await _sum_pdd_granular_por_bucket(
+        db, tenant_id=tenant_id, fundo_doc=fundo_doc, data=d1,
+    )
+    pdd_gran_ex_wop_d0, pdd_gran_wop_d0 = await _sum_pdd_granular_por_bucket(
+        db, tenant_id=tenant_id, fundo_doc=fundo_doc, data=data_d0,
+    )
 
     # Guard de disponibilidade do granular nos 2 dias.
     motivo = await _check_estoque_disponibilidade(
@@ -356,6 +403,10 @@ async def compute_drill_pdd(
             pdd_consolidado_delta=pdd_cons_delta,
             pdd_granular_d1=pdd_gran_d1,
             pdd_granular_d0=pdd_gran_d0,
+            pdd_granular_ex_wop_d1=pdd_gran_ex_wop_d1,
+            pdd_granular_ex_wop_d0=pdd_gran_ex_wop_d0,
+            pdd_granular_wop_d1=pdd_gran_wop_d1,
+            pdd_granular_wop_d0=pdd_gran_wop_d0,
             estoque_disponivel_d1=estoque_d1_ok,
             estoque_disponivel_d0=estoque_d0_ok,
             motivo_indisponivel=motivo,
@@ -399,6 +450,10 @@ async def compute_drill_pdd(
         pdd_consolidado_delta=pdd_cons_delta,
         pdd_granular_d1=pdd_gran_d1,
         pdd_granular_d0=pdd_gran_d0,
+        pdd_granular_ex_wop_d1=pdd_gran_ex_wop_d1,
+        pdd_granular_ex_wop_d0=pdd_gran_ex_wop_d0,
+        pdd_granular_wop_d1=pdd_gran_wop_d1,
+        pdd_granular_wop_d0=pdd_gran_wop_d0,
         estoque_disponivel_d1=True,
         estoque_disponivel_d0=True,
         motivo_indisponivel=None,

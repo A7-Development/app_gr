@@ -84,34 +84,27 @@ export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContent
   }
 
   const d = q.data
-  const granularDelta = d.pdd_granular_d0 - d.pdd_granular_d1
-  const divergenciaGranularVsConsolidado = granularDelta - d.pdd_consolidado_delta
-  const temDivergencia = Math.abs(divergenciaGranularVsConsolidado) > 1
+  const pddAtivoDelta = d.pdd_granular_ex_wop_d0 - d.pdd_granular_ex_wop_d1
+  const wopDelta = d.pdd_granular_wop_d0 - d.pdd_granular_wop_d1
 
   return (
     <div className="flex flex-col gap-5">
-      {/* ── PDD consolidado vs granular ── */}
+      {/* ── PDD granular separado por bucket (PDD ativo vs WOP) ── */}
       <section>
-        <SectionTitle icon={RiPieChartLine} label="PDD consolidado · fonte do balanço" />
+        <SectionTitle icon={RiPieChartLine} label="Composição da PDD" />
+        <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+          Σ <code className="font-mono">valor_pdd</code> de <code className="font-mono">wh_estoque_recebivel</code>,
+          separado por bucket. PDD ativo (faixas A-H) é o que entra no
+          balanço da Cota Sub Jr. WOP já está fora — informativo.
+        </p>
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <Card label="Consolidado (wh_posicao_outros_ativos · PDD)">
-            <ValueGrid d1={d.pdd_consolidado_d1} d0={d.pdd_consolidado_d0} delta={d.pdd_consolidado_delta} />
+          <Card label="PDD ativo (faixas A-H · entra no balanço)">
+            <ValueGrid d1={d.pdd_granular_ex_wop_d1} d0={d.pdd_granular_ex_wop_d0} delta={pddAtivoDelta} />
           </Card>
-          <Card label="Granular (Σ wh_estoque_recebivel.valor_pdd)">
-            <ValueGrid d1={d.pdd_granular_d1} d0={d.pdd_granular_d0} delta={granularDelta} />
+          <Card label="WOP (write-off · já fora do balanço)" muted>
+            <ValueGrid d1={d.pdd_granular_wop_d1} d0={d.pdd_granular_wop_d0} delta={wopDelta} />
           </Card>
         </div>
-        {temDivergencia && (
-          <div className="mt-2 flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
-            <RiErrorWarningLine className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-            <div>
-              <strong>Divergência granular vs consolidado: {fmtBRLSigned(divergenciaGranularVsConsolidado)}.</strong>{" "}
-              Possíveis causas: defasagem na publicação do estoque pela QiTech, write-off
-              fantasma (papel saiu do estoque sem aparecer aqui), ou ajuste contábil de
-              PDD aplicado fora do estoque granular.
-            </div>
-          </div>
-        )}
       </section>
 
       {d.motivo_indisponivel && (
@@ -119,8 +112,8 @@ export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContent
           <RiErrorWarningLine className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <div>
             <strong>Estoque granular indisponível:</strong> {d.motivo_indisponivel}.
-            Papéis em write-off e ranking por |Δ PDD| ficam vazios — só o
-            consolidado acima é confiável.
+            Papéis em write-off e variações por papel ficam vazios — só
+            os totais acima são confiáveis.
           </div>
         </div>
       )}
@@ -130,28 +123,36 @@ export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContent
         <section>
           <SectionTitle
             icon={RiErrorWarningLine}
-            label="Papéis em write-off (WOP)"
+            label="Papéis que viraram WOP no dia"
             counter={`${d.papeis_wop.length} papel(eis) · Σ PDD perdido ${fmtBRL.format(d.papeis_wop_total_pdd_d1)}`}
           />
           <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-            Papéis que existiam em D-1 mas sumiram em D0 sem aparecer em wh_liquidacao_recebivel.
+            Papéis que existiam em D-1 (faixa A-H) e migraram para WOP em D0
+            sem aparecer em <code className="font-mono">wh_liquidacao_recebivel</code>.
             O PDD constituído cai como perda definitiva.
           </p>
           <PapeisTable papeis={d.papeis_wop} highlightDelta={false} />
         </section>
       )}
 
-      {/* ── Top N papeis ── */}
+      {/* ── Variacoes relevantes por papel (renomeado, era "Top papeis") ── */}
       <section>
         <SectionTitle
           icon={RiBarChartHorizontalLine}
-          label="Top papéis por |Δ PDD|"
+          label="Papéis com variação de PDD"
           counter={
             d.top_papeis_total_acima_threshold > d.top_papeis.length
-              ? `${d.top_papeis.length} de ${d.top_papeis_total_acima_threshold} acima de ${fmtBRL.format(d.top_papeis_threshold_brl)}`
-              : `${d.top_papeis.length} papel(eis) acima de ${fmtBRL.format(d.top_papeis_threshold_brl)}`
+              ? `${d.top_papeis.length} listados · ${d.top_papeis_total_acima_threshold} acima de ${fmtBRL.format(d.top_papeis_threshold_brl)}`
+              : `${d.top_papeis.length} papel(eis)`
           }
         />
+        <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+          Todos os papéis com |Δ valor_pdd| acima de {fmtBRL.format(d.top_papeis_threshold_brl)} entre D-1 e D0
+          (excluindo write-off já listado acima). Ordenado por magnitude decrescente.
+          {d.top_papeis_total_acima_threshold > d.top_papeis.length && (
+            <> Lista cortada nos {d.top_papeis.length} primeiros — há mais {d.top_papeis_total_acima_threshold - d.top_papeis.length} papéis abaixo desse nível.</>
+          )}
+        </p>
         {d.top_papeis.length === 0 ? (
           <EmptyState
             icon={RiInboxLine}
@@ -189,9 +190,14 @@ function SectionTitle({
   )
 }
 
-function Card({ label, children }: { label: string; children: React.ReactNode }) {
+function Card({ label, children, muted }: { label: string; children: React.ReactNode; muted?: boolean }) {
   return (
-    <div className="rounded border border-gray-200 p-3 dark:border-gray-800">
+    <div className={cx(
+      "rounded border p-3",
+      muted
+        ? "border-gray-200 bg-gray-50/40 dark:border-gray-800 dark:bg-gray-900/20"
+        : "border-gray-200 dark:border-gray-800",
+    )}>
       <p className="text-[10px] uppercase tracking-[0.04em] text-gray-500 dark:text-gray-400">{label}</p>
       <div className="mt-1.5">{children}</div>
     </div>

@@ -317,17 +317,35 @@ class DrillPddResponse(BaseModel):
     data:                        date
     data_anterior:               date
 
-    # PDD consolidado (do _sum_pdd) — fonte de verdade para o delta da
-    # categoria no balanco. Pode divergir do Σ granular abaixo quando a
-    # QiTech publica PDD consolidado sem que o estoque granular reflita
-    # ainda (defasagem de publicacao).
+    # PDD consolidado (do _sum_pdd refatorado em F1 2026-05-24) — agora
+    # granular ex-WOP, alinhado com a fonte do balanco. Mantido com este nome
+    # por retrocompat com o frontend ate F4 do redesign.
     pdd_consolidado_d1:          Decimal
     pdd_consolidado_d0:          Decimal
     pdd_consolidado_delta:       Decimal
 
-    # Σ valor_pdd da granular (wh_estoque_recebivel). Para diff vs consolidado.
+    # Σ valor_pdd da granular -- 3 dimensoes:
+    #   pdd_granular_*       = TOTAL (inclui WOP, mantido por retrocompat)
+    #   pdd_granular_ex_wop_* = Σ apenas faixas A-H (= contribuicao real ao PL)
+    #   pdd_granular_wop_*   = Σ apenas WOP (= ja fora do PL, informativo)
     pdd_granular_d1:             Decimal
     pdd_granular_d0:             Decimal
+    pdd_granular_ex_wop_d1:      Decimal = Field(
+        default=Decimal("0"),
+        description="Σ valor_pdd dos papeis em faixas A-H (exclui WOP) em D-1",
+    )
+    pdd_granular_ex_wop_d0:      Decimal = Field(
+        default=Decimal("0"),
+        description="Σ valor_pdd dos papeis em faixas A-H (exclui WOP) em D0",
+    )
+    pdd_granular_wop_d1:         Decimal = Field(
+        default=Decimal("0"),
+        description="Σ valor_pdd dos papeis em WOP em D-1 (informativo — ja fora do PL)",
+    )
+    pdd_granular_wop_d0:         Decimal = Field(
+        default=Decimal("0"),
+        description="Σ valor_pdd dos papeis em WOP em D0 (informativo — ja fora do PL)",
+    )
 
     estoque_disponivel_d1:       bool
     estoque_disponivel_d0:       bool

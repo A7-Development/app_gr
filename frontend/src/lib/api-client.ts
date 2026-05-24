@@ -4062,6 +4062,10 @@ type DrillPddResponseDTO = {
   pdd_consolidado_delta:          number | string
   pdd_granular_d1:                number | string
   pdd_granular_d0:                number | string
+  pdd_granular_ex_wop_d1:         number | string
+  pdd_granular_ex_wop_d0:         number | string
+  pdd_granular_wop_d1:            number | string
+  pdd_granular_wop_d0:            number | string
   estoque_disponivel_d1:          boolean
   estoque_disponivel_d0:          boolean
   motivo_indisponivel:            string | null
@@ -4083,6 +4087,10 @@ export type DrillPddResponse = {
   pdd_consolidado_delta:          number
   pdd_granular_d1:                number
   pdd_granular_d0:                number
+  pdd_granular_ex_wop_d1:         number
+  pdd_granular_ex_wop_d0:         number
+  pdd_granular_wop_d1:            number
+  pdd_granular_wop_d0:            number
   estoque_disponivel_d1:          boolean
   estoque_disponivel_d0:          boolean
   motivo_indisponivel:            string | null
@@ -4130,6 +4138,10 @@ function _coerceDrillPdd(r: DrillPddResponseDTO): DrillPddResponse {
     pdd_consolidado_delta:          Number(r.pdd_consolidado_delta),
     pdd_granular_d1:                Number(r.pdd_granular_d1),
     pdd_granular_d0:                Number(r.pdd_granular_d0),
+    pdd_granular_ex_wop_d1:         Number(r.pdd_granular_ex_wop_d1 ?? 0),
+    pdd_granular_ex_wop_d0:         Number(r.pdd_granular_ex_wop_d0 ?? 0),
+    pdd_granular_wop_d1:            Number(r.pdd_granular_wop_d1 ?? 0),
+    pdd_granular_wop_d0:            Number(r.pdd_granular_wop_d0 ?? 0),
     estoque_disponivel_d1:          r.estoque_disponivel_d1,
     estoque_disponivel_d0:          r.estoque_disponivel_d0,
     motivo_indisponivel:            r.motivo_indisponivel,
