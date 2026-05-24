@@ -1,4 +1,4 @@
-"""Controladoria · Cota Sub · drill PDD (F2 do redesign, 2026-05-23).
+"""Controladoria · Cota Sub · drill PDD (F2 do redesign, 2026-05-23 → fix 2026-05-24).
 
 Decompoe a categoria PDD (Provisao para Devedores Duvidosos) do Balance
 hero em:
@@ -6,15 +6,31 @@ hero em:
   1. PDD consolidado D-1 / D0 / Δ  (fonte do balanco — `_sum_pdd`)
   2. PDD granular D-1 / D0          (Σ `wh_estoque_recebivel.valor_pdd`)
      — sinaliza divergencia consolidado vs granular (defasagem QiTech)
-  3. Matriz de migracao A/B/C/D/E/F/G/H ↔ WOP/NOVO
+  3. Matriz de migracao A/B/C/D/E/F/G/H/WOP ↔ A/B/C/D/E/F/G/H/WOP/NOVO
      — celulas (faixa_d1, faixa_d0) agregando qtd_papeis + sum_delta_pdd
-  4. Papeis WOP                     (write-off — papel sumiu entre D-1 e D0)
+  4. Papeis WOP                     (write-off NOVO no dia — papel virou
+                                     WOP em D0 sem aparecer em
+                                     `wh_liquidacao_recebivel`)
   5. Top N papeis por |Δ valor_pdd| (excluindo WOP, ja listados acima)
 
 WOP fantasma: faixa_pdd_d0 IS NULL na granular = papel saiu do estoque sem
 liquidacao registrada. Caso pedagogico do redesign: R$ 118.045,68 separa a
 leitura granular da consolidada QiTech em REALINVEST quando WOP material
 acontece sem espelho contabil. Ver memo [[project_cota_sub_redesign]].
+
+Fix 2026-05-24 — dois bugs do bucket "papeis_wop" descobertos via REALINVEST
+20/05 ("BLB+FRICOCK virando WOP" eram na verdade liquidacoes normais):
+
+  Bug 1: `_VALID_FAIXAS` esquecia "WOP" — papeis legitimamente em WOP em
+         D-1 eram re-rotulados como NOVO, fazendo "WOP→WOP" aparecer como
+         "NOVO→WOP" (3 BMP/V-JOY do REALINVEST 20/05).
+  Bug 2: Bucket `papeis_wop` nao cruzava com `wh_liquidacao_recebivel` —
+         qualquer papel que sumisse do estoque virava "write-off",
+         incluindo recompras/liquidacoes normais (4 BLB/FRICOCK do
+         REALINVEST 20/05, todos com ganho liquido positivo).
+
+Bucket WOP corrigido = (faixa_d0='WOP') ∧ (faixa_d1!='WOP') ∧
+                       (seu_numero ∉ liquidacoes do dia).
 """
 
 from __future__ import annotations
@@ -39,10 +55,16 @@ from app.modules.controladoria.services.cota_sub_explainers import (
 )
 from app.modules.integracoes.public import dia_util_anterior_qitech
 from app.warehouse.estoque_recebivel import EstoqueRecebivel
+from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel
 
 ZERO = Decimal("0")
 
-_VALID_FAIXAS = {"A", "B", "C", "D", "E", "F", "G", "H"}
+# Fix 2026-05-24: "WOP" passa a ser faixa valida. Antes, papeis legitimamente
+# em WOP em D-1 eram re-rotulados como "NOVO" pelo `_normalize_faixa_d1` —
+# fazendo "WOP→WOP" (papel parado em write-off) aparecer como "NOVO→WOP"
+# (papel novo virou write-off no dia), o que e enganoso na matriz e no
+# bucket de papeis_wop.
+_VALID_FAIXAS = {"A", "B", "C", "D", "E", "F", "G", "H", "WOP"}
 
 _DEFAULT_TOP_N = 20
 _DEFAULT_THRESHOLD_BRL = Decimal("100")
@@ -79,6 +101,34 @@ async def _sum_pdd_granular(
     return Decimal((await db.execute(stmt)).scalar() or 0)
 
 
+async def _liquidados_seu_numero_set(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    fundo_doc: str,
+    data: date,
+) -> set[str]:
+    """Set de `seu_numero` dos titulos liquidados em D0.
+
+    Usado pelo bucket `papeis_wop` (`_build_matriz_e_papeis`) para EXCLUIR
+    papeis que sumiram do estoque por liquidacao normal (recompra, baixa
+    por deposito cedente/sacado, liquidacao normal) — nao sao write-off.
+
+    `seu_numero` e a chave de business preservada entre as duas tabelas
+    (a UQ do estoque inclui `numero_documento`; a UQ de liquidacao inclui
+    `id_recebivel` que nao existe no estoque, entao `seu_numero` e o ponto
+    mais forte de match). Em REALINVEST nao ha duplicacao de `seu_numero`
+    no mesmo dia em wh_liquidacao_recebivel.
+    """
+    stmt = (
+        select(LiquidacaoRecebivel.seu_numero)
+        .where(LiquidacaoRecebivel.tenant_id == tenant_id)
+        .where(LiquidacaoRecebivel.fundo_doc == fundo_doc)
+        .where(LiquidacaoRecebivel.data_posicao == data)
+    )
+    return {row[0] for row in (await db.execute(stmt)).all() if row[0]}
+
+
 async def _build_matriz_e_papeis(
     db: AsyncSession,
     *,
@@ -88,6 +138,7 @@ async def _build_matriz_e_papeis(
     data_d0: date,
     threshold_brl: Decimal,
     top_n: int,
+    liquidados_d0: set[str],
 ) -> tuple[list[DrillPddMigracaoCelula], list[DrillPddPapel], list[DrillPddPapel], int]:
     """Constroi matriz + papeis WOP + top N papeis numa unica passada pelo banco.
 
@@ -192,8 +243,19 @@ async def _build_matriz_e_papeis(
             situacao_recebivel_d0=r.situacao_recebivel_d0,
         )
 
-        # WOP destacado: papel sumiu entre D-1 e D0 (faixa_d0 == "WOP")
-        if faixa_d0 == "WOP" and abs(papel.valor_pdd_d1) > 0:
+        # WOP destacado — write-off NOVO no dia. Fix 2026-05-24:
+        # (a) faixa_d0 == "WOP"   — papel em write-off em D0
+        # (b) faixa_d1 != "WOP"   — NAO estava em WOP em D-1 (evento do dia,
+        #                           nao papel parado em WOP ha dias)
+        # (c) seu_numero ∉ liquidados_d0 — NAO foi liquidado normalmente
+        #                           (recompra/baixa/liquidacao = sumiu por outro motivo)
+        # (d) PDD relevante       — abs(valor_pdd_d1) > 0 (mantido do antigo)
+        if (
+            faixa_d0 == "WOP"
+            and faixa_d1 != "WOP"
+            and papel.seu_numero not in liquidados_d0
+            and abs(papel.valor_pdd_d1) > 0
+        ):
             papeis_wop.append(papel)
 
         # Candidato a top N (excluindo WOP — ja listado acima)
@@ -306,6 +368,14 @@ async def compute_drill_pdd(
             top_papeis_total_acima_threshold=0,
         )
 
+    # Fix 2026-05-24: set de liquidados em D0 pra excluir do bucket WOP
+    # papeis que sumiram do estoque por liquidacao normal (recompra,
+    # baixa por deposito cedente/sacado, liquidacao normal). Caso REALINVEST
+    # 20/05: 4 BLB+FRICOCK apareciam como WOP por falta deste cross-check.
+    liquidados_d0 = await _liquidados_seu_numero_set(
+        db, tenant_id=tenant_id, fundo_doc=fundo_doc, data=data_d0,
+    )
+
     matriz, papeis_wop, top_papeis, total_acima_threshold = await _build_matriz_e_papeis(
         db,
         tenant_id=tenant_id,
@@ -314,6 +384,7 @@ async def compute_drill_pdd(
         data_d0=data_d0,
         threshold_brl=threshold_brl,
         top_n=top_n,
+        liquidados_d0=liquidados_d0,
     )
 
     papeis_wop_total_pdd = sum((abs(p.valor_pdd_d1) for p in papeis_wop), ZERO)
