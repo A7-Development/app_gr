@@ -29,9 +29,12 @@ import {
 } from "@/lib/hooks/integracoes"
 import type {
   BackfillJob,
+  EndpointCoverage,
   Environment,
   SourceTypeId,
 } from "@/lib/api-client"
+
+import { BulkBackfillSheet } from "./BulkBackfillSheet"
 
 const RANGE_OPTIONS = [
   { value: "30", label: "Últimos 30 dias" },
@@ -52,6 +55,10 @@ export function CoberturaTab({
   environment?: Environment
 }) {
   const [rangeDays, setRangeDays] = React.useState<number>(180)
+  const [bulkEndpoint, setBulkEndpoint] = React.useState<EndpointCoverage | null>(
+    null,
+  )
+  const [bulkOpen, setBulkOpen] = React.useState(false)
 
   const coverageQ = useSourceCoverage(sourceType, rangeDays, uaId)
   const activeJobsQ = useActiveBackfills(sourceType)
@@ -165,9 +172,21 @@ export function CoberturaTab({
           startDate={coverageQ.data.start_date}
           endDate={coverageQ.data.end_date}
           onBackfill={handleBackfill}
+          onBulkSync={(ep) => {
+            setBulkEndpoint(ep)
+            setBulkOpen(true)
+          }}
           activeJobByEndpoint={activeJobByEndpoint}
         />
       )}
+
+      <BulkBackfillSheet
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        endpoint={bulkEndpoint}
+        onSubmit={handleBackfill}
+        isSubmitting={createBackfillMut.isPending}
+      />
     </div>
   )
 }
