@@ -3675,6 +3675,454 @@ function _coerceBalancoPatrimonial(r: BalancoPatrimonialResponseDTO): BalancoPat
   }
 }
 
+// ── Drills DC + PDD + CPR (F2 do redesign, 2026-05-23) ─────────────────────
+//
+// Endpoints /controladoria/cota-sub/drill/{dc,pdd,cpr} — cada um abre o
+// DrillDownSheet lateral direito quando user clica na categoria correspondente
+// do Balance hero. Sinais absolutos; UI interpreta.
+
+// ---- DRILL DC ----
+type DrillDcAquisicaoDTO = {
+  cedente_doc:        string
+  cedente_nome:       string
+  sacado_doc:         string
+  sacado_nome:        string
+  seu_numero:         string
+  numero_documento:   string
+  tipo_recebivel:     string
+  data_vencimento:    string | null
+  valor_compra:       number | string
+  valor_vencimento:   number | string
+  taxa_aquisicao:     number | string
+  prazo_recebivel:    number
+}
+export type DrillDcAquisicao = Omit<DrillDcAquisicaoDTO, "valor_compra" | "valor_vencimento" | "taxa_aquisicao"> & {
+  valor_compra:     number
+  valor_vencimento: number
+  taxa_aquisicao:   number
+}
+
+type DrillDcLiquidacaoPorTipoDTO = {
+  tipo_movimento:       string
+  qtd_papeis:           number
+  sum_valor_pago:       number | string
+  sum_valor_aquisicao:  number | string
+  sum_valor_vencimento: number | string
+  sum_ajuste:           number | string
+  ganho_liquido:        number | string
+}
+export type DrillDcLiquidacaoPorTipo = {
+  tipo_movimento:       string
+  qtd_papeis:           number
+  sum_valor_pago:       number
+  sum_valor_aquisicao:  number
+  sum_valor_vencimento: number
+  sum_ajuste:           number
+  ganho_liquido:        number
+}
+
+type DrillDcLiquidacaoLinhaDTO = {
+  cedente_doc:      string
+  cedente_nome:     string
+  sacado_doc:       string
+  sacado_nome:      string
+  seu_numero:       string
+  documento:        string
+  tipo_recebivel:   string
+  tipo_movimento:   string
+  valor_pago:       number | string
+  valor_aquisicao:  number | string
+  valor_vencimento: number | string
+  ajuste:           number | string
+  ganho_liquido:    number | string
+}
+export type DrillDcLiquidacaoLinha = Omit<
+  DrillDcLiquidacaoLinhaDTO,
+  "valor_pago" | "valor_aquisicao" | "valor_vencimento" | "ajuste" | "ganho_liquido"
+> & {
+  valor_pago:       number
+  valor_aquisicao:  number
+  valor_vencimento: number
+  ajuste:           number
+  ganho_liquido:    number
+}
+
+type DrillDcApropriacaoDTO = {
+  estoque_d1:         number | string
+  estoque_d0:         number | string
+  delta_estoque:      number | string
+  aquisicoes_total:   number | string
+  liquidacoes_total:  number | string
+  apropriacao:        number | string
+}
+export type DrillDcApropriacao = {
+  estoque_d1:         number
+  estoque_d0:         number
+  delta_estoque:      number
+  aquisicoes_total:   number
+  liquidacoes_total:  number
+  apropriacao:        number
+}
+
+type DrillDcResponseDTO = {
+  fundo_id:               string
+  fundo_nome:             string
+  data:                   string
+  data_anterior:          string
+  aquisicoes_qtd:         number
+  aquisicoes_total:       number | string
+  aquisicoes:             DrillDcAquisicaoDTO[]
+  liquidacoes_qtd:        number
+  liquidacoes_total:      number | string
+  liquidacoes_por_tipo:   DrillDcLiquidacaoPorTipoDTO[]
+  liquidacoes_top:        DrillDcLiquidacaoLinhaDTO[]
+  apropriacao:            DrillDcApropriacaoDTO
+}
+export type DrillDcResponse = {
+  fundo_id:               string
+  fundo_nome:             string
+  data:                   string
+  data_anterior:          string
+  aquisicoes_qtd:         number
+  aquisicoes_total:       number
+  aquisicoes:             DrillDcAquisicao[]
+  liquidacoes_qtd:        number
+  liquidacoes_total:      number
+  liquidacoes_por_tipo:   DrillDcLiquidacaoPorTipo[]
+  liquidacoes_top:        DrillDcLiquidacaoLinha[]
+  apropriacao:            DrillDcApropriacao
+}
+
+function _coerceDrillDcAquisicao(a: DrillDcAquisicaoDTO): DrillDcAquisicao {
+  return {
+    ...a,
+    valor_compra:     Number(a.valor_compra),
+    valor_vencimento: Number(a.valor_vencimento),
+    taxa_aquisicao:   Number(a.taxa_aquisicao),
+  }
+}
+
+function _coerceDrillDcLiquidacaoPorTipo(t: DrillDcLiquidacaoPorTipoDTO): DrillDcLiquidacaoPorTipo {
+  return {
+    tipo_movimento:       t.tipo_movimento,
+    qtd_papeis:           t.qtd_papeis,
+    sum_valor_pago:       Number(t.sum_valor_pago),
+    sum_valor_aquisicao:  Number(t.sum_valor_aquisicao),
+    sum_valor_vencimento: Number(t.sum_valor_vencimento),
+    sum_ajuste:           Number(t.sum_ajuste),
+    ganho_liquido:        Number(t.ganho_liquido),
+  }
+}
+
+function _coerceDrillDcLiquidacaoLinha(l: DrillDcLiquidacaoLinhaDTO): DrillDcLiquidacaoLinha {
+  return {
+    ...l,
+    valor_pago:       Number(l.valor_pago),
+    valor_aquisicao:  Number(l.valor_aquisicao),
+    valor_vencimento: Number(l.valor_vencimento),
+    ajuste:           Number(l.ajuste),
+    ganho_liquido:    Number(l.ganho_liquido),
+  }
+}
+
+function _coerceDrillDc(r: DrillDcResponseDTO): DrillDcResponse {
+  return {
+    fundo_id:               r.fundo_id,
+    fundo_nome:             r.fundo_nome,
+    data:                   r.data,
+    data_anterior:          r.data_anterior,
+    aquisicoes_qtd:         r.aquisicoes_qtd,
+    aquisicoes_total:       Number(r.aquisicoes_total),
+    aquisicoes:             r.aquisicoes.map(_coerceDrillDcAquisicao),
+    liquidacoes_qtd:        r.liquidacoes_qtd,
+    liquidacoes_total:      Number(r.liquidacoes_total),
+    liquidacoes_por_tipo:   r.liquidacoes_por_tipo.map(_coerceDrillDcLiquidacaoPorTipo),
+    liquidacoes_top:        r.liquidacoes_top.map(_coerceDrillDcLiquidacaoLinha),
+    apropriacao: {
+      estoque_d1:        Number(r.apropriacao.estoque_d1),
+      estoque_d0:        Number(r.apropriacao.estoque_d0),
+      delta_estoque:     Number(r.apropriacao.delta_estoque),
+      aquisicoes_total:  Number(r.apropriacao.aquisicoes_total),
+      liquidacoes_total: Number(r.apropriacao.liquidacoes_total),
+      apropriacao:       Number(r.apropriacao.apropriacao),
+    },
+  }
+}
+
+// ---- DRILL PDD ----
+export type PddFaixaKey = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "WOP" | "NOVO"
+
+type DrillPddMigracaoCelulaDTO = {
+  faixa_de:               PddFaixaKey
+  faixa_para:             PddFaixaKey
+  qtd_papeis:             number
+  sum_valor_nominal:      number | string
+  sum_valor_presente_d1:  number | string
+  sum_valor_presente_d0:  number | string
+  sum_valor_pdd_d1:       number | string
+  sum_valor_pdd_d0:       number | string
+  sum_delta_pdd:          number | string
+}
+export type DrillPddMigracaoCelula = {
+  faixa_de:               PddFaixaKey
+  faixa_para:             PddFaixaKey
+  qtd_papeis:             number
+  sum_valor_nominal:      number
+  sum_valor_presente_d1:  number
+  sum_valor_presente_d0:  number
+  sum_valor_pdd_d1:       number
+  sum_valor_pdd_d0:       number
+  sum_delta_pdd:          number
+}
+
+type DrillPddPapelDTO = {
+  cedente_doc:                string
+  cedente_nome:               string
+  sacado_doc:                 string
+  sacado_nome:                string
+  seu_numero:                 string
+  numero_documento:           string
+  tipo_recebivel:             string
+  valor_nominal:              number | string
+  data_vencimento_ajustada:   string | null
+  faixa_pdd_d1:               PddFaixaKey | null
+  faixa_pdd_d0:               PddFaixaKey | null
+  valor_pdd_d1:               number | string
+  valor_pdd_d0:               number | string
+  delta_valor_pdd:            number | string
+  situacao_recebivel_d0:      string | null
+}
+export type DrillPddPapel = Omit<
+  DrillPddPapelDTO,
+  "valor_nominal" | "valor_pdd_d1" | "valor_pdd_d0" | "delta_valor_pdd"
+> & {
+  valor_nominal:   number
+  valor_pdd_d1:    number
+  valor_pdd_d0:    number
+  delta_valor_pdd: number
+}
+
+type DrillPddResponseDTO = {
+  fundo_id:                       string
+  fundo_nome:                     string
+  data:                           string
+  data_anterior:                  string
+  pdd_consolidado_d1:             number | string
+  pdd_consolidado_d0:             number | string
+  pdd_consolidado_delta:          number | string
+  pdd_granular_d1:                number | string
+  pdd_granular_d0:                number | string
+  estoque_disponivel_d1:          boolean
+  estoque_disponivel_d0:          boolean
+  motivo_indisponivel:            string | null
+  matriz:                         DrillPddMigracaoCelulaDTO[]
+  papeis_wop:                     DrillPddPapelDTO[]
+  papeis_wop_total_pdd_d1:        number | string
+  top_papeis:                     DrillPddPapelDTO[]
+  top_papeis_threshold_brl:       number | string
+  top_papeis_n_solicitado:        number
+  top_papeis_total_acima_threshold: number
+}
+export type DrillPddResponse = {
+  fundo_id:                       string
+  fundo_nome:                     string
+  data:                           string
+  data_anterior:                  string
+  pdd_consolidado_d1:             number
+  pdd_consolidado_d0:             number
+  pdd_consolidado_delta:          number
+  pdd_granular_d1:                number
+  pdd_granular_d0:                number
+  estoque_disponivel_d1:          boolean
+  estoque_disponivel_d0:          boolean
+  motivo_indisponivel:            string | null
+  matriz:                         DrillPddMigracaoCelula[]
+  papeis_wop:                     DrillPddPapel[]
+  papeis_wop_total_pdd_d1:        number
+  top_papeis:                     DrillPddPapel[]
+  top_papeis_threshold_brl:       number
+  top_papeis_n_solicitado:        number
+  top_papeis_total_acima_threshold: number
+}
+
+function _coerceDrillPddCelula(c: DrillPddMigracaoCelulaDTO): DrillPddMigracaoCelula {
+  return {
+    faixa_de:               c.faixa_de,
+    faixa_para:             c.faixa_para,
+    qtd_papeis:             c.qtd_papeis,
+    sum_valor_nominal:      Number(c.sum_valor_nominal),
+    sum_valor_presente_d1:  Number(c.sum_valor_presente_d1),
+    sum_valor_presente_d0:  Number(c.sum_valor_presente_d0),
+    sum_valor_pdd_d1:       Number(c.sum_valor_pdd_d1),
+    sum_valor_pdd_d0:       Number(c.sum_valor_pdd_d0),
+    sum_delta_pdd:          Number(c.sum_delta_pdd),
+  }
+}
+
+function _coerceDrillPddPapel(p: DrillPddPapelDTO): DrillPddPapel {
+  return {
+    ...p,
+    valor_nominal:   Number(p.valor_nominal),
+    valor_pdd_d1:    Number(p.valor_pdd_d1),
+    valor_pdd_d0:    Number(p.valor_pdd_d0),
+    delta_valor_pdd: Number(p.delta_valor_pdd),
+  }
+}
+
+function _coerceDrillPdd(r: DrillPddResponseDTO): DrillPddResponse {
+  return {
+    fundo_id:                       r.fundo_id,
+    fundo_nome:                     r.fundo_nome,
+    data:                           r.data,
+    data_anterior:                  r.data_anterior,
+    pdd_consolidado_d1:             Number(r.pdd_consolidado_d1),
+    pdd_consolidado_d0:             Number(r.pdd_consolidado_d0),
+    pdd_consolidado_delta:          Number(r.pdd_consolidado_delta),
+    pdd_granular_d1:                Number(r.pdd_granular_d1),
+    pdd_granular_d0:                Number(r.pdd_granular_d0),
+    estoque_disponivel_d1:          r.estoque_disponivel_d1,
+    estoque_disponivel_d0:          r.estoque_disponivel_d0,
+    motivo_indisponivel:            r.motivo_indisponivel,
+    matriz:                         r.matriz.map(_coerceDrillPddCelula),
+    papeis_wop:                     r.papeis_wop.map(_coerceDrillPddPapel),
+    papeis_wop_total_pdd_d1:        Number(r.papeis_wop_total_pdd_d1),
+    top_papeis:                     r.top_papeis.map(_coerceDrillPddPapel),
+    top_papeis_threshold_brl:       Number(r.top_papeis_threshold_brl),
+    top_papeis_n_solicitado:        r.top_papeis_n_solicitado,
+    top_papeis_total_acima_threshold: r.top_papeis_total_acima_threshold,
+  }
+}
+
+// ---- DRILL CPR ----
+export type CprNaturezaKey =
+  | "diferimento"
+  | "apropriacao_taxa"
+  | "apropriacao_despesa"
+  | "iof_ir"
+  | "provisao_liquidacao"
+  | "aporte_engaiolado"
+  | "outros"
+
+type DrillCprLinhaDTO = {
+  descricao:           string
+  historico_traduzido: string
+  valor_d1:            number | string
+  valor_d0:            number | string
+  delta_valor:         number | string
+  natureza:            CprNaturezaKey
+}
+export type DrillCprLinha = Omit<DrillCprLinhaDTO, "valor_d1" | "valor_d0" | "delta_valor"> & {
+  valor_d1:    number
+  valor_d0:    number
+  delta_valor: number
+}
+
+type DrillCprNaturezaGroupDTO = {
+  natureza:        CprNaturezaKey
+  label:           string
+  qtd_linhas:      number
+  sum_valor_d1:    number | string
+  sum_valor_d0:    number | string
+  sum_delta:       number | string
+  top_linhas:      DrillCprLinhaDTO[]
+}
+export type DrillCprNaturezaGroup = {
+  natureza:     CprNaturezaKey
+  label:        string
+  qtd_linhas:   number
+  sum_valor_d1: number
+  sum_valor_d0: number
+  sum_delta:    number
+  top_linhas:   DrillCprLinha[]
+}
+
+export type AporteEngaioladoEstado = "entrou" | "devolvido" | "persiste"
+
+type DrillCprAporteEngaioladoDTO = {
+  descricao:    string
+  estado:       AporteEngaioladoEstado
+  valor_d1:     number | string
+  valor_d0:     number | string
+  delta_valor:  number | string
+}
+export type DrillCprAporteEngaiolado = {
+  descricao:    string
+  estado:       AporteEngaioladoEstado
+  valor_d1:     number
+  valor_d0:     number
+  delta_valor:  number
+}
+
+type DrillCprResponseDTO = {
+  fundo_id:             string
+  fundo_nome:           string
+  data:                 string
+  data_anterior:        string
+  cpr_total_d1:         number | string
+  cpr_total_d0:         number | string
+  cpr_total_delta:      number | string
+  qtd_linhas_d1:        number
+  qtd_linhas_d0:        number
+  naturezas:            DrillCprNaturezaGroupDTO[]
+  aportes_engaiolados:  DrillCprAporteEngaioladoDTO[]
+}
+export type DrillCprResponse = {
+  fundo_id:             string
+  fundo_nome:           string
+  data:                 string
+  data_anterior:        string
+  cpr_total_d1:         number
+  cpr_total_d0:         number
+  cpr_total_delta:      number
+  qtd_linhas_d1:        number
+  qtd_linhas_d0:        number
+  naturezas:            DrillCprNaturezaGroup[]
+  aportes_engaiolados:  DrillCprAporteEngaiolado[]
+}
+
+function _coerceDrillCprLinha(l: DrillCprLinhaDTO): DrillCprLinha {
+  return {
+    ...l,
+    valor_d1:    Number(l.valor_d1),
+    valor_d0:    Number(l.valor_d0),
+    delta_valor: Number(l.delta_valor),
+  }
+}
+
+function _coerceDrillCprNatureza(n: DrillCprNaturezaGroupDTO): DrillCprNaturezaGroup {
+  return {
+    natureza:     n.natureza,
+    label:        n.label,
+    qtd_linhas:   n.qtd_linhas,
+    sum_valor_d1: Number(n.sum_valor_d1),
+    sum_valor_d0: Number(n.sum_valor_d0),
+    sum_delta:    Number(n.sum_delta),
+    top_linhas:   n.top_linhas.map(_coerceDrillCprLinha),
+  }
+}
+
+function _coerceDrillCpr(r: DrillCprResponseDTO): DrillCprResponse {
+  return {
+    fundo_id:        r.fundo_id,
+    fundo_nome:      r.fundo_nome,
+    data:            r.data,
+    data_anterior:   r.data_anterior,
+    cpr_total_d1:    Number(r.cpr_total_d1),
+    cpr_total_d0:    Number(r.cpr_total_d0),
+    cpr_total_delta: Number(r.cpr_total_delta),
+    qtd_linhas_d1:   r.qtd_linhas_d1,
+    qtd_linhas_d0:   r.qtd_linhas_d0,
+    naturezas:       r.naturezas.map(_coerceDrillCprNatureza),
+    aportes_engaiolados: r.aportes_engaiolados.map((a) => ({
+      descricao:    a.descricao,
+      estado:       a.estado,
+      valor_d1:     Number(a.valor_d1),
+      valor_d0:     Number(a.valor_d0),
+      delta_valor:  Number(a.delta_valor),
+    })),
+  }
+}
+
 // ── Balancete Patrimonial Diario COSIF (Fase 1 Cota Sub) ───────────────────
 //
 // Modelo agnostico multi-tenant — backend devolve arvore COSIF plana
@@ -4077,6 +4525,52 @@ export const controladoria = {
       `/controladoria/cota-sub/explicacao?${params.toString()}`,
     )
     return _coerceExplicacao(raw)
+  },
+
+  // ── Drills DC / PDD / CPR (F2 do redesign, 2026-05-23) ────────────────
+  cotaSubDrillDc: async (
+    fundoId: string,
+    data: string,
+    dataAnterior?: string,
+  ): Promise<DrillDcResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    const raw = await apiClient.get<DrillDcResponseDTO>(
+      `/controladoria/cota-sub/drill/dc?${params.toString()}`,
+    )
+    return _coerceDrillDc(raw)
+  },
+
+  cotaSubDrillPdd: async (
+    fundoId: string,
+    data: string,
+    opts?: {
+      dataAnterior?:  string
+      thresholdBrl?:  number
+      topN?:          number
+    },
+  ): Promise<DrillPddResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (opts?.dataAnterior) params.set("data_anterior", opts.dataAnterior)
+    if (opts?.thresholdBrl !== undefined) params.set("threshold_brl", String(opts.thresholdBrl))
+    if (opts?.topN !== undefined) params.set("top_n", String(opts.topN))
+    const raw = await apiClient.get<DrillPddResponseDTO>(
+      `/controladoria/cota-sub/drill/pdd?${params.toString()}`,
+    )
+    return _coerceDrillPdd(raw)
+  },
+
+  cotaSubDrillCpr: async (
+    fundoId: string,
+    data: string,
+    dataAnterior?: string,
+  ): Promise<DrillCprResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    const raw = await apiClient.get<DrillCprResponseDTO>(
+      `/controladoria/cota-sub/drill/cpr?${params.toString()}`,
+    )
+    return _coerceDrillCpr(raw)
   },
 
   // ── DRE — Demonstrativo do Resultado do Exercicio ─────────────────────
