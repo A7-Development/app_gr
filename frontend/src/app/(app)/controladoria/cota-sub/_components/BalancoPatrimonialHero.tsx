@@ -57,24 +57,6 @@ const fmtDate = (iso: string): string => {
   return m ? `${m[3]}/${m[2]}` : iso
 }
 
-// Identidade visual por categoria — dot pequeno do lado esquerdo. Modo
-// Iteracao de Design ativo permite paleta Tailwind alem da canonica
-// (CLAUDE.md banner). Promocao a token nomeado fica na varredura final.
-const DOT_BY_KEY: Record<CategoriaPatrimonialKey, string> = {
-  dc:                   "bg-blue-500",
-  titulos_publicos:     "bg-sky-500",
-  op_estruturadas:      "bg-violet-500",
-  fundos_di:            "bg-emerald-500",
-  compromissada:        "bg-teal-500",
-  outros_ativos:        "bg-amber-500",
-  cpr:                  "bg-indigo-500",
-  tesouraria:           "bg-slate-500",
-  saldo_conta_corrente: "bg-gray-500",
-  senior:               "bg-gray-700",
-  mezanino:             "bg-gray-500",
-  pdd:                  "bg-rose-500",
-}
-
 const DRILL_ENABLED_F2: ReadonlySet<CategoriaPatrimonialKey> = new Set<CategoriaPatrimonialKey>([
   "dc",
   "cpr",
@@ -85,8 +67,10 @@ const RESIDUO_AMBER_BRL = 1
 const RESIDUO_RED_BRL = 1000
 
 // Grid de colunas — single source of truth pra alinhar header + rows.
-// Densidade compact: 4 colunas, valores 100px direita, chevron 14px.
-const GRID = "grid grid-cols-[1fr_100px_100px_100px_14px] items-center gap-2"
+// Label fixo em 180px (cabe ate "Saldo Conta Corrente"); 3 colunas numericas
+// dividem o restante em 1fr (evita encavalamento de valores grandes tipo
+// "R$ 24.436.232,09" + delta).
+const GRID = "grid grid-cols-[180px_1fr_1fr_1fr_14px] items-center gap-2"
 
 export type BalancoPatrimonialHeroProps = {
   data?:         BalancoPatrimonialResponse
@@ -256,12 +240,8 @@ function BalanceRow({
       tabIndex={drillEnabled ? 0 : undefined}
       title={drillEnabled ? "Clique para detalhar" : undefined}
     >
-      <span className="flex items-center gap-2 min-w-0">
-        <span
-          className={cx("inline-block size-1.5 shrink-0 rounded-full", DOT_BY_KEY[categoria.key])}
-          aria-hidden="true"
-        />
-        <span className="truncate text-gray-700 dark:text-gray-200">
+      <span className="flex items-center min-w-0">
+        <span className="truncate text-gray-900 dark:text-gray-50">
           {categoria.label}
         </span>
       </span>
@@ -295,8 +275,8 @@ function TotalRow({
       GRID,
       "border-t border-gray-200 bg-gray-50/40 px-3 py-1.5 text-[12px] font-semibold tabular-nums dark:border-gray-800 dark:bg-gray-900/30",
     )}>
-      <span className="flex items-center gap-2 min-w-0 pl-3.5">
-        <span className="truncate text-gray-700 dark:text-gray-200">
+      <span className="flex items-center min-w-0">
+        <span className="truncate text-gray-900 dark:text-gray-50">
           {label}
         </span>
       </span>
@@ -323,7 +303,7 @@ function PlRow({
   return (
     <div className={cx(
       GRID,
-      "border-t px-3 py-1.5 tabular-nums",
+      "border-t px-3 py-1.5 text-[12px] tabular-nums",
       emphasize
         ? "border-gray-300 bg-blue-50/40 dark:border-gray-700 dark:bg-blue-950/10"
         : "border-gray-100 dark:border-gray-800",
@@ -331,10 +311,8 @@ function PlRow({
       <span className="flex flex-col min-w-0">
         <span
           className={cx(
-            "truncate",
-            emphasize
-              ? "text-[13px] font-semibold text-gray-900 dark:text-gray-50"
-              : "text-[12px] font-medium text-gray-700 dark:text-gray-300",
+            "truncate text-[12px] text-gray-900 dark:text-gray-50",
+            emphasize ? "font-semibold" : "font-medium",
           )}
         >
           {label}
@@ -355,10 +333,8 @@ function PlRow({
       </span>
       <span
         className={cx(
-          "text-right",
-          emphasize
-            ? "text-[14px] font-bold text-gray-900 dark:text-gray-50"
-            : "text-[12px] font-medium text-gray-700 dark:text-gray-200",
+          "text-right text-[12px] text-gray-900 dark:text-gray-50",
+          emphasize ? "font-semibold" : "font-medium",
         )}
       >
         {fmtBRL.format(d0)}
