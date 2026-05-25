@@ -4288,6 +4288,136 @@ function _coerceDrillCpr(r: DrillCprResponseDTO): DrillCprResponse {
   }
 }
 
+// ── Agente IA · analista de variacao da Cota Sub Jr ───────────────────
+
+// Espelha AnalysisVariacaoCotaResponse (Pydantic) + AgenteVariacaoRunMetadata
+// do backend. Coercao Decimal -> number igual aos drills.
+
+export type AgenteSanityCheck = {
+  passou:             boolean
+  residuo_brl:        number
+  pl_deduzido_delta:  number
+  pl_fonte_delta:     number
+  diagnostico:        string
+}
+
+export type AgenteCategoriaDelta = {
+  key:             string
+  label:           string
+  tipo:            "ativo" | "passivo"
+  d1:              number
+  d0:              number
+  delta:           number
+  rank_magnitude:  number
+}
+
+export type AgentePapelMencionado = {
+  seu_numero:     string
+  cedente_nome:   string
+  sacado_nome:    string
+  delta_brl:      number
+  natureza:       string
+}
+
+export type AgenteClassificacaoPrincipal =
+  | "carrego_normal"
+  | "fluxo_novo_intenso"
+  | "mutacao_silenciosa_pura"
+  | "padrao_abatimento_offrecord"
+  | "constituicao_pdd"
+  | "reversao_pdd"
+  | "aporte_engaiolado"
+  | "evento_pontual_explicado"
+  | "evento_pontual_sem_explicacao"
+  | "outro"
+
+export type AgenteExplicacaoCategoria = {
+  categoria_key:            string
+  narrativa:                string
+  papeis_mencionados:       AgentePapelMencionado[]
+  classificacao_principal:  AgenteClassificacaoPrincipal
+  confianca:                number
+}
+
+export type AgenteSinalAlerta = {
+  severidade:  "info" | "atencao" | "critico"
+  tipo:
+    | "cedente_reincidente"
+    | "sacado_problematico"
+    | "concentracao_categoria"
+    | "mutacao_silenciosa_material"
+    | "residuo_alto"
+    | "outro"
+  entidade:    string
+  descricao:   string
+  evidencia:   string
+}
+
+export type AgenteSugestaoAcao = {
+  prioridade:  "alta" | "media" | "baixa"
+  acao:        string
+  detalhe:     string
+}
+
+export type AgenteAnaliseVariacao = {
+  fundo_nome:           string
+  data:                 string
+  data_anterior:        string
+  nivel_1_sanity:       AgenteSanityCheck
+  nivel_2_decomposicao: AgenteCategoriaDelta[]
+  nivel_3_explicacoes:  AgenteExplicacaoCategoria[]
+  sinais_alerta:        AgenteSinalAlerta[]
+  sugestoes_acao:       AgenteSugestaoAcao[]
+  sumario_executivo:    string
+}
+
+export type AgenteVariacaoRunMetadata = {
+  analysis_run_id:        string
+  audit_version:          string
+  model_used:             string
+  from_cache:             boolean
+  cache_age_seconds:      number
+  tokens_input:           number
+  tokens_output:          number
+  tokens_cache_read:      number
+  tokens_cache_creation:  number
+  cost_brl_estimated:     number
+  duration_ms:            number
+}
+
+export type AgenteVariacaoRunResponse = {
+  metadata:  AgenteVariacaoRunMetadata
+  analise:   AgenteAnaliseVariacao
+}
+
+type AgenteVariacaoRunResponseDTO = {
+  metadata: {
+    analysis_run_id:        string
+    audit_version:          string
+    model_used:             string
+    from_cache:             boolean
+    cache_age_seconds:      number
+    tokens_input:           number
+    tokens_output:          number
+    tokens_cache_read:      number
+    tokens_cache_creation:  number
+    cost_brl_estimated:     number | string
+    duration_ms:            number
+  }
+  analise: AgenteAnaliseVariacao  // Pydantic ja serializa numeros direto
+}
+
+function _coerceAgenteVariacaoRun(r: AgenteVariacaoRunResponseDTO): AgenteVariacaoRunResponse {
+  return {
+    metadata: {
+      ...r.metadata,
+      cost_brl_estimated: Number(r.metadata.cost_brl_estimated),
+    },
+    analise: r.analise,
+  }
+}
+
+
 // ── Balancete Patrimonial Diario COSIF (Fase 1 Cota Sub) ───────────────────
 //
 // Modelo agnostico multi-tenant — backend devolve arvore COSIF plana
@@ -4736,6 +4866,22 @@ export const controladoria = {
       `/controladoria/cota-sub/drill/cpr?${params.toString()}`,
     )
     return _coerceDrillCpr(raw)
+  },
+
+  // ── Agente IA · analista de variacao da Cota Sub Jr ─────────────────
+  // POST porque invoca LLM (side effect — grava em agent_analysis_run).
+  // Cache automatico no backend: 2a chamada com mesmos params retorna
+  // em <1s, custo R$ 0.
+  cotaSubAgenteAnalistaVariacaoRun: async (
+    fundoId: string,
+    data: string,
+  ): Promise<AgenteVariacaoRunResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    const raw = await apiClient.post<AgenteVariacaoRunResponseDTO>(
+      `/controladoria/cota-sub/agente/analista-variacao/run?${params.toString()}`,
+      undefined,
+    )
+    return _coerceAgenteVariacaoRun(raw)
   },
 
   // ── DRE — Demonstrativo do Resultado do Exercicio ─────────────────────
