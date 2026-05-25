@@ -85,6 +85,10 @@ class AgentRunResult:
     tokens_cache_creation: int = 0
     cost_brl: Decimal = Decimal("0")
     prompt_full_id: str = ""         # 'agent.social_contract@v1'
+    model_used: str = ""             # modelo resolvido em runtime (override
+                                     # chain DB > agent_config > catalog).
+                                     # Pode ser o fallback se o primary falhou.
+                                     # Usar pra audit + UI honesta.
 
 
 # ─── Prompt rendering helpers ─────────────────────────────────────────────
@@ -427,7 +431,7 @@ async def run_specialist_agent(
             message=f"start {agent_full_id}",
         )
 
-    output_data, usage, _resolved_models = await _invoke_with_validation(
+    output_data, usage, resolved_models = await _invoke_with_validation(
         spec=spec,
         system_text=system_text,
         user_text=user_text,
@@ -466,6 +470,7 @@ async def run_specialist_agent(
         tokens_cache_creation=usage.tokens_cache_creation,
         cost_brl=Decimal("0"),  # billing layer computes via FX rate
         prompt_full_id=resolved.audit_version,
+        model_used=resolved_models.model,
     )
 
 
@@ -544,6 +549,7 @@ async def run_document_extraction(
         tokens_cache_creation=usage.tokens_cache_creation,
         cost_brl=Decimal("0"),
         prompt_full_id=prompt.full_id,
+        model_used=resolved_models.model,
     )
 
 
@@ -665,6 +671,7 @@ async def run_standalone_agent(
         tokens_cache_creation=usage.tokens_cache_creation,
         cost_brl=Decimal("0"),
         prompt_full_id=resolved.audit_version,
+        model_used=resolved_models.model,
     )
 
 

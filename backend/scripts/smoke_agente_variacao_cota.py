@@ -95,7 +95,7 @@ async def _run_agente(
         "data_anterior": data_anterior.isoformat(),
     }
 
-    print(f"  ... invocando agente {AGENT_NAME} (modelo claude-opus-4-7)...")
+    print(f"  ... invocando agente {AGENT_NAME}...")
     result = await run_standalone_agent(
         agent_name=AGENT_NAME,
         scope=scope,
@@ -103,6 +103,7 @@ async def _run_agente(
         db=db_session,
     )
 
+    _info(f"modelo usado: {result.model_used}")
     _info(
         f"tokens: in={result.tokens_input} out={result.tokens_output} "
         f"cache_read={result.tokens_cache_read} cache_creation={result.tokens_cache_creation}"
