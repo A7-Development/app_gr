@@ -33,7 +33,7 @@ import { useDrillDc } from "@/lib/hooks/controladoria"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 import { Button } from "@/components/tremor/Button"
-import type { DrillDcDecomposicao, DrillDcMutacaoPapel, DrillDcMigracaoWopPapel } from "@/lib/api-client"
+import type { DrillDcMutacaoPapel, DrillDcMigracaoWopPapel } from "@/lib/api-client"
 
 const fmtBRL = new Intl.NumberFormat("pt-BR", {
   style:                 "currency",
