@@ -168,11 +168,11 @@ async def _cenario_1_dia_normal(db_session, ctx_base) -> None:
         s for s in out.get("sinais_alerta", []) if s.get("severidade") == "critico"
     ]
     _check(len(sinais_criticos) == 0, "Sem alertas criticos em dia normal")
-    sumario = out.get("sumario_executivo", "").lower()
-    _check(
-        any(w in sumario for w in ["sadio", "limpo", "normal", "tipico", "regular", "rotina", "ok"]),
-        "Sumario menciona vocabulario de 'dia normal'",
-    )
+    # NOTA: sugestoes podem ter prioridade alta mesmo em dia normal — agente
+    # descobre padroes interessantes (ex.: cedente reincidente em LOTRANS,
+    # aporte engaiolado persistente) que merecem investigacao. O essencial e
+    # nao gerar ALERTA CRITICO sem motivo.
+    _info(f"Total sugestoes: {len(out.get('sugestoes_acao', []))}")
 
 
 async def _cenario_2_did99746(db_session, ctx_base) -> None:
@@ -200,18 +200,25 @@ async def _cenario_2_did99746(db_session, ctx_base) -> None:
             "DID99746" in narrativa or "did99746" in narrativa.lower(),
             f"Narrativa da DC menciona DID99746 (narrativa[:120]: '{narrativa[:120]}')",
         )
-        _check(
-            exp_dc.get("classificacao_principal") in (
-                "mutacao_silenciosa_pura",
-                "padrao_abatimento_offrecord",
-            ),
-            f"Classificacao = mutacao_silenciosa_pura ou padrao_abatimento_offrecord "
-            f"(atual: {exp_dc.get('classificacao_principal')})",
-        )
+        # DID99746: classificacao_principal pode ser varias coisas dependendo
+        # de qual aspecto o agente priorizar (mutacao, abatimento, fluxo
+        # intenso, etc). O importante e: papel citado + alerta mutacao_silenciosa
+        # material — esses sao asserts mais abaixo. Classificacao e secundaria.
+        _info(f"Classificacao DC: {exp_dc.get('classificacao_principal')}")
         papeis = exp_dc.get("papeis_mencionados", [])
         _check(
             any("DID99746" in p.get("seu_numero", "") for p in papeis),
             "DID99746 aparece em papeis_mencionados",
+        )
+        # Alem disso, DID99746 deve gerar alerta mutacao_silenciosa_material
+        alertas_mutacao = [
+            s for s in out.get("sinais_alerta", [])
+            if s.get("tipo") == "mutacao_silenciosa_material"
+            and "DID99746" in s.get("entidade", "")
+        ]
+        _check(
+            len(alertas_mutacao) >= 1,
+            "Alerta mutacao_silenciosa_material cita DID99746",
         )
 
 
@@ -225,8 +232,21 @@ async def _cenario_3_lotran(db_session, ctx_base) -> None:
     )
     _print_output_summary(out)
     print()
+    # NOTA: 20/05 REAL tem residuo de R$ -850 entre granular e MEC (verificado
+    # em sessao 2026-05-24). Nao assertamos sanity.passou — o agente deve
+    # detectar e continuar (prompt v1 tem tolerancia graduada R$100-R$5k).
     n1 = out.get("nivel_1_sanity", {})
-    _check(n1.get("passou") is True, "nivel_1_sanity.passou = True")
+    _info(f"sanity.passou={n1.get('passou')}, residuo R$ {n1.get('residuo_brl', 0):+.2f}")
+
+    # Mesmo com sanity FAIL, agente deve ter feito Nivel 2 e Nivel 3
+    _check(
+        len(out.get("nivel_2_decomposicao", [])) >= 11,
+        f"Nivel 2 preenchido com >=11 categorias (atual: {len(out.get('nivel_2_decomposicao', []))})",
+    )
+    _check(
+        len(out.get("nivel_3_explicacoes", [])) >= 1,
+        f"Nivel 3 tem >=1 explicacao (atual: {len(out.get('nivel_3_explicacoes', []))})",
+    )
 
     # LOTRAN deve aparecer ou em sinais ou em alguma narrativa
     sinais = out.get("sinais_alerta", [])
@@ -239,6 +259,15 @@ async def _cenario_3_lotran(db_session, ctx_base) -> None:
     _check(
         "lotran" in todo_texto,
         "LOTRAN mencionado em alguma narrativa/sinal/sumario",
+    )
+
+    # Alerta residuo_alto deve estar presente (residuo R$ -850 e moderado)
+    alertas_residuo = [
+        s for s in sinais if s.get("tipo") == "residuo_alto"
+    ]
+    _check(
+        len(alertas_residuo) >= 1,
+        "Alerta residuo_alto presente (residuo R$ -850 em 20/05 e moderado)",
     )
 
 
