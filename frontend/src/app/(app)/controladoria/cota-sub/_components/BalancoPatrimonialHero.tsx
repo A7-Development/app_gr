@@ -26,6 +26,7 @@ import {
   RiErrorWarningLine,
   RiArrowRightSLine,
   RiCalendarLine,
+  RiSparklingFill,
 } from "@remixicon/react"
 
 import { cx } from "@/lib/utils"
@@ -96,6 +97,10 @@ export type BalancoPatrimonialHeroProps = {
   errorMessage?: string
   onRetry?:      () => void
   onDrillCategoria?: (key: CategoriaPatrimonialKey) => void
+  /** Callback do botao "Explicar variacao". Quando undefined, botao some. */
+  onExplicarVariacao?: () => void
+  /** Loading state do agente — desabilita o botao + muda label. */
+  explicarVariacaoLoading?: boolean
 }
 
 export function BalancoPatrimonialHero({
@@ -104,6 +109,8 @@ export function BalancoPatrimonialHero({
   errorMessage,
   onRetry,
   onDrillCategoria,
+  onExplicarVariacao,
+  explicarVariacaoLoading = false,
 }: BalancoPatrimonialHeroProps) {
   if (errorMessage && !loading) {
     return (
@@ -160,7 +167,28 @@ export function BalancoPatrimonialHero({
             {data.fundo_nome}
           </p>
         </div>
-        <IdentidadeBadge status={residuoStatus} residuo={residuo} />
+        <div className="flex items-center gap-2">
+          {onExplicarVariacao && (
+            <button
+              type="button"
+              onClick={onExplicarVariacao}
+              disabled={explicarVariacaoLoading}
+              className={cx(
+                "inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium transition-colors",
+                "border-violet-200 bg-violet-50 text-violet-700",
+                "hover:border-violet-300 hover:bg-violet-100",
+                "dark:border-violet-900/50 dark:bg-violet-500/10 dark:text-violet-300",
+                "dark:hover:border-violet-800 dark:hover:bg-violet-500/20",
+                "disabled:cursor-wait disabled:opacity-60",
+              )}
+              title="Invocar agente IA pra explicar a variacao do dia"
+            >
+              <RiSparklingFill className="size-3" aria-hidden="true" />
+              {explicarVariacaoLoading ? "Analisando…" : "Explicar variação"}
+            </button>
+          )}
+          <IdentidadeBadge status={residuoStatus} residuo={residuo} />
+        </div>
       </div>
 
       {/* Cabeçalho das colunas */}

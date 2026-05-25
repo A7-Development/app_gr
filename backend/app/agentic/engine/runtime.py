@@ -85,6 +85,18 @@ class AgentRunResult:
     tokens_cache_creation: int = 0
     cost_brl: Decimal = Decimal("0")
     prompt_full_id: str = ""         # 'agent.social_contract@v1'
+    model_used: str = ""             # modelo resolvido em runtime (override
+                                     # chain DB > agent_config > catalog).
+                                     # Pode ser o fallback se o primary falhou.
+                                     # Usar pra audit + UI honesta.
+    # ─── Cache + audit (run_standalone_agent) ─────────────────────────────
+    from_cache: bool = False         # True = output veio de execucao previa,
+                                     # NAO houve chamada nova ao LLM. Custo = 0.
+    analysis_run_id: Any = None      # UUID da row em agent_analysis_run (pra
+                                     # audit/UI). None quando rodou via
+                                     # run_specialist_agent legado.
+    cache_age_seconds: int = 0       # idade do cache em segundos quando hit.
+    duration_ms: int = 0             # duracao real do invoke em ms; 0 quando hit.
 
 
 # ─── Prompt rendering helpers ─────────────────────────────────────────────
@@ -427,7 +439,7 @@ async def run_specialist_agent(
             message=f"start {agent_full_id}",
         )
 
-    output_data, usage, _resolved_models = await _invoke_with_validation(
+    output_data, usage, resolved_models = await _invoke_with_validation(
         spec=spec,
         system_text=system_text,
         user_text=user_text,
@@ -466,6 +478,7 @@ async def run_specialist_agent(
         tokens_cache_creation=usage.tokens_cache_creation,
         cost_brl=Decimal("0"),  # billing layer computes via FX rate
         prompt_full_id=resolved.audit_version,
+        model_used=resolved_models.model,
     )
 
 
@@ -544,6 +557,258 @@ async def run_document_extraction(
         tokens_cache_creation=usage.tokens_cache_creation,
         cost_brl=Decimal("0"),
         prompt_full_id=prompt.full_id,
+        model_used=resolved_models.model,
+    )
+
+
+async def run_standalone_agent(
+    *,
+    agent_name: str,
+    scope: ScopedContext,
+    user_context: dict[str, Any] | None = None,
+    db: AsyncSession,
+    session: AnalysisSession | None = None,
+) -> AgentRunResult:
+    """Run a specialist agent OUTSIDE the Credito workflow.
+
+    Unlike `run_specialist_agent` (acoplado ao NodeContext do playbook engine
+    e a Module.CREDITO hardcoded), este caminho permite invocar qualquer
+    agente do CATALOG passando scope + tenant + permissions explicitamente.
+
+    Use para agentes standalone (ex.: `controladoria.analista_variacao_cota`)
+    invocados via endpoint REST direto, smoke test, ou job agendado.
+
+    Args:
+        agent_name: nome canonico do agente (ex.: 'controladoria.analista_variacao_cota').
+            O AgentRegistry strip o prefixo de modulo pra match com CATALOG.
+        scope: ScopedContext ja populado pelo caller — tenant_id, user_id,
+            module, permissions, extras. Tools/permissions filtram baseado
+            nisso.
+        user_context: dict de variaveis pra renderizar o user_context_template
+            do ai_prompt (ex.: {fundo_nome, data_d0, data_anterior}).
+        db: AsyncSession.
+        session: AnalysisSession opcional (working memory + step trace).
+
+    Returns:
+        AgentRunResult com output validado contra spec.output_schema.
+    """
+    from app.agentic.analysis_cache import (
+        PersistRunArgs,
+        hash_inputs,
+        lookup_cached,
+        persist_run,
+    )
+    from app.agentic.engine.catalog import CATALOG
+    from app.agentic.playbooks.nodes._base import NodeContext
+
+    # Resolve catalog spec — strip prefixo de modulo se houver.
+    raw_name = agent_name.split(".", 1)[1] if "." in agent_name else agent_name
+    if raw_name not in CATALOG:
+        raise ValueError(f"Agente '{raw_name}' nao encontrado em CATALOG.")
+    spec = CATALOG[raw_name]
+
+    # Resolve definition (DB-first via AgentRegistry).
+    resolved = await AgentRegistry.get(db, name=agent_name, scope=scope)
+    prompt = resolved.prompt
+
+    # ─── Cache check ──────────────────────────────────────────────────────
+    # Inputs_snapshot = (scope.extras + user_context) — tudo que diferencia
+    # uma analise da outra. audit_version vai no hash separadamente (vide
+    # hash_inputs) e garante invalidacao auto quando prompt/persona muda.
+    inputs_snapshot = {
+        "scope_extras": dict(scope.extras),
+        "user_context": dict(user_context or {}),
+    }
+    inputs_hash = hash_inputs(resolved.audit_version, inputs_snapshot)
+
+    cached = await lookup_cached(
+        db,
+        tenant_id=scope.tenant_id,
+        agent_name=agent_name,
+        agent_version=resolved.version,
+        inputs_hash=inputs_hash,
+    )
+    if cached is not None:
+        logger.info(
+            "Cache HIT pra agente '%s' (idade=%ds, run_id=%s) — economia de chamada LLM.",
+            agent_name, cached.age_seconds, cached.id,
+        )
+        return AgentRunResult(
+            output_data=cached.output_data,
+            output_schema_name=cached.output_schema_name,
+            tokens_input=cached.tokens_input,
+            tokens_output=cached.tokens_output,
+            tokens_cache_read=cached.tokens_cache_read,
+            tokens_cache_creation=cached.tokens_cache_creation,
+            cost_brl=cached.cost_brl_estimated or Decimal("0"),
+            prompt_full_id=cached.audit_version,
+            model_used=cached.model_used,
+            from_cache=True,
+            analysis_run_id=cached.id,
+            cache_age_seconds=cached.age_seconds,
+        )
+
+    # ─── Cache miss — invoca LLM ──────────────────────────────────────────
+
+    # Renderiza prompt com context. user_context vira variaveis pra
+    # {placeholder} em user_context_template do ai_prompt.
+    render_context: dict[str, Any] = {
+        "page": f"{scope.module.value}.standalone",
+        "period": "",
+        "filters": "",
+    }
+    if user_context:
+        render_context.update(user_context)
+    rendered = prompt.render(context=render_context)
+
+    system_text_raw = "\n\n".join(
+        block.text for msg in rendered if msg.role == "system" for block in msg.content
+    )
+    system_text = compose_system_text(
+        persona=resolved.persona,
+        expertises=resolved.expertises,
+        prompt_system_text=system_text_raw,
+    )
+
+    user_text = "\n\n".join(
+        block.text for msg in rendered if msg.role == "user" for block in msg.content
+    )
+    if not user_text:
+        # Fallback se ai_prompt nao tem user_context_template.
+        user_text = (
+            "Produza a analise no formato JSON definido pelo schema da tarefa. "
+            "Inclua o objeto JSON dentro de um bloco ```json ... ```."
+        )
+
+    # NodeContext sintetico — necessario por causa do contrato existente
+    # de `_invoke_with_validation` (acoplado a ctx.tenant_id, ctx.initiated_by,
+    # ctx.run_id). Quando esse contrato for limpo, este shim some.
+    from uuid import uuid4
+    ctx = NodeContext(
+        run_id=uuid4(),
+        tenant_id=scope.tenant_id,
+        node_id="standalone",
+        initiated_by=scope.user_id,
+        previous_outputs={},
+        trigger_data={},
+        node_config={},
+        session=session,
+    )
+
+    agent_full_id = resolved.full_id
+
+    if session is not None:
+        session.record_observation(
+            agent_full_id=agent_full_id,
+            message=f"start {agent_full_id} (standalone)",
+        )
+
+    invoke_start_ms = int(time.time() * 1000)
+    persist_status = "success"
+    persist_error: str | None = None
+    output_data: dict[str, Any] | None = None
+    usage = None
+    resolved_models = None
+
+    try:
+        output_data, usage, resolved_models = await _invoke_with_validation(
+            spec=spec,
+            system_text=system_text,
+            user_text=user_text,
+            ctx=ctx,
+            db=db,
+            resolved=resolved,
+            session=session,
+            agent_full_id=agent_full_id,
+            scope_override=scope,  # Bypass do scope hardcoded CREDITO.
+        )
+    except Exception as e:
+        persist_status = "error"
+        persist_error = f"{type(e).__name__}: {e}"
+        # Persiste o run com status='error' pra audit antes de propagar.
+        await persist_run(
+            db,
+            PersistRunArgs(
+                tenant_id=scope.tenant_id,
+                agent_name=agent_name,
+                agent_version=resolved.version,
+                audit_version=resolved.audit_version,
+                inputs_hash=inputs_hash,
+                inputs_snapshot=inputs_snapshot,
+                output_data=None,
+                output_schema_name=spec.output_schema.__name__,
+                model_used=resolved.model or "",
+                tokens_input=0,
+                tokens_output=0,
+                tokens_cache_read=0,
+                tokens_cache_creation=0,
+                cost_brl_estimated=None,
+                duration_ms=int(time.time() * 1000) - invoke_start_ms,
+                status=persist_status,
+                error_message=persist_error,
+                triggered_by_user_id=scope.user_id,
+            ),
+        )
+        raise
+
+    duration_ms = int(time.time() * 1000) - invoke_start_ms
+
+    # Estimativa de custo em BRL (aproximacao — billing fino fica em layer separado).
+    # Sonnet 4.6: $3/M in, $15/M out, $0.30/M cache_read, $3.75/M cache_creation
+    # Opus 4.7:   $15/M in, $75/M out, $1.50/M cache_read, $18.75/M cache_creation
+    # Como pricing varia por modelo, deixamos billing detalhado pra futuro.
+    # Estimativa generica usando Sonnet 4.6 + FX R$ 5.50/USD:
+    cost_usd = (
+        usage.tokens_input * 3.0
+        + usage.tokens_output * 15.0
+        + usage.tokens_cache_read * 0.30
+        + usage.tokens_cache_creation * 3.75
+    ) / 1_000_000
+    cost_brl = Decimal(str(round(cost_usd * 5.50, 4)))
+
+    # ─── Persist (cache + audit) ──────────────────────────────────────────
+    analysis_run_id = await persist_run(
+        db,
+        PersistRunArgs(
+            tenant_id=scope.tenant_id,
+            agent_name=agent_name,
+            agent_version=resolved.version,
+            audit_version=resolved.audit_version,
+            inputs_hash=inputs_hash,
+            inputs_snapshot=inputs_snapshot,
+            output_data=output_data,
+            output_schema_name=spec.output_schema.__name__,
+            model_used=resolved_models.model,
+            tokens_input=usage.tokens_input,
+            tokens_output=usage.tokens_output,
+            tokens_cache_read=usage.tokens_cache_read,
+            tokens_cache_creation=usage.tokens_cache_creation,
+            cost_brl_estimated=cost_brl,
+            duration_ms=duration_ms,
+            status=persist_status,
+            error_message=None,
+            triggered_by_user_id=scope.user_id,
+        ),
+    )
+    logger.info(
+        "Cache MISS pra agente '%s' — execucao gravada (run_id=%s, cost~R$%.2f, duracao=%dms).",
+        agent_name, analysis_run_id, float(cost_brl), duration_ms,
+    )
+
+    return AgentRunResult(
+        output_data=output_data,
+        output_schema_name=spec.output_schema.__name__,
+        tokens_input=usage.tokens_input,
+        tokens_output=usage.tokens_output,
+        tokens_cache_read=usage.tokens_cache_read,
+        tokens_cache_creation=usage.tokens_cache_creation,
+        cost_brl=cost_brl,
+        prompt_full_id=resolved.audit_version,
+        model_used=resolved_models.model,
+        from_cache=False,
+        analysis_run_id=analysis_run_id,
+        cache_age_seconds=0,
+        duration_ms=duration_ms,
     )
 
 
@@ -636,6 +901,7 @@ async def _invoke_with_validation(
     resolved: ResolvedAgent | None = None,
     session: AnalysisSession | None = None,
     agent_full_id: str | None = None,
+    scope_override: ScopedContext | None = None,
 ) -> tuple[dict[str, Any], _Usage, ResolvedModels]:
     """Invoke the agent and validate output, retrying once on schema failure.
 
@@ -676,19 +942,26 @@ async def _invoke_with_validation(
     # vivem em workflows do Credito); permissions vazias com
     # cross_module=True na chamada do registry. F2.b vai trazer module
     # via AgentDefinition + permissions reais do user invocador.
-    scope = ScopedContext(
-        tenant_id=ctx.tenant_id,
-        empresa_id=None,
-        user_id=ctx.initiated_by,
-        module=Module.CREDITO,
-        permissions={},
-        db=db,
-        extras={
-            "dossier_id": ctx.trigger_data.get("dossier_id"),
-            "run_id": ctx.run_id,
-            "node_id": ctx.node_id,
-        },
-    )
+    # `scope_override` (2026-05-24): permite agentes standalone (fora de
+    # workflow Credito) injetarem scope custom com module + permissions
+    # + extras adequados (ex.: agente de controladoria com Module.CONTROLADORIA
+    # + ua_id em extras).
+    if scope_override is not None:
+        scope = scope_override
+    else:
+        scope = ScopedContext(
+            tenant_id=ctx.tenant_id,
+            empresa_id=None,
+            user_id=ctx.initiated_by,
+            module=Module.CREDITO,
+            permissions={},
+            db=db,
+            extras={
+                "dossier_id": ctx.trigger_data.get("dossier_id"),
+                "run_id": ctx.run_id,
+                "node_id": ctx.node_id,
+            },
+        )
 
     tools = (
         tools_override

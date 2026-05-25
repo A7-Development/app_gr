@@ -23,6 +23,10 @@ from app.modules.controladoria.schemas.cota_sub import (
     VariacaoDiariaResponse,
     VariacoesDiaResponse,
 )
+from app.modules.controladoria.schemas.agente_variacao_cota import (
+    AgenteVariacaoRunMetadata,
+    AgenteVariacaoRunResponse,
+)
 from app.modules.controladoria.schemas.cota_sub_drill import (
     DrillCprResponse,
     DrillDcResponse,
@@ -445,3 +449,111 @@ async def explicacao_variacao(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
         ) from exc
+
+
+# ─── Agente IA · analista de variacao da Cota Sub Jr ─────────────────────
+
+
+@router.post(
+    "/agente/analista-variacao/run",
+    response_model=AgenteVariacaoRunResponse,
+)
+async def agente_analista_variacao_run(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0). D-1 e calculado como dia util anterior QiTech.")],
+    _: None = _Guard,
+) -> AgenteVariacaoRunResponse:
+    """Invoca o agente IA de analise de variacao da Cota Sub Jr.
+
+    Protocolo de 3 niveis executado pelo agente (Sonnet 4.6 default):
+      1. Sanity check (identidade contabil PL deduzido vs PL fonte MEC)
+      2. Decomposicao patrimonial (12 categorias com ΔBRL)
+      3. Explicacao narrativa por categoria significativa (cita papeis,
+         classifica padrao, sugere acoes)
+
+    **Cache automatico**: invocacoes com mesmo (tenant, fundo, data, prompt
+    version) servem do cache (`agent_analysis_run`). Mudanca de prompt ou
+    re-ingestao de dados invalida cache automaticamente.
+
+    Custo tipico: R$ 1,40 por execucao nova (Sonnet 4.6); R$ 0 em cache hit.
+    Duracao tipica: ~90s execucao nova; <1s cache hit.
+
+    Multi-tenant: scope enforced via `principal.tenant_id`.
+    Audit: row gravada em `agent_analysis_run` com audit_version composto +
+    tokens + custo estimado + status.
+    """
+    # Imports tardios pra evitar carregar o motor agentico em endpoints que
+    # nao usam (startup mais rapido).
+    from app.agentic._scope import ScopedContext
+    from app.agentic.engine.runtime import run_standalone_agent
+    from app.modules.cadastros.public import UnidadeAdministrativa
+    from app.modules.integracoes.public import dia_util_anterior_qitech
+    from sqlalchemy import select as sa_select
+
+    # Resolve UA + dia util anterior (mesmo padrao dos drills).
+    ua = (
+        await db.execute(
+            sa_select(UnidadeAdministrativa)
+            .where(UnidadeAdministrativa.tenant_id == principal.tenant_id)
+            .where(UnidadeAdministrativa.id == fundo_id)
+        )
+    ).scalar_one_or_none()
+    if ua is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Unidade Administrativa {fundo_id} nao encontrada.",
+        )
+
+    data_anterior = await dia_util_anterior_qitech(
+        db, tenant_id=principal.tenant_id, ua_id=fundo_id, data_d0=data,
+    )
+
+    scope = ScopedContext(
+        tenant_id=principal.tenant_id,
+        empresa_id=None,
+        user_id=principal.user_id,
+        module=Module.CONTROLADORIA,
+        permissions={Module.CONTROLADORIA: Permission.READ},
+        db=db,
+        extras={
+            "ua_id": str(fundo_id),
+            "data_d0": data.isoformat(),
+        },
+    )
+    user_context = {
+        "fundo_nome": ua.nome,
+        "data_d0": data.isoformat(),
+        "data_anterior": data_anterior.isoformat(),
+    }
+
+    try:
+        result = await run_standalone_agent(
+            agent_name="controladoria.analista_variacao_cota",
+            scope=scope,
+            user_context=user_context,
+            db=db,
+        )
+    except Exception as exc:  # pragma: no cover — falha rara
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Falha ao invocar agente: {exc}",
+        ) from exc
+
+    return AgenteVariacaoRunResponse(
+        metadata=AgenteVariacaoRunMetadata(
+            analysis_run_id=result.analysis_run_id,
+            audit_version=result.prompt_full_id,
+            model_used=result.model_used,
+            from_cache=result.from_cache,
+            cache_age_seconds=result.cache_age_seconds,
+            tokens_input=result.tokens_input,
+            tokens_output=result.tokens_output,
+            tokens_cache_read=result.tokens_cache_read,
+            tokens_cache_creation=result.tokens_cache_creation,
+            cost_brl_estimated=result.cost_brl,
+            duration_ms=result.duration_ms,
+        ),
+        analise=result.output_data,  # type: ignore[arg-type]  # Pydantic valida ao serializar
+    )

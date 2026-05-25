@@ -214,3 +214,150 @@ class PleitoExtraction(BaseModel):
     contexto: str | None = None
     urgencia: Literal["alta", "media", "baixa"] | None = None
     confianca: float = Field(..., ge=0.0, le=1.0)
+
+
+# ─── Controladoria · analista variacao cota sub jr ───────────────────────
+
+
+class SanityCheck(BaseModel):
+    """Nivel 1 do agente — identidade contabil bateu no dia?"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    passou: bool = Field(description="True se residuo_brl < tolerancia (R$ 1).")
+    residuo_brl: float = Field(
+        description="(ΔPL deduzido) − (ΔPL fonte MEC). Erro REAL do dia, nao "
+                    "snapshot acumulado.",
+    )
+    pl_deduzido_delta: float = Field(description="Δ do PL calculado pelo granular.")
+    pl_fonte_delta: float = Field(description="Δ do PL lido do MEC.")
+    diagnostico: str = Field(
+        description="Frase curta pt-BR: 'fechamento sadio' / 'arredondamento "
+                    "centavos' / 'desalinhamento de pipeline'.",
+    )
+
+
+class CategoriaDelta(BaseModel):
+    """Nivel 2 do agente — uma linha do balanco com ΔBRL."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(description="Chave canonica: 'dc', 'pdd', 'cpr', etc.")
+    label: str = Field(description="Label amigavel pt-BR.")
+    tipo: Literal["ativo", "passivo"]
+    d1: float
+    d0: float
+    delta: float = Field(description="d0 - d1 (sinal natural).")
+    rank_magnitude: int = Field(
+        ge=1,
+        description="1 = maior |delta| do dia, 2 = segundo maior, etc.",
+    )
+
+
+class PapelMencionado(BaseModel):
+    """Papel especifico citado pelo agente como evidencia."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    seu_numero: str
+    cedente_nome: str
+    sacado_nome: str
+    delta_brl: float = Field(description="Impacto do papel na categoria.")
+    natureza: str = Field(
+        description="ex.: 'mutacao_silenciosa', 'liquidacao_parcial', "
+                    "'write_off', 'migracao_wop', 'aquisicao_novo'",
+    )
+
+
+class ExplicacaoCategoria(BaseModel):
+    """Nivel 3 do agente — narrativa de uma categoria significativa."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    categoria_key: str = Field(description="Match com CategoriaDelta.key.")
+    narrativa: str = Field(
+        description="Sintese pt-BR (2-5 frases) explicando o ΔBRL. "
+                    "Concreto: cite papeis, cedentes, padroes temporais. "
+                    "Evite vaguidade.",
+    )
+    papeis_mencionados: list[PapelMencionado] = Field(
+        default_factory=list,
+        description="Papeis especificos citados na narrativa.",
+    )
+    classificacao_principal: Literal[
+        "carrego_normal",
+        "fluxo_novo_intenso",
+        "mutacao_silenciosa_pura",
+        "padrao_abatimento_offrecord",
+        "constituicao_pdd",
+        "reversao_pdd",
+        "aporte_engaiolado",
+        "evento_pontual_explicado",
+        "evento_pontual_sem_explicacao",
+        "outro",
+    ] = Field(description="Etiqueta canonica do que dominou a variacao.")
+    confianca: float = Field(
+        ge=0.0, le=1.0,
+        description="Confianca da narrativa (0.5 = duas hipoteses; 0.95 = quase certo).",
+    )
+
+
+class SinalAlerta(BaseModel):
+    """Sinal de risco detectado — concentracao, reincidencia, etc."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    severidade: Literal["info", "atencao", "critico"]
+    tipo: Literal[
+        "cedente_reincidente",
+        "sacado_problematico",
+        "concentracao_categoria",
+        "mutacao_silenciosa_material",
+        "residuo_alto",
+        "outro",
+    ]
+    entidade: str = Field(description="Nome do cedente/sacado/categoria envolvido.")
+    descricao: str = Field(description="Frase pt-BR explicando o alerta.")
+    evidencia: str = Field(description="Quais papeis/eventos suportam.")
+
+
+class SugestaoAcao(BaseModel):
+    """Acao recomendada ao controller."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    prioridade: Literal["alta", "media", "baixa"]
+    acao: str = Field(description="Verbo pt-BR: 'investigar', 'monitorar', 'nenhuma'.")
+    detalhe: str = Field(description="O que fazer concretamente.")
+
+
+class AnalysisVariacaoCotaResponse(BaseModel):
+    """Output do agente `controladoria.analista_variacao_cota`.
+
+    3 niveis (sanity + decomposicao + explicacao narrativa) + sinais de
+    alerta + sugestoes de acao. UI consome cada bloco em uma secao distinta.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    fundo_nome: str
+    data: str = Field(description="ISO yyyy-mm-dd da data D0 analisada.")
+    data_anterior: str = Field(description="ISO yyyy-mm-dd da data D-1.")
+
+    nivel_1_sanity: SanityCheck
+    nivel_2_decomposicao: list[CategoriaDelta] = Field(
+        description="Todas as 12 categorias ordenadas por rank_magnitude ASC."
+    )
+    nivel_3_explicacoes: list[ExplicacaoCategoria] = Field(
+        default_factory=list,
+        description="Narrativas das categorias mais significativas (top N por "
+                    "|delta| OU com pattern detectado).",
+    )
+
+    sinais_alerta: list[SinalAlerta] = Field(default_factory=list)
+    sugestoes_acao: list[SugestaoAcao] = Field(default_factory=list)
+
+    sumario_executivo: str = Field(
+        description="2-4 frases pt-BR resumindo a variacao do dia. "
+                    "Headline pra controller que so vai ler isso.",
+    )

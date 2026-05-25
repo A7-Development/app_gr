@@ -101,6 +101,7 @@ import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 import { toast } from "sonner"
 
 import { ActiveBackfillJobsPanel } from "./_components/ActiveBackfillJobsPanel"
+import { AgenteVariacaoPanel } from "./_components/AgenteVariacaoPanel"
 import { BalanceTable } from "./_components/BalanceTable"
 import { BalancoInspector } from "./_components/BalancoInspector"
 import { BalancoPatrimonialHero } from "./_components/BalancoPatrimonialHero"
@@ -108,6 +109,7 @@ import { CategoriaDrillSheet } from "./_components/CategoriaDrillSheet"
 import { DrillCprContent } from "./_components/DrillCprContent"
 import { DrillDcContent } from "./_components/DrillDcContent"
 import { DrillPddContent } from "./_components/DrillPddContent"
+import { useAgenteAnalistaVariacao } from "@/lib/hooks/controladoria"
 import type { CategoriaPatrimonialKey } from "@/lib/api-client"
 // EventosDiaTab desativado em F1 do redesign (2026-05-22) — substituido pelo
 // BalancoPatrimonialHero na aba "eventos". F4 decide o destino final (apos
@@ -673,6 +675,13 @@ export default function CotaSubPage() {
   // matchMedia com SSR-safe init (false no first paint, atualiza no useEffect).
   const isXl = useMediaQuery("(min-width: 1280px)")
 
+  // Agente IA — analise da variacao da Cota Sub Jr (2026-05-25).
+  // Mutation porque invoca LLM (side effect grava em agent_analysis_run).
+  // Cache no backend evita rerodar com mesmos params; React Query nao
+  // cacheia (let backend handle).
+  const [agentePanelOpen, setAgentePanelOpen] = React.useState(false)
+  const agenteMutation = useAgenteAnalistaVariacao()
+
   // Lookup do UUID da UA selecionada (endpoint backend exige fundo_id).
   const fundoId = React.useMemo(() => {
     if (fundo === "Todos") return null
@@ -1077,6 +1086,18 @@ export default function CotaSubPage() {
                         }
                         onRetry={() => balancoPatQuery.refetch()}
                         onDrillCategoria={setDrilledCategoria}
+                        onExplicarVariacao={
+                          fundoId
+                            ? () => {
+                                setAgentePanelOpen(true)
+                                agenteMutation.mutate({
+                                  fundoId,
+                                  data: dayIso,
+                                })
+                              }
+                            : undefined
+                        }
+                        explicarVariacaoLoading={agenteMutation.isPending}
                       />
                       {/* F3 redesign 2026-05-24: slot direito vira BalancoInspector
                           (in-layout, parte da grid). Em telas < xl o slot some
@@ -1270,6 +1291,24 @@ export default function CotaSubPage() {
           </>
         )}
       </DrillDownSheet>
+
+      {/* Agente IA — analise da variacao da Cota Sub Jr (2026-05-25) */}
+      <AgenteVariacaoPanel
+        open={agentePanelOpen}
+        onClose={() => setAgentePanelOpen(false)}
+        loading={agenteMutation.isPending}
+        error={
+          agenteMutation.isError
+            ? (agenteMutation.error as Error)?.message ?? "Erro desconhecido"
+            : null
+        }
+        data={agenteMutation.data ?? null}
+        onRetry={
+          fundoId
+            ? () => agenteMutation.mutate({ fundoId, data: dayIso })
+            : undefined
+        }
+      />
 
     </div>
   )

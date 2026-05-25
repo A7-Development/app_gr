@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from app.agentic.engine.output_schemas import (
+    AnalysisVariacaoCotaResponse,
     CommercialVisitAnalysis,
     CrossReferenceAnalysis,
     DocumentExtraction,
@@ -333,5 +334,41 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         thinking_budget_tokens=2000,
         timeout_seconds=60,
         section_id="plea",
+    ),
+    # ─── Controladoria · analista de variacao da Cota Sub Jr ─────────────
+    # Retomada de [[project_pagina_variacao_cota]] em 2026-05-24 apos
+    # F1+F2+F5 do redesign cota-sub serem entregues (PR #26 mergeado em
+    # main). 3 niveis de analise (sanity + decomposicao + explicacao
+    # narrativa). Consome as 8 tools de app/agentic/tools/controladoria/.
+    "analista_variacao_cota": SpecialistAgentSpec(
+        name="analista_variacao_cota",
+        description=(
+            "Explica narrativamente a variacao do PL Sub Jr de um FIDC entre "
+            "D-1 e D0. Faz sanity check, decompoe nas 12 categorias do "
+            "balanco, e investiga categorias com Δ material cruzando "
+            "wh_estoque_recebivel x wh_liquidacao_recebivel x historico do "
+            "papel pra distinguir liquidacao normal, mutacao silenciosa pura, "
+            "padrao de abatimento off-record, etc."
+        ),
+        prompt_name="agent.controladoria.analista_variacao_cota",
+        tools=(
+            "check_identidade_contabil",
+            "get_balanco_patrimonial",
+            "get_drill_dc",
+            "get_drill_pdd",
+            "get_drill_cpr",
+            "get_eventos_liquidacao_adjacentes",
+            "get_historico_estoque_papel",
+            "get_papeis_mesmo_cedente_sacado",
+        ),
+        output_schema=AnalysisVariacaoCotaResponse,
+        # Modelo Opus 4.7 escolhido pra narrativa rica + raciocinio em
+        # padroes temporais. Cache de prompt resolve custo (system_text
+        # estavel cross-runs).
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=15000,
+        timeout_seconds=600,
+        section_id="cota_sub_analise_variacao",
     ),
 }

@@ -7,7 +7,7 @@
 
 import * as React from "react"
 import { differenceInCalendarDays, parseISO } from "date-fns"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery } from "@tanstack/react-query"
 
 import {
   controladoria,
@@ -448,5 +448,18 @@ export function useDreFornecedores(
     enabled:
       !!filters?.grupoDre && !!filters?.competenciaDe && !!filters?.competenciaAte,
     staleTime: 5 * 60 * 1000,
+  })
+}
+
+// ─── Agente IA · analista de variacao da Cota Sub Jr ─────────────────
+//
+// useMutation porque invoca LLM (side effect — grava em agent_analysis_run).
+// Cache no backend (1 chamada com mesmos params reaproveita resposta
+// previa), entao React Query nao precisa cachear de novo.
+
+export function useAgenteAnalistaVariacao() {
+  return useMutation({
+    mutationFn: ({ fundoId, data }: { fundoId: string; data: string }) =>
+      controladoria.cotaSubAgenteAnalistaVariacaoRun(fundoId, data),
   })
 }

@@ -7,6 +7,7 @@ Estrutura:
 
 Subdirs por modulo (dominio):
     credito/        dossier, document (3 + 2 tools)
+    controladoria/  cota_sub (8 tools)
     shared/         calc (2 tools)
 
 Importar subdirs aqui forca execucao dos decorators na carga do pacote
@@ -14,7 +15,7 @@ Importar subdirs aqui forca execucao dos decorators na carga do pacote
 modulo delas, gerando flakiness.
 """
 
-from app.agentic.tools import credito, shared  # noqa: F401
+from app.agentic.tools import controladoria, credito, shared  # noqa: F401
 from app.agentic.tools._base import AgentTool, register_tool, string_schema
 from app.agentic.tools.registry import ToolRegistry
 
