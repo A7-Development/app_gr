@@ -96,6 +96,7 @@ class AgentRunResult:
                                      # audit/UI). None quando rodou via
                                      # run_specialist_agent legado.
     cache_age_seconds: int = 0       # idade do cache em segundos quando hit.
+    duration_ms: int = 0             # duracao real do invoke em ms; 0 quando hit.
 
 
 # ─── Prompt rendering helpers ─────────────────────────────────────────────
@@ -807,6 +808,7 @@ async def run_standalone_agent(
         from_cache=False,
         analysis_run_id=analysis_run_id,
         cache_age_seconds=0,
+        duration_ms=duration_ms,
     )
 
 
