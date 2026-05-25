@@ -89,6 +89,13 @@ class AgentRunResult:
                                      # chain DB > agent_config > catalog).
                                      # Pode ser o fallback se o primary falhou.
                                      # Usar pra audit + UI honesta.
+    # ─── Cache + audit (run_standalone_agent) ─────────────────────────────
+    from_cache: bool = False         # True = output veio de execucao previa,
+                                     # NAO houve chamada nova ao LLM. Custo = 0.
+    analysis_run_id: Any = None      # UUID da row em agent_analysis_run (pra
+                                     # audit/UI). None quando rodou via
+                                     # run_specialist_agent legado.
+    cache_age_seconds: int = 0       # idade do cache em segundos quando hit.
 
 
 # ─── Prompt rendering helpers ─────────────────────────────────────────────
@@ -584,6 +591,12 @@ async def run_standalone_agent(
     Returns:
         AgentRunResult com output validado contra spec.output_schema.
     """
+    from app.agentic.analysis_cache import (
+        PersistRunArgs,
+        hash_inputs,
+        lookup_cached,
+        persist_run,
+    )
     from app.agentic.engine.catalog import CATALOG
     from app.agentic.playbooks.nodes._base import NodeContext
 
@@ -596,6 +609,45 @@ async def run_standalone_agent(
     # Resolve definition (DB-first via AgentRegistry).
     resolved = await AgentRegistry.get(db, name=agent_name, scope=scope)
     prompt = resolved.prompt
+
+    # ─── Cache check ──────────────────────────────────────────────────────
+    # Inputs_snapshot = (scope.extras + user_context) — tudo que diferencia
+    # uma analise da outra. audit_version vai no hash separadamente (vide
+    # hash_inputs) e garante invalidacao auto quando prompt/persona muda.
+    inputs_snapshot = {
+        "scope_extras": dict(scope.extras),
+        "user_context": dict(user_context or {}),
+    }
+    inputs_hash = hash_inputs(resolved.audit_version, inputs_snapshot)
+
+    cached = await lookup_cached(
+        db,
+        tenant_id=scope.tenant_id,
+        agent_name=agent_name,
+        agent_version=resolved.version,
+        inputs_hash=inputs_hash,
+    )
+    if cached is not None:
+        logger.info(
+            "Cache HIT pra agente '%s' (idade=%ds, run_id=%s) — economia de chamada LLM.",
+            agent_name, cached.age_seconds, cached.id,
+        )
+        return AgentRunResult(
+            output_data=cached.output_data,
+            output_schema_name=cached.output_schema_name,
+            tokens_input=cached.tokens_input,
+            tokens_output=cached.tokens_output,
+            tokens_cache_read=cached.tokens_cache_read,
+            tokens_cache_creation=cached.tokens_cache_creation,
+            cost_brl=cached.cost_brl_estimated or Decimal("0"),
+            prompt_full_id=cached.audit_version,
+            model_used=cached.model_used,
+            from_cache=True,
+            analysis_run_id=cached.id,
+            cache_age_seconds=cached.age_seconds,
+        )
+
+    # ─── Cache miss — invoca LLM ──────────────────────────────────────────
 
     # Renderiza prompt com context. user_context vira variaveis pra
     # {placeholder} em user_context_template do ai_prompt.
@@ -650,16 +702,96 @@ async def run_standalone_agent(
             message=f"start {agent_full_id} (standalone)",
         )
 
-    output_data, usage, resolved_models = await _invoke_with_validation(
-        spec=spec,
-        system_text=system_text,
-        user_text=user_text,
-        ctx=ctx,
-        db=db,
-        resolved=resolved,
-        session=session,
-        agent_full_id=agent_full_id,
-        scope_override=scope,  # Bypass do scope hardcoded CREDITO.
+    invoke_start_ms = int(time.time() * 1000)
+    persist_status = "success"
+    persist_error: str | None = None
+    output_data: dict[str, Any] | None = None
+    usage = None
+    resolved_models = None
+
+    try:
+        output_data, usage, resolved_models = await _invoke_with_validation(
+            spec=spec,
+            system_text=system_text,
+            user_text=user_text,
+            ctx=ctx,
+            db=db,
+            resolved=resolved,
+            session=session,
+            agent_full_id=agent_full_id,
+            scope_override=scope,  # Bypass do scope hardcoded CREDITO.
+        )
+    except Exception as e:
+        persist_status = "error"
+        persist_error = f"{type(e).__name__}: {e}"
+        # Persiste o run com status='error' pra audit antes de propagar.
+        await persist_run(
+            db,
+            PersistRunArgs(
+                tenant_id=scope.tenant_id,
+                agent_name=agent_name,
+                agent_version=resolved.version,
+                audit_version=resolved.audit_version,
+                inputs_hash=inputs_hash,
+                inputs_snapshot=inputs_snapshot,
+                output_data=None,
+                output_schema_name=spec.output_schema.__name__,
+                model_used=resolved.model or "",
+                tokens_input=0,
+                tokens_output=0,
+                tokens_cache_read=0,
+                tokens_cache_creation=0,
+                cost_brl_estimated=None,
+                duration_ms=int(time.time() * 1000) - invoke_start_ms,
+                status=persist_status,
+                error_message=persist_error,
+                triggered_by_user_id=scope.user_id,
+            ),
+        )
+        raise
+
+    duration_ms = int(time.time() * 1000) - invoke_start_ms
+
+    # Estimativa de custo em BRL (aproximacao — billing fino fica em layer separado).
+    # Sonnet 4.6: $3/M in, $15/M out, $0.30/M cache_read, $3.75/M cache_creation
+    # Opus 4.7:   $15/M in, $75/M out, $1.50/M cache_read, $18.75/M cache_creation
+    # Como pricing varia por modelo, deixamos billing detalhado pra futuro.
+    # Estimativa generica usando Sonnet 4.6 + FX R$ 5.50/USD:
+    cost_usd = (
+        usage.tokens_input * 3.0
+        + usage.tokens_output * 15.0
+        + usage.tokens_cache_read * 0.30
+        + usage.tokens_cache_creation * 3.75
+    ) / 1_000_000
+    cost_brl = Decimal(str(round(cost_usd * 5.50, 4)))
+
+    # ─── Persist (cache + audit) ──────────────────────────────────────────
+    analysis_run_id = await persist_run(
+        db,
+        PersistRunArgs(
+            tenant_id=scope.tenant_id,
+            agent_name=agent_name,
+            agent_version=resolved.version,
+            audit_version=resolved.audit_version,
+            inputs_hash=inputs_hash,
+            inputs_snapshot=inputs_snapshot,
+            output_data=output_data,
+            output_schema_name=spec.output_schema.__name__,
+            model_used=resolved_models.model,
+            tokens_input=usage.tokens_input,
+            tokens_output=usage.tokens_output,
+            tokens_cache_read=usage.tokens_cache_read,
+            tokens_cache_creation=usage.tokens_cache_creation,
+            cost_brl_estimated=cost_brl,
+            duration_ms=duration_ms,
+            status=persist_status,
+            error_message=None,
+            triggered_by_user_id=scope.user_id,
+        ),
+    )
+    logger.info(
+        "Cache MISS pra agente '%s' — execucao gravada (run_id=%s, cost~R$%.2f, duracao=%dms).",
+        agent_name, analysis_run_id, float(cost_brl), duration_ms,
     )
 
     return AgentRunResult(
@@ -669,9 +801,12 @@ async def run_standalone_agent(
         tokens_output=usage.tokens_output,
         tokens_cache_read=usage.tokens_cache_read,
         tokens_cache_creation=usage.tokens_cache_creation,
-        cost_brl=Decimal("0"),
+        cost_brl=cost_brl,
         prompt_full_id=resolved.audit_version,
         model_used=resolved_models.model,
+        from_cache=False,
+        analysis_run_id=analysis_run_id,
+        cache_age_seconds=0,
     )
 
 
