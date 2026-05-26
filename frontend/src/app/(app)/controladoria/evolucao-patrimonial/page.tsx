@@ -104,6 +104,11 @@ function presetToInicio(preset: Preset): string {
   return format(subMonths(new Date(), PRESET_MESES[preset]), "yyyy-MM-dd")
 }
 
+function fmtDataCurta(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : iso
+}
+
 function xLabel(iso: string, gran: EvolucaoGranularidade): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
   if (!m) return iso
@@ -200,11 +205,25 @@ export default function EvolucaoPatrimonialPage() {
     [preset, granularidade, fundo, classesSel],
   )
 
-  const toggleClasse = React.useCallback((c: EvolucaoClasse) => {
-    setClassesSel((curr) =>
-      curr.includes(c) ? curr.filter((x) => x !== c) : [...curr, c],
-    )
-  }, [])
+  // Toggle de classe com semantica intuitiva: clicar numa classe "ligada"
+  // desliga ela (mostra o resto), nunca estreita pra uma so. classesSel
+  // vazio = todas; quando vira "todas" de novo, normaliza pra vazio.
+  const toggleClasse = React.useCallback(
+    (c: EvolucaoClasse) => {
+      const all = (data?.classes_disponiveis ?? []).map((ci) => ci.classe)
+      if (all.length === 0) return
+      setClassesSel((curr) => {
+        const efetivo = curr.length === 0 ? all : curr
+        const next = efetivo.includes(c)
+          ? efetivo.filter((x) => x !== c)
+          : [...efetivo, c]
+        if (next.length === 0) return curr // nao zera (mostraria nada)
+        if (next.length === all.length) return [] // todas -> "Todas"
+        return next
+      })
+    },
+    [data],
+  )
 
   return (
     <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
@@ -377,6 +396,9 @@ export default function EvolucaoPatrimonialPage() {
               data={data}
               loading={serieQuery.isLoading}
               granularidade={granularidade}
+              setGranularidade={setGranularidade}
+              classesSel={classesSel}
+              onToggleClasse={toggleClasse}
               mensalData={mensalQuery.data}
               varLente={varLente}
               setVarLente={setVarLente}
@@ -411,6 +433,9 @@ function EvolucaoContent({
   data,
   loading,
   granularidade,
+  setGranularidade,
+  classesSel,
+  onToggleClasse,
   mensalData,
   varLente,
   setVarLente,
@@ -418,11 +443,20 @@ function EvolucaoContent({
   data: EvolucaoPatrimonialResponse | undefined
   loading: boolean
   granularidade: EvolucaoGranularidade
+  setGranularidade: (v: EvolucaoGranularidade) => void
+  classesSel: EvolucaoClasse[]
+  onToggleClasse: (c: EvolucaoClasse) => void
   mensalData: EvolucaoPatrimonialResponse | undefined
   varLente: VarLente
   setVarLente: (v: VarLente) => void
 }) {
+  // Empilhado vs sobreposto — controle LOCAL do card Evolucao do PL (apresentacao).
+  const [plStacked, setPlStacked] = React.useState(true)
   const serie = React.useMemo(() => data?.serie ?? [], [data])
+  // Lista completa de classes do fundo (independente do filtro) — alimenta os
+  // chips de classe do card; o filtro real vive em classesSel (global).
+  const todasClasses = React.useMemo(() => data?.classes_disponiveis ?? [], [data])
+  const ultimaData = serie.length > 0 ? serie[serie.length - 1].data : null
   const kpis = data?.kpis
   const xLabels = React.useMemo(
     () => serie.map((p) => xLabel(p.data, granularidade)),
@@ -443,7 +477,8 @@ function EvolucaoContent({
   const plOption = React.useMemo<EChartsOption>(() => {
     const ativas = CLASSE_STACK_ORDER.filter((c) => classesDisp.some((ci) => ci.classe === c))
     return {
-      grid: { top: 16, right: 16, bottom: 48, left: 60 },
+      // right amplo: acomoda o endLabel (rotulo no ultimo ponto).
+      grid: { top: 16, right: 92, bottom: 48, left: 60 },
       xAxis: { type: "category", data: xLabels, axisTick: { show: false } },
       yAxis: {
         type: "value",
@@ -452,12 +487,21 @@ function EvolucaoContent({
       series: ativas.map((c) => ({
         name: classesDisp.find((ci) => ci.classe === c)?.label ?? c,
         type: "line",
-        stack: "pl",
+        stack: plStacked ? "pl" : undefined,
         smooth: false,
         symbol: "none",
-        areaStyle: { opacity: 0.65 },
-        lineStyle: { width: 1, color: CLASSE_COLOR[c] },
+        areaStyle: { opacity: plStacked ? 0.6 : 0.12 },
+        lineStyle: { width: plStacked ? 1 : 2, color: CLASSE_COLOR[c] },
         itemStyle: { color: CLASSE_COLOR[c] },
+        // Rotulo de dados no ultimo ponto disponivel da serie.
+        endLabel: {
+          show: true,
+          fontSize: 10,
+          color: CLASSE_COLOR[c],
+          formatter: (p: { value: unknown }) =>
+            p.value === null || p.value === undefined ? "" : brlCompact(Number(p.value)),
+        },
+        labelLayout: { moveOverlap: "shiftY" },
         data: pivot(serie, c, "patrimonio", true),
       })),
       legend: { bottom: 0, icon: "circle", itemWidth: 8, itemHeight: 8 },
@@ -466,7 +510,7 @@ function EvolucaoContent({
         valueFormatter: (v) => (typeof v === "number" ? brlCompact(v) : String(v)),
       },
     }
-  }, [serie, xLabels, classesDisp])
+  }, [serie, xLabels, classesDisp, plStacked])
 
   // ── Composicao do passivo (100% stacked area) ──
   const compOption = React.useMemo<EChartsOption>(() => {
@@ -685,10 +729,61 @@ function EvolucaoContent({
 
       {/* Hero: Evolucao do PL (2/3) + Composicao (1/3) */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div className="flex flex-col gap-2 lg:col-span-2">
+          {/* Controles do card: chips de classe (sync global) + granularidade
+              (sync global) + empilhado (local). */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {todasClasses.map((ci) => {
+                const ativa = classesSel.length === 0 || classesSel.includes(ci.classe)
+                return (
+                  <button
+                    key={ci.classe}
+                    type="button"
+                    onClick={() => onToggleClasse(ci.classe)}
+                    aria-pressed={ativa}
+                    className={cx(
+                      "inline-flex items-center gap-1.5 rounded-[4px] border px-2 py-1 text-[12px] transition-colors",
+                      ativa
+                        ? "border-gray-300 bg-white text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-50"
+                        : "border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-600",
+                    )}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="size-2 rounded-[2px]"
+                      style={{
+                        backgroundColor: ativa ? CLASSE_COLOR[ci.classe] : "transparent",
+                        boxShadow: ativa ? undefined : `inset 0 0 0 1px ${CLASSE_COLOR[ci.classe]}`,
+                      }}
+                    />
+                    {ci.label}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <SegmentSwitch<EvolucaoGranularidade>
+                options={[
+                  { value: "mensal", label: "Mensal" },
+                  { value: "diaria", label: "Diaria" },
+                ]}
+                value={granularidade}
+                onChange={setGranularidade}
+              />
+              <SegmentSwitch<"stacked" | "overlay">
+                options={[
+                  { value: "stacked", label: "Empilhado" },
+                  { value: "overlay", label: "Sobreposto" },
+                ]}
+                value={plStacked ? "stacked" : "overlay"}
+                onChange={(v) => setPlStacked(v === "stacked")}
+              />
+            </div>
+          </div>
           <EChartsCard
             title="Evolucao do PL"
-            caption="Patrimonio liquido por classe (empilhado)"
+            caption={`Patrimonio liquido por classe${ultimaData ? ` · ultima posicao ${fmtDataCurta(ultimaData)}` : ""}`}
             option={plOption}
             height={320}
             loading={loading}
