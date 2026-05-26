@@ -4724,7 +4724,107 @@ function _coerceCosifRowsResponse(r: CosifRowsResponseRaw): CosifRowsResponse {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Controladoria · Evolucao Patrimonial — serie temporal do PL do passivo.
+// Backend serializa float (display), entao consumimos `number` direto (sem
+// coerce string->number). Espelha
+// backend/app/modules/controladoria/schemas/evolucao_patrimonial.py
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type EvolucaoClasse = "sub" | "mez" | "sr"
+export type EvolucaoGranularidade = "diaria" | "mensal"
+
+export type EvolucaoSeriePontoClasse = {
+  classe:              EvolucaoClasse
+  patrimonio:          number
+  quantidade:          number
+  valor_cota:          number
+  variacao_diaria_pct: number
+  variacao_mensal_pct: number
+  entradas:            number
+  saidas:              number
+  captacao_liquida:    number
+  pct_cdi:             number | null
+  rentab_real_cdi_pct: number | null
+}
+
+export type EvolucaoSeriePonto = {
+  data:            string  // YYYY-MM-DD
+  pl_total:        number
+  cdi_retorno_pct: number | null
+  classes:         EvolucaoSeriePontoClasse[]
+}
+
+export type EvolucaoClasseInfo = {
+  classe:                 EvolucaoClasse
+  label:                  string
+  carteira_cliente_nome:  string
+  primeiro_dia:           string
+  ultimo_dia:             string
+}
+
+export type EvolucaoResumoClasse = {
+  classe:                   EvolucaoClasse
+  label:                    string
+  pl_inicio:                number
+  pl_atual:                 number
+  valor_cota_inicio:        number
+  valor_cota_atual:         number
+  rentab_periodo_pct:       number | null
+  captacao_liquida_periodo: number
+  pct_cdi_ultimo:           number | null
+  participacao_pct:         number | null
+}
+
+export type EvolucaoKpis = {
+  pl_total_inicio:         number
+  pl_total_atual:          number
+  pl_total_delta_pct:      number | null
+  captacao_liquida_periodo: number
+  subordinacao_pct:        number | null
+  rentab_sub_periodo_pct:  number | null
+  pct_cdi_sub_ultimo:      number | null
+}
+
+export type EvolucaoProveniencia = {
+  fonte:          string
+  relatorio:      string
+  atualizado_em:  string | null
+  gaps_ignorados: number
+}
+
+export type EvolucaoPatrimonialResponse = {
+  fundo_id:            string
+  fundo_nome:          string
+  periodo_inicio:      string
+  periodo_fim:         string
+  granularidade:       EvolucaoGranularidade
+  classes_disponiveis: EvolucaoClasseInfo[]
+  serie:               EvolucaoSeriePonto[]
+  resumo_por_classe:   EvolucaoResumoClasse[]
+  kpis:                EvolucaoKpis
+  proveniencia:        EvolucaoProveniencia
+}
+
 export const controladoria = {
+  evolucaoPatrimonialSerie: async (opts: {
+    fundoId:        string
+    periodoInicio?: string  // YYYY-MM-DD
+    periodoFim?:    string  // YYYY-MM-DD
+    granularidade?: EvolucaoGranularidade
+    classes?:       EvolucaoClasse[]
+  }): Promise<EvolucaoPatrimonialResponse> => {
+    const params = new URLSearchParams({ fundo_id: opts.fundoId })
+    if (opts.periodoInicio) params.set("periodo_inicio", opts.periodoInicio)
+    if (opts.periodoFim) params.set("periodo_fim", opts.periodoFim)
+    if (opts.granularidade) params.set("granularidade", opts.granularidade)
+    for (const c of opts.classes ?? []) params.append("classes", c)
+    // float no backend -> number direto, sem coerce.
+    return apiClient.get<EvolucaoPatrimonialResponse>(
+      `/controladoria/evolucao-patrimonial/serie?${params.toString()}`,
+    )
+  },
+
   cotaSubVariacaoDiaria: async (
     fundoId: string,
     data: string,           // YYYY-MM-DD

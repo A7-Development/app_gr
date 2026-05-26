@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.modules.controladoria.api import (
     cota_sub,
     dre,
+    evolucao_patrimonial,
     qitech_estoque_carteira,
     reports,
 )
@@ -13,6 +14,9 @@ router = APIRouter()
 
 # L2 Cota Sub — analise da cota subordinada do FIDC.
 router.include_router(cota_sub.router)
+
+# L2 Evolucao Patrimonial — serie temporal do PL do passivo (todas as classes).
+router.include_router(evolucao_patrimonial.router)
 
 # L2 DRE — Demonstrativo do Resultado do Exercicio. Le silver wh_dre_mensal
 # populada pelo ETL Bitfin (bronze + classifier, ver commit 4d5399e).

@@ -268,8 +268,8 @@ export const MODULES: ModuleDefinition[] = [
         enabled: true,
         icon: RiPieChart2Line,
         children: [
-          { name: "Cota Sub", href: "/controladoria/cota-sub", enabled: true },
-          { name: "Cotas Sr/Mez", href: "/controladoria/cotas-sr-mez", enabled: false },
+          { name: "Variacao da Cota", href: "/controladoria/cota-sub", enabled: true },
+          { name: "Evolucao Patrimonial", href: "/controladoria/evolucao-patrimonial", enabled: true },
           { name: "Gatilhos", href: "/controladoria/gatilhos", enabled: false },
         ],
       },

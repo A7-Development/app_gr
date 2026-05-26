@@ -847,9 +847,9 @@ export default function CotaSubPage() {
         {/* Title row (70px) — banda branca unificada com a toolbar abaixo */}
         <div className="shrink-0 bg-white px-6 pt-3.5 pb-3 dark:bg-gray-950">
           <PageHeader
-            title="Cota Subordinada"
+            title="Variacao da Cota"
             info="Analise diaria comparativa (D-1 vs D0). ΔCota Sub = ΔAtivo − ΔPassivo Contabil − ΔEquity (Mez+Sr). Foco em explicar visualmente o saldo do dia e os eventos que mais contribuiram."
-            subtitle="Controladoria · Variacao Diaria"
+            subtitle="Controladoria · Patrimonio e Cotas"
             actions={
               <DashboardHeaderActions
                 ai={{ open: ai.open, onToggle: ai.toggle }}
