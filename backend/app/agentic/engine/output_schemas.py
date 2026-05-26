@@ -226,7 +226,7 @@ class SanityCheck(BaseModel):
 
     passou: bool = Field(description="True se residuo_brl < tolerancia (R$ 1).")
     residuo_brl: float = Field(
-        description="(ΔPL deduzido) − (ΔPL fonte MEC). Erro REAL do dia, nao "
+        description="(ΔPL deduzido) - (ΔPL fonte MEC). Erro REAL do dia, nao "
                     "snapshot acumulado.",
     )
     pl_deduzido_delta: float = Field(description="Δ do PL calculado pelo granular.")
@@ -260,6 +260,11 @@ class PapelMencionado(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     seu_numero: str
+    numero_documento: str = Field(
+        default="",
+        description="Numero do documento/titulo (ex.: '39805'). PREFERIR este na "
+                    "narrativa e na UI em vez do seu_numero/DID.",
+    )
     cedente_nome: str
     sacado_nome: str
     delta_brl: float = Field(description="Impacto do papel na categoria.")

@@ -4312,7 +4312,8 @@ export type AgenteCategoriaDelta = {
 }
 
 export type AgentePapelMencionado = {
-  seu_numero:     string
+  seu_numero:       string
+  numero_documento: string
   cedente_nome:   string
   sacado_nome:    string
   delta_brl:      number
