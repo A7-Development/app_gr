@@ -588,18 +588,35 @@ function EvolucaoContent({
       }
     }
     const field = varLente === "diaria" ? "variacao_diaria_pct" : "variacao_mensal_pct"
+    // Rotulo de dados so com poucos pontos (mensal ~13); em serie densa
+    // (diaria / "Tudo") os rotulos se sobrepoem — desliga.
+    const showLabels = serie.length <= 16
     return {
-      grid: { top: 16, right: 12, bottom: 48, left: 48 },
+      grid: { top: 24, right: 12, bottom: 48, left: 48 },
       xAxis: { type: "category", data: xLabels, axisTick: { show: false } },
       yAxis: { type: "value", axisLabel: { formatter: "{value}%" } },
       series: classesDisp.map((ci) => ({
         name: ci.label,
-        type: "bar",
+        type: "line",
+        smooth: false,
+        symbol: "circle",
+        symbolSize: 5,
+        lineStyle: { width: 2, color: CLASSE_COLOR[ci.classe] },
         itemStyle: { color: CLASSE_COLOR[ci.classe] },
+        label: {
+          show: showLabels,
+          position: "top",
+          fontSize: 10,
+          color: CLASSE_COLOR[ci.classe],
+          formatter: (p: { value: unknown }) => {
+            if (p.value === null || p.value === undefined) return ""
+            return `${Number(p.value).toFixed(1)}%`
+          },
+        },
         data: pivot(serie, ci.classe, field, false),
       })),
       legend: { bottom: 0, icon: "circle", itemWidth: 8, itemHeight: 8 },
-      tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => (typeof v === "number" ? `${v.toFixed(2)}%` : String(v)) },
+      tooltip: { trigger: "axis", valueFormatter: (v) => (typeof v === "number" ? `${v.toFixed(2)}%` : String(v)) },
     }
   }, [serie, xLabels, classesDisp, varLente])
 
