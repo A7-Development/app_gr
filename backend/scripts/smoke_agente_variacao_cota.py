@@ -14,9 +14,12 @@
      - papel DID99746 aparece em papeis_mencionados com natureza
        'mutacao_silenciosa'
 
-  3. 2026-05-20 (padrao LOTRAN — 3 papeis com abatimento off-record):
+  3. 2026-05-20 (padrao LOTRAN — 3 papeis com abatimento off-record +
+     APORTE de capital na Cota Mezanino):
      - sinais_alerta inclui pelo menos 1 cedente_reincidente do LOTRAN
      - explicacao da DC menciona LOTRAN ou padrao_abatimento_offrecord
+     - [prompt v4] separa o aporte de R$ 119.546 da Mezanino (entrada de
+       R$ 120k, ~100 cotas) da remuneracao de R$ 1.954 da cota
 
 Read-only — seguro mesmo em dev=prod.
 
@@ -308,6 +311,36 @@ async def _cenario_3_lotran(db_session, ctx_base) -> None:
         )
     else:
         _info("PDD nao entrou no Nivel 3 (rank baixo) — assert de classificacao pulado")
+
+    # ─── NOVO (prompt v4): aporte de capital na Cota Mezanino ────────────────
+    # Em 20/05 a Cota Mezanino (passivo na otica Sub) subiu +R$ 121.499,89,
+    # dos quais R$ 119.545,73 foram APORTE de cotistas (entrada R$ 120k, ~100
+    # cotas novas) e so R$ 1.954,16 foi remuneracao da cota. O agente DEVE
+    # separar capital de valorizacao via get_decomposicao_classes. Estes
+    # asserts so passam com prompt >= v4 ativo (v3 nao separava).
+    mez_cat = next((c for c in n2 if c.get("key") == "mezanino"), None)
+    _check(
+        mez_cat is not None and mez_cat.get("delta", 0) > 100_000,
+        f"Categoria Mezanino com Δ > R$ 100k (atual: "
+        f"{mez_cat.get('delta') if mez_cat else 'ausente'})",
+    )
+    texto_v4 = (todas_narrativas + " " + sumario).lower()
+    _check(
+        "aporte" in texto_v4
+        and any(tok in texto_v4 for tok in ("119", "120", "121")),
+        "Narrativa/sumario separa o APORTE de capital da Mezanino (cita ~R$ 119-121k)",
+    )
+    exp_mez = next(
+        (e for e in explicacoes if e.get("categoria_key") == "mezanino"), None
+    )
+    if exp_mez is not None:
+        _check(
+            exp_mez.get("classificacao_principal") == "aporte_classe",
+            f"Explicacao da Mezanino = aporte_classe (atual: "
+            f"{exp_mez.get('classificacao_principal')})",
+        )
+    else:
+        _info("Mezanino nao entrou no Nivel 3 — assert de classificacao pulado")
 
 
 async def main() -> None:

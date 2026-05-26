@@ -357,6 +357,7 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
             "get_drill_dc",
             "get_drill_pdd",
             "get_drill_cpr",
+            "get_decomposicao_classes",
             "get_eventos_liquidacao_adjacentes",
             "get_historico_estoque_papel",
             "get_papeis_mesmo_cedente_sacado",

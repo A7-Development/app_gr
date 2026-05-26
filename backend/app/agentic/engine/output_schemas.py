@@ -297,6 +297,11 @@ class ExplicacaoCategoria(BaseModel):
         "constituicao_pdd",
         "reversao_pdd",
         "aporte_engaiolado",
+        # Eventos de capital numa classe de cota (Sub/Mez/Sr): subscricao ou
+        # resgate de cotistas, distintos do custo/remuneracao da cota. Ver
+        # tool get_decomposicao_classes (efeito_capital vs efeito_valorizacao).
+        "aporte_classe",
+        "resgate_classe",
         "evento_pontual_explicado",
         "evento_pontual_sem_explicacao",
         "outro",
