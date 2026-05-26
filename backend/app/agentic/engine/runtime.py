@@ -1148,6 +1148,21 @@ async def _run_tool_loop(
             }
         )
 
+        # Narracao "em voz alta": o texto que o modelo escreve ANTES de
+        # disparar as tools desta rodada e o raciocinio dele. Registra como
+        # step REASONING pra surfacear ao vivo no AgentLiveStatus (via
+        # session._on_step). So quando ha session — caminho sem session
+        # (testes/single-shot) ignora.
+        if session is not None:
+            interim_text = "".join(
+                block.text for block in response.content if block.type == "text"
+            ).strip()
+            if interim_text:
+                session.record_reasoning(
+                    agent_full_id=agent_full_id or spec.name,
+                    text=interim_text,
+                )
+
         tool_results: list[dict[str, Any]] = []
         for block in response.content:
             if block.type != "tool_use":
