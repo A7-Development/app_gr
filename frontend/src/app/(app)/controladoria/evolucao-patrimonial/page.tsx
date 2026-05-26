@@ -477,8 +477,8 @@ function EvolucaoContent({
   const plOption = React.useMemo<EChartsOption>(() => {
     const ativas = CLASSE_STACK_ORDER.filter((c) => classesDisp.some((ci) => ci.classe === c))
     return {
-      // right amplo: acomoda o endLabel (rotulo no ultimo ponto).
-      grid: { top: 16, right: 92, bottom: 48, left: 60 },
+      // right amplo: acomoda o endLabel (legenda + rotulo no ultimo ponto).
+      grid: { top: 16, right: 156, bottom: 24, left: 60 },
       xAxis: { type: "category", data: xLabels, axisTick: { show: false } },
       yAxis: {
         type: "value",
@@ -493,18 +493,24 @@ function EvolucaoContent({
         areaStyle: { opacity: plStacked ? 0.6 : 0.12 },
         lineStyle: { width: plStacked ? 1 : 2, color: CLASSE_COLOR[c] },
         itemStyle: { color: CLASSE_COLOR[c] },
-        // Rotulo de dados no ultimo ponto disponivel da serie.
+        // Legenda + rotulo juntos no fim a direita: nome da classe + valor no
+        // ultimo ponto. Substitui a legenda inferior (removida abaixo).
         endLabel: {
           show: true,
-          fontSize: 10,
+          fontSize: 11,
+          fontWeight: 600,
           color: CLASSE_COLOR[c],
-          formatter: (p: { value: unknown }) =>
-            p.value === null || p.value === undefined ? "" : brlCompact(Number(p.value)),
+          formatter: (p: { seriesName?: string; value: unknown }) =>
+            p.value === null || p.value === undefined
+              ? ""
+              : `${p.seriesName ?? ""}  ${brlCompact(Number(p.value))}`,
         },
         labelLayout: { moveOverlap: "shiftY" },
         data: pivot(serie, c, "patrimonio", true),
       })),
-      legend: { bottom: 0, icon: "circle", itemWidth: 8, itemHeight: 8 },
+      // Legenda inferior removida — a identificacao das series vive no
+      // endLabel colorido a direita.
+      legend: { show: false },
       tooltip: {
         trigger: "axis",
         valueFormatter: (v) => (typeof v === "number" ? brlCompact(v) : String(v)),
