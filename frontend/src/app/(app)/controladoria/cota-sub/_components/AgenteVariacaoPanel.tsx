@@ -455,7 +455,7 @@ function CategoriaRow({ cat, explicacao }: { cat: AgenteCategoriaDelta; explicac
                 {explicacao.papeis_mencionados.map((p, i) => (
                   <li key={i} className="flex flex-col gap-0.5 rounded border border-gray-200 bg-white px-2 py-1.5 dark:border-gray-800 dark:bg-gray-950">
                     <div className="flex items-center justify-between gap-2 tabular-nums">
-                      <span className="font-mono text-[11px] text-gray-700 dark:text-gray-300">{p.seu_numero}</span>
+                      <span title={p.seu_numero ? `DID ${p.seu_numero}` : undefined} className="font-mono text-[11px] text-gray-700 dark:text-gray-300">{p.numero_documento || p.seu_numero}</span>
                       <span className={cx(
                         "font-medium",
                         p.delta_brl > 0 ? "text-emerald-700 dark:text-emerald-400" : p.delta_brl < 0 ? "text-red-700 dark:text-red-400" : "text-gray-400",
