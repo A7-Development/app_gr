@@ -41,6 +41,9 @@ from app.modules.controladoria.schemas.cota_sub import (
 )
 from app.modules.controladoria.services.cota_sub import (
     ZERO,
+    _is_mezanino,
+    _is_senior,
+    _is_sub_jr,
     _mec_classes,
     _sum_compromissada,
     _sum_cpr_snapshot,
@@ -53,6 +56,7 @@ from app.modules.controladoria.services.cota_sub import (
     _sum_titulos_publicos,
 )
 from app.modules.integracoes.public import dia_util_anterior_qitech
+from app.warehouse.mec_evolucao_cotas import MecEvolucaoCotas
 from app.warehouse.saldo_conta_corrente import SaldoContaCorrente
 
 
@@ -238,3 +242,169 @@ async def compute_balanco_patrimonial(
         residuo_identidade_d0=pl_deduzido_d0 - pl_fonte_d0,
         residuo_identidade_delta=(pl_deduzido_d0 - pl_deduzido_d1) - (pl_fonte_d0 - pl_fonte_d1),
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Decomposicao por classe de cota — capital (aporte/resgate) vs valorizacao
+# ─────────────────────────────────────────────────────────────────────────────
+
+_TOL_CAPITAL = Decimal("1.0")  # abaixo disso, Δqtd e ruido de arredondamento
+
+
+def _classe_de(carteira_nome: str, ua_nome: str) -> str | None:
+    """Roteia `carteira_cliente_nome` -> sub_jr | mezanino | senior | None."""
+    if _is_sub_jr(carteira_nome, ua_nome):
+        return "sub_jr"
+    if _is_mezanino(carteira_nome):
+        return "mezanino"
+    if _is_senior(carteira_nome):
+        return "senior"
+    return None
+
+
+async def compute_decomposicao_classes_mec(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    ua_id: UUID,
+    data_d0: date,
+    data_d1: date | None = None,
+) -> dict:
+    """Decompoe o ΔPL de CADA classe de cota (Sub Jr / Mezanino / Senior) entre
+    D-1 e D0 em efeito-CAPITAL (aporte/resgate) vs efeito-VALORIZACAO
+    (remuneracao/custo da cota).
+
+    Motivacao (2026-05-26): na otica do PL Sub Jr, Senior e Mezanino sao
+    PASSIVOS. Quando o PL de uma dessas classes sobe, o agente de variacao
+    precisa distinguir (a) APORTE de cotistas (evento de capital — aumenta o
+    passivo e dilui a Sub) de (b) apenas REMUNERACAO da cota (custo financeiro
+    do dia). Sem isso, +R$ 121k na Mezanino e indistinguivel de custo. Caso
+    canonico: REALINVEST 20/05/2026 (Mezanino +R$ 121.499,89 = aporte R$
+    119.545,73 + remuneracao R$ 1.954,16).
+
+    Decomposicao (robusta a multiplas series por classe):
+
+        efeito_capital      = Σ(entradas - saidas + aporte - retirada)  [fluxo QiTech D0]
+        efeito_valorizacao  = Δpatrimonio - efeito_capital             [residuo]
+        cross-check (qtd)   = (Σq0 - Σq1) * valor_cota_d0  ≈ efeito_capital
+
+    O efeito_capital usa os fluxos reportados pela QiTech no MEC (verdade do
+    evento de capital); a decomposicao por quantidade entra so como conferencia.
+
+    Returns:
+        dict com `data`, `data_anterior`, `fundo_nome` e `classes` (lista de
+        dicts por classe, ordenada por |Δpatrimonio| decrescente). Cada classe:
+        patrimonio/quantidade/valor_cota (d1/d0/delta), fluxos, efeito_capital,
+        efeito_valorizacao, classificacao (`aporte`|`resgate`|`apenas_valorizacao`),
+        houve_evento_capital, e cross_check_qtd.
+    """
+    ua = (
+        await db.execute(
+            select(UnidadeAdministrativa)
+            .where(UnidadeAdministrativa.tenant_id == tenant_id)
+            .where(UnidadeAdministrativa.id == ua_id)
+        )
+    ).scalar_one_or_none()
+    if ua is None:
+        raise ValueError(f"Unidade Administrativa {ua_id} nao encontrada")
+
+    d1 = data_d1 or await dia_util_anterior_qitech(
+        db, tenant_id=tenant_id, ua_id=ua_id, data_d0=data_d0,
+    )
+
+    def _empty() -> dict[str, Decimal | int]:
+        return {
+            "patrimonio": ZERO, "quantidade": ZERO, "n_rows": 0,
+            "entradas": ZERO, "saidas": ZERO, "aporte": ZERO, "retirada": ZERO,
+        }
+
+    async def _load(data: date) -> dict[str, dict]:
+        stmt = (
+            select(
+                MecEvolucaoCotas.carteira_cliente_nome,
+                MecEvolucaoCotas.patrimonio,
+                MecEvolucaoCotas.quantidade,
+                MecEvolucaoCotas.entradas,
+                MecEvolucaoCotas.saidas,
+                MecEvolucaoCotas.aporte,
+                MecEvolucaoCotas.retirada,
+            )
+            .where(MecEvolucaoCotas.tenant_id == tenant_id)
+            .where(MecEvolucaoCotas.unidade_administrativa_id == ua_id)
+            .where(MecEvolucaoCotas.data_posicao == data)
+        )
+        acc = {"sub_jr": _empty(), "mezanino": _empty(), "senior": _empty()}
+        for nome, pat, qtd, ent, sai, ap, ret in (await db.execute(stmt)).all():
+            classe = _classe_de(nome, ua.nome)
+            if classe is None:
+                continue
+            a = acc[classe]
+            a["patrimonio"] += Decimal(pat or 0)
+            a["quantidade"] += Decimal(qtd or 0)
+            a["entradas"] += Decimal(ent or 0)
+            a["saidas"] += Decimal(sai or 0)
+            a["aporte"] += Decimal(ap or 0)
+            a["retirada"] += Decimal(ret or 0)
+            a["n_rows"] += 1
+        return acc
+
+    snap_d1 = await _load(d1)
+    snap_d0 = await _load(data_d0)
+
+    labels = {"sub_jr": "Cota Sub Jr", "mezanino": "Cota Mezanino", "senior": "Cota Senior"}
+    classes_out: list[dict] = []
+    for key in ("sub_jr", "mezanino", "senior"):
+        a1, a0 = snap_d1[key], snap_d0[key]
+        if a1["n_rows"] == 0 and a0["n_rows"] == 0:
+            continue  # classe inexistente neste fundo
+
+        pat_d1, pat_d0 = a1["patrimonio"], a0["patrimonio"]
+        qtd_d1, qtd_d0 = a1["quantidade"], a0["quantidade"]
+        delta_pl = pat_d0 - pat_d1
+        delta_qtd = qtd_d0 - qtd_d1
+
+        vcota_d1 = (pat_d1 / qtd_d1) if qtd_d1 else ZERO
+        vcota_d0 = (pat_d0 / qtd_d0) if qtd_d0 else ZERO
+
+        # Efeito CAPITAL = fluxo de cotistas reportado pela QiTech no dia D0.
+        efeito_capital = a0["entradas"] - a0["saidas"] + a0["aporte"] - a0["retirada"]
+        # Efeito VALORIZACAO = o que sobra (remuneracao/custo da cota).
+        efeito_valorizacao = delta_pl - efeito_capital
+
+        if abs(efeito_capital) < _TOL_CAPITAL:
+            classificacao = "apenas_valorizacao"
+        elif efeito_capital > 0:
+            classificacao = "aporte"
+        else:
+            classificacao = "resgate"
+
+        classes_out.append({
+            "classe": key,
+            "label": labels[key],
+            "patrimonio_d1": pat_d1,
+            "patrimonio_d0": pat_d0,
+            "delta_pl": delta_pl,
+            "quantidade_d1": qtd_d1,
+            "quantidade_d0": qtd_d0,
+            "delta_quantidade": delta_qtd,
+            "valor_cota_d1": vcota_d1,
+            "valor_cota_d0": vcota_d0,
+            "entradas": a0["entradas"],
+            "saidas": a0["saidas"],
+            "aporte": a0["aporte"],
+            "retirada": a0["retirada"],
+            "efeito_capital": efeito_capital,
+            "efeito_valorizacao": efeito_valorizacao,
+            "classificacao": classificacao,
+            "houve_evento_capital": abs(efeito_capital) >= _TOL_CAPITAL,
+            "cross_check_capital_por_qtd": delta_qtd * vcota_d0,
+            "cross_check_residuo": efeito_capital - (delta_qtd * vcota_d0),
+        })
+
+    classes_out.sort(key=lambda c: abs(c["delta_pl"]), reverse=True)
+    return {
+        "fundo_nome": ua.nome,
+        "data": data_d0,
+        "data_anterior": d1,
+        "classes": classes_out,
+    }

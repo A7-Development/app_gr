@@ -1,7 +1,9 @@
 """Tools agenticas pra analise da variacao da Cota Sub Jr.
 
-8 tools registradas (4 wrappers de services existentes + 4 novas pra
+9 tools registradas (5 wrappers de services existentes + 4 novas pra
 cruzamentos que o agente faz manualmente em conversas com Ricardo).
+O 5o wrapper (get_decomposicao_classes, 2026-05-26) decompoe o ΔPL de
+cada classe de cota em efeito-capital (aporte/resgate) vs valorizacao.
 
 **Convencao de scope:**
 
@@ -34,7 +36,6 @@ from sqlalchemy import select
 from app.agentic._scope import ScopedContext
 from app.agentic.tools._base import register_tool
 from app.core.enums import Module, Permission
-
 
 # ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -203,6 +204,50 @@ async def get_drill_cpr(scope: ScopedContext, args: dict[str, Any]) -> str:
 
     ua_id, data_d0 = _parse_scope_inputs(scope)
     r = await compute_drill_cpr(
+        scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
+    )
+    return _to_json(r)
+
+
+# ─── Tool 4b: decomposicao por classe de cota (capital vs valorizacao) ───
+
+
+@register_tool(
+    name="get_decomposicao_classes",
+    description=(
+        "Decompoe o ΔPL de CADA classe de cota (Sub Jr, Mezanino, Senior) "
+        "entre D-1 e D0 em efeito-CAPITAL (aporte/resgate de cotistas) vs "
+        "efeito-VALORIZACAO (remuneracao/custo da cota no dia). Na otica do "
+        "PL Sub Jr, Senior e Mezanino sao PASSIVOS — quando o PL de uma "
+        "dessas classes sobe (ex.: categoria 'senior' ou 'mezanino' com Δ "
+        "material no balanco), USE esta tool pra saber se foi aporte (entrou "
+        "dinheiro novo, aumentou o passivo, diluiu a Sub) ou apenas custo "
+        "financeiro da cota. Retorna por classe: patrimonio/quantidade/"
+        "valor_cota (d1/d0), fluxos (entradas/saidas/aporte/retirada), "
+        "efeito_capital, efeito_valorizacao e classificacao "
+        "(aporte|resgate|apenas_valorizacao). efeito_capital vem dos fluxos "
+        "reportados pela QiTech; efeito_valorizacao = ΔPL - efeito_capital. "
+        "Cross-check por quantidade incluido. SEMPRE chame quando a categoria "
+        "senior ou mezanino aparecer no Nivel 3."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+    module=Module.CONTROLADORIA,
+    min_permission=Permission.READ,
+    cost_hint="cheap",
+    cacheable=True,
+)
+async def get_decomposicao_classes(scope: ScopedContext, args: dict[str, Any]) -> str:
+    """Wrap de compute_decomposicao_classes_mec. ua_id+data vem do scope."""
+    from app.modules.controladoria.services.balanco_patrimonial import (
+        compute_decomposicao_classes_mec,
+    )
+
+    ua_id, data_d0 = _parse_scope_inputs(scope)
+    r = await compute_decomposicao_classes_mec(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
     return _to_json(r)
