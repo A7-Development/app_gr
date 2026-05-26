@@ -597,6 +597,17 @@ async def _upsert_silver(
         )
 
 
+async def persist_serasa_pj_silver(
+    db: AsyncSession, rows: SerasaPjMappedRows
+) -> None:
+    """UPSERT silver reutilizavel (header + filhas) — wrapper publico de
+    `_upsert_silver`. Usado pelo relay Bitfin (`adapters/erp/bitfin/
+    serasa_relay.py`) pra gravar no mesmo wh_serasa_pj_* sem duplicar a logica.
+    O caller commita.
+    """
+    await _upsert_silver(db, rows)
+
+
 async def _upsert_consulta_returning_id(
     db: AsyncSession,
     row: dict[str, Any],

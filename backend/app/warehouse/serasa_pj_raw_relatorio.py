@@ -20,6 +20,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    BigInteger,
     DateTime,
     ForeignKey,
     Index,
@@ -49,6 +50,18 @@ class SerasaPjRawRelatorio(Base):
             "tenant_id",
             "cnpj",
             text("fetched_at DESC"),
+        ),
+        # Relay Bitfin (2026-05-26): idempotencia + watermark. Composto por
+        # (tenant_id, bitfin_consulta_id) porque cada UNLTD_<cliente> tem sua
+        # propria sequencia de ConsultaFinanceiraId — o id sozinho colidiria
+        # entre tenants. Parcial: so linhas vindas do relay (bitfin_consulta_id
+        # NOT NULL); consultas diretas a Serasa ficam de fora.
+        Index(
+            "uq_serasa_pj_raw_bitfin_consulta",
+            "tenant_id",
+            "bitfin_consulta_id",
+            unique=True,
+            postgresql_where=text("bitfin_consulta_id IS NOT NULL"),
         ),
     )
 
@@ -119,4 +132,12 @@ class SerasaPjRawRelatorio(Base):
     )
     fetched_by_version: Mapped[str] = mapped_column(
         String(128), nullable=False
+    )
+
+    # Origem Bitfin relay (2026-05-26): quando a consulta veio replicada do
+    # Bitfin (dbo.ConsultaFinanceira) em vez de chamada direta a Serasa,
+    # guarda o ConsultaFinanceiraId de origem. NULL = consulta direta (API do
+    # GR). Serve de chave de idempotencia + watermark (MAX por tenant) do relay.
+    bitfin_consulta_id: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
     )
