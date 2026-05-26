@@ -8,9 +8,14 @@
 //
 
 import * as React from "react"
-import { Controller, useForm } from "react-hook-form"
+import { Controller, useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { RiCheckLine, RiLoader4Line } from "@remixicon/react"
+import {
+  RiAlertLine,
+  RiCheckLine,
+  RiLoader4Line,
+  RiToolsLine,
+} from "@remixicon/react"
 
 import { Button } from "@/components/tremor/Button"
 import { Divider } from "@/components/tremor/Divider"
@@ -30,6 +35,7 @@ import type {
   AIExpertiseVersionInfo,
   AIPersonaVersionInfo,
   AIPromptVersionInfo,
+  AIToolInfo,
 } from "@/lib/api-client"
 import {
   agentDefinitionCreateSchema,
@@ -187,6 +193,238 @@ function ExpertisePicker({ available, selected, onChange }: ExpertisePickerProps
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// Tool picker (escopado por modulo + cross_module)
+// ───────────────────────────────────────────────────────────────────────────
+//
+// Semantica do valor (espelha agent_definition.allowed_tools no backend):
+//   null  -> override DESLIGADO: usa as tools padrao do CATALOG (codigo).
+//   []    -> override LIGADO sem nenhuma tool (agente sem ferramentas).
+//   [...] -> override LIGADO com subset explicito.
+//
+// Gate de modulo (CLAUDE.md §11.3/§19): tools do proprio modulo do agente
+// sao sempre selecionaveis; tools de OUTRO modulo so podem ser ADICIONADAS
+// quando cross_module estiver ligado. Remover e sempre permitido (limpar
+// entradas "mortas"). O runtime reaplica o mesmo gate — a UI so antecipa.
+
+type ToolPickerProps = {
+  available: AIToolInfo[]
+  agentModule: string
+  crossModule: boolean
+  value: string[] | null
+  onChange: (next: string[] | null) => void
+}
+
+function ToolPicker({
+  available,
+  agentModule,
+  crossModule,
+  value,
+  onChange,
+}: ToolPickerProps) {
+  const overrideOn = value !== null
+  const selectedSet = new Set(value ?? [])
+
+  function toggle(name: string) {
+    const next = new Set(selectedSet)
+    if (next.has(name)) {
+      next.delete(name)
+    } else {
+      next.add(name)
+    }
+    onChange(Array.from(next))
+  }
+
+  // Tools fora do modulo do agente, atualmente selecionadas, enquanto
+  // cross_module esta desligado: nao serao carregadas em runtime.
+  const deadCrossModule = (value ?? []).filter((n) => {
+    const t = available.find((x) => x.name === n)
+    return t && t.module !== agentModule && !crossModule
+  })
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={overrideOn}
+          onChange={(e) => onChange(e.target.checked ? (value ?? []) : null)}
+          className="mt-0.5 size-4 rounded border-gray-300 dark:border-gray-700"
+        />
+        <div className="flex flex-col">
+          <span className="text-[13px] font-medium text-gray-900 dark:text-gray-100">
+            Sobrescrever tools do CATALOG
+          </span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            Desligado: usa as tools definidas em codigo (CATALOG). Ligue para
+            escolher o conjunto pela UI — sem deploy.
+          </span>
+        </div>
+      </label>
+
+      {!overrideOn ? null : available.length === 0 ? (
+        <FieldHint>
+          Nenhuma tool registrada. Tools nascem em codigo via{" "}
+          <code>@register_tool</code> (veja /admin/ia/tools).
+        </FieldHint>
+      ) : (
+        <ToolGroups
+          available={available}
+          agentModule={agentModule}
+          crossModule={crossModule}
+          selectedSet={selectedSet}
+          onToggle={toggle}
+        />
+      )}
+
+      {overrideOn && deadCrossModule.length > 0 && (
+        <div
+          className={cx(
+            "flex items-start gap-1.5 rounded-md border p-2 text-[12px]",
+            "border-amber-200 bg-amber-50 text-amber-900",
+            "dark:border-amber-900/50 dark:bg-amber-500/10 dark:text-amber-200",
+          )}
+        >
+          <RiAlertLine className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          <span>
+            {deadCrossModule.length} tool(s) de outro modulo selecionada(s) NAO
+            serao carregadas enquanto &quot;Permitir invocacao cross-modulo&quot;
+            estiver desligado: <code>{deadCrossModule.join(", ")}</code>. Ligue
+            o cross-modulo ou remova-as.
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ToolGroups({
+  available,
+  agentModule,
+  crossModule,
+  selectedSet,
+  onToggle,
+}: {
+  available: AIToolInfo[]
+  agentModule: string
+  crossModule: boolean
+  selectedSet: Set<string>
+  onToggle: (name: string) => void
+}) {
+  // Agrupa por modulo; o modulo do agente vem primeiro.
+  const grouped = new Map<string, AIToolInfo[]>()
+  for (const t of available) {
+    const list = grouped.get(t.module) ?? []
+    list.push(t)
+    grouped.set(t.module, list)
+  }
+  const moduleOrder = Array.from(grouped.keys()).sort((a, b) => {
+    if (a === agentModule) return -1
+    if (b === agentModule) return 1
+    return a.localeCompare(b)
+  })
+
+  return (
+    <div className="flex flex-col gap-3 max-h-[320px] overflow-y-auto rounded border border-gray-200 dark:border-gray-800 p-3">
+      {moduleOrder.map((mod) => {
+        const isOwn = mod === agentModule
+        const gated = !isOwn && !crossModule
+        return (
+          <div key={mod}>
+            <div className="mb-1.5 flex items-center gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                {mod}
+                {isOwn && " (modulo do agente)"}
+              </span>
+              {gated && (
+                <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                  requer cross-modulo
+                </span>
+              )}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {(grouped.get(mod) ?? []).map((t) => {
+                const checked = selectedSet.has(t.name)
+                // So bloqueia ADICIONAR cross-modulo; remover e sempre ok.
+                const disabled = gated && !checked
+                return (
+                  <label
+                    key={t.name}
+                    className={cx(
+                      "flex items-start gap-2 rounded px-2 py-1",
+                      disabled
+                        ? "cursor-not-allowed opacity-50"
+                        : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900",
+                      checked && "bg-blue-50 dark:bg-blue-500/10",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={disabled}
+                      onChange={() => onToggle(t.name)}
+                      className="mt-0.5 size-4 rounded border-gray-300 dark:border-gray-700"
+                    />
+                    <div className="flex flex-col">
+                      <span className="font-mono text-[13px] font-medium text-gray-900 dark:text-gray-100">
+                        {t.name}
+                      </span>
+                      <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                        {t.description}
+                      </span>
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// `ToolField` conecta o picker ao form: le `cross_module` via useWatch
+// (vive na secao Governance, em ModelFields) e resolve o modulo do agente.
+function ToolField({
+  control,
+  tools,
+  agentModule,
+}: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  control: any
+  tools: AIToolInfo[]
+  agentModule: string
+}) {
+  const crossModule = useWatch({ control, name: "cross_module" }) ?? false
+  return (
+    <div>
+      <Label className="flex items-center gap-1.5">
+        <RiToolsLine className="size-3.5 text-gray-500" aria-hidden />
+        Tools (ferramentas)
+      </Label>
+      <Controller
+        name="allowed_tools"
+        control={control}
+        render={({ field }) => (
+          <ToolPicker
+            available={tools}
+            agentModule={agentModule}
+            crossModule={!!crossModule}
+            value={(field.value ?? null) as string[] | null}
+            onChange={field.onChange}
+          />
+        )}
+      />
+      <FieldHint>
+        Subset que o agente pode chamar em runtime. Criar tool nova continua
+        sendo codigo (<code>@register_tool</code> + deploy) — aqui voce so
+        escolhe entre as ja registradas.
+      </FieldHint>
+    </div>
+  )
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Form bodies (compartilhado entre Create/Edit)
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -195,6 +433,7 @@ type CommonFormProps = {
   expertises: AIExpertiseVersionInfo[]
   prompts: AIPromptVersionInfo[]
   models: AIAgentModelOption[]
+  tools: AIToolInfo[]
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -212,6 +451,7 @@ export function AgentCreateForm({
   expertises,
   prompts,
   models,
+  tools,
   onSubmit,
   onCancel,
   submitting,
@@ -234,9 +474,14 @@ export function AgentCreateForm({
       temperature: null,
       max_tokens: null,
       cross_module: false,
+      // null = override desligado (usa default do CATALOG).
+      allowed_tools: null,
       credit_hint: null,
     },
   })
+
+  // Modulo atual (campo do form) — escopa o ToolPicker.
+  const watchedModule = useWatch({ control, name: "module" }) ?? "credito"
 
   // Filtra apenas versoes ativas dos pickers
   const personasAtivas = personas.filter((p) => p.is_active)
@@ -312,6 +557,8 @@ export function AgentCreateForm({
         personas={personasAtivas}
         expertises={expertisesAtivas}
         prompts={promptsAtivos}
+        tools={tools}
+        agentModule={watchedModule}
       />
 
       <Divider />
@@ -351,6 +598,7 @@ export function AgentEditForm({
   expertises,
   prompts,
   models,
+  tools,
   onSubmit,
   onCancel,
   submitting,
@@ -371,6 +619,8 @@ export function AgentEditForm({
       temperature: agent.temperature,
       max_tokens: agent.max_tokens,
       cross_module: agent.cross_module,
+      // null preservado = override desligado (usa CATALOG); array = override ligado.
+      allowed_tools: agent.allowed_tools,
       credit_hint: agent.credit_hint,
     },
   })
@@ -415,6 +665,8 @@ export function AgentEditForm({
         personas={personasAtivas}
         expertises={expertisesAtivas}
         prompts={promptsAtivos}
+        tools={tools}
+        agentModule={agent.module}
       />
 
       <Divider />
@@ -441,7 +693,7 @@ export function AgentEditForm({
 // ───────────────────────────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function CompositionFields({ control, errors, personas, expertises, prompts }: any) {
+function CompositionFields({ control, errors, personas, expertises, prompts, tools, agentModule }: any) {
   return (
     <section className="flex flex-col gap-4">
       <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -534,6 +786,8 @@ function CompositionFields({ control, errors, personas, expertises, prompts }: a
         </FieldHint>
         <FieldError message={errors.prompt_name?.message} />
       </div>
+
+      <ToolField control={control} tools={tools ?? []} agentModule={agentModule} />
     </section>
   )
 }

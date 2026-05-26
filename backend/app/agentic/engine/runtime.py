@@ -282,6 +282,9 @@ async def _render_checklist_block(
 def _build_tools_for_agent(
     spec: SpecialistAgentSpec,
     scope: ScopedContext,
+    *,
+    allowed_tools: tuple[str, ...] | list[str] | None = None,
+    cross_module: bool = False,
 ) -> list[AgentTool]:
     """Resolve tools via ToolRegistry filtrado por scope + allowed list.
 
@@ -290,16 +293,24 @@ def _build_tools_for_agent(
     importacao de `app.agentic.tools.*`. Adicionar tool nova = novo
     arquivo com decorator, zero mudanca aqui.
 
-    `cross_module=True` enquanto F2.b nao trouxer o user-level RBAC
-    completo do invocador: hoje specialist agents sao chamados por nodes
-    do workflow Credito, que ja foram autorizados pela camada acima
-    (require_module). Quando AgentDefinition + permissions reais do user
-    chegarem, removemos o cross_module e a filtragem fica fina.
+    `allowed_tools`:
+        None  -> usa o default do CATALOG (`spec.tools`) — agentes curados
+                 em codigo. [] -> agente sem tools. [...] -> override da UI
+                 (editavel em `agent_definition.allowed_tools` sem deploy).
+
+    `cross_module` (CLAUDE.md §11.3 / §19): quando False (default da
+    AgentDefinition), o `get_available` aplica o filtro de modulo — o
+    agente so enxerga tools do proprio modulo. Cruzar modulo exige
+    `cross_module=True` explicito na definicao + auditoria. O caller passa
+    `resolved.cross_module`; agentes legados sem AgentDefinition (resolved
+    is None: extracao de documento, testes) mantem `cross_module=True` no
+    call site por back-compat — eram invocados por nodes ja autorizados.
     """
+    effective = list(allowed_tools) if allowed_tools is not None else list(spec.tools)
     return ToolRegistry.get_available(
         scope,
-        allowed=list(spec.tools),
-        cross_module=True,
+        allowed=effective,
+        cross_module=cross_module,
     )
 
 
@@ -966,7 +977,15 @@ async def _invoke_with_validation(
     tools = (
         tools_override
         if tools_override is not None
-        else _build_tools_for_agent(spec, scope)
+        else _build_tools_for_agent(
+            spec,
+            scope,
+            # Override de tools da AgentDefinition (None = usa spec.tools).
+            allowed_tools=resolved.allowed_tools if resolved is not None else None,
+            # Honra o gate de modulo da definicao; legado (resolved None)
+            # mantem o comportamento antigo (cross_module aberto).
+            cross_module=resolved.cross_module if resolved is not None else True,
+        )
     )
 
     client = AsyncAnthropic(api_key=credential.api_key)

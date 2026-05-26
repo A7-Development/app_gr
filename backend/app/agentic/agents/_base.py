@@ -63,6 +63,11 @@ class ResolvedAgent:
     cross_module: bool
     credit_hint: int | None
 
+    # Override de tools (DB). None = usa `spec.tools` do CATALOG (default
+    # curado em codigo); tupla (mesmo vazia) = override explicito da UI.
+    # Resolvido pelo runtime em `_build_tools_for_agent`.
+    allowed_tools: tuple[str, ...] | None = None
+
     @property
     def full_id(self) -> str:
         """Identifier do agente (paralelo a Prompt.full_id)."""

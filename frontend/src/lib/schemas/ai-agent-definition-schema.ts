@@ -42,6 +42,8 @@ export const agentDefinitionCreateSchema = z.object({
   temperature: z.number().min(0).max(2).nullable().optional(),
   max_tokens: z.number().int().min(1).max(200000).nullable().optional(),
   cross_module: z.boolean().optional(),
+  // null = herda default do CATALOG (spec.tools); [] = sem tools; [...] = override.
+  allowed_tools: z.array(z.string()).nullable().optional(),
   credit_hint: z.number().int().min(0).nullable().optional(),
 })
 
@@ -54,6 +56,7 @@ export const agentDefinitionUpdateSchema = z.object({
   temperature: z.number().min(0).max(2).nullable().optional(),
   max_tokens: z.number().int().min(1).max(200000).nullable().optional(),
   cross_module: z.boolean().optional(),
+  allowed_tools: z.array(z.string()).nullable().optional(),
   credit_hint: z.number().int().min(0).nullable().optional(),
 })
 
@@ -93,6 +96,8 @@ export function buildCreatePayload(
     temperature: values.temperature ?? null,
     max_tokens: values.max_tokens ?? null,
     cross_module: values.cross_module ?? false,
+    // null = herda do CATALOG; [] (override ligado, nada escolhido) preservado.
+    allowed_tools: values.allowed_tools ?? null,
     credit_hint: values.credit_hint ?? null,
   }
 }
@@ -113,6 +118,9 @@ export function buildUpdatePayload(
   if (values.max_tokens !== undefined) payload.max_tokens = values.max_tokens
   if (values.cross_module !== undefined)
     payload.cross_module = values.cross_module
+  // null = herda da base; [] = zera; [...] = override. Enviado as-is.
+  if (values.allowed_tools !== undefined)
+    payload.allowed_tools = values.allowed_tools
   if (values.credit_hint !== undefined) payload.credit_hint = values.credit_hint
   return payload
 }
