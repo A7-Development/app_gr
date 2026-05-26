@@ -75,11 +75,14 @@ class SerasaPjPagamentoBucket(Auditable, Base):
         Numeric(20, 2), nullable=True
     )
 
+    # Serasa envia percentuais em centesimos (basis points): 100% = 10000.
+    # Numeric(8,4) (max 9999.9999) estourava no bucket PONTUAL de empresas
+    # 100% pontuais (percentageTo=10000.0). Numeric(9,4) segura 10000.0000.
     percentage_from: Mapped[Decimal | None] = mapped_column(
-        Numeric(8, 4), nullable=True
+        Numeric(9, 4), nullable=True
     )
     percentage_to: Mapped[Decimal | None] = mapped_column(
-        Numeric(8, 4), nullable=True
+        Numeric(9, 4), nullable=True
     )
     percentage_label: Mapped[str | None] = mapped_column(
         String(64), nullable=True

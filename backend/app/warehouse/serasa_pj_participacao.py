@@ -57,7 +57,10 @@ class SerasaPjParticipacao(Auditable, Base):
         String(14), nullable=False, index=True
     )
     razao_social: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Numeric(9,4): hedge contra o padrao basis-point da Serasa (100% = 10000),
+    # mesmo caso de pagamento_bucket.percentage_*. Seg 028 nao traz participacao,
+    # mas alargamos por consistencia caso o produto mude.
     percentual: Mapped[Decimal | None] = mapped_column(
-        Numeric(7, 4), nullable=True
+        Numeric(9, 4), nullable=True
     )
     qualificacao: Mapped[str | None] = mapped_column(Text, nullable=True)
