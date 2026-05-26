@@ -735,58 +735,7 @@ function EvolucaoContent({
 
       {/* Hero: Evolucao do PL (2/3) + Composicao (1/3) */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <div className="flex flex-col gap-2 lg:col-span-2">
-          {/* Controles do card: chips de classe (sync global) + granularidade
-              (sync global) + empilhado (local). */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-1.5">
-              {todasClasses.map((ci) => {
-                const ativa = classesSel.length === 0 || classesSel.includes(ci.classe)
-                return (
-                  <button
-                    key={ci.classe}
-                    type="button"
-                    onClick={() => onToggleClasse(ci.classe)}
-                    aria-pressed={ativa}
-                    className={cx(
-                      "inline-flex items-center gap-1.5 rounded-[4px] border px-2 py-1 text-[12px] transition-colors",
-                      ativa
-                        ? "border-gray-300 bg-white text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-50"
-                        : "border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-600",
-                    )}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="size-2 rounded-[2px]"
-                      style={{
-                        backgroundColor: ativa ? CLASSE_COLOR[ci.classe] : "transparent",
-                        boxShadow: ativa ? undefined : `inset 0 0 0 1px ${CLASSE_COLOR[ci.classe]}`,
-                      }}
-                    />
-                    {ci.label}
-                  </button>
-                )
-              })}
-            </div>
-            <div className="flex items-center gap-2">
-              <SegmentSwitch<EvolucaoGranularidade>
-                options={[
-                  { value: "mensal", label: "Mensal" },
-                  { value: "diaria", label: "Diaria" },
-                ]}
-                value={granularidade}
-                onChange={setGranularidade}
-              />
-              <SegmentSwitch<"stacked" | "overlay">
-                options={[
-                  { value: "stacked", label: "Empilhado" },
-                  { value: "overlay", label: "Sobreposto" },
-                ]}
-                value={plStacked ? "stacked" : "overlay"}
-                onChange={(v) => setPlStacked(v === "stacked")}
-              />
-            </div>
-          </div>
+        <div className="lg:col-span-2">
           <EChartsCard
             title="Evolucao do PL"
             caption={`Patrimonio liquido por classe${ultimaData ? ` · ultima posicao ${fmtDataCurta(ultimaData)}` : ""}`}
@@ -804,6 +753,55 @@ function EvolucaoContent({
                     deltaSub: "no periodo",
                   }
                 : undefined
+            }
+            actions={
+              // Controles do card (dentro da area do card): chips de classe
+              // (sync global) + granularidade (sync global) + empilhado (local).
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                {todasClasses.map((ci) => {
+                  const ativa = classesSel.length === 0 || classesSel.includes(ci.classe)
+                  return (
+                    <button
+                      key={ci.classe}
+                      type="button"
+                      onClick={() => onToggleClasse(ci.classe)}
+                      aria-pressed={ativa}
+                      className={cx(
+                        "inline-flex items-center gap-1.5 rounded-[4px] border px-2 py-1 text-[12px] transition-colors",
+                        ativa
+                          ? "border-gray-300 bg-white text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-50"
+                          : "border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-600",
+                      )}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="size-2 rounded-[2px]"
+                        style={{
+                          backgroundColor: ativa ? CLASSE_COLOR[ci.classe] : "transparent",
+                          boxShadow: ativa ? undefined : `inset 0 0 0 1px ${CLASSE_COLOR[ci.classe]}`,
+                        }}
+                      />
+                      {ci.label}
+                    </button>
+                  )
+                })}
+                <SegmentSwitch<EvolucaoGranularidade>
+                  options={[
+                    { value: "mensal", label: "Mensal" },
+                    { value: "diaria", label: "Diaria" },
+                  ]}
+                  value={granularidade}
+                  onChange={setGranularidade}
+                />
+                <SegmentSwitch<"stacked" | "overlay">
+                  options={[
+                    { value: "stacked", label: "Empilhado" },
+                    { value: "overlay", label: "Sobreposto" },
+                  ]}
+                  value={plStacked ? "stacked" : "overlay"}
+                  onChange={(v) => setPlStacked(v === "stacked")}
+                />
+              </div>
             }
           />
         </div>
