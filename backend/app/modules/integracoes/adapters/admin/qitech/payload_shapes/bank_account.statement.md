@@ -27,109 +27,103 @@ Sincronizou primeira vez em prod (ver memoria
 ## Shape do payload
 
 **Formato:** JSON. **Encoding:** UTF-8.
-**Locale:** ISO-8601 ou `YYYY-MM-DD` para datas; numeros como int/float/string.
 
-Schema **inferido** — mapper foi escrito antes de observarmos payload real,
-tolerante a multiplos formatos. Quando virmos payload real em prod,
-removeremos alternativas que nao aparecem.
+Schema **REAL** — validado contra payload de prod em 2026-05 (mapper corrigido
+em `qitech_adapter_v0.5.0`). O mapper ainda aceita envelopes alternativos por
+defesa, mas o formato observado e estavel.
 
-**Envelope** — mapper aceita 4 formas:
-- **Lista direta no root:** `[ { ...item... }, ... ]`
-- **Wrapped:** `{ "lancamentos": [...] }` (ou variante acentuada
-  `"lançamentos"`)
-- **Items:** `{ "items": [...] }` ou `{ "extrato": [...] }` ou
-  `{ "movimentos": [...] }`
-- **Nested:** `{ "relatorios": { "statement"/"extrato"/"lancamentos": [...] } }`
+**Envelope (observado):** `{ "extrato": [ { ...item... }, ... ] }`.
+(Mapper tambem tolera lista direta, `lancamentos`, `items`, `movimentos` e
+`relatorios.*` por compatibilidade.)
 
-### Estrutura de cada `item`
-
-Mapper tenta multiplas chaves por campo critico — primeiro disponivel ganha:
+### Estrutura de cada `item` (REAL)
 
 ```
-# Critic'os (sem qualquer um deles, linha e descartada)
-dataLancamento (ou dataLançamento, data, dataLiquidacao, dataLiquidação)
-                       string ISO-8601 ou YYYY-MM-DD
-valor (ou valorMovimento, valorMovimentacao, amount)
-                       number | string  (sinal negativo aceito → vira tipo "D")
-tipo (ou tipoOperacao, tipoDeOperacao, natureza)
-                       string  ("D"/"C"/"DEBITO"/"CREDITO"/"+"/"-"/etc; normalizado)
-
-# Opcionais
-dataMovimento (ou dataMovimentacao, dataOperacao)
-                       string ISO-8601
-historico (ou histórico)         string
-descricao (ou descrição)         string
-documento (ou nrDocumento)       string
-contrapartida (ou contraparte)   object
-    nome (ou name)               string
-    cnpj (ou cpf, documento, doc) string
-banco                            object
-    codigo (ou código, code)     string
-    nome (ou name)               string
-moeda                            string  (default "BRL")
-dataAtualizacao (ou updatedAt)   string ISO-8601  (mapeado para source_updated_at)
+data            string  "YYYY-MM-DDT00:00:00.000"  — data contabil (CRITICO)
+dataHora        string  "DD/MM/YYYY HH:MM:SS"       — timestamp do evento
+valor           number  SEMPRE POSITIVO             — sinal NAO vem aqui (CRITICO)
+tipoLancamento  string  "C" | "D" | "S"             — o SINAL (CRITICO)
+                          C = credito/entrada
+                          D = debito/saida
+                          S = SALDO (snapshot, NAO e movimento → descartado)
+documento       int|str|null
+lancamento      int                                 — id estavel do lancamento
+historico       object  { "codigo": "0497",         — codigo de historico bancario
+                          "descricao": "TED - ..." } — texto do lancamento
+contraparte     object                              — (chave SEM "rtida")
+    nome                  string  (as vezes literal "null")
+    inscricao             int|null  — CPF/CNPJ SEM zero-pad (PJ 14 / PF 11)
+    tipoPessoa            "J" | "F" | "null"
+    banco/agencia/conta   int|null  — dados bancarios DA CONTRAPARTE
+    indicadorEnviadoRecebido  "R" | "E" | null
 ```
 
-## Exemplo (anonimizado — inferido)
+## Exemplo (real, anonimizado)
 
 ```json
-[
-  {
-    "dataLancamento": "2026-05-15",
-    "dataMovimento": "2026-05-15",
-    "valor": 12500.00,
-    "tipo": "C",
-    "historico": "TED RECEBIDA",
-    "descricao": "TED RECEBIDA DE FORNECEDOR X",
-    "documento": "12345678",
-    "contrapartida": {
-      "nome": "FORNECEDOR EXEMPLO LTDA",
-      "cnpj": "99888777000166"
+{
+  "extrato": [
+    {
+      "data": "2026-05-26T00:00:00.000",
+      "dataHora": "26/05/2026 07:15:08",
+      "valor": 1559348.82,
+      "documento": 0,
+      "lancamento": 50957269,
+      "historico": { "codigo": "0497", "descricao": "TED - STR FORNECEDOR X" },
+      "contraparte": {
+        "nome": "FORNECEDOR X", "inscricao": 99888777000166,
+        "tipoPessoa": "J", "indicadorEnviadoRecebido": "R"
+      },
+      "tipoLancamento": "C"
     },
-    "moeda": "BRL"
-  },
-  {
-    "dataLancamento": "2026-05-15",
-    "valor": -3520.00,
-    "tipo": "D",
-    "historico": "PAGAMENTO CESSAO",
-    "contrapartida": {
-      "nome": "CEDENTE EXEMPLO SA",
-      "cnpj": "55666777000188"
+    {
+      "data": "2026-05-12T00:00:00.000",
+      "dataHora": "12/05/2026 10:39:38",
+      "valor": 667065.09,
+      "lancamento": 50633207,
+      "historico": { "codigo": "0123", "descricao": "TRANSFERENCIA A DEBITO ..." },
+      "contraparte": { "nome": null, "inscricao": null, "tipoPessoa": null },
+      "tipoLancamento": "D"
+    },
+    {
+      "data": "2026-05-08T00:00:00.000",
+      "valor": 2461.57,
+      "lancamento": 24554012,
+      "historico": { "codigo": "0099", "descricao": "SALDO C/C" },
+      "contraparte": { "nome": "null", "inscricao": null, "tipoPessoa": "null" },
+      "tipoLancamento": "S"
     }
-  }
-]
+  ]
+}
 ```
 
 ## Gotchas
 
-- **Schema inferido — nao 100% validado contra payload real.** Comportamento
-  nao totalmente claro — investigar quando primeiros syncs reais em
-  volume acontecerem em prod.
-- **Lancamentos sem `(data_lancamento AND valor AND tipo)` sao descartados
-  silenciosamente.** Sao campos criticos — sem eles a linha nao tem
-  semantica. Caller pode contar `len(input) - len(output)` para estimar
-  perda.
-- **`valor` sempre absoluto no warehouse, sinal vai em `tipo`:** mapper
-  faz `abs(valor)` antes de gravar, e seta `tipo="D"` se valor original
-  for negativo. Garante semantica consistente (`valor + tipo` reconstroi
-  o sinal).
-- **Normalizacao de `tipo`:**
-  - Comeca com `D` ou esta em `("DEBIT", "DEBITO", "DÉBITO", "SAIDA",
-    "SAÍDA", "-")` → `"D"`.
-  - Comeca com `C` ou esta em `("CREDIT", "CREDITO", "CRÉDITO", "ENTRADA",
-    "+")` → `"C"`.
-  - Senao, fallback pelo sinal de `valor` (negativo → "D", positivo →
-    "C", zero → `None` → linha descartada).
-- **`historico` vs `descricao`:** o mapper guarda os dois separadamente
-  (chaves acentuadas e nao-acentuadas testadas). Em prod podemos ver que
-  apenas um veio preenchido — o outro fica `None`.
-- **`source_id` usa hash do item:** como QiTech pode nao expor ID estavel
-  do lancamento, mapper usa `sha256_of_row(item)[:16]` no source_id.
-  Re-fetch do mesmo lancamento nao duplica (UQ `tenant, source_id`).
-  Risco: se a QiTech mudar formatacao do payload entre fetches sem mudar
-  semantica (ex.: renomear chave), o hash muda e duplicamos. Aceitavel
-  hoje — adapter version protege contra essa mudanca.
+- **O sinal NAO vem no `valor`** (sempre positivo) — vem em `tipoLancamento`
+  (C/D/S). O bug original (mapper pre-v0.5.0) procurava `tipo`/`natureza`,
+  nao achava `tipoLancamento`, e caia no fallback "valor>0 → C": TUDO virava
+  credito. Corrigido.
+- **`tipoLancamento="S"` sao linhas de SALDO, nao movimentos** — descartadas
+  aqui. Saldo de conta vive em `wh_saldo_bancario_diario` (endpoint
+  `bank_account.balance`). Cuidado: "SAIDA" tambem comeca com S; o mapper so
+  trata `"S"`/`"SALDO"` exatos como saldo, nao prefixo.
+- **`historico` e um OBJETO `{codigo, descricao}`, nao string.** Mapeamento:
+  `historico.descricao` (texto) → coluna **`descricao`** (e o campo
+  pesquisavel + parte da business key); `historico.codigo` → coluna
+  **`historico`** (codigo de historico bancario, ex.: 0497=TED, 0099=saldo,
+  0123=transf a debito). O bug original gravava o dict cru stringificado em
+  `historico` e deixava `descricao` nula — quebrava a UQ e o filtro por texto.
+- **Doc da contraparte vem em `contraparte.inscricao`** (inteiro, sem zeros a
+  esquerda) — mapper faz zero-pad por `tipoPessoa` (J→14, F→11 digitos). Chave
+  e `contraparte` (sem "rtida"); `nome`/`tipoPessoa` podem vir como literal
+  string `"null"` → tratados como None.
+- **`valor` sempre absoluto no warehouse, sinal vai em `tipo`:** mapper faz
+  `abs(valor)`. `valor + tipo` reconstroi o sinal.
+- **Lancamentos sem `(data E valor E tipo C/D)` sao descartados.** Campos
+  criticos.
+- **`source_id` usa `lancamento`** (id estavel) quando presente:
+  `bank_account_statement|{ua}|{ag}|{conta}|{data}|{lancamento}`. Fallback
+  `sha16(item)` quando ausente. Re-fetch nao duplica (business key UQ).
 - **Coverage UNSUPPORTED:** endpoint intraday nao se encaixa no modelo
   `(data_referencia, status)` do coverage atual. Reconciler nao reabre
   furo aqui — monitoria precisa ser por idade do ultimo sync ok, nao por
@@ -144,43 +138,45 @@ dataAtualizacao (ou updatedAt)   string ISO-8601  (mapeado para source_updated_a
 
 ## Mapping campo do payload → coluna do silver (`wh_extrato_bancario`)
 
-| Campo (payload, primeiro disponivel)                  | Tipo (payload)         | Coluna (silver)        | Tipo (silver)  | Transformacao              |
-| ----------------------------------------------------- | ---------------------- | ---------------------- | -------------- | -------------------------- |
-| `dataLancamento`/`dataLançamento`/`data`/`dataLiquidacao`/`dataLiquidação` | string ISO/YYYY-MM-DD | `data_lancamento` | date | _pick_data_lancamento (crit'o) |
-| `dataMovimento`/`dataMovimentacao`/`dataOperacao`     | string ISO\|null       | `data_movimento`       | date\|null     | _pick_data_movimento       |
-| `valor`/`valorMovimento`/`valorMovimentacao`/`amount` | number\|string         | `valor`                | numeric(18,2)  | _pick_valor → abs(...)     |
-| `tipo`/`tipoOperacao`/`tipoDeOperacao`/`natureza`     | string                 | `tipo`                 | text ("D"/"C") | _pick_tipo (normalize)     |
-| `historico`/`histórico`                               | string\|null           | `historico`            | text\|null     | normalize_str_or_none      |
-| `descricao`/`descrição`                               | string\|null           | `descricao`            | text\|null     | normalize_str_or_none      |
-| `documento`/`nrDocumento`                             | string\|null           | `documento`            | text\|null     | normalize_str_or_none      |
-| `contrapartida.nome`/`contrapartida.name` (ou `contraparte.*`) | string\|null  | `contrapartida_nome`   | text\|null     | _pick_contrapartida        |
-| `contrapartida.cnpj`/`cpf`/`documento`/`doc`          | string\|null           | `contrapartida_doc`    | text\|null     | _pick_contrapartida        |
-| `banco.codigo`/`código`/`code` (item-level)           | string\|null           | `banco_codigo`         | text\|null     | normalize_str_or_none      |
-| `banco.nome`/`name` (item-level)                      | string\|null           | `banco_nome`           | text\|null     | normalize_str_or_none      |
-| `moeda`                                               | string                 | `moeda`                | text           | normalize_str_or_none, default "BRL" |
-| `dataAtualizacao`/`updatedAt`                         | string ISO-8601\|null  | (provenance) `source_updated_at` | timestamptz\|null | parse_iso_or_none |
+| Campo (payload real)                | Tipo (payload)     | Coluna (silver)        | Tipo (silver)  | Transformacao                       |
+| ----------------------------------- | ------------------ | ---------------------- | -------------- | ----------------------------------- |
+| `data`                              | string ISO        | `data_lancamento`      | date           | _pick_data_lancamento (CRITICO)     |
+| `dataHora`                          | "DD/MM/YYYY HH:MM:SS" | `data_movimento`    | date\|null     | _pick_data_movimento (fallback `data`) |
+| `valor`                             | number (>0)       | `valor`                | numeric(18,2)  | abs(...) — sinal vai em `tipo`      |
+| `tipoLancamento`                    | "C"/"D"/"S"       | `tipo`                 | text ("C"/"D") | _pick_tipo; **`S` (saldo) descartado** |
+| `historico.codigo`                  | string            | `historico`            | text\|null     | codigo de historico bancario        |
+| `historico.descricao`               | string            | `descricao`            | text\|null     | texto (pesquisavel + business key)  |
+| `documento`                         | int\|str\|null    | `documento`            | text\|null     | normalize_str_or_none               |
+| `contraparte.nome`                  | string\|"null"    | `contrapartida_nome`   | text\|null     | _clean_null ("null" string → None)  |
+| `contraparte.inscricao`             | int\|null         | `contrapartida_doc`    | text\|null (14)| _format_doc (zero-pad por tipoPessoa) |
+| `dataHora` (→ datetime)             | "DD/MM/YYYY HH:MM:SS" | (prov.) `source_updated_at` | timestamptz\|null | _parse_datahora           |
+| _(nao presente no payload)_         | _                  | `banco_codigo`/`banco_nome` | null      | item nao traz banco proprio da conta |
 | _(param)_ `tenant_id`                                 | _                      | `tenant_id`            | uuid           | passado pelo caller        |
 | _(param)_ `unidade_administrativa_id`                 | _                      | `unidade_administrativa_id` | uuid      | passado pelo caller        |
 | _(param)_ `agencia`                                   | _                      | `agencia`              | text           | passado pelo caller        |
 | _(param)_ `conta`                                     | _                      | `conta`                | text           | passado pelo caller        |
 
-### Source-id (UQ no upsert)
+### Source-id (proveniencia; UQ real e a business key)
 
 ```
-bank_account_statement|{ua_id}|{agencia}|{conta}|{data_lancamento_iso}|{sha16(item)}
+bank_account_statement|{ua_id}|{agencia}|{conta}|{data_lancamento_iso}|{lancamento}
 ```
 
-`sha16(item)` (primeiros 16 chars do SHA256 do item bruto) protege contra
-QiTech nao expor ID estavel. Re-fetch do mesmo lancamento (byte-identico)
-nao duplica via UQ. Mudancas no payload (mesmo semanticamente
-equivalentes) geram hash diferente — pode duplicar; aceitavel hoje, mas
-candidato a tracking caso vire problema.
+`lancamento` e o id estavel do lancamento na Singulare. Fallback `sha16(item)`
+quando ausente. A UQ do silver e a business key explicita
+(`uq_wh_extrato_bancario`: tenant, ua, agencia, conta, data_lancamento, valor,
+tipo, descricao, contrapartida_doc) — source_id e so proveniencia.
 
 ## Historico
 
+- **2026-05-26:** **payload real validado em prod + mapper corrigido
+  (`qitech_adapter_v0.5.0`).** Bugs do schema inferido consertados: (1) sinal
+  agora vem de `tipoLancamento` (era sempre 'C'); (2) linhas de saldo
+  (`S`) descartadas; (3) `historico.{codigo,descricao}` split correto entre
+  colunas `historico`/`descricao` (era dict cru); (4) doc da contraparte via
+  `inscricao` com zero-pad; (5) source_id usa `lancamento`. Silver historico
+  (65 linhas erradas) re-mapeado do raw imutavel via
+  `scripts/remap_bank_account_statement.py`.
 - **2026-05-01:** confirmado em teste real que endereco antigo
   `/v2/bank-account/statement/...` (sem `/conta-corrente/`) NAO existe —
   URL canonica e `/v2/conta-corrente/bank-account/statement/...`.
-- **Mapper escrito antes** de observarmos payload real — tolerante a
-  multiplos formatos. Preencher quando primeiros syncs reais em volume
-  validarem o shape exato e quando QiTech mudar payload.

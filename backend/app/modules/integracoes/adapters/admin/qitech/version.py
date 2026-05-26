@@ -8,4 +8,4 @@ Incrementar seguindo semver:
 
 from __future__ import annotations
 
-ADAPTER_VERSION = "qitech_adapter_v0.4.0"  # 2026-05-19: business key explicita em 16 silvers (source_id vira proveniencia pura). Conserto do bug v0.3.0 que duplicou wh_cpr_movimento REALINVEST 14/05.
+ADAPTER_VERSION = "qitech_adapter_v0.5.0"  # 2026-05-26: bank_account.statement mapper corrigido contra payload real (tipoLancamento C/D/S; descarta saldos S; historico.{codigo,descricao}; doc via inscricao; id estavel `lancamento`). Antes: tipo sempre 'C', descricao nula, dict cru em historico.
