@@ -8,30 +8,25 @@
 // BackfillJob com o array de datas. Worker do backend ja processa
 // sequencialmente respeitando timing entre chamadas.
 //
-// Seletor de periodo: dois Selects independentes (De / Ate) listando APENAS
-// as datas que existem na Cobertura, agrupadas por mes. Escolha trocada de
-// calendario livre (DateRangePicker) por causa do estado de range do calendario
-// "se atrapalhar" ao reancorar. Com dois valores independentes + clamp
-// (escolher De depois do Ate arrasta o Ate junto, e vice-versa) e impossivel
-// travar numa combinacao invalida.
+// Seletor de periodo: dois inputs de texto (De / Ate) onde o usuario DIGITA a
+// data no formato dd/mm/aaaa. Mascara aplicada conforme digita (insere as
+// barras), parse + validacao via date-fns, e revert para o ultimo valor valido
+// no blur se ficar incompleto/invalido. Escolha trocada de calendario livre e
+// depois de dropdown de datas pre-definidas por digitacao direta (pedido do
+// Ricardo). Com dois valores independentes + clamp (digitar De depois do Ate
+// arrasta o Ate junto, e vice-versa) e impossivel travar numa combinacao
+// invalida.
 //
 // Cap de seguranca: 180 dias por disparo. Acima disso, bloqueia e pede pra
 // quebrar em meses.
 //
 
 import * as React from "react"
-import { format, parseISO } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { format, isValid, parse, parseISO } from "date-fns"
 
 import {
   Button,
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectGroupLabel,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Input,
   Sheet,
   SheetBody,
   SheetContent,
@@ -45,10 +40,31 @@ import type { EndpointCoverage } from "@/lib/api-client"
 
 const MAX_DATES_PER_DISPATCH = 180
 
-/** Uma data selecionavel no dropdown. `iso` = yyyy-MM-dd. */
-type DayOption = { iso: string; label: string }
-/** Datas agrupadas por mes para navegar listas longas no Select. */
-type MonthGroup = { key: string; label: string; days: DayOption[] }
+const ISO_FMT = "yyyy-MM-dd"
+const BR_FMT = "dd/MM/yyyy"
+
+/** Aplica mascara dd/mm/aaaa conforme digita (insere as barras). */
+function maskDateInput(raw: string): string {
+  const d = raw.replace(/\D/g, "").slice(0, 8)
+  let out = d.slice(0, 2)
+  if (d.length > 2) out += "/" + d.slice(2, 4)
+  if (d.length > 4) out += "/" + d.slice(4, 8)
+  return out
+}
+
+/** "dd/MM/yyyy" digitado -> ISO yyyy-MM-dd, ou null se incompleto/invalido. */
+function parseTypedDate(text: string): string | null {
+  if (text.length !== 10) return null
+  const d = parse(text, BR_FMT, new Date())
+  if (!isValid(d)) return null
+  // Guarda round-trip: rejeita 31/02 etc. que o parse poderia normalizar.
+  if (format(d, BR_FMT) !== text) return null
+  return format(d, ISO_FMT)
+}
+
+function isoToBr(iso: string): string {
+  return iso ? format(parseISO(iso), BR_FMT) : ""
+}
 
 export function BulkBackfillSheet({
   open,
@@ -82,32 +98,6 @@ export function BulkBackfillSheet({
       setSkipAlreadyOk(false)
     }
   }, [open, firstDay, lastDay])
-
-  // Datas da Cobertura agrupadas por mes. endpoint.days ja vem cronologico,
-  // entao a ordem de insercao no Map (e no Array.from) preserva a ordem.
-  const monthGroups = React.useMemo<MonthGroup[]>(() => {
-    if (!endpoint) return []
-    const map = new Map<string, MonthGroup>()
-    for (const d of endpoint.days) {
-      const date = parseISO(d.data)
-      const key = format(date, "yyyy-MM")
-      let group = map.get(key)
-      if (!group) {
-        const raw = format(date, "MMMM 'de' yyyy", { locale: ptBR })
-        group = {
-          key,
-          label: raw.charAt(0).toUpperCase() + raw.slice(1),
-          days: [],
-        }
-        map.set(key, group)
-      }
-      group.days.push({
-        iso: d.data,
-        label: format(date, "dd/MMM/yyyy", { locale: ptBR }),
-      })
-    }
-    return Array.from(map.values())
-  }, [endpoint])
 
   // Clamp: manter sempre fromDate <= toDate sem nunca bloquear uma escolha.
   // Comparacao lexicografica de yyyy-MM-dd == comparacao cronologica.
@@ -180,19 +170,18 @@ export function BulkBackfillSheet({
             <h3 className="text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
               Período
             </h3>
-            <div className="grid grid-cols-[2.25rem_1fr] items-center gap-x-3 gap-y-2">
+            <div className="grid grid-cols-[2.5rem_1fr] items-center gap-x-3 gap-y-2">
               <label
                 htmlFor="bulk-from"
                 className="text-[13px] text-gray-600 dark:text-gray-400"
               >
                 De
               </label>
-              <DateSelect
+              <DateTextInput
                 id="bulk-from"
-                ariaLabel="Data inicial"
+                ariaLabel="Data inicial (dd/mm/aaaa)"
                 value={fromDate}
                 onValueChange={handleFromChange}
-                groups={monthGroups}
               />
               <label
                 htmlFor="bulk-to"
@@ -200,17 +189,17 @@ export function BulkBackfillSheet({
               >
                 Até
               </label>
-              <DateSelect
+              <DateTextInput
                 id="bulk-to"
-                ariaLabel="Data final"
+                ariaLabel="Data final (dd/mm/aaaa)"
                 value={toDate}
                 onValueChange={handleToChange}
-                groups={monthGroups}
               />
             </div>
             <p className="text-[11px] text-gray-500 dark:text-gray-400">
-              Limitado ao range já carregado na Cobertura. Para datas mais
-              antigas, troque o range no seletor do topo antes.
+              Digite no formato dd/mm/aaaa. Limitado ao range já carregado na
+              Cobertura — para datas mais antigas, troque o range no seletor do
+              topo antes.
             </p>
           </section>
 
@@ -294,37 +283,53 @@ export function BulkBackfillSheet({
   )
 }
 
-function DateSelect({
+function DateTextInput({
   id,
   ariaLabel,
   value,
   onValueChange,
-  groups,
 }: {
   id: string
   ariaLabel: string
+  /** ISO yyyy-MM-dd ou "". */
   value: string
-  onValueChange: (v: string) => void
-  groups: MonthGroup[]
+  onValueChange: (iso: string) => void
 }) {
+  const [text, setText] = React.useState<string>(() => isoToBr(value))
+
+  // Sincroniza quando o value externo muda (clamp, reset ao abrir/trocar
+  // endpoint). Quando o usuario digita, o ISO resultante ja casa com o texto,
+  // entao isso vira no-op e nao mexe no cursor.
+  React.useEffect(() => {
+    setText(isoToBr(value))
+  }, [value])
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const masked = maskDateInput(e.target.value)
+    setText(masked)
+    const iso = parseTypedDate(masked)
+    if (iso) onValueChange(iso)
+  }
+
+  const handleBlur = () => {
+    // Texto incompleto/invalido ao sair do campo volta pro ultimo valor valido.
+    if (!parseTypedDate(text)) setText(isoToBr(value))
+  }
+
+  const hasError = text.length === 10 && parseTypedDate(text) === null
+
   return (
-    <Select value={value || undefined} onValueChange={onValueChange}>
-      <SelectTrigger id={id} aria-label={ariaLabel} className="w-full">
-        <SelectValue placeholder="Selecione" />
-      </SelectTrigger>
-      <SelectContent>
-        {groups.map((group) => (
-          <SelectGroup key={group.key}>
-            <SelectGroupLabel>{group.label}</SelectGroupLabel>
-            {group.days.map((d) => (
-              <SelectItem key={d.iso} value={d.iso}>
-                {d.label}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        ))}
-      </SelectContent>
-    </Select>
+    <Input
+      id={id}
+      aria-label={ariaLabel}
+      inputMode="numeric"
+      autoComplete="off"
+      placeholder="dd/mm/aaaa"
+      value={text}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      hasError={hasError}
+    />
   )
 }
 
