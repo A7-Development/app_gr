@@ -1,22 +1,21 @@
 "use client"
 
 /**
- * BalancoPatrimonialHero — Balance hero da Cota Sub (F1 do redesign, 2026-05-22).
+ * BalancoPatrimonialHero — Balance hero da Cota Sub.
  *
- * Formato balancete denso (iteracao Alt A revisada 2026-05-22): tabela
- * 4 colunas (label | D-1 | D0 | Δ) com dot de identidade por categoria,
- * densidade compact pra caber 100% na vertical em 50% de largura sem
- * scroll. Datas no header das colunas. Linha de Identidade no rodape:
- *   - residuo ≈ 0      → fechamento ok (badge verde)
- *   - residuo < R$ 1k  → arredondamento (badge âmbar)
- *   - residuo >= R$ 1k → desalinhamento (badge vermelho)
+ * Refator 2026-05-25: usa DataTable canônica com padrão DRE (hierarquia
+ * expansível) mas sempre expandido + chevron escondido.
  *
- * Drill chevron (▸) por linha placeholder — F2 liga DrillDownSheet para
- * DC, PDD e CPR. Resto fica nao-clicavel ate F3.
+ * Estrutura:
+ *   - Grupo "Ativos" → subRows: categorias_ativos + Σ Ativos
+ *   - Grupo "Passivos · redutores" → subRows: categorias_passivos + Σ Passivos
+ *   - "PL Sub Jr · calculado" (top-level, destaque)
+ *   - "PL Sub Jr · fonte MEC" (top-level)
+ *   - "Resíduo identidade contábil (dia)" (top-level)
  *
- * Aposenta na page.tsx:
- *   AnaliseVariacaoCard, WaterfallEventosCard, ReconciliacaoWaterfallCard,
- *   DriversCard, BridgeCard, ResiduoAlertCard, StatusHeadlineCompact.
+ * Click em line drilável dispara onDrillCategoria. Cabeçalho D-1/D0/Δ fixo
+ * no topo da tabela. Header (fundo nome + botão IA + IdentidadeBadge) e
+ * footer ficam fora da DataTable, no Card wrapper.
  */
 
 import * as React from "react"
@@ -28,12 +27,15 @@ import {
   RiCalendarLine,
   RiSparklingFill,
 } from "@remixicon/react"
+import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 
 import { cx } from "@/lib/utils"
 import { Card } from "@/components/tremor/Card"
+import { DataTable } from "@/design-system/components/DataTable"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 import { Button } from "@/components/tremor/Button"
+import { tableTokens } from "@/design-system/tokens/table"
 import type {
   BalancoPatrimonialResponse,
   CategoriaPatrimonial,
@@ -64,9 +66,7 @@ const DRILL_ENABLED_F2: ReadonlySet<CategoriaPatrimonialKey> = new Set<Categoria
   "pdd",
 ])
 
-// Tooltip amigavel por categoria — descreve a definicao/composicao
-// economica da linha (vs `categoria.source` do backend que descreve a
-// fonte tecnica). Aparece como tooltip nativo no `title` do label.
+// Tooltip amigavel por categoria (descricao economica) — usado em title de linha.
 const CATEGORIA_TOOLTIP: Partial<Record<CategoriaPatrimonialKey, string>> = {
   dc:                   "Σ Valor Presente dos recebíveis em estoque (exclui WOP). Marcação na curva contratual.",
   pdd:                  "Σ Provisão para Devedores Duvidosos constituída (faixas A-H, exclui WOP). Reduz o PL Sub Jr.",
@@ -85,11 +85,381 @@ const CATEGORIA_TOOLTIP: Partial<Record<CategoriaPatrimonialKey, string>> = {
 const RESIDUO_AMBER_BRL = 1
 const RESIDUO_RED_BRL = 1000
 
-// Grid de colunas — single source of truth pra alinhar header + rows.
-// Label fixo em 180px (cabe ate "Saldo Conta Corrente"); 3 colunas numericas
-// dividem o restante em 1fr (evita encavalamento de valores grandes tipo
-// "R$ 24.436.232,09" + delta).
-const GRID = "grid grid-cols-[180px_1fr_1fr_1fr_14px] items-center gap-2"
+// ─────────────────────────────────────────────────────────────────────────────
+// Tipos de linha
+// ─────────────────────────────────────────────────────────────────────────────
+
+type RowKind =
+  | "grupo"        // Ativos / Passivos · redutores
+  | "line"         // categoria (drilável se em DRILL_ENABLED_F2)
+  | "subtotal"     // Σ Ativos / Σ Passivos
+  | "pl-deduzido"  // PL Sub Jr · calculado
+  | "pl-fonte"     // PL Sub Jr · fonte MEC
+  | "residuo"      // Resíduo identidade contábil (dia)
+
+type Row = {
+  id:       string
+  kind:     RowKind
+  label:    string
+  sublabel?: string
+  d1:       number | null
+  d0:       number | null
+  delta:    number | null
+  subRows?: Row[]
+  // Apenas pra line:
+  categoria?: CategoriaPatrimonial
+  drillEnabled?: boolean
+  tooltip?: string
+}
+
+function buildTooltip(cat: CategoriaPatrimonial): string | undefined {
+  const parts: string[] = []
+  const friendly = CATEGORIA_TOOLTIP[cat.key]
+  if (friendly) parts.push(friendly)
+  if (cat.source) parts.push(`Fonte: ${cat.source}`)
+  return parts.length ? parts.join("\n\n") : undefined
+}
+
+function buildTree(data: BalancoPatrimonialResponse, residuoDelta: number): Row[] {
+  const ativos: Row[] = data.ativos.map((cat) => ({
+    id: `ativo-${cat.key}`,
+    kind: "line",
+    label: cat.label,
+    d1: cat.d1,
+    d0: cat.d0,
+    delta: cat.delta,
+    categoria: cat,
+    drillEnabled: DRILL_ENABLED_F2.has(cat.key),
+    tooltip: buildTooltip(cat),
+  }))
+  const passivos: Row[] = data.passivos.map((cat) => ({
+    id: `passivo-${cat.key}`,
+    kind: "line",
+    label: cat.label,
+    d1: cat.d1,
+    d0: cat.d0,
+    delta: cat.delta,
+    categoria: cat,
+    drillEnabled: DRILL_ENABLED_F2.has(cat.key),
+    tooltip: buildTooltip(cat),
+  }))
+
+  return [
+    {
+      id: "g-ativos",
+      kind: "grupo",
+      label: "Ativos",
+      // Grupo eh apenas header de secao — totais ficam no subtotal abaixo.
+      d1: null,
+      d0: null,
+      delta: null,
+      subRows: [
+        ...ativos,
+        {
+          id: "sub-ativos",
+          kind: "subtotal",
+          label: "Σ Ativos",
+          d1: data.soma_ativos_d1,
+          d0: data.soma_ativos_d0,
+          delta: data.soma_ativos_delta,
+        },
+      ],
+    },
+    {
+      id: "g-passivos",
+      kind: "grupo",
+      label: "Passivos · redutores",
+      d1: null,
+      d0: null,
+      delta: null,
+      subRows: [
+        ...passivos,
+        {
+          id: "sub-passivos",
+          kind: "subtotal",
+          label: "Σ Passivos",
+          d1: data.soma_passivos_d1,
+          d0: data.soma_passivos_d0,
+          delta: data.soma_passivos_delta,
+        },
+      ],
+    },
+    {
+      id: "pl-deduzido",
+      kind: "pl-deduzido",
+      label: "PL Sub Jr · calculado",
+      d1: data.pl_deduzido_d1,
+      d0: data.pl_deduzido_d0,
+      delta: data.pl_deduzido_delta,
+      tooltip: "PL Sub Jr construído de baixo pra cima a partir das fontes granulares.",
+    },
+    {
+      id: "pl-fonte",
+      kind: "pl-fonte",
+      label: "PL Sub Jr · fonte MEC",
+      d1: data.pl_fonte_d1,
+      d0: data.pl_fonte_d0,
+      delta: data.pl_fonte_delta,
+      tooltip: "PL Sub Jr lido diretamente do MEC publicado pela QiTech. Usado como check externo.",
+    },
+    {
+      id: "residuo",
+      kind: "residuo",
+      label: "Resíduo identidade contábil (dia)",
+      d1: null,
+      d0: null,
+      delta: residuoDelta,
+    },
+  ]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Colunas
+// ─────────────────────────────────────────────────────────────────────────────
+
+const col = createColumnHelper<Row>()
+
+type BuildColsOpts = {
+  data: string
+  dataAnterior: string
+}
+
+function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
+  return [
+    col.accessor("label", {
+      id:     "label",
+      header: "Linha",
+      size:   240,
+      cell:   (info) => {
+        const row = info.row.original
+        // depth automatica do react-table — categorias dentro de Ativos/Passivos
+        // ganham 16px de indentacao automatica.
+        const depth = info.row.depth
+        const indent = depth * 16
+
+        if (row.kind === "grupo") {
+          return (
+            <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-600 dark:text-gray-300">
+              {row.label}
+            </span>
+          )
+        }
+        if (row.kind === "residuo") {
+          return (
+            <span
+              className="block truncate text-[10px] uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600"
+              title="Δ do dia = (ΔPL calculado) − (ΔPL fonte MEC). Erro real do dia, não snapshot acumulado."
+            >
+              {row.label}
+            </span>
+          )
+        }
+        if (row.kind === "subtotal") {
+          return (
+            <span
+              style={{ paddingLeft: `${indent}px` }}
+              className={cx("block truncate", tableTokens.cellStrong)}
+            >
+              {row.label}
+            </span>
+          )
+        }
+        if (row.kind === "pl-deduzido" || row.kind === "pl-fonte") {
+          const isMain = row.kind === "pl-deduzido"
+          return (
+            <div className="flex flex-col min-w-0" title={row.tooltip}>
+              <span className={cx(
+                "block truncate",
+                isMain ? "font-semibold text-gray-900 dark:text-gray-50" : "font-medium text-gray-700 dark:text-gray-300",
+                row.tooltip && "cursor-help",
+              )}>
+                {row.label}
+              </span>
+              {row.sublabel && (
+                <span className="text-[10px] text-gray-400 dark:text-gray-600">{row.sublabel}</span>
+              )}
+            </div>
+          )
+        }
+        // line — categoria
+        return (
+          <span
+            style={{ paddingLeft: `${indent}px` }}
+            className={cx("block truncate text-gray-900 dark:text-gray-50", row.tooltip && "cursor-help")}
+            title={row.tooltip}
+          >
+            {row.label}
+          </span>
+        )
+      },
+    }) as ColumnDef<Row, unknown>,
+
+    col.accessor("d1", {
+      id:     "d1",
+      header: () => (
+        <div className="text-right text-[10px] font-medium uppercase tracking-[0.04em] text-gray-500 dark:text-gray-400">
+          D-1
+          <div className="font-normal text-gray-400 normal-case">{fmtDate(opts.dataAnterior)}</div>
+        </div>
+      ),
+      meta:   { align: "right" },
+      size:   130,
+      cell:   (info) => {
+        const row = info.row.original
+        if (row.kind === "residuo") return null
+        const v = info.getValue<number | null>()
+        if (v == null) return null
+        // grupo agora carrega o agregado do grupo (sem subtotal redundante),
+        // entao merece destaque igual subtotal/pl-deduzido.
+        const isStrong = row.kind === "subtotal" || row.kind === "pl-deduzido"
+        const isMuted = row.kind === "pl-fonte"
+        return (
+          <div
+            style={{ textAlign: "right" }}
+            className={cx(
+              isMuted ? tableTokens.cellSecondary + " tabular-nums" : tableTokens.cellNumber,
+              isStrong && "font-semibold",
+            )}
+          >
+            {fmtBRL.format(v)}
+          </div>
+        )
+      },
+    }) as ColumnDef<Row, unknown>,
+
+    col.accessor("d0", {
+      id:     "d0",
+      header: () => (
+        <div className="text-right text-[10px] font-medium uppercase tracking-[0.04em] text-gray-500 dark:text-gray-400">
+          D0
+          <div className="font-normal text-gray-400 normal-case">{fmtDate(opts.data)}</div>
+        </div>
+      ),
+      meta:   { align: "right" },
+      size:   130,
+      cell:   (info) => {
+        const row = info.row.original
+        if (row.kind === "residuo") return null
+        const v = info.getValue<number | null>()
+        if (v == null) return null
+        const isStrong = row.kind === "subtotal" || row.kind === "pl-deduzido"
+        const isMuted = row.kind === "pl-fonte"
+        return (
+          <div
+            style={{ textAlign: "right" }}
+            className={cx(
+              isMuted ? tableTokens.cellSecondary + " tabular-nums" : tableTokens.cellNumber,
+              isStrong && "font-semibold",
+            )}
+          >
+            {fmtBRL.format(v)}
+          </div>
+        )
+      },
+    }) as ColumnDef<Row, unknown>,
+
+    col.accessor("delta", {
+      id:     "delta",
+      header: () => (
+        <div className="text-right text-[10px] font-medium uppercase tracking-[0.04em] text-gray-500 dark:text-gray-400">
+          Δ
+        </div>
+      ),
+      meta:   { align: "right" },
+      size:   120,
+      cell:   (info) => {
+        const row = info.row.original
+        const v = info.getValue<number | null>()
+        if (v == null) {
+          if (row.kind === "residuo") return null
+          return null
+        }
+        const isZero = Math.abs(v) < 0.005
+        if (isZero) {
+          return <div style={{ textAlign: "right" }} className="text-gray-300 dark:text-gray-700 tabular-nums">—</div>
+        }
+        const isPositive = v > 0
+        const isStrong = row.kind === "subtotal" || row.kind === "pl-deduzido"
+        // Residuo tem coloração própria por magnitude
+        if (row.kind === "residuo") {
+          const abs = Math.abs(v)
+          const tone = abs < RESIDUO_AMBER_BRL ? "ok"
+            : abs < RESIDUO_RED_BRL ? "warn" : "error"
+          return (
+            <div
+              style={{ textAlign: "right" }}
+              className={cx(
+                "tabular-nums",
+                tone === "ok" && "text-gray-500 dark:text-gray-400",
+                tone === "warn" && "font-medium text-amber-700 dark:text-amber-400",
+                tone === "error" && "font-semibold text-red-700 dark:text-red-400",
+              )}
+            >
+              {fmtBRLSigned(v)}
+            </div>
+          )
+        }
+        return (
+          <div
+            style={{ textAlign: "right" }}
+            className={cx(
+              isPositive ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400",
+              "tabular-nums",
+              isStrong && "font-semibold",
+            )}
+          >
+            {fmtBRLSigned(v)}
+          </div>
+        )
+      },
+    }) as ColumnDef<Row, unknown>,
+
+    col.accessor((row) => row, {
+      id:     "chevron",
+      header: "",
+      size:   24,
+      cell:   (info) => {
+        const row = info.row.original
+        if (row.kind !== "line" || !row.drillEnabled) return null
+        return (
+          <div className="flex justify-end text-gray-300 dark:text-gray-700">
+            <RiArrowRightSLine className="size-3.5" aria-hidden="true" />
+          </div>
+        )
+      },
+    }) as ColumnDef<Row, unknown>,
+  ]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// rowClassName por kind (mesmo padrão DRE pra grupo/subgrupo)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function rowClass(row: Row): string {
+  if (row.kind === "grupo") {
+    return cx(
+      "!border-l-0 bg-gray-50 dark:bg-gray-900/60",
+      "border-y border-y-gray-200 dark:border-y-gray-800",
+    )
+  }
+  if (row.kind === "subtotal") {
+    return "!border-l-0 bg-gray-50/40 dark:bg-gray-900/30 border-t border-t-gray-300 dark:border-t-gray-700"
+  }
+  if (row.kind === "pl-deduzido") {
+    return "!border-l-0 bg-blue-50/40 dark:bg-blue-950/10 border-t-2 border-t-gray-300 dark:border-t-gray-700"
+  }
+  if (row.kind === "pl-fonte") {
+    return "!border-l-0 border-t border-t-gray-100 dark:border-t-gray-900"
+  }
+  if (row.kind === "residuo") {
+    return "!h-6 !border-l-0 border-t border-t-gray-200 dark:border-t-gray-800"
+  }
+  return "" // line
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Componente
+// ─────────────────────────────────────────────────────────────────────────────
 
 export type BalancoPatrimonialHeroProps = {
   data?:         BalancoPatrimonialResponse
@@ -112,6 +482,30 @@ export function BalancoPatrimonialHero({
   onExplicarVariacao,
   explicarVariacaoLoading = false,
 }: BalancoPatrimonialHeroProps) {
+  // Hooks rodam incondicionalmente, antes de qualquer early return
+  // (rules-of-hooks). `data` e null nos estados de erro/loading/empty;
+  // os memos ficam null-safe e so produzem conteudo real quando ha data.
+  const residuo = data ? data.residuo_identidade_delta : 0
+  const residuoAbs = Math.abs(residuo)
+  const residuoStatus: "ok" | "warn" | "error" =
+    residuoAbs < RESIDUO_AMBER_BRL ? "ok"
+    : residuoAbs < RESIDUO_RED_BRL ? "warn"
+    : "error"
+
+  const tree = React.useMemo(
+    () => (data ? buildTree(data, residuo) : []),
+    [data, residuo],
+  )
+  const columns = React.useMemo(
+    () => buildColumns({ data: data?.data ?? "", dataAnterior: data?.data_anterior ?? "" }),
+    [data?.data, data?.data_anterior],
+  )
+  const handleRowClick = React.useCallback((row: Row) => {
+    if (row.kind === "line" && row.drillEnabled && row.categoria && onDrillCategoria) {
+      onDrillCategoria(row.categoria.key)
+    }
+  }, [onDrillCategoria])
+
   if (errorMessage && !loading) {
     return (
       <ErrorState
@@ -143,17 +537,6 @@ export function BalancoPatrimonialHero({
       />
     )
   }
-
-  // F4.8 (2026-05-24): usa residuo do DELTA DO DIA, nao snapshot acumulado.
-  // Snapshot D0 acumula arredondamento da QiTech ao longo do tempo (R$ 0,52
-  // em 13/05); delta-dos-deltas isola o erro do dia (R$ 0,05 em 13/05),
-  // que e o que importa pra avaliar fechamento.
-  const residuo = data.residuo_identidade_delta
-  const residuoAbs = Math.abs(residuo)
-  const residuoStatus: "ok" | "warn" | "error" =
-    residuoAbs < RESIDUO_AMBER_BRL ? "ok"
-    : residuoAbs < RESIDUO_RED_BRL ? "warn"
-    : "error"
 
   return (
     <Card className="flex flex-col p-0">
@@ -191,286 +574,31 @@ export function BalancoPatrimonialHero({
         </div>
       </div>
 
-      {/* Cabeçalho das colunas */}
-      <div className={cx(GRID, "border-y border-gray-100 bg-gray-50/60 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.04em] text-gray-500 dark:border-gray-800 dark:bg-gray-900/30 dark:text-gray-400")}>
-        <span></span>
-        <span className="text-right">D-1<br /><span className="font-normal text-gray-400">{fmtDate(data.data_anterior)}</span></span>
-        <span className="text-right">D0<br /><span className="font-normal text-gray-400">{fmtDate(data.data)}</span></span>
-        <span className="text-right">Δ</span>
-        <span></span>
-      </div>
-
-      {/* Seção ATIVOS */}
-      <SectionLabel label="Ativos" />
-      {data.ativos.map((cat) => (
-        <BalanceRow
-          key={cat.key}
-          categoria={cat}
-          onDrill={onDrillCategoria}
-        />
-      ))}
-      <TotalRow
-        label="Σ Ativos"
-        d1={data.soma_ativos_d1}
-        d0={data.soma_ativos_d0}
-        delta={data.soma_ativos_delta}
-      />
-
-      {/* Seção PASSIVOS */}
-      <SectionLabel label="Passivos · redutores" />
-      {data.passivos.map((cat) => (
-        <BalanceRow
-          key={cat.key}
-          categoria={cat}
-          onDrill={onDrillCategoria}
-        />
-      ))}
-      <TotalRow
-        label="Σ Passivos"
-        d1={data.soma_passivos_d1}
-        d0={data.soma_passivos_d0}
-        delta={data.soma_passivos_delta}
-      />
-
-      {/* Seção FECHAMENTO — reconciliação PL calculado vs MEC */}
-      <PlRow
-        label="PL Sub Jr · calculado"
-        sublabel="Σ Ativos − Σ Passivos (pelas fontes granulares)"
-        tooltip="PL Sub Jr construído de baixo pra cima: soma das categorias do Ativo menos soma das categorias do Passivo, todas calculadas a partir das tabelas silver granulares do warehouse."
-        d1={data.pl_deduzido_d1}
-        d0={data.pl_deduzido_d0}
-        delta={data.pl_deduzido_delta}
-        emphasize
-      />
-      <PlRow
-        label="PL Sub Jr · fonte MEC"
-        sublabel="wh_mec_evolucao_cotas (classe Sub Jr)"
-        tooltip="PL Sub Jr lido diretamente do MEC (Movimento Estatístico Consolidado) publicado pela QiTech. Usado como check externo do cálculo acima."
-        d1={data.pl_fonte_d1}
-        d0={data.pl_fonte_d0}
-        delta={data.pl_fonte_delta}
-      />
-      <IdentidadeRow
-        residuoDelta={data.residuo_identidade_delta}
-        residuoSnapshot={data.residuo_identidade_d0}
-        status={residuoStatus}
+      {/* DataTable hierárquica — sempre expandida.
+         Não setamos `expandedColumnId` → chevron não renderiza, ficando
+         apenas indentação automática via row.depth na cell de label. */}
+      <DataTable
+        data={tree}
+        columns={columns}
+        density="compact"
+        showColumnManager={false}
+        showDensityToggle={false}
+        showExport={false}
+        virtualize={false}
+        enableExpanding
+        getSubRows={(row) => row.subRows}
+        defaultExpanded={true}
+        rowClassName={(row) => cx(
+          rowClass(row),
+          row.kind === "line" && row.drillEnabled && "cursor-pointer hover:bg-gray-50/80 dark:hover:bg-gray-900/40",
+        )}
+        onRowClick={handleRowClick}
       />
     </Card>
   )
 }
 
-// ─── Sub-componentes ────────────────────────────────────────────────────────
-
-function SectionLabel({ label }: { label: string }) {
-  return (
-    <div className="border-t border-gray-100 bg-white px-3 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-500 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-400">
-      {label}
-    </div>
-  )
-}
-
-function BalanceRow({
-  categoria,
-  onDrill,
-}: {
-  categoria:   CategoriaPatrimonial
-  onDrill?:    (key: CategoriaPatrimonialKey) => void
-}) {
-  const drillEnabled = DRILL_ENABLED_F2.has(categoria.key) && onDrill !== undefined
-  const isZero = Math.abs(categoria.delta) < 0.005
-  const isEmpty = Math.abs(categoria.d0) < 0.005 && isZero
-
-  // Tooltip combinado: descricao amigavel + fonte tecnica + dica de drill.
-  const tooltipParts: string[] = []
-  const friendly = CATEGORIA_TOOLTIP[categoria.key]
-  if (friendly) tooltipParts.push(friendly)
-  if (categoria.source) tooltipParts.push(`Fonte: ${categoria.source}`)
-  if (drillEnabled) tooltipParts.push("Clique para detalhar")
-  const tooltip = tooltipParts.join("\n\n")
-
-  return (
-    <div
-      className={cx(
-        GRID,
-        "group border-t border-gray-50 px-3 py-1 transition-colors duration-100 text-[12px] tabular-nums",
-        "dark:border-gray-900",
-        drillEnabled && "cursor-pointer hover:bg-gray-50/80 dark:hover:bg-gray-900/40",
-        isEmpty && "opacity-50",
-      )}
-      onClick={drillEnabled ? () => onDrill(categoria.key) : undefined}
-      role={drillEnabled ? "button" : undefined}
-      tabIndex={drillEnabled ? 0 : undefined}
-      title={tooltip || undefined}
-    >
-      <span className="flex items-center min-w-0">
-        <span className="truncate text-gray-900 dark:text-gray-50">
-          {categoria.label}
-        </span>
-      </span>
-      <span className="text-right text-gray-500 dark:text-gray-400">
-        {fmtBRL.format(categoria.d1)}
-      </span>
-      <span className="text-right font-medium text-gray-900 dark:text-gray-50">
-        {fmtBRL.format(categoria.d0)}
-      </span>
-      <DeltaCell delta={categoria.delta} />
-      <span className="flex justify-end">
-        {drillEnabled && (
-          <RiArrowRightSLine
-            className="size-3.5 text-gray-300 transition-colors group-hover:text-gray-500 dark:text-gray-700 dark:group-hover:text-gray-400"
-            aria-hidden="true"
-          />
-        )}
-      </span>
-    </div>
-  )
-}
-
-function TotalRow({
-  label, d1, d0, delta,
-}: {
-  label: string
-  d1: number; d0: number; delta: number
-}) {
-  return (
-    <div className={cx(
-      GRID,
-      "border-t border-gray-200 bg-gray-50/40 px-3 py-1.5 text-[12px] font-semibold tabular-nums dark:border-gray-800 dark:bg-gray-900/30",
-    )}>
-      <span className="flex items-center min-w-0">
-        <span className="truncate text-gray-900 dark:text-gray-50">
-          {label}
-        </span>
-      </span>
-      <span className="text-right text-gray-600 dark:text-gray-400">
-        {fmtBRL.format(d1)}
-      </span>
-      <span className="text-right text-gray-900 dark:text-gray-50">
-        {fmtBRL.format(d0)}
-      </span>
-      <DeltaCell delta={delta} bold />
-      <span />
-    </div>
-  )
-}
-
-function PlRow({
-  label, sublabel, tooltip, d1, d0, delta, emphasize = false,
-}: {
-  label:     string
-  sublabel?: string
-  tooltip?:  string
-  d1: number; d0: number; delta: number
-  emphasize?: boolean
-}) {
-  return (
-    <div
-      className={cx(
-        GRID,
-        "border-t px-3 py-1.5 text-[12px] tabular-nums",
-        emphasize
-          ? "border-gray-300 bg-blue-50/40 dark:border-gray-700 dark:bg-blue-950/10"
-          : "border-gray-100 dark:border-gray-800",
-      )}
-      title={tooltip}
-    >
-      <span className="flex flex-col min-w-0">
-        <span
-          className={cx(
-            "truncate text-[12px] text-gray-900 dark:text-gray-50",
-            tooltip && "cursor-help",
-            emphasize ? "font-semibold" : "font-medium",
-          )}
-        >
-          {label}
-        </span>
-        {sublabel && (
-          <span className="text-[10px] text-gray-400 dark:text-gray-600">
-            {sublabel}
-          </span>
-        )}
-      </span>
-      <span
-        className={cx(
-          "text-right text-[12px]",
-          emphasize ? "text-gray-700 dark:text-gray-300" : "text-gray-500 dark:text-gray-400",
-        )}
-      >
-        {fmtBRL.format(d1)}
-      </span>
-      <span
-        className={cx(
-          "text-right text-[12px] text-gray-900 dark:text-gray-50",
-          emphasize ? "font-semibold" : "font-medium",
-        )}
-      >
-        {fmtBRL.format(d0)}
-      </span>
-      <DeltaCell delta={delta} bold={emphasize} />
-      <span />
-    </div>
-  )
-}
-
-function IdentidadeRow({
-  residuoDelta, residuoSnapshot, status,
-}: {
-  residuoDelta:    number
-  residuoSnapshot: number
-  status:          "ok" | "warn" | "error"
-}) {
-  // Tooltip mostra o snapshot acumulado pra quem quiser ver o "ruido total"
-  // que se acumulou desde o inicio do fundo (geralmente centavos).
-  const tooltip = `Erro do dia (ΔPL calculado − ΔPL fonte MEC). Snapshot D0 acumulado: ${fmtBRLSigned(residuoSnapshot)}.`
-  return (
-    <div className="flex items-center justify-between gap-2 border-t border-gray-200 px-3 py-1 text-[10px] dark:border-gray-800">
-      <span
-        className="cursor-help uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600"
-        title={tooltip}
-      >
-        Resíduo identidade contábil (dia)
-      </span>
-      <span
-        className={cx(
-          "tabular-nums",
-          status === "ok"    && "text-gray-500 dark:text-gray-400",
-          status === "warn"  && "font-medium text-amber-700 dark:text-amber-400",
-          status === "error" && "font-semibold text-red-700 dark:text-red-400",
-        )}
-        title={tooltip}
-      >
-        {fmtBRLSigned(residuoDelta)}
-      </span>
-    </div>
-  )
-}
-
-function DeltaCell({
-  delta,
-  bold = false,
-}: {
-  delta: number
-  bold?: boolean
-}) {
-  const isZero = Math.abs(delta) < 0.005
-  if (isZero) {
-    return <span className="text-right text-gray-300 dark:text-gray-700">—</span>
-  }
-  const isPositive = delta > 0
-  return (
-    <span
-      className={cx(
-        "text-right",
-        bold && "font-semibold",
-        isPositive
-          ? "text-emerald-700 dark:text-emerald-400"
-          : "text-red-700 dark:text-red-400",
-      )}
-    >
-      {fmtBRLSigned(delta)}
-    </span>
-  )
-}
+// ─── IdentidadeBadge (mantido inalterado) ────────────────────────────────────
 
 function IdentidadeBadge({
   status, residuo,
