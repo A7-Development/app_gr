@@ -695,6 +695,8 @@ export type AIAgentDefinitionDetail = {
   temperature: number | null
   max_tokens: number | null
   cross_module: boolean
+  // null = usa default do CATALOG (spec.tools); [] = sem tools; [...] = override.
+  allowed_tools: string[] | null
   credit_hint: number | null
   tenant_id: string | null
   is_active: boolean
@@ -713,6 +715,7 @@ export type AIAgentDefinitionCreatePayload = {
   temperature?: number | null
   max_tokens?: number | null
   cross_module?: boolean
+  allowed_tools?: string[] | null
   credit_hint?: number | null
 }
 

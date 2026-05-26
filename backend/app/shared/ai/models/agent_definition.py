@@ -83,6 +83,18 @@ class AgentDefinition(Base):
     )
     prompt_name: Mapped[str] = mapped_column(String(128), nullable=False)
 
+    # Subset de tools que o agente pode chamar, por nome (ou wildcard de
+    # modulo, ex.: "controladoria.*"). Resolvido em runtime via
+    # `ToolRegistry.get_available(scope, allowed=...)`. Semantica do valor:
+    #   NULL  -> usa o default do CATALOG (`SpecialistAgentSpec.tools`) —
+    #            preserva o comportamento dos agentes curados em codigo.
+    #   []    -> agente SEM tools (conversacional puro / explicito).
+    #   [...] -> override explicito (editavel pela UI, sem deploy).
+    # Sem FK (lista de strings); validacao na camada de aplicacao + registry.
+    allowed_tools: Mapped[list[str] | None] = mapped_column(
+        ARRAY(String), nullable=True
+    )
+
     # Overrides opcionais — quando None, runtime usa o default do
     # SpecialistAgentSpec (catalog) ou do prompt template.
     model: Mapped[str | None] = mapped_column(String(64), nullable=True)

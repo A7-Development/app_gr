@@ -72,6 +72,7 @@ import {
   usePersonas,
   usePreviewAgentDefinition,
   usePrompts,
+  useTools,
   useUpdateAgentDefinition,
 } from "@/lib/hooks/admin-ai"
 import {
@@ -249,6 +250,9 @@ export default function AgentsAdminPage() {
   const expertisesQuery = useExpertises()
   const promptsQuery = usePrompts()
   const modelsQuery = useAdminAgentModels()
+  // Catalogo completo de tools (sem filtro de modulo) — o ToolPicker escopa
+  // client-side por modulo do agente + cross_module.
+  const toolsQuery = useTools()
 
   const createMut = useCreateAgentDefinition()
   const updateMut = useUpdateAgentDefinition()
@@ -611,6 +615,7 @@ export default function AgentsAdminPage() {
                   expertises={expertisesQuery.data ?? []}
                   prompts={promptsQuery.data ?? []}
                   models={modelsQuery.data ?? []}
+                  tools={toolsQuery.data ?? []}
                   onSubmit={handleEdit}
                   onCancel={() => setEditingId(null)}
                   submitting={updateMut.isPending}
@@ -649,6 +654,7 @@ export default function AgentsAdminPage() {
               expertises={expertisesQuery.data ?? []}
               prompts={promptsQuery.data ?? []}
               models={modelsQuery.data ?? []}
+              tools={toolsQuery.data ?? []}
               onSubmit={handleCreate}
               onCancel={closeSheet}
               submitting={createMut.isPending}
@@ -867,6 +873,30 @@ function AgentDetailView({
             </span>
           )}
         </div>
+      </section>
+
+      <section>
+        <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          Tools
+        </div>
+        {agent.allowed_tools === null ? (
+          <span className={tableTokens.cellMuted}>
+            Padrao do CATALOG (definido em codigo)
+          </span>
+        ) : agent.allowed_tools.length === 0 ? (
+          <span className={tableTokens.cellMuted}>(sem tools — conversacional)</span>
+        ) : (
+          <ul className="flex flex-wrap gap-1">
+            {agent.allowed_tools.map((t) => (
+              <li
+                key={t}
+                className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+              >
+                {t}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <Divider />

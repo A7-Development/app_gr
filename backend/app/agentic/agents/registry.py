@@ -199,6 +199,12 @@ class AgentRegistry:
             thinking_budget_tokens=spec.thinking_budget_tokens,
             cross_module=definition.cross_module,
             credit_hint=definition.credit_hint,
+            # NULL no DB -> None aqui -> runtime cai no `spec.tools` do CATALOG.
+            allowed_tools=(
+                tuple(definition.allowed_tools)
+                if definition.allowed_tools is not None
+                else None
+            ),
         )
 
 
@@ -264,4 +270,6 @@ async def _resolve_from_catalog(
         thinking_budget_tokens=spec.thinking_budget_tokens,
         cross_module=False,
         credit_hint=None,
+        # Fallback CATALOG sem row em DB: sem override, usa `spec.tools`.
+        allowed_tools=None,
     )

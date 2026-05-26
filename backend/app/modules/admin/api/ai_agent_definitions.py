@@ -153,9 +153,10 @@ async def _to_detail(
     # Prompt: resolve via repository pra pegar versao ativa
     prompt_ref: AgentPromptRef | None = None
     try:
-        prompt = await prompt_repo.resolve(db, name=row.prompt_name)
-        # `prompt_repo.resolve` retorna `Prompt` dataclass; pra carregar id
-        # da row precisamos query separada.
+        # Resolve so pra disparar PromptNotFoundError quando o prompt nao
+        # existe (capturado abaixo). O `Prompt` dataclass nao carrega o id da
+        # row; pra isso fazemos a query separada logo em seguida.
+        await prompt_repo.resolve(db, name=row.prompt_name)
         prompt_row_stmt = (
             select(AIPrompt)
             .join(AIPromptActive, AIPromptActive.name == AIPrompt.name)
@@ -186,6 +187,7 @@ async def _to_detail(
         temperature=float(row.temperature) if row.temperature is not None else None,
         max_tokens=row.max_tokens,
         cross_module=row.cross_module,
+        allowed_tools=row.allowed_tools,
         credit_hint=row.credit_hint,
         tenant_id=row.tenant_id,
         is_active=active_map.get((row.tenant_id, row.name)) == row.id,
@@ -303,6 +305,7 @@ async def create_agent(
         temperature=payload.temperature,
         max_tokens=payload.max_tokens,
         cross_module=payload.cross_module,
+        allowed_tools=payload.allowed_tools,
         credit_hint=payload.credit_hint,
         created_by_user_id=principal.user_id,
     )
@@ -368,6 +371,9 @@ async def update_agent(
         temperature=_coalesce(payload.temperature, base.temperature),
         max_tokens=_coalesce(payload.max_tokens, base.max_tokens),
         cross_module=_coalesce(payload.cross_module, base.cross_module),
+        # None no payload herda a base; [] zera; [...] sobrescreve (mesma
+        # semantica de expertise_ids).
+        allowed_tools=_coalesce(payload.allowed_tools, base.allowed_tools),
         credit_hint=_coalesce(payload.credit_hint, base.credit_hint),
         created_by_user_id=principal.user_id,
     )

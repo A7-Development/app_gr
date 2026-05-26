@@ -94,6 +94,8 @@ class AgentDefinitionDetail(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     cross_module: bool
+    # None = usa default do CATALOG (spec.tools); [] = sem tools; [...] = override.
+    allowed_tools: list[str] | None = None
     credit_hint: int | None = None
     tenant_id: UUID | None
     is_active: bool
@@ -128,6 +130,8 @@ class AgentDefinitionCreate(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     cross_module: bool = False
+    # None = herda default do CATALOG; [] = sem tools; [...] = override explicito.
+    allowed_tools: list[str] | None = None
     credit_hint: int | None = None
 
 
@@ -147,6 +151,8 @@ class AgentDefinitionUpdate(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     cross_module: bool | None = None
+    # Em update, None = herda da base (nao mexe); [] = zera tools; [...] = override.
+    allowed_tools: list[str] | None = None
     credit_hint: int | None = None
 
 
