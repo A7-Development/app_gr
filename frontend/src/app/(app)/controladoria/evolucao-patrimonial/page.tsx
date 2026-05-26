@@ -104,6 +104,22 @@ function presetToInicio(preset: Preset): string {
   return format(subMonths(new Date(), PRESET_MESES[preset]), "yyyy-MM-dd")
 }
 
+// Eixo Y em milhoes compacto, padrao operacoes4 (ex.: "12,5"). Sem "R$"/"M"
+// — a unidade fica implicita na caption ("R$ mi") e no tooltip (BRL full).
+function fmtMilhoesAxis(v: number): string {
+  if (v === 0) return "0"
+  return (v / 1_000_000).toFixed(1).replace(".", ",")
+}
+
+// hex -> rgba com alpha, para o gradiente de area (estilo EvolucaoMensalCard).
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace("#", "")
+  const r = parseInt(h.slice(0, 2), 16)
+  const g = parseInt(h.slice(2, 4), 16)
+  const b = parseInt(h.slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 function fmtDataCurta(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
   return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : iso
@@ -478,11 +494,12 @@ function EvolucaoContent({
     const ativas = CLASSE_STACK_ORDER.filter((c) => classesDisp.some((ci) => ci.classe === c))
     return {
       // right amplo: acomoda o endLabel (legenda + rotulo no ultimo ponto).
-      grid: { top: 16, right: 156, bottom: 24, left: 60 },
+      grid: { top: 16, right: 156, bottom: 24, left: 40 },
       xAxis: { type: "category", data: xLabels, axisTick: { show: false } },
       yAxis: {
         type: "value",
-        axisLabel: { formatter: (v: number) => `R$ ${(v / 1e6).toFixed(0)}M` },
+        // Milhoes compacto, padrao operacoes4 (EvolucaoMensalCard).
+        axisLabel: { formatter: fmtMilhoesAxis, fontSize: 10 },
       },
       series: ativas.map((c) => ({
         name: classesDisp.find((ci) => ci.classe === c)?.label ?? c,
@@ -490,8 +507,21 @@ function EvolucaoContent({
         stack: plStacked ? "pl" : undefined,
         smooth: false,
         symbol: "none",
-        areaStyle: { opacity: plStacked ? 0.6 : 0.12 },
-        lineStyle: { width: plStacked ? 1 : 2, color: CLASSE_COLOR[c] },
+        // Area com gradiente topo->transparente (estilo operacoes4).
+        areaStyle: {
+          color: {
+            type: "linear" as const,
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: hexToRgba(CLASSE_COLOR[c], plStacked ? 0.45 : 0.28) },
+              { offset: 1, color: hexToRgba(CLASSE_COLOR[c], 0) },
+            ],
+          },
+        },
+        lineStyle: { width: 2, color: CLASSE_COLOR[c] },
         itemStyle: { color: CLASSE_COLOR[c] },
         // Legenda + rotulo juntos no fim a direita: nome da classe + valor no
         // ultimo ponto. Substitui a legenda inferior (removida abaixo).
@@ -738,7 +768,7 @@ function EvolucaoContent({
         <div className="lg:col-span-2">
           <EChartsCard
             title="Evolucao do PL"
-            caption={`Patrimonio liquido por classe${ultimaData ? ` · ultima posicao ${fmtDataCurta(ultimaData)}` : ""}`}
+            caption={`Patrimonio liquido por classe (R$ mi)${ultimaData ? ` · ultima posicao ${fmtDataCurta(ultimaData)}` : ""}`}
             option={plOption}
             height={320}
             loading={loading}
