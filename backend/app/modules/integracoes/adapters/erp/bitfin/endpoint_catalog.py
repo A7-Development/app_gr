@@ -39,6 +39,24 @@ BITFIN_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_value="30",
         canonical_table="wh_titulo, wh_operacao, wh_dre, wh_caixa_snapshot",
     ),
+    # Relay Serasa (2026-05-26): replica as consultas Serasa Relato PJ feitas
+    # DENTRO do Bitfin (dbo.ConsultaFinanceira.Relatorio, gzip JSON) para o
+    # warehouse wh_serasa_pj_*, reusando o mapper Serasa do GR. Incremental
+    # por watermark de ConsultaFinanceiraId (idempotente). Endpoint proprio
+    # (schedule/enable independentes do full_sync do ERP).
+    EndpointSpec(
+        admin_code="bitfin",
+        name="bitfin.serasa_relay",
+        label="Bitfin · Relay Serasa PJ",
+        description=(
+            "Replica as consultas Serasa (Relato PJ Analitico) registradas no "
+            "Bitfin para o warehouse wh_serasa_pj_*. Incremental por "
+            "ConsultaFinanceiraId; nao faz chamada paga a Serasa."
+        ),
+        default_schedule_kind=ScheduleKind.INTERVAL,
+        default_schedule_value="15",
+        canonical_table="wh_serasa_pj_consulta",
+    ),
 )
 
 

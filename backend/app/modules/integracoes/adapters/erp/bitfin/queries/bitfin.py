@@ -8,6 +8,17 @@ fetch contra ANALYTICS para o caminho critico do DRE). Tres fontes:
 - ComissaoComercialFechamento (bloco 3: comissoes comerciais)
 """
 
+# ─── Relay Serasa (consultas Serasa armazenadas no Bitfin) ─────────────────
+# Incremental por ConsultaFinanceiraId (IDENTITY, append-only). TOP (?) limita
+# o lote; o 2o ? e o watermark. Fonte fixa em Relato PJ (o mapper seg-028 do GR
+# so consome esse produto). Relatorio = varbinary gzip(JSON) → bytes no pyodbc.
+SELECT_CONSULTA_FINANCEIRA_SINCE_ID = """
+SELECT TOP (?) ConsultaFinanceiraId, Documento, DataFinal, Relatorio
+FROM dbo.ConsultaFinanceira
+WHERE ConsultaFinanceiraId > ? AND Fonte = 'Serasa - Relato PJ'
+ORDER BY ConsultaFinanceiraId
+"""
+
 SELECT_DRE_DEMONSTRATIVO_RAW = """
 SELECT
     Ano AS ano, Mes AS mes,

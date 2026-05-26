@@ -85,14 +85,28 @@ async def adapter_sync_endpoint(
     Levanta ValueError pra endpoint_name nao reconhecido.
     """
     _ = environment
+    _ = unidade_administrativa_id  # Bitfin filtra por CNPJ no config, nao por UA
+    config = BitfinConfig.from_dict(config_dict)
+
+    # Relay Serasa: replica dbo.ConsultaFinanceira → wh_serasa_pj_* (sem chamada
+    # paga a Serasa). Endpoint proprio, independente do full_sync do ERP.
+    if endpoint_name == "bitfin.serasa_relay":
+        from app.modules.integracoes.adapters.erp.bitfin.serasa_relay import (
+            relay_serasa_pj,
+        )
+
+        summary = await relay_serasa_pj(
+            tenant_id, config, triggered_by=triggered_by
+        )
+        summary["endpoint_name"] = endpoint_name
+        return summary
+
     if endpoint_name != "bitfin.full_sync":
         raise ValueError(
             f"Endpoint desconhecido para Bitfin: {endpoint_name!r}. "
-            f"Conhecido: ['bitfin.full_sync']"
+            f"Conhecido: ['bitfin.full_sync', 'bitfin.serasa_relay']"
         )
 
-    _ = unidade_administrativa_id  # Bitfin filtra por CNPJ no config, nao por UA
-    config = BitfinConfig.from_dict(config_dict)
     summary = await sync_all(
         tenant_id,
         config,
