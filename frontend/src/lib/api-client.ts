@@ -911,6 +911,32 @@ export function buildAIChatRequest(
   }
 }
 
+/**
+ * Request SSE do agente de variacao da Cota Sub (run-stream). Mesma anatomy
+ * do buildAIChatRequest: POST + Bearer token + Accept text/event-stream.
+ * Sem body — params vao na query string (fundo_id, data). Consumido via
+ * fetch + ReadableStream (NUNCA EventSource — nao passa Authorization).
+ */
+export function buildCotaSubAgenteVariacaoStreamRequest(
+  fundoId: string,
+  data: string,
+): { url: string; init: RequestInit } {
+  const headers: Record<string, string> = {
+    Accept: "text/event-stream",
+  }
+  const token = getToken()
+  if (token) headers.Authorization = `Bearer ${token}`
+  const params = new URLSearchParams({ fundo_id: fundoId, data })
+  return {
+    url: `${API_URL}/controladoria/cota-sub/agente/analista-variacao/run-stream?${params.toString()}`,
+    init: {
+      method: "POST",
+      headers,
+      cache: "no-store",
+    },
+  }
+}
+
 //
 // Helpers de alto nivel
 //
@@ -4391,7 +4417,7 @@ export type AgenteVariacaoRunResponse = {
   analise:   AgenteAnaliseVariacao
 }
 
-type AgenteVariacaoRunResponseDTO = {
+export type AgenteVariacaoRunResponseDTO = {
   metadata: {
     analysis_run_id:        string
     audit_version:          string
@@ -4408,7 +4434,7 @@ type AgenteVariacaoRunResponseDTO = {
   analise: AgenteAnaliseVariacao  // Pydantic ja serializa numeros direto
 }
 
-function _coerceAgenteVariacaoRun(r: AgenteVariacaoRunResponseDTO): AgenteVariacaoRunResponse {
+export function coerceAgenteVariacaoRun(r: AgenteVariacaoRunResponseDTO): AgenteVariacaoRunResponse {
   return {
     metadata: {
       ...r.metadata,
@@ -4882,7 +4908,7 @@ export const controladoria = {
       `/controladoria/cota-sub/agente/analista-variacao/run?${params.toString()}`,
       undefined,
     )
-    return _coerceAgenteVariacaoRun(raw)
+    return coerceAgenteVariacaoRun(raw)
   },
 
   // ── DRE — Demonstrativo do Resultado do Exercicio ─────────────────────

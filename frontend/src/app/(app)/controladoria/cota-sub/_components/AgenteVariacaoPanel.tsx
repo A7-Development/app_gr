@@ -37,6 +37,10 @@ import { Card } from "@/components/tremor/Card"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 import { Button } from "@/components/tremor/Button"
+import {
+  AgentLiveStatus,
+  type AgentToolLogEntry,
+} from "@/design-system/components/AgentLiveStatus"
 import type {
   AgenteAnaliseVariacao,
   AgenteCategoriaDelta,
@@ -96,16 +100,22 @@ const PRIORIDADE_STYLE: Record<AgenteSugestaoAcao["prioridade"], { dot: string; 
 export type AgenteVariacaoPanelProps = {
   open:        boolean
   onClose:     () => void
-  loading:     boolean
+  /** Estado do stream SSE — controla qual corpo o painel renderiza. */
+  status:      "idle" | "streaming" | "done" | "error"
+  /** Trace ao vivo (tool_use / tool_result / reasoning) — alimenta a timeline. */
+  toolsLog:    AgentToolLogEntry[]
+  /** ISO em que o stream comecou — alimenta o ticker do timer. */
+  startedAt:   string | null
+  /** Resultado final (chega no frame `result`). */
+  result:      AgenteVariacaoRunResponse | null
   error:       string | null
-  data:        AgenteVariacaoRunResponse | null
   onRetry?:    () => void
 }
 
 // ─── Componente raiz ──────────────────────────────────────────────────────
 
 export function AgenteVariacaoPanel(props: AgenteVariacaoPanelProps) {
-  const { open, onClose, loading, error, data, onRetry } = props
+  const { open, onClose, status, toolsLog, startedAt, result, error, onRetry } = props
   return (
     <DrillDownSheet open={open} onClose={onClose} size="xl" title="Análise IA · Variação da Cota Sub Jr">
       <DrillDownSheet.Header
@@ -118,41 +128,45 @@ export function AgenteVariacaoPanel(props: AgenteVariacaoPanelProps) {
         }
       />
       <DrillDownSheet.Body>
-        {loading && <LoadingState />}
-        {error && !loading && (
+        {status === "streaming" && <LiveState toolsLog={toolsLog} startedAt={startedAt} />}
+        {status === "error" && (
           <ErrorState
             title="Falha ao invocar o agente"
-            description={error}
+            description={error ?? "Erro desconhecido"}
             action={onRetry ? <Button onClick={onRetry}>Tentar novamente</Button> : undefined}
           />
         )}
-        {data && !loading && !error && <AgenteAnaliseBody data={data} />}
+        {status === "done" && result && <AgenteAnaliseBody data={result} />}
       </DrillDownSheet.Body>
     </DrillDownSheet>
   )
 }
 
-// ─── Loading state ────────────────────────────────────────────────────────
+// ─── Live state — agente trabalhando ao vivo (SSE) ─────────────────────────
 
-function LoadingState() {
+function LiveState({
+  toolsLog,
+  startedAt,
+}: {
+  toolsLog: AgentToolLogEntry[]
+  startedAt: string | null
+}) {
   return (
-    <div className="flex flex-col items-center justify-center gap-4 py-16">
-      <div className="relative size-12">
-        <div className="absolute inset-0 animate-ping rounded-full bg-violet-200 opacity-50 dark:bg-violet-900/40" />
-        <div className="absolute inset-2 flex items-center justify-center rounded-full bg-violet-500 text-white">
-          <RiSparklingFill className="size-5" aria-hidden />
-        </div>
-      </div>
-      <div className="flex flex-col items-center gap-1 text-center">
-        <p className="text-sm font-medium text-gray-900 dark:text-gray-50">
-          Analisando a variação do dia…
-        </p>
-        <p className="text-[11px] text-gray-500 dark:text-gray-400 max-w-md">
-          O agente faz sanity check, decompõe as 12 categorias do balanço e
-          investiga cruzando estoque × liquidações × histórico. Pode levar até 90s na primeira execução
-          (cacheia depois).
-        </p>
-      </div>
+    <div className="flex flex-col gap-3">
+      <p className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+        O agente faz sanity check, decompõe as 12 categorias do balanço e investiga
+        cruzando estoque × liquidações × histórico. Acompanhe abaixo, em tempo real,
+        o que ele está consultando e raciocinando. Pode levar até 90s na primeira
+        execução (cacheia depois).
+      </p>
+      <Card className="p-4">
+        <AgentLiveStatus
+          startedAt={startedAt}
+          toolsLog={toolsLog}
+          maxEntries={60}
+          fallbackMessage="Conectando ao agente…"
+        />
+      </Card>
     </div>
   )
 }

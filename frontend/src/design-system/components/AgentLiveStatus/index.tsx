@@ -18,7 +18,9 @@ import * as React from "react"
 import {
   RiArrowLeftLine,
   RiArrowRightLine,
+  RiChat3Line,
   RiCloseCircleLine,
+  RiErrorWarningLine,
   RiLoader4Line,
 } from "@remixicon/react"
 
@@ -29,13 +31,18 @@ import { cx } from "@/lib/utils"
 export type AgentToolLogEntry = {
   /** ISO timestamp do evento. */
   iso_at: string
-  /** "tool_use" = agente chamou ferramenta · "tool_result" = recebeu retorno. */
-  kind: "tool_use" | "tool_result"
+  /**
+   * Tipo do step. `tool_use`/`tool_result` = coreografia de ferramentas;
+   * `reasoning` = texto que o modelo narrou entre tool calls (o "raciocinio
+   * em voz alta"); `observation` = marcador de inicio/fim; `scratchpad` =
+   * resumo interno (nao renderizado); `error` = falha.
+   */
+  kind: "tool_use" | "tool_result" | "reasoning" | "observation" | "scratchpad" | "error"
   /** Nome da ferramenta chamada (ex.: "ref_calc", "dossier_read"). */
   tool_name?: string | null
   /** Duracao em ms (so em tool_result). */
   duration_ms?: number | null
-  /** Mensagem opcional (ex.: input/output truncado pra display). */
+  /** Mensagem opcional (ex.: input/output truncado pra display, ou narrativa). */
   message?: string | null
 }
 
@@ -134,33 +141,86 @@ function ToolsTimeline({
   const recent = entries.slice(-maxEntries)
   return (
     <ol
-      className="relative space-y-1.5 pl-2"
+      className="relative space-y-1.5 pl-1"
       aria-label="Atividade do agente em tempo real"
     >
-      {recent.map((entry, idx) => {
-        const isUse = entry.kind === "tool_use"
-        const Icon = isUse ? RiArrowRightLine : RiArrowLeftLine
-        const tone = isUse
-          ? "text-blue-600 dark:text-blue-400"
-          : "text-gray-500 dark:text-gray-400"
-        const label = isUse
-          ? `calling ${entry.tool_name ?? "tool"}`
-          : `${entry.tool_name ?? "tool"} result${
-              entry.duration_ms != null
-                ? ` (${(entry.duration_ms / 1000).toFixed(1)}s)`
-                : ""
-            }`
-        return (
-          <li
-            key={`${entry.iso_at}-${idx}`}
-            className="flex items-start gap-2"
-          >
-            <Icon className={cx("mt-0.5 size-3 shrink-0", tone)} aria-hidden />
-            <span className={cx("font-mono text-xs", tone)}>{label}</span>
-          </li>
-        )
-      })}
+      {recent.map((entry, idx) => (
+        <TimelineRow key={`${entry.iso_at}-${idx}`} entry={entry} />
+      ))}
     </ol>
+  )
+}
+
+/** Renderiza UMA entrada do trace, com tratamento por `kind`. */
+function TimelineRow({ entry }: { entry: AgentToolLogEntry }) {
+  // Scratchpad = resumo interno do agente (JSON truncado) — poluiria a
+  // timeline. Nao renderiza.
+  if (entry.kind === "scratchpad") return null
+
+  // Reasoning = o "falando com ele mesmo". Texto que o modelo escreveu antes
+  // de chamar a tool. Renderiza como pensamento (italico, quebra linha).
+  if (entry.kind === "reasoning") {
+    return (
+      <li className="flex items-start gap-2">
+        <RiChat3Line
+          className="mt-0.5 size-3.5 shrink-0 text-violet-500 dark:text-violet-400"
+          aria-hidden
+        />
+        <span className="text-xs italic leading-relaxed text-gray-700 dark:text-gray-300">
+          {entry.message}
+        </span>
+      </li>
+    )
+  }
+
+  if (entry.kind === "error") {
+    return (
+      <li className="flex items-start gap-2">
+        <RiErrorWarningLine
+          className="mt-0.5 size-3 shrink-0 text-red-500"
+          aria-hidden
+        />
+        <span className="font-mono text-xs text-red-600 dark:text-red-400">
+          {entry.message ?? "erro"}
+        </span>
+      </li>
+    )
+  }
+
+  // Observation = marcador de inicio/fim de agente. Faint, nao compete com
+  // tool calls e reasoning.
+  if (entry.kind === "observation") {
+    return (
+      <li className="flex items-start gap-2">
+        <span
+          className="mt-1 size-1.5 shrink-0 rounded-full bg-gray-300 dark:bg-gray-700"
+          aria-hidden
+        />
+        <span className="text-[11px] text-gray-400 dark:text-gray-600">
+          {entry.message}
+        </span>
+      </li>
+    )
+  }
+
+  // tool_use / tool_result
+  const isUse = entry.kind === "tool_use"
+  const Icon = isUse ? RiArrowRightLine : RiArrowLeftLine
+  const tone = isUse
+    ? "text-blue-600 dark:text-blue-400"
+    : "text-gray-500 dark:text-gray-400"
+  const label = isUse
+    ? entry.tool_name ?? "tool"
+    : `${entry.tool_name ?? "tool"}${
+        entry.duration_ms != null
+          ? ` · ${(entry.duration_ms / 1000).toFixed(1)}s`
+          : ""
+      }`
+  return (
+    <li className="flex items-start gap-2">
+      <Icon className={cx("mt-0.5 size-3 shrink-0", tone)} aria-hidden />
+      <span className={cx("font-mono text-xs", tone)}>{label}</span>
+    </li>
   )
 }
 

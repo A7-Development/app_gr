@@ -10,7 +10,11 @@ import { differenceInCalendarDays, parseISO } from "date-fns"
 import { useMutation, useQuery } from "@tanstack/react-query"
 
 import {
+  buildCotaSubAgenteVariacaoStreamRequest,
+  coerceAgenteVariacaoRun,
   controladoria,
+  type AgenteVariacaoRunResponse,
+  type AgenteVariacaoRunResponseDTO,
   type CoverageDay,
   type DreBaseFilters,
   type DreDrillFornecedoresFilters,
@@ -19,6 +23,7 @@ import {
 import {
   buildCoverageStripEntry,
   isCoverageStripEntryHealthy,
+  type AgentToolLogEntry,
   type CoverageStripEntry,
 } from "@/design-system/components"
 
@@ -462,4 +467,135 @@ export function useAgenteAnalistaVariacao() {
     mutationFn: ({ fundoId, data }: { fundoId: string; data: string }) =>
       controladoria.cotaSubAgenteAnalistaVariacaoRun(fundoId, data),
   })
+}
+
+// ─── Agente IA · streaming SSE (ao vivo) ─────────────────────────────
+//
+// Versao streaming do agente: em vez de bloquear ~90s e devolver o JSON
+// pronto, mostra o trabalho do agente ao vivo (tool_use / tool_result /
+// reasoning) via SSE. Le o ReadableStream no mesmo molde do useAIChat.
+
+export type AgenteVariacaoStreamStatus = "idle" | "streaming" | "done" | "error"
+
+export type AgenteVariacaoStreamState = {
+  status:    AgenteVariacaoStreamStatus
+  toolsLog:  AgentToolLogEntry[]
+  result:    AgenteVariacaoRunResponse | null
+  error:     string | null
+  startedAt: string | null
+}
+
+const _INITIAL_STREAM_STATE: AgenteVariacaoStreamState = {
+  status:    "idle",
+  toolsLog:  [],
+  result:    null,
+  error:     null,
+  startedAt: null,
+}
+
+export function useAgenteVariacaoStream() {
+  const [state, setState] = React.useState<AgenteVariacaoStreamState>(_INITIAL_STREAM_STATE)
+  // AbortController da execucao em curso — cancela o stream anterior se o
+  // user re-disparar (Retry / trocar dia) antes do termino.
+  const abortRef = React.useRef<AbortController | null>(null)
+
+  const reset = React.useCallback(() => {
+    abortRef.current?.abort()
+    abortRef.current = null
+    setState(_INITIAL_STREAM_STATE)
+  }, [])
+
+  const run = React.useCallback(async (fundoId: string, data: string) => {
+    abortRef.current?.abort()
+    const ac = new AbortController()
+    abortRef.current = ac
+
+    setState({
+      status:    "streaming",
+      toolsLog:  [],
+      result:    null,
+      error:     null,
+      startedAt: new Date().toISOString(),
+    })
+
+    const { url, init } = buildCotaSubAgenteVariacaoStreamRequest(fundoId, data)
+
+    try {
+      const res = await fetch(url, { ...init, signal: ac.signal })
+      if (!res.ok || !res.body) {
+        let detail = res.statusText
+        try {
+          const errJson = (await res.json()) as { detail?: string }
+          if (errJson.detail) detail = errJson.detail
+        } catch {
+          // ignore
+        }
+        throw new Error(detail || `Falha HTTP ${res.status}`)
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder("utf-8")
+      let buffer = ""
+
+      const handleEvent = (event: string, dataStr: string) => {
+        let payload: Record<string, unknown> = {}
+        try {
+          payload = JSON.parse(dataStr) as Record<string, unknown>
+        } catch {
+          return
+        }
+        if (event === "step") {
+          setState((s) => ({
+            ...s,
+            toolsLog: [...s.toolsLog, payload as unknown as AgentToolLogEntry],
+          }))
+        } else if (event === "result") {
+          const coerced = coerceAgenteVariacaoRun(
+            payload as unknown as AgenteVariacaoRunResponseDTO,
+          )
+          setState((s) => ({ ...s, status: "done", result: coerced }))
+        } else if (event === "error") {
+          const detail = (payload.detail as string) ?? "Erro desconhecido"
+          setState((s) => ({ ...s, status: "error", error: detail }))
+        }
+      }
+
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+
+        // SSE frames separados por linha em branco.
+        let sep: number
+        while ((sep = buffer.indexOf("\n\n")) !== -1) {
+          const frame = buffer.slice(0, sep)
+          buffer = buffer.slice(sep + 2)
+          const lines = frame.split("\n")
+          let event = "message"
+          const dataLines: string[] = []
+          for (const line of lines) {
+            if (line.startsWith("event:")) event = line.slice(6).trim()
+            else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim())
+          }
+          if (dataLines.length > 0) handleEvent(event, dataLines.join("\n"))
+        }
+      }
+
+      // Stream encerrou sem result nem error (queda de conexao no meio).
+      setState((s) =>
+        s.status === "streaming"
+          ? { ...s, status: "error", error: "Conexao encerrada antes do resultado." }
+          : s,
+      )
+    } catch (err) {
+      if ((err as Error)?.name === "AbortError") return // re-disparo: silencioso
+      setState((s) => ({
+        ...s,
+        status: "error",
+        error:  (err as Error)?.message ?? "Erro desconhecido",
+      }))
+    }
+  }, [])
+
+  return { state, run, reset }
 }

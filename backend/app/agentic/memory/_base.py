@@ -34,6 +34,7 @@ class StepKind(StrEnum):
 
     TOOL_USE = "tool_use"                 # agente chamou ferramenta
     TOOL_RESULT = "tool_result"           # ferramenta retornou
+    REASONING = "reasoning"               # texto que o modelo narrou entre tool calls
     SCRATCHPAD_WRITE = "scratchpad"       # agente escreveu observacao
     OBSERVATION = "observation"           # marcador livre (inicio/fim de agente)
     ERROR = "error"                       # tool/agent levantou excecao
@@ -214,6 +215,31 @@ class AnalysisSession:
                 step_index=self._next_step_index(),
                 agent_full_id=agent_full_id,
                 message=message,
+            )
+        )
+
+    def record_reasoning(
+        self,
+        *,
+        agent_full_id: str,
+        text: str,
+    ) -> SessionStep:
+        """Registra o texto que o modelo narrou ANTES de chamar tools.
+
+        Esse e o "raciocinio em voz alta" do agente — o que ele escreve
+        entre uma rodada de tool_use e a proxima. Surfaceado ao vivo no
+        `AgentLiveStatus` (frontend) via `_on_step`. `message` carrega o
+        texto (capado pra display); `output_json` guarda a versao maior.
+        """
+        clean = text.strip()
+        return self._emit(
+            SessionStep(
+                iso_at=datetime.now(UTC),
+                kind=StepKind.REASONING,
+                step_index=self._next_step_index(),
+                agent_full_id=agent_full_id,
+                message=clean[:800],
+                output_json={"text": clean[:4000]},
             )
         )
 
