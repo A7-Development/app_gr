@@ -453,7 +453,7 @@ function EvolucaoContent({
         name: classesDisp.find((ci) => ci.classe === c)?.label ?? c,
         type: "line",
         stack: "pl",
-        smooth: true,
+        smooth: false,
         symbol: "none",
         areaStyle: { opacity: 0.65 },
         lineStyle: { width: 1, color: CLASSE_COLOR[c] },
@@ -482,7 +482,7 @@ function EvolucaoContent({
           name: classesDisp.find((ci) => ci.classe === c)?.label ?? c,
           type: "line",
           stack: "comp",
-          smooth: true,
+          smooth: false,
           symbol: "none",
           areaStyle: { opacity: 0.7 },
           lineStyle: { width: 0, color: CLASSE_COLOR[c] },
@@ -507,7 +507,7 @@ function EvolucaoContent({
       series: classesDisp.map((ci) => ({
         name: ci.label,
         type: "line",
-        smooth: true,
+        smooth: false,
         symbol: "none",
         lineStyle: { width: 2, color: CLASSE_COLOR[ci.classe] },
         itemStyle: { color: CLASSE_COLOR[ci.classe] },
@@ -540,7 +540,7 @@ function EvolucaoContent({
         {
           name: "Cota Sub",
           type: "line",
-          smooth: true,
+          smooth: false,
           symbol: "none",
           lineStyle: { width: 2, color: CLASSE_COLOR.sub },
           itemStyle: { color: CLASSE_COLOR.sub },
@@ -549,7 +549,7 @@ function EvolucaoContent({
         {
           name: "CDI",
           type: "line",
-          smooth: true,
+          smooth: false,
           symbol: "none",
           lineStyle: { width: 1.5, color: CDI_COLOR, type: "dashed" },
           itemStyle: { color: CDI_COLOR },
@@ -576,7 +576,7 @@ function EvolucaoContent({
           return {
             name: ci.label,
             type: "line",
-            smooth: true,
+            smooth: false,
             symbol: "none",
             lineStyle: { width: 2, color: CLASSE_COLOR[ci.classe] },
             itemStyle: { color: CLASSE_COLOR[ci.classe] },
