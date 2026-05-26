@@ -271,6 +271,44 @@ async def _cenario_3_lotran(db_session, ctx_base) -> None:
         "Alerta residuo_alto presente (residuo R$ -850 em 20/05 e moderado)",
     )
 
+    # ─── REGRESSAO: sinal da PDD (bug do prompt v1, corrigido na v2/v3) ──────
+    # Em 20/05 a PDD SUBIU R$ +2.262,65 (papeis MEGA PACK migraram A->B,
+    # constituindo PDD). O prompt v1 narrava isso invertido ("faixa B->A
+    # revertendo"), incoerente com um AUMENTO. Estes asserts travam a direcao:
+    n2 = out.get("nivel_2_decomposicao", [])
+    pdd_cat = next((c for c in n2 if c.get("key") == "pdd"), None)
+    _check(
+        pdd_cat is not None and pdd_cat.get("delta", 0) > 0,
+        f"PDD subiu no dia -> delta > 0 (atual: "
+        f"{pdd_cat.get('delta') if pdd_cat else 'categoria ausente'})",
+    )
+
+    # Papeis MEGA PACK (sacado vencido, efeito vagao A->B) citados como driver
+    # TEM que ter delta_brl positivo (constituicao). Negativo = sinal invertido.
+    papeis_mega = [
+        p
+        for e in explicacoes
+        for p in e.get("papeis_mencionados", [])
+        if "MEGA PACK" in (p.get("sacado_nome") or "").upper()
+    ]
+    _check(
+        len(papeis_mega) > 0 and all(p.get("delta_brl", 0) > 0 for p in papeis_mega),
+        f"Papeis MEGA PACK citados como constituicao (delta_brl > 0); "
+        f"achei {len(papeis_mega)}: {[round(p.get('delta_brl', 0), 2) for p in papeis_mega]}",
+    )
+
+    # Se a PDD entrou no Nivel 3, a classificacao tem que ser constituicao_pdd
+    # (NAO reversao_pdd) — PDD subiu no dia.
+    exp_pdd = next((e for e in explicacoes if e.get("categoria_key") == "pdd"), None)
+    if exp_pdd is not None:
+        _check(
+            exp_pdd.get("classificacao_principal") == "constituicao_pdd",
+            f"Explicacao da PDD = constituicao_pdd (atual: "
+            f"{exp_pdd.get('classificacao_principal')})",
+        )
+    else:
+        _info("PDD nao entrou no Nivel 3 (rank baixo) — assert de classificacao pulado")
+
 
 async def main() -> None:
     settings = get_settings()
