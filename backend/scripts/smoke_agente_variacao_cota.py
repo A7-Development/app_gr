@@ -200,9 +200,19 @@ async def _cenario_2_did99746(db_session, ctx_base) -> None:
     _check(exp_dc is not None, "Agente produziu explicacao pra categoria DC")
     if exp_dc:
         narrativa = exp_dc.get("narrativa", "")
+        papeis_dc = exp_dc.get("papeis_mencionados", [])
+        # Intencao: a explicacao da DC SURFACA o caso DID99746. Vale na prosa
+        # OU via papel citado — o prompt (>= v3) manda narrar por
+        # numero_documento (ex.: "Documento 39197"), entao a narrativa pode
+        # legitimamente nao inlinar a sigla DID enquanto
+        # papeis_mencionados.seu_numero a carrega. Exigir a string so na prosa
+        # e fragil (variancia de fraseado do LLM, sem valor diagnostico).
+        did_na_narrativa = "did99746" in narrativa.lower()
+        did_nos_papeis = any("DID99746" in p.get("seu_numero", "") for p in papeis_dc)
         _check(
-            "DID99746" in narrativa or "did99746" in narrativa.lower(),
-            f"Narrativa da DC menciona DID99746 (narrativa[:120]: '{narrativa[:120]}')",
+            did_na_narrativa or did_nos_papeis,
+            f"DC surfaca DID99746 (narrativa ou papeis_mencionados); "
+            f"narrativa[:120]: '{narrativa[:120]}'",
         )
         # DID99746: classificacao_principal pode ser varias coisas dependendo
         # de qual aspecto o agente priorizar (mutacao, abatimento, fluxo
