@@ -8,6 +8,13 @@
 // BackfillJob com o array de datas. Worker do backend ja processa
 // sequencialmente respeitando timing entre chamadas.
 //
+// Seletor de periodo: dois Selects independentes (De / Ate) listando APENAS
+// as datas que existem na Cobertura, agrupadas por mes. Escolha trocada de
+// calendario livre (DateRangePicker) por causa do estado de range do calendario
+// "se atrapalhar" ao reancorar. Com dois valores independentes + clamp
+// (escolher De depois do Ate arrasta o Ate junto, e vice-versa) e impossivel
+// travar numa combinacao invalida.
+//
 // Cap de seguranca: 180 dias por disparo. Acima disso, bloqueia e pede pra
 // quebrar em meses.
 //
@@ -18,8 +25,13 @@ import { ptBR } from "date-fns/locale"
 
 import {
   Button,
-  DateRangePicker,
-  type DateRange,
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectGroupLabel,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Sheet,
   SheetBody,
   SheetContent,
@@ -32,6 +44,11 @@ import { cx } from "@/lib/utils"
 import type { EndpointCoverage } from "@/lib/api-client"
 
 const MAX_DATES_PER_DISPATCH = 180
+
+/** Uma data selecionavel no dropdown. `iso` = yyyy-MM-dd. */
+type DayOption = { iso: string; label: string }
+/** Datas agrupadas por mes para navegar listas longas no Select. */
+type MonthGroup = { key: string; label: string; days: DayOption[] }
 
 export function BulkBackfillSheet({
   open,
@@ -50,12 +67,8 @@ export function BulkBackfillSheet({
   const firstDay = endpoint?.days[0]?.data
   const lastDay = endpoint?.days[endpoint.days.length - 1]?.data
 
-  const defaultRange = React.useMemo<DateRange | undefined>(() => {
-    if (!firstDay || !lastDay) return undefined
-    return { from: parseISO(firstDay), to: parseISO(lastDay) }
-  }, [firstDay, lastDay])
-
-  const [range, setRange] = React.useState<DateRange | undefined>(defaultRange)
+  const [fromDate, setFromDate] = React.useState<string>(firstDay ?? "")
+  const [toDate, setToDate] = React.useState<string>(lastDay ?? "")
   const [onlyBusinessDays, setOnlyBusinessDays] = React.useState(true)
   const [skipAlreadyOk, setSkipAlreadyOk] = React.useState(false)
 
@@ -63,16 +76,60 @@ export function BulkBackfillSheet({
   // que abrir o sheet pro endpoint B mostre o range do endpoint A.
   React.useEffect(() => {
     if (open) {
-      setRange(defaultRange)
+      setFromDate(firstDay ?? "")
+      setToDate(lastDay ?? "")
       setOnlyBusinessDays(true)
       setSkipAlreadyOk(false)
     }
-  }, [open, defaultRange])
+  }, [open, firstDay, lastDay])
+
+  // Datas da Cobertura agrupadas por mes. endpoint.days ja vem cronologico,
+  // entao a ordem de insercao no Map (e no Array.from) preserva a ordem.
+  const monthGroups = React.useMemo<MonthGroup[]>(() => {
+    if (!endpoint) return []
+    const map = new Map<string, MonthGroup>()
+    for (const d of endpoint.days) {
+      const date = parseISO(d.data)
+      const key = format(date, "yyyy-MM")
+      let group = map.get(key)
+      if (!group) {
+        const raw = format(date, "MMMM 'de' yyyy", { locale: ptBR })
+        group = {
+          key,
+          label: raw.charAt(0).toUpperCase() + raw.slice(1),
+          days: [],
+        }
+        map.set(key, group)
+      }
+      group.days.push({
+        iso: d.data,
+        label: format(date, "dd/MMM/yyyy", { locale: ptBR }),
+      })
+    }
+    return Array.from(map.values())
+  }, [endpoint])
+
+  // Clamp: manter sempre fromDate <= toDate sem nunca bloquear uma escolha.
+  // Comparacao lexicografica de yyyy-MM-dd == comparacao cronologica.
+  const handleFromChange = React.useCallback(
+    (v: string) => {
+      setFromDate(v)
+      if (toDate && v > toDate) setToDate(v)
+    },
+    [toDate],
+  )
+  const handleToChange = React.useCallback(
+    (v: string) => {
+      setToDate(v)
+      if (fromDate && v < fromDate) setFromDate(v)
+    },
+    [fromDate],
+  )
 
   const selectedDates = React.useMemo<string[]>(() => {
-    if (!endpoint || !range?.from) return []
-    const from = format(range.from, "yyyy-MM-dd")
-    const to = format(range.to ?? range.from, "yyyy-MM-dd")
+    if (!endpoint || !fromDate) return []
+    const from = fromDate
+    const to = toDate || fromDate
     return endpoint.days
       .filter((d) => d.data >= from && d.data <= to)
       .filter((d) => {
@@ -96,7 +153,7 @@ export function BulkBackfillSheet({
         return true
       })
       .map((d) => d.data)
-  }, [endpoint, range, onlyBusinessDays, skipAlreadyOk])
+  }, [endpoint, fromDate, toDate, onlyBusinessDays, skipAlreadyOk])
 
   const overCap = selectedDates.length > MAX_DATES_PER_DISPATCH
   const canSubmit =
@@ -107,9 +164,6 @@ export function BulkBackfillSheet({
     await onSubmit(endpoint.name, selectedDates)
     onOpenChange(false)
   }
-
-  const fromDate = firstDay ? parseISO(firstDay) : undefined
-  const toDate = lastDay ? parseISO(lastDay) : undefined
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -126,14 +180,34 @@ export function BulkBackfillSheet({
             <h3 className="text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
               Período
             </h3>
-            <DateRangePicker
-              value={range}
-              onChange={setRange}
-              locale={ptBR}
-              fromDate={fromDate}
-              toDate={toDate}
-              className="w-full"
-            />
+            <div className="grid grid-cols-[2.25rem_1fr] items-center gap-x-3 gap-y-2">
+              <label
+                htmlFor="bulk-from"
+                className="text-[13px] text-gray-600 dark:text-gray-400"
+              >
+                De
+              </label>
+              <DateSelect
+                id="bulk-from"
+                ariaLabel="Data inicial"
+                value={fromDate}
+                onValueChange={handleFromChange}
+                groups={monthGroups}
+              />
+              <label
+                htmlFor="bulk-to"
+                className="text-[13px] text-gray-600 dark:text-gray-400"
+              >
+                Até
+              </label>
+              <DateSelect
+                id="bulk-to"
+                ariaLabel="Data final"
+                value={toDate}
+                onValueChange={handleToChange}
+                groups={monthGroups}
+              />
+            </div>
             <p className="text-[11px] text-gray-500 dark:text-gray-400">
               Limitado ao range já carregado na Cobertura. Para datas mais
               antigas, troque o range no seletor do topo antes.
@@ -217,6 +291,40 @@ export function BulkBackfillSheet({
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  )
+}
+
+function DateSelect({
+  id,
+  ariaLabel,
+  value,
+  onValueChange,
+  groups,
+}: {
+  id: string
+  ariaLabel: string
+  value: string
+  onValueChange: (v: string) => void
+  groups: MonthGroup[]
+}) {
+  return (
+    <Select value={value || undefined} onValueChange={onValueChange}>
+      <SelectTrigger id={id} aria-label={ariaLabel} className="w-full">
+        <SelectValue placeholder="Selecione" />
+      </SelectTrigger>
+      <SelectContent>
+        {groups.map((group) => (
+          <SelectGroup key={group.key}>
+            <SelectGroupLabel>{group.label}</SelectGroupLabel>
+            {group.days.map((d) => (
+              <SelectItem key={d.iso} value={d.iso}>
+                {d.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 
