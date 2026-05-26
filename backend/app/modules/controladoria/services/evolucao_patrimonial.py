@@ -17,11 +17,11 @@ do cota_sub. A classe (Sub/Mez/Sr) e identificada por heuristica sobre
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.cadastros.public import UnidadeAdministrativa
@@ -46,6 +46,10 @@ _CLASSE_LABEL: dict[ClasseCota, str] = {
 }
 # Ordem canonica de exibicao (senior no topo da pilha, sub na base).
 _CLASSE_ORDER: list[ClasseCota] = ["sr", "mez", "sub"]
+
+# Janela (dias corridos antes da ultima publicacao) usada para inferir o
+# conjunto de classes ativas do fundo ao resolver o default de `periodo_fim`.
+_JANELA_COMPLETA_DIAS = 45
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -116,6 +120,58 @@ class _MecPonto:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Resolucao da janela
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def _ultima_data_completa(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    ua_id: UUID,
+    ua_nome: str,
+    max_data: date,
+) -> date | None:
+    """Ultimo dia em que TODAS as classes do fundo estao publicadas (nao-zeradas).
+
+    A foto MEC mais recente pode ter uma classe zerada (bug "MEC <classe>
+    zerada"); terminar a janela ali renderizaria uma queda falsa. Ancoramos no
+    ultimo dia em que toda classe ativa esta presente.
+
+    'Todas as classes' = uniao das classes vistas com `patrimonio > 0` na janela
+    recente (`_JANELA_COMPLETA_DIAS`) -- assim uma zeragem transitoria nao
+    encolhe o conjunto, e uma classe resgatada ha muito tempo nao o infla.
+    Retorna None se nenhum dia da janela estiver completo (caller cai pra
+    `max_data`).
+    """
+    janela_inicio = max_data - timedelta(days=_JANELA_COMPLETA_DIAS)
+    rows = (
+        await db.execute(
+            select(
+                MecEvolucaoCotas.data_posicao,
+                MecEvolucaoCotas.carteira_cliente_nome,
+            )
+            .where(MecEvolucaoCotas.tenant_id == tenant_id)
+            .where(MecEvolucaoCotas.unidade_administrativa_id == ua_id)
+            .where(MecEvolucaoCotas.patrimonio > 0)
+            .where(MecEvolucaoCotas.data_posicao >= janela_inicio)
+        )
+    ).all()
+
+    presentes: dict[date, set[ClasseCota]] = defaultdict(set)
+    for d, nome in rows:
+        classe = _classificar(nome, ua_nome)
+        if classe is not None:
+            presentes[d].add(classe)
+    if not presentes:
+        return None
+
+    todas: set[ClasseCota] = set().union(*presentes.values())
+    completos = [d for d, classes in presentes.items() if classes >= todas]
+    return max(completos) if completos else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Service principal
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -143,10 +199,10 @@ async def compute_evolucao_patrimonial(
     ua_nome = ua.nome
 
     # 2. Resolve janela. O default de `fim` NAO e a ultima data publicada e
-    #    sim o ultimo dia com a classe Sub presente e nao-zerada -- a ultima
-    #    data costuma ser um snapshot incompleto (bug conhecido QiTech "MEC
-    #    Sub zerada"), que faria a pagina renderizar uma queda falsa pra zero.
-    #    Override explicito de periodo_fim ainda mostra o dia incompleto.
+    #    sim o ultimo dia com TODAS as classes do fundo publicadas (nao-zeradas)
+    #    -- a ultima data costuma ser um snapshot incompleto (bug conhecido
+    #    QiTech "MEC <classe> zerada"), que faria a pagina renderizar uma queda
+    #    falsa. Override explicito de periodo_fim ainda mostra o dia incompleto.
     max_data = (
         await db.execute(
             select(MecEvolucaoCotas.data_posicao)
@@ -160,21 +216,10 @@ async def compute_evolucao_patrimonial(
         raise ValueError(
             f"Sem dados MEC para a Unidade Administrativa {ua_id}."
         )
-    ultimo_sub = (
-        await db.execute(
-            select(MecEvolucaoCotas.data_posicao)
-            .where(MecEvolucaoCotas.tenant_id == tenant_id)
-            .where(MecEvolucaoCotas.unidade_administrativa_id == ua_id)
-            .where(MecEvolucaoCotas.patrimonio > 0)
-            .where(
-                func.upper(func.trim(MecEvolucaoCotas.carteira_cliente_nome))
-                == ua_nome.strip().upper()
-            )
-            .order_by(MecEvolucaoCotas.data_posicao.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    fim = periodo_fim or ultimo_sub or max_data
+    ultima_completa = await _ultima_data_completa(
+        db, tenant_id=tenant_id, ua_id=ua_id, ua_nome=ua_nome, max_data=max_data
+    )
+    fim = periodo_fim or ultima_completa or max_data
     inicio = periodo_inicio or _shift_12m(fim)
 
     # 3. Le MEC no intervalo. Cada (data, classe) e 1 linha.
