@@ -16,6 +16,8 @@ import {
   type AgenteVariacaoRunResponse,
   type AgenteVariacaoRunResponseDTO,
   type CoverageDay,
+  type EvolucaoClasse,
+  type EvolucaoGranularidade,
   type DreBaseFilters,
   type DreDrillFornecedoresFilters,
   type DrePivotFilters,
@@ -44,6 +46,24 @@ const KEYS = {
     ["controladoria", "cota-sub", "variacoes-dia", fundoId, data, dataAnterior ?? null] as const,
   datasDisponiveis: (fundoId: string) =>
     ["controladoria", "cota-sub", "datas-disponiveis", fundoId] as const,
+
+  evolucaoPatrimonial: (
+    fundoId: string,
+    granularidade: string,
+    periodoInicio?: string,
+    periodoFim?: string,
+    classes?: string[],
+  ) =>
+    [
+      "controladoria",
+      "evolucao-patrimonial",
+      "serie",
+      fundoId,
+      granularidade,
+      periodoInicio ?? null,
+      periodoFim ?? null,
+      (classes ?? []).join(",") || null,
+    ] as const,
   explicacaoVariacao: (fundoId: string, data: string, dataAnterior?: string, thresholdBrl?: number, topN?: number) =>
     ["controladoria", "cota-sub", "explicacao", fundoId, data, dataAnterior ?? null, thresholdBrl ?? null, topN ?? null] as const,
 
@@ -75,6 +95,40 @@ export function useDatasDisponiveis(
     queryFn: () => controladoria.cotaSubDatasDisponiveis(fundoId!),
     enabled,
     staleTime: 60 * 60 * 1000,  // 1 hora
+  })
+}
+
+export function useEvolucaoPatrimonial(
+  fundoId: string | null | undefined,
+  opts?: {
+    periodoInicio?: string | null
+    periodoFim?:    string | null
+    granularidade?: EvolucaoGranularidade
+    classes?:       EvolucaoClasse[]
+  },
+) {
+  // Serie temporal do PL do passivo (todas as classes). Default mensal /
+  // 12M corridos / todas as classes resolvido no backend.
+  const granularidade = opts?.granularidade ?? "mensal"
+  const enabled = !!fundoId
+  return useQuery({
+    queryKey: KEYS.evolucaoPatrimonial(
+      fundoId ?? "",
+      granularidade,
+      opts?.periodoInicio ?? undefined,
+      opts?.periodoFim ?? undefined,
+      opts?.classes,
+    ),
+    queryFn: () =>
+      controladoria.evolucaoPatrimonialSerie({
+        fundoId: fundoId!,
+        periodoInicio: opts?.periodoInicio ?? undefined,
+        periodoFim:    opts?.periodoFim ?? undefined,
+        granularidade,
+        classes:       opts?.classes,
+      }),
+    enabled,
+    staleTime: 5 * 60 * 1000,
   })
 }
 

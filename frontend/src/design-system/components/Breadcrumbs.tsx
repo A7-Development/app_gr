@@ -16,6 +16,10 @@ type Segment = {
 // Rotas novas caem no fallback (capitaliza o slug).
 const LABELS: Record<string, string> = {
   "": "Inicio",
+  // Rota mantida como `cota-sub` (deep-links + agente), mas o label exibido
+  // acompanha o rename do submenu (2026-05-26).
+  "cota-sub": "Variacao da Cota",
+  "evolucao-patrimonial": "Evolucao Patrimonial",
 }
 
 function humanize(segment: string) {
