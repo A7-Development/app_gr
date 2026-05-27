@@ -84,12 +84,19 @@ def _parse_scope_inputs(scope: ScopedContext) -> tuple[UUID, date]:
 @register_tool(
     name="get_balanco_patrimonial",
     description=(
-        "Retorna o balanço patrimonial completo do FIDC otica Sub Jr para "
-        "a data analisada (D0) vs dia util anterior (D-1). Inclui as 12 "
-        "categorias (Direitos Creditorios, PDD, Tesouraria, Senior, etc.) "
-        "com d1/d0/delta cada + somas + identidade contabil (PL deduzido "
-        "vs PL fonte MEC + residuo do dia). Use SEMPRE no inicio da "
-        "analise pra contexto geral."
+        "Retorna o balanço patrimonial ESTRUTURAL do FIDC otica Sub Jr para a "
+        "data analisada (D0) vs dia util anterior (D-1) — MESMA estrutura da tela, "
+        "coerente por natureza e sinal. Devolve `ativos` e `passivos` (cada linha "
+        "com key/label/natureza/d1/d0/delta), na ORDEM FIXA do balancete:\n"
+        "  Ativos: Direitos Creditorios, (-)PDD (natureza=contra_ativo, ABATE o "
+        "DC), Titulos Publicos, Op. Estruturadas, Fundos DI, Compromissada, Outros "
+        "Ativos, Tesouraria, Saldo Conta Corrente, Contas a Receber.\n"
+        "  Passivos: Contas a Pagar, Cota Senior, Cota Mezanino.\n"
+        "Contas a Receber = CPR de natureza ATIVA (liquidacoes em floating + "
+        "diferimentos); Contas a Pagar = CPR de natureza PASSIVA (despesas/taxas/"
+        "IOF a recolher). Inclui dc_liquido (DC bruto - PDD), total_ativo, "
+        "total_passivo, pl_sub (= total_ativo - total_passivo) e bloco "
+        "`reconciliacao` (pl_fonte MEC + residuo). Use SEMPRE no inicio da analise."
     ),
     input_schema={
         "type": "object",
@@ -102,13 +109,19 @@ def _parse_scope_inputs(scope: ScopedContext) -> tuple[UUID, date]:
     cacheable=True,
 )
 async def get_balanco_patrimonial(scope: ScopedContext, args: dict[str, Any]) -> str:
-    """Wrap de compute_balanco_patrimonial. ua_id+data vem do scope."""
+    """Wrap de compute_balanco_estrutural. ua_id+data vem do scope.
+
+    Migrado 2026-05-27 (follow-up B): passou a ler o balanco ESTRUTURAL pra
+    falar a mesma lingua da tela (PDD contra-ativo, Contas a Receber/Pagar,
+    Cotas Prioritarias). O nome da tool segue `get_balanco_patrimonial` por
+    compat ate o cleanup do balanco antigo (entao vira get_balanco_estrutural).
+    """
     from app.modules.controladoria.services.balanco_patrimonial import (
-        compute_balanco_patrimonial,
+        compute_balanco_estrutural,
     )
 
     ua_id, data_d0 = _parse_scope_inputs(scope)
-    r = await compute_balanco_patrimonial(
+    r = await compute_balanco_estrutural(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
     return _to_json(r)
@@ -602,16 +615,16 @@ async def check_identidade_contabil(
     scope: ScopedContext, args: dict[str, Any],
 ) -> str:
     from app.modules.controladoria.services.balanco_patrimonial import (
-        compute_balanco_patrimonial,
+        compute_balanco_estrutural,
     )
 
     ua_id, data_d0 = _parse_scope_inputs(scope)
     tolerancia = Decimal(str(args.get("tolerancia_brl", 1.0)))
 
-    r = await compute_balanco_patrimonial(
+    r = await compute_balanco_estrutural(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
-    residuo = r.residuo_identidade_delta
+    residuo = r.reconciliacao.residuo_delta
     passou = abs(residuo) < tolerancia
 
     if abs(residuo) < Decimal("0.05"):
@@ -637,8 +650,8 @@ async def check_identidade_contabil(
     return _to_json({
         "passou": passou,
         "residuo_brl": residuo,
-        "pl_deduzido_delta": r.pl_deduzido_delta,
-        "pl_fonte_delta": r.pl_fonte_delta,
+        "pl_deduzido_delta": r.pl_sub_delta,
+        "pl_fonte_delta": r.reconciliacao.pl_fonte_delta,
         "tolerancia_brl": tolerancia,
         "diagnostico": diagnostico,
     })
