@@ -43,7 +43,6 @@ from app.modules.integracoes.services.backfill_service import (
     create_backfill_job,
     get_backfill_job,
     list_active_backfill_jobs,
-    resolve_backfill_ua,
 )
 from app.modules.integracoes.services.coverage import (
     CoverageStatus,
@@ -795,29 +794,12 @@ async def create_endpoint_backfill(
             ),
         )
 
-    # Quando a UI nao manda UA (nenhuma selecionada), resolve a config
-    # habilitada — evita o job com ua=None que falhava 100% silenciosamente
-    # (bug 2026-05-27). UA ambigua (>1) ou ausente vira 409 claro.
-    ua_id = payload.unidade_administrativa_id
-    if ua_id is None:
-        try:
-            ua_id = await resolve_backfill_ua(
-                db,
-                tenant_id=principal.tenant_id,
-                source_type=source_type,
-                environment=payload.environment,
-            )
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail=str(e)
-            ) from e
-
     job = await create_backfill_job(
         db,
         tenant_id=principal.tenant_id,
         source_type=source_type,
         environment=payload.environment,
-        unidade_administrativa_id=ua_id,
+        unidade_administrativa_id=payload.unidade_administrativa_id,
         endpoint_name=endpoint_name,
         dates=payload.dates,
         created_by=f"user:{principal.user_id}",

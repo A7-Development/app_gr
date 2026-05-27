@@ -27,7 +27,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import AsyncSessionLocal
 from app.core.enums import Environment, SourceType
 from app.modules.integracoes.models.backfill_job import BackfillJob
-from app.modules.integracoes.services.source_config import list_configs
 from app.modules.integracoes.services.sync_runner import run_sync_endpoint
 
 logger = logging.getLogger("gr.integracoes.backfill")
@@ -93,52 +92,6 @@ async def create_backfill_job(
     await db.commit()
     await db.refresh(job)
     return job
-
-
-async def resolve_backfill_ua(
-    db: AsyncSession,
-    *,
-    tenant_id: UUID,
-    source_type: SourceType,
-    environment: Environment,
-) -> UUID | None:
-    """Resolve a UA de um backfill quando o caller nao passa uma explicita.
-
-    Bug 2026-05-27: o re-sync em lote disparava com `unidade_administrativa_id
-    = None` quando nenhuma UA estava selecionada na UI. Como a config QiTech e
-    por-UA (`tenant_source_config` tem 1 linha por UA, nenhuma com UA NULL para
-    o REALINVEST), `run_sync_endpoint(ua=None)` estourava `ValueError` em TODA
-    data e o job terminava `done` com 100% em `dates_failed` (falso sucesso).
-
-    Politica de resolucao (le `tenant_source_config` habilitadas):
-      - exatamente 1 config com UA -> usa essa UA.
-      - >1 config com UA -> ValueError (ambiguo; caller deve especificar). E
-        melhor falhar claro que adivinhar OU falhar silencioso em N datas.
-      - nenhuma config com UA mas existe config legacy (UA NULL) habilitada ->
-        retorna None (o sync acha a config legacy normalmente).
-      - nenhuma config habilitada -> ValueError.
-
-    Quando o caller JA passa uma UA, este helper nao e chamado.
-    """
-    rows = [r for r in await list_configs(db, tenant_id, source_type, environment) if r.enabled]
-    if not rows:
-        raise ValueError(
-            f"Nenhuma config habilitada de {source_type.value}/"
-            f"{environment.value} para resolver a UA do backfill — configure a "
-            f"integracao antes."
-        )
-    ua_rows = [r for r in rows if r.unidade_administrativa_id is not None]
-    if len(ua_rows) == 1:
-        return ua_rows[0].unidade_administrativa_id
-    if len(ua_rows) > 1:
-        uas = ", ".join(str(r.unidade_administrativa_id) for r in ua_rows)
-        raise ValueError(
-            f"Multiplas UAs configuradas para {source_type.value}/"
-            f"{environment.value} ({uas}). Especifique unidade_administrativa_id "
-            f"no backfill."
-        )
-    # So config(s) legacy com UA NULL -> sync funciona com ua=None.
-    return None
 
 
 async def get_backfill_job(
@@ -370,9 +323,7 @@ async def _process_job_dates(job_id: UUID, summary: dict[str, Any]) -> None:
             job.dates_failed = new_failed
             job.updated_at = datetime.now(UTC)
             if not new_pending:
-                # Todas as datas falharam -> `failed` (nao `done` silencioso).
-                # `new_done` e a lista acumulada de sucessos; vazia = 100% falha.
-                job.status = "done" if new_done else "failed"
+                job.status = "done"
                 job.completed_at = datetime.now(UTC)
             await db.commit()
 
