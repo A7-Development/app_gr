@@ -67,6 +67,7 @@ from app.modules.integracoes.adapters.admin.qitech.reports import (
     fetch_market_report,
 )
 from app.modules.integracoes.adapters.admin.qitech.version import ADAPTER_VERSION
+from app.modules.integracoes.services.qitech_ua_classe import get_expected_classes
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 from app.shared.audit_log.helpers import log_silver_replacement
 from app.warehouse.cpr_movimento import CprMovimento
@@ -171,11 +172,24 @@ async def _upsert_raw(
         tenant_id=tenant_id,
         unidade_administrativa_id=unidade_administrativa_id,
     )
+    # Catalogo de classes (qitech_ua_classe): so faz sentido em http 200
+    # (4xx/5xx ja resolve `empty` antes de olhar o payload). Set vazio =
+    # sem catalogo -> assessor cai na heuristica legada.
+    expected_classes: set[str] = set()
+    if http_status == 200:
+        expected_classes = await get_expected_classes(
+            db,
+            tenant_id=tenant_id,
+            unidade_administrativa_id=unidade_administrativa_id,
+            tipo_de_mercado=tipo_de_mercado,
+            on_date=data_posicao,
+        )
     completeness = assess_completeness(
         tipo_de_mercado=tipo_de_mercado,
         payload=payload,
         http_status=http_status,
         ua_nome=ua_nome,
+        expected_classes=expected_classes,
     )
     row = {
         "tenant_id": tenant_id,

@@ -96,6 +96,73 @@ def _rf_items(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
     return [item for item in rf if isinstance(item, dict)]
 
 
+def _market_items(
+    payload: dict[str, Any] | None, tipo_de_mercado: str
+) -> list[dict[str, Any]]:
+    """Extrai a lista de items de QUALQUER endpoint da familia `market/*`.
+
+    O sub-key de `relatórios` casa com o `tipo_de_mercado` (confirmado para
+    mec/rf/tesouraria/conta-corrente/cpr/rentabilidade/...). Generaliza
+    `_mec_items`/`_rf_items` para o assessor por catalogo de classes."""
+    if not isinstance(payload, dict):
+        return []
+    relatorios = payload.get("relatórios")
+    if not isinstance(relatorios, dict):
+        return []
+    items = relatorios.get(tipo_de_mercado)
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _to_float(value: Any) -> float | None:
+    """Best-effort numeric parse (QiTech mistura int/float/string)."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_value_sane(item: dict[str, Any]) -> bool:
+    """Detecta o item-lixo da publicacao parcial QiTech: classe presente no
+    payload mas com `patrimonio<=0 E variaçãoDiaria<=-50` (assinatura da
+    "Sub zerada" — caso 2026-05-25: patrimonio=0, variaçãoDiaria=-100).
+
+    Valores nao-parseaveis NAO sao punidos (retorna True) — evita marcar
+    parcial por ruido de tipo. So um zero acompanhado de queda >50% conta
+    como classe nao-publicada-de-verdade."""
+    p = _to_float(item.get("patrimonio"))
+    v = _to_float(item.get("variaçãoDiaria"))
+    # Zero acompanhado de queda >50% = classe nao-publicada-de-verdade.
+    return not (p is not None and v is not None and p <= 0 and v <= -50)
+
+
+def _assess_market_by_classes(
+    items: list[dict[str, Any]],
+    expected_classes: set[str],
+) -> Completeness:
+    """Veredito por CATALOGO de classes (ancora robusta = `clienteId`).
+
+    - `empty`   : payload sem items.
+    - `partial` : alguma classe esperada ausente OU presente-mas-zerada.
+    - `complete`: todas as classes esperadas presentes E com valor sao.
+
+    `clienteId` e a mesma chave do silver (`carteira_cliente_id`) — bem mais
+    estavel que casar `clienteNome` por string."""
+    if not items:
+        return "empty"
+    by_cid = {str(i.get("clienteId") or ""): i for i in items}
+    for cid in expected_classes:
+        item = by_cid.get(cid)
+        if item is None:
+            return "partial"
+        if not _is_value_sane(item):
+            return "partial"
+    return "complete"
+
+
 def _assess_mec(payload: dict[str, Any] | None, ua_nome: str) -> Completeness:
     items = _mec_items(payload)
     if not items:
@@ -222,6 +289,7 @@ def assess_completeness(
     payload: dict[str, Any] | None,
     http_status: int,
     ua_nome: str | None,
+    expected_classes: set[str] | None = None,
 ) -> Completeness | None:
     """Classifica o payload em `complete | partial | empty`.
 
@@ -235,6 +303,11 @@ def assess_completeness(
         payload: body JSON cru da QiTech (pode ser None se a fonte e CSV).
         http_status: status HTTP do fetch. != 200 sempre conta como `empty`.
         ua_nome: nome cru da UA (ex.: 'REALINVEST FIDC') quando relevante.
+        expected_classes: conjunto de `clienteId`s esperados (catalogo
+            `qitech_ua_classe`). Quando NAO-vazio, o veredito vem do assessor
+            por catalogo (`_assess_market_by_classes`) — presenca + sanidade
+            de valor por classe. Quando None/vazio, cai no caminho legado
+            (heuristica de nome), preservando UAs sem catalogo cadastrado.
 
     Returns:
         'complete' | 'partial' | 'empty' | None (None = nao avaliado).
@@ -243,6 +316,14 @@ def assess_completeness(
     if http_status != 200:
         return "empty"
 
+    # Caminho preferencial: catalogo de classes cadastrado para esta UA.
+    # `clienteId` e a ancora robusta; cobre presenca E valor-zerado.
+    if expected_classes:
+        return _assess_market_by_classes(
+            _market_items(payload, tipo_de_mercado), expected_classes
+        )
+
+    # Sem catalogo: comportamento legado (heuristica de nome / default).
     assessor = _ASSESSORS.get(tipo_de_mercado)
     if assessor is not None:
         if not ua_nome:
