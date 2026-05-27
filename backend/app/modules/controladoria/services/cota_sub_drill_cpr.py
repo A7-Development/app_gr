@@ -235,8 +235,25 @@ async def compute_drill_cpr(
     ua_id: UUID,
     data_d0: date,
     data_d1: date | None = None,
+    side: Literal["receber", "pagar"] | None = None,
 ) -> DrillCprResponse:
-    """Drill CPR: totais + agrupamento por natureza + aportes engaiolados."""
+    """Drill CPR: totais + agrupamento por natureza + aportes engaiolados.
+
+    `side` (2026-05-27) segrega a decomposicao pela natureza+sinal do balanco
+    estrutural — a linha unica de CPR virou DUAS no balanco (Contas a Receber
+    = Σ valor > 0 / Contas a Pagar = Σ valor < 0):
+
+      - "receber": so rubricas de valor positivo (diferimento de despesa,
+        floating de "LIQUIDADOS TOTAL - PROV"). Natureza ATIVA.
+      - "pagar"  : so rubricas de valor negativo (taxas, despesas, IOF/IR,
+        aporte engaiolado). Natureza PASSIVA. Valores ficam negativos aqui;
+        a UI exibe magnitude.
+      - None     : comportamento legado (CPR net, todas as rubricas).
+
+    Filtra por sinal representativo da rubrica (valor em D0, ou D-1 quando
+    zerou em D0). Rubricas de CPR nao trocam de sinal dentro de um par de
+    snapshots, entao os totais por lado reconciliam com a linha do balanco.
+    """
     ua = (
         await db.execute(
             select(UnidadeAdministrativa)
@@ -254,6 +271,18 @@ async def compute_drill_cpr(
     linhas = await _linhas_cpr_pivotadas(
         db, tenant_id=tenant_id, ua_id=ua_id, data_d1=d1, data_d0=data_d0,
     )
+
+    if side in ("receber", "pagar"):
+        # Sinal representativo: D0, ou D-1 quando a rubrica zerou em D0. Cada
+        # rubrica cai em exatamente UM lado (sem aparecer nos dois mesmo num
+        # raro flip de sinal). Totais por lado reconciliam com a linha do balanco.
+        def _repr_sign(ln: DrillCprLinha) -> Decimal:
+            return ln.valor_d0 if ln.valor_d0 != ZERO else ln.valor_d1
+
+        if side == "receber":
+            linhas = [ln for ln in linhas if _repr_sign(ln) > ZERO]
+        else:
+            linhas = [ln for ln in linhas if _repr_sign(ln) < ZERO]
 
     # ── Totais
     total_d1 = sum((ln.valor_d1 for ln in linhas), ZERO)

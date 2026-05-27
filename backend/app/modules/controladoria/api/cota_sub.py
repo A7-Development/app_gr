@@ -2,7 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -379,6 +379,10 @@ async def drill_cpr(
         date | None,
         Query(description="Override opcional para D-1."),
     ] = None,
+    side: Annotated[
+        Literal["receber", "pagar"] | None,
+        Query(description="Segrega por sinal: 'receber' (valor>0, ativo) ou 'pagar' (valor<0, passivo). Omitido = CPR net legado."),
+    ] = None,
     _: None = _Guard,
 ) -> DrillCprResponse:
     """Drill da categoria CPR (Contas a Pagar e Receber) do Balance hero.
@@ -388,6 +392,9 @@ async def drill_cpr(
       2. Agrupamento por natureza (diferimento, taxas, despesas, IOF/IR,
          aporte/devolucao, outros)
       3. Aportes engaiolados detectados (caso pedagogico REALINVEST 07-13/05)
+
+    `side` (2026-05-27) restringe ao lado Contas a Receber (ativo) ou Contas a
+    Pagar (passivo), espelhando o split por sinal do balanco estrutural.
     """
     try:
         return await compute_drill_cpr(
@@ -396,6 +403,7 @@ async def drill_cpr(
             ua_id=fundo_id,
             data_d0=data,
             data_d1=data_anterior,
+            side=side,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

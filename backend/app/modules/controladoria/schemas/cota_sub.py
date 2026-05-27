@@ -826,10 +826,11 @@ CategoriaPatrimonialKey = Literal[
     "dc",
     "op_estruturadas",
     "outros_ativos",
-    "cpr",
+    "cpr_receber",
     "tesouraria",
     "saldo_conta_corrente",
     # Passivos / redutores
+    "cpr_pagar",
     "mezanino",
     "senior",
     "pdd",

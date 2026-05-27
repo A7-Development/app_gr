@@ -72,8 +72,8 @@ const KEYS = {
     ["controladoria", "cota-sub", "drill", "dc", fundoId, data, dataAnterior ?? null] as const,
   drillPdd: (fundoId: string, data: string, dataAnterior?: string, thresholdBrl?: number, topN?: number) =>
     ["controladoria", "cota-sub", "drill", "pdd", fundoId, data, dataAnterior ?? null, thresholdBrl ?? null, topN ?? null] as const,
-  drillCpr: (fundoId: string, data: string, dataAnterior?: string) =>
-    ["controladoria", "cota-sub", "drill", "cpr", fundoId, data, dataAnterior ?? null] as const,
+  drillCpr: (fundoId: string, data: string, dataAnterior?: string, side?: "receber" | "pagar") =>
+    ["controladoria", "cota-sub", "drill", "cpr", fundoId, data, dataAnterior ?? null, side ?? null] as const,
 
   dreCompetencias: (f: DreBaseFilters) =>
     ["controladoria", "dre", "competencias", f] as const,
@@ -305,12 +305,13 @@ export function useDrillCpr(
   fundoId: string | null | undefined,
   data: string | null | undefined,
   dataAnterior?: string | null,
+  side?: "receber" | "pagar",
   enabled: boolean = true,
 ) {
   const ready = !!fundoId && !!data && enabled
   return useQuery({
-    queryKey: KEYS.drillCpr(fundoId ?? "", data ?? "", dataAnterior ?? undefined),
-    queryFn: () => controladoria.cotaSubDrillCpr(fundoId!, data!, dataAnterior ?? undefined),
+    queryKey: KEYS.drillCpr(fundoId ?? "", data ?? "", dataAnterior ?? undefined, side),
+    queryFn: () => controladoria.cotaSubDrillCpr(fundoId!, data!, dataAnterior ?? undefined, side),
     enabled: ready,
     staleTime: 5 * 60 * 1000,
   })

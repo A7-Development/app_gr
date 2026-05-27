@@ -420,7 +420,7 @@ async def compute_balanco_estrutural(
             key="cpr_receber", label="Contas a Receber", natureza="ativo",
             grupo="disponibilidades", grupo_label="Disponibilidades",
             source="wh_cpr_movimento (Σ valor > 0: floating + diferidos)",
-            v1=cpr_rec_d1, v0=cpr_rec_d0, drill_key="cpr",
+            v1=cpr_rec_d1, v0=cpr_rec_d0, drill_key="cpr_receber",
         ),
     ]
 
@@ -429,7 +429,7 @@ async def compute_balanco_estrutural(
             key="cpr_pagar", label="Contas a Pagar", natureza="passivo",
             grupo="operacional", grupo_label="Operacional",
             source="wh_cpr_movimento (Σ valor < 0: despesas/taxas/IOF a recolher)",
-            v1=-cpr_pag_d1, v0=-cpr_pag_d0, drill_key="cpr",
+            v1=-cpr_pag_d1, v0=-cpr_pag_d0, drill_key="cpr_pagar",
         ),
         _linha_estrutural(
             key="senior", label="Cota Senior", natureza="passivo",

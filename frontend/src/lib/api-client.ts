@@ -3625,9 +3625,10 @@ export type CategoriaPatrimonialKey =
   | "dc"
   | "op_estruturadas"
   | "outros_ativos"
-  | "cpr"
+  | "cpr_receber"
   | "tesouraria"
   | "saldo_conta_corrente"
+  | "cpr_pagar"
   | "mezanino"
   | "senior"
   | "pdd"
@@ -5079,9 +5080,11 @@ export const controladoria = {
     fundoId: string,
     data: string,
     dataAnterior?: string,
+    side?: "receber" | "pagar",
   ): Promise<DrillCprResponse> => {
     const params = new URLSearchParams({ fundo_id: fundoId, data })
     if (dataAnterior) params.set("data_anterior", dataAnterior)
+    if (side) params.set("side", side)
     const raw = await apiClient.get<DrillCprResponseDTO>(
       `/controladoria/cota-sub/drill/cpr?${params.toString()}`,
     )
