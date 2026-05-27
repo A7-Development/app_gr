@@ -100,7 +100,7 @@ class DriverResultOut(BaseModel):
     decomposicao parcial do ΔPL Sub no metodo do gestor REALINVEST.
 
     Σ drivers (excluindo indeterminados) ≈ ΔPL_Sub_MEC.
-    Residuo = ΔPL_Sub_MEC − Σ drivers (exposto sempre, sem threshold).
+    Residuo = ΔPL_Sub_MEC - Σ drivers (exposto sempre, sem threshold).
     """
 
     metric_global_id:    str         = Field(description="ex.: controladoria.cota_sub.driver.pdd")
@@ -170,6 +170,31 @@ class DriverResultOut(BaseModel):
     )
 
 
+NaoReconhecidoModo = Literal["vaza_residuo", "entra_indevido", "vigia"]
+
+
+class ItemNaoReconhecidoOut(BaseModel):
+    """Item que uma fonte da pagina Cota Sub nao soube classificar.
+
+    Espelha `cota_sub_completude.ItemNaoReconhecido`. Detector generico
+    (2026-05-27, pos-caso VCNC): cada driver classifica/filtra por heuristica;
+    um valor novo num campo de classificacao vaza pro residuo (`vaza_residuo`),
+    entra num driver indevidamente (`entra_indevido`) ou e exposto pra
+    auditoria (`vigia`). Σ `vaza_residuo` deve explicar parte do residuo_modelo.
+    """
+
+    fonte:          str = Field(description="Tabela silver origem")
+    endpoint:       str = Field(description="Endpoint QiTech de origem")
+    campo:          str = Field(description="Campo de classificacao que falhou")
+    identificador:  str = Field(description="Valor cru nao reconhecido")
+    label:          str = Field(description="Rotulo humano pra UI (pt-BR)")
+    valor_d0:       Decimal = Field(description="Peso R$ em D0")
+    valor_d_prev:   Decimal = Field(description="Peso R$ em D-1")
+    modo:           NaoReconhecidoModo
+    driver_afetado: str = Field(description="Driver/alvo impactado")
+    motivo:         str = Field(description="Explicacao curta (pt-BR)")
+
+
 class VariacaoDiariaResponse(BaseModel):
     """Resposta do endpoint GET /controladoria/cota-sub/variacao-diaria."""
 
@@ -202,7 +227,17 @@ class VariacaoDiariaResponse(BaseModel):
     )
     residuo_modelo:     Decimal = Field(
         default=Decimal("0"),
-        description="pl_delta − soma_drivers. Sem threshold; valor exato exposto.",
+        description="pl_delta - soma_drivers. Sem threshold; valor exato exposto.",
+    )
+
+    # Detector de itens nao reconhecidos (2026-05-27, pos-VCNC). Varre TODAS
+    # as fontes da pagina; itens `vaza_residuo` explicam parte do residuo_modelo.
+    nao_reconhecidos:   list[ItemNaoReconhecidoOut] = Field(
+        default_factory=list,
+        description=(
+            "Valores que alguma fonte da pagina nao soube classificar. "
+            "Modo vaza_residuo/entra_indevido = bug; vigia = informacional."
+        ),
     )
 
 
@@ -954,3 +989,13 @@ class BalancoEstruturalResponse(BaseModel):
     pl_sub_delta: Decimal
 
     reconciliacao: ReconciliacaoMec
+
+    # Detector de nao-reconhecidos (2026-05-27, pos-VCNC). Itens vaza_residuo
+    # explicam parte do reconciliacao.residuo_delta. Vazio = tudo classificado.
+    nao_reconhecidos: list[ItemNaoReconhecidoOut] = Field(
+        default_factory=list,
+        description=(
+            "Valores que alguma fonte da pagina nao soube classificar. "
+            "Modo vaza_residuo/entra_indevido = bug; vigia = informacional."
+        ),
+    )

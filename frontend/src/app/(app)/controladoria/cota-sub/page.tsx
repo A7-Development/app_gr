@@ -105,6 +105,7 @@ import { AgenteVariacaoPanel } from "./_components/AgenteVariacaoPanel"
 import { BalanceTable } from "./_components/BalanceTable"
 import { BalancoInspector } from "./_components/BalancoInspector"
 import { BalancoPatrimonialHero } from "./_components/BalancoPatrimonialHero"
+import { NaoReconhecidosPanel } from "./_components/NaoReconhecidosPanel"
 import { CategoriaDrillSheet } from "./_components/CategoriaDrillSheet"
 import { DrillCprContent } from "./_components/DrillCprContent"
 import { DrillDcContent } from "./_components/DrillDcContent"
@@ -1170,6 +1171,14 @@ export default function CotaSubPage() {
                             />
                           )}
                         </BalancoInspector>
+                      </div>
+                      {/* Detector de nao-reconhecidos (2026-05-27, pos-VCNC):
+                          spanned full-width sob a reconciliacao que ele explica. */}
+                      <div className="xl:col-span-2">
+                        <NaoReconhecidosPanel
+                          itens={balancoEstruturalQuery.data?.nao_reconhecidos}
+                          loading={balancoEstruturalQuery.isLoading}
+                        />
                       </div>
                     </div>
                   )}

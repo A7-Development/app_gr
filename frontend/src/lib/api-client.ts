@@ -3025,6 +3025,34 @@ export type DriverResultOut = {
   evidencias_indisponiveis_motivo: string | null
 }
 
+// Detector de itens nao reconhecidos (2026-05-27, pos-VCNC). Um valor novo num
+// campo de classificacao que vaza pro residuo (vaza_residuo), entra num driver
+// indevidamente (entra_indevido) ou e exposto pra auditoria (vigia).
+export type NaoReconhecidoModo = "vaza_residuo" | "entra_indevido" | "vigia"
+
+export type ItemNaoReconhecido = {
+  fonte:          string  // tabela silver origem
+  endpoint:       string  // endpoint QiTech
+  campo:          string  // campo de classificacao que falhou
+  identificador:  string  // valor cru nao reconhecido
+  label:          string  // rotulo humano
+  valor_d0:       number
+  valor_d_prev:   number
+  modo:           NaoReconhecidoModo
+  driver_afetado: string
+  motivo:         string
+}
+
+// Decimal vem como string no JSON do Pydantic — coercao via _coerceNaoReconhecido.
+type ItemNaoReconhecidoDTO = Omit<ItemNaoReconhecido, "valor_d0" | "valor_d_prev"> & {
+  valor_d0:     number | string
+  valor_d_prev: number | string
+}
+
+function _coerceNaoReconhecido(i: ItemNaoReconhecidoDTO): ItemNaoReconhecido {
+  return { ...i, valor_d0: Number(i.valor_d0), valor_d_prev: Number(i.valor_d_prev) }
+}
+
 export type VariacaoDiariaResponse = {
   fundo_id:           string
   fundo_nome:         string
@@ -3045,6 +3073,8 @@ export type VariacaoDiariaResponse = {
   drivers:            DriverResultOut[]
   soma_drivers:       number
   residuo_modelo:     number
+  // Detector de nao-reconhecidos (2026-05-27). Vazio quando tudo classificou.
+  nao_reconhecidos:   ItemNaoReconhecido[]
 }
 
 // ── Explainers heuristicos da variacao ───────────────────────────────────
@@ -3370,6 +3400,7 @@ function _coerceVariacao(r: VariacaoDiariaResponse): VariacaoDiariaResponse {
     drivers:        r.drivers.map(_coerceDriverResultOut),
     soma_drivers:   Number(r.soma_drivers),
     residuo_modelo: Number(r.residuo_modelo),
+    nao_reconhecidos: (r.nao_reconhecidos ?? []).map(_coerceNaoReconhecido),
   }
 }
 
@@ -3786,6 +3817,7 @@ type BalancoEstruturalResponseDTO = {
   pl_sub_d0:           number | string
   pl_sub_delta:        number | string
   reconciliacao:       ReconciliacaoMecDTO
+  nao_reconhecidos?:   ItemNaoReconhecidoDTO[]
 }
 
 export type BalancoEstruturalResponse = {
@@ -3808,6 +3840,7 @@ export type BalancoEstruturalResponse = {
   pl_sub_d0:           number
   pl_sub_delta:        number
   reconciliacao:       ReconciliacaoMec
+  nao_reconhecidos:    ItemNaoReconhecido[]
 }
 
 function _coerceBalancoLinhaEstrutural(l: BalancoLinhaEstruturalDTO): BalancoLinhaEstrutural {
@@ -3854,6 +3887,7 @@ function _coerceBalancoEstrutural(r: BalancoEstruturalResponseDTO): BalancoEstru
       residuo_delta:     Number(r.reconciliacao.residuo_delta),
       dentro_tolerancia: r.reconciliacao.dentro_tolerancia,
     },
+    nao_reconhecidos: (r.nao_reconhecidos ?? []).map(_coerceNaoReconhecido),
   }
 }
 

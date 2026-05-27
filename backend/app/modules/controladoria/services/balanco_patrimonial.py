@@ -584,6 +584,28 @@ async def compute_balanco_estrutural(
     pl_fonte_d0 = s0["pl_sub_fonte"]
     residuo_delta = (pl_sub_d0 - pl_sub_d1) - (pl_fonte_d0 - pl_fonte_d1)
 
+    # Detector de nao-reconhecidos (2026-05-27, pos-VCNC). Lazy import: o modulo
+    # completude importa helpers de cota_sub.py; no topo poderia formar ciclo
+    # via os imports de schema. Itens vaza_residuo explicam parte do residuo.
+    from app.modules.controladoria.schemas.cota_sub import ItemNaoReconhecidoOut
+    from app.modules.controladoria.services.cota_sub_completude import (
+        scan_nao_reconhecidos,
+    )
+
+    completude = await scan_nao_reconhecidos(
+        db, tenant_id=tenant_id, ua_id=ua_id, ua_nome=ua.nome,
+        fundo_doc=ua.cnpj or "", data_d0=data_d0, data_d_prev=d1,
+    )
+    nao_reconhecidos_out = [
+        ItemNaoReconhecidoOut(
+            fonte=i.fonte, endpoint=i.endpoint, campo=i.campo,
+            identificador=i.identificador, label=i.label,
+            valor_d0=i.valor_d0, valor_d_prev=i.valor_d_prev,
+            modo=i.modo, driver_afetado=i.driver_afetado, motivo=i.motivo,
+        )
+        for i in completude.itens
+    ]
+
     return BalancoEstruturalResponse(
         fundo_id=str(ua_id),
         fundo_nome=ua.nome,
@@ -612,4 +634,5 @@ async def compute_balanco_estrutural(
             residuo_delta=residuo_delta,
             dentro_tolerancia=abs(residuo_delta) < _TOL_RESIDUO_DIA,
         ),
+        nao_reconhecidos=nao_reconhecidos_out,
     )
