@@ -480,7 +480,7 @@ async def compute_balanco_estrutural(
 
     ativos: list[BalancoLinhaEstrutural] = [
         _linha_estrutural(
-            key="dc_bruto", label="Direitos Creditórios (bruto)", natureza="ativo",
+            key="dc_bruto", label="Direitos Creditórios", natureza="ativo",
             grupo="direitos_creditorios", grupo_label="Direitos Creditórios",
             source="wh_estoque_recebivel (Σ valor_presente, exclui WOP)",
             v1=s1["dc"], v0=s0["dc"], drill_key="dc",
@@ -534,7 +534,7 @@ async def compute_balanco_estrutural(
             v1=s1["saldo_conta_corrente"], v0=s0["saldo_conta_corrente"],
         ),
         _linha_estrutural(
-            key="cpr_receber", label="CPR a Receber", natureza="ativo",
+            key="cpr_receber", label="Contas a Receber", natureza="ativo",
             grupo="disponibilidades", grupo_label="Disponibilidades",
             source="wh_cpr_movimento (Σ valor > 0: floating + diferidos)",
             v1=cpr_rec_d1, v0=cpr_rec_d0, drill_key="cpr",
@@ -543,7 +543,7 @@ async def compute_balanco_estrutural(
 
     passivos: list[BalancoLinhaEstrutural] = [
         _linha_estrutural(
-            key="cpr_pagar", label="CPR a Pagar", natureza="passivo",
+            key="cpr_pagar", label="Contas a Pagar", natureza="passivo",
             grupo="operacional", grupo_label="Operacional",
             source="wh_cpr_movimento (Σ valor < 0: despesas/taxas/IOF a recolher)",
             v1=-cpr_pag_d1, v0=-cpr_pag_d0, drill_key="cpr",
