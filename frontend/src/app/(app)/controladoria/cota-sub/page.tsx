@@ -70,7 +70,7 @@ import { useUAs } from "@/lib/hooks/cadastros"
 import {
   COTA_SUB_REPORTS,
   useBalanco,
-  useBalancoPatrimonial,
+  useBalancoEstrutural,
   useCotaSubReadiness,
   useDatasDisponiveis,
 } from "@/lib/hooks/controladoria"
@@ -110,7 +110,43 @@ import { DrillCprContent } from "./_components/DrillCprContent"
 import { DrillDcContent } from "./_components/DrillDcContent"
 import { DrillPddContent } from "./_components/DrillPddContent"
 import { useAgenteVariacaoStream } from "@/lib/hooks/controladoria"
-import type { CategoriaPatrimonialKey } from "@/lib/api-client"
+import type {
+  BalancoEstruturalResponse,
+  CategoriaPatrimonial,
+  CategoriaPatrimonialKey,
+} from "@/lib/api-client"
+
+/**
+ * Mapeia a linha drilada do balanco estrutural pro shape `CategoriaPatrimonial`
+ * que o BalancoInspector/CategoriaDrillSheet consomem (header do drill).
+ * O drill (dc/pdd/cpr) usa `drill_key`. Pra CPR, sintetiza o net (receber − pagar)
+ * porque sao 2 linhas (a receber=ativo / a pagar=passivo) com o mesmo drill.
+ */
+function toInspectorCategoria(
+  data: BalancoEstruturalResponse | undefined,
+  drill: CategoriaPatrimonialKey | null,
+): CategoriaPatrimonial | undefined {
+  if (!data || !drill) return undefined
+  const matches = [...data.ativos, ...data.passivos].filter((l) => l.drill_key === drill)
+  if (matches.length === 0) return undefined
+  if (drill === "cpr") {
+    const rec = matches.find((l) => l.natureza === "ativo")
+    const pag = matches.find((l) => l.natureza === "passivo")
+    const d1 = (rec?.d1 ?? 0) - (pag?.d1 ?? 0)
+    const d0 = (rec?.d0 ?? 0) - (pag?.d0 ?? 0)
+    return { key: "cpr", label: "CPR (líquido)", tipo: "ativo", d1, d0, delta: d0 - d1, source: "wh_cpr_movimento" }
+  }
+  const l = matches[0]
+  return {
+    key:    drill,
+    label:  l.label,
+    tipo:   l.natureza === "passivo" ? "passivo" : "ativo",
+    d1:     l.d1,
+    d0:     l.d0,
+    delta:  l.delta,
+    source: l.source,
+  }
+}
 // EventosDiaTab desativado em F1 do redesign (2026-05-22) — substituido pelo
 // BalancoPatrimonialHero na aba "eventos". F4 decide o destino final (apos
 // drills da F2/F3 estarem completos). Import + componente preservados no
@@ -690,7 +726,11 @@ export default function CotaSubPage() {
 
   const dayIso          = React.useMemo(() => format(day, "yyyy-MM-dd"), [day])
   const balanceQuery    = useBalanco(fundoId, dayIso)
-  const balancoPatQuery = useBalancoPatrimonial(fundoId, dayIso)
+  const balancoEstruturalQuery = useBalancoEstrutural(fundoId, dayIso)
+  const drilledCategoriaObj = React.useMemo(
+    () => toInspectorCategoria(balancoEstruturalQuery.data, drilledCategoria),
+    [balancoEstruturalQuery.data, drilledCategoria],
+  )
   // useBalanceteDiario removido em F1 do redesign (2026-05-22) — antes
   // alimentava EventosDiaTab. F4 reintroduz se aposentar EventosDiaTab definitivamente
   // ou usar outra tab secundaria. Por enquanto fica fora pra reduzir requests.
@@ -1077,14 +1117,14 @@ export default function CotaSubPage() {
                   {activeTab === "eventos" && (
                     <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                       <BalancoPatrimonialHero
-                        data={balancoPatQuery.data}
-                        loading={balancoPatQuery.isLoading}
+                        data={balancoEstruturalQuery.data}
+                        loading={balancoEstruturalQuery.isLoading}
                         errorMessage={
-                          balancoPatQuery.isError
-                            ? `Erro: ${(balancoPatQuery.error as Error)?.message ?? "desconhecido"}`
+                          balancoEstruturalQuery.isError
+                            ? `Erro: ${(balancoEstruturalQuery.error as Error)?.message ?? "desconhecido"}`
                             : undefined
                         }
-                        onRetry={() => balancoPatQuery.refetch()}
+                        onRetry={() => balancoEstruturalQuery.refetch()}
                         onDrillCategoria={setDrilledCategoria}
                         onExplicarVariacao={
                           fundoId
@@ -1102,36 +1142,31 @@ export default function CotaSubPage() {
                           (overlay) controlado por isXl no render do Sheet. */}
                       <div className="hidden xl:block">
                         <BalancoInspector
-                          categoria={
-                            drilledCategoria === null || !balancoPatQuery.data
-                              ? undefined
-                              : [...balancoPatQuery.data.ativos, ...balancoPatQuery.data.passivos]
-                                  .find((c) => c.key === drilledCategoria)
-                          }
-                          fundoNome={balancoPatQuery.data?.fundo_nome ?? ""}
-                          data={balancoPatQuery.data?.data ?? dayIso}
-                          dataAnterior={balancoPatQuery.data?.data_anterior ?? ""}
+                          categoria={drilledCategoriaObj}
+                          fundoNome={balancoEstruturalQuery.data?.fundo_nome ?? ""}
+                          data={balancoEstruturalQuery.data?.data ?? dayIso}
+                          dataAnterior={balancoEstruturalQuery.data?.data_anterior ?? ""}
                           onClose={() => setDrilledCategoria(null)}
                         >
                           {drilledCategoria === "dc" && fundoId && (
                             <DrillDcContent
                               fundoId={fundoId}
-                              data={balancoPatQuery.data?.data ?? dayIso}
-                              dataAnterior={balancoPatQuery.data?.data_anterior}
+                              data={balancoEstruturalQuery.data?.data ?? dayIso}
+                              dataAnterior={balancoEstruturalQuery.data?.data_anterior}
                             />
                           )}
                           {drilledCategoria === "pdd" && fundoId && (
                             <DrillPddContent
                               fundoId={fundoId}
-                              data={balancoPatQuery.data?.data ?? dayIso}
-                              dataAnterior={balancoPatQuery.data?.data_anterior}
+                              data={balancoEstruturalQuery.data?.data ?? dayIso}
+                              dataAnterior={balancoEstruturalQuery.data?.data_anterior}
                             />
                           )}
                           {drilledCategoria === "cpr" && fundoId && (
                             <DrillCprContent
                               fundoId={fundoId}
-                              data={balancoPatQuery.data?.data ?? dayIso}
-                              dataAnterior={balancoPatQuery.data?.data_anterior}
+                              data={balancoEstruturalQuery.data?.data ?? dayIso}
+                              dataAnterior={balancoEstruturalQuery.data?.data_anterior}
                             />
                           )}
                         </BalancoInspector>
@@ -1185,35 +1220,30 @@ export default function CotaSubPage() {
       <CategoriaDrillSheet
         open={drilledCategoria !== null && !isXl}
         onClose={() => setDrilledCategoria(null)}
-        categoria={
-          drilledCategoria === null || !balancoPatQuery.data
-            ? undefined
-            : [...balancoPatQuery.data.ativos, ...balancoPatQuery.data.passivos]
-                .find((c) => c.key === drilledCategoria)
-        }
-        fundoNome={balancoPatQuery.data?.fundo_nome ?? ""}
-        data={balancoPatQuery.data?.data ?? dayIso}
-        dataAnterior={balancoPatQuery.data?.data_anterior ?? ""}
+        categoria={drilledCategoriaObj}
+        fundoNome={balancoEstruturalQuery.data?.fundo_nome ?? ""}
+        data={balancoEstruturalQuery.data?.data ?? dayIso}
+        dataAnterior={balancoEstruturalQuery.data?.data_anterior ?? ""}
       >
         {drilledCategoria === "dc" && fundoId && (
           <DrillDcContent
             fundoId={fundoId}
-            data={balancoPatQuery.data?.data ?? dayIso}
-            dataAnterior={balancoPatQuery.data?.data_anterior}
+            data={balancoEstruturalQuery.data?.data ?? dayIso}
+            dataAnterior={balancoEstruturalQuery.data?.data_anterior}
           />
         )}
         {drilledCategoria === "pdd" && fundoId && (
           <DrillPddContent
             fundoId={fundoId}
-            data={balancoPatQuery.data?.data ?? dayIso}
-            dataAnterior={balancoPatQuery.data?.data_anterior}
+            data={balancoEstruturalQuery.data?.data ?? dayIso}
+            dataAnterior={balancoEstruturalQuery.data?.data_anterior}
           />
         )}
         {drilledCategoria === "cpr" && fundoId && (
           <DrillCprContent
             fundoId={fundoId}
-            data={balancoPatQuery.data?.data ?? dayIso}
-            dataAnterior={balancoPatQuery.data?.data_anterior}
+            data={balancoEstruturalQuery.data?.data ?? dayIso}
+            dataAnterior={balancoEstruturalQuery.data?.data_anterior}
           />
         )}
       </CategoriaDrillSheet>

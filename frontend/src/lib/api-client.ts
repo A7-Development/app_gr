@@ -3707,6 +3707,156 @@ function _coerceBalancoPatrimonial(r: BalancoPatrimonialResponseDTO): BalancoPat
   }
 }
 
+// Endpoint /controladoria/cota-sub/balanco-estrutural — redesign 2026-05-27.
+// Coerente por natureza + sinal: PDD = contra-ativo (abate DC), CPR dividido
+// por sinal (a receber=ativo / a pagar=passivo), Senior+Mezanino agrupados como
+// "Cotas Prioritarias", residuo MEC em bloco de reconciliacao (nao e linha).
+
+export type BalancoNaturezaLinha = "ativo" | "contra_ativo" | "passivo"
+export type BalancoGrupoKey =
+  | "direitos_creditorios"
+  | "aplicacoes"
+  | "disponibilidades"
+  | "operacional"
+  | "cotas_prioritarias"
+
+type BalancoLinhaEstruturalDTO = {
+  key:         string
+  label:       string
+  natureza:    BalancoNaturezaLinha
+  grupo:       BalancoGrupoKey
+  grupo_label: string
+  d1:          number | string
+  d0:          number | string
+  delta:       number | string
+  source:      string
+  drill_key:   CategoriaPatrimonialKey | null
+}
+
+export type BalancoLinhaEstrutural = {
+  key:         string
+  label:       string
+  natureza:    BalancoNaturezaLinha
+  grupo:       BalancoGrupoKey
+  grupo_label: string
+  d1:          number
+  d0:          number
+  delta:       number
+  source:      string
+  drill_key:   CategoriaPatrimonialKey | null
+}
+
+type ReconciliacaoMecDTO = {
+  pl_fonte_d1:       number | string
+  pl_fonte_d0:       number | string
+  pl_fonte_delta:    number | string
+  residuo_d1:        number | string
+  residuo_d0:        number | string
+  residuo_delta:     number | string
+  dentro_tolerancia: boolean
+}
+
+export type ReconciliacaoMec = {
+  pl_fonte_d1:       number
+  pl_fonte_d0:       number
+  pl_fonte_delta:    number
+  residuo_d1:        number
+  residuo_d0:        number
+  residuo_delta:     number
+  dentro_tolerancia: boolean
+}
+
+type BalancoEstruturalResponseDTO = {
+  fundo_id:            string
+  fundo_nome:          string
+  data:                string
+  data_anterior:       string
+  ativos:              BalancoLinhaEstruturalDTO[]
+  passivos:            BalancoLinhaEstruturalDTO[]
+  dc_liquido_d1:       number | string
+  dc_liquido_d0:       number | string
+  dc_liquido_delta:    number | string
+  total_ativo_d1:      number | string
+  total_ativo_d0:      number | string
+  total_ativo_delta:   number | string
+  total_passivo_d1:    number | string
+  total_passivo_d0:    number | string
+  total_passivo_delta: number | string
+  pl_sub_d1:           number | string
+  pl_sub_d0:           number | string
+  pl_sub_delta:        number | string
+  reconciliacao:       ReconciliacaoMecDTO
+}
+
+export type BalancoEstruturalResponse = {
+  fundo_id:            string
+  fundo_nome:          string
+  data:                string
+  data_anterior:       string
+  ativos:              BalancoLinhaEstrutural[]
+  passivos:            BalancoLinhaEstrutural[]
+  dc_liquido_d1:       number
+  dc_liquido_d0:       number
+  dc_liquido_delta:    number
+  total_ativo_d1:      number
+  total_ativo_d0:      number
+  total_ativo_delta:   number
+  total_passivo_d1:    number
+  total_passivo_d0:    number
+  total_passivo_delta: number
+  pl_sub_d1:           number
+  pl_sub_d0:           number
+  pl_sub_delta:        number
+  reconciliacao:       ReconciliacaoMec
+}
+
+function _coerceBalancoLinhaEstrutural(l: BalancoLinhaEstruturalDTO): BalancoLinhaEstrutural {
+  return {
+    key:         l.key,
+    label:       l.label,
+    natureza:    l.natureza,
+    grupo:       l.grupo,
+    grupo_label: l.grupo_label,
+    d1:          Number(l.d1),
+    d0:          Number(l.d0),
+    delta:       Number(l.delta),
+    source:      l.source,
+    drill_key:   l.drill_key,
+  }
+}
+
+function _coerceBalancoEstrutural(r: BalancoEstruturalResponseDTO): BalancoEstruturalResponse {
+  return {
+    fundo_id:            r.fundo_id,
+    fundo_nome:          r.fundo_nome,
+    data:                r.data,
+    data_anterior:       r.data_anterior,
+    ativos:              r.ativos.map(_coerceBalancoLinhaEstrutural),
+    passivos:            r.passivos.map(_coerceBalancoLinhaEstrutural),
+    dc_liquido_d1:       Number(r.dc_liquido_d1),
+    dc_liquido_d0:       Number(r.dc_liquido_d0),
+    dc_liquido_delta:    Number(r.dc_liquido_delta),
+    total_ativo_d1:      Number(r.total_ativo_d1),
+    total_ativo_d0:      Number(r.total_ativo_d0),
+    total_ativo_delta:   Number(r.total_ativo_delta),
+    total_passivo_d1:    Number(r.total_passivo_d1),
+    total_passivo_d0:    Number(r.total_passivo_d0),
+    total_passivo_delta: Number(r.total_passivo_delta),
+    pl_sub_d1:           Number(r.pl_sub_d1),
+    pl_sub_d0:           Number(r.pl_sub_d0),
+    pl_sub_delta:        Number(r.pl_sub_delta),
+    reconciliacao: {
+      pl_fonte_d1:       Number(r.reconciliacao.pl_fonte_d1),
+      pl_fonte_d0:       Number(r.reconciliacao.pl_fonte_d0),
+      pl_fonte_delta:    Number(r.reconciliacao.pl_fonte_delta),
+      residuo_d1:        Number(r.reconciliacao.residuo_d1),
+      residuo_d0:        Number(r.reconciliacao.residuo_d0),
+      residuo_delta:     Number(r.reconciliacao.residuo_delta),
+      dentro_tolerancia: r.reconciliacao.dentro_tolerancia,
+    },
+  }
+}
+
 // ── Drills DC + PDD + CPR (F2 do redesign, 2026-05-23) ─────────────────────
 //
 // Endpoints /controladoria/cota-sub/drill/{dc,pdd,cpr} — cada um abre o
@@ -4880,6 +5030,19 @@ export const controladoria = {
       `/controladoria/cota-sub/balanco-patrimonial?${params.toString()}`,
     )
     return _coerceBalancoPatrimonial(raw)
+  },
+
+  cotaSubBalancoEstrutural: async (
+    fundoId: string,
+    data: string,           // YYYY-MM-DD
+    dataAnterior?: string,  // YYYY-MM-DD opcional (override de D-1)
+  ): Promise<BalancoEstruturalResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    const raw = await apiClient.get<BalancoEstruturalResponseDTO>(
+      `/controladoria/cota-sub/balanco-estrutural?${params.toString()}`,
+    )
+    return _coerceBalancoEstrutural(raw)
   },
 
   cotaSubVariacoesDia: async (

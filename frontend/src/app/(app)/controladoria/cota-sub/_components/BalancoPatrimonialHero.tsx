@@ -1,21 +1,20 @@
 "use client"
 
 /**
- * BalancoPatrimonialHero — Balance hero da Cota Sub.
+ * BalancoPatrimonialHero — Balance hero da Cota Sub (redesign ESTRUTURAL 2026-05-27).
  *
- * Refator 2026-05-25: usa DataTable canônica com padrão DRE (hierarquia
- * expansível) mas sempre expandido + chevron escondido.
+ * Consome /controladoria/cota-sub/balanco-estrutural. Coerente por natureza + sinal:
+ *   - ATIVO: grupo Direitos Creditórios [DC bruto, (−) PDD contra-ativo, = DC líquido],
+ *     Aplicações, Disponibilidades [..., CPR a Receber].
+ *   - PASSIVO: Operacional [CPR a Pagar], Cotas Prioritárias [Cota Senior, Cota Mezanino].
+ *   - PL Sub Jr = Σ Ativo − Σ Passivo (fecha por construção).
+ *   - Reconciliação MEC (PL fonte + resíduo) vai num rodapé separado — não é
+ *     linha do balanço.
  *
- * Estrutura:
- *   - Grupo "Ativos" → subRows: categorias_ativos + Σ Ativos
- *   - Grupo "Passivos · redutores" → subRows: categorias_passivos + Σ Passivos
- *   - "PL Sub Jr · calculado" (top-level, destaque)
- *   - "PL Sub Jr · fonte MEC" (top-level)
- *   - "Resíduo identidade contábil (dia)" (top-level)
- *
- * Click em line drilável dispara onDrillCategoria. Cabeçalho D-1/D0/Δ fixo
- * no topo da tabela. Header (fundo nome + botão IA + IdentidadeBadge) e
- * footer ficam fora da DataTable, no Card wrapper.
+ * DataTable canônica com padrão DRE (hierarquia expansível, sempre expandida,
+ * chevron escondido). Grupos top-level (Ativos/Passivos) via subRows; sub-grupos
+ * (captions) + subtotais são linhas planas dentro do grupo. Click em linha com
+ * `drillKey` (dc/pdd/cpr) dispara onDrillCategoria.
  */
 
 import * as React from "react"
@@ -37,8 +36,8 @@ import { ErrorState } from "@/design-system/components/ErrorState"
 import { Button } from "@/components/tremor/Button"
 import { tableTokens } from "@/design-system/tokens/table"
 import type {
-  BalancoPatrimonialResponse,
-  CategoriaPatrimonial,
+  BalancoEstruturalResponse,
+  BalancoLinhaEstrutural,
   CategoriaPatrimonialKey,
 } from "@/lib/api-client"
 
@@ -60,26 +59,21 @@ const fmtDate = (iso: string): string => {
   return m ? `${m[3]}/${m[2]}` : iso
 }
 
-const DRILL_ENABLED_F2: ReadonlySet<CategoriaPatrimonialKey> = new Set<CategoriaPatrimonialKey>([
-  "dc",
-  "cpr",
-  "pdd",
-])
-
-// Tooltip amigavel por categoria (descricao economica) — usado em title de linha.
-const CATEGORIA_TOOLTIP: Partial<Record<CategoriaPatrimonialKey, string>> = {
-  dc:                   "Σ Valor Presente dos recebíveis em estoque (exclui WOP). Marcação na curva contratual.",
-  pdd:                  "Σ Provisão para Devedores Duvidosos constituída (faixas A-H, exclui WOP). Reduz o PL Sub Jr.",
-  cpr:                  "Contas a Pagar/Receber líquido. Despesas, taxas, aportes engaiolados, provisões.",
-  tesouraria:           "Saldo em tesouraria da classe Sub (exclui Mez/Sr).",
+// Tooltip amigavel por linha (descricao economica) — usado em title de linha.
+const LINHA_TOOLTIP: Record<string, string> = {
+  dc_bruto:             "Σ Valor Presente dos recebíveis em estoque (exclui WOP), BRUTO — antes da PDD.",
+  pdd:                  "Σ Provisão para Devedores Duvidosos (faixas A-H, exclui WOP). Contra-ativo: reduz o DC líquido.",
+  cpr_receber:          "CPR de natureza ativa: liquidações em floating (recebível em trânsito retido pelo banco) + despesas diferidas. Σ valores positivos.",
+  cpr_pagar:            "CPR de natureza passiva: despesas, taxas e IOF a recolher. Σ valores negativos (mostrado em módulo).",
+  tesouraria:           "Saldo em tesouraria da classe Sub (exclui Mez/Sr). Negativo = caixa a descoberto (reduz o ativo).",
   saldo_conta_corrente: "Saldo em conta corrente. Exclui linhas CONCILIA (contra-saldos que somam 0).",
   compromissada:        "Operações compromissadas (overnight).",
   titulos_publicos:     "Σ posição em títulos públicos (NTN-*, LFT, LTN).",
   op_estruturadas:      "Σ posição em operações estruturadas (NCPX, VCNC).",
   fundos_di:            "Σ cotas de fundos DI externos.",
-  outros_ativos:        "Outros ativos não classificados nas demais linhas (exclui PDD e TPF).",
-  senior:               "Patrimônio da Cota Sênior (passivo da Sub Jr).",
-  mezanino:             "Patrimônio da Cota Mezanino (passivo da Sub Jr).",
+  outros_ativos:        "Outros ativos não classificados (exclui PDD e TPF).",
+  senior:               "Patrimônio da Cota Senior — cota prioritária (recebe antes da Sub).",
+  mezanino:             "Patrimônio da Cota Mezanino — cota prioritária (recebe antes da Sub).",
 }
 
 const RESIDUO_AMBER_BRL = 1
@@ -90,125 +84,105 @@ const RESIDUO_RED_BRL = 1000
 // ─────────────────────────────────────────────────────────────────────────────
 
 type RowKind =
-  | "grupo"        // Ativos / Passivos · redutores
-  | "line"         // categoria (drilável se em DRILL_ENABLED_F2)
-  | "subtotal"     // Σ Ativos / Σ Passivos
-  | "pl-deduzido"  // PL Sub Jr · calculado
-  | "pl-fonte"     // PL Sub Jr · fonte MEC
-  | "residuo"      // Resíduo identidade contábil (dia)
+  | "grupo"      // Ativos / Passivos (top-level)
+  | "caption"    // sub-grupo (Direitos Creditórios / Aplicações / Operacional / ...)
+  | "line"       // linha de balanço (drilável se drillKey != null)
+  | "subtotal"   // DC líquido / Σ Ativos / Σ Passivos
+  | "pl-sub"     // PL Sub Jr (residual, destaque)
+  | "pl-fonte"   // PL Sub Jr · fonte MEC (reconciliação)
+  | "residuo"    // Resíduo identidade contábil (dia)
 
 type Row = {
-  id:       string
-  kind:     RowKind
-  label:    string
-  sublabel?: string
-  d1:       number | null
-  d0:       number | null
-  delta:    number | null
-  subRows?: Row[]
-  // Apenas pra line:
-  categoria?: CategoriaPatrimonial
-  drillEnabled?: boolean
-  tooltip?: string
+  id:        string
+  kind:      RowKind
+  label:     string
+  d1:        number | null
+  d0:        number | null
+  delta:     number | null
+  subRows?:  Row[]
+  drillKey?: CategoriaPatrimonialKey | null
+  contra?:   boolean
+  tooltip?:  string
 }
 
-function buildTooltip(cat: CategoriaPatrimonial): string | undefined {
+function lineTooltip(ln: BalancoLinhaEstrutural): string | undefined {
   const parts: string[] = []
-  const friendly = CATEGORIA_TOOLTIP[cat.key]
+  const friendly = LINHA_TOOLTIP[ln.key]
   if (friendly) parts.push(friendly)
-  if (cat.source) parts.push(`Fonte: ${cat.source}`)
+  if (ln.source) parts.push(`Fonte: ${ln.source}`)
   return parts.length ? parts.join("\n\n") : undefined
 }
 
-function buildTree(data: BalancoPatrimonialResponse, residuoDelta: number): Row[] {
-  const ativos: Row[] = data.ativos.map((cat) => ({
-    id: `ativo-${cat.key}`,
-    kind: "line",
-    label: cat.label,
-    d1: cat.d1,
-    d0: cat.d0,
-    delta: cat.delta,
-    categoria: cat,
-    drillEnabled: DRILL_ENABLED_F2.has(cat.key),
-    tooltip: buildTooltip(cat),
-  }))
-  const passivos: Row[] = data.passivos.map((cat) => ({
-    id: `passivo-${cat.key}`,
-    kind: "line",
-    label: cat.label,
-    d1: cat.d1,
-    d0: cat.d0,
-    delta: cat.delta,
-    categoria: cat,
-    drillEnabled: DRILL_ENABLED_F2.has(cat.key),
-    tooltip: buildTooltip(cat),
-  }))
+function lineRow(ln: BalancoLinhaEstrutural): Row {
+  const contra = ln.natureza === "contra_ativo"
+  return {
+    id:        `line-${ln.key}`,
+    kind:      "line",
+    label:     contra ? `(−) ${ln.label}` : ln.label,
+    d1:        ln.d1,
+    d0:        ln.d0,
+    delta:     ln.delta,
+    drillKey:  ln.drill_key,
+    contra,
+    tooltip:   lineTooltip(ln),
+  }
+}
 
+function captionRow(grupo: string, label: string): Row {
+  return { id: `cap-${grupo}`, kind: "caption", label, d1: null, d0: null, delta: null }
+}
+
+function subtotalRow(id: string, label: string, d1: number, d0: number, delta: number): Row {
+  return { id, kind: "subtotal", label, d1, d0, delta }
+}
+
+/** Monta as linhas de um lado (ativo/passivo): captions por grupo + linhas. */
+function sideRows(lines: BalancoLinhaEstrutural[], dcLiquido?: { d1: number; d0: number; delta: number }): Row[] {
+  const out: Row[] = []
+  let lastGrupo: string | null = null
+  for (const ln of lines) {
+    if (ln.grupo !== lastGrupo) {
+      // Fecha o grupo Direitos Creditórios com o subtotal "DC líquido".
+      if (lastGrupo === "direitos_creditorios" && dcLiquido) {
+        out.push(subtotalRow("dc-liquido", "DC líquido", dcLiquido.d1, dcLiquido.d0, dcLiquido.delta))
+      }
+      out.push(captionRow(ln.grupo, ln.grupo_label))
+      lastGrupo = ln.grupo
+    }
+    out.push(lineRow(ln))
+  }
+  if (lastGrupo === "direitos_creditorios" && dcLiquido) {
+    out.push(subtotalRow("dc-liquido", "DC líquido", dcLiquido.d1, dcLiquido.d0, dcLiquido.delta))
+  }
+  return out
+}
+
+function buildTree(data: BalancoEstruturalResponse): Row[] {
+  const ativoRows = sideRows(data.ativos, {
+    d1: data.dc_liquido_d1, d0: data.dc_liquido_d0, delta: data.dc_liquido_delta,
+  })
+  ativoRows.push(subtotalRow("sub-ativos", "Σ Ativos", data.total_ativo_d1, data.total_ativo_d0, data.total_ativo_delta))
+
+  const passivoRows = sideRows(data.passivos)
+  passivoRows.push(subtotalRow("sub-passivos", "Σ Passivos", data.total_passivo_d1, data.total_passivo_d0, data.total_passivo_delta))
+
+  const r = data.reconciliacao
   return [
+    { id: "g-ativos", kind: "grupo", label: "Ativos", d1: null, d0: null, delta: null, subRows: ativoRows },
+    { id: "g-passivos", kind: "grupo", label: "Passivos", d1: null, d0: null, delta: null, subRows: passivoRows },
     {
-      id: "g-ativos",
-      kind: "grupo",
-      label: "Ativos",
-      // Grupo eh apenas header de secao — totais ficam no subtotal abaixo.
-      d1: null,
-      d0: null,
-      delta: null,
-      subRows: [
-        ...ativos,
-        {
-          id: "sub-ativos",
-          kind: "subtotal",
-          label: "Σ Ativos",
-          d1: data.soma_ativos_d1,
-          d0: data.soma_ativos_d0,
-          delta: data.soma_ativos_delta,
-        },
-      ],
+      id: "pl-sub", kind: "pl-sub", label: "PL Sub Jr",
+      d1: data.pl_sub_d1, d0: data.pl_sub_d0, delta: data.pl_sub_delta,
+      tooltip: "Patrimônio Líquido da Cota Sub Jr = Σ Ativo − Σ Passivo. Fecha por construção.",
     },
     {
-      id: "g-passivos",
-      kind: "grupo",
-      label: "Passivos · redutores",
-      d1: null,
-      d0: null,
-      delta: null,
-      subRows: [
-        ...passivos,
-        {
-          id: "sub-passivos",
-          kind: "subtotal",
-          label: "Σ Passivos",
-          d1: data.soma_passivos_d1,
-          d0: data.soma_passivos_d0,
-          delta: data.soma_passivos_delta,
-        },
-      ],
+      id: "pl-fonte", kind: "pl-fonte", label: "PL Sub Jr · fonte MEC",
+      d1: r.pl_fonte_d1, d0: r.pl_fonte_d0, delta: r.pl_fonte_delta,
+      tooltip: "PL Sub Jr lido direto do MEC publicado pela QiTech. Check externo de reconciliação.",
     },
     {
-      id: "pl-deduzido",
-      kind: "pl-deduzido",
-      label: "PL Sub Jr · calculado",
-      d1: data.pl_deduzido_d1,
-      d0: data.pl_deduzido_d0,
-      delta: data.pl_deduzido_delta,
-      tooltip: "PL Sub Jr construído de baixo pra cima a partir das fontes granulares.",
-    },
-    {
-      id: "pl-fonte",
-      kind: "pl-fonte",
-      label: "PL Sub Jr · fonte MEC",
-      d1: data.pl_fonte_d1,
-      d0: data.pl_fonte_d0,
-      delta: data.pl_fonte_delta,
-      tooltip: "PL Sub Jr lido diretamente do MEC publicado pela QiTech. Usado como check externo.",
-    },
-    {
-      id: "residuo",
-      kind: "residuo",
-      label: "Resíduo identidade contábil (dia)",
-      d1: null,
-      d0: null,
-      delta: residuoDelta,
+      id: "residuo", kind: "residuo", label: "Resíduo de reconciliação (dia)",
+      d1: null, d0: null, delta: r.residuo_delta,
     },
   ]
 }
@@ -219,10 +193,7 @@ function buildTree(data: BalancoPatrimonialResponse, residuoDelta: number): Row[
 
 const col = createColumnHelper<Row>()
 
-type BuildColsOpts = {
-  data: string
-  dataAnterior: string
-}
+type BuildColsOpts = { data: string; dataAnterior: string }
 
 function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
   return [
@@ -232,14 +203,21 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
       size:   240,
       cell:   (info) => {
         const row = info.row.original
-        // depth automatica do react-table — categorias dentro de Ativos/Passivos
-        // ganham 16px de indentacao automatica.
-        const depth = info.row.depth
-        const indent = depth * 16
+        const indent = info.row.depth * 16
 
         if (row.kind === "grupo") {
           return (
             <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-600 dark:text-gray-300">
+              {row.label}
+            </span>
+          )
+        }
+        if (row.kind === "caption") {
+          return (
+            <span
+              style={{ paddingLeft: `${indent}px` }}
+              className="block truncate text-[10px] font-medium uppercase tracking-[0.05em] text-gray-400 dark:text-gray-500"
+            >
               {row.label}
             </span>
           )
@@ -256,36 +234,35 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
         }
         if (row.kind === "subtotal") {
           return (
+            <span style={{ paddingLeft: `${indent}px` }} className={cx("block truncate", tableTokens.cellStrong)}>
+              {row.label}
+            </span>
+          )
+        }
+        if (row.kind === "pl-sub" || row.kind === "pl-fonte") {
+          const isMain = row.kind === "pl-sub"
+          return (
             <span
-              style={{ paddingLeft: `${indent}px` }}
-              className={cx("block truncate", tableTokens.cellStrong)}
+              title={row.tooltip}
+              className={cx(
+                "block truncate",
+                isMain ? "font-semibold text-gray-900 dark:text-gray-50" : "font-medium text-gray-700 dark:text-gray-300",
+                row.tooltip && "cursor-help",
+              )}
             >
               {row.label}
             </span>
           )
         }
-        if (row.kind === "pl-deduzido" || row.kind === "pl-fonte") {
-          const isMain = row.kind === "pl-deduzido"
-          return (
-            <div className="flex flex-col min-w-0" title={row.tooltip}>
-              <span className={cx(
-                "block truncate",
-                isMain ? "font-semibold text-gray-900 dark:text-gray-50" : "font-medium text-gray-700 dark:text-gray-300",
-                row.tooltip && "cursor-help",
-              )}>
-                {row.label}
-              </span>
-              {row.sublabel && (
-                <span className="text-[10px] text-gray-400 dark:text-gray-600">{row.sublabel}</span>
-              )}
-            </div>
-          )
-        }
-        // line — categoria
+        // line
         return (
           <span
             style={{ paddingLeft: `${indent}px` }}
-            className={cx("block truncate text-gray-900 dark:text-gray-50", row.tooltip && "cursor-help")}
+            className={cx(
+              "block truncate",
+              row.contra ? "text-gray-500 dark:text-gray-400" : "text-gray-900 dark:text-gray-50",
+              row.tooltip && "cursor-help",
+            )}
             title={row.tooltip}
           >
             {row.label}
@@ -294,97 +271,60 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
       },
     }) as ColumnDef<Row, unknown>,
 
-    col.accessor("d1", {
-      id:     "d1",
-      header: () => (
-        <div className="text-right text-[10px] font-medium uppercase tracking-[0.04em] text-gray-500 dark:text-gray-400">
-          D-1
-          <div className="font-normal text-gray-400 normal-case">{fmtDate(opts.dataAnterior)}</div>
-        </div>
-      ),
-      meta:   { align: "right" },
-      size:   130,
-      cell:   (info) => {
-        const row = info.row.original
-        if (row.kind === "residuo") return null
-        const v = info.getValue<number | null>()
-        if (v == null) return null
-        // grupo agora carrega o agregado do grupo (sem subtotal redundante),
-        // entao merece destaque igual subtotal/pl-deduzido.
-        const isStrong = row.kind === "subtotal" || row.kind === "pl-deduzido"
-        const isMuted = row.kind === "pl-fonte"
-        return (
-          <div
-            style={{ textAlign: "right" }}
-            className={cx(
-              isMuted ? tableTokens.cellSecondary + " tabular-nums" : tableTokens.cellNumber,
-              isStrong && "font-semibold",
-            )}
-          >
-            {fmtBRL.format(v)}
+    ...(["d1", "d0"] as const).map((field) =>
+      col.accessor(field, {
+        id:     field,
+        header: () => (
+          <div className="text-right text-[10px] font-medium uppercase tracking-[0.04em] text-gray-500 dark:text-gray-400">
+            {field === "d1" ? "D-1" : "D0"}
+            <div className="font-normal text-gray-400 normal-case">
+              {fmtDate(field === "d1" ? opts.dataAnterior : opts.data)}
+            </div>
           </div>
-        )
-      },
-    }) as ColumnDef<Row, unknown>,
-
-    col.accessor("d0", {
-      id:     "d0",
-      header: () => (
-        <div className="text-right text-[10px] font-medium uppercase tracking-[0.04em] text-gray-500 dark:text-gray-400">
-          D0
-          <div className="font-normal text-gray-400 normal-case">{fmtDate(opts.data)}</div>
-        </div>
-      ),
-      meta:   { align: "right" },
-      size:   130,
-      cell:   (info) => {
-        const row = info.row.original
-        if (row.kind === "residuo") return null
-        const v = info.getValue<number | null>()
-        if (v == null) return null
-        const isStrong = row.kind === "subtotal" || row.kind === "pl-deduzido"
-        const isMuted = row.kind === "pl-fonte"
-        return (
-          <div
-            style={{ textAlign: "right" }}
-            className={cx(
-              isMuted ? tableTokens.cellSecondary + " tabular-nums" : tableTokens.cellNumber,
-              isStrong && "font-semibold",
-            )}
-          >
-            {fmtBRL.format(v)}
-          </div>
-        )
-      },
-    }) as ColumnDef<Row, unknown>,
+        ),
+        meta:   { align: "right" },
+        size:   130,
+        cell:   (info) => {
+          const row = info.row.original
+          if (row.kind === "residuo" || row.kind === "caption") return null
+          const v = info.getValue<number | null>()
+          if (v == null) return null
+          const isStrong = row.kind === "subtotal" || row.kind === "pl-sub"
+          const isMuted = row.kind === "pl-fonte" || row.contra
+          return (
+            <div
+              style={{ textAlign: "right" }}
+              className={cx(
+                isMuted ? tableTokens.cellSecondary + " tabular-nums" : tableTokens.cellNumber,
+                isStrong && "font-semibold",
+              )}
+            >
+              {fmtBRL.format(v)}
+            </div>
+          )
+        },
+      }) as ColumnDef<Row, unknown>,
+    ),
 
     col.accessor("delta", {
       id:     "delta",
       header: () => (
-        <div className="text-right text-[10px] font-medium uppercase tracking-[0.04em] text-gray-500 dark:text-gray-400">
-          Δ
-        </div>
+        <div className="text-right text-[10px] font-medium uppercase tracking-[0.04em] text-gray-500 dark:text-gray-400">Δ</div>
       ),
       meta:   { align: "right" },
       size:   120,
       cell:   (info) => {
         const row = info.row.original
+        if (row.kind === "caption") return null
         const v = info.getValue<number | null>()
-        if (v == null) {
-          if (row.kind === "residuo") return null
-          return null
-        }
+        if (v == null) return null
         const isZero = Math.abs(v) < 0.005
         if (isZero) {
           return <div style={{ textAlign: "right" }} className="text-gray-300 dark:text-gray-700 tabular-nums">—</div>
         }
-        const isPositive = v > 0
-        const isStrong = row.kind === "subtotal" || row.kind === "pl-deduzido"
-        // Residuo tem coloração própria por magnitude
         if (row.kind === "residuo") {
           const abs = Math.abs(v)
-          const tone = abs < RESIDUO_AMBER_BRL ? "ok"
-            : abs < RESIDUO_RED_BRL ? "warn" : "error"
+          const tone = abs < RESIDUO_AMBER_BRL ? "ok" : abs < RESIDUO_RED_BRL ? "warn" : "error"
           return (
             <div
               style={{ textAlign: "right" }}
@@ -399,11 +339,12 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
             </div>
           )
         }
+        const isStrong = row.kind === "subtotal" || row.kind === "pl-sub"
         return (
           <div
             style={{ textAlign: "right" }}
             className={cx(
-              isPositive ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400",
+              v > 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400",
               "tabular-nums",
               isStrong && "font-semibold",
             )}
@@ -420,7 +361,7 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
       size:   24,
       cell:   (info) => {
         const row = info.row.original
-        if (row.kind !== "line" || !row.drillEnabled) return null
+        if (row.kind !== "line" || !row.drillKey) return null
         return (
           <div className="flex justify-end text-gray-300 dark:text-gray-700">
             <RiArrowRightSLine className="size-3.5" aria-hidden="true" />
@@ -432,20 +373,20 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// rowClassName por kind (mesmo padrão DRE pra grupo/subgrupo)
+// rowClassName por kind
 // ─────────────────────────────────────────────────────────────────────────────
 
 function rowClass(row: Row): string {
   if (row.kind === "grupo") {
-    return cx(
-      "!border-l-0 bg-gray-50 dark:bg-gray-900/60",
-      "border-y border-y-gray-200 dark:border-y-gray-800",
-    )
+    return cx("!border-l-0 bg-gray-50 dark:bg-gray-900/60", "border-y border-y-gray-200 dark:border-y-gray-800")
+  }
+  if (row.kind === "caption") {
+    return "!border-l-0 !h-6"
   }
   if (row.kind === "subtotal") {
     return "!border-l-0 bg-gray-50/40 dark:bg-gray-900/30 border-t border-t-gray-300 dark:border-t-gray-700"
   }
-  if (row.kind === "pl-deduzido") {
+  if (row.kind === "pl-sub") {
     return "!border-l-0 bg-blue-50/40 dark:bg-blue-950/10 border-t-2 border-t-gray-300 dark:border-t-gray-700"
   }
   if (row.kind === "pl-fonte") {
@@ -462,7 +403,7 @@ function rowClass(row: Row): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type BalancoPatrimonialHeroProps = {
-  data?:         BalancoPatrimonialResponse
+  data?:         BalancoEstruturalResponse
   loading?:      boolean
   errorMessage?: string
   onRetry?:      () => void
@@ -482,27 +423,19 @@ export function BalancoPatrimonialHero({
   onExplicarVariacao,
   explicarVariacaoLoading = false,
 }: BalancoPatrimonialHeroProps) {
-  // Hooks rodam incondicionalmente, antes de qualquer early return
-  // (rules-of-hooks). `data` e null nos estados de erro/loading/empty;
-  // os memos ficam null-safe e so produzem conteudo real quando ha data.
-  const residuo = data ? data.residuo_identidade_delta : 0
+  const residuo = data ? data.reconciliacao.residuo_delta : 0
   const residuoAbs = Math.abs(residuo)
   const residuoStatus: "ok" | "warn" | "error" =
-    residuoAbs < RESIDUO_AMBER_BRL ? "ok"
-    : residuoAbs < RESIDUO_RED_BRL ? "warn"
-    : "error"
+    residuoAbs < RESIDUO_AMBER_BRL ? "ok" : residuoAbs < RESIDUO_RED_BRL ? "warn" : "error"
 
-  const tree = React.useMemo(
-    () => (data ? buildTree(data, residuo) : []),
-    [data, residuo],
-  )
+  const tree = React.useMemo(() => (data ? buildTree(data) : []), [data])
   const columns = React.useMemo(
     () => buildColumns({ data: data?.data ?? "", dataAnterior: data?.data_anterior ?? "" }),
     [data?.data, data?.data_anterior],
   )
   const handleRowClick = React.useCallback((row: Row) => {
-    if (row.kind === "line" && row.drillEnabled && row.categoria && onDrillCategoria) {
-      onDrillCategoria(row.categoria.key)
+    if (row.kind === "line" && row.drillKey && onDrillCategoria) {
+      onDrillCategoria(row.drillKey)
     }
   }, [onDrillCategoria])
 
@@ -520,9 +453,7 @@ export function BalancoPatrimonialHero({
   if (loading && !data) {
     return (
       <Card className="flex h-[480px] items-center justify-center p-3">
-        <span className="text-sm text-gray-500 dark:text-gray-400">
-          Carregando balanço…
-        </span>
+        <span className="text-sm text-gray-500 dark:text-gray-400">Carregando balanço…</span>
       </Card>
     )
   }
@@ -540,15 +471,10 @@ export function BalancoPatrimonialHero({
 
   return (
     <Card className="flex flex-col p-0">
-      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-2 px-3 pt-2.5 pb-2">
         <div className="flex flex-col">
-          <h3 className="text-[13px] font-semibold text-gray-900 dark:text-gray-50">
-            Balanço · ótica Sub Jr
-          </h3>
-          <p className="text-[11px] text-gray-500 dark:text-gray-400">
-            {data.fundo_nome}
-          </p>
+          <h3 className="text-[13px] font-semibold text-gray-900 dark:text-gray-50">Balanço · ótica Sub Jr</h3>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">{data.fundo_nome}</p>
         </div>
         <div className="flex items-center gap-2">
           {onExplicarVariacao && (
@@ -574,9 +500,6 @@ export function BalancoPatrimonialHero({
         </div>
       </div>
 
-      {/* DataTable hierárquica — sempre expandida.
-         Não setamos `expandedColumnId` → chevron não renderiza, ficando
-         apenas indentação automática via row.depth na cell de label. */}
       <DataTable
         data={tree}
         columns={columns}
@@ -590,7 +513,7 @@ export function BalancoPatrimonialHero({
         defaultExpanded={true}
         rowClassName={(row) => cx(
           rowClass(row),
-          row.kind === "line" && row.drillEnabled && "cursor-pointer hover:bg-gray-50/80 dark:hover:bg-gray-900/40",
+          row.kind === "line" && row.drillKey && "cursor-pointer hover:bg-gray-50/80 dark:hover:bg-gray-900/40",
         )}
         onRowClick={handleRowClick}
       />
@@ -598,14 +521,9 @@ export function BalancoPatrimonialHero({
   )
 }
 
-// ─── IdentidadeBadge (mantido inalterado) ────────────────────────────────────
+// ─── IdentidadeBadge ─────────────────────────────────────────────────────────
 
-function IdentidadeBadge({
-  status, residuo,
-}: {
-  status: "ok" | "warn" | "error"
-  residuo: number
-}) {
+function IdentidadeBadge({ status, residuo }: { status: "ok" | "warn" | "error"; residuo: number }) {
   if (status === "ok") {
     return (
       <span className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300">
