@@ -58,10 +58,26 @@ export type DrillCprContentProps = {
   fundoId:       string
   data:          string
   dataAnterior?: string
+  /**
+   * Lado do CPR (split por sinal, 2026-05-27): "receber" (valor>0, ativo) ou
+   * "pagar" (valor<0, passivo). Omitido = legado (CPR net). No lado "pagar" os
+   * valores no banco sao negativos; a UI exibe MAGNITUDE positiva (decisao
+   * Ricardo) — `orient` faz o flip. O Δ segue a mesma orientacao da linha do
+   * balanco (crescimento de magnitude = positivo/verde).
+   */
+  side?:         "receber" | "pagar"
 }
 
-export function DrillCprContent({ fundoId, data, dataAnterior }: DrillCprContentProps) {
-  const q = useDrillCpr(fundoId, data, dataAnterior)
+export function DrillCprContent({ fundoId, data, dataAnterior, side }: DrillCprContentProps) {
+  const q = useDrillCpr(fundoId, data, dataAnterior, side)
+
+  // Magnitude: no lado pagar os valores vem negativos do CPR; exibimos abs.
+  const orient = side === "pagar" ? -1 : 1
+  const o = React.useCallback((v: number) => orient * v, [orient])
+  const totaisLabel =
+    side === "pagar" ? "Contas a Pagar · totais D-1 → D0"
+    : side === "receber" ? "Contas a Receber · totais D-1 → D0"
+    : "CPR · totais D-1 → D0"
 
   if (q.isError) {
     return (
@@ -88,24 +104,24 @@ export function DrillCprContent({ fundoId, data, dataAnterior }: DrillCprContent
     <div className="flex flex-col gap-5">
       {/* ── Totais ── */}
       <section>
-        <SectionTitle icon={RiCoinsLine} label="CPR · totais D-1 → D0" />
+        <SectionTitle icon={RiCoinsLine} label={totaisLabel} />
         <div className="mt-2 grid grid-cols-3 gap-2 rounded border border-gray-200 p-3 dark:border-gray-800">
           <div>
             <p className="text-[10px] uppercase tracking-[0.04em] text-gray-400">D-1 · {d.qtd_linhas_d1} linha(s)</p>
-            <p className="text-[14px] tabular-nums text-gray-700 dark:text-gray-300">{fmtBRL.format(d.cpr_total_d1)}</p>
+            <p className="text-[14px] tabular-nums text-gray-700 dark:text-gray-300">{fmtBRL.format(o(d.cpr_total_d1))}</p>
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-[0.04em] text-gray-400">D0 · {d.qtd_linhas_d0} linha(s)</p>
-            <p className="text-[14px] font-medium tabular-nums text-gray-900 dark:text-gray-50">{fmtBRL.format(d.cpr_total_d0)}</p>
+            <p className="text-[14px] font-medium tabular-nums text-gray-900 dark:text-gray-50">{fmtBRL.format(o(d.cpr_total_d0))}</p>
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-[0.04em] text-gray-400">Δ</p>
             <p className={cx(
               "text-[14px] font-semibold tabular-nums",
-              d.cpr_total_delta > 0 ? "text-emerald-700 dark:text-emerald-400"
-                : d.cpr_total_delta < 0 ? "text-red-700 dark:text-red-400"
+              o(d.cpr_total_delta) > 0 ? "text-emerald-700 dark:text-emerald-400"
+                : o(d.cpr_total_delta) < 0 ? "text-red-700 dark:text-red-400"
                 : "text-gray-400 dark:text-gray-600",
-            )}>{fmtBRLSigned(d.cpr_total_delta)}</p>
+            )}>{fmtBRLSigned(o(d.cpr_total_delta))}</p>
           </div>
         </div>
       </section>
@@ -122,7 +138,7 @@ export function DrillCprContent({ fundoId, data, dataAnterior }: DrillCprContent
             Rubrica <code className="font-mono text-[10px]">Aporte</code> no CPR sinaliza
             recurso recebido sem integralização em nenhuma classe — fica engaiolado
             (pendente) por N dias até ser devolvido ou integralizado. Caso REALINVEST
-            07-14/05/2026: -R$ 124.500 persistiu por 5 dias úteis.
+            07-14/05/2026: R$ 124.500 persistiu por 5 dias úteis.
           </p>
           <div className="mt-2 flex flex-col gap-2">
             {d.aportes_engaiolados.map((ev, idx) => {
@@ -143,20 +159,20 @@ export function DrillCprContent({ fundoId, data, dataAnterior }: DrillCprContent
                   <div className="grid grid-cols-3 gap-2 border-t border-rose-200 bg-rose-50/60 px-3 py-1 text-[11px] tabular-nums dark:border-rose-900/60 dark:bg-rose-950/30">
                     <div>
                       <p className="text-[10px] uppercase tracking-[0.04em] text-rose-700/70 dark:text-rose-300/70">D-1</p>
-                      <p className="text-gray-700 dark:text-gray-300">{fmtBRL.format(ev.valor_d1)}</p>
+                      <p className="text-gray-700 dark:text-gray-300">{fmtBRL.format(o(ev.valor_d1))}</p>
                     </div>
                     <div>
                       <p className="text-[10px] uppercase tracking-[0.04em] text-rose-700/70 dark:text-rose-300/70">D0</p>
-                      <p className="font-medium text-gray-900 dark:text-gray-50">{fmtBRL.format(ev.valor_d0)}</p>
+                      <p className="font-medium text-gray-900 dark:text-gray-50">{fmtBRL.format(o(ev.valor_d0))}</p>
                     </div>
                     <div>
                       <p className="text-[10px] uppercase tracking-[0.04em] text-rose-700/70 dark:text-rose-300/70">Δ</p>
                       <p className={cx(
                         "font-semibold",
-                        ev.delta_valor > 0 ? "text-emerald-700 dark:text-emerald-400"
-                          : ev.delta_valor < 0 ? "text-red-700 dark:text-red-400"
+                        o(ev.delta_valor) > 0 ? "text-emerald-700 dark:text-emerald-400"
+                          : o(ev.delta_valor) < 0 ? "text-red-700 dark:text-red-400"
                           : "text-gray-400 dark:text-gray-600",
-                      )}>{fmtBRLSigned(ev.delta_valor)}</p>
+                      )}>{fmtBRLSigned(o(ev.delta_valor))}</p>
                     </div>
                   </div>
                 </div>
@@ -172,8 +188,12 @@ export function DrillCprContent({ fundoId, data, dataAnterior }: DrillCprContent
         {d.naturezas.length === 0 ? (
           <EmptyState
             icon={RiInboxLine}
-            title="Nenhuma rubrica de CPR"
-            description="O CPR está zerado em ambas as datas."
+            title={
+              side === "pagar" ? "Nenhuma conta a pagar"
+              : side === "receber" ? "Nenhuma conta a receber"
+              : "Nenhuma rubrica de CPR"
+            }
+            description="Sem rubricas para este lado em ambas as datas."
             className="mt-2"
           />
         ) : (
@@ -188,10 +208,10 @@ export function DrillCprContent({ fundoId, data, dataAnterior }: DrillCprContent
                   </span>
                   <span className={cx(
                     "text-[12px] font-semibold tabular-nums",
-                    n.sum_delta > 0 ? "text-emerald-700 dark:text-emerald-400"
-                      : n.sum_delta < 0 ? "text-red-700 dark:text-red-400"
+                    o(n.sum_delta) > 0 ? "text-emerald-700 dark:text-emerald-400"
+                      : o(n.sum_delta) < 0 ? "text-red-700 dark:text-red-400"
                       : "text-gray-400 dark:text-gray-600",
-                  )}>Δ {fmtBRLSigned(n.sum_delta)}</span>
+                  )}>Δ {fmtBRLSigned(o(n.sum_delta))}</span>
                 </div>
                 <table className="w-full text-[12px] tabular-nums">
                   <thead className="text-[10px] uppercase tracking-[0.04em] text-gray-400 dark:text-gray-600">
@@ -208,14 +228,14 @@ export function DrillCprContent({ fundoId, data, dataAnterior }: DrillCprContent
                         <td className="px-3 py-1 text-gray-700 dark:text-gray-200" title={ln.descricao}>
                           <span className="block truncate max-w-[320px]">{ln.historico_traduzido || ln.descricao}</span>
                         </td>
-                        <td className="px-3 py-1 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(ln.valor_d1)}</td>
-                        <td className="px-3 py-1 text-right text-gray-900 dark:text-gray-50">{fmtBRL.format(ln.valor_d0)}</td>
+                        <td className="px-3 py-1 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(o(ln.valor_d1))}</td>
+                        <td className="px-3 py-1 text-right text-gray-900 dark:text-gray-50">{fmtBRL.format(o(ln.valor_d0))}</td>
                         <td className={cx(
                           "px-3 py-1 text-right font-medium",
-                          ln.delta_valor > 0 ? "text-emerald-700 dark:text-emerald-400"
-                            : ln.delta_valor < 0 ? "text-red-700 dark:text-red-400"
+                          o(ln.delta_valor) > 0 ? "text-emerald-700 dark:text-emerald-400"
+                            : o(ln.delta_valor) < 0 ? "text-red-700 dark:text-red-400"
                             : "text-gray-400",
-                        )}>{fmtBRLSigned(ln.delta_valor)}</td>
+                        )}>{fmtBRLSigned(o(ln.delta_valor))}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -120,8 +120,9 @@ import type {
 /**
  * Mapeia a linha drilada do balanco estrutural pro shape `CategoriaPatrimonial`
  * que o BalancoInspector/CategoriaDrillSheet consomem (header do drill).
- * O drill (dc/pdd/cpr) usa `drill_key`. Pra CPR, sintetiza o net (receber − pagar)
- * porque sao 2 linhas (a receber=ativo / a pagar=passivo) com o mesmo drill.
+ * O drill usa `drill_key`. CPR foi separado por sinal em duas linhas/chaves
+ * (`cpr_receber`=ativo / `cpr_pagar`=passivo, 2026-05-27) — cada chave casa
+ * com exatamente uma linha, entao o ramo generico ja resolve label + tipo.
  */
 function toInspectorCategoria(
   data: BalancoEstruturalResponse | undefined,
@@ -130,13 +131,6 @@ function toInspectorCategoria(
   if (!data || !drill) return undefined
   const matches = [...data.ativos, ...data.passivos].filter((l) => l.drill_key === drill)
   if (matches.length === 0) return undefined
-  if (drill === "cpr") {
-    const rec = matches.find((l) => l.natureza === "ativo")
-    const pag = matches.find((l) => l.natureza === "passivo")
-    const d1 = (rec?.d1 ?? 0) - (pag?.d1 ?? 0)
-    const d0 = (rec?.d0 ?? 0) - (pag?.d0 ?? 0)
-    return { key: "cpr", label: "Contas a Pagar/Receber (líquido)", tipo: "ativo", d1, d0, delta: d0 - d1, source: "wh_cpr_movimento" }
-  }
   const l = matches[0]
   return {
     key:    drill,
@@ -1163,11 +1157,20 @@ export default function CotaSubPage() {
                               dataAnterior={balancoEstruturalQuery.data?.data_anterior}
                             />
                           )}
-                          {drilledCategoria === "cpr" && fundoId && (
+                          {drilledCategoria === "cpr_receber" && fundoId && (
                             <DrillCprContent
                               fundoId={fundoId}
                               data={balancoEstruturalQuery.data?.data ?? dayIso}
                               dataAnterior={balancoEstruturalQuery.data?.data_anterior}
+                              side="receber"
+                            />
+                          )}
+                          {drilledCategoria === "cpr_pagar" && fundoId && (
+                            <DrillCprContent
+                              fundoId={fundoId}
+                              data={balancoEstruturalQuery.data?.data ?? dayIso}
+                              dataAnterior={balancoEstruturalQuery.data?.data_anterior}
+                              side="pagar"
                             />
                           )}
                         </BalancoInspector>
@@ -1248,11 +1251,20 @@ export default function CotaSubPage() {
             dataAnterior={balancoEstruturalQuery.data?.data_anterior}
           />
         )}
-        {drilledCategoria === "cpr" && fundoId && (
+        {drilledCategoria === "cpr_receber" && fundoId && (
           <DrillCprContent
             fundoId={fundoId}
             data={balancoEstruturalQuery.data?.data ?? dayIso}
             dataAnterior={balancoEstruturalQuery.data?.data_anterior}
+            side="receber"
+          />
+        )}
+        {drilledCategoria === "cpr_pagar" && fundoId && (
+          <DrillCprContent
+            fundoId={fundoId}
+            data={balancoEstruturalQuery.data?.data ?? dayIso}
+            dataAnterior={balancoEstruturalQuery.data?.data_anterior}
+            side="pagar"
           />
         )}
       </CategoriaDrillSheet>

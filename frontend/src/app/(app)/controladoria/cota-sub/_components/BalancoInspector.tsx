@@ -71,7 +71,7 @@ export function BalancoInspector({
         <EmptyState
           icon={RiInformationLine}
           title="Selecione uma linha do balanço"
-          description="Clique em Direitos Creditórios, PDD ou CPR para abrir a explicação da variação D-1 → D0 aqui."
+          description="Clique em Direitos Creditórios, PDD, Contas a Receber ou Contas a Pagar para abrir a explicação da variação D-1 → D0 aqui."
         />
       </Card>
     )
