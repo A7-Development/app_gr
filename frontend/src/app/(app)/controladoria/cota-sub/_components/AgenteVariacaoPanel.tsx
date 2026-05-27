@@ -226,6 +226,16 @@ function LiveState({
 
 // ─── Relatorio protocolar (documento) ──────────────────────────────────────
 
+// Ordem canonica do balancete estrutural (espelha compute_balanco_estrutural).
+// A secao "Analise por Rubrica" segue ESTA ordem — igual a tela — nao a
+// magnitude. Keys batem com os emitidos pelo agente (prompt v7+ le o estrutural).
+const BALANCO_ORDER: Record<string, number> = {
+  dc_bruto: 0, pdd: 1, titulos_publicos: 2, op_estruturadas: 3, fundos_di: 4,
+  compromissada: 5, outros_ativos: 6, tesouraria: 7, saldo_conta_corrente: 8,
+  cpr_receber: 9, cpr_pagar: 10, senior: 11, mezanino: 12,
+}
+const balancoPos = (k: string): number => BALANCO_ORDER[k] ?? 999
+
 function RelatorioProtocolar({ data }: { data: AgenteVariacaoRunResponse }) {
   const { metadata, analise } = data
   const reportNo = reportNoFrom(analise.data, metadata.analysis_run_id)
@@ -238,8 +248,11 @@ function RelatorioProtocolar({ data }: { data: AgenteVariacaoRunResponse }) {
 
   const byRank = (a: AgenteCategoriaDelta, b: AgenteCategoriaDelta) =>
     a.rank_magnitude - b.rank_magnitude
-  const ativos = analise.nivel_2_decomposicao.filter((c) => c.tipo === "ativo").sort(byRank)
-  const passivos = analise.nivel_2_decomposicao.filter((c) => c.tipo === "passivo").sort(byRank)
+  // Seção "Por rubrica" segue a ordem do balancete (igual a tela), NAO magnitude.
+  const byBalanco = (a: AgenteCategoriaDelta, b: AgenteCategoriaDelta) =>
+    balancoPos(a.key) - balancoPos(b.key)
+  const ativos = analise.nivel_2_decomposicao.filter((c) => c.tipo === "ativo").sort(byBalanco)
+  const passivos = analise.nivel_2_decomposicao.filter((c) => c.tipo === "passivo").sort(byBalanco)
 
   const papeis = React.useMemo(
     () => collectPapeis(analise.nivel_3_explicacoes),
