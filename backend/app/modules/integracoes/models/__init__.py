@@ -6,6 +6,7 @@ from app.modules.integracoes.models.qitech_report_job import (
     QitechJobStatus,
     QitechReportJob,
 )
+from app.modules.integracoes.models.qitech_ua_classe import QiTechUaClasse
 from app.modules.integracoes.models.tenant_source_config import TenantSourceConfig
 from app.modules.integracoes.models.tenant_source_endpoint_config import (
     TenantSourceEndpointConfig,
@@ -14,6 +15,7 @@ from app.modules.integracoes.models.tenant_source_endpoint_config import (
 __all__ = [
     "BackfillJob",
     "EndpointDateState",
+    "QiTechUaClasse",
     "QitechJobStatus",
     "QitechReportJob",
     "TenantSourceConfig",

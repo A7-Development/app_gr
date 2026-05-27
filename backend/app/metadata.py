@@ -39,6 +39,7 @@ from app.modules.credito.models import (  # noqa: F401
     CreditDossierRedFlag,
 )
 from app.modules.integracoes.models.qitech_report_job import QitechReportJob  # noqa: F401
+from app.modules.integracoes.models.qitech_ua_classe import QiTechUaClasse  # noqa: F401
 from app.modules.integracoes.models.tenant_source_config import TenantSourceConfig  # noqa: F401
 
 # Shared kernel

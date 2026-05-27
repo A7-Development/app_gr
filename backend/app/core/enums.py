@@ -141,6 +141,22 @@ class Environment(enum.StrEnum):
     PRODUCTION = "production"
 
 
+class PapelCota(enum.StrEnum):
+    """Role of a FIDC cota class within a fund (QiTech `clienteId` catalog).
+
+    Pre-registered per UA in `qitech_ua_classe` and used by the completeness
+    assessor to know which `clienteId`s a `market/*` payload must carry. A
+    multiclasse FIDC has SUBORDINADA + MEZANINO + SENIOR; a single-class fund
+    has only UNICA. See CLAUDE.md sec 13/14 (proveniencia) and the QiTech
+    adapter `completeness.py`.
+    """
+
+    SUBORDINADA = "SUBORDINADA"
+    MEZANINO = "MEZANINO"
+    SENIOR = "SENIOR"
+    UNICA = "UNICA"
+
+
 # ─── Workflow engine (shared kernel) ───────────────────────────────────────
 # These enums live in `core` because they are cross-cutting (used by the
 # workflow engine in app/shared/workflow/, the credito module that
