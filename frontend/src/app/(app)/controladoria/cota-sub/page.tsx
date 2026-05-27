@@ -134,7 +134,7 @@ function toInspectorCategoria(
     const pag = matches.find((l) => l.natureza === "passivo")
     const d1 = (rec?.d1 ?? 0) - (pag?.d1 ?? 0)
     const d0 = (rec?.d0 ?? 0) - (pag?.d0 ?? 0)
-    return { key: "cpr", label: "CPR (líquido)", tipo: "ativo", d1, d0, delta: d0 - d1, source: "wh_cpr_movimento" }
+    return { key: "cpr", label: "Contas a Pagar/Receber (líquido)", tipo: "ativo", d1, d0, delta: d0 - d1, source: "wh_cpr_movimento" }
   }
   const l = matches[0]
   return {

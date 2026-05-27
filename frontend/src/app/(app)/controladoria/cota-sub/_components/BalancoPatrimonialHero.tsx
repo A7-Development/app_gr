@@ -4,17 +4,16 @@
  * BalancoPatrimonialHero — Balance hero da Cota Sub (redesign ESTRUTURAL 2026-05-27).
  *
  * Consome /controladoria/cota-sub/balanco-estrutural. Coerente por natureza + sinal:
- *   - ATIVO: grupo Direitos Creditórios [DC bruto, (−) PDD contra-ativo, = DC líquido],
- *     Aplicações, Disponibilidades [..., CPR a Receber].
- *   - PASSIVO: Operacional [CPR a Pagar], Cotas Prioritárias [Cota Senior, Cota Mezanino].
+ *   - ATIVO (lista plana): Direitos Creditórios, (−) PDD (contra-ativo),
+ *     Títulos Públicos, ..., Contas a Receber.
+ *   - PASSIVO (lista plana): Contas a Pagar, Cota Senior, Cota Mezanino.
  *   - PL Sub Jr = Σ Ativo − Σ Passivo (fecha por construção).
- *   - Reconciliação MEC (PL fonte + resíduo) vai num rodapé separado — não é
+ *   - Reconciliação MEC (PL fonte + resíduo) num rodapé separado — não é
  *     linha do balanço.
  *
  * DataTable canônica com padrão DRE (hierarquia expansível, sempre expandida,
- * chevron escondido). Grupos top-level (Ativos/Passivos) via subRows; sub-grupos
- * (captions) + subtotais são linhas planas dentro do grupo. Click em linha com
- * `drillKey` (dc/pdd/cpr) dispara onDrillCategoria.
+ * chevron escondido). Grupos top-level (Ativos/Passivos) via subRows. Click em
+ * linha com `drillKey` (dc/pdd/cpr) dispara onDrillCategoria.
  */
 
 import * as React from "react"
@@ -61,10 +60,10 @@ const fmtDate = (iso: string): string => {
 
 // Tooltip amigavel por linha (descricao economica) — usado em title de linha.
 const LINHA_TOOLTIP: Record<string, string> = {
-  dc_bruto:             "Σ Valor Presente dos recebíveis em estoque (exclui WOP), BRUTO — antes da PDD.",
-  pdd:                  "Σ Provisão para Devedores Duvidosos (faixas A-H, exclui WOP). Contra-ativo: reduz o DC líquido.",
-  cpr_receber:          "CPR de natureza ativa: liquidações em floating (recebível em trânsito retido pelo banco) + despesas diferidas. Σ valores positivos.",
-  cpr_pagar:            "CPR de natureza passiva: despesas, taxas e IOF a recolher. Σ valores negativos (mostrado em módulo).",
+  dc_bruto:             "Σ Valor Presente dos recebíveis em estoque (exclui WOP).",
+  pdd:                  "Σ Provisão para Devedores Duvidosos (faixas A-H, exclui WOP). Contra-ativo: reduz o ativo.",
+  cpr_receber:          "Contas a receber: liquidações em floating (recebível em trânsito retido pelo banco) + despesas diferidas. Σ valores positivos do CPR.",
+  cpr_pagar:            "Contas a pagar: despesas, taxas e IOF a recolher. Σ valores negativos do CPR (mostrado em módulo).",
   tesouraria:           "Saldo em tesouraria da classe Sub (exclui Mez/Sr). Negativo = caixa a descoberto (reduz o ativo).",
   saldo_conta_corrente: "Saldo em conta corrente. Exclui linhas CONCILIA (contra-saldos que somam 0).",
   compromissada:        "Operações compromissadas (overnight).",
@@ -85,9 +84,8 @@ const RESIDUO_RED_BRL = 1000
 
 type RowKind =
   | "grupo"      // Ativos / Passivos (top-level)
-  | "caption"    // sub-grupo (Direitos Creditórios / Aplicações / Operacional / ...)
   | "line"       // linha de balanço (drilável se drillKey != null)
-  | "subtotal"   // DC líquido / Σ Ativos / Σ Passivos
+  | "subtotal"   // Σ Ativos / Σ Passivos
   | "pl-sub"     // PL Sub Jr (residual, destaque)
   | "pl-fonte"   // PL Sub Jr · fonte MEC (reconciliação)
   | "residuo"    // Resíduo identidade contábil (dia)
@@ -128,42 +126,15 @@ function lineRow(ln: BalancoLinhaEstrutural): Row {
   }
 }
 
-function captionRow(grupo: string, label: string): Row {
-  return { id: `cap-${grupo}`, kind: "caption", label, d1: null, d0: null, delta: null }
-}
-
 function subtotalRow(id: string, label: string, d1: number, d0: number, delta: number): Row {
   return { id, kind: "subtotal", label, d1, d0, delta }
 }
 
-/** Monta as linhas de um lado (ativo/passivo): captions por grupo + linhas. */
-function sideRows(lines: BalancoLinhaEstrutural[], dcLiquido?: { d1: number; d0: number; delta: number }): Row[] {
-  const out: Row[] = []
-  let lastGrupo: string | null = null
-  for (const ln of lines) {
-    if (ln.grupo !== lastGrupo) {
-      // Fecha o grupo Direitos Creditórios com o subtotal "DC líquido".
-      if (lastGrupo === "direitos_creditorios" && dcLiquido) {
-        out.push(subtotalRow("dc-liquido", "DC líquido", dcLiquido.d1, dcLiquido.d0, dcLiquido.delta))
-      }
-      out.push(captionRow(ln.grupo, ln.grupo_label))
-      lastGrupo = ln.grupo
-    }
-    out.push(lineRow(ln))
-  }
-  if (lastGrupo === "direitos_creditorios" && dcLiquido) {
-    out.push(subtotalRow("dc-liquido", "DC líquido", dcLiquido.d1, dcLiquido.d0, dcLiquido.delta))
-  }
-  return out
-}
-
 function buildTree(data: BalancoEstruturalResponse): Row[] {
-  const ativoRows = sideRows(data.ativos, {
-    d1: data.dc_liquido_d1, d0: data.dc_liquido_d0, delta: data.dc_liquido_delta,
-  })
+  const ativoRows = data.ativos.map(lineRow)
   ativoRows.push(subtotalRow("sub-ativos", "Σ Ativos", data.total_ativo_d1, data.total_ativo_d0, data.total_ativo_delta))
 
-  const passivoRows = sideRows(data.passivos)
+  const passivoRows = data.passivos.map(lineRow)
   passivoRows.push(subtotalRow("sub-passivos", "Σ Passivos", data.total_passivo_d1, data.total_passivo_d0, data.total_passivo_delta))
 
   const r = data.reconciliacao
@@ -212,16 +183,6 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
             </span>
           )
         }
-        if (row.kind === "caption") {
-          return (
-            <span
-              style={{ paddingLeft: `${indent}px` }}
-              className="block truncate text-[10px] font-medium uppercase tracking-[0.05em] text-gray-400 dark:text-gray-500"
-            >
-              {row.label}
-            </span>
-          )
-        }
         if (row.kind === "residuo") {
           return (
             <span
@@ -258,11 +219,7 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
         return (
           <span
             style={{ paddingLeft: `${indent}px` }}
-            className={cx(
-              "block truncate",
-              row.contra ? "text-gray-500 dark:text-gray-400" : "text-gray-900 dark:text-gray-50",
-              row.tooltip && "cursor-help",
-            )}
+            className={cx("block truncate text-gray-900 dark:text-gray-50", row.tooltip && "cursor-help")}
             title={row.tooltip}
           >
             {row.label}
@@ -286,11 +243,11 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
         size:   130,
         cell:   (info) => {
           const row = info.row.original
-          if (row.kind === "residuo" || row.kind === "caption") return null
+          if (row.kind === "residuo") return null
           const v = info.getValue<number | null>()
           if (v == null) return null
           const isStrong = row.kind === "subtotal" || row.kind === "pl-sub"
-          const isMuted = row.kind === "pl-fonte" || row.contra
+          const isMuted = row.kind === "pl-fonte"
           return (
             <div
               style={{ textAlign: "right" }}
@@ -315,7 +272,6 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
       size:   120,
       cell:   (info) => {
         const row = info.row.original
-        if (row.kind === "caption") return null
         const v = info.getValue<number | null>()
         if (v == null) return null
         const isZero = Math.abs(v) < 0.005
@@ -379,9 +335,6 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
 function rowClass(row: Row): string {
   if (row.kind === "grupo") {
     return cx("!border-l-0 bg-gray-50 dark:bg-gray-900/60", "border-y border-y-gray-200 dark:border-y-gray-800")
-  }
-  if (row.kind === "caption") {
-    return "!border-l-0 !h-6"
   }
   if (row.kind === "subtotal") {
     return "!border-l-0 bg-gray-50/40 dark:bg-gray-900/30 border-t border-t-gray-300 dark:border-t-gray-700"
