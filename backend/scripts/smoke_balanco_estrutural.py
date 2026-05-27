@@ -27,7 +27,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # no
 from app.core.config import get_settings  # noqa: E402
 from app.modules.controladoria.services.balanco_patrimonial import (  # noqa: E402
     compute_balanco_estrutural,
-    compute_balanco_patrimonial,
 )
 
 _failures: list[str] = []
@@ -47,7 +46,6 @@ def _fmt(v: Decimal) -> str:
 async def _cenario(db, *, tenant_id, ua_id, data_d0: date) -> None:
     print(f"\n=== REALINVEST {data_d0.isoformat()} ===")
     est = await compute_balanco_estrutural(db, tenant_id=tenant_id, ua_id=ua_id, data_d0=data_d0)
-    old = await compute_balanco_patrimonial(db, tenant_id=tenant_id, ua_id=ua_id, data_d0=data_d0)
 
     # Render legivel.
     print("  ATIVO:")
@@ -70,27 +68,16 @@ async def _cenario(db, *, tenant_id, ua_id, data_d0: date) -> None:
     _check(abs((est.total_ativo_d1 - est.total_passivo_d1) - est.pl_sub_d1) < TOL,
            "identidade D-1: Σ Ativo - Σ Passivo == PL Sub")
 
-    # 2. Paridade com o balanco antigo (PL-neutro).
-    _check(abs(est.pl_sub_d0 - old.pl_deduzido_d0) < TOL,
-           f"paridade D0: PL Sub novo ({_fmt(est.pl_sub_d0)}) == pl_deduzido antigo ({_fmt(old.pl_deduzido_d0)})")
-    _check(abs(est.pl_sub_d1 - old.pl_deduzido_d1) < TOL,
-           "paridade D-1: PL Sub novo == pl_deduzido antigo")
-    _check(abs(est.pl_sub_delta - old.pl_deduzido_delta) < TOL,
-           "paridade delta: pl_sub_delta == pl_deduzido_delta")
-
-    # 3. dc_liquido == dc_bruto - pdd.
+    # 2. dc_liquido == dc_bruto - pdd.
     dc_bruto = next(ln for ln in est.ativos if ln.key == "dc_bruto")
     pdd = next(ln for ln in est.ativos if ln.key == "pdd")
     _check(abs(est.dc_liquido_d0 - (dc_bruto.d0 - pdd.d0)) < TOL,
            "dc_liquido == dc_bruto - pdd")
     _check(pdd.natureza == "contra_ativo", "PDD natureza == contra_ativo")
 
-    # 4. CPR split reconcilia com o net antigo.
+    # 3. CPR dividido por sinal: a receber (ativo) e a pagar (passivo, modulo) >= 0.
     cpr_rec = next(ln for ln in est.ativos if ln.key == "cpr_receber")
     cpr_pag = next(ln for ln in est.passivos if ln.key == "cpr_pagar")
-    cpr_old = next(c for c in old.ativos if c.key == "cpr")
-    _check(abs((cpr_rec.d0 - cpr_pag.d0) - cpr_old.d0) < TOL,
-           f"CPR: receber - pagar ({_fmt(cpr_rec.d0 - cpr_pag.d0)}) == net antigo ({_fmt(cpr_old.d0)})")
     _check(cpr_rec.d0 >= 0 and cpr_pag.d0 >= 0,
            "CPR a receber >= 0 e a pagar (magnitude) >= 0")
 

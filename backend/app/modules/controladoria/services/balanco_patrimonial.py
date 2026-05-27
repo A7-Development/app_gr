@@ -38,8 +38,6 @@ from app.modules.cadastros.public import UnidadeAdministrativa
 from app.modules.controladoria.schemas.cota_sub import (
     BalancoEstruturalResponse,
     BalancoLinhaEstrutural,
-    BalancoPatrimonialResponse,
-    CategoriaPatrimonial,
     ReconciliacaoMec,
 )
 from app.modules.controladoria.services.cota_sub import (
@@ -131,121 +129,6 @@ async def _snapshot(
         # ── Fonte (referencia) ────────────────────────────────────────────
         "pl_sub_fonte":          classes["sub_jr"],
     }
-
-
-_ATIVO_KEYS_LABELS_SOURCES: tuple[tuple[str, str, str], ...] = (
-    ("dc",                    "Direitos Creditórios",   "wh_estoque_recebivel (Σ valor_presente, exclui WOP)"),
-    ("titulos_publicos",      "Títulos Públicos",       "wh_posicao_renda_fixa (COSIF TPF)"),
-    ("op_estruturadas",       "Op. Estruturadas",       "wh_posicao_renda_fixa (COSIF Nota Comercial)"),
-    ("fundos_di",             "Fundos DI",              "wh_posicao_cota_fundo (externos)"),
-    ("compromissada",         "Compromissada",          "wh_posicao_compromissada"),
-    ("outros_ativos",         "Outros Ativos",          "wh_posicao_outros_ativos (exclui PDD + TPF)"),
-    ("cpr",                   "CPR (líquido)",          "wh_cpr_movimento (sum valor)"),
-    ("tesouraria",            "Tesouraria",             "wh_saldo_tesouraria (classe Sub)"),
-    ("saldo_conta_corrente",  "Saldo Conta Corrente",   "wh_saldo_conta_corrente (exclui CONCILIA)"),
-)
-
-
-_PASSIVO_KEYS_LABELS_SOURCES: tuple[tuple[str, str, str], ...] = (
-    ("senior",   "Cota Senior",   "wh_mec_evolucao_cotas (classe Senior)"),
-    ("mezanino", "Cota Mezanino", "wh_mec_evolucao_cotas (classe Mezanino)"),
-    ("pdd",      "PDD",           "wh_estoque_recebivel (Σ valor_pdd, exclui WOP)"),
-)
-
-
-def _categoria(
-    key: str, label: str, source: str, tipo: str, d1_val: Decimal, d0_val: Decimal,
-) -> CategoriaPatrimonial:
-    return CategoriaPatrimonial(
-        key=key,  # type: ignore[arg-type]
-        label=label,
-        tipo=tipo,  # type: ignore[arg-type]
-        d1=d1_val,
-        d0=d0_val,
-        delta=d0_val - d1_val,
-        source=source,
-    )
-
-
-async def compute_balanco_patrimonial(
-    db: AsyncSession,
-    *,
-    tenant_id: UUID,
-    ua_id: UUID,
-    data_d0: date,
-    data_d1: date | None = None,
-) -> BalancoPatrimonialResponse:
-    """Computa o balanco patrimonial otica Sub Jr para D-1 e D0.
-
-    Args:
-        tenant_id: escopo multi-tenant.
-        ua_id: UUID da Unidade Administrativa (FIDC).
-        data_d0: dia analisado.
-        data_d1: override opcional do D-1 (default: dia util anterior pelo
-                 calendario QiTech).
-
-    Raises:
-        ValueError: quando a UA nao existe ou nao tem dados em D-1/D0.
-    """
-    ua = (
-        await db.execute(
-            select(UnidadeAdministrativa)
-            .where(UnidadeAdministrativa.tenant_id == tenant_id)
-            .where(UnidadeAdministrativa.id == ua_id)
-        )
-    ).scalar_one_or_none()
-    if ua is None:
-        raise ValueError(f"Unidade Administrativa {ua_id} nao encontrada")
-
-    d1 = data_d1 or await dia_util_anterior_qitech(
-        db, tenant_id=tenant_id, ua_id=ua_id, data_d0=data_d0,
-    )
-
-    snap_d1 = await _snapshot(db, tenant_id=tenant_id, ua_id=ua_id, ua_nome=ua.nome, data=d1)
-    snap_d0 = await _snapshot(db, tenant_id=tenant_id, ua_id=ua_id, ua_nome=ua.nome, data=data_d0)
-
-    ativos = [
-        _categoria(key, label, source, "ativo", snap_d1[key], snap_d0[key])
-        for key, label, source in _ATIVO_KEYS_LABELS_SOURCES
-    ]
-    passivos = [
-        _categoria(key, label, source, "passivo", snap_d1[key], snap_d0[key])
-        for key, label, source in _PASSIVO_KEYS_LABELS_SOURCES
-    ]
-
-    soma_ativos_d1 = sum((a.d1 for a in ativos), ZERO)
-    soma_ativos_d0 = sum((a.d0 for a in ativos), ZERO)
-    soma_passivos_d1 = sum((p.d1 for p in passivos), ZERO)
-    soma_passivos_d0 = sum((p.d0 for p in passivos), ZERO)
-
-    pl_deduzido_d1 = soma_ativos_d1 - soma_passivos_d1
-    pl_deduzido_d0 = soma_ativos_d0 - soma_passivos_d0
-    pl_fonte_d1 = snap_d1["pl_sub_fonte"]
-    pl_fonte_d0 = snap_d0["pl_sub_fonte"]
-
-    return BalancoPatrimonialResponse(
-        fundo_id=str(ua_id),
-        fundo_nome=ua.nome,
-        data=data_d0,
-        data_anterior=d1,
-        ativos=ativos,
-        passivos=passivos,
-        soma_ativos_d1=soma_ativos_d1,
-        soma_ativos_d0=soma_ativos_d0,
-        soma_ativos_delta=soma_ativos_d0 - soma_ativos_d1,
-        soma_passivos_d1=soma_passivos_d1,
-        soma_passivos_d0=soma_passivos_d0,
-        soma_passivos_delta=soma_passivos_d0 - soma_passivos_d1,
-        pl_deduzido_d1=pl_deduzido_d1,
-        pl_deduzido_d0=pl_deduzido_d0,
-        pl_deduzido_delta=pl_deduzido_d0 - pl_deduzido_d1,
-        pl_fonte_d1=pl_fonte_d1,
-        pl_fonte_d0=pl_fonte_d0,
-        pl_fonte_delta=pl_fonte_d0 - pl_fonte_d1,
-        residuo_identidade_d1=pl_deduzido_d1 - pl_fonte_d1,
-        residuo_identidade_d0=pl_deduzido_d0 - pl_fonte_d0,
-        residuo_identidade_delta=(pl_deduzido_d0 - pl_deduzido_d1) - (pl_fonte_d0 - pl_fonte_d1),
-    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

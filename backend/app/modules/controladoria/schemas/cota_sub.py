@@ -836,84 +836,14 @@ CategoriaPatrimonialKey = Literal[
 ]
 
 
-class CategoriaPatrimonial(BaseModel):
-    """Uma linha do balanco — categoria patrimonial com saldos D-1 / D0 / Δ."""
-
-    key:    CategoriaPatrimonialKey
-    label:  str       = Field(description="Label exibido na UI (pt-BR)")
-    tipo:   Literal["ativo", "passivo"]
-    d1:     Decimal   = Field(description="Saldo em D-1 (R$, sinal absoluto)")
-    d0:     Decimal   = Field(description="Saldo em D0 (R$, sinal absoluto)")
-    delta:  Decimal   = Field(description="d0 - d1 (com sinal natural)")
-    source: str       = Field(description="Tabela canonica origem + filtro aplicado")
-
-
-class BalancoPatrimonialResponse(BaseModel):
-    """Resposta do endpoint GET /controladoria/cota-sub/balanco-patrimonial.
-
-    Balanco patrimonial diario na otica do cotista subordinado, com identidade
-    contabil explicita:
-
-        PL Sub Jr (deduzido)    = Σ Ativos - Σ Passivos
-        PL Sub Jr (na fonte)    = wh_mec_evolucao_cotas, classe Sub
-        Residuo (consistencia)  = PL deduzido - PL na fonte  (esperado ~0)
-
-    Identidade fechando em zero = sistema em ordem. Residuo != 0 indica
-    desalinhamento entre o calculo do gestor REALINVEST (consolidado via 11
-    categorias) e o publicado pela QiTech no MEC. Frontend renderiza estado
-    de saude (✓ / ⚠ / ✗) baseado em `residuo_identidade`.
-    """
-
-    fundo_id:           str       = Field(description="UUID da Unidade Administrativa")
-    fundo_nome:         str
-    data:               date      = Field(description="D0 (dia analisado)")
-    data_anterior:      date      = Field(description="D-1 (dia util anterior)")
-
-    ativos:             list[CategoriaPatrimonial]
-    passivos:           list[CategoriaPatrimonial]
-
-    soma_ativos_d1:     Decimal
-    soma_ativos_d0:     Decimal
-    soma_ativos_delta:  Decimal
-
-    soma_passivos_d1:    Decimal
-    soma_passivos_d0:    Decimal
-    soma_passivos_delta: Decimal
-
-    pl_deduzido_d1:     Decimal   = Field(description="Σ Ativos - Σ Passivos em D-1")
-    pl_deduzido_d0:     Decimal   = Field(description="Σ Ativos - Σ Passivos em D0")
-    pl_deduzido_delta:  Decimal
-
-    pl_fonte_d1:        Decimal   = Field(description="PL Sub Jr lido de wh_mec (classe Sub) em D-1")
-    pl_fonte_d0:        Decimal   = Field(description="PL Sub Jr lido de wh_mec (classe Sub) em D0")
-    pl_fonte_delta:     Decimal
-
-    residuo_identidade_d1: Decimal = Field(
-        description="pl_deduzido_d1 - pl_fonte_d1 (snapshot acumulado; "
-                    "inclui arredondamentos historicos)",
-    )
-    residuo_identidade_d0: Decimal = Field(
-        description="pl_deduzido_d0 - pl_fonte_d0 (snapshot acumulado; "
-                    "inclui arredondamentos historicos)",
-    )
-    residuo_identidade_delta: Decimal = Field(
-        default=Decimal("0"),
-        description="(pl_deduzido_delta - pl_fonte_delta) -- ERRO DO DIA, "
-                    "isolado do acumulado historico. Esperado ~0; valores "
-                    "pequenos (<R$1) sao arredondamento da QiTech, valores "
-                    "altos (>R$10) sinalizam falha de calculo.",
-    )
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Balanco ESTRUTURAL (redesign 2026-05-27) — coerencia por natureza + sinal
 # ─────────────────────────────────────────────────────────────────────────────
-# Diferenca vs BalancoPatrimonialResponse (que continua servindo a tool do
-# agente, §19): aqui PDD e CONTRA-ATIVO (abate DC, nao e passivo), CPR e
-# DIVIDIDO por sinal (a receber=ativo / a pagar=passivo), Senior+Mezanino sao
-# agrupados como "Cotas Prioritarias" no passivo, e o residuo MEC sai do corpo
-# do balanco pra um bloco de reconciliacao. PL Sub IDENTICO ao pl_deduzido do
-# balanco antigo (so muda classificacao/apresentacao).
+# Unico balanco da pagina (o antigo BalancoPatrimonialResponse foi removido em
+# 2026-05-27). Coerente por natureza + sinal: PDD e CONTRA-ATIVO (abate DC, nao
+# e passivo), CPR DIVIDIDO por sinal (a receber=ativo / a pagar=passivo),
+# Senior+Mezanino agrupados como "Cotas Prioritarias" no passivo, e o residuo
+# MEC sai do corpo do balanco pra um bloco de reconciliacao.
 
 BalancoNaturezaLinha = Literal["ativo", "contra_ativo", "passivo"]
 BalancoGrupoKey = Literal[
