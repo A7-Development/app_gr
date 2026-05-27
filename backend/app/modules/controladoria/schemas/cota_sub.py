@@ -868,3 +868,89 @@ class BalancoPatrimonialResponse(BaseModel):
                     "pequenos (<R$1) sao arredondamento da QiTech, valores "
                     "altos (>R$10) sinalizam falha de calculo.",
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Balanco ESTRUTURAL (redesign 2026-05-27) — coerencia por natureza + sinal
+# ─────────────────────────────────────────────────────────────────────────────
+# Diferenca vs BalancoPatrimonialResponse (que continua servindo a tool do
+# agente, §19): aqui PDD e CONTRA-ATIVO (abate DC, nao e passivo), CPR e
+# DIVIDIDO por sinal (a receber=ativo / a pagar=passivo), Senior+Mezanino sao
+# agrupados como "Cotas Prioritarias" no passivo, e o residuo MEC sai do corpo
+# do balanco pra um bloco de reconciliacao. PL Sub IDENTICO ao pl_deduzido do
+# balanco antigo (so muda classificacao/apresentacao).
+
+BalancoNaturezaLinha = Literal["ativo", "contra_ativo", "passivo"]
+BalancoGrupoKey = Literal[
+    "direitos_creditorios",
+    "aplicacoes",
+    "disponibilidades",
+    "operacional",
+    "cotas_prioritarias",
+]
+
+
+class BalancoLinhaEstrutural(BaseModel):
+    """Uma linha do balanco estrutural, classificada por natureza + grupo."""
+
+    key:         str
+    label:       str
+    natureza:    BalancoNaturezaLinha
+    grupo:       BalancoGrupoKey
+    grupo_label: str
+    d1:    Decimal = Field(description="Magnitude em D-1 (contra_ativo/passivo >=0; ativo pode ser <0 p/ caixa a descoberto)")
+    d0:    Decimal
+    delta: Decimal = Field(description="d0 - d1 (sinal natural)")
+    source:    str
+    drill_key: CategoriaPatrimonialKey | None = Field(
+        default=None,
+        description="Chave do drill quando a linha e drilavel (dc/cpr/pdd). None = sem drill.",
+    )
+
+
+class ReconciliacaoMec(BaseModel):
+    """Check de qualidade — PL Sub calculado vs fonte MEC. NAO e linha do balanco."""
+
+    pl_fonte_d1:    Decimal
+    pl_fonte_d0:    Decimal
+    pl_fonte_delta: Decimal
+    residuo_d1:    Decimal = Field(description="pl_sub_calculado_d1 - pl_fonte_d1 (acumulado)")
+    residuo_d0:    Decimal
+    residuo_delta: Decimal = Field(description="erro do dia = pl_sub_delta - pl_fonte_delta")
+    dentro_tolerancia: bool = Field(description="|residuo_delta| < R$ 1")
+
+
+class BalancoEstruturalResponse(BaseModel):
+    """GET /controladoria/cota-sub/balanco-estrutural.
+
+    Balanco gerencial otica Sub Jr, coerente por natureza + sinal:
+      ATIVO (ativo + contra_ativo) / PASSIVO (operacional + cotas_prioritarias)
+      / PL Sub Jr residual. Fecha por construcao: PL Sub = Σ Ativo - Σ Passivo.
+    Reconciliacao com a fonte MEC vai em bloco separado (nao e linha do balanco).
+    """
+
+    fundo_id:      str
+    fundo_nome:    str
+    data:          date
+    data_anterior: date
+
+    ativos:   list[BalancoLinhaEstrutural] = Field(description="natureza ativo + contra_ativo, em ordem de grupo")
+    passivos: list[BalancoLinhaEstrutural] = Field(description="natureza passivo, em ordem de grupo")
+
+    dc_liquido_d1:    Decimal = Field(description="DC bruto - PDD (subtotal do grupo Direitos Creditorios)")
+    dc_liquido_d0:    Decimal
+    dc_liquido_delta: Decimal
+
+    total_ativo_d1:    Decimal = Field(description="Σ ativo - Σ contra_ativo")
+    total_ativo_d0:    Decimal
+    total_ativo_delta: Decimal
+
+    total_passivo_d1:    Decimal
+    total_passivo_d0:    Decimal
+    total_passivo_delta: Decimal
+
+    pl_sub_d1:    Decimal = Field(description="total_ativo - total_passivo (fecha por construcao)")
+    pl_sub_d0:    Decimal
+    pl_sub_delta: Decimal
+
+    reconciliacao: ReconciliacaoMec

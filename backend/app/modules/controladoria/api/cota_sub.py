@@ -21,6 +21,7 @@ from app.modules.controladoria.schemas.balancete_diario import (
     CosifRowsResponseSchema,
 )
 from app.modules.controladoria.schemas.cota_sub import (
+    BalancoEstruturalResponse,
     BalancoPatrimonialResponse,
     BalancoResponse,
     ExplicacaoVariacaoResponse,
@@ -38,6 +39,7 @@ from app.modules.controladoria.services.balancete_diario import (
 )
 from app.modules.controladoria.services.balanco import compute_balanco
 from app.modules.controladoria.services.balanco_patrimonial import (
+    compute_balanco_estrutural,
     compute_balanco_patrimonial,
 )
 from app.modules.controladoria.services.cota_sub import compute_variacao_diaria
@@ -136,6 +138,38 @@ async def balanco_patrimonial(
     """
     try:
         return await compute_balanco_patrimonial(
+            db,
+            tenant_id=principal.tenant_id,
+            ua_id=fundo_id,
+            data_d0=data,
+            data_d1=data_anterior,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/balanco-estrutural", response_model=BalancoEstruturalResponse)
+async def balanco_estrutural(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0). D-1 e calculado como dia util anterior.")],
+    data_anterior: Annotated[
+        date | None,
+        Query(description="Override opcional para D-1."),
+    ] = None,
+    _: None = _Guard,
+) -> BalancoEstruturalResponse:
+    """Balanco gerencial otica Sub Jr — coerente por natureza + sinal.
+
+    Versao redesenhada (2026-05-27): PDD vira contra-ativo (abate DC), CPR
+    dividido por sinal (a receber=ativo / a pagar=passivo), Senior+Mezanino
+    agrupados como "Cotas Prioritarias", residuo MEC em bloco de reconciliacao.
+    PL Sub identico ao do /balanco-patrimonial (so muda apresentacao). Aditivo:
+    /balanco-patrimonial continua servindo a tool do agente (§19).
+    """
+    try:
+        return await compute_balanco_estrutural(
             db,
             tenant_id=principal.tenant_id,
             ua_id=fundo_id,

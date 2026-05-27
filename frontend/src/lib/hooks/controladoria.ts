@@ -38,6 +38,8 @@ const KEYS = {
     ["controladoria", "cota-sub", "balanco", fundoId, data, dataAnterior ?? null] as const,
   balancoPatrimonial: (fundoId: string, data: string, dataAnterior?: string) =>
     ["controladoria", "cota-sub", "balanco-patrimonial", fundoId, data, dataAnterior ?? null] as const,
+  balancoEstrutural: (fundoId: string, data: string, dataAnterior?: string) =>
+    ["controladoria", "cota-sub", "balanco-estrutural", fundoId, data, dataAnterior ?? null] as const,
   balanceteDiario: (fundoId: string, data: string, dataAnterior?: string) =>
     ["controladoria", "cota-sub", "balancete-diario", fundoId, data, dataAnterior ?? null] as const,
   cosifRows: (fundoId: string, data: string, cosifCodigo: string) =>
@@ -179,6 +181,27 @@ export function useBalancoPatrimonial(
   return useQuery({
     queryKey: KEYS.balancoPatrimonial(fundoId ?? "", data ?? "", dataAnterior ?? undefined),
     queryFn: () => controladoria.cotaSubBalancoPatrimonial(
+      fundoId!,
+      data!,
+      dataAnterior ?? undefined,
+    ),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useBalancoEstrutural(
+  fundoId: string | null | undefined,
+  data: string | null | undefined,
+  dataAnterior?: string | null,
+) {
+  // Balance hero ESTRUTURAL (redesign 2026-05-27). Coerente por natureza +
+  // sinal: PDD contra-ativo, CPR dividido, Cotas Prioritarias, reconciliacao
+  // MEC a parte. Endpoint aditivo — nao quebra a tool do agente.
+  const enabled = !!fundoId && !!data
+  return useQuery({
+    queryKey: KEYS.balancoEstrutural(fundoId ?? "", data ?? "", dataAnterior ?? undefined),
+    queryFn: () => controladoria.cotaSubBalancoEstrutural(
       fundoId!,
       data!,
       dataAnterior ?? undefined,

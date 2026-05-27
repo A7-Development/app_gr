@@ -36,8 +36,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.cadastros.public import UnidadeAdministrativa
 from app.modules.controladoria.schemas.cota_sub import (
+    BalancoEstruturalResponse,
+    BalancoLinhaEstrutural,
     BalancoPatrimonialResponse,
     CategoriaPatrimonial,
+    ReconciliacaoMec,
 )
 from app.modules.controladoria.services.cota_sub import (
     ZERO,
@@ -46,6 +49,7 @@ from app.modules.controladoria.services.cota_sub import (
     _is_sub_jr,
     _mec_classes,
     _sum_compromissada,
+    _sum_cpr_por_sinal,
     _sum_cpr_snapshot,
     _sum_dc,
     _sum_fundos_di,
@@ -408,3 +412,204 @@ async def compute_decomposicao_classes_mec(
         "data_anterior": d1,
         "classes": classes_out,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Balanco ESTRUTURAL (redesign 2026-05-27) — coerencia por natureza + sinal
+# ─────────────────────────────────────────────────────────────────────────────
+# Reusa os MESMOS _snapshot/_sum_* do balanco antigo + a divisao de CPR por
+# sinal. So muda classificacao/apresentacao — PL Sub e ALGEBRICAMENTE identico
+# ao pl_deduzido de compute_balanco_patrimonial (provado em smoke). Funcao
+# ADITIVA: nao toca em compute_balanco_patrimonial (que serve a tool do agente).
+
+_TOL_RESIDUO_DIA = Decimal("1.0")
+
+
+def _linha_estrutural(
+    *, key: str, label: str, natureza: str, grupo: str, grupo_label: str,
+    source: str, v1: Decimal, v0: Decimal, drill_key: str | None = None,
+) -> BalancoLinhaEstrutural:
+    return BalancoLinhaEstrutural(
+        key=key, label=label,
+        natureza=natureza,  # type: ignore[arg-type]
+        grupo=grupo,  # type: ignore[arg-type]
+        grupo_label=grupo_label,
+        d1=v1, d0=v0, delta=v0 - v1,
+        source=source,
+        drill_key=drill_key,  # type: ignore[arg-type]
+    )
+
+
+async def compute_balanco_estrutural(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    ua_id: UUID,
+    data_d0: date,
+    data_d1: date | None = None,
+) -> BalancoEstruturalResponse:
+    """Balanco gerencial otica Sub Jr, coerente por natureza + sinal.
+
+    - PDD vira contra-ativo (abate DC -> "DC liquido"), nao passivo.
+    - CPR dividido por sinal: a receber (Σ>0, ativo) / a pagar (Σ<0, passivo).
+    - Tesouraria/Caixa fica no ativo mesmo negativa (reduz o ativo).
+    - Senior + Mezanino agrupados como "Cotas Prioritarias" no passivo.
+    - PL Sub = Σ Ativo - Σ Passivo (fecha por construcao). Reconciliacao com a
+      fonte MEC vai em bloco separado.
+    """
+    ua = (
+        await db.execute(
+            select(UnidadeAdministrativa)
+            .where(UnidadeAdministrativa.tenant_id == tenant_id)
+            .where(UnidadeAdministrativa.id == ua_id)
+        )
+    ).scalar_one_or_none()
+    if ua is None:
+        raise ValueError(f"Unidade Administrativa {ua_id} nao encontrada")
+
+    d1 = data_d1 or await dia_util_anterior_qitech(
+        db, tenant_id=tenant_id, ua_id=ua_id, data_d0=data_d0,
+    )
+
+    s1 = await _snapshot(db, tenant_id=tenant_id, ua_id=ua_id, ua_nome=ua.nome, data=d1)
+    s0 = await _snapshot(db, tenant_id=tenant_id, ua_id=ua_id, ua_nome=ua.nome, data=data_d0)
+
+    # CPR por sinal (substitui o net do snapshot). cpr_pag* vem <= 0.
+    cpr_rec_d1, cpr_pag_d1 = await _sum_cpr_por_sinal(db, tenant_id, ua_id, d1)
+    cpr_rec_d0, cpr_pag_d0 = await _sum_cpr_por_sinal(db, tenant_id, ua_id, data_d0)
+
+    ativos: list[BalancoLinhaEstrutural] = [
+        _linha_estrutural(
+            key="dc_bruto", label="Direitos Creditórios (bruto)", natureza="ativo",
+            grupo="direitos_creditorios", grupo_label="Direitos Creditórios",
+            source="wh_estoque_recebivel (Σ valor_presente, exclui WOP)",
+            v1=s1["dc"], v0=s0["dc"], drill_key="dc",
+        ),
+        _linha_estrutural(
+            key="pdd", label="PDD", natureza="contra_ativo",
+            grupo="direitos_creditorios", grupo_label="Direitos Creditórios",
+            source="wh_estoque_recebivel (Σ valor_pdd, exclui WOP)",
+            v1=s1["pdd"], v0=s0["pdd"], drill_key="pdd",
+        ),
+        _linha_estrutural(
+            key="titulos_publicos", label="Títulos Públicos", natureza="ativo",
+            grupo="aplicacoes", grupo_label="Aplicações",
+            source="wh_posicao_renda_fixa (COSIF TPF)",
+            v1=s1["titulos_publicos"], v0=s0["titulos_publicos"],
+        ),
+        _linha_estrutural(
+            key="op_estruturadas", label="Op. Estruturadas", natureza="ativo",
+            grupo="aplicacoes", grupo_label="Aplicações",
+            source="wh_posicao_renda_fixa (COSIF Nota Comercial)",
+            v1=s1["op_estruturadas"], v0=s0["op_estruturadas"],
+        ),
+        _linha_estrutural(
+            key="fundos_di", label="Fundos DI", natureza="ativo",
+            grupo="aplicacoes", grupo_label="Aplicações",
+            source="wh_posicao_cota_fundo (externos)",
+            v1=s1["fundos_di"], v0=s0["fundos_di"],
+        ),
+        _linha_estrutural(
+            key="compromissada", label="Compromissada", natureza="ativo",
+            grupo="aplicacoes", grupo_label="Aplicações",
+            source="wh_posicao_compromissada",
+            v1=s1["compromissada"], v0=s0["compromissada"],
+        ),
+        _linha_estrutural(
+            key="outros_ativos", label="Outros Ativos", natureza="ativo",
+            grupo="aplicacoes", grupo_label="Aplicações",
+            source="wh_posicao_outros_ativos (exclui PDD + TPF)",
+            v1=s1["outros_ativos"], v0=s0["outros_ativos"],
+        ),
+        _linha_estrutural(
+            key="tesouraria", label="Tesouraria", natureza="ativo",
+            grupo="disponibilidades", grupo_label="Disponibilidades",
+            source="wh_saldo_tesouraria (classe Sub)",
+            v1=s1["tesouraria"], v0=s0["tesouraria"],
+        ),
+        _linha_estrutural(
+            key="saldo_conta_corrente", label="Saldo Conta Corrente", natureza="ativo",
+            grupo="disponibilidades", grupo_label="Disponibilidades",
+            source="wh_saldo_conta_corrente (exclui CONCILIA)",
+            v1=s1["saldo_conta_corrente"], v0=s0["saldo_conta_corrente"],
+        ),
+        _linha_estrutural(
+            key="cpr_receber", label="CPR a Receber", natureza="ativo",
+            grupo="disponibilidades", grupo_label="Disponibilidades",
+            source="wh_cpr_movimento (Σ valor > 0: floating + diferidos)",
+            v1=cpr_rec_d1, v0=cpr_rec_d0, drill_key="cpr",
+        ),
+    ]
+
+    passivos: list[BalancoLinhaEstrutural] = [
+        _linha_estrutural(
+            key="cpr_pagar", label="CPR a Pagar", natureza="passivo",
+            grupo="operacional", grupo_label="Operacional",
+            source="wh_cpr_movimento (Σ valor < 0: despesas/taxas/IOF a recolher)",
+            v1=-cpr_pag_d1, v0=-cpr_pag_d0, drill_key="cpr",
+        ),
+        _linha_estrutural(
+            key="senior", label="Cota Senior", natureza="passivo",
+            grupo="cotas_prioritarias", grupo_label="Cotas Prioritárias",
+            source="wh_mec_evolucao_cotas (classe Senior)",
+            v1=s1["senior"], v0=s0["senior"],
+        ),
+        _linha_estrutural(
+            key="mezanino", label="Cota Mezanino", natureza="passivo",
+            grupo="cotas_prioritarias", grupo_label="Cotas Prioritárias",
+            source="wh_mec_evolucao_cotas (classe Mezanino)",
+            v1=s1["mezanino"], v0=s0["mezanino"],
+        ),
+    ]
+
+    # Subtotais. Ativo: ativo(+) - contra_ativo(-). Passivo: Σ magnitudes.
+    def _tot_ativo(attr: str) -> Decimal:
+        return sum(
+            (getattr(ln, attr) if ln.natureza == "ativo" else -getattr(ln, attr) for ln in ativos),
+            ZERO,
+        )
+
+    dc_liq_d1 = s1["dc"] - s1["pdd"]
+    dc_liq_d0 = s0["dc"] - s0["pdd"]
+
+    total_ativo_d1 = _tot_ativo("d1")
+    total_ativo_d0 = _tot_ativo("d0")
+    total_passivo_d1 = sum((ln.d1 for ln in passivos), ZERO)
+    total_passivo_d0 = sum((ln.d0 for ln in passivos), ZERO)
+
+    pl_sub_d1 = total_ativo_d1 - total_passivo_d1
+    pl_sub_d0 = total_ativo_d0 - total_passivo_d0
+
+    pl_fonte_d1 = s1["pl_sub_fonte"]
+    pl_fonte_d0 = s0["pl_sub_fonte"]
+    residuo_delta = (pl_sub_d0 - pl_sub_d1) - (pl_fonte_d0 - pl_fonte_d1)
+
+    return BalancoEstruturalResponse(
+        fundo_id=str(ua_id),
+        fundo_nome=ua.nome,
+        data=data_d0,
+        data_anterior=d1,
+        ativos=ativos,
+        passivos=passivos,
+        dc_liquido_d1=dc_liq_d1,
+        dc_liquido_d0=dc_liq_d0,
+        dc_liquido_delta=dc_liq_d0 - dc_liq_d1,
+        total_ativo_d1=total_ativo_d1,
+        total_ativo_d0=total_ativo_d0,
+        total_ativo_delta=total_ativo_d0 - total_ativo_d1,
+        total_passivo_d1=total_passivo_d1,
+        total_passivo_d0=total_passivo_d0,
+        total_passivo_delta=total_passivo_d0 - total_passivo_d1,
+        pl_sub_d1=pl_sub_d1,
+        pl_sub_d0=pl_sub_d0,
+        pl_sub_delta=pl_sub_d0 - pl_sub_d1,
+        reconciliacao=ReconciliacaoMec(
+            pl_fonte_d1=pl_fonte_d1,
+            pl_fonte_d0=pl_fonte_d0,
+            pl_fonte_delta=pl_fonte_d0 - pl_fonte_d1,
+            residuo_d1=pl_sub_d1 - pl_fonte_d1,
+            residuo_d0=pl_sub_d0 - pl_fonte_d0,
+            residuo_delta=residuo_delta,
+            dentro_tolerancia=abs(residuo_delta) < _TOL_RESIDUO_DIA,
+        ),
+    )

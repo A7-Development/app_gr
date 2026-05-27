@@ -37,7 +37,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.cadastros.public import UnidadeAdministrativa
@@ -52,6 +52,11 @@ from app.modules.controladoria.schemas.cota_sub import (
     SaldoTesourariaEvidencia,
     VariacaoDiariaResponse,
 )
+from app.modules.controladoria.services.cosif.classifier import (
+    classify,
+    load_overrides,
+    load_rules_cache,
+)
 from app.modules.integracoes.public import dia_util_anterior_qitech
 from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel
 from app.warehouse.cpr_movimento import CprMovimento
@@ -59,11 +64,6 @@ from app.warehouse.estoque_recebivel import EstoqueRecebivel
 from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel
 from app.warehouse.mec_evolucao_cotas import MecEvolucaoCotas
 from app.warehouse.movimento_caixa import MovimentoCaixa
-from app.modules.controladoria.services.cosif.classifier import (
-    classify,
-    load_overrides,
-    load_rules_cache,
-)
 from app.warehouse.posicao_compromissada import PosicaoCompromissada
 from app.warehouse.posicao_cota_fundo import PosicaoCotaFundo
 from app.warehouse.posicao_outros_ativos import PosicaoOutrosAtivos
@@ -588,6 +588,41 @@ async def _sum_cpr_snapshot(
         .where(CprMovimento.data_posicao == data)
     )
     return Decimal((await db.execute(stmt)).scalar() or 0)
+
+
+async def _sum_cpr_por_sinal(
+    db: AsyncSession, tenant_id: UUID, ua_id: UUID, data: date
+) -> tuple[Decimal, Decimal]:
+    """CPR segregado por sinal de `valor` (mesma heuristica de `_cpr_lista`).
+
+    Retorna (a_receber, a_pagar):
+      - a_receber = Σ(valor > 0) -> natureza ATIVA. Diferimentos de despesa +
+        "LIQUIDADOS TOTAL - PROV" (recebivel em transito retido pelo floating
+        bancario). Sempre >= 0.
+      - a_pagar   = Σ(valor < 0) -> natureza PASSIVA (despesas/taxas/IOF a
+        recolher). Mantem o sinal NEGATIVO (<= 0).
+
+    Por construcao `a_receber + a_pagar == _sum_cpr_snapshot` (o net do dia).
+    Snapshot de UM dia (1 linha por item): somar e correto. A armadilha do
+    "saldo acumulado por lote" so morde em serie temporal/multi-lote.
+    """
+    stmt = (
+        select(
+            func.coalesce(
+                func.sum(case((CprMovimento.valor > 0, CprMovimento.valor), else_=ZERO)),
+                ZERO,
+            ),
+            func.coalesce(
+                func.sum(case((CprMovimento.valor < 0, CprMovimento.valor), else_=ZERO)),
+                ZERO,
+            ),
+        )
+        .where(CprMovimento.tenant_id == tenant_id)
+        .where(CprMovimento.unidade_administrativa_id == ua_id)
+        .where(CprMovimento.data_posicao == data)
+    )
+    receber, pagar = (await db.execute(stmt)).one()
+    return Decimal(receber or 0), Decimal(pagar or 0)
 
 
 async def _sum_tesouraria(
@@ -1164,10 +1199,10 @@ async def compute_variacao_diaria(
     # evitar circular: compute.py importa helpers daqui (`_sum_*`); inverter
     # o sentido aqui exigiria mover helpers pra modulo neutro — refactor
     # registrado como tech debt da Fase 4.
+    from app.modules.controladoria.schemas.cota_sub import DriverResultOut
     from app.modules.controladoria.services.cota_sub_drivers import (
         compute_drivers,
     )
-    from app.modules.controladoria.schemas.cota_sub import DriverResultOut
 
     driver_computation = await compute_drivers(
         db, tenant_id=tenant_id, ua_id=ua_id, data_d0=data_d0, data_d_prev=d1,
