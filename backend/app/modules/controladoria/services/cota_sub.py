@@ -1253,6 +1253,28 @@ async def compute_variacao_diaria(
     ]
     decomposicao_total = sum((d.valor for d in decomposicao), ZERO)
 
+    # Detector de nao-reconhecidos (2026-05-27, pos-VCNC). Lazy import: o
+    # modulo completude importa os helpers `_is_*`/`_sum_*` daqui — importar
+    # no topo fecharia ciclo. Mesma estrategia do compute_drivers acima.
+    from app.modules.controladoria.schemas.cota_sub import ItemNaoReconhecidoOut
+    from app.modules.controladoria.services.cota_sub_completude import (
+        scan_nao_reconhecidos,
+    )
+
+    completude = await scan_nao_reconhecidos(
+        db, tenant_id=tenant_id, ua_id=ua_id, ua_nome=ua.nome,
+        fundo_doc=fundo_doc, data_d0=data_d0, data_d_prev=d1,
+    )
+    nao_reconhecidos_out = [
+        ItemNaoReconhecidoOut(
+            fonte=i.fonte, endpoint=i.endpoint, campo=i.campo,
+            identificador=i.identificador, label=i.label,
+            valor_d0=i.valor_d0, valor_d_prev=i.valor_d_prev,
+            modo=i.modo, driver_afetado=i.driver_afetado, motivo=i.motivo,
+        )
+        for i in completude.itens
+    ]
+
     return VariacaoDiariaResponse(
         fundo_id=str(ua_id),
         fundo_nome=ua.nome,
@@ -1271,4 +1293,5 @@ async def compute_variacao_diaria(
         drivers=drivers_out,
         soma_drivers=driver_computation.soma_drivers,
         residuo_modelo=driver_computation.residuo,
+        nao_reconhecidos=nao_reconhecidos_out,
     )
