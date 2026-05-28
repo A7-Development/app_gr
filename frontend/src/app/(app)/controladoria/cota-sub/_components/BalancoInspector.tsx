@@ -78,8 +78,9 @@ export function BalancoInspector({
   }
 
   const isAtivo = categoria.tipo === "ativo"
-  const isPositive = categoria.delta > 0
-  const isNegative = categoria.delta < 0
+  const isZero = Math.abs(categoria.delta) < 0.005
+  // PDD e contra-ativo (redutor): subir piora o PL Sub -> positivo=vermelho.
+  const bom = categoria.contra ? categoria.delta < 0 : categoria.delta > 0
 
   return (
     <Card className="flex h-full flex-col p-0">
@@ -122,9 +123,11 @@ export function BalancoInspector({
           <span
             className={cx(
               "text-[11px] tabular-nums",
-              isPositive && "text-emerald-700 dark:text-emerald-400",
-              isNegative && "text-red-700 dark:text-red-400",
-              !isPositive && !isNegative && "text-gray-400 dark:text-gray-600",
+              isZero
+                ? "text-gray-400 dark:text-gray-600"
+                : bom
+                  ? "text-emerald-700 dark:text-emerald-400"
+                  : "text-red-700 dark:text-red-400",
             )}
           >
             {fmtBRLSigned(categoria.delta)} vs {fmtDate(dataAnterior)}

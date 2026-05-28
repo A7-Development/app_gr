@@ -71,10 +71,11 @@ export function CategoriaDrillSheet({
             title={categoria.label}
             value={categoria.d0}
             delta={{
-              value:     categoria.delta,
-              label:     `vs ${fmtDate(dataAnterior)} (${fmtBRL.format(categoria.d1)})`,
-              format:    "currency",
-              labelTone: "muted",
+              value:          categoria.delta,
+              label:          `vs ${fmtDate(dataAnterior)} (${fmtBRL.format(categoria.d1)})`,
+              format:         "currency",
+              labelTone:      "muted",
+              positiveIsGood: !categoria.contra,
             }}
           />
           <DrillDownSheet.Body>

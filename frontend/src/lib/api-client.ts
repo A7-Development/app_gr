@@ -3642,6 +3642,9 @@ export type CategoriaPatrimonial = {
   d0:     number
   delta:  number
   source: string
+  /** Contra-ativo (redutor, ex.: PDD): polaridade do delta invertida —
+   *  subir piora o PL Sub, entao positivo=vermelho / negativo=verde. */
+  contra?: boolean
 }
 
 
