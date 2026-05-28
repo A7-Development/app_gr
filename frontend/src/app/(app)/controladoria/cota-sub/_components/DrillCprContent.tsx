@@ -15,38 +15,23 @@ import {
   RiCoinsLine,
   RiInformationLine,
   RiInboxLine,
-  type RemixiconComponentType,
 } from "@remixicon/react"
 
 import { cx } from "@/lib/utils"
 import { useDrillCpr } from "@/lib/hooks/controladoria"
-import type { CprNaturezaKey } from "@/lib/api-client"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 import { Button } from "@/components/tremor/Button"
-
-const fmtBRL = new Intl.NumberFormat("pt-BR", {
-  style:                 "currency",
-  currency:              "BRL",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})
-
-const fmtBRLSigned = (v: number): string => {
-  if (Math.abs(v) < 0.005) return "R$ 0,00"
-  const sign = v > 0 ? "+" : "−"
-  return `${sign}${fmtBRL.format(Math.abs(v))}`
-}
-
-const NATUREZA_DOT: Record<CprNaturezaKey, string> = {
-  diferimento:         "bg-violet-500",
-  apropriacao_taxa:    "bg-indigo-500",
-  apropriacao_despesa: "bg-blue-500",
-  iof_ir:              "bg-amber-500",
-  provisao_liquidacao: "bg-emerald-500",
-  aporte_engaiolado:   "bg-rose-500",
-  outros:              "bg-gray-400",
-}
+import {
+  DrillClosureBadge,
+  DrillSectionTitle,
+  drillRowBorder,
+  drillTableWrap,
+  drillTfootRow,
+  fmtBRL,
+  fmtBRLSigned,
+  toneClass,
+} from "./drillKit"
 
 const ESTADO_LABEL: Record<"entrou" | "devolvido" | "persiste", { label: string; tone: string }> = {
   entrou:    { label: "Novo em D0",     tone: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" },
@@ -100,11 +85,28 @@ export function DrillCprContent({ fundoId, data, dataAnterior, side }: DrillCprC
   const d = q.data
   const temAporteEngaiolado = d.aportes_engaiolados.length > 0
 
+  // Fechamento: as naturezas particionam o total da linha. Σ(natureza D0) deve
+  // bater o total D0 (= valor da linha Contas a Receber/Pagar no balanco).
+  const linhaLabel = side === "pagar" ? "Contas a Pagar" : side === "receber" ? "Contas a Receber" : "CPR"
+  const valorLinha = o(d.cpr_total_d0)
+  const somaNaturezas = d.naturezas.reduce((s, n) => s + o(n.sum_valor_d0), 0)
+  const fecha = Math.abs(valorLinha - somaNaturezas) < 0.01
+
   return (
     <div className="flex flex-col gap-5">
+      {/* ── Selo de fechamento ── */}
+      <DrillClosureBadge
+        fecha={fecha}
+        sub={!fecha ? `linha ${fmtBRL.format(valorLinha)} · naturezas ${fmtBRL.format(somaNaturezas)}` : undefined}
+      >
+        {fecha
+          ? `Fecha · ${d.naturezas.length} natureza(s) compõem ${linhaLabel} ${fmtBRL.format(valorLinha)}`
+          : `Diverge · soma das naturezas ≠ ${linhaLabel}`}
+      </DrillClosureBadge>
+
       {/* ── Totais ── */}
       <section>
-        <SectionTitle icon={RiCoinsLine} label={totaisLabel} />
+        <DrillSectionTitle icon={RiCoinsLine} label={totaisLabel} />
         <div className="mt-2 grid grid-cols-3 gap-2 rounded border border-gray-200 p-3 dark:border-gray-800">
           <div>
             <p className="text-[10px] uppercase tracking-[0.04em] text-gray-400">D-1 · {d.qtd_linhas_d1} linha(s)</p>
@@ -118,9 +120,7 @@ export function DrillCprContent({ fundoId, data, dataAnterior, side }: DrillCprC
             <p className="text-[10px] uppercase tracking-[0.04em] text-gray-400">Δ</p>
             <p className={cx(
               "text-[14px] font-semibold tabular-nums",
-              o(d.cpr_total_delta) > 0 ? "text-emerald-700 dark:text-emerald-400"
-                : o(d.cpr_total_delta) < 0 ? "text-red-700 dark:text-red-400"
-                : "text-gray-400 dark:text-gray-600",
+              toneClass(o(d.cpr_total_delta)),
             )}>{fmtBRLSigned(o(d.cpr_total_delta))}</p>
           </div>
         </div>
@@ -129,7 +129,7 @@ export function DrillCprContent({ fundoId, data, dataAnterior, side }: DrillCprC
       {/* ── Aportes engaiolados ── */}
       {temAporteEngaiolado && (
         <section>
-          <SectionTitle
+          <DrillSectionTitle
             icon={RiInformationLine}
             label="Aportes engaiolados"
             counter={`${d.aportes_engaiolados.length} rubrica(s) ativa(s)`}
@@ -169,9 +169,7 @@ export function DrillCprContent({ fundoId, data, dataAnterior, side }: DrillCprC
                       <p className="text-[10px] uppercase tracking-[0.04em] text-rose-700/70 dark:text-rose-300/70">Δ</p>
                       <p className={cx(
                         "font-semibold",
-                        o(ev.delta_valor) > 0 ? "text-emerald-700 dark:text-emerald-400"
-                          : o(ev.delta_valor) < 0 ? "text-red-700 dark:text-red-400"
-                          : "text-gray-400 dark:text-gray-600",
+                        toneClass(o(ev.delta_valor)),
                       )}>{fmtBRLSigned(o(ev.delta_valor))}</p>
                     </div>
                   </div>
@@ -184,7 +182,7 @@ export function DrillCprContent({ fundoId, data, dataAnterior, side }: DrillCprC
 
       {/* ── Naturezas ── */}
       <section>
-        <SectionTitle icon={RiBubbleChartLine} label="Por natureza" />
+        <DrillSectionTitle icon={RiBubbleChartLine} label="Por natureza" />
         {d.naturezas.length === 0 ? (
           <EmptyState
             icon={RiInboxLine}
@@ -199,72 +197,49 @@ export function DrillCprContent({ fundoId, data, dataAnterior, side }: DrillCprC
         ) : (
           <div className="mt-2 flex flex-col gap-3">
             {d.naturezas.map((n) => (
-              <div key={n.natureza} className="overflow-hidden rounded border border-gray-200 dark:border-gray-800">
-                <div className="flex items-center justify-between gap-2 border-b border-gray-100 bg-gray-50/60 px-3 py-1.5 dark:border-gray-900 dark:bg-gray-900/30">
-                  <span className="flex items-center gap-1.5 text-[12px]">
-                    <span className={cx("inline-block size-1.5 rounded-full", NATUREZA_DOT[n.natureza])} aria-hidden />
-                    <span className="font-medium text-gray-900 dark:text-gray-50">{n.label}</span>
-                    <span className="text-[10px] text-gray-500 dark:text-gray-400">· {n.qtd_linhas} linha(s)</span>
-                  </span>
-                  <span className={cx(
-                    "text-[12px] font-semibold tabular-nums",
-                    o(n.sum_delta) > 0 ? "text-emerald-700 dark:text-emerald-400"
-                      : o(n.sum_delta) < 0 ? "text-red-700 dark:text-red-400"
-                      : "text-gray-400 dark:text-gray-600",
-                  )}>Δ {fmtBRLSigned(o(n.sum_delta))}</span>
+              <div key={n.natureza} className={drillTableWrap}>
+                <div className="border-b border-gray-100 px-3 py-1.5 dark:border-gray-900">
+                  <span className="text-[12px] font-medium text-gray-900 dark:text-gray-50">{n.label}</span>
+                  <span className="ml-1.5 text-[10px] text-gray-500 dark:text-gray-400">· {n.qtd_linhas} linha(s)</span>
                 </div>
                 <table className="w-full text-[12px] tabular-nums">
                   <thead className="text-[10px] uppercase tracking-[0.04em] text-gray-400 dark:text-gray-600">
                     <tr>
-                      <th className="px-3 py-1 text-left">Rubrica</th>
-                      <th className="px-3 py-1 text-right">D-1</th>
-                      <th className="px-3 py-1 text-right">D0</th>
-                      <th className="px-3 py-1 text-right">Δ</th>
+                      <th className="px-3 py-1.5 text-left">Rubrica</th>
+                      <th className="px-3 py-1.5 text-right">D-1</th>
+                      <th className="px-3 py-1.5 text-right">D0</th>
+                      <th className="px-3 py-1.5 text-right">Δ</th>
                     </tr>
                   </thead>
                   <tbody>
                     {n.top_linhas.map((ln, idx) => (
-                      <tr key={`${n.natureza}-${idx}-${ln.descricao}`} className="border-t border-gray-100 dark:border-gray-900">
-                        <td className="px-3 py-1 text-gray-700 dark:text-gray-200" title={ln.descricao}>
+                      <tr key={`${n.natureza}-${idx}-${ln.descricao}`} className={drillRowBorder}>
+                        <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200" title={ln.descricao}>
                           <span className="block truncate max-w-[320px]">{ln.historico_traduzido || ln.descricao}</span>
                         </td>
-                        <td className="px-3 py-1 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(o(ln.valor_d1))}</td>
-                        <td className="px-3 py-1 text-right text-gray-900 dark:text-gray-50">{fmtBRL.format(o(ln.valor_d0))}</td>
+                        <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(o(ln.valor_d1))}</td>
+                        <td className="px-3 py-1.5 text-right text-gray-900 dark:text-gray-50">{fmtBRL.format(o(ln.valor_d0))}</td>
                         <td className={cx(
-                          "px-3 py-1 text-right font-medium",
-                          o(ln.delta_valor) > 0 ? "text-emerald-700 dark:text-emerald-400"
-                            : o(ln.delta_valor) < 0 ? "text-red-700 dark:text-red-400"
-                            : "text-gray-400",
+                          "px-3 py-1.5 text-right font-medium",
+                          toneClass(o(ln.delta_valor)),
                         )}>{fmtBRLSigned(o(ln.delta_valor))}</td>
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr className={drillTfootRow}>
+                      <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200">Total</td>
+                      <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(o(n.sum_valor_d1))}</td>
+                      <td className="px-3 py-1.5 text-right text-gray-900 dark:text-gray-50">{fmtBRL.format(o(n.sum_valor_d0))}</td>
+                      <td className={cx("px-3 py-1.5 text-right", toneClass(o(n.sum_delta)))}>{fmtBRLSigned(o(n.sum_delta))}</td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             ))}
           </div>
         )}
       </section>
-    </div>
-  )
-}
-
-function SectionTitle({
-  icon: Icon, label, counter,
-}: {
-  icon: RemixiconComponentType
-  label: string
-  counter?: string
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-2">
-      <h4 className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-700 dark:text-gray-300">
-        <Icon className="size-3.5 text-gray-400 dark:text-gray-500" aria-hidden />
-        {label}
-      </h4>
-      {counter && (
-        <span className="text-[11px] text-gray-500 dark:text-gray-400 tabular-nums">{counter}</span>
-      )}
     </div>
   )
 }
