@@ -202,7 +202,13 @@ export function DrillCprContent({ fundoId, data, dataAnterior, side }: DrillCprC
                   <span className="text-[12px] font-medium text-gray-900 dark:text-gray-50">{n.label}</span>
                   <span className="ml-1.5 text-[10px] text-gray-500 dark:text-gray-400">· {n.qtd_linhas} linha(s)</span>
                 </div>
-                <table className="w-full text-[12px] tabular-nums">
+                <table className="w-full table-fixed text-[12px] tabular-nums">
+                  <colgroup>
+                    <col />
+                    <col className="w-[22%]" />
+                    <col className="w-[22%]" />
+                    <col className="w-[22%]" />
+                  </colgroup>
                   <thead className="text-[10px] uppercase tracking-[0.04em] text-gray-400 dark:text-gray-600">
                     <tr>
                       <th className="px-3 py-1.5 text-left">Rubrica</th>

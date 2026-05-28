@@ -296,11 +296,14 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
           )
         }
         const isStrong = row.kind === "subtotal" || row.kind === "pl-sub"
+        // PDD e contra-ativo (redutor): subir o saldo PIORA o PL Sub, entao
+        // delta positivo = vermelho / negativo = verde (polaridade invertida).
+        const bom = row.contra ? v < 0 : v > 0
         return (
           <div
             style={{ textAlign: "right" }}
             className={cx(
-              v > 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400",
+              bom ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400",
               "tabular-nums",
               isStrong && "font-semibold",
             )}
