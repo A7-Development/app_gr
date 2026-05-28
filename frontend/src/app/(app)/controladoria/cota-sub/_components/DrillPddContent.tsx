@@ -13,11 +13,9 @@
  * frente ao detalhamento por papel das secoes 2 e 3).
  */
 
-import * as React from "react"
 import {
   RiBarChartHorizontalLine,
   RiErrorWarningLine,
-  RiPieChartLine,
   RiInboxLine,
 } from "@remixicon/react"
 
@@ -94,9 +92,6 @@ export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContent
   }
 
   const d = q.data
-  const pddAtivoDelta = d.pdd_granular_ex_wop_d0 - d.pdd_granular_ex_wop_d1
-  const wopDelta = d.pdd_granular_wop_d0 - d.pdd_granular_wop_d1
-
   const pddDisponivel = !d.motivo_indisponivel
 
   return (
@@ -111,31 +106,12 @@ export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContent
           : "PDD não confirmável nesta data"}
       </DrillClosureBadge>
 
-      {/* ── PDD granular separado por bucket (PDD ativo vs WOP) ── */}
-      <section>
-        <DrillSectionTitle icon={RiPieChartLine} label="Composição da PDD" />
-        <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-          Σ <code className="font-mono">valor_pdd</code> de <code className="font-mono">wh_estoque_recebivel</code>,
-          separado por bucket. PDD ativo (faixas A-H) é o que entra no
-          balanço da Cota Sub Jr. WOP já está fora — informativo.
-        </p>
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          <Card label="PDD ativo (faixas A-H · entra no balanço)">
-            <ValueGrid d1={d.pdd_granular_ex_wop_d1} d0={d.pdd_granular_ex_wop_d0} delta={pddAtivoDelta} />
-          </Card>
-          <Card label="WOP (write-off · já fora do balanço)" muted>
-            <ValueGrid d1={d.pdd_granular_wop_d1} d0={d.pdd_granular_wop_d0} delta={wopDelta} />
-          </Card>
-        </div>
-      </section>
-
       {d.motivo_indisponivel && (
         <div className="flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
           <RiErrorWarningLine className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <div>
             <strong>Estoque granular indisponível:</strong> {d.motivo_indisponivel}.
-            Papéis em write-off e variações por papel ficam vazios — só
-            os totais acima são confiáveis.
+            Papéis em write-off e variações por papel ficam vazios.
           </div>
         </div>
       )}
@@ -192,42 +168,6 @@ export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContent
 }
 
 // ─── Sub-componentes ────────────────────────────────────────────────────────
-
-function Card({ label, children, muted }: { label: string; children: React.ReactNode; muted?: boolean }) {
-  return (
-    <div className={cx(
-      "rounded border p-3",
-      muted
-        ? "border-gray-200 bg-gray-50/40 dark:border-gray-800 dark:bg-gray-900/20"
-        : "border-gray-200 dark:border-gray-800",
-    )}>
-      <p className="text-[10px] uppercase tracking-[0.04em] text-gray-500 dark:text-gray-400">{label}</p>
-      <div className="mt-1.5">{children}</div>
-    </div>
-  )
-}
-
-function ValueGrid({ d1, d0, delta }: { d1: number; d0: number; delta: number }) {
-  return (
-    <div className="grid grid-cols-3 gap-2 text-[12px] tabular-nums">
-      <div>
-        <p className="text-[10px] text-gray-400">D-1</p>
-        <p className="text-gray-700 dark:text-gray-300">{fmtBRL.format(d1)}</p>
-      </div>
-      <div>
-        <p className="text-[10px] text-gray-400">D0</p>
-        <p className="font-medium text-gray-900 dark:text-gray-50">{fmtBRL.format(d0)}</p>
-      </div>
-      <div>
-        <p className="text-[10px] text-gray-400">Δ</p>
-        <p className={cx(
-          "font-semibold",
-          toneClass(delta, false),
-        )}>{fmtBRLSigned(delta)}</p>
-      </div>
-    </div>
-  )
-}
 
 function PapeisTable({ papeis, highlightDelta }: { papeis: DrillPddPapel[]; highlightDelta: boolean }) {
   const totNominal = papeis.reduce((s, p) => s + p.valor_nominal, 0)
