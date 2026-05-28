@@ -4408,6 +4408,69 @@ function _coerceDrillCpr(r: DrillCprResponseDTO): DrillCprResponse {
   }
 }
 
+// ── DRILL ORIGEM (ver origem — linhas-fonte simples, 2026-05-28) ────────────
+// Drill generico das 9 linhas SEM drill rico. Lista as linhas-fonte que
+// compoem o valor da linha + prova de fechamento (soma == valor_balanco).
+
+type DrillOrigemLinhaDTO = {
+  identificador: string
+  descricao:     string
+  detalhe:       string | null
+  valor:         number | string
+}
+export type DrillOrigemLinha = {
+  identificador: string
+  descricao:     string
+  detalhe:       string | null
+  valor:         number
+}
+type DrillOrigemResponseDTO = {
+  fundo_id:      string
+  fundo_nome:    string
+  data:          string
+  linha_key:     string
+  linha_label:   string
+  fonte:         string
+  linhas:        DrillOrigemLinhaDTO[]
+  soma:          number | string
+  valor_balanco: number | string
+  diferenca:     number | string
+  fecha:         boolean
+}
+export type DrillOrigemResponse = {
+  fundo_id:      string
+  fundo_nome:    string
+  data:          string
+  linha_key:     string
+  linha_label:   string
+  fonte:         string
+  linhas:        DrillOrigemLinha[]
+  soma:          number
+  valor_balanco: number
+  diferenca:     number
+  fecha:         boolean
+}
+function _coerceDrillOrigem(r: DrillOrigemResponseDTO): DrillOrigemResponse {
+  return {
+    fundo_id:      r.fundo_id,
+    fundo_nome:    r.fundo_nome,
+    data:          r.data,
+    linha_key:     r.linha_key,
+    linha_label:   r.linha_label,
+    fonte:         r.fonte,
+    linhas:        r.linhas.map((l) => ({
+      identificador: l.identificador,
+      descricao:     l.descricao,
+      detalhe:       l.detalhe,
+      valor:         Number(l.valor),
+    })),
+    soma:          Number(r.soma),
+    valor_balanco: Number(r.valor_balanco),
+    diferenca:     Number(r.diferenca),
+    fecha:         r.fecha,
+  }
+}
+
 // ── Agente IA · analista de variacao da Cota Sub Jr ───────────────────
 
 // Espelha AnalysisVariacaoCotaResponse (Pydantic) + AgenteVariacaoRunMetadata
@@ -5089,6 +5152,18 @@ export const controladoria = {
       `/controladoria/cota-sub/drill/cpr?${params.toString()}`,
     )
     return _coerceDrillCpr(raw)
+  },
+
+  cotaSubDrillOrigem: async (
+    fundoId: string,
+    data: string,
+    linha: string,
+  ): Promise<DrillOrigemResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data, linha })
+    const raw = await apiClient.get<DrillOrigemResponseDTO>(
+      `/controladoria/cota-sub/drill/origem?${params.toString()}`,
+    )
+    return _coerceDrillOrigem(raw)
   },
 
   // ── Agente IA · analista de variacao da Cota Sub Jr ─────────────────

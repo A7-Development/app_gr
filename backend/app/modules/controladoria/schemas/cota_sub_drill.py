@@ -457,3 +457,47 @@ class DrillCprResponse(BaseModel):
     naturezas:              list[DrillCprNaturezaGroup]
 
     aportes_engaiolados:    list[DrillCprAporteEngaiolado]
+
+
+# ── DRILL ORIGEM (ver origem — linhas-fonte simples, 2026-05-28) ──────────────
+#
+# Drill generico de "ver origem" para as 9 linhas SEM drill rico (RF/Tesouraria/
+# CC/Outros/Fundos/Cotas). Lista as linhas-fonte que compoem o valor da linha do
+# balanco e prova o fechamento (soma das linhas == valor da linha). E o nivel
+# minimo de conferenciabilidade (§14): cada numero rastreavel ate o dado-fonte.
+#
+# Shape uniforme de 3 colunas de texto + valor pra caber qualquer das 9 linhas:
+#   identificador (codigo/seu_numero/cliente_id) · descricao (nome/carteira) ·
+#   detalhe (cosif/instituicao/tipo — opcional) · valor.
+
+
+class OrigemLinha(BaseModel):
+    """Uma linha-fonte que compoe a linha do balanco (snapshot D0)."""
+
+    identificador: str = Field(description="Codigo/seu_numero/cliente_id da fonte.")
+    descricao:     str = Field(description="Nome/carteira/descricao.")
+    detalhe:       str | None = Field(
+        default=None, description="Coluna secundaria opcional (COSIF, instituicao, tipo)."
+    )
+    valor:         Decimal
+
+
+class DrillOrigemResponse(BaseModel):
+    """Drill 'ver origem' de uma linha do balanco estrutural.
+
+    valor_balanco vem do helper oficial (_sum_*); soma e o Σ das linhas-fonte
+    reproduzidas. `fecha` = |soma - valor_balanco| < 0.01 (auto-guard: se a
+    reproducao divergir do helper, o selo acusa)."""
+
+    fundo_id:       str
+    fundo_nome:     str
+    data:           date
+    linha_key:      str
+    linha_label:    str
+    fonte:          str = Field(description="Tabela silver de origem (proveniencia).")
+
+    linhas:         list[OrigemLinha]
+    soma:           Decimal = Field(description="Σ das linhas-fonte listadas.")
+    valor_balanco:  Decimal = Field(description="Valor oficial da linha (helper _sum_*).")
+    diferenca:      Decimal = Field(description="valor_balanco - soma.")
+    fecha:          bool
