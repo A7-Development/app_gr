@@ -141,6 +141,7 @@ function toInspectorCategoria(
     d0:     l.d0,
     delta:  l.delta,
     source: l.source,
+    contra: l.natureza === "contra_ativo",
   }
 }
 

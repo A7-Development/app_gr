@@ -203,6 +203,9 @@ interface HeroProps {
      *  - `match`: pega a mesma cor do delta principal (verde/vermelho),
      *    para quando o label contem o valor complementar (ex.: "%" do delta absoluto). */
     labelTone?: "muted" | "match"
+    /** Polaridade da cor do delta. Default `true` (positivo=verde/bom).
+     *  `false` inverte — para redutores/contra-ativo (ex.: PDD), onde subir e ruim. */
+    positiveIsGood?: boolean
   }
   className?: string
 }
@@ -225,7 +228,7 @@ function _formatHeroDelta(v: number, format: HeroDeltaFormat): string {
 
 function Hero({ id, title, value, delta, className }: HeroProps) {
   const dir = delta ? (delta.value >= 0 ? "up" : "down") : null
-  const good = dir === "up"
+  const good = (delta?.positiveIsGood ?? true) ? dir === "up" : dir === "down"
   const ArrowIcon = dir === "up" ? RiArrowUpLine : RiArrowDownLine
   const deltaColor = good
     ? "text-emerald-600 dark:text-emerald-400"
