@@ -187,10 +187,18 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
             correspondente.
           </p>
           <div className="mt-2 overflow-hidden rounded border border-amber-200 dark:border-amber-900/40">
-            <table className="w-full text-[12px] tabular-nums">
+            <table className="w-full table-fixed text-[12px] tabular-nums">
+              <colgroup>
+                <col className="w-[22%]" />
+                <col className="w-[12%]" />
+                <col className="w-[15%]" />
+                <col className="w-[15%]" />
+                <col className="w-[14%]" />
+                <col className="w-[22%]" />
+              </colgroup>
               <thead className="bg-amber-50 text-[10px] font-medium uppercase tracking-[0.04em] text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
                 <tr>
-                  <th className="px-3 py-1.5 text-left">Cedente → Sacado</th>
+                  <th className="px-3 py-1.5 text-left">Cedente / Sacado</th>
                   <th className="px-3 py-1.5 text-left">Título</th>
                   <th className="px-3 py-1.5 text-right">VP D-1</th>
                   <th className="px-3 py-1.5 text-right">VP D0</th>
@@ -498,17 +506,12 @@ function MutacaoRow({ p }: { p: DrillDcMutacaoPapel }) {
 
   return (
     <tr className="border-t border-amber-100 dark:border-amber-900/40">
-      <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200">
-        <div className="flex flex-col">
-          <span className="truncate text-[11px]" title={`${p.cedente_doc} → ${p.sacado_doc}`}>
-            <span className="font-medium">{p.cedente_nome}</span>
-            <span className="text-gray-400"> → </span>
-            <span>{p.sacado_nome}</span>
-          </span>
-        </div>
+      <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200" title={`${p.cedente_doc} → ${p.sacado_doc}`}>
+        <div className="truncate font-medium text-gray-900 dark:text-gray-50">{p.cedente_nome}</div>
+        <div className="truncate text-[10px] text-gray-500 dark:text-gray-400">→ {p.sacado_nome}</div>
       </td>
       <td className="px-3 py-1.5 font-mono text-[11px] text-gray-500 dark:text-gray-400" title={p.numero_documento}>
-        {p.seu_numero}
+        <span className="block truncate">{p.seu_numero}</span>
       </td>
       <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(p.vp_d1)}</td>
       <td className="px-3 py-1.5 text-right text-gray-900 dark:text-gray-50">{fmtBRL.format(p.vp_d0)}</td>
@@ -520,7 +523,7 @@ function MutacaoRow({ p }: { p: DrillDcMutacaoPapel }) {
       </td>
       <td className="px-3 py-1.5 text-[10px] text-gray-500 dark:text-gray-400">
         <div className="flex flex-col gap-0.5">
-          {mudancas.map((m, i) => <span key={i}>{m}</span>)}
+          {mudancas.map((m, i) => <span key={i} className="break-words">{m}</span>)}
         </div>
       </td>
     </tr>
