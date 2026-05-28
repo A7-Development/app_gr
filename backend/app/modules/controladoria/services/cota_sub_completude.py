@@ -39,14 +39,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.controladoria.services.cosif.classifier import (
-    classify,
-    load_overrides,
-    load_rules_cache,
-)
 from app.modules.controladoria.services.cota_sub import (
-    COSIF_TO_DRIVER_GESTOR,
     ZERO,
+    _driver_for_nome_papel,
     _is_fundo_externo,
     _is_mezanino,
     _is_senior,
@@ -123,34 +118,9 @@ class CompletudeReport:
         return any(i.modo in ("vaza_residuo", "entra_indevido") for i in self.itens)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Status COSIF -> reconhecido / vazando
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def _rf_cosif_status(cosif: str | None) -> Literal["counted", "excluded", "unmapped", "pendente"]:
-    """Classifica o destino de um papel de RF pela sua resolucao COSIF.
-
-    - pendente: `classify` nao casou regra/override (cosif=None) — VAZA.
-    - unmapped: tem cosif mas nenhum prefixo de `COSIF_TO_DRIVER_GESTOR` casa
-      — VAZA (nao entra em nenhum driver e nao e exclusao intencional).
-    - excluded: casa prefixo cujo valor e None (compensacao interna / cota
-      emitida) — reconhecido, exclusao intencional.
-    - counted: casa prefixo que aponta pra um driver — reconhecido, contado.
-    """
-    if not cosif:
-        return "pendente"
-    best_len = 0
-    best_val: str | None = None
-    matched = False
-    for prefix, driver in COSIF_TO_DRIVER_GESTOR.items():
-        if cosif.startswith(prefix) and len(prefix) > best_len:
-            best_len = len(prefix)
-            best_val = driver
-            matched = True
-    if not matched:
-        return "unmapped"
-    return "excluded" if best_val is None else "counted"
+# Exclusoes conhecidas da RF (reconhecidas, fora das 2 linhas): SRP
+# (compromissada/repo, pareada ~0) e MEZAN (mezanino, passivo via MEC).
+_RF_EXCLUSOES_CONHECIDAS: frozenset[str] = frozenset({"SRP", "MEZAN"})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -206,70 +176,60 @@ async def _scan_renda_fixa(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID,
     d_prev: date, d0: date, threshold: Decimal,
 ) -> list[ItemNaoReconhecido]:
-    """Renda fixa: papel cujo COSIF e `pendente` (sem regra) ou `unmapped`.
-
-    Reaproveita `classify` (mesma cascata override->rule->pendente que os
-    drivers Titulos Publicos / Op Estruturadas usam). Foi exatamente este o
-    drop da VCNC. Considera ambas as datas (papel pode entrar so em D0).
-    """
-    rules_cache = await load_rules_cache(db)
-    overrides = await load_overrides(db, tenant_id=tenant_id, fundo_id=ua_id)
-
-    # codigo -> {nome, status_d?, valor_d_prev, valor_d0}
+    """Renda fixa: papel cujo `nome_do_papel` NAO e reconhecido — nem cai numa
+    linha (Titulos Publicos / Op. Estruturadas via `_driver_for_nome_papel`) nem
+    e exclusao conhecida (SRP/MEZAN). Tipo novo que a QiTech trouxer VAZA ->
+    flag pra cadastrar. Considera ambas as datas (papel pode entrar so em D0)."""
     acc: dict[str, dict[str, Any]] = {}
     for d, slot in ((d_prev, "d_prev"), (d0, "d0")):
         rows = (
             await db.execute(
                 select(
                     PosicaoRendaFixa.codigo, PosicaoRendaFixa.nome_do_papel,
-                    PosicaoRendaFixa.codigo_lastro, PosicaoRendaFixa.quantidade,
-                    PosicaoRendaFixa.valor_bruto,
+                    PosicaoRendaFixa.codigo_lastro, PosicaoRendaFixa.valor_bruto,
                 )
                 .where(PosicaoRendaFixa.tenant_id == tenant_id)
                 .where(PosicaoRendaFixa.unidade_administrativa_id == ua_id)
                 .where(PosicaoRendaFixa.data_posicao == d)
             )
         ).all()
-        for codigo, nome, codigo_lastro, quantidade, valor_bruto in rows:
-            resolution = classify(
-                silver_origin="wh_posicao_renda_fixa",
-                row={
-                    "codigo": codigo, "nome_do_papel": nome,
-                    "codigo_lastro": codigo_lastro, "quantidade": quantidade,
-                },
-                rules_cache=rules_cache, overrides=overrides,
-            )
-            status = _rf_cosif_status(resolution.cosif)
+        for codigo, nome, codigo_lastro, valor_bruto in rows:
             entry = acc.setdefault(codigo or nome or "?", {
-                "nome": nome or "", "valor_d_prev": ZERO, "valor_d0": ZERO,
-                "status": status, "cosif": resolution.cosif,
+                "nome": nome or "", "lastro": codigo_lastro or "",
+                "d_prev": ZERO, "d0": ZERO,
             })
             entry[slot] = Decimal(valor_bruto or 0)
-            entry["status"] = status  # status do dia mais recente avaliado
-            entry["cosif"] = resolution.cosif
             entry["nome"] = nome or entry["nome"]
+            entry["lastro"] = codigo_lastro or entry["lastro"]
 
     out: list[ItemNaoReconhecido] = []
     for codigo, e in acc.items():
-        if e["status"] not in ("pendente", "unmapped"):
+        nome = e["nome"]
+        # Reconhecido (cai numa linha) ou exclusao intencional conhecida -> ok.
+        if _driver_for_nome_papel(nome, e["lastro"]) is not None:
+            continue
+        if (nome or "").strip().upper() in _RF_EXCLUSOES_CONHECIDAS:
+            continue
+        # Tesouro -OVE = exclusao intencional (garantia/over), nao vaza.
+        if nome.strip().upper().startswith(("NTN", "LTN", "LFT")) \
+                and (e["lastro"] or "").strip().upper().endswith("OVE"):
             continue
         vd0 = e.get("d0", ZERO)
         vdp = e.get("d_prev", ZERO)
         if abs(vd0) < threshold and abs(vdp) < threshold:
             continue
-        motivo = (
-            "Nenhuma regra COSIF casou (pendente) — papel sai de todos os drivers de RF."
-            if e["status"] == "pendente"
-            else f"COSIF {e['cosif']} sem mapeamento pra driver gestor — papel sai da decomposicao."
-        )
         out.append(ItemNaoReconhecido(
             fonte="wh_posicao_renda_fixa", endpoint="qitech.market.rf",
             campo="nome_do_papel", identificador=str(codigo),
-            label=f"{e['nome']} ({codigo})",
+            label=f"{nome} ({codigo})",
             valor_d0=vd0, valor_d_prev=vdp,
             modo="vaza_residuo",
             driver_afetado="Titulos Publicos / Op Estruturadas",
-            motivo=motivo,
+            motivo=(
+                f"Tipo de papel '{nome}' nao reconhecido (nem Tesouro NTN/LTN/LFT, "
+                f"nem Nota Comercial NCPX/VCNC/PDDNC, nem exclusao SRP/MEZAN) — "
+                f"cadastrar a classificacao em _driver_for_nome_papel."
+            ),
         ))
     return out
 

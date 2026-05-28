@@ -31,14 +31,9 @@ from app.modules.controladoria.schemas.cota_sub_drill import (
 from app.modules.controladoria.services.balanco_patrimonial import (
     _sum_saldo_conta_corrente,
 )
-from app.modules.controladoria.services.cosif.classifier import (
-    classify,
-    load_overrides,
-    load_rules_cache,
-)
 from app.modules.controladoria.services.cota_sub import (
     ZERO,
-    _driver_gestor_for_cosif,
+    _driver_for_nome_papel,
     _is_fundo_externo,
     _is_mezanino,
     _is_senior,
@@ -84,14 +79,15 @@ SUPPORTED_KEYS = frozenset(_META)
 async def _rows_renda_fixa(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID, data: date, driver: str,
 ) -> list[OrigemLinha]:
-    rules = await load_rules_cache(db)
-    overrides = await load_overrides(db, tenant_id=tenant_id, fundo_id=ua_id)
+    """Linhas-fonte de Titulos Publicos / Op. Estruturadas. Classifica por
+    `nome_do_papel` (QiTech) via _driver_for_nome_papel; detalhe = emitente
+    (dado real da QiTech, nao COSIF)."""
     stmt = (
         select(
             PosicaoRendaFixa.codigo,
             PosicaoRendaFixa.nome_do_papel,
+            PosicaoRendaFixa.emitente,
             PosicaoRendaFixa.codigo_lastro,
-            PosicaoRendaFixa.quantidade,
             PosicaoRendaFixa.valor_bruto,
         )
         .where(PosicaoRendaFixa.tenant_id == tenant_id)
@@ -99,22 +95,13 @@ async def _rows_renda_fixa(
         .where(PosicaoRendaFixa.data_posicao == data)
     )
     out: list[OrigemLinha] = []
-    for codigo, nome, lastro, qtd, valor_bruto in (await db.execute(stmt)).all():
-        resolution = classify(
-            silver_origin="wh_posicao_renda_fixa",
-            row={
-                "codigo": codigo, "nome_do_papel": nome,
-                "codigo_lastro": lastro, "quantidade": qtd,
-            },
-            rules_cache=rules,
-            overrides=overrides,
-        )
-        if _driver_gestor_for_cosif(resolution.cosif) != driver:
+    for codigo, nome, emitente, codigo_lastro, valor_bruto in (await db.execute(stmt)).all():
+        if _driver_for_nome_papel(nome, codigo_lastro) != driver:
             continue
         out.append(OrigemLinha(
             identificador=str(codigo or ""),
             descricao=str(nome or ""),
-            detalhe=resolution.cosif,
+            detalhe=str(emitente or "") or None,
             valor=Decimal(valor_bruto or 0),
         ))
     return out

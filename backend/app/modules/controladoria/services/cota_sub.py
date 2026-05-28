@@ -34,7 +34,6 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy import case, func, select
@@ -51,11 +50,6 @@ from app.modules.controladoria.schemas.cota_sub import (
     PlCategoria,
     SaldoTesourariaEvidencia,
     VariacaoDiariaResponse,
-)
-from app.modules.controladoria.services.cosif.classifier import (
-    classify,
-    load_overrides,
-    load_rules_cache,
 )
 from app.modules.integracoes.public import dia_util_anterior_qitech
 from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel
@@ -357,29 +351,61 @@ def _driver_gestor_for_cosif(cosif: str | None) -> str | None:
     return best[1]
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Classificacao da Renda Fixa por `nome_do_papel` (campo NATIVO da QiTech)
+# ─────────────────────────────────────────────────────────────────────────────
+# Substitui o mapeamento COSIF opaco (decisao 2026-05-28). O tipo de papel que
+# a QiTech manda decide a linha do balanco — transparente e auditavel, sem
+# codigo COSIF inventado. Universo observado no historico REALINVEST
+# (2021-11 -> 2026-05):
+#   Titulos Publicos (Tesouro): NTN-B, NTN O, LTNO, LFTO (+ familias NTN/LTN/LFT)
+#   Op. Estruturadas (Nota Comercial): NCPX, VCNC, PDDNC (PDD da NC -> reduz,
+#       pois valor_bruto vem negativo)
+#   Fora das 2 linhas: SRP (compromissada/repo, pareada ~0), MEZAN (mezanino,
+#       passivo ja captado via MEC)
+# Tipo desconhecido cai fora (None) — adicionar aqui quando a QiTech trouxer um
+# papel novo (o guard de nao-reconhecidos sinaliza).
+_RF_OP_ESTRUTURADAS: frozenset[str] = frozenset({"NCPX", "VCNC", "PDDNC"})
+
+
+def _driver_for_nome_papel(
+    nome_do_papel: str | None, codigo_lastro: str | None = None,
+) -> str | None:
+    """Mapeia (nome_do_papel, codigo_lastro) da QiTech -> driver da linha.
+
+    O Tesouro distingue-se pelo SUFIXO do lastro (confirmado contra MEC):
+      - lastro `-NTN` -> holding real, entra em Titulos Publicos
+      - lastro `-OVE` -> NAO conta no PL Sub (o MEC exclui; reconcilia com
+        residuo ~0). Provavelmente garantia/over. So o -NTN entra.
+    """
+    n = (nome_do_papel or "").strip().upper()
+    if n.startswith(("NTN", "LTN", "LFT")):
+        if (codigo_lastro or "").strip().upper().endswith("OVE"):
+            return None
+        return "titulos_publicos"
+    if n in _RF_OP_ESTRUTURADAS:
+        return "op_estruturadas"
+    return None
+
+
 async def _sum_renda_fixa_por_driver(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID, data: date,
 ) -> dict[str, Decimal]:
     """Soma wh_posicao_renda_fixa agrupado por driver gestor.
 
-    Aplica classificacao COSIF (cosif_rule + tenant_papel_classificacao) em
-    cada papel, mapeia COSIF -> driver via `COSIF_TO_DRIVER_GESTOR`, e
-    acumula `valor_bruto` por driver. Papeis nao classificados ou em
-    categorias excluidas (compensacao/cota emitida) NAO entram em nenhum
-    driver — ficam invisiveis do somatorio (residuo do metodo).
+    Classifica cada papel por `nome_do_papel` (campo NATIVO da QiTech) via
+    `_driver_for_nome_papel` e acumula `valor_bruto` por driver. Substituiu o
+    mapeamento COSIF opaco em 2026-05-28 — transparente e auditavel. Papeis
+    fora das duas linhas (SRP, MEZAN, tipo desconhecido) NAO entram em nenhum
+    driver.
 
     Returns:
         dict[driver_name, Decimal] — drivers sem papel ficam ausentes.
     """
-    rules_cache = await load_rules_cache(db)
-    overrides = await load_overrides(db, tenant_id=tenant_id, fundo_id=ua_id)
-
     stmt = (
         select(
-            PosicaoRendaFixa.codigo,
             PosicaoRendaFixa.nome_do_papel,
             PosicaoRendaFixa.codigo_lastro,
-            PosicaoRendaFixa.quantidade,
             PosicaoRendaFixa.valor_bruto,
         )
         .where(PosicaoRendaFixa.tenant_id == tenant_id)
@@ -389,20 +415,8 @@ async def _sum_renda_fixa_por_driver(
     rows = (await db.execute(stmt)).all()
 
     totais: dict[str, Decimal] = {}
-    for codigo, nome_do_papel, codigo_lastro, quantidade, valor_bruto in rows:
-        row_dict: dict[str, Any] = {
-            "codigo": codigo,
-            "nome_do_papel": nome_do_papel,
-            "codigo_lastro": codigo_lastro,
-            "quantidade": quantidade,
-        }
-        resolution = classify(
-            silver_origin="wh_posicao_renda_fixa",
-            row=row_dict,
-            rules_cache=rules_cache,
-            overrides=overrides,
-        )
-        driver = _driver_gestor_for_cosif(resolution.cosif)
+    for nome_do_papel, codigo_lastro, valor_bruto in rows:
+        driver = _driver_for_nome_papel(nome_do_papel, codigo_lastro)
         if driver is None:
             continue
         totais[driver] = totais.get(driver, ZERO) + Decimal(valor_bruto or 0)
