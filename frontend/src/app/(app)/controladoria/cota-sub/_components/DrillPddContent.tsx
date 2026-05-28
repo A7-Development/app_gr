@@ -19,7 +19,6 @@ import {
   RiErrorWarningLine,
   RiPieChartLine,
   RiInboxLine,
-  type RemixiconComponentType,
 } from "@remixicon/react"
 
 import { cx } from "@/lib/utils"
@@ -28,19 +27,17 @@ import type { DrillPddPapel, PddFaixaKey } from "@/lib/api-client"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 import { Button } from "@/components/tremor/Button"
-
-const fmtBRL = new Intl.NumberFormat("pt-BR", {
-  style:                 "currency",
-  currency:              "BRL",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})
-
-const fmtBRLSigned = (v: number): string => {
-  if (Math.abs(v) < 0.005) return "R$ 0,00"
-  const sign = v > 0 ? "+" : "−"
-  return `${sign}${fmtBRL.format(Math.abs(v))}`
-}
+import {
+  DrillClosureBadge,
+  DrillSectionTitle,
+  drillRowBorder,
+  drillTableWrap,
+  drillThead,
+  drillTfootRow,
+  fmtBRL,
+  fmtBRLSigned,
+  toneClass,
+} from "./drillKit"
 
 // Cor de dot por faixa (paleta tailwind ad-hoc — Modo Iteracao de Design ativo).
 const FAIXA_DOT: Record<PddFaixaKey, string> = {
@@ -100,11 +97,23 @@ export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContent
   const pddAtivoDelta = d.pdd_granular_ex_wop_d0 - d.pdd_granular_ex_wop_d1
   const wopDelta = d.pdd_granular_wop_d0 - d.pdd_granular_wop_d1
 
+  const pddDisponivel = !d.motivo_indisponivel
+
   return (
     <div className="flex flex-col gap-5">
+      {/* ── Selo de fechamento ── */}
+      <DrillClosureBadge
+        fecha={pddDisponivel}
+        sub={!pddDisponivel ? "estoque granular indisponível — totais não confirmáveis" : undefined}
+      >
+        {pddDisponivel
+          ? `Fecha · PDD ativo (faixas A-H) = ${fmtBRL.format(d.pdd_granular_ex_wop_d0)} (entra no balanço)`
+          : "PDD não confirmável nesta data"}
+      </DrillClosureBadge>
+
       {/* ── PDD granular separado por bucket (PDD ativo vs WOP) ── */}
       <section>
-        <SectionTitle icon={RiPieChartLine} label="Composição da PDD" />
+        <DrillSectionTitle icon={RiPieChartLine} label="Composição da PDD" />
         <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
           Σ <code className="font-mono">valor_pdd</code> de <code className="font-mono">wh_estoque_recebivel</code>,
           separado por bucket. PDD ativo (faixas A-H) é o que entra no
@@ -134,7 +143,7 @@ export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContent
       {/* ── WOP destacado ── */}
       {d.papeis_wop.length > 0 && (
         <section>
-          <SectionTitle
+          <DrillSectionTitle
             icon={RiErrorWarningLine}
             label="Papéis que viraram WOP no dia"
             counter={`${d.papeis_wop.length} papel(eis) · Σ PDD perdido ${fmtBRL.format(d.papeis_wop_total_pdd_d1)}`}
@@ -150,7 +159,7 @@ export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContent
 
       {/* ── Todos os papeis com variacao de PDD ── */}
       <section>
-        <SectionTitle
+        <DrillSectionTitle
           icon={RiBarChartHorizontalLine}
           label="Papéis com variação de PDD"
           counter={
@@ -184,26 +193,6 @@ export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContent
 
 // ─── Sub-componentes ────────────────────────────────────────────────────────
 
-function SectionTitle({
-  icon: Icon, label, counter,
-}: {
-  icon: RemixiconComponentType
-  label: string
-  counter?: string
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-2">
-      <h4 className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-700 dark:text-gray-300">
-        <Icon className="size-3.5 text-gray-400 dark:text-gray-500" aria-hidden />
-        {label}
-      </h4>
-      {counter && (
-        <span className="text-[11px] text-gray-500 dark:text-gray-400 tabular-nums">{counter}</span>
-      )}
-    </div>
-  )
-}
-
 function Card({ label, children, muted }: { label: string; children: React.ReactNode; muted?: boolean }) {
   return (
     <div className={cx(
@@ -233,9 +222,7 @@ function ValueGrid({ d1, d0, delta }: { d1: number; d0: number; delta: number })
         <p className="text-[10px] text-gray-400">Δ</p>
         <p className={cx(
           "font-semibold",
-          delta > 0 ? "text-red-700 dark:text-red-400"
-            : delta < 0 ? "text-emerald-700 dark:text-emerald-400"
-            : "text-gray-400 dark:text-gray-600",
+          toneClass(delta, false),
         )}>{fmtBRLSigned(delta)}</p>
       </div>
     </div>
@@ -243,10 +230,14 @@ function ValueGrid({ d1, d0, delta }: { d1: number; d0: number; delta: number })
 }
 
 function PapeisTable({ papeis, highlightDelta }: { papeis: DrillPddPapel[]; highlightDelta: boolean }) {
+  const totNominal = papeis.reduce((s, p) => s + p.valor_nominal, 0)
+  const totPddD1 = papeis.reduce((s, p) => s + p.valor_pdd_d1, 0)
+  const totPddD0 = papeis.reduce((s, p) => s + p.valor_pdd_d0, 0)
+  const totDelta = papeis.reduce((s, p) => s + p.delta_valor_pdd, 0)
   return (
-    <div className="mt-2 overflow-hidden rounded border border-gray-200 dark:border-gray-800">
+    <div className={cx("mt-2", drillTableWrap)}>
       <table className="w-full text-[12px] tabular-nums">
-        <thead className="bg-gray-50 text-[10px] font-medium uppercase tracking-[0.04em] text-gray-500 dark:bg-gray-900/30 dark:text-gray-400">
+        <thead className={drillThead}>
           <tr>
             <th className="px-3 py-1.5 text-left">Cedente / Sacado</th>
             <th className="px-3 py-1.5 text-left">Título</th>
@@ -259,7 +250,7 @@ function PapeisTable({ papeis, highlightDelta }: { papeis: DrillPddPapel[]; high
         </thead>
         <tbody>
           {papeis.map((p, idx) => (
-            <tr key={`${p.cedente_doc}-${p.seu_numero}-${p.numero_documento}-${idx}`} className="border-t border-gray-100 dark:border-gray-900">
+            <tr key={`${p.cedente_doc}-${p.seu_numero}-${p.numero_documento}-${idx}`} className={drillRowBorder}>
               <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200" title={`${p.cedente_doc} / ${p.sacado_doc}`}>
                 <div className="truncate max-w-[200px] font-medium text-gray-900 dark:text-gray-50">{p.cedente_nome}</div>
                 <div className="truncate max-w-[200px] text-[10px] text-gray-500 dark:text-gray-400">→ {p.sacado_nome}</div>
@@ -286,15 +277,22 @@ function PapeisTable({ papeis, highlightDelta }: { papeis: DrillPddPapel[]; high
               <td className={cx(
                 "px-3 py-1.5 text-right",
                 highlightDelta && "font-semibold",
-                p.delta_valor_pdd > 0 ? "text-red-700 dark:text-red-400"
-                  : p.delta_valor_pdd < 0 ? "text-emerald-700 dark:text-emerald-400"
-                  : "text-gray-400",
+                toneClass(p.delta_valor_pdd, false),
               )}>
                 {fmtBRLSigned(p.delta_valor_pdd)}
               </td>
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr className={drillTfootRow}>
+            <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200" colSpan={3}>Total · {papeis.length} papel(eis)</td>
+            <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(totNominal)}</td>
+            <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(totPddD1)}</td>
+            <td className="px-3 py-1.5 text-right text-gray-900 dark:text-gray-50">{fmtBRL.format(totPddD0)}</td>
+            <td className={cx("px-3 py-1.5 text-right", toneClass(totDelta, false))}>{fmtBRLSigned(totDelta)}</td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   )

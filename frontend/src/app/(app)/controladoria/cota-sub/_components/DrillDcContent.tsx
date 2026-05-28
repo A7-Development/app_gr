@@ -25,7 +25,6 @@ import {
   RiInboxLine,
   RiAlertLine,
   RiArchive2Line,
-  type RemixiconComponentType,
 } from "@remixicon/react"
 
 import { cx } from "@/lib/utils"
@@ -34,19 +33,14 @@ import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 import { Button } from "@/components/tremor/Button"
 import type { DrillDcMutacaoPapel, DrillDcMigracaoWopPapel } from "@/lib/api-client"
-
-const fmtBRL = new Intl.NumberFormat("pt-BR", {
-  style:                 "currency",
-  currency:              "BRL",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})
-
-const fmtBRLSigned = (v: number): string => {
-  if (Math.abs(v) < 0.005) return "R$ 0,00"
-  const sign = v > 0 ? "+" : "−"
-  return `${sign}${fmtBRL.format(Math.abs(v))}`
-}
+import {
+  DrillClosureBadge,
+  DrillSectionTitle,
+  drillTfootRow,
+  fmtBRL,
+  fmtBRLSigned,
+  toneClass,
+} from "./drillKit"
 
 const fmtPct = (v: number, base: number): string => {
   if (Math.abs(base) < 0.005) return "—"
@@ -105,11 +99,31 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
   const totalAquisicoes = d.aquisicoes.length
   const mutacaoVisivel = mutacaoExpanded ? d.mutacao_papeis : d.mutacao_papeis.slice(0, MUTACAO_PREVIEW)
 
+  const dcFecha = Math.abs(dec.residuo) < RESIDUO_OK_BRL
+  const liqGanhoTotal = d.liquidacoes_por_tipo.reduce((s, t) => s + t.ganho_liquido, 0)
+  const liqAquisicaoTotal = d.liquidacoes_por_tipo.reduce((s, t) => s + t.sum_valor_aquisicao, 0)
+  const aquisVencTotal = d.aquisicoes.reduce((s, a) => s + a.valor_vencimento, 0)
+  const mutVpD1Total = d.mutacao_papeis.reduce((s, p) => s + p.vp_d1, 0)
+  const mutVpD0Total = d.mutacao_papeis.reduce((s, p) => s + p.vp_d0, 0)
+  const mutDeltaTotal = d.mutacao_papeis.reduce((s, p) => s + p.delta_vp, 0)
+  const wopVpD1Total = d.migracao_wop_papeis.reduce((s, p) => s + p.vp_d1, 0)
+  const wopPddD1Total = d.migracao_wop_papeis.reduce((s, p) => s + p.valor_pdd_d1, 0)
+
   return (
     <div className="flex flex-col gap-5">
+      {/* ── Selo de fechamento ── */}
+      <DrillClosureBadge
+        fecha={dcFecha}
+        sub={!dcFecha ? "resíduo acima da tolerância — desalinhamento de pipeline" : undefined}
+      >
+        {dcFecha
+          ? `Fecha · decomposição bate o Estoque D0 (${fmtBRL.format(dec.saldo_d0)})`
+          : `Diverge · resíduo ${fmtBRLSigned(dec.residuo)}`}
+      </DrillClosureBadge>
+
       {/* ── 1. Decomposicao do estoque ── */}
       <section>
-        <SectionTitle
+        <DrillSectionTitle
           icon={RiCalculatorLine}
           label="Composição do estoque"
           help="Σ Valor Presente dos recebíveis em estoque (exclui WOP)"
@@ -161,7 +175,7 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
       {/* ── 2. Detalhe Mutacao silenciosa (so se houver) ── */}
       {d.mutacao_papeis.length > 0 && (
         <section>
-          <SectionTitle
+          <DrillSectionTitle
             icon={RiAlertLine}
             label="Papéis com mutação silenciosa"
             counter={`${d.mutacao_papeis.length} papel${d.mutacao_papeis.length === 1 ? "" : "is"}`}
@@ -189,6 +203,15 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
                   <MutacaoRow key={`${p.cedente_doc}-${p.seu_numero}-${p.numero_documento}`} p={p} />
                 ))}
               </tbody>
+              <tfoot>
+                <tr className={drillTfootRow}>
+                  <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200" colSpan={2}>Total · {d.mutacao_papeis.length} papel(eis)</td>
+                  <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(mutVpD1Total)}</td>
+                  <td className="px-3 py-1.5 text-right text-gray-900 dark:text-gray-50">{fmtBRL.format(mutVpD0Total)}</td>
+                  <td className={cx("px-3 py-1.5 text-right", toneClass(mutDeltaTotal))}>{fmtBRLSigned(mutDeltaTotal)}</td>
+                  <td className="px-3 py-1.5" />
+                </tr>
+              </tfoot>
             </table>
             {d.mutacao_papeis.length > MUTACAO_PREVIEW && (
               <div className="border-t border-amber-200 px-3 py-1.5 dark:border-amber-900/40">
@@ -211,7 +234,7 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
       {/* ── 3. Detalhe Migracao WOP (so se houver) ── */}
       {d.migracao_wop_papeis.length > 0 && (
         <section>
-          <SectionTitle
+          <DrillSectionTitle
             icon={RiArchive2Line}
             label="Papéis que migraram para WOP"
             counter={`${d.migracao_wop_papeis.length} papel${d.migracao_wop_papeis.length === 1 ? "" : "is"}`}
@@ -236,6 +259,13 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
                   <MigracaoWopRow key={`${p.cedente_doc}-${p.seu_numero}-${p.numero_documento}`} p={p} />
                 ))}
               </tbody>
+              <tfoot>
+                <tr className={drillTfootRow}>
+                  <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200" colSpan={3}>Total · {d.migracao_wop_papeis.length} papel(eis)</td>
+                  <td className="px-3 py-1.5 text-right text-gray-700 dark:text-gray-200">{fmtBRL.format(wopVpD1Total)}</td>
+                  <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(wopPddD1Total)}</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </section>
@@ -243,7 +273,7 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
 
       {/* ── 4. Liquidações por tipo ── */}
       <section>
-        <SectionTitle
+        <DrillSectionTitle
           icon={RiArrowRightUpLine}
           label="Liquidações por tipo"
           counter={`${d.liquidacoes_qtd} título(s) · ${fmtBRL.format(d.liquidacoes_total)}`}
@@ -277,11 +307,7 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
                     <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(t.sum_valor_aquisicao)}</td>
                     <td className={cx(
                       "px-3 py-1.5 text-right font-medium",
-                      t.ganho_liquido > 0
-                        ? "text-emerald-700 dark:text-emerald-400"
-                        : t.ganho_liquido < 0
-                        ? "text-red-700 dark:text-red-400"
-                        : "text-gray-400 dark:text-gray-600",
+                      toneClass(t.ganho_liquido),
                     )}>{fmtBRLSigned(t.ganho_liquido)}</td>
                     <td className="px-3 py-1.5 text-right text-[10px] text-gray-400 dark:text-gray-600">
                       {fmtPct(t.sum_valor_pago, d.liquidacoes_total)}
@@ -289,6 +315,16 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr className={drillTfootRow}>
+                  <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200">Total</td>
+                  <td className="px-3 py-1.5 text-right text-gray-600 dark:text-gray-400">{d.liquidacoes_qtd}</td>
+                  <td className="px-3 py-1.5 text-right text-gray-900 dark:text-gray-50">{fmtBRL.format(d.liquidacoes_total)}</td>
+                  <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(liqAquisicaoTotal)}</td>
+                  <td className={cx("px-3 py-1.5 text-right", toneClass(liqGanhoTotal))}>{fmtBRLSigned(liqGanhoTotal)}</td>
+                  <td className="px-3 py-1.5" />
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -296,7 +332,7 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
 
       {/* ── 5. Aquisições do dia ── */}
       <section>
-        <SectionTitle
+        <DrillSectionTitle
           icon={RiArrowRightDownLine}
           label="Aquisições do dia"
           counter={`${totalAquisicoes} título(s) · ${fmtBRL.format(d.aquisicoes_total)}`}
@@ -340,6 +376,14 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className={drillTfootRow}>
+                    <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200" colSpan={3}>Total · {totalAquisicoes} título(s)</td>
+                    <td className="px-3 py-1.5 text-right text-gray-900 dark:text-gray-50">{fmtBRL.format(d.aquisicoes_total)}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(aquisVencTotal)}</td>
+                    <td className="px-3 py-1.5" />
+                  </tr>
+                </tfoot>
               </table>
             </div>
             {totalAquisicoes > AQUISICOES_PREVIEW && (
@@ -362,49 +406,6 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
 }
 
 // ─── Sub-componentes ────────────────────────────────────────────────────────
-
-function SectionTitle({
-  icon: Icon, label, counter, help, tone = "neutral",
-}: {
-  icon:    RemixiconComponentType
-  label:   string
-  counter?: string
-  help?:    string
-  tone?:    "neutral" | "alert"
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-2">
-      <h4 className={cx(
-        "flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.04em]",
-        tone === "alert"
-          ? "text-amber-800 dark:text-amber-300"
-          : "text-gray-700 dark:text-gray-300",
-      )}>
-        <Icon
-          className={cx(
-            "size-3.5",
-            tone === "alert"
-              ? "text-amber-600 dark:text-amber-400"
-              : "text-gray-400 dark:text-gray-500",
-          )}
-          aria-hidden
-        />
-        {label}
-        {help && (
-          <span
-            className="cursor-help text-[10px] font-normal normal-case tracking-normal text-gray-400 dark:text-gray-600"
-            title={help}
-          >
-            (?)
-          </span>
-        )}
-      </h4>
-      {counter && (
-        <span className="text-[11px] text-gray-500 dark:text-gray-400 tabular-nums">{counter}</span>
-      )}
-    </div>
-  )
-}
 
 function DecomposicaoRow({
   label, value, counter, sign, isAnchor, isFirst, highlight, muted, highlightAlert,
