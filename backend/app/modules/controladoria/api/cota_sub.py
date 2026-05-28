@@ -30,6 +30,7 @@ from app.modules.controladoria.schemas.cota_sub import (
 from app.modules.controladoria.schemas.cota_sub_drill import (
     DrillCprResponse,
     DrillDcResponse,
+    DrillOrigemResponse,
     DrillPddResponse,
 )
 from app.modules.controladoria.services.balancete_diario import (
@@ -43,6 +44,7 @@ from app.modules.controladoria.services.balanco_patrimonial import (
 from app.modules.controladoria.services.cota_sub import compute_variacao_diaria
 from app.modules.controladoria.services.cota_sub_drill_cpr import compute_drill_cpr
 from app.modules.controladoria.services.cota_sub_drill_dc import compute_drill_dc
+from app.modules.controladoria.services.cota_sub_drill_origem import compute_drill_origem
 from app.modules.controladoria.services.cota_sub_drill_pdd import compute_drill_pdd
 from app.modules.controladoria.services.cota_sub_explainers import (
     compute_explicacao_variacao,
@@ -407,6 +409,40 @@ async def drill_cpr(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/drill/origem", response_model=DrillOrigemResponse)
+async def drill_origem(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0).")],
+    linha: Annotated[
+        str,
+        Query(description="Chave da linha do balanco (titulos_publicos, op_estruturadas, "
+                          "fundos_di, compromissada, outros_ativos, tesouraria, "
+                          "saldo_conta_corrente, senior, mezanino)."),
+    ],
+    _: None = _Guard,
+) -> DrillOrigemResponse:
+    """Drill 'ver origem' das linhas SEM drill rico (RF/Tesouraria/CC/Outros/
+    Fundos/Cotas). Lista as linhas-fonte (snapshot D0) que compoem o valor da
+    linha e prova o fechamento (Σ linhas == valor da linha do balanco).
+
+    DC/PDD/CPR tem drills proprios (/drill/dc|pdd|cpr) — `linha` desses retorna 422.
+    """
+    try:
+        return await compute_drill_origem(
+            db,
+            tenant_id=principal.tenant_id,
+            ua_id=fundo_id,
+            data_d0=data,
+            line_key=linha,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
 
 
 @router.get("/explicacao", response_model=ExplicacaoVariacaoResponse)

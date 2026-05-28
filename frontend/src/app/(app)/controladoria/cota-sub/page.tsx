@@ -109,6 +109,7 @@ import { NaoReconhecidosPanel } from "./_components/NaoReconhecidosPanel"
 import { CategoriaDrillSheet } from "./_components/CategoriaDrillSheet"
 import { DrillCprContent } from "./_components/DrillCprContent"
 import { DrillDcContent } from "./_components/DrillDcContent"
+import { DrillOrigemContent } from "./_components/DrillOrigemContent"
 import { DrillPddContent } from "./_components/DrillPddContent"
 import { useAgenteVariacaoStream } from "@/lib/hooks/controladoria"
 import type {
@@ -142,6 +143,13 @@ function toInspectorCategoria(
     source: l.source,
   }
 }
+
+// Linhas com drill generico "ver origem" (listagem de linhas-fonte +
+// prova de fechamento). DC/PDD/CPR tem drills ricos proprios e ficam fora.
+const ORIGEM_KEYS: ReadonlySet<CategoriaPatrimonialKey> = new Set<CategoriaPatrimonialKey>([
+  "titulos_publicos", "op_estruturadas", "fundos_di", "compromissada",
+  "outros_ativos", "tesouraria", "saldo_conta_corrente", "senior", "mezanino",
+])
 // EventosDiaTab desativado em F1 do redesign (2026-05-22) — substituido pelo
 // BalancoPatrimonialHero na aba "eventos". F4 decide o destino final (apos
 // drills da F2/F3 estarem completos). Import + componente preservados no
@@ -1173,6 +1181,13 @@ export default function CotaSubPage() {
                               side="pagar"
                             />
                           )}
+                          {drilledCategoria && ORIGEM_KEYS.has(drilledCategoria) && fundoId && (
+                            <DrillOrigemContent
+                              fundoId={fundoId}
+                              data={balancoEstruturalQuery.data?.data ?? dayIso}
+                              linha={drilledCategoria}
+                            />
+                          )}
                         </BalancoInspector>
                       </div>
                       {/* Detector de nao-reconhecidos (2026-05-27, pos-VCNC):
@@ -1265,6 +1280,13 @@ export default function CotaSubPage() {
             data={balancoEstruturalQuery.data?.data ?? dayIso}
             dataAnterior={balancoEstruturalQuery.data?.data_anterior}
             side="pagar"
+          />
+        )}
+        {drilledCategoria && ORIGEM_KEYS.has(drilledCategoria) && fundoId && (
+          <DrillOrigemContent
+            fundoId={fundoId}
+            data={balancoEstruturalQuery.data?.data ?? dayIso}
+            linha={drilledCategoria}
           />
         )}
       </CategoriaDrillSheet>
