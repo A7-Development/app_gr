@@ -106,6 +106,20 @@ async def main() -> None:
             _check(desp.sum_delta > 0 and desp.variacao_magnitude < 0,
                    "natureza despesa: sum_delta CRU (+) tem sinal OPOSTO a variacao_magnitude (-)")
 
+        # 3b. Transicao por rubrica (fix 28/05): Consultoria/Cobranca = baixada_em_d0.
+        linhas_cc = [
+            ln for n in pagar.naturezas for ln in n.top_linhas
+            if "consultor" in ln.descricao.lower() or "cobran" in ln.descricao.lower()
+        ]
+        for ln in linhas_cc:
+            print(f"  rubrica: {ln.descricao[:40]:40} transicao={ln.transicao} "
+                  f"impacto={_fmt(ln.impacto_pl_sub)}")
+        _check(len(linhas_cc) >= 2, "Consultoria + Cobranca presentes no lado pagar")
+        _check(all(ln.transicao == "baixada_em_d0" for ln in linhas_cc),
+               "Consultoria/Cobranca: transicao == baixada_em_d0 (pagas, nao constituidas)")
+        _check(all(ln.impacto_pl_sub > 0 for ln in linhas_cc),
+               "Consultoria/Cobranca: impacto_pl_sub > 0 (reduziu passivo)")
+
         # 4. sugestao narra certo.
         sug = _sugestao_drill_cpr(receber, pagar)
         print(f"  sugestao: {sug['resumo_factual']}")

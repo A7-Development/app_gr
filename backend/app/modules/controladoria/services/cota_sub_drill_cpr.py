@@ -122,6 +122,29 @@ def _direcao_magnitude(var: Decimal) -> Literal["subiu", "caiu", "estavel"]:
     return "estavel"
 
 
+_EPS = Decimal("0.005")
+
+
+def _transicao_linha(
+    v_d1: Decimal, v_d0: Decimal,
+) -> Literal["nova_em_d0", "baixada_em_d0", "cresceu", "encolheu", "estavel"]:
+    """Transicao da rubrica entre D-1 e D0 por MAGNITUDE (sinal-agnostica).
+
+    baixada_em_d0 = existia em D-1 e sumiu/zerou em D0 (paga/baixada — o caso
+    Consultoria/Cobranca 28/05 que o agente invertia). nova_em_d0 = surgiu no dia.
+    """
+    m1, m0 = abs(v_d1), abs(v_d0)
+    if m1 < _EPS and m0 >= _EPS:
+        return "nova_em_d0"
+    if m1 >= _EPS and m0 < _EPS:
+        return "baixada_em_d0"
+    if m0 > m1 + _EPS:
+        return "cresceu"
+    if m0 < m1 - _EPS:
+        return "encolheu"
+    return "estavel"
+
+
 def _classificar(descricao: str, historico_traduzido: str) -> CprNaturezaKey:
     """Aplica regex em ordem de especificidade. Primeiro match vence."""
     texto = f"{descricao} {historico_traduzido}".strip()
@@ -310,6 +333,14 @@ async def compute_drill_cpr(
             linhas = [ln for ln in linhas if _repr_sign(ln) > ZERO]
         else:
             linhas = [ln for ln in linhas if _repr_sign(ln) < ZERO]
+
+        # Enriquece cada rubrica com transicao + impacto (sinal corrigido) pra o
+        # agente nao inverter baixada vs constituida (fix 28/05).
+        for ln in linhas:
+            ln.transicao = _transicao_linha(ln.valor_d1, ln.valor_d0)
+            var_mag, impacto = _magnitude_impacto(side, ln.valor_d1, ln.valor_d0)
+            ln.variacao_magnitude = var_mag
+            ln.impacto_pl_sub = impacto
 
     # ── Totais
     total_d1 = sum((ln.valor_d1 for ln in linhas), ZERO)
