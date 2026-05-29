@@ -32,16 +32,8 @@ import {
 import { useSourceCoverage } from "./integracoes"
 
 const KEYS = {
-  variacaoDiaria: (fundoId: string, data: string, dataAnterior?: string) =>
-    ["controladoria", "cota-sub", "variacao-diaria", fundoId, data, dataAnterior ?? null] as const,
-  balanco: (fundoId: string, data: string, dataAnterior?: string) =>
-    ["controladoria", "cota-sub", "balanco", fundoId, data, dataAnterior ?? null] as const,
   balancoEstrutural: (fundoId: string, data: string, dataAnterior?: string) =>
     ["controladoria", "cota-sub", "balanco-estrutural", fundoId, data, dataAnterior ?? null] as const,
-  balanceteDiario: (fundoId: string, data: string, dataAnterior?: string) =>
-    ["controladoria", "cota-sub", "balancete-diario", fundoId, data, dataAnterior ?? null] as const,
-  cosifRows: (fundoId: string, data: string, cosifCodigo: string) =>
-    ["controladoria", "cota-sub", "cosif-rows", fundoId, data, cosifCodigo] as const,
   variacoesDia: (fundoId: string, data: string, dataAnterior?: string) =>
     ["controladoria", "cota-sub", "variacoes-dia", fundoId, data, dataAnterior ?? null] as const,
   datasDisponiveis: (fundoId: string) =>
@@ -64,9 +56,6 @@ const KEYS = {
       periodoFim ?? null,
       (classes ?? []).join(",") || null,
     ] as const,
-  explicacaoVariacao: (fundoId: string, data: string, dataAnterior?: string, thresholdBrl?: number, topN?: number) =>
-    ["controladoria", "cota-sub", "explicacao", fundoId, data, dataAnterior ?? null, thresholdBrl ?? null, topN ?? null] as const,
-
   // F2 drills (2026-05-23)
   drillDc: (fundoId: string, data: string, dataAnterior?: string) =>
     ["controladoria", "cota-sub", "drill", "dc", fundoId, data, dataAnterior ?? null] as const,
@@ -134,42 +123,6 @@ export function useEvolucaoPatrimonial(
   })
 }
 
-export function useVariacaoDiaria(
-  fundoId: string | null | undefined,
-  data: string | null | undefined,
-  dataAnterior?: string | null,
-) {
-  const enabled = !!fundoId && !!data
-  return useQuery({
-    queryKey: KEYS.variacaoDiaria(fundoId ?? "", data ?? "", dataAnterior ?? undefined),
-    queryFn: () => controladoria.cotaSubVariacaoDiaria(
-      fundoId!,
-      data!,
-      dataAnterior ?? undefined,
-    ),
-    enabled,
-    staleTime: 5 * 60 * 1000,  // 5 min — dia anterior nao muda
-  })
-}
-
-export function useBalanco(
-  fundoId: string | null | undefined,
-  data: string | null | undefined,
-  dataAnterior?: string | null,
-) {
-  const enabled = !!fundoId && !!data
-  return useQuery({
-    queryKey: KEYS.balanco(fundoId ?? "", data ?? "", dataAnterior ?? undefined),
-    queryFn: () => controladoria.cotaSubBalanco(
-      fundoId!,
-      data!,
-      dataAnterior ?? undefined,
-    ),
-    enabled,
-    staleTime: 5 * 60 * 1000,
-  })
-}
-
 export function useBalancoEstrutural(
   fundoId: string | null | undefined,
   data: string | null | undefined,
@@ -196,6 +149,7 @@ export function useVariacoesDia(
   data: string | null | undefined,
   dataAnterior?: string | null,
 ) {
+  // Consumido pela pagina Pagamento Diario (conciliacao pagamento->provisao).
   const enabled = !!fundoId && !!data
   return useQuery({
     queryKey: KEYS.variacoesDia(fundoId ?? "", data ?? "", dataAnterior ?? undefined),
@@ -204,54 +158,6 @@ export function useVariacoesDia(
       data!,
       dataAnterior ?? undefined,
     ),
-    enabled,
-    staleTime: 5 * 60 * 1000,
-  })
-}
-
-export function useBalanceteDiario(
-  fundoId: string | null | undefined,
-  data: string | null | undefined,
-  dataAnterior?: string | null,
-) {
-  const enabled = !!fundoId && !!data
-  return useQuery({
-    queryKey: KEYS.balanceteDiario(fundoId ?? "", data ?? "", dataAnterior ?? undefined),
-    queryFn: () => controladoria.cotaSubBalanceteDiario(
-      fundoId!,
-      data!,
-      dataAnterior ?? undefined,
-    ),
-    enabled,
-    staleTime: 5 * 60 * 1000,
-  })
-}
-
-export function useExplicacaoVariacao(
-  fundoId: string | null | undefined,
-  data: string | null | undefined,
-  opts?: {
-    dataAnterior?: string | null
-    thresholdBrl?: number
-    topN?:         number
-  },
-) {
-  // Explainers heuristicos da variacao do PL Sub (D-1 -> D0). Por ora so PDD.
-  // Lazy: so dispara quando o usuario tem fundoId + data validos.
-  const enabled = !!fundoId && !!data
-  return useQuery({
-    queryKey: KEYS.explicacaoVariacao(
-      fundoId ?? "",
-      data ?? "",
-      opts?.dataAnterior ?? undefined,
-      opts?.thresholdBrl,
-      opts?.topN,
-    ),
-    queryFn: () => controladoria.cotaSubExplicacao(fundoId!, data!, {
-      dataAnterior: opts?.dataAnterior ?? undefined,
-      thresholdBrl: opts?.thresholdBrl,
-      topN:         opts?.topN,
-    }),
     enabled,
     staleTime: 5 * 60 * 1000,
   })
@@ -330,26 +236,6 @@ export function useDrillOrigem(
     queryKey: KEYS.drillOrigem(fundoId ?? "", data ?? "", linha ?? ""),
     queryFn: () => controladoria.cotaSubDrillOrigem(fundoId!, data!, linha!),
     enabled: ready,
-    staleTime: 5 * 60 * 1000,
-  })
-}
-
-export function useCosifRows(
-  fundoId: string | null | undefined,
-  data: string | null | undefined,
-  cosifCodigo: string | null | undefined,
-) {
-  // Drill-down do CosifDrillSheet — so dispara quando o user clica numa
-  // conta com codigo. Bucket pendente (codigo=null) nao tem rows endpoint.
-  const enabled = !!fundoId && !!data && !!cosifCodigo
-  return useQuery({
-    queryKey: KEYS.cosifRows(fundoId ?? "", data ?? "", cosifCodigo ?? ""),
-    queryFn: () => controladoria.cotaSubBalanceteCosifRows(
-      fundoId!,
-      data!,
-      cosifCodigo!,
-    ),
-    enabled,
     staleTime: 5 * 60 * 1000,
   })
 }

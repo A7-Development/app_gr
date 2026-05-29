@@ -5,8 +5,8 @@ servico nenhum). Para um fundo+data:
 
   1. Roda `compute_balanco_estrutural` -> valor OFICIAL de cada linha (top-down).
   2. Reproduz INDEPENDENTEMENTE o filtro de cada linha (bottom-up), reusando os
-     MESMOS predicados/classificacao dos helpers (`_is_*`, `classify`,
-     `_driver_gestor_for_cosif`) -> soma + contagem de linhas-fonte.
+     MESMOS predicados/classificacao dos helpers (`_is_*`,
+     `_driver_for_nome_papel`) -> soma + contagem de linhas-fonte.
   3. Compara: bottom-up == top-down? Imprime selo FECHA / DIVERGE por linha.
   4. Imprime a reconciliacao com a fonte MEC (residuo) + nao-reconhecidos.
 
@@ -47,18 +47,12 @@ from app.modules.cadastros.public import UnidadeAdministrativa
 from app.modules.controladoria.services.balanco_patrimonial import (
     compute_balanco_estrutural,
 )
-from app.modules.controladoria.services.cosif.classifier import (
-    classify,
-    load_overrides,
-    load_rules_cache,
-)
 from app.modules.controladoria.services.cota_sub import (
     ZERO,
-    _driver_gestor_for_cosif,
+    _driver_for_nome_papel,
     _is_fundo_externo,
     _is_mezanino,
     _is_senior,
-    _is_sub_jr,
     _is_titulo_publico,
 )
 from app.modules.integracoes.public import dia_util_anterior_qitech
@@ -125,15 +119,13 @@ async def _origem_renda_fixa(
     db: AsyncSession, *, tenant_id: UUID, ua_id: UUID, data: date, driver: str,
 ) -> Origem:
     """Titulos Publicos / Op. Estruturadas — wh_posicao_renda_fixa classificado
-    via COSIF. Reusa o MESMO classify()/_driver_gestor_for_cosif do helper."""
-    rules_cache = await load_rules_cache(db)
-    overrides = await load_overrides(db, tenant_id=tenant_id, fundo_id=ua_id)
+    via `_driver_for_nome_papel` (nome_do_papel + lastro), o MESMO classificador
+    do balanco (substituiu o COSIF em 2026-05-28)."""
     stmt = (
         select(
             PosicaoRendaFixa.codigo,
             PosicaoRendaFixa.nome_do_papel,
             PosicaoRendaFixa.codigo_lastro,
-            PosicaoRendaFixa.quantidade,
             PosicaoRendaFixa.valor_bruto,
         )
         .where(PosicaoRendaFixa.tenant_id == tenant_id)
@@ -142,26 +134,17 @@ async def _origem_renda_fixa(
     )
     rows: list[dict[str, Any]] = []
     soma = ZERO
-    for codigo, nome, lastro, qtd, valor_bruto in (await db.execute(stmt)).all():
-        resolution = classify(
-            silver_origin="wh_posicao_renda_fixa",
-            row={
-                "codigo": codigo, "nome_do_papel": nome,
-                "codigo_lastro": lastro, "quantidade": qtd,
-            },
-            rules_cache=rules_cache,
-            overrides=overrides,
-        )
-        if _driver_gestor_for_cosif(resolution.cosif) != driver:
+    for codigo, nome, lastro, valor_bruto in (await db.execute(stmt)).all():
+        if _driver_for_nome_papel(nome, lastro) != driver:
             continue
         v = Decimal(valor_bruto or 0)
         soma += v
         rows.append({
             "codigo": codigo, "nome_do_papel": nome,
-            "cosif": resolution.cosif, "valor": v,
+            "lastro": lastro, "valor": v,
         })
     rows.sort(key=lambda r: r["valor"], reverse=True)
-    return Origem(rows, soma, ["codigo", "nome_do_papel", "cosif", "valor"])
+    return Origem(rows, soma, ["codigo", "nome_do_papel", "lastro", "valor"])
 
 
 async def _origem_fundos_di(
@@ -509,189 +492,9 @@ async def _compare(db: AsyncSession, ua: UnidadeAdministrativa, datas: list[date
     print()
 
 
-def _print_cov(
-    tabela: str, destino: str, total: Decimal, claimed: Decimal,
-    n_total: int, unclaimed: list[dict[str, Any]], cols: list[str],
-    *, nota: str = "", list_rows: bool = True,
-) -> None:
-    nao = total - claimed
-    leak = "VAZA" if abs(nao) >= Decimal("1") else "ok"
-    print(f"\n  {tabela}  -> {destino}")
-    print(f"    total ........ R$ {_fmt(total)}  ({n_total} linhas)")
-    print(f"    reivindicado . R$ {_fmt(claimed)}")
-    print(f"    NAO-reivind. . R$ {_fmt(nao)}  ({len(unclaimed)} linhas)  [{leak}]")
-    if nota:
-        print(f"    nota: {nota}")
-    if list_rows and unclaimed:
-        for r in unclaimed[:10]:
-            cells = "  ".join(
-                (f"{float(r[c]):>14,.2f}" if c == "valor" else f"{str(r.get(c) or '')[:26]}")
-                for c in cols
-            )
-            print(f"      - {cells}")
-
-
-async def _coverage(db: AsyncSession, ua: UnidadeAdministrativa, data: date) -> None:
-    """Prova de fechamento por tabela-fonte: Σ(tabela) = reivindicado + NAO.
-
-    As linhas NAO-reivindicadas sao o "dado desconsiderado" — passam por NENHUM
-    filtro de linha do balanco. Algumas exclusoes sao ESPERADAS (WOP, PDD que
-    vai pro granular); outras sao VAZAMENTO real (COSIF nao classificado, classe
-    MEC desconhecida)."""
-    tid, ua_id, cnpj, ua_nome = ua.tenant_id, ua.id, ua.cnpj or "", ua.nome
-    print(f"\n{'='*74}")
-    print(f" COBERTURA POR TABELA-FONTE — {ua.nome} — {data.isoformat()}")
-    print(f"{'='*74}")
-
-    # 1. Renda Fixa -> Titulos Publicos + Op. Estruturadas (via COSIF)
-    rules = await load_rules_cache(db)
-    ov = await load_overrides(db, tenant_id=tid, fundo_id=ua_id)
-    rf = (await db.execute(
-        select(PosicaoRendaFixa.codigo, PosicaoRendaFixa.nome_do_papel,
-               PosicaoRendaFixa.codigo_lastro, PosicaoRendaFixa.quantidade,
-               PosicaoRendaFixa.valor_bruto)
-        .where(PosicaoRendaFixa.tenant_id == tid)
-        .where(PosicaoRendaFixa.unidade_administrativa_id == ua_id)
-        .where(PosicaoRendaFixa.data_posicao == data)
-    )).all()
-    total = claimed = ZERO
-    unclaimed: list[dict[str, Any]] = []
-    for cod, nome, lastro, qtd, vb in rf:
-        res = classify(silver_origin="wh_posicao_renda_fixa",
-                       row={"codigo": cod, "nome_do_papel": nome,
-                            "codigo_lastro": lastro, "quantidade": qtd},
-                       rules_cache=rules, overrides=ov)
-        drv = _driver_gestor_for_cosif(res.cosif)
-        v = Decimal(vb or 0)
-        total += v
-        if drv in ("titulos_publicos", "op_estruturadas"):
-            claimed += v
-        else:
-            unclaimed.append({"codigo": cod, "nome_do_papel": nome,
-                              "cosif": res.cosif, "driver": str(drv), "valor": v})
-    unclaimed.sort(key=lambda r: abs(r["valor"]), reverse=True)
-    _print_cov("wh_posicao_renda_fixa", "Titulos Publicos + Op. Estruturadas",
-               total, claimed, len(rf), unclaimed,
-               ["codigo", "nome_do_papel", "cosif", "driver", "valor"],
-               nota="NAO-reivindicado aqui = COSIF que nao mapeia pra TPF/Op.Estr "
-                    "(debenture, CRI, cota emitida, nao classificado) = VAZAMENTO real")
-
-    # 2. Cota Fundo -> Fundos DI (externos). Internos deveriam estar na DC.
-    cf = (await db.execute(
-        select(PosicaoCotaFundo.ativo_codigo, PosicaoCotaFundo.ativo_nome,
-               PosicaoCotaFundo.valor_liquido)
-        .where(PosicaoCotaFundo.tenant_id == tid)
-        .where(PosicaoCotaFundo.unidade_administrativa_id == ua_id)
-        .where(PosicaoCotaFundo.data_posicao == data)
-    )).all()
-    total = claimed = ZERO
-    unclaimed = []
-    for cod, nome, vl in cf:
-        v = Decimal(vl or 0)
-        total += v
-        if _is_fundo_externo(nome or "", ua_nome):
-            claimed += v
-        else:
-            unclaimed.append({"ativo_codigo": cod, "ativo_nome": nome, "valor": v})
-    _print_cov("wh_posicao_cota_fundo", "Fundos DI (externos)",
-               total, claimed, len(cf), unclaimed,
-               ["ativo_codigo", "ativo_nome", "valor"],
-               nota="NAO-reivindicado = fundos INTERNOS (carteira DC vista como cota) "
-                    "— ESPERADO, contado na DC granular (nao vaza se DC os captura)")
-
-    # 3. Outros Ativos -> linha Outros Ativos (exclui PDD e TPF)
-    oa = (await db.execute(
-        select(PosicaoOutrosAtivos.codigo, PosicaoOutrosAtivos.descricao_tipo_de_ativo,
-               PosicaoOutrosAtivos.valor_total)
-        .where(PosicaoOutrosAtivos.tenant_id == tid)
-        .where(PosicaoOutrosAtivos.unidade_administrativa_id == ua_id)
-        .where(PosicaoOutrosAtivos.data_posicao == data)
-    )).all()
-    total = claimed = ZERO
-    unclaimed = []
-    for cod, tipo, vt in oa:
-        v = Decimal(vt or 0)
-        total += v
-        if cod != "PDD" and not _is_titulo_publico(tipo or ""):
-            claimed += v
-        else:
-            motivo = "PDD->granular" if cod == "PDD" else "TPF->renda_fixa"
-            unclaimed.append({"codigo": cod, "tipo": f"{tipo} ({motivo})", "valor": v})
-    _print_cov("wh_posicao_outros_ativos", "Outros Ativos",
-               total, claimed, len(oa), unclaimed,
-               ["codigo", "tipo", "valor"],
-               nota="NAO-reivindicado = PDD (vai pro granular) ou TPF (vem da renda_fixa) "
-                    "— ESPERADO se a contagem dupla nao acontecer")
-
-    # 4. Estoque -> DC + PDD (exclui WOP). WOP e exclusao ESPERADA.
-    est = (await db.execute(
-        select(func.coalesce(func.sum(EstoqueRecebivel.valor_presente), ZERO),
-               func.count())
-        .where(EstoqueRecebivel.tenant_id == tid)
-        .where(EstoqueRecebivel.fundo_doc == cnpj)
-        .where(EstoqueRecebivel.data_referencia == data)
-    )).one()
-    wop = (await db.execute(
-        select(func.coalesce(func.sum(EstoqueRecebivel.valor_presente), ZERO),
-               func.count())
-        .where(EstoqueRecebivel.tenant_id == tid)
-        .where(EstoqueRecebivel.fundo_doc == cnpj)
-        .where(EstoqueRecebivel.data_referencia == data)
-        .where(EstoqueRecebivel.faixa_pdd == "WOP")
-    )).one()
-    _print_cov("wh_estoque_recebivel", "Direitos Creditorios (valor_presente)",
-               Decimal(est[0]), Decimal(est[0]) - Decimal(wop[0]), int(est[1]),
-               [{"x": "WOP", "valor": Decimal(wop[0])}] if wop[0] else [],
-               ["x", "valor"], list_rows=bool(wop[0]),
-               nota=f"NAO-reivindicado = WOP ({int(wop[1])} linhas) — ESPERADO "
-                    "(write-off 100% provisionado, efeito liquido 0)")
-
-    # 5. CPR -> Contas a Receber (>0) + a Pagar (<0). So valor==0 fica de fora.
-    cpr_tot = (await db.execute(
-        select(func.coalesce(func.sum(CprMovimento.valor), ZERO), func.count())
-        .where(CprMovimento.tenant_id == tid)
-        .where(CprMovimento.unidade_administrativa_id == ua_id)
-        .where(CprMovimento.data_posicao == data)
-    )).one()
-    cpr_zero = (await db.execute(
-        select(func.count())
-        .where(CprMovimento.tenant_id == tid)
-        .where(CprMovimento.unidade_administrativa_id == ua_id)
-        .where(CprMovimento.data_posicao == data)
-        .where(CprMovimento.valor == 0)
-    )).scalar()
-    _print_cov("wh_cpr_movimento", "Contas a Receber + a Pagar (net)",
-               Decimal(cpr_tot[0]), Decimal(cpr_tot[0]), int(cpr_tot[1]), [],
-               ["x"], nota=f"cobertura total (>0 e <0); {cpr_zero} linhas valor==0")
-
-    # 6. MEC -> Senior + Mezanino (passivo) + Sub (fonte). Classe nao reconhecida = VAZA.
-    mec = (await db.execute(
-        select(MecEvolucaoCotas.carteira_cliente_nome, MecEvolucaoCotas.carteira_cliente_id,
-               MecEvolucaoCotas.patrimonio)
-        .where(MecEvolucaoCotas.tenant_id == tid)
-        .where(MecEvolucaoCotas.unidade_administrativa_id == ua_id)
-        .where(MecEvolucaoCotas.data_posicao == data)
-    )).all()
-    total = classified = ZERO
-    unclaimed = []
-    for nome, cid, pat in mec:
-        v = Decimal(pat or 0)
-        total += v
-        if _is_sub_jr(nome or "", ua_nome) or _is_mezanino(nome or "") or _is_senior(nome or ""):
-            classified += v
-        else:
-            unclaimed.append({"cliente_id": cid, "carteira": nome, "valor": v})
-    _print_cov("wh_mec_evolucao_cotas", "Sub (fonte) + Senior + Mezanino",
-               total, classified, len(mec), unclaimed,
-               ["cliente_id", "carteira", "valor"],
-               nota="NAO-classificado = clienteNome que nao casa Sub/Mez/Sen = VAZAMENTO "
-                    "(classe invisivel ao balanco E a fonte MEC)")
-    print()
-
-
 async def run(
     fundo: str, data_arg: str | None, drill: str | None, top: int,
-    scan: int | None, scan_tol: Decimal, compare: str | None, coverage: bool,
+    scan: int | None, scan_tol: Decimal, compare: str | None,
 ) -> None:
     async with AsyncSessionLocal() as db:
         ua = await _resolve_ua(db, fundo)
@@ -701,10 +504,6 @@ async def run(
             return
         if scan:
             await _scan(db, ua, scan, scan_tol)
-            return
-        if coverage:
-            data_cov = await _resolve_data(db, tenant_id=ua.tenant_id, cnpj=cnpj, data_arg=data_arg)
-            await _coverage(db, ua, data_cov)
             return
         data_d0 = await _resolve_data(db, tenant_id=ua.tenant_id, cnpj=cnpj, data_arg=data_arg)
         d1 = await dia_util_anterior_qitech(
@@ -815,8 +614,6 @@ def main() -> None:
                    help="tolerancia BRL do scan (default 1.0 = _TOL_RESIDUO_DIA)")
     p.add_argument("--compare", default=None, metavar="D1,D2,...",
                    help="compara as 13 linhas (valor+contagem) entre datas")
-    p.add_argument("--coverage", action="store_true",
-                   help="prova de fechamento por tabela-fonte (lista dado desconsiderado)")
     args = p.parse_args()
     with contextlib.suppress(AttributeError, ValueError):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -824,7 +621,7 @@ def main() -> None:
     async def _main() -> None:
         try:
             await run(args.fundo, args.data, args.drill, args.top,
-                      args.scan, Decimal(str(args.tol)), args.compare, args.coverage)
+                      args.scan, Decimal(str(args.tol)), args.compare)
         finally:
             await engine.dispose()
 
