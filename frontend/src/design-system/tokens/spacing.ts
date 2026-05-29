@@ -21,6 +21,7 @@ export const drawer = {
 } as const
 
 export const rowHeight = {
+  ultra:       28,
   compact:     32,
   default:     40,
   comfortable: 48,
@@ -30,9 +31,13 @@ export type DensityMode = keyof typeof rowHeight
 
 /**
  * Returns Tailwind height class for table row density.
+ * `ultra` (h-7/28px) é um ponto abaixo de `compact` — densifica a linha SEM
+ * reduzir a fonte (cell continua 12px via tableTokens). Útil em tabelas que
+ * precisam caber em colunas estreitas (ex.: balanço em 40% da largura).
  */
 export function rowHeightClass(density: DensityMode): string {
   return {
+    ultra:       "h-7",
     compact:     "h-8",
     default:     "h-10",
     comfortable: "h-12",
