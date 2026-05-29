@@ -36,7 +36,10 @@ import type { DrillDcMutacaoPapel, DrillDcMigracaoWopPapel } from "@/lib/api-cli
 import {
   DrillClosureBadge,
   DrillSectionTitle,
+  drillRowBorder,
+  drillTableWrap,
   drillTfootRow,
+  drillThead,
   fmtBRL,
   fmtBRLSigned,
   toneClass,
@@ -132,43 +135,56 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
           ΔDC explicado linha-a-linha pelo granular. Identidade contábil fecha
           por construção — resíduo &gt; R$ 0,50 sinaliza desalinhamento de pipeline.
         </p>
-        <div className="mt-3 overflow-hidden rounded border border-gray-200 dark:border-gray-800">
-          <DecomposicaoRow label="Estoque (D-1)" value={dec.saldo_d1} isAnchor isFirst />
-          <DecomposicaoRow
-            label="+ Aquisições"
-            counter={`${dec.aquisicoes_n} título${dec.aquisicoes_n === 1 ? "" : "s"} novo${dec.aquisicoes_n === 1 ? "" : "s"}`}
-            value={dec.aquisicoes_total}
-            sign="+"
-          />
-          <DecomposicaoRow
-            label="− Liquidações"
-            counter={`${dec.liquidacoes_n} título${dec.liquidacoes_n === 1 ? "" : "s"} baixado${dec.liquidacoes_n === 1 ? "" : "s"}`}
-            value={-dec.liquidacoes_total}
-            sign="−"
-          />
-          <DecomposicaoRow
-            label="− Migração WOP"
-            counter={`${dec.migracao_wop_n} título${dec.migracao_wop_n === 1 ? "" : "s"} ${dec.migracao_wop_n === 1 ? "migrou" : "migraram"}`}
-            value={-dec.migracao_wop_total}
-            sign="−"
-            muted={dec.migracao_wop_n === 0}
-          />
-          <DecomposicaoRow
-            label="+ Apropriação de juros"
-            counter={`${dec.apropriacao_n} papéis na carteira`}
-            value={dec.apropriacao_total}
-            sign="+"
-          />
-          <DecomposicaoRow
-            label="+ Mutação silenciosa"
-            counter={`${dec.mutacao_n} papel${dec.mutacao_n === 1 ? "" : "is"} com mudança de parâmetro`}
-            value={dec.mutacao_total}
-            sign="+"
-            muted={dec.mutacao_n === 0}
-            highlightAlert={dec.mutacao_n > 0}
-          />
-          <DecomposicaoRow label="= Estoque (D0)" value={dec.saldo_d0} isAnchor highlight />
-          <ResiduoRow value={dec.residuo} />
+        <div className={cx("mt-3", drillTableWrap)}>
+          <table className="w-full text-[12px] tabular-nums">
+            <thead className={drillThead}>
+              <tr>
+                <th className="px-3 py-1.5 text-left">Componente</th>
+                <th className="px-3 py-1.5 text-left">Detalhe</th>
+                <th className="px-3 py-1.5 text-right">Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              <DecomposicaoRow label="Estoque (D-1)" value={dec.saldo_d1} isAnchor />
+              <DecomposicaoRow
+                label="+ Aquisições"
+                counter={`${dec.aquisicoes_n} título${dec.aquisicoes_n === 1 ? "" : "s"} novo${dec.aquisicoes_n === 1 ? "" : "s"}`}
+                value={dec.aquisicoes_total}
+                sign="+"
+              />
+              <DecomposicaoRow
+                label="− Liquidações"
+                counter={`${dec.liquidacoes_n} título${dec.liquidacoes_n === 1 ? "" : "s"} baixado${dec.liquidacoes_n === 1 ? "" : "s"}`}
+                value={-dec.liquidacoes_total}
+                sign="−"
+              />
+              <DecomposicaoRow
+                label="− Migração WOP"
+                counter={`${dec.migracao_wop_n} título${dec.migracao_wop_n === 1 ? "" : "s"} ${dec.migracao_wop_n === 1 ? "migrou" : "migraram"}`}
+                value={-dec.migracao_wop_total}
+                sign="−"
+                muted={dec.migracao_wop_n === 0}
+              />
+              <DecomposicaoRow
+                label="+ Apropriação de juros"
+                counter={`${dec.apropriacao_n} papéis na carteira`}
+                value={dec.apropriacao_total}
+                sign="+"
+              />
+              <DecomposicaoRow
+                label="+ Mutação silenciosa"
+                counter={`${dec.mutacao_n} papel${dec.mutacao_n === 1 ? "" : "is"} com mudança de parâmetro`}
+                value={dec.mutacao_total}
+                sign="+"
+                muted={dec.mutacao_n === 0}
+                highlightAlert={dec.mutacao_n > 0}
+              />
+            </tbody>
+            <tfoot>
+              <DecomposicaoRow label="= Estoque (D0)" value={dec.saldo_d0} isAnchor highlight isTotal />
+              <ResiduoRow value={dec.residuo} />
+            </tfoot>
+          </table>
         </div>
       </section>
 
@@ -416,41 +432,40 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
 // ─── Sub-componentes ────────────────────────────────────────────────────────
 
 function DecomposicaoRow({
-  label, value, counter, sign, isAnchor, isFirst, highlight, muted, highlightAlert,
+  label, value, counter, sign, isAnchor, highlight, muted, highlightAlert, isTotal,
 }: {
   label:           string
   value:           number
   counter?:        string
   sign?:           "+" | "−"
   isAnchor?:       boolean  // saldo D-1 ou D0 (sem +/-)
-  isFirst?:        boolean
   highlight?:      boolean  // saldo D0
   muted?:          boolean  // bucket vazio
   highlightAlert?: boolean  // bucket Mutacao com valor != 0
+  isTotal?:        boolean  // linha de fechamento no tfoot (= Estoque D0)
 }) {
   const isZero = Math.abs(value) < 0.005
   const isPositive = value > 0
   const isNegative = value < 0
 
   return (
-    <div className={cx(
-      "grid grid-cols-[1fr_auto_140px] items-center gap-2 px-3 py-1.5 text-[12px] tabular-nums",
-      !isFirst && "border-t border-gray-100 dark:border-gray-900",
-      highlight && "border-t-gray-300 bg-blue-50/40 dark:border-t-gray-700 dark:bg-blue-950/10",
+    <tr className={cx(
+      isTotal ? drillTfootRow : drillRowBorder,
+      highlight && "bg-blue-50/40 dark:bg-blue-950/10",
       highlightAlert && "bg-amber-50/40 dark:bg-amber-950/10",
       muted && "opacity-50",
     )}>
-      <span className={cx(
-        "truncate",
+      <td className={cx(
+        "px-3 py-1.5",
         isAnchor
           ? "font-semibold text-gray-900 dark:text-gray-50"
           : "text-gray-700 dark:text-gray-200",
-      )}>{label}</span>
-      <span className="whitespace-nowrap text-[10px] text-gray-400 dark:text-gray-600">
+      )}>{label}</td>
+      <td className="px-3 py-1.5 text-[10px] text-gray-400 dark:text-gray-600">
         {counter ?? ""}
-      </span>
-      <span className={cx(
-        "text-right",
+      </td>
+      <td className={cx(
+        "px-3 py-1.5 text-right",
         isAnchor && (highlight
           ? "font-bold text-gray-900 dark:text-gray-50"
           : "font-semibold text-gray-900 dark:text-gray-50"),
@@ -462,8 +477,8 @@ function DecomposicaoRow({
         highlightAlert && "font-semibold",
       )}>
         {isAnchor ? fmtBRL.format(value) : fmtBRLSigned(value)}
-      </span>
-    </div>
+      </td>
+    </tr>
   )
 }
 
@@ -471,29 +486,29 @@ function ResiduoRow({ value }: { value: number }) {
   const abs = Math.abs(value)
   const isOk = abs < RESIDUO_OK_BRL
   return (
-    <div className={cx(
-      "grid grid-cols-[1fr_140px] items-center gap-2 border-t px-3 py-1.5 text-[11px] tabular-nums",
+    <tr className={cx(
+      "border-t text-[11px] tabular-nums",
       isOk
         ? "border-gray-100 dark:border-gray-900"
         : "border-amber-200 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/10",
     )}>
-      <span className={cx(
-        "uppercase tracking-[0.06em]",
+      <td colSpan={2} className={cx(
+        "px-3 py-1.5 uppercase tracking-[0.06em]",
         isOk
           ? "text-gray-400 dark:text-gray-600"
           : "font-semibold text-amber-800 dark:text-amber-300",
       )}>
         Resíduo {isOk ? "(arredondamento)" : "(desalinhamento de pipeline)"}
-      </span>
-      <span className={cx(
-        "text-right",
+      </td>
+      <td className={cx(
+        "px-3 py-1.5 text-right",
         isOk
           ? "text-gray-500 dark:text-gray-400"
           : "font-semibold text-amber-800 dark:text-amber-300",
       )}>
         {fmtBRLSigned(value)}
-      </span>
-    </div>
+      </td>
+    </tr>
   )
 }
 
