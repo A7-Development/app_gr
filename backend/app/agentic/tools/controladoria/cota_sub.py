@@ -386,8 +386,14 @@ def _sugestao_drill_pdd(r: Any) -> dict[str, Any]:
         "impacto_pl_sub POSITIVO (reduz o passivo, BOM pra Sub) — o valor cru "
         "(negativo) e a `sum_delta` por natureza tem sinal CONTRARIO ao impacto, "
         "NAO os use pra narrar sentido. Por natureza, use `variacao_magnitude` e "
-        "`impacto_pl_sub`. O bloco `sugestao` traz classificacao + alertas (EVIDENCIA, "
-        "valide). Use quando ΔContas a Pagar/Receber for material."
+        "`impacto_pl_sub`.\n\n"
+        "Por RUBRICA (top_linhas) leia `transicao` (e valor_d1 vs valor_d0): "
+        "`baixada_em_d0` = a rubrica EXISTIA em D-1 e sumiu/zerou em D0 = foi PAGA/"
+        "baixada (reduz o passivo, NAO e despesa nova); `nova_em_d0` = constituida no "
+        "dia; `cresceu`/`encolheu` = mudou de tamanho. NUNCA infira 'nova provisao' da "
+        "data de pagamento no texto da descricao (ex.: '...com pagamento 08/06/26'). "
+        "O bloco `sugestao` traz classificacao + alertas (EVIDENCIA, valide). Use "
+        "quando ΔContas a Pagar/Receber for material."
     ),
     input_schema={
         "type": "object",

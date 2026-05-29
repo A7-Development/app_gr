@@ -538,8 +538,29 @@ class DrillCprLinha(BaseModel):
     historico_traduzido: str
     valor_d1:            Decimal
     valor_d0:            Decimal
-    delta_valor:         Decimal = Field(description="valor_d0 - valor_d1")
+    delta_valor:         Decimal = Field(description="valor_d0 - valor_d1 (cru)")
     natureza:            CprNaturezaKey
+    # Tools grossas 2026-05-29 (fix 28/05): transicao + impacto por RUBRICA, pra
+    # o agente nao inverter "baixada" vs "constituida". Preenchidos so quando o
+    # drill e chamado com side=receber|pagar.
+    transicao:           Literal[
+        "nova_em_d0", "baixada_em_d0", "cresceu", "encolheu", "estavel"
+    ] = Field(
+        default="estavel",
+        description="Lido de valor_d1/valor_d0 por MAGNITUDE: baixada_em_d0 = existia "
+                    "em D-1 e sumiu/zerou em D0 (PAGA/baixada, reduz passivo — NAO e "
+                    "despesa nova); nova_em_d0 = surgiu no dia; cresceu/encolheu = mudou "
+                    "de tamanho. NUNCA infira 'nova' da data de pagamento no texto.",
+    )
+    variacao_magnitude:  Decimal = Field(
+        default=Decimal("0"),
+        description="Δ da magnitude da rubrica (>0 cresceu, <0 encolheu).",
+    )
+    impacto_pl_sub:      Decimal = Field(
+        default=Decimal("0"),
+        description="Impacto no PL Sub (sinal corrigido). Pagar que encolhe/baixa -> "
+                    "positivo (libera PL).",
+    )
 
 
 class DrillCprNaturezaGroup(BaseModel):
