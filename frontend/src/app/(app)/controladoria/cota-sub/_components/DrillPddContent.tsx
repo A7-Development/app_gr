@@ -176,7 +176,7 @@ function PapeisTable({ papeis, highlightDelta }: { papeis: DrillPddPapel[]; high
   const totDelta = papeis.reduce((s, p) => s + p.delta_valor_pdd, 0)
   return (
     <div className={cx("mt-2", drillTableWrap)}>
-      <table className="w-full text-[12px] tabular-nums">
+      <table className="w-full whitespace-nowrap text-[12px] tabular-nums">
         <thead className={drillThead}>
           <tr>
             <th className="px-3 py-1.5 text-left">Cedente / Sacado</th>
@@ -192,8 +192,8 @@ function PapeisTable({ papeis, highlightDelta }: { papeis: DrillPddPapel[]; high
           {papeis.map((p, idx) => (
             <tr key={`${p.cedente_doc}-${p.seu_numero}-${p.numero_documento}-${idx}`} className={drillRowBorder}>
               <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200" title={`${p.cedente_doc} / ${p.sacado_doc}`}>
-                <div className="truncate max-w-[200px] font-medium text-gray-900 dark:text-gray-50">{p.cedente_nome}</div>
-                <div className="truncate max-w-[200px] text-[10px] text-gray-500 dark:text-gray-400">→ {p.sacado_nome}</div>
+                <div className="truncate max-w-[160px] font-medium text-gray-900 dark:text-gray-50">{p.cedente_nome}</div>
+                <div className="truncate max-w-[160px] text-[10px] text-gray-500 dark:text-gray-400">→ {p.sacado_nome}</div>
               </td>
               <td className="px-3 py-1.5 font-mono text-[11px] text-gray-500 dark:text-gray-400" title={`DID ${p.seu_numero}`}>
                 <span className="block truncate">{p.numero_documento || p.seu_numero}</span>

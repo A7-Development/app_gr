@@ -53,6 +53,20 @@ const fmtBRLSigned = (v: number): string => {
   return `${sign}${fmtBRL.format(Math.abs(v))}`
 }
 
+// Numero SEM prefixo "R$" — usado nas celulas da tabela para caber em 1/3 da
+// largura. O simbolo R$ migra para o header (eyebrow "(R$)"). Mantem 2 casas
+// (centavos importam pra reconciliacao do residuo). Ver decisao 2026-05-29.
+const fmtNum = new Intl.NumberFormat("pt-BR", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+const fmtNumSigned = (v: number): string => {
+  if (Math.abs(v) < 0.005) return "0,00"
+  const sign = v > 0 ? "+" : "−"
+  return `${sign}${fmtNum.format(Math.abs(v))}`
+}
+
 const fmtDate = (iso: string): string => {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
   return m ? `${m[3]}/${m[2]}` : iso
@@ -171,7 +185,7 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
     col.accessor("label", {
       id:     "label",
       header: "Linha",
-      size:   240,
+      size:   150,
       cell:   (info) => {
         const row = info.row.original
         const indent = info.row.depth * 16
@@ -207,7 +221,7 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
               title={row.tooltip}
               className={cx(
                 "block truncate",
-                isMain ? "font-semibold text-gray-900 dark:text-gray-50" : "font-medium text-gray-700 dark:text-gray-300",
+                isMain ? tableTokens.cellStrong : "text-xs font-medium text-gray-700 dark:text-gray-300",
                 row.tooltip && "cursor-help",
               )}
             >
@@ -219,7 +233,7 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
         return (
           <span
             style={{ paddingLeft: `${indent}px` }}
-            className={cx("block truncate text-gray-900 dark:text-gray-50", row.tooltip && "cursor-help")}
+            className={cx("block truncate", tableTokens.cellText, row.tooltip && "cursor-help")}
             title={row.tooltip}
           >
             {row.label}
@@ -232,15 +246,15 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
       col.accessor(field, {
         id:     field,
         header: () => (
-          <div className="text-right text-[10px] font-medium uppercase tracking-[0.04em] text-gray-500 dark:text-gray-400">
-            {field === "d1" ? "D-1" : "D0"}
-            <div className="font-normal text-gray-400 normal-case">
+          <div className={cx(tableTokens.header, "text-right text-gray-500 dark:text-gray-400")}>
+            {field === "d1" ? "D-1 (R$)" : "D0 (R$)"}
+            <div className="font-normal text-gray-400 normal-case tracking-normal">
               {fmtDate(field === "d1" ? opts.dataAnterior : opts.data)}
             </div>
           </div>
         ),
         meta:   { align: "right" },
-        size:   130,
+        size:   108,
         cell:   (info) => {
           const row = info.row.original
           if (row.kind === "residuo") return null
@@ -256,7 +270,7 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
                 isStrong && "font-semibold",
               )}
             >
-              {fmtBRL.format(v)}
+              {fmtNum.format(v)}
             </div>
           )
         },
@@ -266,17 +280,17 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
     col.accessor("delta", {
       id:     "delta",
       header: () => (
-        <div className="text-right text-[10px] font-medium uppercase tracking-[0.04em] text-gray-500 dark:text-gray-400">Δ</div>
+        <div className={cx(tableTokens.header, "text-right text-gray-500 dark:text-gray-400")}>Δ</div>
       ),
       meta:   { align: "right" },
-      size:   120,
+      size:   104,
       cell:   (info) => {
         const row = info.row.original
         const v = info.getValue<number | null>()
         if (v == null) return null
         const isZero = Math.abs(v) < 0.005
         if (isZero) {
-          return <div style={{ textAlign: "right" }} className="text-gray-300 dark:text-gray-700 tabular-nums">—</div>
+          return <div style={{ textAlign: "right" }} className={cx(tableTokens.cellMuted, "tabular-nums")}>—</div>
         }
         if (row.kind === "residuo") {
           const abs = Math.abs(v)
@@ -285,13 +299,13 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
             <div
               style={{ textAlign: "right" }}
               className={cx(
-                "tabular-nums",
+                "text-xs tabular-nums",
                 tone === "ok" && "text-gray-500 dark:text-gray-400",
                 tone === "warn" && "font-medium text-amber-700 dark:text-amber-400",
                 tone === "error" && "font-semibold text-red-700 dark:text-red-400",
               )}
             >
-              {fmtBRLSigned(v)}
+              {fmtNumSigned(v)}
             </div>
           )
         }
@@ -303,12 +317,12 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
           <div
             style={{ textAlign: "right" }}
             className={cx(
-              bom ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400",
-              "tabular-nums",
+              "text-xs tabular-nums",
+              bom ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400",
               isStrong && "font-semibold",
             )}
           >
-            {fmtBRLSigned(v)}
+            {fmtNumSigned(v)}
           </div>
         )
       },
@@ -317,7 +331,7 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
     col.accessor((row) => row, {
       id:     "chevron",
       header: "",
-      size:   24,
+      size:   20,
       cell:   (info) => {
         const row = info.row.original
         if (row.kind !== "line" || !row.drillKey) return null
@@ -459,7 +473,7 @@ export function BalancoPatrimonialHero({
       <DataTable
         data={tree}
         columns={columns}
-        density="compact"
+        density="ultra"
         showColumnManager={false}
         showDensityToggle={false}
         showExport={false}
