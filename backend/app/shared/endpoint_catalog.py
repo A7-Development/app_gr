@@ -114,6 +114,16 @@ class EndpointSpec:
     # project_qitech_partial_refetch). Default 3 — espelha 3 dias uteis
     # de janela de republicacao observada empiricamente.
     refresh_complete_window_business_days: int = 3
+    # Endpoint assincrono (job + webhook callback) — ex.: market.fidc_estoque.
+    # O resultado NAO esta disponivel imediatamente apos run_sync_endpoint:
+    # o POST so enfileira um job na fonte; a carga real chega depois via
+    # webhook (`process_fidc_estoque_callback`). Quando True, o dispatcher da
+    # state machine usa o branch assincrono: guard de in-flight (nao re-POSTa
+    # enquanto ha QitechReportJob WAITING/PROCESSING pra data) + backoff de
+    # tolerancia pro re-POST. A leitura imediata pos-POST e ignorada (seria
+    # sempre "sem dado"); o COMPLETE vem do poll seguinte, quando o webhook
+    # ja gravou o raw. Default False (endpoints sincronos).
+    is_async_report: bool = False
 
     @property
     def global_id(self) -> str:

@@ -42,6 +42,10 @@ from app.modules.integracoes.adapters.admin.qitech.coverage import (
     fetch_qitech_coverage,
 )
 from app.modules.integracoes.models.endpoint_date_state import EndpointDateState
+from app.modules.integracoes.models.qitech_report_job import (
+    QitechJobStatus,
+    QitechReportJob,
+)
 from app.modules.integracoes.models.tenant_source_endpoint_config import (
     TenantSourceEndpointConfig,
 )
@@ -53,7 +57,9 @@ from app.modules.integracoes.services.state_machine import (
 )
 from app.modules.integracoes.services.sync_runner import run_sync_endpoint
 from app.modules.integracoes.services.tolerance import (
+    PublicationState,
     ToleranceWindow,
+    compute_publication_state,
     resolve_tolerance_window,
 )
 from app.shared.endpoint_catalog import EndpointSpec
@@ -186,6 +192,212 @@ async def _fetch_latest_raw_status(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Async report endpoints (job + webhook)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Mapa endpoint_name -> report_type do QitechReportJob, pros endpoints
+# assincronos (is_async_report=True). Hoje so fidc_estoque; o report_type
+# difere do endpoint_name (hifen vs underscore, sem prefixo 'market.').
+_ASYNC_REPORT_TYPE_BY_ENDPOINT: dict[str, str] = {
+    "market.fidc_estoque": "fidc-estoque",
+}
+
+# Estados de QitechReportJob que significam "POST ja feito, resultado ainda
+# a caminho" — enquanto um job esta nesses estados, NAO disparamos outro
+# (anti job-storm). SUCCESS/EMPTY/ERROR sao terminais: liberam re-POST.
+_ACTIVE_REPORT_JOB_STATUSES = (
+    QitechJobStatus.WAITING,
+    QitechJobStatus.PROCESSING,
+)
+
+
+async def _has_active_async_report_job(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    unidade_administrativa_id: UUID | None,
+    report_type: str,
+    reference_date: date,
+) -> bool:
+    """True se ha QitechReportJob WAITING/PROCESSING pra (tenant, ua, data).
+
+    Guard de in-flight: equivalente ao `_active_async_job_dates_for_fidc_estoque`
+    do reconciler legado. Sem ele, o dispatcher dispararia um job novo a cada
+    poll enquanto o callback do anterior nao chega — job-storm na QiTech.
+    """
+    stmt = select(QitechReportJob.id).where(
+        QitechReportJob.tenant_id == tenant_id,
+        QitechReportJob.report_type == report_type,
+        QitechReportJob.reference_date == reference_date,
+        QitechReportJob.status.in_(_ACTIVE_REPORT_JOB_STATUSES),
+    )
+    if unidade_administrativa_id is not None:
+        stmt = stmt.where(
+            QitechReportJob.unidade_administrativa_id == unidade_administrativa_id
+        )
+    else:
+        stmt = stmt.where(QitechReportJob.unidade_administrativa_id.is_(None))
+    return (await db.execute(stmt.limit(1))).first() is not None
+
+
+async def _process_async_report_row(
+    row: EndpointDateState,
+    *,
+    spec: EndpointSpec,
+) -> dict[str, Any]:
+    """Processa 1 row de endpoint assincrono (job + webhook).
+
+    Diferenca do fluxo sincrono (`_process_row`): o resultado de um POST nao
+    fica disponivel na hora — chega depois via webhook
+    (`process_fidc_estoque_callback`), que grava o raw. Por isso aqui:
+
+    1. LE o raw PRIMEIRO. Se ja ha dado (webhook de um POST anterior ja
+       chegou) -> transition normal -> COMPLETE/EMPTY/PARTIAL.
+    2. Se nao ha dado E nao ha job ativo (WAITING/PROCESSING) -> dispara um
+       POST novo via run_sync_endpoint. O resultado vira no proximo poll.
+    3. Se nao ha dado MAS ha job ativo -> NAO dispara (guard de in-flight);
+       so re-agenda.
+
+    Em todos os casos o `transition` final usa a leitura do raw (passos 1/2/3),
+    NUNCA o resultado imediato do POST (que seria sempre "sem dado"). Assim o
+    backoff de tolerancia (30min/2h/12h) governa o ritmo de re-POST e o
+    give_up_business_days eventualmente leva a ABANDONED — sem o cap cego de
+    tentativas do reconciler legado.
+    """
+    out: dict[str, Any] = {"row_id": str(row.id), "ok": False, "new_state": None}
+    source_type = SourceType(row.source_type)
+    environment = Environment(row.environment)
+    report_type = _ASYNC_REPORT_TYPE_BY_ENDPOINT.get(row.endpoint_name)
+
+    now = datetime.now(UTC)
+    today = now.date()
+
+    # 1. Le o estado atual do raw (resultado de webhook de POST anterior).
+    async with AsyncSessionLocal() as db:
+        http_status, completeness = await _fetch_latest_raw_status(
+            db,
+            tenant_id=row.tenant_id,
+            unidade_administrativa_id=row.unidade_administrativa_id,
+            source_type=source_type,
+            endpoint_name=row.endpoint_name,
+            data_referencia=row.data_referencia,
+        )
+
+    has_data = http_status is not None and 200 <= http_status < 300
+
+    # 2. Resolve tolerancia + calendario ANTES de decidir POSTar — precisamos
+    #    do estado de publicacao pra nao disparar job em data ja vencida
+    #    (FURO_DEFINITIVO -> ABANDONED sem martelar a fonte morta).
+    async with AsyncSessionLocal() as db:
+        window = await _load_tolerance_for_endpoint(
+            db,
+            tenant_id=row.tenant_id,
+            source_type=source_type,
+            environment=environment,
+            unidade_administrativa_id=row.unidade_administrativa_id,
+            endpoint_name=row.endpoint_name,
+            spec=spec,
+        )
+    if window is None:
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                update(EndpointDateState)
+                .where(EndpointDateState.id == row.id)
+                .values(
+                    state=EndpointDateStateValue.NOT_STARTED.value,
+                    next_attempt_at=now + timedelta(hours=1),
+                    updated_at=now,
+                )
+            )
+            await db.commit()
+        out["error"] = "invalid_tolerance_window"
+        return out
+
+    cal_start = min(row.data_referencia, today) - timedelta(days=60)
+    cal_end = today + timedelta(days=5)
+    async with AsyncSessionLocal() as db:
+        business_days_set = await _load_business_days(
+            db, tenant_id=row.tenant_id, start=cal_start, end=cal_end
+        )
+
+    tolerance_state = compute_publication_state(
+        reference_date=row.data_referencia,
+        today=today,
+        business_days_set=business_days_set,
+        window=window,
+    )
+
+    posted = False
+    # 3. Sem dado ainda E dentro da janela de give_up — dispara POST so se nao
+    #    houver job ativo (guard de in-flight). Data ja em FURO_DEFINITIVO nao
+    #    dispara: o transition abaixo a leva direto a ABANDONED.
+    if (
+        not has_data
+        and report_type is not None
+        and tolerance_state != PublicationState.FURO_DEFINITIVO
+    ):
+        async with AsyncSessionLocal() as db:
+            active = await _has_active_async_report_job(
+                db,
+                tenant_id=row.tenant_id,
+                unidade_administrativa_id=row.unidade_administrativa_id,
+                report_type=report_type,
+                reference_date=row.data_referencia,
+            )
+        if not active:
+            try:
+                await run_sync_endpoint(
+                    row.tenant_id,
+                    source_type,
+                    row.endpoint_name,
+                    environment=environment,
+                    since=row.data_referencia,
+                    triggered_by=f"state_machine:{row.id}",
+                    unidade_administrativa_id=row.unidade_administrativa_id,
+                )
+                posted = True
+            except Exception as e:
+                logger.exception(
+                    "state_machine(async): POST falhou pra row=%s endpoint=%s data=%s",
+                    row.id,
+                    row.endpoint_name,
+                    row.data_referencia,
+                )
+                out["error"] = f"{type(e).__name__}: {e}"
+
+    # 4. Transita com base na LEITURA do raw (has_data ? 200 : None) — nunca
+    #    no resultado imediato do POST (que seria sempre "sem dado").
+    updates = transition(
+        data_referencia=row.data_referencia,
+        today=today,
+        now=now,
+        business_days_set=business_days_set,
+        window=window,
+        refresh_complete_window_business_days=(
+            spec.refresh_complete_window_business_days
+        ),
+        http_status=http_status if has_data else None,
+        completeness=completeness if has_data else None,
+        previous_attempts_count=row.attempts_count,
+    )
+
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            update(EndpointDateState)
+            .where(EndpointDateState.id == row.id)
+            .values(**updates, updated_at=now)
+        )
+        await db.commit()
+
+    out["ok"] = True
+    out["new_state"] = updates["state"]
+    out["http_status"] = http_status if has_data else None
+    out["completeness"] = completeness if has_data else None
+    out["async_posted"] = posted
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -289,6 +501,12 @@ async def _process_row(
             await db.commit()
         out["error"] = "endpoint_not_enabled"
         return out
+
+    # Endpoints assincronos (job + webhook) tem fluxo proprio: o POST nao
+    # devolve o dado na hora, entao nao da pra ler o raw logo apos run_sync.
+    # Delega pro branch async (guard de in-flight + transition na leitura do raw).
+    if spec.is_async_report:
+        return await _process_async_report_row(row, spec=spec)
 
     source_type = SourceType(row.source_type)
     environment = Environment(row.environment)
