@@ -219,39 +219,66 @@ class PleitoExtraction(BaseModel):
 # ─── Controladoria · analista variacao cota sub jr ───────────────────────
 
 
-class SanityCheck(BaseModel):
-    """Nivel 1 do agente — identidade contabil bateu no dia?"""
+# Redesign 2026-05-29 (renovacao total): output organizado pra leitura em
+# segundos — macro (Ativo vs Passivo -> PL Sub) -> ofensores (bullets 5s) ->
+# grupos na ordem da tabela (Ativos -> Passivos, bullets primeiro + explicacao
+# depois) -> conclusao + alertas. O coracao e o flag `atipico`: separa o
+# movimento que merece atencao do grande-porem-normal. A regua de calculo/sinal
+# vive nas TOOLS (engrossadas) — o agente le campos prontos e narra.
+
+
+class AtipicidadeFlag(BaseModel):
+    """Marca um movimento como atipico (merece atencao) + por que."""
 
     model_config = ConfigDict(extra="forbid")
 
-    passou: bool = Field(description="True se residuo_brl < tolerancia (R$ 1).")
-    residuo_brl: float = Field(
-        description="(ΔPL deduzido) - (ΔPL fonte MEC). Erro REAL do dia, nao "
-                    "snapshot acumulado.",
-    )
-    pl_deduzido_delta: float = Field(description="Δ do PL calculado pelo granular.")
-    pl_fonte_delta: float = Field(description="Δ do PL lido do MEC.")
-    diagnostico: str = Field(
-        description="Frase curta pt-BR: 'fechamento sadio' / 'arredondamento "
-                    "centavos' / 'desalinhamento de pipeline'.",
-    )
+    motivo: str = Field(description="Por que e atipico, 1 frase concreta.")
+    severidade: Literal["info", "atencao", "critico"]
 
 
-class CategoriaDelta(BaseModel):
-    """Nivel 2 do agente — uma linha do balanco com ΔBRL."""
+class SanityMacro(BaseModel):
+    """Resumo do Nivel 1 (vem pronto de check_identidade_contabil)."""
 
     model_config = ConfigDict(extra="forbid")
 
-    key: str = Field(description="Chave canonica: 'dc', 'pdd', 'cpr', etc.")
-    label: str = Field(description="Label amigavel pt-BR.")
-    tipo: Literal["ativo", "passivo"]
-    d1: float
-    d0: float
-    delta: float = Field(description="d0 - d1 (sinal natural).")
-    rank_magnitude: int = Field(
-        ge=1,
-        description="1 = maior |delta| do dia, 2 = segundo maior, etc.",
+    severidade: Literal["ok", "atencao", "critico"]
+    residuo_brl: float = Field(description="(ΔPL deduzido) - (ΔPL fonte MEC).")
+    deve_continuar: bool = Field(
+        description="False so em residuo critico (>= R$ 5.000) — ai a analise para.",
     )
+
+
+class MacroVariacao(BaseModel):
+    """Bloco macro — o fundamento: ΔPL Sub = ΔAtivo - ΔPassivo."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pl_sub_d1: float
+    pl_sub_d0: float
+    pl_sub_delta: float = Field(description="Variacao do PL Sub Jr no dia (d0 - d1).")
+    total_ativo_delta: float = Field(description="Δ do total de ativos.")
+    total_passivo_delta: float = Field(description="Δ do total de passivos.")
+    leitura: str = Field(
+        description="1 frase: como ativo e passivo compuseram o ΔPL Sub "
+                    "(ex.: 'PL Sub +X: ativos renderam +A e passivos cairam -P').",
+    )
+    sanity: SanityMacro
+
+
+class OfensorLinha(BaseModel):
+    """Top mover do dia por impacto no PL Sub — leitura em 5 segundos."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lado: Literal["ativo", "passivo"]
+    key: str = Field(description="Chave da linha do balanco (dc_bruto, pdd, cpr_pagar, ...).")
+    label: str
+    delta: float = Field(description="Δ natural da linha (d0 - d1).")
+    impacto_pl_sub: float = Field(
+        description="Impacto no PL Sub com sinal corrigido (positivo ajudou a cota).",
+    )
+    atipico: bool = Field(description="True quando este movimento foge do normal.")
+    bullet: str = Field(description="1 linha factual, leitura em 5s.")
 
 
 class PapelMencionado(BaseModel):
@@ -267,48 +294,46 @@ class PapelMencionado(BaseModel):
     )
     cedente_nome: str
     sacado_nome: str
-    delta_brl: float = Field(description="Impacto do papel na categoria.")
+    delta_brl: float = Field(description="Impacto do papel na linha.")
     natureza: str = Field(
-        description="ex.: 'mutacao_silenciosa', 'liquidacao_parcial', "
-                    "'write_off', 'migracao_wop', 'aquisicao_novo'",
+        description="ex.: 'mutacao_silenciosa', 'multa_juros', 'desconto_concedido', "
+                    "'write_off', 'migracao_wop', 'aquisicao_novo', 'efeito_vagao'",
     )
 
 
-class ExplicacaoCategoria(BaseModel):
-    """Nivel 3 do agente — narrativa de uma categoria significativa."""
+class GrupoAnalise(BaseModel):
+    """Analise de uma linha do balanco. Bullets primeiro, profundidade depois."""
 
     model_config = ConfigDict(extra="forbid")
 
-    categoria_key: str = Field(description="Match com CategoriaDelta.key.")
-    narrativa: str = Field(
-        description="Sintese pt-BR (2-5 frases) explicando o ΔBRL. "
-                    "Concreto: cite papeis, cedentes, padroes temporais. "
-                    "Evite vaguidade.",
+    key: str = Field(description="Chave da linha (dc_bruto, pdd, cpr_pagar, senior, ...).")
+    label: str
+    lado: Literal["ativo", "passivo"]
+    d1: float
+    d0: float
+    delta: float = Field(description="d0 - d1 (sinal natural).")
+    impacto_pl_sub: float = Field(description="Impacto no PL Sub (sinal corrigido).")
+    atipico: bool = Field(description="True quando o movimento merece atencao.")
+    atipicidade: AtipicidadeFlag | None = Field(
+        default=None,
+        description="Preenchido quando atipico=True; null quando normal.",
     )
-    papeis_mencionados: list[PapelMencionado] = Field(
+    classificacao: str | None = Field(
+        default=None,
+        description="Etiqueta do que dominou (vem da sugestao da tool: carrego_normal, "
+                    "evento_pontual_explicado, constituicao_pdd, aporte_classe, etc.).",
+    )
+    bullets: list[str] = Field(
         default_factory=list,
-        description="Papeis especificos citados na narrativa.",
+        description="2-4 pontos curtos, leitura rapida — VEM PRIMEIRO na UI.",
     )
-    classificacao_principal: Literal[
-        "carrego_normal",
-        "fluxo_novo_intenso",
-        "mutacao_silenciosa_pura",
-        "padrao_abatimento_offrecord",
-        "constituicao_pdd",
-        "reversao_pdd",
-        "aporte_engaiolado",
-        # Eventos de capital numa classe de cota (Sub/Mez/Sr): subscricao ou
-        # resgate de cotistas, distintos do custo/remuneracao da cota. Ver
-        # tool get_decomposicao_classes (efeito_capital vs efeito_valorizacao).
-        "aporte_classe",
-        "resgate_classe",
-        "evento_pontual_explicado",
-        "evento_pontual_sem_explicacao",
-        "outro",
-    ] = Field(description="Etiqueta canonica do que dominou a variacao.")
-    confianca: float = Field(
-        ge=0.0, le=1.0,
-        description="Confianca da narrativa (0.5 = duas hipoteses; 0.95 = quase certo).",
+    explicacao: str = Field(
+        description="1-3 frases de profundidade, DEPOIS dos bullets. So aprofunde "
+                    "onde importa; linha normal pode ter explicacao minima.",
+    )
+    papeis: list[PapelMencionado] = Field(
+        default_factory=list,
+        description="Papeis especificos citados, quando relevante.",
     )
 
 
@@ -331,21 +356,12 @@ class SinalAlerta(BaseModel):
     evidencia: str = Field(description="Quais papeis/eventos suportam.")
 
 
-class SugestaoAcao(BaseModel):
-    """Acao recomendada ao controller."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    prioridade: Literal["alta", "media", "baixa"]
-    acao: str = Field(description="Verbo pt-BR: 'investigar', 'monitorar', 'nenhuma'.")
-    detalhe: str = Field(description="O que fazer concretamente.")
-
-
 class AnalysisVariacaoCotaResponse(BaseModel):
-    """Output do agente `controladoria.analista_variacao_cota`.
+    """Output do agente `controladoria.analista_variacao_cota` (redesign 2026-05-29).
 
-    3 niveis (sanity + decomposicao + explicacao narrativa) + sinais de
-    alerta + sugestoes de acao. UI consome cada bloco em uma secao distinta.
+    Leitura em camadas: macro (Ativo vs Passivo) -> ofensores (bullets 5s) ->
+    grupos por linha do balanco (Ativos depois Passivos) -> conclusao. Alertas
+    carregam os atipicos materiais (auditabilidade §14).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -354,20 +370,20 @@ class AnalysisVariacaoCotaResponse(BaseModel):
     data: str = Field(description="ISO yyyy-mm-dd da data D0 analisada.")
     data_anterior: str = Field(description="ISO yyyy-mm-dd da data D-1.")
 
-    nivel_1_sanity: SanityCheck
-    nivel_2_decomposicao: list[CategoriaDelta] = Field(
-        description="Todas as 12 categorias ordenadas por rank_magnitude ASC."
-    )
-    nivel_3_explicacoes: list[ExplicacaoCategoria] = Field(
+    macro: MacroVariacao
+    ofensores: list[OfensorLinha] = Field(
         default_factory=list,
-        description="Narrativas das categorias mais significativas (top N por "
-                    "|delta| OU com pattern detectado).",
+        description="Top ~5 movers por |impacto_pl_sub|, ativos e passivos juntos.",
     )
-
-    sinais_alerta: list[SinalAlerta] = Field(default_factory=list)
-    sugestoes_acao: list[SugestaoAcao] = Field(default_factory=list)
-
-    sumario_executivo: str = Field(
-        description="2-4 frases pt-BR resumindo a variacao do dia. "
-                    "Headline pra controller que so vai ler isso.",
+    grupos: list[GrupoAnalise] = Field(
+        default_factory=list,
+        description="1 por linha do balanco com movimento relevante, na ordem da "
+                    "tabela: Ativos (DC, PDD, ...) depois Passivos.",
+    )
+    conclusao: str = Field(
+        description="Fecho curto (1-3 frases) — o que o controller leva do dia.",
+    )
+    alertas: list[SinalAlerta] = Field(
+        default_factory=list,
+        description="So os atipicos materiais que merecem registro/acao.",
     )

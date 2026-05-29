@@ -454,6 +454,12 @@ class BalancoLinhaEstrutural(BaseModel):
     d1:    Decimal = Field(description="Magnitude em D-1 (contra_ativo/passivo >=0; ativo pode ser <0 p/ caixa a descoberto)")
     d0:    Decimal
     delta: Decimal = Field(description="d0 - d1 (sinal natural)")
+    impacto_pl_sub: Decimal = Field(
+        default=Decimal("0"),
+        description="Impacto no PL Sub Jr com sinal ja corrigido: ativo -> +delta; "
+                    "contra_ativo (PDD) e passivo -> -delta. Use ISTO para rankear "
+                    "ofensores (positivo = ajudou a cota; negativo = pressionou).",
+    )
     source:    str
     drill_key: CategoriaPatrimonialKey | None = Field(
         default=None,

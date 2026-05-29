@@ -3795,51 +3795,63 @@ function _coerceDrillOrigem(r: DrillOrigemResponseDTO): DrillOrigemResponse {
 // Espelha AnalysisVariacaoCotaResponse (Pydantic) + AgenteVariacaoRunMetadata
 // do backend. Coercao Decimal -> number igual aos drills.
 
-export type AgenteSanityCheck = {
-  passou:             boolean
-  residuo_brl:        number
-  pl_deduzido_delta:  number
-  pl_fonte_delta:     number
-  diagnostico:        string
+// Redesign 2026-05-29: macro / ofensores / grupos / conclusao / alertas.
+// Espelha AnalysisVariacaoCotaResponse (Pydantic) reescrito.
+
+export type AgenteSanityMacro = {
+  severidade:      "ok" | "atencao" | "critico"
+  residuo_brl:     number
+  deve_continuar:  boolean
 }
 
-export type AgenteCategoriaDelta = {
-  key:             string
-  label:           string
-  tipo:            "ativo" | "passivo"
-  d1:              number
-  d0:              number
-  delta:           number
-  rank_magnitude:  number
+export type AgenteMacroVariacao = {
+  pl_sub_d1:            number
+  pl_sub_d0:            number
+  pl_sub_delta:         number
+  total_ativo_delta:    number
+  total_passivo_delta:  number
+  leitura:              string
+  sanity:               AgenteSanityMacro
 }
 
 export type AgentePapelMencionado = {
   seu_numero:       string
   numero_documento: string
-  cedente_nome:   string
-  sacado_nome:    string
-  delta_brl:      number
-  natureza:       string
+  cedente_nome:     string
+  sacado_nome:      string
+  delta_brl:        number
+  natureza:         string
 }
 
-export type AgenteClassificacaoPrincipal =
-  | "carrego_normal"
-  | "fluxo_novo_intenso"
-  | "mutacao_silenciosa_pura"
-  | "padrao_abatimento_offrecord"
-  | "constituicao_pdd"
-  | "reversao_pdd"
-  | "aporte_engaiolado"
-  | "evento_pontual_explicado"
-  | "evento_pontual_sem_explicacao"
-  | "outro"
+export type AgenteOfensorLinha = {
+  lado:            "ativo" | "passivo"
+  key:             string
+  label:           string
+  delta:           number
+  impacto_pl_sub:  number
+  atipico:         boolean
+  bullet:          string
+}
 
-export type AgenteExplicacaoCategoria = {
-  categoria_key:            string
-  narrativa:                string
-  papeis_mencionados:       AgentePapelMencionado[]
-  classificacao_principal:  AgenteClassificacaoPrincipal
-  confianca:                number
+export type AgenteAtipicidade = {
+  motivo:      string
+  severidade:  "info" | "atencao" | "critico"
+}
+
+export type AgenteGrupoAnalise = {
+  key:             string
+  label:           string
+  lado:            "ativo" | "passivo"
+  d1:              number
+  d0:              number
+  delta:           number
+  impacto_pl_sub:  number
+  atipico:         boolean
+  atipicidade:     AgenteAtipicidade | null
+  classificacao:   string | null
+  bullets:         string[]
+  explicacao:      string
+  papeis:          AgentePapelMencionado[]
 }
 
 export type AgenteSinalAlerta = {
@@ -3856,22 +3868,15 @@ export type AgenteSinalAlerta = {
   evidencia:   string
 }
 
-export type AgenteSugestaoAcao = {
-  prioridade:  "alta" | "media" | "baixa"
-  acao:        string
-  detalhe:     string
-}
-
 export type AgenteAnaliseVariacao = {
-  fundo_nome:           string
-  data:                 string
-  data_anterior:        string
-  nivel_1_sanity:       AgenteSanityCheck
-  nivel_2_decomposicao: AgenteCategoriaDelta[]
-  nivel_3_explicacoes:  AgenteExplicacaoCategoria[]
-  sinais_alerta:        AgenteSinalAlerta[]
-  sugestoes_acao:       AgenteSugestaoAcao[]
-  sumario_executivo:    string
+  fundo_nome:     string
+  data:           string
+  data_anterior:  string
+  macro:          AgenteMacroVariacao
+  ofensores:      AgenteOfensorLinha[]
+  grupos:         AgenteGrupoAnalise[]
+  conclusao:      string
+  alertas:        AgenteSinalAlerta[]
 }
 
 export type AgenteVariacaoRunMetadata = {
