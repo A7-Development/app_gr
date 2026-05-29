@@ -50,14 +50,78 @@ from app.modules.controladoria.schemas.cota_sub_drill import (
     PddFaixaKey,
 )
 from app.modules.controladoria.services.cota_sub import _sum_pdd
-from app.modules.controladoria.services.cota_sub_explainers import (
-    _check_estoque_disponibilidade,
-)
 from app.modules.integracoes.public import dia_util_anterior_qitech
 from app.warehouse.estoque_recebivel import EstoqueRecebivel
 from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel
 
 ZERO = Decimal("0")
+
+
+# Guard de disponibilidade do estoque granular (relocado de cota_sub_explainers
+# em 2026-05-28 ao remover o COSIF — drill PDD era o unico consumidor vivo).
+
+
+async def _estoque_disponivel(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    fundo_doc: str,
+    data: date,
+) -> bool:
+    """True se wh_estoque_recebivel tem ao menos 1 linha pra (fundo, data).
+
+    Usado como guard antes de FULL OUTER JOIN entre 2 datas — quando uma
+    delas esta vazia (fidc-estoque ainda nao publicado pela QiTech, ou
+    job EMPTY), o JOIN converte os papeis da data presente em pseudo-
+    evidencias de "papel sumiu" — distorce a leitura. Melhor retornar
+    [] + motivo do que servir evidencias falsas.
+    """
+    stmt = (
+        select(func.count())
+        .select_from(EstoqueRecebivel)
+        .where(EstoqueRecebivel.tenant_id == tenant_id)
+        .where(EstoqueRecebivel.fundo_doc == fundo_doc)
+        .where(EstoqueRecebivel.data_referencia == data)
+    )
+    count = (await db.execute(stmt)).scalar_one() or 0
+    return count > 0
+
+
+async def _check_estoque_disponibilidade(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    fundo_doc: str,
+    data_d0: date,
+    data_d1: date,
+) -> str | None:
+    """Valida disponibilidade de wh_estoque_recebivel nas 2 datas.
+
+    Retorna `None` quando ambas estao OK (segue o diff normal).
+    Retorna motivo humano quando uma ou ambas vazias (caller retorna
+    evidencias=[] + motivo).
+    """
+    d0_ok = await _estoque_disponivel(
+        db, tenant_id=tenant_id, fundo_doc=fundo_doc, data=data_d0,
+    )
+    d1_ok = await _estoque_disponivel(
+        db, tenant_id=tenant_id, fundo_doc=fundo_doc, data=data_d1,
+    )
+    if d0_ok and d1_ok:
+        return None
+
+    faltam: list[str] = []
+    if not d0_ok:
+        faltam.append(data_d0.strftime("%d/%m"))
+    if not d1_ok:
+        faltam.append(data_d1.strftime("%d/%m"))
+
+    return (
+        f"Estoque granular ainda nao publicado pela QiTech em {', '.join(faltam)} "
+        f"(report market.fidc_estoque). Driver continua confiavel — vem do "
+        f"consolidado MEC/posicoes. Evidencias papel-a-papel ficarao disponiveis "
+        f"quando o relatorio for publicado."
+    )
 
 # Fix 2026-05-24: "WOP" passa a ser faixa valida. Antes, papeis legitimamente
 # em WOP em D-1 eram re-rotulados como "NOVO" pelo `_normalize_faixa_d1` —

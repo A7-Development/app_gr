@@ -37,15 +37,81 @@ from app.modules.controladoria.schemas.cota_sub import (
     VariacaoItem,
     VariacoesDiaResponse,
 )
-from app.modules.controladoria.services.balanco import (
-    CPR_COSIF_META,
-    _classify_cpr_cosif,
-)
 from app.modules.integracoes.public import dia_util_anterior_qitech
 from app.warehouse.cpr_movimento import CprMovimento
 from app.warehouse.movimento_caixa import MovimentoCaixa
 
 ZERO = Decimal("0")
+
+
+# Classificacao de movimentos do CPR em contas COSIF analiticas. Relocado de
+# `services/balanco.py` em 2026-05-28 ao remover o balanco antigo / engine COSIF
+# — este matcher por palavra-chave do historico_traduzido (NAO usa o classifier
+# COSIF DB-backed, ja removido) alimenta a conciliacao pagamento->provisao da
+# pagina Pagamento Diario (/variacoes-dia), unico consumidor vivo. Migrar pra
+# vocabulario neutro e followup (a pagina ainda fala "COSIF" no detalhamento).
+CPR_COSIF_META: dict[str, tuple[str, str]] = {
+    # cosif: (label, natureza_atual_no_balanco — 'A'=Ativo, 'P'=Passivo)
+    "1.8.4.30.00": ("DEVEDORES - CONTA LIQUIDAÇÕES PENDENTES", "A"),
+    "1.9.9.10":    ("DESPESAS ANTECIPADAS",                    "A"),
+    "4.9.1.10":    ("IOF A RECOLHER",                          "P"),
+    "4.9.9.30":    ("PROVISÃO PARA PAGAMENTOS A EFETUAR",      "P"),
+    "4.9.9.83":    ("VALORES A PAGAR À SOCIEDADE ADMINISTRADORA", "P"),
+}
+
+
+def _classify_cpr_cosif(historico: str, valor: Decimal) -> str:
+    """Mapeia item do CPR para conta COSIF analitica baseada em historico_traduzido.
+
+    Retorna 1 das 5 contas:
+      ATIVO:
+        '1.8.4.30.00'  Devedores - Conta Liquidacoes Pendentes
+        '1.9.9.10'     Despesas antecipadas (diferimentos)
+      PASSIVO:
+        '4.9.1.10'     IOF a Recolher
+        '4.9.9.30'     Provisao para pagamentos a efetuar
+        '4.9.9.83'     Valores a Pagar Sociedade Administradora
+
+    PRECEDENCIA importa: alguns padroes sao substring uns dos outros.
+    Ex.: 'BANCO LIQUIDANTE' contem 'LIQUIDA' — checar 'BANCO LIQ' antes.
+    """
+    h = (historico or "").upper()
+
+    # 1) Banco Liquidante (despesa adm) — checar ANTES de qualquer pattern de "LIQUID*"
+    if "BANCO LIQ" in h:
+        return "4.9.9.30"
+
+    # 2) Diferimentos (Ativo - Despesas Antecipadas)
+    if "DIFER" in h:
+        return "1.9.9.10"
+
+    # 3) IOF / tributos
+    if "IOF" in h:
+        return "4.9.1.10"
+
+    # 4) Liquidacoes em transito / TED / Baixa / Compensacao / Aquisicao
+    #    (Ativo - 1.8.4.30.00). Use 'LIQUIDADO' (não 'LIQUIDA') para evitar
+    #    falso match em 'LIQUIDANTE'.
+    if any(k in h for k in (
+        "LIQUIDADO", "LIQUIDAÇÃO", "LIQUIDACAO",  # snapshots de operações já liquidadas
+        "TED",                                     # transferencias em transito
+        "BAIXA",                                   # baixas operacionais
+        "AQUISIC",                                 # TED para aquisicao de ativos
+        "COMPENSAÇÃO", "COMPENSACAO",              # ajuste de compensacao de cotas
+        "DEVOLUÇÃO", "DEVOLUCAO",                  # devolucao de pagamento em duplicidade
+    )):
+        return "1.8.4.30.00"
+
+    # 5) Taxas correntes apropriadas (4.9.9.83)
+    if "TAXA" in h and any(k in h for k in ("ADMINISTRA", "CUSTODIA", "CUSTÓDIA", "GESTAO", "GESTÃO")):
+        return "4.9.9.83"
+
+    # 6) Despesas administrativas pontuais (4.9.9.30)
+    if any(k in h for k in ("AUDITOR", "CONSULTOR", "COBRAN", "SELIC", "ANBIMA", "CVM")):
+        return "4.9.9.30"
+
+    # Defaults pelo sinal — conservadores
+    return "4.9.9.30" if valor < 0 else "1.8.4.30.00"
 
 
 # Keywords de match: pagamento → provisao (palavras canonicas em UPPER).

@@ -69,7 +69,6 @@ import { Insight, InsightBar } from "@/design-system/components/Insight"
 import { useUAs } from "@/lib/hooks/cadastros"
 import {
   COTA_SUB_REPORTS,
-  useBalanco,
   useBalancoEstrutural,
   useCotaSubReadiness,
   useDatasDisponiveis,
@@ -102,7 +101,6 @@ import { toast } from "sonner"
 
 import { ActiveBackfillJobsPanel } from "./_components/ActiveBackfillJobsPanel"
 import { AgenteVariacaoPanel } from "./_components/AgenteVariacaoPanel"
-import { BalanceTable } from "./_components/BalanceTable"
 import { BalancoInspector } from "./_components/BalancoInspector"
 import { BalancoPatrimonialHero } from "./_components/BalancoPatrimonialHero"
 import { NaoReconhecidosPanel } from "./_components/NaoReconhecidosPanel"
@@ -151,11 +149,6 @@ const ORIGEM_KEYS: ReadonlySet<CategoriaPatrimonialKey> = new Set<CategoriaPatri
   "titulos_publicos", "op_estruturadas", "fundos_di", "compromissada",
   "outros_ativos", "tesouraria", "saldo_conta_corrente", "senior", "mezanino",
 ])
-// EventosDiaTab desativado em F1 do redesign (2026-05-22) — substituido pelo
-// BalancoPatrimonialHero na aba "eventos". F4 decide o destino final (apos
-// drills da F2/F3 estarem completos). Import + componente preservados no
-// codebase ate la pra rollback rapido.
-// import { EventosDiaTab } from "./_components/EventosDiaTab"
 
 // ───────────────────────────────────────────────────────────────────────────
 // Tipos + Mocks
@@ -194,7 +187,6 @@ const MOCK_INSIGHTS: AIInsight[] = [
 
 const TABS = [
   { key: "eventos",       label: "Eventos do dia" },
-  { key: "balanco",       label: "Balanço" },
   { key: "movimentacoes", label: "Movimentações" },
   { key: "cotistas",      label: "Cotistas" },
 ] as const
@@ -402,28 +394,6 @@ function AddFilterMenu({
         ))}
       </PopoverContent>
     </Popover>
-  )
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// Aba "Balanco" — BalanceTable contabil (PagamentosDiaPanel removido 2026-05-11)
-// ───────────────────────────────────────────────────────────────────────────
-
-function BalancoTab(props: {
-  rows:          ReturnType<typeof useBalanco>["data"] extends infer T ? (T extends { rows: infer R } ? R : never) : never
-  data?:         string
-  dataAnterior?: string
-  emptyMessage?: string
-}) {
-  return (
-    <div className="flex flex-col gap-4">
-      <BalanceTable
-        rows={props.rows}
-        data={props.data}
-        dataAnterior={props.dataAnterior}
-        emptyMessage={props.emptyMessage}
-      />
-    </div>
   )
 }
 
@@ -729,15 +699,11 @@ export default function CotaSubPage() {
   }, [fundo, fundosQuery.data])
 
   const dayIso          = React.useMemo(() => format(day, "yyyy-MM-dd"), [day])
-  const balanceQuery    = useBalanco(fundoId, dayIso)
   const balancoEstruturalQuery = useBalancoEstrutural(fundoId, dayIso)
   const drilledCategoriaObj = React.useMemo(
     () => toInspectorCategoria(balancoEstruturalQuery.data, drilledCategoria),
     [balancoEstruturalQuery.data, drilledCategoria],
   )
-  // useBalanceteDiario removido em F1 do redesign (2026-05-22) — antes
-  // alimentava EventosDiaTab. F4 reintroduz se aposentar EventosDiaTab definitivamente
-  // ou usar outra tab secundaria. Por enquanto fica fora pra reduzir requests.
   const fundoSelecionado = fundoId !== null
 
   // Datas em que a QiTech publicou snapshot — Calendar bloqueia tudo o que nao
@@ -1083,7 +1049,7 @@ export default function CotaSubPage() {
                 onApplyView={handleApplyView}
               />
               <span className="shrink-0 text-[11px] text-gray-500 dark:text-gray-400">
-                {balanceQuery.isFetching ? "Atualizando…" : "Atualizado"}
+                {balancoEstruturalQuery.isFetching ? "Atualizando…" : "Atualizado"}
               </span>
             </div>
           </div>
@@ -1200,20 +1166,6 @@ export default function CotaSubPage() {
                         />
                       </div>
                     </div>
-                  )}
-                  {activeTab === "balanco" && (
-                    <BalancoTab
-                      rows={balanceQuery.data?.rows ?? []}
-                      data={balanceQuery.data?.data}
-                      dataAnterior={balanceQuery.data?.data_anterior}
-                      emptyMessage={
-                        balanceQuery.isLoading
-                          ? "Carregando..."
-                          : balanceQuery.isError
-                          ? `Erro: ${(balanceQuery.error as Error)?.message ?? "desconhecido"}`
-                          : undefined
-                      }
-                    />
                   )}
                   {activeTab === "movimentacoes" && (
                     <MovimentacoesTab
