@@ -1085,7 +1085,8 @@ export default function CotaSubPage() {
               ) : (
                 <>
                   {activeTab === "eventos" && (
-                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">
+                      <div className="xl:col-span-2">
                       <BalancoPatrimonialHero
                         data={balancoEstruturalQuery.data}
                         loading={balancoEstruturalQuery.isLoading}
@@ -1106,11 +1107,12 @@ export default function CotaSubPage() {
                         }
                         explicarVariacaoLoading={agente.state.status === "streaming"}
                       />
+                      </div>
                       {/* F3 redesign 2026-05-24: slot direito vira BalancoInspector
                           (in-layout, parte da grid). Em telas < xl o slot some
                           (hidden) e o page.tsx cai pro CategoriaDrillSheet
                           (overlay) controlado por isXl no render do Sheet. */}
-                      <div className="hidden xl:block">
+                      <div className="hidden xl:col-span-3 xl:block">
                         <BalancoInspector
                           categoria={drilledCategoriaObj}
                           fundoNome={balancoEstruturalQuery.data?.fundo_nome ?? ""}
@@ -1159,7 +1161,7 @@ export default function CotaSubPage() {
                       </div>
                       {/* Detector de nao-reconhecidos (2026-05-27, pos-VCNC):
                           spanned full-width sob a reconciliacao que ele explica. */}
-                      <div className="xl:col-span-2">
+                      <div className="xl:col-span-5">
                         <NaoReconhecidosPanel
                           itens={balancoEstruturalQuery.data?.nao_reconhecidos}
                           loading={balancoEstruturalQuery.isLoading}

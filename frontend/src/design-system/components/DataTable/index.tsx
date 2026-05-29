@@ -93,6 +93,15 @@ export interface DataTableProps<TData> {
 }
 
 const DENSITY_ICONS: Record<DensityMode, React.ReactNode> = {
+  ultra: (
+    <svg viewBox="0 0 14 14" className="size-3.5" fill="none">
+      <line x1="2" y1="2"    x2="12" y2="2"    stroke="currentColor" strokeWidth="1.25"/>
+      <line x1="2" y1="4.4"  x2="12" y2="4.4"  stroke="currentColor" strokeWidth="1.25"/>
+      <line x1="2" y1="6.8"  x2="12" y2="6.8"  stroke="currentColor" strokeWidth="1.25"/>
+      <line x1="2" y1="9.2"  x2="12" y2="9.2"  stroke="currentColor" strokeWidth="1.25"/>
+      <line x1="2" y1="11.6" x2="12" y2="11.6" stroke="currentColor" strokeWidth="1.25"/>
+    </svg>
+  ),
   compact: (
     <svg viewBox="0 0 14 14" className="size-3.5" fill="none">
       <line x1="2" y1="2.5"  x2="12" y2="2.5"  stroke="currentColor" strokeWidth="1.5"/>
@@ -360,7 +369,7 @@ export function DataTable<TData>({
   const rowVirtualizer = useVirtualizer({
     count: shouldVirtualize ? rows.length : 0,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => (density === "compact" ? 32 : density === "comfortable" ? 48 : 40),
+    estimateSize: () => (density === "ultra" ? 28 : density === "compact" ? 32 : density === "comfortable" ? 48 : 40),
     overscan: 12,
   })
 
@@ -380,7 +389,7 @@ export function DataTable<TData>({
         <div className="flex shrink-0 items-center justify-end gap-2 border-b border-gray-100 dark:border-gray-900 px-3 py-1.5">
           {showDensityToggle && (
             <div className="flex items-center rounded border border-gray-200 dark:border-gray-800 overflow-hidden">
-              {(["compact", "default", "comfortable"] as DensityMode[]).map((d) => (
+              {(["ultra", "compact", "default", "comfortable"] as DensityMode[]).map((d) => (
                 <button
                   key={d}
                   type="button"

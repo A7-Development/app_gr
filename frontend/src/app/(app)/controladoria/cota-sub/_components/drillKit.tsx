@@ -41,16 +41,19 @@ export function fmtBRLSigned(v: number): string {
 export function toneClass(v: number, goodWhenPositive = true): string {
   if (Math.abs(v) < 0.005) return "text-gray-400 dark:text-gray-600"
   const good = goodWhenPositive ? v > 0 : v < 0
+  // Shades 600 = alinhado com tableTokens.cellNumberPositive/Negative (canonico).
   return good
-    ? "text-emerald-700 dark:text-emerald-400"
-    : "text-red-700 dark:text-red-400"
+    ? "text-emerald-600 dark:text-emerald-400"
+    : "text-red-600 dark:text-red-400"
 }
 
 // ── Classes compartilhadas de tabela ────────────────────────────────────────
 
-/** Container bordado de tabela/bloco. */
+/** Container bordado de tabela/bloco. `overflow-x-auto` permite scroll
+ * horizontal quando a tabela e mais larga que o drawer (evita cortar a
+ * ultima coluna, como acontecia com `overflow-hidden`). */
 export const drillTableWrap =
-  "overflow-hidden rounded border border-gray-200 dark:border-gray-800"
+  "overflow-x-auto rounded border border-gray-200 dark:border-gray-800"
 
 /** Cabecalho de tabela canonico (faixa cinza-50 — estilo unificado). */
 export const drillThead =
