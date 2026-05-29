@@ -407,12 +407,17 @@ def test_qitech_state_machine_enabled_set():
     Ver `project_qitech_sync_state_machine` memory.
 
     Excluidos por desenho:
-    - `market.fidc_estoque`: fluxo assincrono job+webhook (callback). Modelo
-      polling da state machine nao casa direto — precisa tratamento proprio.
     - `bank_account.balance`: DAILY_AT 19:00 com expected_lag=0. Candidato
       futuro; nao incluido na F3 inicial.
     - `bank_account.statement`: INTERVAL 60min. Coverage UNSUPPORTED, fluxo
       diferente. Nao se aplica.
+
+    Caso especial:
+    - `market.fidc_estoque`: fluxo assincrono job+webhook. Migrado pra state
+      machine em 2026-05-29 via branch assincrono do dispatcher
+      (`is_async_report=True`) — guard de in-flight + backoff de tolerancia,
+      substituindo o cap cego de 8 tentativas do reconciler legado. Ver
+      `project_qitech_max_attempts_cap`.
     """
     enabled = {ep.name for ep in QITECH_ENDPOINTS if ep.state_machine_enabled}
     expected = {
@@ -433,17 +438,23 @@ def test_qitech_state_machine_enabled_set():
         "custodia.liquidados_baixados",
         "custodia.movimento_aberto",
         "custodia.detalhes_operacoes",
+        # Async (2026-05-29): migrado do reconciler legado via branch assincrono
+        "market.fidc_estoque",
     }
     assert enabled == expected, (
         f"State machine set divergiu: enabled={enabled} expected={expected}"
     )
 
 
-def test_qitech_fidc_estoque_not_in_state_machine():
-    """fidc_estoque tem fluxo assincrono job+webhook — fora da state machine
-    ate ter tratamento proprio para callback (ver §19 do CLAUDE.md)."""
+def test_qitech_fidc_estoque_in_state_machine_async():
+    """fidc_estoque (async job+webhook) foi migrado pra state machine em
+    2026-05-29 com `is_async_report=True` — o dispatcher usa o branch
+    assincrono (guard de in-flight + backoff). Substituiu o caminho legado
+    do reconciler, cujo cap de 8 tentativas/data gerava furo silencioso
+    quando a QiTech publicava tarde. Ver `project_qitech_max_attempts_cap`."""
     spec = QITECH_ENDPOINTS_BY_NAME["market.fidc_estoque"]
-    assert spec.state_machine_enabled is False
+    assert spec.state_machine_enabled is True
+    assert spec.is_async_report is True
 
 
 def test_qitech_catalog_tolerance_overrides():

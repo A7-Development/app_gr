@@ -211,6 +211,17 @@ _MARKET_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_tolerance_business_days=2,
         default_give_up_business_days=7,
         payload_shape_doc_relpath=_shape("market.fidc_estoque"),
+        # State machine (2026-05-29): migrado do caminho legado (reconciler +
+        # watermark + refresh_complete) pra state machine. Motivo: o cap de 8
+        # tentativas/data do reconciler (_MAX_ATTEMPTS_PER_DATE) gerava furo
+        # silencioso quando a QiTech publicava tarde — esgotava as 8 tentativas
+        # na madrugada e desistia antes de o relatorio ficar pronto (caso
+        # REALINVEST 28/05). A state machine nao tem cap: retenta com backoff
+        # (30min/2h/12h) ate give_up_business_days (7), capturando publicacao
+        # tardia. is_async_report=True ativa o branch assincrono do dispatcher
+        # (guard de in-flight + backoff de re-POST). Ver project_qitech_max_attempts_cap.
+        state_machine_enabled=True,
+        is_async_report=True,
     ),
 )
 
