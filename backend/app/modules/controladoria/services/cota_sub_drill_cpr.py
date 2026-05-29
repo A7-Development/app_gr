@@ -50,6 +50,7 @@ from app.modules.controladoria.schemas.cota_sub_drill import (
     DrillCprLinha,
     DrillCprNaturezaGroup,
     DrillCprResponse,
+    DrillCprResumo,
 )
 from app.modules.integracoes.public import dia_util_anterior_qitech
 from app.warehouse.cpr_movimento import CprMovimento
@@ -93,6 +94,32 @@ _RX_APORTE = re.compile(r"^aporte\b", re.IGNORECASE)
 _RX_LIQUIDADOS_TOTAL_PROV = re.compile(
     r"^liquidados\s+total\s*-\s*prov", re.IGNORECASE,
 )
+
+
+def _magnitude_impacto(
+    side: Literal["receber", "pagar"] | None, sum_d1: Decimal, sum_d0: Decimal,
+) -> tuple[Decimal, Decimal]:
+    """(variacao_magnitude, impacto_pl_sub) com sinal economico ja corrigido.
+
+    Pagar (passivo, valores crus negativos): magnitude = -valor; a divida
+    encolher (var<0) LIBERA o PL Sub (impacto = -var > 0). Receber (ativo):
+    magnitude = valor; encolher reduz o PL (impacto = var). Net: indefinido.
+    """
+    if side == "pagar":
+        var = (-sum_d0) - (-sum_d1)
+        return var, -var
+    if side == "receber":
+        var = sum_d0 - sum_d1
+        return var, var
+    return ZERO, ZERO
+
+
+def _direcao_magnitude(var: Decimal) -> Literal["subiu", "caiu", "estavel"]:
+    if var < Decimal("-0.005"):
+        return "caiu"
+    if var > Decimal("0.005"):
+        return "subiu"
+    return "estavel"
 
 
 def _classificar(descricao: str, historico_traduzido: str) -> CprNaturezaKey:
@@ -303,16 +330,36 @@ async def compute_drill_cpr(
         # Ordena top lines por |delta| DESC.
         bucket_sorted = sorted(bucket, key=lambda ln: abs(ln.delta_valor), reverse=True)
         top = bucket_sorted[:_TOP_LINHAS_POR_NATUREZA]
+        sum_d1 = sum((ln.valor_d1 for ln in bucket), ZERO)
+        sum_d0 = sum((ln.valor_d0 for ln in bucket), ZERO)
+        var_mag, impacto = _magnitude_impacto(side, sum_d1, sum_d0)
         naturezas.append(
             DrillCprNaturezaGroup(
                 natureza=natureza,
                 label=_NATUREZA_LABEL[natureza],
                 qtd_linhas=len(bucket),
-                sum_valor_d1=sum((ln.valor_d1 for ln in bucket), ZERO),
-                sum_valor_d0=sum((ln.valor_d0 for ln in bucket), ZERO),
-                sum_delta=sum((ln.delta_valor for ln in bucket), ZERO),
+                sum_valor_d1=sum_d1,
+                sum_valor_d0=sum_d0,
+                sum_delta=sum_d0 - sum_d1,
+                variacao_magnitude=var_mag,
+                impacto_pl_sub=impacto,
                 top_linhas=top,
             )
+        )
+
+    # Resumo com sinal economico (so nos lados receber/pagar — net fica None).
+    resumo: DrillCprResumo | None = None
+    if side in ("receber", "pagar"):
+        var_mag_total, impacto_total = _magnitude_impacto(side, total_d1, total_d0)
+        mag_d1 = -total_d1 if side == "pagar" else total_d1
+        mag_d0 = -total_d0 if side == "pagar" else total_d0
+        resumo = DrillCprResumo(
+            side=side,
+            magnitude_d1=mag_d1,
+            magnitude_d0=mag_d0,
+            variacao_magnitude=var_mag_total,
+            impacto_pl_sub=impacto_total,
+            direcao=_direcao_magnitude(var_mag_total),
         )
 
     aportes_engaiolados = _detectar_aportes_engaiolados(linhas)
@@ -327,6 +374,7 @@ async def compute_drill_cpr(
         cpr_total_delta=total_d0 - total_d1,
         qtd_linhas_d1=qtd_d1,
         qtd_linhas_d0=qtd_d0,
+        resumo=resumo,
         naturezas=naturezas,
         aportes_engaiolados=aportes_engaiolados,
     )

@@ -136,8 +136,17 @@ async def get_balanco_patrimonial(scope: ScopedContext, args: dict[str, Any]) ->
         "migracao WOP (papeis que viraram write-off), apropriacao de juros "
         "(populacao constante sem mudanca de parametro), mutacao silenciosa "
         "(papeis que mudaram valor_nominal/taxa/vencimento sem evento). "
-        "Identidade fecha por construcao (residuo ~ R$ 0). Inclui lista de "
-        "papeis em cada bucket nao-vazio. Use quando ΔDC for material."
+        "Identidade fecha por construcao (residuo ~ R$ 0).\n\n"
+        "JA VEM PRONTO o bloco `resultado_do_dia` com os MOTORES DE RENDA da "
+        "DC e SINAL DE IMPACTO no PL Sub corrigido (voce NAO precisa flipar o "
+        "ajuste): carrego_apropriacao, renda_multa_juros (= -Σajuste<0, sempre "
+        ">=0), desconto_concedido (>=0, custo), ajuste_liquido_resultado, "
+        "mutacao_total, migracao_wop_total, giro_aquisicoes/giro_liquidacoes "
+        "(NAO movem a cota), motor_dominante e resultado_outlier. Em cada "
+        "liquidacao (por_tipo e top) use `impacto_resultado_brl` (= -ajuste) "
+        "como delta_brl do papel — NUNCA `ganho_liquido`. O bloco `sugestao` "
+        "traz classificacao_sugerida + alerta_sugerido (EVIDENCIA computada; "
+        "valide e use seu julgamento, nao copie cego). Use quando ΔDC for material."
     ),
     input_schema={
         "type": "object",
@@ -150,14 +159,100 @@ async def get_balanco_patrimonial(scope: ScopedContext, args: dict[str, Any]) ->
     cacheable=True,
 )
 async def get_drill_dc(scope: ScopedContext, args: dict[str, Any]) -> str:
-    """Wrap de compute_drill_dc."""
+    """Wrap de compute_drill_dc + camada de sugestao (tools grossas, 2026-05-29).
+
+    O service ja devolve `resultado_do_dia` com sinais de impacto corrigidos
+    (dominio puro, serve UI tambem). Aqui acrescentamos o que e contrato do
+    AGENTE — `classificacao_sugerida` (enum de ExplicacaoCategoria) e
+    `alerta_sugerido` (SinalAlerta pronto) — como EVIDENCIA computada, nunca
+    veredito final (§14: o julgamento e a narrativa continuam do agente).
+    """
     from app.modules.controladoria.services.cota_sub_drill_dc import compute_drill_dc
 
     ua_id, data_d0 = _parse_scope_inputs(scope)
     r = await compute_drill_dc(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
-    return _to_json(r)
+
+    payload = r.model_dump()
+    payload["sugestao"] = _sugestao_drill_dc(r)
+    return _to_json(payload)
+
+
+# Mutacao silenciosa material: dispara alerta quando |ΔVP| dos papeis com
+# mudanca de parametro passa do MAIOR entre um piso absoluto e uma fracao do
+# saldo DC. Calibrado pelo caso canonico DID99746 (-R$ 22.795 num papel) vs
+# ruido de drift (-R$ 2.971 espalhados em REALINVEST 20/05, ~0,012% do estoque).
+# POLITICA TUNAVEL — confirmar limiar com Ricardo antes de generalizar p/ outros fundos.
+_MUTACAO_ALERTA_BRL = Decimal("5000")       # piso absoluto
+_MUTACAO_ALERTA_FRAC = Decimal("0.0005")    # 0,05% do saldo DC
+
+
+def _sugestao_drill_dc(r: Any) -> dict[str, Any]:
+    """Deriva classificacao_sugerida + alerta_sugerido do resultado_do_dia.
+
+    Mapeia os descritores de dominio (motor_dominante/resultado_outlier) para
+    os enums do contrato do agente (ExplicacaoCategoria.classificacao_principal
+    e SinalAlerta). Retorna sempre `resumo_factual` (so numeros, deterministico).
+    """
+    res = r.resultado_do_dia
+    if res is None:  # defensivo — sempre presente no caminho normal
+        return {"classificacao_sugerida": None, "alerta_sugerido": None, "resumo_factual": ""}
+
+    mutacao = res.mutacao_total
+    saldo_d0 = r.decomposicao.saldo_d0
+    # Material = passa do MAIOR entre piso e fracao (escala com o tamanho do fundo).
+    limiar_mutacao = max(_MUTACAO_ALERTA_BRL, _MUTACAO_ALERTA_FRAC * saldo_d0)
+    mutacao_material = abs(mutacao) >= limiar_mutacao
+
+    # classificacao_sugerida (enum ExplicacaoCategoria) = o que DOMINOU o dia.
+    # Eixo de DOMINANCIA (resultado_outlier), separado do eixo de MATERIALIDADE
+    # do alerta. Se o carrego domina (nao-outlier), o dia e carrego_normal mesmo
+    # com uma mutacao material — que vira ALERTA, nao headline (caso 20/05).
+    # Independente de `motor_dominante` (que vira "misto" quando carrego e
+    # multa/juros sao ambos grandes — caso REALINVEST 14/05).
+    ajuste_liq = abs(res.ajuste_liquido_resultado)
+    if not res.resultado_outlier:
+        classificacao = "carrego_normal"
+    elif abs(mutacao) >= ajuste_liq:
+        classificacao = "mutacao_silenciosa_pura"
+    else:
+        classificacao = "evento_pontual_explicado"
+
+    # alerta_sugerido — SinalAlerta pronto (so quando mutacao material).
+    alerta: dict[str, Any] | None = None
+    if mutacao_material:
+        alerta = {
+            "severidade": "atencao",
+            "tipo": "mutacao_silenciosa_material",
+            "entidade": r.fundo_nome,
+            "descricao": (
+                f"Mutacao silenciosa de R$ {float(mutacao):+,.2f} no estoque DC "
+                f"({r.decomposicao.mutacao_n} papeis com mudanca de parametro sem "
+                f"evento de liquidacao/aquisicao)."
+            ),
+            "evidencia": (
+                "Ver mutacao_papeis[] no drill DC (valor_nominal/taxa/vencimento "
+                "alterados entre D-1 e D0)."
+            ),
+        }
+
+    resumo = (
+        f"Resultado DC do dia: carrego R$ {float(res.carrego_apropriacao):+,.2f}; "
+        f"multa/juros R$ {float(res.renda_multa_juros):+,.2f}; "
+        f"desconto R$ {float(res.desconto_concedido):,.2f}; "
+        f"mutacao R$ {float(res.mutacao_total):+,.2f}. "
+        f"Motor dominante: {res.motor_dominante}"
+        f"{' (OUTLIER — carrego nao domina)' if res.resultado_outlier else ''}. "
+        f"Giro (nao move a cota): aquisicoes R$ {float(res.giro_aquisicoes):,.2f}, "
+        f"liquidacoes R$ {float(res.giro_liquidacoes):,.2f}."
+    )
+
+    return {
+        "classificacao_sugerida": classificacao,
+        "alerta_sugerido": alerta,
+        "resumo_factual": resumo,
+    }
 
 
 @register_tool(
@@ -167,8 +262,18 @@ async def get_drill_dc(scope: ScopedContext, args: dict[str, Any]) -> str:
         "(write-off ja fora do balanco), papeis que migraram para WOP no "
         "dia (write-off real, sem liquidacao formal), e lista de TODOS os "
         "papeis ex-WOP com variacao de PDD entre D-1 e D0 (inclui papeis "
-        "LIQUIDADOS com PDD reversa). Use quando ΔPDD for material ou "
-        "quando suspeitar de write-off."
+        "LIQUIDADOS com PDD reversa).\n\n"
+        "JA VEM PRONTO o bloco `resumo` com a leitura de SINAL (regra dura -- "
+        "NAO inverter): constituicao_total (delta>0, PDD subiu, REDUZ o PL Sub), "
+        "reversao_total (delta<0, PDD caiu, AUMENTA o PL Sub), delta_liquido, "
+        "direcao e impacto_pl_sub (sinal ja correto). E `efeito_vagao[]`: sacados "
+        "cujos titulos foram arrastados JUNTOS p/ a mesma faixa (>=2 papeis, >=1 "
+        "vencido) — cada item ja traz documento_puxador (vencido) e "
+        "documentos_arrastados (a vencer). O bloco `sugestao` traz "
+        "classificacao_sugerida (constituicao_pdd/reversao_pdd) + alerta_sugerido "
+        "(EVIDENCIA computada; valide e use seu julgamento). Sinal por papel/celula "
+        "continua em delta_valor_pdd / sum_delta_pdd. Use quando ΔPDD for material "
+        "ou suspeitar de write-off."
     ),
     input_schema={
         "type": "object",
@@ -181,25 +286,108 @@ async def get_drill_dc(scope: ScopedContext, args: dict[str, Any]) -> str:
     cacheable=True,
 )
 async def get_drill_pdd(scope: ScopedContext, args: dict[str, Any]) -> str:
-    """Wrap de compute_drill_pdd."""
+    """Wrap de compute_drill_pdd + camada de sugestao (tools grossas, 2026-05-29).
+
+    Service ja devolve `resumo` (sinal de impacto) + `efeito_vagao` detectado.
+    Aqui anexamos a camada do contrato do AGENTE — classificacao_sugerida +
+    alerta_sugerido — como EVIDENCIA, nao veredito (§14).
+    """
     from app.modules.controladoria.services.cota_sub_drill_pdd import compute_drill_pdd
 
     ua_id, data_d0 = _parse_scope_inputs(scope)
     r = await compute_drill_pdd(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
-    return _to_json(r)
+
+    payload = r.model_dump()
+    payload["sugestao"] = _sugestao_drill_pdd(r)
+    return _to_json(payload)
+
+
+# Efeito vagao material: dispara alerta de sacado_problematico. POLITICA
+# TUNAVEL — calibrar com Ricardo (hoje: grupo com Σ|delta_pdd| >= piso OU
+# >= 3 papeis arrastados).
+_VAGAO_ALERTA_BRL = Decimal("1000")
+_VAGAO_ALERTA_QTD = 3
+
+
+def _sugestao_drill_pdd(r: Any) -> dict[str, Any]:
+    """Deriva classificacao_sugerida + alerta_sugerido do resumo/efeito_vagao.
+
+    classificacao mapeia a direcao do delta (constituicao/reversao) para o enum
+    de ExplicacaoCategoria. alerta sai do efeito_vagao material (sacado cujos
+    titulos foram arrastados de faixa). resumo_factual = numeros deterministicos.
+    """
+    resumo = r.resumo
+    if resumo is None:  # granular indisponivel (motivo_indisponivel != None)
+        return {"classificacao_sugerida": None, "alerta_sugerido": None, "resumo_factual": ""}
+
+    # classificacao_sugerida — enum de ExplicacaoCategoria.
+    if resumo.direcao == "constituicao":
+        classificacao = "constituicao_pdd"
+    elif resumo.direcao == "reversao":
+        classificacao = "reversao_pdd"
+    else:
+        classificacao = None  # dia neutro de PDD — agente decide pelo resto
+
+    # alerta_sugerido — maior grupo de efeito vagao, se material.
+    alerta: dict[str, Any] | None = None
+    materiais = [
+        v for v in r.efeito_vagao
+        if abs(v.sum_delta_pdd) >= _VAGAO_ALERTA_BRL or v.qtd_papeis >= _VAGAO_ALERTA_QTD
+    ]
+    if materiais:
+        v = max(materiais, key=lambda g: abs(g.sum_delta_pdd))
+        alerta = {
+            "severidade": "atencao",
+            "tipo": "sacado_problematico",
+            "entidade": v.sacado_nome,
+            "descricao": (
+                f"Efeito vagao no sacado {v.sacado_nome}: {v.qtd_papeis} titulos "
+                f"reclassificados p/ faixa {v.faixa_para} (Σ PDD R$ {float(v.sum_delta_pdd):+,.2f}). "
+                f"Documento vencido {v.documento_puxador} puxou "
+                f"{v.qtd_a_vencer_arrastados} titulo(s) a vencer."
+            ),
+            "evidencia": (
+                f"Puxador (vencido): doc {v.documento_puxador}. Arrastados (a vencer): "
+                f"{', '.join(v.documentos_arrastados) or '—'}. Ver efeito_vagao[] no drill PDD."
+            ),
+        }
+
+    direcao_txt = {"constituicao": "constituicao (reduz PL Sub)",
+                   "reversao": "reversao (aumenta PL Sub)",
+                   "neutro": "neutra"}[resumo.direcao]
+    resumo_factual = (
+        f"PDD: {direcao_txt}. Constituicao R$ {float(resumo.constituicao_total):,.2f}, "
+        f"reversao R$ {float(resumo.reversao_total):,.2f}, "
+        f"liquido R$ {float(resumo.delta_liquido):+,.2f} "
+        f"(impacto no PL Sub R$ {float(resumo.impacto_pl_sub):+,.2f}). "
+        f"Efeito vagao: {len(r.efeito_vagao)} sacado(s)."
+    )
+
+    return {
+        "classificacao_sugerida": classificacao,
+        "alerta_sugerido": alerta,
+        "resumo_factual": resumo_factual,
+    }
 
 
 @register_tool(
     name="get_drill_cpr",
     description=(
-        "Detalhamento do CPR (Contas a Pagar e Receber): totais D-1/D0/Δ, "
-        "decomposicao por natureza (diferimento, apropriacao de taxa, "
-        "despesa apropriada, IOF/IR, aporte engaiolado, outros) com top "
-        "linhas de cada, detector de aporte engaiolado (rubrica 'Aporte' "
-        "com saldo nao zero que persiste no CPR ate ser resolvida). Use "
-        "quando ΔCPR for material ou suspeitar de evento administrativo."
+        "Detalhamento do CPR ja SEPARADO em `contas_a_receber` (ATIVO) e "
+        "`contas_a_pagar` (PASSIVO) — espelha as DUAS linhas do balanco "
+        "estrutural. Cada lado traz decomposicao por natureza (diferimento, "
+        "taxas, despesas, IOF/IR, aporte engaiolado, outros) + aporte engaiolado.\n\n"
+        "REGRA DURA DE SINAL (le SEMPRE daqui, NUNCA do valor cru): cada lado tem "
+        "um bloco `resumo` com magnitude_d1/magnitude_d0 (sempre >= 0), "
+        "variacao_magnitude (= delta da linha no balanco; <0 = a linha ENCOLHEU) e "
+        "impacto_pl_sub com sinal economico ja correto. Contas a Pagar que CAI tem "
+        "impacto_pl_sub POSITIVO (reduz o passivo, BOM pra Sub) — o valor cru "
+        "(negativo) e a `sum_delta` por natureza tem sinal CONTRARIO ao impacto, "
+        "NAO os use pra narrar sentido. Por natureza, use `variacao_magnitude` e "
+        "`impacto_pl_sub`. O bloco `sugestao` traz classificacao + alertas (EVIDENCIA, "
+        "valide). Use quando ΔContas a Pagar/Receber for material."
     ),
     input_schema={
         "type": "object",
@@ -212,14 +400,74 @@ async def get_drill_pdd(scope: ScopedContext, args: dict[str, Any]) -> str:
     cacheable=True,
 )
 async def get_drill_cpr(scope: ScopedContext, args: dict[str, Any]) -> str:
-    """Wrap de compute_drill_cpr."""
+    """Wrap de compute_drill_cpr nos DOIS lados + camada de sugestao.
+
+    Tools grossas 2026-05-29 (motivado por bug REALINVEST 28/05): em vez de
+    devolver o CPR net (cujo sinal cru no lado pagar enganou o agente — leu
+    "Contas a Pagar subiu" quando caiu), devolve receber e pagar separados, cada
+    um com `resumo` de magnitude/impacto (sinal economico) — alinhado com as
+    duas linhas do balanco. `sugestao` (contrato do agente) anexada como §14.
+    """
     from app.modules.controladoria.services.cota_sub_drill_cpr import compute_drill_cpr
 
     ua_id, data_d0 = _parse_scope_inputs(scope)
-    r = await compute_drill_cpr(
-        scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
+    receber = await compute_drill_cpr(
+        scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0, side="receber",
     )
-    return _to_json(r)
+    pagar = await compute_drill_cpr(
+        scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0, side="pagar",
+    )
+    payload = {
+        "fundo_nome": pagar.fundo_nome,
+        "data": pagar.data,
+        "data_anterior": pagar.data_anterior,
+        "contas_a_receber": receber.model_dump(),
+        "contas_a_pagar": pagar.model_dump(),
+        "sugestao": _sugestao_drill_cpr(receber, pagar),
+    }
+    return _to_json(payload)
+
+
+def _sugestao_drill_cpr(receber: Any, pagar: Any) -> dict[str, Any]:
+    """Sugestao do CPR: leitura factual + alertas (aporte engaiolado).
+
+    classificacao_sugerida fica em `aporte_engaiolado` quando ha aporte
+    engaiolado relevante; senao None (CPR raramente domina o dia — o agente
+    decide pelo resto). resumo_factual descreve os DOIS lados pela magnitude.
+    """
+    rr, rp = receber.resumo, pagar.resumo
+
+    # Alerta de aporte engaiolado (qualquer lado; tipicamente no pagar).
+    alertas: list[dict[str, Any]] = []
+    for lado in (pagar, receber):
+        for ap in lado.aportes_engaiolados:
+            if ap.estado == "persiste" or abs(ap.valor_d0) > 0 or abs(ap.valor_d1) > 0:
+                alertas.append({
+                    "severidade": "atencao",
+                    "tipo": "outro",
+                    "entidade": ap.descricao,
+                    "descricao": (
+                        f"Aporte engaiolado '{ap.descricao}' {ap.estado} "
+                        f"(D-1 R$ {float(ap.valor_d1):,.2f} -> D0 R$ {float(ap.valor_d0):,.2f})."
+                    ),
+                    "evidencia": "Rubrica 'Aporte' no CPR — ver aportes_engaiolados no drill.",
+                })
+
+    classificacao = "aporte_engaiolado" if alertas else None
+
+    def _lado_txt(nome: str, res: Any) -> str:
+        if res is None:
+            return f"{nome}: (sem dados)"
+        return (f"{nome} {res.direcao} de R$ {float(res.magnitude_d1):,.2f} para "
+                f"R$ {float(res.magnitude_d0):,.2f} (impacto PL Sub R$ {float(res.impacto_pl_sub):+,.2f})")
+
+    resumo_factual = f"{_lado_txt('Contas a Pagar', rp)}; {_lado_txt('Contas a Receber', rr)}."
+
+    return {
+        "classificacao_sugerida": classificacao,
+        "alertas_sugeridos": alertas,
+        "resumo_factual": resumo_factual,
+    }
 
 
 # ─── Tool 4b: decomposicao por classe de cota (capital vs valorizacao) ───
@@ -240,8 +488,14 @@ async def get_drill_cpr(scope: ScopedContext, args: dict[str, Any]) -> str:
         "efeito_capital, efeito_valorizacao e classificacao "
         "(aporte|resgate|apenas_valorizacao). efeito_capital vem dos fluxos "
         "reportados pela QiTech; efeito_valorizacao = ΔPL - efeito_capital. "
-        "Cross-check por quantidade incluido. SEMPRE chame quando a categoria "
-        "senior ou mezanino aparecer no Nivel 3."
+        "Cross-check por quantidade incluido.\n\n"
+        "JA VEM PRONTO o bloco `sugestao` com `por_classe` (classificacao_sugerida "
+        "ja mapeada pro enum: aporte_classe / resgate_classe / carrego_normal, e o "
+        "impacto_pl_sub com SINAL ja corrigido — aporte numa PRIORITARIA (Sr/Mez) "
+        "REDUZ o PL Sub por diluicao; aporte na SUBORDINADA aumenta) e "
+        "`alertas_sugeridos` (captacao/resgate material >= R$ 50k OU 0,5% do PL Sub, "
+        "como EVIDENCIA computada — valide, nao copie cego). SEMPRE chame quando a "
+        "categoria senior ou mezanino aparecer no Nivel 3."
     ),
     input_schema={
         "type": "object",
@@ -254,7 +508,13 @@ async def get_drill_cpr(scope: ScopedContext, args: dict[str, Any]) -> str:
     cacheable=True,
 )
 async def get_decomposicao_classes(scope: ScopedContext, args: dict[str, Any]) -> str:
-    """Wrap de compute_decomposicao_classes_mec. ua_id+data vem do scope."""
+    """Wrap de compute_decomposicao_classes_mec + camada de sugestao.
+
+    Tools grossas 2026-05-29: o service ja decompoe capital vs valorizacao por
+    classe. Aqui mapeamos a classificacao de dominio (aporte/resgate/
+    apenas_valorizacao) pro enum do agente e montamos os alertas de captacao
+    material — regras que viviam no prompt. EVIDENCIA, nao veredito (§14).
+    """
     from app.modules.controladoria.services.balanco_patrimonial import (
         compute_decomposicao_classes_mec,
     )
@@ -263,7 +523,83 @@ async def get_decomposicao_classes(scope: ScopedContext, args: dict[str, Any]) -
     r = await compute_decomposicao_classes_mec(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
+    r["sugestao"] = _sugestao_decomposicao_classes(r)
     return _to_json(r)
+
+
+# Captacao/resgate material numa classe: gatilho de alerta. POLITICA TUNAVEL.
+_CAPITAL_ALERTA_BRL = Decimal("50000")
+_CAPITAL_ALERTA_FRAC = Decimal("0.005")  # 0,5% do PL Sub
+
+# Mapa classificacao de dominio -> enum ExplicacaoCategoria.classificacao_principal.
+_CLASSIF_CLASSE_MAP = {
+    "aporte": "aporte_classe",
+    "resgate": "resgate_classe",
+    "apenas_valorizacao": "carrego_normal",
+}
+
+
+def _sugestao_decomposicao_classes(r: dict[str, Any]) -> dict[str, Any]:
+    """Deriva classificacao_sugerida por classe + alertas de captacao material.
+
+    `compute_decomposicao_classes_mec` devolve dict (nao Pydantic) com `classes`.
+    Cada classe vira uma ExplicacaoCategoria distinta no Nivel 3 do agente —
+    por isso a sugestao e POR CLASSE. impacto_pl_sub ja vem com o sinal correto
+    da otica Sub Jr (passivo prioritario: aporte reduz; subordinada: aporte soma).
+    """
+    classes = r.get("classes", [])
+    # PL Sub = patrimonio_d0 da classe subordinada (base do limiar de 0,5%).
+    pl_sub_d0 = next(
+        (Decimal(str(c["patrimonio_d0"])) for c in classes if c["classe"] == "sub_jr"),
+        Decimal("0"),
+    )
+    limiar = max(_CAPITAL_ALERTA_BRL, _CAPITAL_ALERTA_FRAC * abs(pl_sub_d0))
+
+    por_classe: dict[str, Any] = {}
+    alertas: list[dict[str, Any]] = []
+    for c in classes:
+        classe = c["classe"]
+        ec = Decimal(str(c["efeito_capital"]))
+        ev = Decimal(str(c["efeito_valorizacao"]))
+        is_prioritaria = classe in ("senior", "mezanino")
+        # Impacto no PL Sub: prioritaria e passivo (aporte reduz a Sub por
+        # diluicao); subordinada e o proprio PL (aporte soma direto).
+        impacto_pl_sub = -ec if is_prioritaria else ec
+
+        por_classe[classe] = {
+            "classificacao_sugerida": _CLASSIF_CLASSE_MAP.get(c["classificacao"]),
+            "efeito_capital": float(ec),
+            "efeito_valorizacao": float(ev),
+            "impacto_pl_sub_do_capital": float(impacto_pl_sub),
+        }
+
+        if abs(ec) >= limiar:
+            verbo = "Aporte" if ec > 0 else "Resgate"
+            if is_prioritaria:
+                efeito_sub = "REDUZ o PL Sub (diluicao)" if ec > 0 else "AUMENTA o PL Sub"
+            else:
+                efeito_sub = "AUMENTA o PL Sub" if ec > 0 else "REDUZ o PL Sub"
+            alertas.append({
+                "severidade": "atencao",
+                "tipo": "outro",
+                "entidade": c["label"],
+                "descricao": (
+                    f"{verbo} de capital de R$ {float(ec):+,.2f} na {c['label']} "
+                    f"(valorizacao do dia R$ {float(ev):+,.2f}). Evento de captacao, "
+                    f"NAO custo — {efeito_sub}."
+                ),
+                "evidencia": (
+                    f"Fluxos QiTech: entradas {c['entradas']}, saidas {c['saidas']}, "
+                    f"aporte {c['aporte']}, retirada {c['retirada']}. "
+                    f"Cross-check por qtd: {c['cross_check_capital_por_qtd']}."
+                ),
+            })
+
+    return {
+        "por_classe": por_classe,
+        "alertas_sugeridos": alertas,
+        "limiar_capital_brl": float(limiar),
+    }
 
 
 # ─── Tool 5: cross-tabela — eventos adjacentes pra um papel ──────────────
@@ -585,23 +921,33 @@ async def get_papeis_mesmo_cedente_sacado(
 # ─── Tool 8: sanity Nivel 1 (identidade contabil do dia) ─────────────────
 
 
+# Bandas de resíduo do Nivel 1 (agent-contract, antes no prompt v8). POLITICA
+# TUNAVEL. < ATENCAO: fechamento sadio/arredondamento. ATENCAO <= |res| <
+# CRITICO: divergencia moderada, segue a analise + 1 alerta. >= CRITICO: para.
+_RESIDUO_ATENCAO_BRL = Decimal("100")
+_RESIDUO_CRITICO_BRL = Decimal("5000")
+
+
 @register_tool(
     name="check_identidade_contabil",
     description=(
-        "Sanity check Nivel 1 do agente — verifica se a identidade "
-        "contabil bateu no dia: (ΔPL calculado pelo granular) ≈ (ΔPL fonte "
-        "MEC). Retorna {passou, residuo_brl, pl_deduzido_delta, pl_fonte_delta, "
-        "tolerancia}. Use SEMPRE como primeira tool da analise antes de "
-        "investigar variacoes — se residuo for grande, ha desalinhamento de "
-        "pipeline e analise pode estar invalida."
+        "Sanity check Nivel 1 (PRIMEIRA tool da analise): a identidade contabil "
+        "bateu? (ΔPL granular) ≈ (ΔPL fonte MEC).\n\n"
+        "JA VEM PRONTA a decisao do Nivel 1 (regras antes no prompt): `severidade` "
+        "(ok|atencao|critico pelas bandas R$100/R$5.000), `deve_continuar` (False so "
+        "em residuo critico >= R$5.000 — ai PARE: preencha apenas nivel_1 + sumario "
+        "+ o alerta/acao sugeridos), `alerta_sugerido` (SinalAlerta residuo_alto "
+        "pronto, ou null) e `acao_sugerida` (SugestaoAcao pronta, ou null). EVIDENCIA "
+        "computada — use seu julgamento, nao copie cego. Tambem: passou, residuo_brl, "
+        "pl_deduzido_delta, pl_fonte_delta, diagnostico."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "tolerancia_brl": {
                 "type": "number",
-                "description": "Threshold em BRL acima do qual residuo eh "
-                               "considerado problema. Default 1.0.",
+                "description": "Threshold do flag `passou` (fechamento sadio). Default 1.0. "
+                               "NAO afeta severidade (que usa bandas R$100/R$5.000).",
             },
         },
         "additionalProperties": False,
@@ -625,33 +971,75 @@ async def check_identidade_contabil(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
     residuo = r.reconciliacao.residuo_delta
-    passou = abs(residuo) < tolerancia
+    abs_res = abs(residuo)
+    passou = abs_res < tolerancia
 
-    if abs(residuo) < Decimal("0.05"):
+    # Severidade pelas bandas do Nivel 1 (alinhadas com diagnostico + acao).
+    if abs_res >= _RESIDUO_CRITICO_BRL:
+        severidade = "critico"
+        deve_continuar = False
+        diagnostico = (
+            f"DESALINHAMENTO CRITICO de R$ {residuo:+.2f} (>= R$ {_RESIDUO_CRITICO_BRL:.0f}). "
+            f"Identidade contabil quebrou — pipeline tem furo (snapshot QiTech faltando, "
+            f"mapper bug, etc.). PARE: a analise das variacoes pode estar invalida."
+        )
+    elif abs_res >= _RESIDUO_ATENCAO_BRL:
+        severidade = "atencao"
+        deve_continuar = True
+        diagnostico = (
+            f"Divergencia moderada de R$ {residuo:+.2f} (R$ {_RESIDUO_ATENCAO_BRL:.0f} a "
+            f"R$ {_RESIDUO_CRITICO_BRL:.0f}). Acima de arredondamento, mas nao critico. "
+            f"SEGUE a analise — investigue a categoria de maior |Δ| pra localizar a origem."
+        )
+    elif abs_res < Decimal("0.05"):
+        severidade = "ok"
+        deve_continuar = True
         diagnostico = "Fechamento perfeito (arredondamento <= 5 centavos)."
-    elif passou:
-        diagnostico = (
-            f"Fechamento sadio (residuo de R$ {residuo:+.2f} dentro da "
-            f"tolerancia de R$ {tolerancia:.2f} — arredondamento estrutural QiTech)."
-        )
-    elif abs(residuo) < Decimal("100"):
-        diagnostico = (
-            f"Residuo elevado de R$ {residuo:+.2f}. Acima do esperado "
-            f"(centavos) mas ainda nao critico (<R$ 100). Investigar "
-            f"categoria com maior |Δ| pra encontrar desalinhamento."
-        )
     else:
+        severidade = "ok"
+        deve_continuar = True
         diagnostico = (
-            f"DESALINHAMENTO CRITICO de R$ {residuo:+.2f}. Identidade "
-            f"contabil quebrou. Analise das variacoes pode estar invalida "
-            f"— pipeline tem furo (snapshot QiTech faltando, mapper bug, etc.)."
+            f"Fechamento sadio (residuo de R$ {residuo:+.2f} — arredondamento "
+            f"estrutural QiTech, abaixo de R$ {_RESIDUO_ATENCAO_BRL:.0f})."
         )
+
+    # alerta_sugerido + acao_sugerida prontos (so quando ha o que reportar).
+    alerta: dict[str, Any] | None = None
+    acao: dict[str, Any] | None = None
+    if severidade in ("atencao", "critico"):
+        alerta = {
+            "severidade": severidade,
+            "tipo": "residuo_alto",
+            "entidade": r.fundo_nome,
+            "descricao": (
+                f"Identidade contabil com residuo de R$ {residuo:+.2f} no dia "
+                f"({severidade}). ΔPL granular vs ΔPL fonte MEC nao fecham."
+            ),
+            "evidencia": (
+                f"PL deduzido Δ R$ {float(r.pl_sub_delta):+,.2f} vs PL fonte MEC Δ "
+                f"R$ {float(r.reconciliacao.pl_fonte_delta):+,.2f}."
+            ),
+        }
+    if severidade == "critico":
+        acao = {
+            "prioridade": "alta",
+            "acao": "investigar",
+            "detalhe": (
+                "Pipeline com furo (residuo >= R$ 5.000). Preencha apenas nivel_1 + "
+                "sumario + este alerta/acao; deixe nivel_2 e nivel_3 vazios ate o "
+                "desalinhamento ser resolvido."
+            ),
+        }
 
     return _to_json({
         "passou": passou,
+        "severidade": severidade,
+        "deve_continuar": deve_continuar,
         "residuo_brl": residuo,
         "pl_deduzido_delta": r.pl_sub_delta,
         "pl_fonte_delta": r.reconciliacao.pl_fonte_delta,
         "tolerancia_brl": tolerancia,
         "diagnostico": diagnostico,
+        "alerta_sugerido": alerta,
+        "acao_sugerida": acao,
     })

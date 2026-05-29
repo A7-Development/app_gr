@@ -64,8 +64,19 @@ class DrillDcLiquidacaoPorTipo(BaseModel):
     sum_valor_pago:         Decimal = Field(description="Σ valor recebido em caixa")
     sum_valor_aquisicao:    Decimal = Field(description="Σ valor pelo qual o FIDC adquiriu (custo)")
     sum_valor_vencimento:   Decimal = Field(description="Σ valor de face no vencimento")
-    sum_ajuste:             Decimal = Field(description="Σ ajustes contabeis aplicados")
-    ganho_liquido:          Decimal = Field(description="Σ (valor_pago - valor_aquisicao - ajuste)")
+    sum_ajuste:             Decimal = Field(description="Σ ajustes contabeis (= valor_vencimento - valor_pago)")
+    impacto_resultado_brl:  Decimal = Field(
+        default=Decimal("0"),
+        description="Impacto NO RESULTADO do dia = -sum_ajuste (sinal ja corrigido). "
+                    "Positivo = multa/juros de mora (renda); negativo = desconto "
+                    "concedido (custo). USE ISTO como delta_brl ao citar o papel/tipo "
+                    "como driver de resultado — NUNCA o `ganho_liquido` (que e de vida "
+                    "inteira do titulo, erro de ~3x).",
+    )
+    ganho_liquido:          Decimal = Field(
+        description="Σ (valor_pago - valor_aquisicao - ajuste). NAO e resultado do dia — "
+                    "e o ganho acumulado de vida inteira do titulo. So contexto.",
+    )
 
 
 class DrillDcLiquidacaoLinha(BaseModel):
@@ -82,8 +93,17 @@ class DrillDcLiquidacaoLinha(BaseModel):
     valor_pago:         Decimal
     valor_aquisicao:    Decimal
     valor_vencimento:   Decimal
-    ajuste:             Decimal
-    ganho_liquido:      Decimal = Field(description="valor_pago - valor_aquisicao - ajuste")
+    ajuste:             Decimal = Field(description="valor_vencimento - valor_pago")
+    impacto_resultado_brl: Decimal = Field(
+        default=Decimal("0"),
+        description="Impacto NO RESULTADO do dia = -ajuste (sinal corrigido). Positivo = "
+                    "multa/juros (renda); negativo = desconto concedido. Use ISTO como "
+                    "delta_brl do papel, NUNCA o ganho_liquido.",
+    )
+    ganho_liquido:      Decimal = Field(
+        description="valor_pago - valor_aquisicao - ajuste. Ganho de vida inteira — NAO "
+                    "e resultado do dia.",
+    )
 
 
 class DrillDcApropriacao(BaseModel):
@@ -227,6 +247,63 @@ class DrillDcDecomposicao(BaseModel):
     )
 
 
+class DrillDcResultadoDoDia(BaseModel):
+    """Os motores de renda da DC no dia, com sinal de IMPACTO ja corrigido.
+
+    Refactor 2026-05-29 (tools grossas): consolida aqui a leitura que antes
+    o prompt do agente carregava como "regra dura de sinal". Todos os campos
+    ja vem no sentido do IMPACTO no PL Sub (positivo = aumentou o PL Sub;
+    negativo = reduziu), de modo que o consumidor (agente OU UI) nao precisa
+    flipar o `ajuste` nem re-derivar nada de cabeca.
+
+    Separacao value-movers (movem a cota) vs giro (transferencia DC<->caixa,
+    NAO move a cota):
+
+      VALUE-MOVERS:  carrego_apropriacao + ajuste_liquido_resultado
+                     (+ mutacao_total, migracao_wop_total como correcoes)
+      GIRO:          giro_aquisicoes, giro_liquidacoes (contexto, nao resultado)
+    """
+
+    # ── Value-movers (movem o PL Sub) ───────────────────────────────────────
+    carrego_apropriacao:      Decimal = Field(
+        description="= decomposicao.apropriacao_total. Juros + MtM da populacao "
+                    "constante. Motor 'normal' do dia. Positivo = renda.",
+    )
+    renda_multa_juros:        Decimal = Field(
+        description="= -Σ(ajuste<0) das liquidacoes. Multa + juros de mora (sacado "
+                    "pagou ACIMA do vencimento). Sempre >= 0 (renda).",
+    )
+    desconto_concedido:       Decimal = Field(
+        description="= Σ(ajuste>0) das liquidacoes. Abatimento concedido (sacado "
+                    "pagou ABAIXO do vencimento). Magnitude >= 0 (custo).",
+    )
+    ajuste_liquido_resultado: Decimal = Field(
+        description="= renda_multa_juros - desconto_concedido = -Σajuste. Impacto "
+                    "liquido das liquidacoes no resultado do dia.",
+    )
+    mutacao_total:            Decimal = Field(
+        description="= decomposicao.mutacao_total. ΔVP de papeis que mudaram "
+                    "parametro sem evento (mutacao silenciosa). Pode ser perda.",
+    )
+    migracao_wop_total:       Decimal = Field(
+        description="= decomposicao.migracao_wop_total. VP que virou WOP no dia. "
+                    "~Neutro no PL Sub (sai DC e sai PDD juntos), mas relevante narrar.",
+    )
+
+    # ── Giro (NAO move a cota) ───────────────────────────────────────────────
+    giro_aquisicoes:          Decimal = Field(description="Σ VP dos papeis novos (D0 \\ D-1).")
+    giro_liquidacoes:         Decimal = Field(description="Σ VP_d1 dos papeis que sairam (D-1 \\ D0).")
+
+    # ── Heuristica de leitura (descritores de dominio, nao enums do agente) ──
+    motor_dominante:          Literal[
+        "carrego", "multa_juros", "desconto", "mutacao", "write_off", "misto"
+    ] = Field(description="Qual motor tem maior magnitude de impacto no dia.")
+    resultado_outlier:        bool = Field(
+        description="True quando |ajuste_liquido_resultado| ou |mutacao_total| supera "
+                    "o carrego_apropriacao — dia foge do padrao (carrego nao domina).",
+    )
+
+
 class DrillDcResponse(BaseModel):
     """Drill da categoria DC (Direitos Creditorios)."""
 
@@ -250,6 +327,12 @@ class DrillDcResponse(BaseModel):
 
     # F2 redesign 2026-05-24: decomposicao em 5 buckets a partir do granular.
     decomposicao:        DrillDcDecomposicao
+
+    # Tools grossas 2026-05-29: motores de renda com sinal de IMPACTO ja
+    # corrigido (carrego / multa-juros / desconto / mutacao / WOP) + giro
+    # segregado. Opcional (default None) por retrocompat com a UI atual.
+    resultado_do_dia:    DrillDcResultadoDoDia | None = None
+
     mutacao_papeis:      list[DrillDcMutacaoPapel] = Field(
         default_factory=list,
         description="Detalhe do bucket Mutacao (top N por |delta_vp|)",
@@ -312,6 +395,66 @@ class DrillPddPapel(BaseModel):
     situacao_recebivel_d0:      str | None = None
 
 
+class DrillPddResumo(BaseModel):
+    """Leitura pronta da variacao de PDD com sinal de IMPACTO no PL Sub.
+
+    Tools grossas 2026-05-29: move pra dentro da tool a "regra dura -- NAO
+    inverter" que o prompt do agente carregava. PDD e contra-ativo:
+    constituicao (delta_valor_pdd > 0, PDD sobe) REDUZ o PL Sub; reversao
+    (delta < 0, PDD cai) AUMENTA. Os totais ja vem separados por sinal e o
+    `impacto_pl_sub` ja vem com o sinal correto (= -delta_liquido) — o agente
+    nao deduz de cabeca. Escopo: faixas A-H (ex-WOP, = contribuicao ao PL).
+    """
+
+    constituicao_total: Decimal = Field(
+        description="Σ delta_valor_pdd dos papeis com delta > 0 (PDD subiu). >= 0. "
+                    "Impacto NEGATIVO no PL Sub.",
+    )
+    reversao_total: Decimal = Field(
+        description="Σ delta_valor_pdd dos papeis com delta < 0 (PDD caiu). <= 0. "
+                    "Impacto POSITIVO no PL Sub.",
+    )
+    delta_liquido: Decimal = Field(
+        description="constituicao_total + reversao_total (= Δ PDD ex-WOP consolidado).",
+    )
+    direcao: Literal["constituicao", "reversao", "neutro"] = Field(
+        description="Sinal dominante do delta_liquido.",
+    )
+    impacto_pl_sub: Decimal = Field(
+        description="= -delta_liquido. Positivo = PDD caiu e PL Sub subiu; "
+                    "negativo = PDD subiu e PL Sub caiu.",
+    )
+
+
+class DrillPddEfeitoVagao(BaseModel):
+    """Sacado cujos titulos foram reclassificados JUNTOS para a mesma faixa.
+
+    Efeito vagao (regra de dominio, Resolucao 2682): quando um sacado tem >= 1
+    titulo VENCIDO que entrou/piorou numa faixa de PDD, os DEMAIS titulos do
+    MESMO sacado — inclusive os que ainda NAO venceram — sao arrastados para a
+    mesma faixa. O detector agrupa por (sacado, faixa_para) e exige: >= 2 papeis
+    migrando para a mesma faixa (pior que a origem) e >= 1 vencido (o "puxador").
+
+    Tools grossas 2026-05-29: o prompt pedia ao LLM reconhecer esse padrao a
+    olho; agora vem detectado e nomeado.
+    """
+
+    sacado_doc:                str
+    sacado_nome:               str
+    faixa_para:                PddFaixaKey = Field(description="Faixa de destino comum.")
+    qtd_papeis:                int = Field(description="Total de papeis do sacado migrando p/ a faixa.")
+    qtd_vencidos:              int = Field(description="Quantos ja venceram (puxadores).")
+    qtd_a_vencer_arrastados:   int = Field(description="Quantos ainda nao venceram (arrastados).")
+    sum_delta_pdd:             Decimal = Field(description="Σ delta_valor_pdd do grupo.")
+    documento_puxador:         str = Field(
+        description="numero_documento do titulo VENCIDO de maior PDD (o que puxou).",
+    )
+    documentos_arrastados:     list[str] = Field(
+        default_factory=list,
+        description="numeros_documento dos titulos a vencer arrastados.",
+    )
+
+
 class DrillPddResponse(BaseModel):
     """Drill da categoria PDD (Provisao para Devedores Duvidosos)."""
 
@@ -353,6 +496,11 @@ class DrillPddResponse(BaseModel):
     estoque_disponivel_d1:       bool
     estoque_disponivel_d0:       bool
     motivo_indisponivel:         str | None = None
+
+    # Tools grossas 2026-05-29: leitura pronta (sinal de impacto) + vagao
+    # detectado. Opcionais (default None/[]) por retrocompat com a UI atual.
+    resumo:                      DrillPddResumo | None = None
+    efeito_vagao:                list[DrillPddEfeitoVagao] = Field(default_factory=list)
 
     matriz:                      list[DrillPddMigracaoCelula]
 
@@ -400,11 +548,50 @@ class DrillCprNaturezaGroup(BaseModel):
     natureza:        CprNaturezaKey
     label:           str = Field(description="Label pt-BR amigavel (ex.: 'Diferimento de despesa')")
     qtd_linhas:      int
-    sum_valor_d1:    Decimal
-    sum_valor_d0:    Decimal
-    sum_delta:       Decimal
+    sum_valor_d1:    Decimal = Field(description="Σ valor cru D-1 (negativo no lado pagar).")
+    sum_valor_d0:    Decimal = Field(description="Σ valor cru D0 (negativo no lado pagar).")
+    sum_delta:       Decimal = Field(description="sum_valor_d0 - sum_valor_d1 (cru). NAO use p/ ler sentido no lado pagar.")
+    # Tools grossas 2026-05-29: sinais ja corrigidos (so preenchidos quando
+    # o drill e chamado com side=receber|pagar).
+    variacao_magnitude: Decimal = Field(
+        default=Decimal("0"),
+        description="Δ da MAGNITUDE da rubrica (>0 cresceu, <0 encolheu). No lado "
+                    "pagar = -sum_delta (a divida diminuir da delta cru POSITIVO).",
+    )
+    impacto_pl_sub:  Decimal = Field(
+        default=Decimal("0"),
+        description="Impacto no PL Sub Jr. Pagar (passivo) que encolhe -> POSITIVO "
+                    "(libera PL); Receber (ativo) que encolhe -> NEGATIVO.",
+    )
     top_linhas:      list[DrillCprLinha] = Field(
         description="Top N linhas do grupo ordenadas por |delta_valor| DESC"
+    )
+
+
+class DrillCprResumo(BaseModel):
+    """Leitura pronta de um lado do CPR (Contas a Receber OU a Pagar).
+
+    Tools grossas 2026-05-29: nasce de um bug real (REALINVEST 28/05) — o drill
+    devolvia totais CRUS negativos no lado pagar, cujo delta com sinal (+108k)
+    e OPOSTO a variacao da magnitude (-108k) e ao impacto. O agente leu o sinal
+    cru e narrou "Contas a Pagar SUBIU" quando ela CAIU. Aqui a magnitude e o
+    impacto ja vem com sinal economico — alinhados com a linha do balanco.
+    """
+
+    side:               Literal["receber", "pagar"]
+    magnitude_d1:       Decimal = Field(description="|total| em D-1 (>= 0).")
+    magnitude_d0:       Decimal = Field(description="|total| em D0 (>= 0).")
+    variacao_magnitude: Decimal = Field(
+        description="magnitude_d0 - magnitude_d1. <0 = a linha ENCOLHEU. "
+                    "Igual ao delta da linha correspondente no balanco estrutural.",
+    )
+    impacto_pl_sub:     Decimal = Field(
+        description="Impacto no PL Sub Jr. Pagar que cai -> POSITIVO (reduz passivo, "
+                    "bom); Receber que cai -> NEGATIVO. = -variacao p/ pagar, "
+                    "+variacao p/ receber.",
+    )
+    direcao:            Literal["subiu", "caiu", "estavel"] = Field(
+        description="Sentido da MAGNITUDE da linha (nao do valor cru).",
     )
 
 
@@ -453,6 +640,10 @@ class DrillCprResponse(BaseModel):
 
     qtd_linhas_d1:          int
     qtd_linhas_d0:          int
+
+    # Tools grossas 2026-05-29: leitura pronta com sinal economico. Preenchido
+    # so quando o drill e chamado com side=receber|pagar (None no modo net).
+    resumo:                 DrillCprResumo | None = None
 
     naturezas:              list[DrillCprNaturezaGroup]
 
