@@ -40,7 +40,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -48,6 +48,9 @@ from app.core.database import AsyncSessionLocal
 from app.core.enums import Environment, SourceType
 from app.modules.integracoes.adapters.admin.qitech.custodia import (
     resolve_cnpj_by_ua_id,
+)
+from app.modules.integracoes.adapters.admin.qitech.etl import (
+    _mark_dia_util_qitech,
 )
 from app.modules.integracoes.models.backfill_job import BackfillJob
 from app.modules.integracoes.models.qitech_report_job import (
@@ -65,6 +68,8 @@ from app.modules.integracoes.services.endpoint_routing import (
     is_state_machine_enabled,
 )
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
+from app.warehouse.dia_util_qitech import DiaUtilQitech
+from app.warehouse.mec_evolucao_cotas import MecEvolucaoCotas
 
 logger = logging.getLogger("gr.integracoes.reconciler")
 
@@ -456,6 +461,126 @@ async def find_qitech_gaps_to_heal(
     return out
 
 
+async def find_dia_util_marker_drift(
+    db: AsyncSession,
+    *,
+    lookback_days: int,
+) -> list[tuple[UUID, UUID, date]]:
+    """Datas com MEC silver presente mas SEM linha em wh_dia_util_qitech.
+
+    Detecta o segundo modo de drift coberto pelo reconciler (alem de furos de
+    raw): dias que tem dado MEC canonico (`wh_mec_evolucao_cotas`) mas nunca
+    foram marcados como dia util, ficando desabilitados no Calendar da pagina
+    cota-sub mesmo com dado integro.
+
+    Causa estrutural: `_mark_dia_util_qitech` so e chamado por
+    `etl.sync_all` e por `adapter.adapter_sync_endpoint` (quando
+    endpoint=market.mec com upsert fresco). Qualquer caminho que popule o
+    silver MEC fora desses dois orquestradores deixa o marcador para tras —
+    ex.: o script `backfill_qitech_mec.py`, que chama `sync_mec` direto.
+
+    Anti-join escopado por (tenant, ua) das configs QiTech habilitadas em
+    producao (multi-tenant §10). So considera MEC com
+    `unidade_administrativa_id` definido, porque o marcador exige UA.
+
+    Returns:
+        Lista de (tenant_id, unidade_administrativa_id, data_posicao) orfas.
+        Vazia quando nao ha drift.
+    """
+    start = datetime.now(UTC).date() - timedelta(days=lookback_days)
+
+    configs = await list_enabled_configs(
+        db,
+        SourceType.ADMIN_QITECH,
+        Environment.PRODUCTION,
+    )
+
+    out: list[tuple[UUID, UUID, date]] = []
+    for cfg in configs:
+        if cfg.unidade_administrativa_id is None:
+            # Marcador de dia util exige UA — config sem UA nao produz MEC
+            # diario marcavel.
+            continue
+
+        marker_exists = exists().where(
+            DiaUtilQitech.tenant_id == MecEvolucaoCotas.tenant_id,
+            DiaUtilQitech.unidade_administrativa_id
+            == MecEvolucaoCotas.unidade_administrativa_id,
+            DiaUtilQitech.data_posicao == MecEvolucaoCotas.data_posicao,
+        )
+        stmt = (
+            select(MecEvolucaoCotas.data_posicao)
+            .where(
+                MecEvolucaoCotas.tenant_id == cfg.tenant_id,
+                MecEvolucaoCotas.unidade_administrativa_id
+                == cfg.unidade_administrativa_id,
+                MecEvolucaoCotas.data_posicao >= start,
+                ~marker_exists,
+            )
+            .distinct()
+            .order_by(MecEvolucaoCotas.data_posicao)
+        )
+        for row in (await db.execute(stmt)).all():
+            out.append(
+                (cfg.tenant_id, cfg.unidade_administrativa_id, row[0])
+            )
+    return out
+
+
+async def heal_dia_util_marker_drift(
+    drift: list[tuple[UUID, UUID, date]],
+) -> dict[str, Any]:
+    """Marca como dia util cada (tenant, ua, data) orfa detectada.
+
+    Reusa `_mark_dia_util_qitech` — data-driven e idempotente: reconfirma
+    MEC silver presente + conta raw http=200 antes de gravar. Erros por data
+    nao derrubam a varredura (logados + contados).
+
+    Returns:
+        Summary com contadores (marked/skipped/failed) por tenant impactado.
+    """
+    marked = 0
+    skipped = 0
+    failed = 0
+    by_tenant: dict[UUID, int] = {}
+
+    for tenant_id, ua_id, data_posicao in drift:
+        try:
+            ok = await _mark_dia_util_qitech(
+                tenant_id=tenant_id,
+                unidade_administrativa_id=ua_id,
+                data_posicao=data_posicao,
+            )
+            if ok:
+                marked += 1
+                by_tenant[tenant_id] = by_tenant.get(tenant_id, 0) + 1
+            else:
+                # MEC silver sumiu entre o anti-join e a marcacao — improvavel,
+                # mas a funcao preserva a semantica "ausencia nao marca".
+                skipped += 1
+        except Exception as e:
+            failed += 1
+            logger.exception(
+                "reconciler: failed to heal dia_util marker for %s/%s/%s: %s",
+                tenant_id,
+                ua_id,
+                data_posicao,
+                e,
+            )
+
+    if marked:
+        for tenant_id, count in by_tenant.items():
+            await _record_reconciler_decision(
+                tenant_id=tenant_id,
+                summary={
+                    "phase": "dia_util_marker_heal",
+                    "dias_marcados": count,
+                },
+            )
+
+    return {"marked": marked, "skipped": skipped, "failed": failed}
+
+
 async def _record_reconciler_decision(
     *,
     tenant_id: UUID,
@@ -586,6 +711,19 @@ async def run_reconciler_tick() -> dict[str, Any]:
         )
 
     job_summaries = await enqueue_reconciler_jobs(gaps)
+
+    # Segundo modo de drift: MEC silver presente mas dia nao marcado em
+    # wh_dia_util_qitech (Calendar cota-sub desabilita datas validas). Lookback
+    # proprio, bem maior que o de furos de raw — re-marcar e barato e
+    # idempotente, e backfills historicos de MEC (ex.: backfill_qitech_mec.py)
+    # podem ter deixado datas antigas orfas.
+    async with AsyncSessionLocal() as db:
+        marker_drift = await find_dia_util_marker_drift(
+            db,
+            lookback_days=_DIA_UTIL_HEAL_LOOKBACK_DAYS,
+        )
+    marker_heal = await heal_dia_util_marker_drift(marker_drift)
+
     elapsed = (datetime.now(UTC) - t0).total_seconds()
 
     return {
@@ -595,6 +733,9 @@ async def run_reconciler_tick() -> dict[str, Any]:
         "gaps_detected": len(gaps),
         "jobs_enqueued": sum(1 for s in job_summaries if s["ok"]),
         "jobs_failed": sum(1 for s in job_summaries if not s["ok"]),
+        "dia_util_marker_drift": len(marker_drift),
+        "dia_util_marker_healed": marker_heal["marked"],
+        "dia_util_marker_failed": marker_heal["failed"],
         "elapsed_seconds": round(elapsed, 2),
     }
 
@@ -628,3 +769,11 @@ _MAX_GAPS_PER_JOB: int = 60
 # fica "stale" ate Fase 2 (politica de retry com backoff exponencial +
 # unrecoverable state) substituir essa logica.
 _MAX_ATTEMPTS_PER_DATE: int = 8
+
+# Lookback proprio da varredura de marcador de dia util (separado do lookback
+# de furos de raw, que e curto porque re-fetch de fonte e caro). Re-marcar e
+# barato (le silver + upsert minusculo) e idempotente, entao cobrimos uma
+# janela larga pra capturar datas orfas deixadas por backfills historicos de
+# MEC. 730 dias (~2 anos) e folgado e ainda bounded — o anti-join restringe
+# o trabalho real apenas as datas orfas, que tendem a zero apos a 1a cura.
+_DIA_UTIL_HEAL_LOOKBACK_DAYS: int = 730
