@@ -40,7 +40,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.cadastros.public import UnidadeAdministrativa
@@ -53,6 +53,7 @@ from app.modules.controladoria.schemas.cota_sub_drill import (
     DrillDcMigracaoWopPapel,
     DrillDcMutacaoPapel,
     DrillDcResponse,
+    DrillDcResultadoDoDia,
 )
 from app.modules.controladoria.services.cota_sub import _sum_dc
 from app.modules.integracoes.public import dia_util_anterior_qitech
@@ -132,12 +133,22 @@ async def _liquidacoes_do_dia(
     ua_id: UUID,
     fundo_doc: str,
     data: date,
-) -> tuple[list[DrillDcLiquidacaoPorTipo], list[DrillDcLiquidacaoLinha], int, Decimal]:
+) -> tuple[
+    list[DrillDcLiquidacaoPorTipo], list[DrillDcLiquidacaoLinha], int,
+    Decimal, Decimal, Decimal,
+]:
     """Liquidacoes do dia + agrupamento por `tipo_movimento` + top N individuais.
 
-    Retorna (por_tipo, top_individuais, qtd_total, total_valor_aquisicao).
-    `total_valor_aquisicao` e o que sai do estoque (custo no FIDC); usado
-    na formula da apropriacao.
+    Retorna (por_tipo, top_individuais, qtd_total, total_valor_aquisicao,
+    renda_multa_juros, desconto_concedido).
+
+    - `total_valor_aquisicao` e o que sai do estoque (custo no FIDC); usado
+      na formula da apropriacao.
+    - `renda_multa_juros` = -Σ(ajuste<0): sacado pagou ACIMA do vencimento
+      (multa/juros de mora). Sempre >= 0 (renda).
+    - `desconto_concedido` = Σ(ajuste>0): sacado pagou ABAIXO do vencimento
+      (abatimento). Magnitude >= 0 (custo). Split por sinal feito em SQL
+      (case por linha), entao tipos com ajuste misto contam corretamente.
     """
     base = (
         select(LiquidacaoRecebivel)
@@ -161,6 +172,14 @@ async def _liquidacoes_do_dia(
             func.coalesce(func.sum(LiquidacaoRecebivel.valor_aquisicao), ZERO).label("sum_aq"),
             func.coalesce(func.sum(LiquidacaoRecebivel.valor_vencimento), ZERO).label("sum_venc"),
             func.coalesce(func.sum(LiquidacaoRecebivel.ajuste), ZERO).label("sum_aj"),
+            func.coalesce(
+                func.sum(case((LiquidacaoRecebivel.ajuste < 0, LiquidacaoRecebivel.ajuste), else_=ZERO)),
+                ZERO,
+            ).label("sum_aj_neg"),
+            func.coalesce(
+                func.sum(case((LiquidacaoRecebivel.ajuste > 0, LiquidacaoRecebivel.ajuste), else_=ZERO)),
+                ZERO,
+            ).label("sum_aj_pos"),
         )
         .where(LiquidacaoRecebivel.tenant_id == tenant_id)
         .where(LiquidacaoRecebivel.data_posicao == data)
@@ -179,12 +198,16 @@ async def _liquidacoes_do_dia(
     por_tipo: list[DrillDcLiquidacaoPorTipo] = []
     qtd_total = 0
     sum_aquisicao_total = ZERO
-    for tipo, qtd, sum_pago, sum_aq, sum_venc, sum_aj in agg_rows:
+    renda_multa_juros = ZERO  # -Σ(ajuste<0), acumulado por linha via SQL
+    desconto_concedido = ZERO  # Σ(ajuste>0)
+    for tipo, qtd, sum_pago, sum_aq, sum_venc, sum_aj, sum_aj_neg, sum_aj_pos in agg_rows:
         sum_pago_d = Decimal(sum_pago or 0)
         sum_aq_d = Decimal(sum_aq or 0)
         sum_aj_d = Decimal(sum_aj or 0)
         qtd_total += int(qtd or 0)
         sum_aquisicao_total += sum_aq_d
+        renda_multa_juros += -Decimal(sum_aj_neg or 0)  # ajuste<0 -> renda positiva
+        desconto_concedido += Decimal(sum_aj_pos or 0)  # ajuste>0 -> custo (magnitude)
         por_tipo.append(
             DrillDcLiquidacaoPorTipo(
                 tipo_movimento=tipo or "—",
@@ -193,6 +216,7 @@ async def _liquidacoes_do_dia(
                 sum_valor_aquisicao=sum_aq_d,
                 sum_valor_vencimento=Decimal(sum_venc or 0),
                 sum_ajuste=sum_aj_d,
+                impacto_resultado_brl=-sum_aj_d,  # sinal de impacto ja corrigido
                 ganho_liquido=sum_pago_d - sum_aq_d - sum_aj_d,
             )
         )
@@ -215,12 +239,16 @@ async def _liquidacoes_do_dia(
             valor_aquisicao=r.valor_aquisicao,
             valor_vencimento=r.valor_vencimento,
             ajuste=r.ajuste,
+            impacto_resultado_brl=-r.ajuste,  # sinal de impacto ja corrigido
             ganho_liquido=r.valor_pago - r.valor_aquisicao - r.ajuste,
         )
         for r in top_rows
     ]
 
-    return por_tipo, top_individuais, qtd_total, sum_aquisicao_total
+    return (
+        por_tipo, top_individuais, qtd_total, sum_aquisicao_total,
+        renda_multa_juros, desconto_concedido,
+    )
 
 
 async def _decompor_delta_dc(
@@ -449,6 +477,60 @@ async def _decompor_delta_dc(
     return decomposicao, mutacao_papeis_top, migracao_wop_papeis
 
 
+def _build_resultado_do_dia(
+    *,
+    decomposicao: DrillDcDecomposicao,
+    renda_multa_juros: Decimal,
+    desconto_concedido: Decimal,
+) -> DrillDcResultadoDoDia:
+    """Consolida os motores de renda da DC com sinal de IMPACTO no PL Sub.
+
+    Move pra dentro da tool a "regra dura de sinal" que o prompt do agente
+    carregava: renda de multa/juros e SEMPRE positiva (= -Σajuste<0), desconto
+    e custo (Σajuste>0), e o agente nao precisa mais flipar o `ajuste` de cabeca
+    (fonte do erro de ~3x ao confundir com `ganho_liquido`).
+
+    `motor_dominante` e `resultado_outlier` sao descritores de DOMINIO (nao
+    enums do agente) — a tool wrapper deriva deles a `classificacao_sugerida`.
+    """
+    carrego = decomposicao.apropriacao_total
+    ajuste_liquido = renda_multa_juros - desconto_concedido
+    mutacao = decomposicao.mutacao_total
+    wop = decomposicao.migracao_wop_total
+
+    # Motor dominante: maior magnitude entre os motores de renda/correcao.
+    candidatos: dict[str, Decimal] = {
+        "carrego": abs(carrego),
+        "multa_juros": abs(renda_multa_juros),
+        "desconto": abs(desconto_concedido),
+        "mutacao": abs(mutacao),
+        "write_off": abs(wop),
+    }
+    top = max(candidatos, key=lambda k: candidatos[k])
+    top_val = candidatos[top]
+    # "misto" quando o 2o motor chega a >= 70% do dominante (nenhum domina claro).
+    segundo = sorted(candidatos.values(), reverse=True)[1] if len(candidatos) > 1 else ZERO
+    motor_dominante = "misto" if top_val > ZERO and segundo >= top_val * Decimal("0.7") else top
+
+    # Outlier: carrego deixou de ser o motor (ajuste OU mutacao supera o carrego).
+    resultado_outlier = (
+        abs(ajuste_liquido) > abs(carrego) or abs(mutacao) > abs(carrego)
+    )
+
+    return DrillDcResultadoDoDia(
+        carrego_apropriacao=carrego,
+        renda_multa_juros=renda_multa_juros,
+        desconto_concedido=desconto_concedido,
+        ajuste_liquido_resultado=ajuste_liquido,
+        mutacao_total=mutacao,
+        migracao_wop_total=wop,
+        giro_aquisicoes=decomposicao.aquisicoes_total,
+        giro_liquidacoes=decomposicao.liquidacoes_total,
+        motor_dominante=motor_dominante,  # type: ignore[arg-type]
+        resultado_outlier=resultado_outlier,
+    )
+
+
 async def compute_drill_dc(
     db: AsyncSession,
     *,
@@ -499,7 +581,10 @@ async def compute_drill_dc(
         data=data_d0,
     )
 
-    por_tipo, top_liq, liquidacoes_qtd, liquidacoes_total = await _liquidacoes_do_dia(
+    (
+        por_tipo, top_liq, liquidacoes_qtd, liquidacoes_total,
+        renda_multa_juros, desconto_concedido,
+    ) = await _liquidacoes_do_dia(
         db,
         tenant_id=tenant_id,
         ua_id=ua_id,
@@ -519,6 +604,12 @@ async def compute_drill_dc(
         data_d0=data_d0,
         aquisicoes_evento_total=aquisicoes_total,
         liquidacoes_evento_total=liquidacoes_total,
+    )
+
+    resultado_do_dia = _build_resultado_do_dia(
+        decomposicao=decomposicao,
+        renda_multa_juros=renda_multa_juros,
+        desconto_concedido=desconto_concedido,
     )
 
     return DrillDcResponse(
@@ -542,6 +633,7 @@ async def compute_drill_dc(
             apropriacao=apropriacao_val,
         ),
         decomposicao=decomposicao,
+        resultado_do_dia=resultado_do_dia,
         mutacao_papeis=mutacao_papeis,
         migracao_wop_papeis=migracao_wop_papeis,
     )

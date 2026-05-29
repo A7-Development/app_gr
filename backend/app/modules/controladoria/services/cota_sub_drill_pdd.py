@@ -44,9 +44,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.cadastros.public import UnidadeAdministrativa
 from app.modules.controladoria.schemas.cota_sub_drill import (
+    DrillPddEfeitoVagao,
     DrillPddMigracaoCelula,
     DrillPddPapel,
     DrillPddResponse,
+    DrillPddResumo,
     PddFaixaKey,
 )
 from app.modules.controladoria.services.cota_sub import _sum_pdd
@@ -139,6 +141,15 @@ _VALID_FAIXAS = {"A", "B", "C", "D", "E", "F", "G", "H", "WOP"}
 # papeis com variacao por dia.
 _DEFAULT_TOP_N = 1000
 _DEFAULT_THRESHOLD_BRL = Decimal("0")
+
+# Ordem das faixas BACEN 2682 (A melhor -> H pior). Usada pra detectar
+# "piora" de faixa no efeito vagao. WOP/LIQUIDADO/NOVO ficam fora da ordem.
+_FAIXA_ORDEM: dict[str, int] = {"A": 1, "B": 2, "C": 3, "D": 4, "E": 5, "F": 6, "G": 7, "H": 8}
+
+
+def _piorou_faixa(de: str, para: str) -> bool:
+    """True quando `para` e uma faixa pior (mais provisao) que `de`, ambas A-H."""
+    return _FAIXA_ORDEM.get(de, 0) > 0 and _FAIXA_ORDEM.get(para, 0) > _FAIXA_ORDEM.get(de, 0)
 
 
 def _normalize_faixa_d1(raw: str | None) -> PddFaixaKey:
@@ -265,10 +276,19 @@ async def _build_matriz_e_papeis(
     threshold_brl: Decimal,
     top_n: int,
     liquidados_d0: set[str],
-) -> tuple[list[DrillPddMigracaoCelula], list[DrillPddPapel], list[DrillPddPapel], int]:
+) -> tuple[
+    list[DrillPddMigracaoCelula], list[DrillPddPapel], list[DrillPddPapel], int,
+    Decimal, Decimal, list[DrillPddEfeitoVagao],
+]:
     """Constroi matriz + papeis WOP + top N papeis numa unica passada pelo banco.
 
-    Retorna (matriz, papeis_wop, top_papeis, total_acima_threshold).
+    Retorna (matriz, papeis_wop, top_papeis, total_acima_threshold,
+    constituicao_total, reversao_total, efeito_vagao).
+
+    - constituicao_total/reversao_total: split por sinal do delta de PDD ex-WOP
+      (reconcilia com pdd_granular_ex_wop_delta).
+    - efeito_vagao: grupos (sacado, faixa_para) com >= 2 papeis migrando p/ faixa
+      pior e >= 1 vencido (o "puxador" da Resolucao 2682).
 
     Estrategia: 1 query FULL OUTER JOIN puxa todos os papeis de D-1 + D0,
     agregamos em Python (matriz + top N + WOP). Pra REALINVEST (~2800 papeis)
@@ -324,6 +344,14 @@ async def _build_matriz_e_papeis(
     candidatos_top: list[DrillPddPapel] = []
     total_acima_threshold = 0
 
+    # Resumo (constituicao/reversao) sobre base EX-WOP, pra reconciliar com
+    # pdd_granular_ex_wop_delta: c_i = pdd_d0(ex-WOP) - pdd_d1(ex-WOP).
+    constituicao_total = ZERO
+    reversao_total = ZERO
+
+    # Efeito vagao: papeis que pioraram de faixa, agrupados por (sacado, faixa_para).
+    vagao_acc: dict[tuple[str, PddFaixaKey], list[dict[str, object]]] = {}
+
     for r in rows:
         faixa_d1 = _normalize_faixa_d1(r.faixa_pdd_d1_raw)
         faixa_d0 = _normalize_faixa_d0(
@@ -332,6 +360,27 @@ async def _build_matriz_e_papeis(
             liquidados_d0=liquidados_d0,
         )
         delta_pdd = Decimal(r.valor_pdd_d0 or 0) - Decimal(r.valor_pdd_d1 or 0)
+
+        # ---- Resumo constituicao/reversao (base ex-WOP) ----
+        pdd_d0_exwop = Decimal(r.valor_pdd_d0 or 0) if faixa_d0 != "WOP" else ZERO
+        pdd_d1_exwop = Decimal(r.valor_pdd_d1 or 0) if faixa_d1 != "WOP" else ZERO
+        c_i = pdd_d0_exwop - pdd_d1_exwop
+        if c_i > 0:
+            constituicao_total += c_i
+        elif c_i < 0:
+            reversao_total += c_i
+
+        # ---- Efeito vagao: papel que PIOROU de faixa (A-H -> faixa pior) ----
+        if _piorou_faixa(faixa_d1, faixa_d0):
+            venc = r.data_vencimento_ajustada
+            vencido = venc is not None and venc < data_d0
+            vagao_acc.setdefault((r.sacado_doc or "", faixa_d0), []).append({
+                "numero_documento": r.numero_documento or "",
+                "sacado_nome": r.sacado_nome or "",
+                "vencido": vencido,
+                "valor_pdd_d0": Decimal(r.valor_pdd_d0 or 0),
+                "delta_pdd": delta_pdd,
+            })
 
         # ---- Agrega na matriz ----
         key = (faixa_d1, faixa_d0)
@@ -427,7 +476,35 @@ async def _build_matriz_e_papeis(
     candidatos_top.sort(key=lambda p: abs(p.delta_valor_pdd), reverse=True)
     top_papeis = candidatos_top[:top_n]
 
-    return matriz, papeis_wop, top_papeis, total_acima_threshold
+    # ---- Efeito vagao: grupos (sacado, faixa_para) com >=2 papeis e >=1 vencido ----
+    efeito_vagao: list[DrillPddEfeitoVagao] = []
+    for (sacado_doc, faixa_para), papers in vagao_acc.items():
+        if len(papers) < 2:
+            continue
+        vencidos = [p for p in papers if p["vencido"]]
+        a_vencer = [p for p in papers if not p["vencido"]]
+        if not vencidos:
+            continue  # sem titulo vencido, nao e o padrao de arrasto
+        puxador = max(vencidos, key=lambda p: p["valor_pdd_d0"])  # type: ignore[arg-type,return-value]
+        efeito_vagao.append(
+            DrillPddEfeitoVagao(
+                sacado_doc=sacado_doc,
+                sacado_nome=str(papers[0]["sacado_nome"]),
+                faixa_para=faixa_para,
+                qtd_papeis=len(papers),
+                qtd_vencidos=len(vencidos),
+                qtd_a_vencer_arrastados=len(a_vencer),
+                sum_delta_pdd=sum((Decimal(p["delta_pdd"]) for p in papers), ZERO),  # type: ignore[arg-type]
+                documento_puxador=str(puxador["numero_documento"]),
+                documentos_arrastados=[str(p["numero_documento"]) for p in a_vencer],
+            )
+        )
+    efeito_vagao.sort(key=lambda v: abs(v.sum_delta_pdd), reverse=True)
+
+    return (
+        matriz, papeis_wop, top_papeis, total_acima_threshold,
+        constituicao_total, reversao_total, efeito_vagao,
+    )
 
 
 async def compute_drill_pdd(
@@ -518,7 +595,10 @@ async def compute_drill_pdd(
         db, tenant_id=tenant_id, fundo_doc=fundo_doc, data=data_d0,
     )
 
-    matriz, papeis_wop, top_papeis, total_acima_threshold = await _build_matriz_e_papeis(
+    (
+        matriz, papeis_wop, top_papeis, total_acima_threshold,
+        constituicao_total, reversao_total, efeito_vagao,
+    ) = await _build_matriz_e_papeis(
         db,
         tenant_id=tenant_id,
         fundo_doc=fundo_doc,
@@ -530,6 +610,22 @@ async def compute_drill_pdd(
     )
 
     papeis_wop_total_pdd = sum((abs(p.valor_pdd_d1) for p in papeis_wop), ZERO)
+
+    # Resumo com sinal de impacto no PL Sub (constituicao reduz; reversao aumenta).
+    delta_liquido = constituicao_total + reversao_total
+    if delta_liquido > Decimal("0.005"):
+        direcao = "constituicao"
+    elif delta_liquido < Decimal("-0.005"):
+        direcao = "reversao"
+    else:
+        direcao = "neutro"
+    resumo = DrillPddResumo(
+        constituicao_total=constituicao_total,
+        reversao_total=reversao_total,
+        delta_liquido=delta_liquido,
+        direcao=direcao,
+        impacto_pl_sub=-delta_liquido,
+    )
 
     return DrillPddResponse(
         fundo_id=str(ua_id),
@@ -548,6 +644,8 @@ async def compute_drill_pdd(
         estoque_disponivel_d1=True,
         estoque_disponivel_d0=True,
         motivo_indisponivel=None,
+        resumo=resumo,
+        efeito_vagao=efeito_vagao,
         matriz=matriz,
         papeis_wop=papeis_wop,
         papeis_wop_total_pdd_d1=papeis_wop_total_pdd,

@@ -2,35 +2,37 @@
 
 /**
  * AgenteVariacaoPanel — renderiza o output do agente IA `controladoria.
- * analista_variacao_cota` num DrillDownSheet right-side `xl`, no formato de
- * RELATORIO PROTOCOLAR (documento numerado), nao mais cards empilhados.
+ * analista_variacao_cota` (redesign 2026-05-29) num DrillDownSheet right-side `xl`.
  *
- * Estrutura visual (documento):
- *   MetadataBanner — from_cache + custo + duracao + modelo (transparencia §14)
- *   Cabecalho protocolar — A7 Credit · Strata | titulo + fundo | nº/data-base/janela
- *   1.0 Sintese da Variacao        — sumario_executivo + bullets dos top movimentos
- *   2.0 Sanity Check               — kpi-table (Δ calculado / Δ MEC / residuo) + diagnostico
- *   3.0 Analise por Rubrica        — grupos Ativos / Passivos, subsecoes 3.1..3.N
- *                                    (narrativa + papeis como bullets, flag `!` em anomalia)
- *   4.0 Constatacoes de Risco      — findings (sinais_alerta) c/ severidade + evidencia
- *   5.0 Papeis Citados             — tabela agregando papeis_mencionados (dedupe)
- *   6.0 Acoes Requeridas           — sugestoes_acao por prioridade
- *   Rodape protocolar              — modelo + nº + audit/run (proveniencia)
+ * Leitura em camadas, do macro ao detalhe:
+ *   MetadataBanner   — from_cache + custo + duracao + modelo (transparencia §14)
+ *   Header           — titulo + fundo + janela D-1 -> D0
+ *   MACRO            — 3 KPIs (Δ PL Sub = Δ Ativo - Δ Passivo) + leitura + selo de sanity
+ *   OFENSORES        — top movimentos por impacto no PL Sub, bullets de 5s (atipico realcado)
+ *   GRUPOS           — Accordion na ordem da tabela (Ativos -> Passivos): bullets primeiro,
+ *                      explicacao depois, papeis quando relevante; atipicos abertos por default
+ *   CONCLUSAO        — fecho curto
+ *   ALERTAS          — so os atipicos materiais, por severidade
+ *   Footer           — proveniencia (modelo + audit + run)
  *
- * Frontend-only: consome o `AnalysisVariacaoCotaResponse` atual. Onde o modelo
- * de referencia mostra bullets curados (1.0/4.0/6.0), degrada para a prosa que o
- * schema ja emite (sumario/descricao/detalhe). Na 3.0 os `papeis_mencionados`
- * sao os bullets granulares.
- *
- * Stack: apenas componentes do design-system + tokens + primitivos Remix.
+ * Stack: design-system + primitivos Tremor (Accordion, Badge, Card) + tokens.
+ * O agente entrega numeros com sinal de IMPACTO ja corrigido (impacto_pl_sub) —
+ * a UI nao reinterpreta sinal.
  */
 
 import * as React from "react"
-import { RiSparklingFill, RiDatabaseLine } from "@remixicon/react"
+import { RiSparklingFill, RiDatabaseLine, RiAlertFill } from "@remixicon/react"
 
 import { cx } from "@/lib/utils"
 import { DrillDownSheet } from "@/design-system/components/DrillDownSheet"
 import { Card } from "@/components/tremor/Card"
+import { Badge } from "@/components/tremor/Badge"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/tremor/Accordion"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 import { Button } from "@/components/tremor/Button"
@@ -40,11 +42,10 @@ import {
 } from "@/design-system/components/AgentLiveStatus"
 import type {
   AgenteAnaliseVariacao,
-  AgenteCategoriaDelta,
-  AgenteExplicacaoCategoria,
+  AgenteGrupoAnalise,
+  AgenteOfensorLinha,
   AgentePapelMencionado,
   AgenteSinalAlerta,
-  AgenteSugestaoAcao,
   AgenteVariacaoRunResponse,
 } from "@/lib/api-client"
 
@@ -81,72 +82,37 @@ const fmtCacheAge = (sec: number): string => {
 
 // ─── Helpers de texto e cor ───────────────────────────────────────────────
 
-const humanize = (s: string): string => (s || "").replace(/_/g, " ")
+const humanize = (s: string | null | undefined): string => (s || "").replace(/_/g, " ")
 
-/** Primeira frase de uma narrativa, truncada — usada nos bullets da Sintese. */
-const firstSentence = (text: string): string => {
-  const t = (text || "").trim()
-  if (!t) return ""
-  const m = /^(.+?[.;])\s/.exec(t)
-  const s = m ? m[1] : t
-  return s.length > 140 ? `${s.slice(0, 137).trimEnd()}…` : s
-}
-
-const deltaTone = (v: number): string =>
+/** Cor por sinal de IMPACTO no PL Sub: positivo ajudou (verde), negativo pressionou (vermelho). */
+const impactoTone = (v: number): string =>
   v > 0.005
     ? "text-emerald-700 dark:text-emerald-400"
     : v < -0.005
       ? "text-red-700 dark:text-red-400"
       : "text-gray-400 dark:text-gray-600"
 
-/** Naturezas de papel que merecem o marcador de alerta `!` no bullet. */
-const FLAG_NATUREZA = /mutac|silenc|offrecord|abatim|write[_-]?off|engaiol/i
-
-/** Nº de relatorio deterministico: CSJ-<data>-<4 chars do run_id>. */
-const reportNoFrom = (data: string, runId: string): string => {
-  const id = (runId || "").replace(/-/g, "").slice(0, 4).toUpperCase() || "0001"
-  return `CSJ-${data}-${id}`
+type Severidade = "ok" | "info" | "atencao" | "critico"
+const SEV_BADGE: Record<Severidade, "success" | "neutral" | "warning" | "error"> = {
+  ok: "success",
+  info: "neutral",
+  atencao: "warning",
+  critico: "error",
 }
-
-// Chips de severidade (constatacoes) e prioridade (acoes) — mesma escala visual.
-type ChipTone = "alta" | "media" | "baixa"
-const CHIP_TONE: Record<ChipTone, string> = {
-  alta: "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300",
-  media: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
-  baixa: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
-}
-const SEV_TONE: Record<AgenteSinalAlerta["severidade"], ChipTone> = {
-  critico: "alta",
-  atencao: "media",
-  info: "baixa",
-}
-const SEV_LABEL: Record<AgenteSinalAlerta["severidade"], string> = {
-  critico: "Crítico",
-  atencao: "Atenção",
+const SEV_LABEL: Record<Severidade, string> = {
+  ok: "Fechamento sadio",
   info: "Info",
-}
-const PRIO_LABEL: Record<AgenteSugestaoAcao["prioridade"], string> = {
-  alta: "Alta",
-  media: "Média",
-  baixa: "Baixa",
+  atencao: "Atenção",
+  critico: "Crítico",
 }
 
-/** Agrega todos os papeis citados nas explicacoes, deduplicando por documento. */
-const collectPapeis = (
-  explicacoes: AgenteExplicacaoCategoria[],
-): AgentePapelMencionado[] => {
-  const seen = new Set<string>()
-  const out: AgentePapelMencionado[] = []
-  for (const e of explicacoes) {
-    for (const p of e.papeis_mencionados) {
-      const k = p.numero_documento || p.seu_numero
-      if (!k || seen.has(k)) continue
-      seen.add(k)
-      out.push(p)
-    }
-  }
-  return out
+// Ordem canonica do balancete estrutural (espelha compute_balanco_estrutural).
+const BALANCO_ORDER: Record<string, number> = {
+  dc_bruto: 0, pdd: 1, titulos_publicos: 2, op_estruturadas: 3, fundos_di: 4,
+  compromissada: 5, outros_ativos: 6, tesouraria: 7, saldo_conta_corrente: 8,
+  cpr_receber: 9, cpr_pagar: 10, senior: 11, mezanino: 12,
 }
+const balancoPos = (k: string): number => BALANCO_ORDER[k] ?? 999
 
 // ─── Props ────────────────────────────────────────────────────────────────
 
@@ -189,7 +155,7 @@ export function AgenteVariacaoPanel(props: AgenteVariacaoPanelProps) {
             action={onRetry ? <Button onClick={onRetry}>Tentar novamente</Button> : undefined}
           />
         )}
-        {status === "done" && result && <RelatorioProtocolar data={result} />}
+        {status === "done" && result && <Relatorio data={result} />}
       </DrillDownSheet.Body>
     </DrillDownSheet>
   )
@@ -207,10 +173,10 @@ function LiveState({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
-        O agente faz sanity check, decompõe as 12 categorias do balanço e investiga
-        cruzando estoque × liquidações × histórico. Acompanhe abaixo, em tempo real,
-        o que ele está consultando e raciocinando. Pode levar até 90s na primeira
-        execução (cacheia depois).
+        O agente faz o sanity check, monta a macro (Ativo × Passivo), rankeia os
+        ofensores e abre grupo a grupo cruzando estoque × liquidações × histórico.
+        Acompanhe abaixo, em tempo real, o que ele consulta e raciocina. Pode levar
+        até 90s na primeira execução (cacheia depois).
       </p>
       <Card className="p-4">
         <AgentLiveStatus
@@ -224,180 +190,89 @@ function LiveState({
   )
 }
 
-// ─── Relatorio protocolar (documento) ──────────────────────────────────────
+// ─── Relatorio (documento) ──────────────────────────────────────────────────
 
-// Ordem canonica do balancete estrutural (espelha compute_balanco_estrutural).
-// A secao "Analise por Rubrica" segue ESTA ordem — igual a tela — nao a
-// magnitude. Keys batem com os emitidos pelo agente (prompt v7+ le o estrutural).
-const BALANCO_ORDER: Record<string, number> = {
-  dc_bruto: 0, pdd: 1, titulos_publicos: 2, op_estruturadas: 3, fundos_di: 4,
-  compromissada: 5, outros_ativos: 6, tesouraria: 7, saldo_conta_corrente: 8,
-  cpr_receber: 9, cpr_pagar: 10, senior: 11, mezanino: 12,
-}
-const balancoPos = (k: string): number => BALANCO_ORDER[k] ?? 999
-
-function RelatorioProtocolar({ data }: { data: AgenteVariacaoRunResponse }) {
+function Relatorio({ data }: { data: AgenteVariacaoRunResponse }) {
   const { metadata, analise } = data
-  const reportNo = reportNoFrom(analise.data, metadata.analysis_run_id)
+  const { macro } = analise
 
-  const expMap = React.useMemo(() => {
-    const m = new Map<string, AgenteExplicacaoCategoria>()
-    for (const e of analise.nivel_3_explicacoes) m.set(e.categoria_key, e)
-    return m
-  }, [analise.nivel_3_explicacoes])
-
-  const byRank = (a: AgenteCategoriaDelta, b: AgenteCategoriaDelta) =>
-    a.rank_magnitude - b.rank_magnitude
-  // Seção "Por rubrica" segue a ordem do balancete (igual a tela), NAO magnitude.
-  const byBalanco = (a: AgenteCategoriaDelta, b: AgenteCategoriaDelta) =>
-    balancoPos(a.key) - balancoPos(b.key)
-  const ativos = analise.nivel_2_decomposicao.filter((c) => c.tipo === "ativo").sort(byBalanco)
-  const passivos = analise.nivel_2_decomposicao.filter((c) => c.tipo === "passivo").sort(byBalanco)
-
-  const papeis = React.useMemo(
-    () => collectPapeis(analise.nivel_3_explicacoes),
-    [analise.nivel_3_explicacoes],
+  // Grupos na ordem da tabela (defensivo — o agente ja deve emitir assim).
+  const grupos = React.useMemo(
+    () => [...analise.grupos].sort((a, b) => balancoPos(a.key) - balancoPos(b.key)),
+    [analise.grupos],
   )
-
-  const acoes = React.useMemo(() => {
-    const ord = { alta: 0, media: 1, baixa: 2 } as const
-    return [...analise.sugestoes_acao].sort((a, b) => ord[a.prioridade] - ord[b.prioridade])
-  }, [analise.sugestoes_acao])
-
-  const topCats = React.useMemo(
-    () =>
-      [...analise.nivel_2_decomposicao]
-        .filter((c) => Math.abs(c.delta) >= 1)
-        .sort(byRank)
-        .slice(0, 4),
-    [analise.nivel_2_decomposicao],
+  // Atipicos abrem por default no accordion.
+  const defaultAbertos = React.useMemo(
+    () => grupos.filter((g) => g.atipico).map((g) => g.key),
+    [grupos],
   )
-
-  // Numeracao contigua das secoes opcionais (4+) — sem buracos quando vazias.
-  let secInt = 3
-  const constInt = analise.sinais_alerta.length > 0 ? ++secInt : 0
-  const papInt = papeis.length > 0 ? ++secInt : 0
-  const acaoInt = acoes.length > 0 ? ++secInt : 0
-
-  // Numeracao continua das rubricas (3.1..3.N) atravessando Ativos -> Passivos.
-  let rubricaN = 0
 
   return (
-    <div className="text-[13px] leading-relaxed text-gray-900 dark:text-gray-100">
+    <div className="flex flex-col gap-5 text-[13px] leading-relaxed text-gray-900 dark:text-gray-100">
       <MetadataBanner metadata={metadata} />
+      <Header analise={analise} />
 
-      <ProtocolHeader analise={analise} reportNo={reportNo} />
+      {/* MACRO */}
+      <section className="flex flex-col gap-2">
+        <SectionHead title="Macro · Ativo × Passivo" />
+        <div className="grid grid-cols-3 gap-2">
+          <MacroKpi label="Δ PL Sub Jr" value={fmtBRLSigned(macro.pl_sub_delta)} tone={impactoTone(macro.pl_sub_delta)} />
+          <MacroKpi label="Δ Ativos" value={fmtBRLSigned(macro.total_ativo_delta)} />
+          <MacroKpi label="Δ Passivos" value={fmtBRLSigned(macro.total_passivo_delta)} />
+        </div>
+        <p className="m-0 text-[12.5px] text-gray-700 dark:text-gray-300">{macro.leitura}</p>
+        <SanitySelo sanity={macro.sanity} />
+      </section>
 
-      {/* 1.0 SÍNTESE */}
-      <Section>
-        <SectionHead num="1.0" title="Síntese da Variação" />
-        <div className="pl-9">
-          <p className="m-0 mb-2">{analise.sumario_executivo}</p>
-          {topCats.length > 0 && (
-            <ul className="m-0 list-none p-0">
-              {topCats.map((c) => {
-                const e = expMap.get(c.key)
-                const reason = e ? firstSentence(e.narrativa) : ""
-                return (
-                  <Bullet key={c.key}>
-                    <span className="text-gray-600 dark:text-gray-400">{c.label}</span>{" "}
-                    <span className={cx("font-mono tabular-nums font-medium", deltaTone(c.delta))}>
-                      {fmtBRLSigned(c.delta)}
-                    </span>
-                    {reason ? (
-                      <span className="text-gray-700 dark:text-gray-300"> — {reason}</span>
-                    ) : null}
-                  </Bullet>
-                )
-              })}
+      {/* OFENSORES */}
+      {analise.ofensores.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <SectionHead title="Maiores ofensores" hint="Por impacto no PL Sub" />
+          <Card className="p-3">
+            <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+              {analise.ofensores.map((o) => (
+                <OfensorBullet key={`${o.lado}-${o.key}`} ofensor={o} />
+              ))}
             </ul>
-          )}
-        </div>
-      </Section>
-
-      {/* 2.0 SANITY CHECK */}
-      <Section>
-        <SectionHead num="2.0" title="Sanity Check de Identidade Contábil" />
-        <div className="pl-9">
-          <table className="my-1.5 w-full border-collapse text-[12px]">
-            <tbody>
-              <KpiRow label="Δ PL calculado (granular)" value={fmtBRLSigned(analise.nivel_1_sanity.pl_deduzido_delta)} />
-              <KpiRow label="Δ PL fonte MEC" value={fmtBRLSigned(analise.nivel_1_sanity.pl_fonte_delta)} />
-              <KpiRow
-                label="Resíduo do dia"
-                value={fmtBRLSigned(analise.nivel_1_sanity.residuo_brl)}
-                residuo={Math.abs(analise.nivel_1_sanity.residuo_brl) >= 1}
-              />
-            </tbody>
-          </table>
-          <p className="m-0 text-[12px] text-gray-600 dark:text-gray-400">
-            {analise.nivel_1_sanity.diagnostico}
-          </p>
-        </div>
-      </Section>
-
-      {/* 3.0 ANÁLISE POR RUBRICA */}
-      <Section>
-        <SectionHead num="3.0" title="Análise por Rubrica" />
-        <div className="pl-9">
-          <p className="m-0 text-[12px] text-gray-600 dark:text-gray-400">
-            Organizada na ordem do balancete: Ativos, depois Passivos e redutores do
-            PL. Variação D-1 → D0.
-          </p>
-        </div>
-
-        {ativos.length > 0 && <GroupHead>Ativos</GroupHead>}
-        {ativos.map((cat) => (
-          <RubricaSubsection
-            key={cat.key}
-            num={`3.${++rubricaN}`}
-            cat={cat}
-            exp={expMap.get(cat.key) ?? null}
-          />
-        ))}
-
-        {passivos.length > 0 && <GroupHead>Passivos · Redutores</GroupHead>}
-        {passivos.map((cat) => (
-          <RubricaSubsection
-            key={cat.key}
-            num={`3.${++rubricaN}`}
-            cat={cat}
-            exp={expMap.get(cat.key) ?? null}
-          />
-        ))}
-      </Section>
-
-      {/* 4.0 CONSTATAÇÕES DE RISCO */}
-      {constInt > 0 && (
-        <Section>
-          <SectionHead num={`${constInt}.0`} title="Constatações de Risco" />
-          {analise.sinais_alerta.map((alerta, i) => (
-            <ConstatacaoFinding key={i} num={`${constInt}.${i + 1}`} alerta={alerta} />
-          ))}
-        </Section>
+          </Card>
+        </section>
       )}
 
-      {/* 5.0 PAPÉIS CITADOS */}
-      {papInt > 0 && (
-        <Section>
-          <SectionHead num={`${papInt}.0`} title="Papéis Citados" />
-          <div className="pl-9">
-            <PapeisTable papeis={papeis} />
+      {/* GRUPOS */}
+      {grupos.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <SectionHead title="Análise por grupo" hint="Ordem do balanço · Ativos → Passivos" />
+          <Accordion type="multiple" defaultValue={defaultAbertos}>
+            {grupos.map((g) => (
+              <GrupoItem key={g.key} grupo={g} />
+            ))}
+          </Accordion>
+        </section>
+      )}
+
+      {/* CONCLUSAO */}
+      {analise.conclusao && (
+        <section className="flex flex-col gap-2">
+          <SectionHead title="Conclusão" />
+          <Card className="border-l-2 border-l-violet-400 p-3 text-[12.5px] text-gray-800 dark:border-l-violet-500 dark:text-gray-200">
+            {analise.conclusao}
+          </Card>
+        </section>
+      )}
+
+      {/* ALERTAS */}
+      {analise.alertas.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <SectionHead title="Alertas" hint="Atípicos materiais" />
+          <div className="flex flex-col gap-2">
+            {analise.alertas.map((a, i) => (
+              <AlertaCard key={i} alerta={a} />
+            ))}
           </div>
-        </Section>
+        </section>
       )}
 
-      {/* 6.0 AÇÕES REQUERIDAS */}
-      {acaoInt > 0 && (
-        <Section>
-          <SectionHead num={`${acaoInt}.0`} title="Ações Requeridas" />
-          {acoes.map((s, i) => (
-            <AcaoSubsection key={i} num={`${acaoInt}.${i + 1}`} sugestao={s} />
-          ))}
-        </Section>
-      )}
-
-      <ProtocolFooter metadata={metadata} analise={analise} reportNo={reportNo} />
+      <Footer metadata={metadata} analise={analise} />
     </div>
   )
 }
@@ -407,7 +282,7 @@ function RelatorioProtocolar({ data }: { data: AgenteVariacaoRunResponse }) {
 function MetadataBanner({ metadata }: { metadata: AgenteVariacaoRunResponse["metadata"] }) {
   if (metadata.from_cache) {
     return (
-      <div className="mb-4 flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] dark:border-emerald-900/40 dark:bg-emerald-950/30">
+      <div className="flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] dark:border-emerald-900/40 dark:bg-emerald-950/30">
         <RiDatabaseLine className="size-3.5 shrink-0 text-emerald-700 dark:text-emerald-400" aria-hidden />
         <div className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-0.5 text-emerald-800 dark:text-emerald-200">
           <span className="font-medium">Análise carregada do cache</span>
@@ -419,7 +294,7 @@ function MetadataBanner({ metadata }: { metadata: AgenteVariacaoRunResponse["met
     )
   }
   return (
-    <div className="mb-4 flex items-center gap-2 rounded border border-violet-200 bg-violet-50 px-3 py-2 text-[11px] dark:border-violet-900/40 dark:bg-violet-950/30">
+    <div className="flex items-center gap-2 rounded border border-violet-200 bg-violet-50 px-3 py-2 text-[11px] dark:border-violet-900/40 dark:bg-violet-950/30">
       <RiSparklingFill className="size-3.5 shrink-0 text-violet-700 dark:text-violet-400" aria-hidden />
       <div className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-0.5 text-violet-800 dark:text-violet-200">
         <span className="font-medium">Análise nova gerada por LLM</span>
@@ -434,190 +309,159 @@ function MetadataBanner({ metadata }: { metadata: AgenteVariacaoRunResponse["met
   )
 }
 
-// ─── Cabeçalho / rodapé protocolar ──────────────────────────────────────────
+// ─── Header ─────────────────────────────────────────────────────────────────
 
-function ProtocolHeader({ analise, reportNo }: { analise: AgenteAnaliseVariacao; reportNo: string }) {
+function Header({ analise }: { analise: AgenteAnaliseVariacao }) {
   return (
-    <div className="mb-4 grid grid-cols-[1fr_auto_1fr] items-start gap-6 border-b-[1.5px] border-gray-900 pb-3.5 dark:border-gray-100">
-      <div className="pt-1 text-[11px] font-medium uppercase tracking-[0.04em] text-blue-600 dark:text-blue-400">
-        A7 Credit · Strata
-      </div>
-      <div className="text-center">
-        <h1 className="m-0 mb-0.5 text-[18px] font-medium tracking-[0.02em] text-gray-900 dark:text-gray-100">
-          Análise de Variação · Cota Sub Jr
+    <div className="flex items-baseline justify-between border-b border-gray-200 pb-2 dark:border-gray-800">
+      <div>
+        <h1 className="m-0 text-[16px] font-medium text-gray-900 dark:text-gray-100">
+          Variação da Cota Sub Jr
         </h1>
-        <div className="text-[11px] text-gray-600 dark:text-gray-400">{analise.fundo_nome}</div>
+        <div className="text-[11px] text-gray-500 dark:text-gray-400">{analise.fundo_nome}</div>
       </div>
-      <div className="text-right font-mono text-[10px] leading-[1.7] tabular-nums text-gray-600 dark:text-gray-400">
-        <div>
-          <span className="text-gray-400 dark:text-gray-600">Relatório nº:</span>{" "}
-          <span className="font-medium text-red-600 dark:text-red-400">{reportNo}</span>
-        </div>
-        <div>
-          <span className="text-gray-400 dark:text-gray-600">Data-base:</span> {fmtDateBR(analise.data)}
-        </div>
-        <div>
-          <span className="text-gray-400 dark:text-gray-600">Janela:</span>{" "}
-          {fmtDateBR(analise.data_anterior)} → {fmtDateBR(analise.data)}
-        </div>
+      <div className="text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
+        {fmtDateBR(analise.data_anterior)} → {fmtDateBR(analise.data)}
       </div>
     </div>
   )
 }
 
-function ProtocolFooter({
-  metadata,
-  analise,
-  reportNo,
-}: {
-  metadata: AgenteVariacaoRunResponse["metadata"]
-  analise: AgenteAnaliseVariacao
-  reportNo: string
-}) {
+// ─── Macro ────────────────────────────────────────────────────────────────
+
+function MacroKpi({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
-    <div className="mt-6 border-t border-gray-200 pt-3 dark:border-gray-800">
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-6 text-[10px] text-gray-400 dark:text-gray-600">
-        <span>Confidencial · A7 Credit / Strata</span>
-        <span className="text-center">
-          {metadata.model_used}
-          {metadata.from_cache ? " · cache" : ""}
-        </span>
-        <span className="text-right font-mono tabular-nums">
-          {reportNo} · {fmtDateBR(analise.data)}
-        </span>
+    <Card className="p-3">
+      <div className="text-[10px] font-medium uppercase tracking-[0.04em] text-gray-500 dark:text-gray-400">
+        {label}
       </div>
-      <p className="mt-2 text-center font-mono text-[9px] text-gray-300 dark:text-gray-700">
-        audit {metadata.audit_version} · run {metadata.analysis_run_id}
-      </p>
+      <div className={cx("mt-1 font-mono text-[18px] font-medium tabular-nums", tone ?? "text-gray-900 dark:text-gray-100")}>
+        {value}
+      </div>
+    </Card>
+  )
+}
+
+function SanitySelo({ sanity }: { sanity: AgenteAnaliseVariacao["macro"]["sanity"] }) {
+  const sev = sanity.severidade as Severidade
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+      <Badge variant={SEV_BADGE[sev]}>{SEV_LABEL[sev]}</Badge>
+      <span>
+        Resíduo do dia <span className="font-mono tabular-nums">{fmtBRLSigned(sanity.residuo_brl)}</span>
+      </span>
+      {!sanity.deve_continuar && (
+        <span className="font-medium text-red-700 dark:text-red-400">
+          · pipeline com furo — análise interrompida
+        </span>
+      )}
     </div>
   )
 }
 
-// ─── Rubrica (3.N) ──────────────────────────────────────────────────────────
+// ─── Ofensores ───────────────────────────────────────────────────────────
 
-function RubricaSubsection({
-  num,
-  cat,
-  exp,
-}: {
-  num: string
-  cat: AgenteCategoriaDelta
-  exp: AgenteExplicacaoCategoria | null
-}) {
-  const isZero = Math.abs(cat.delta) < 0.005
-  const papeis = exp?.papeis_mencionados ?? []
-
+function OfensorBullet({ ofensor }: { ofensor: AgenteOfensorLinha }) {
   return (
-    <div className="mt-3">
-      <SubHead num={num} title={cat.label} meta={fmtBRLSigned(cat.delta)} metaTone={deltaTone(cat.delta)} />
-      <div className="pl-9 text-[12.5px]">
-        {exp ? (
-          <>
-            <div className="mb-1 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.04em] text-gray-500 dark:text-gray-400">
-              <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                {humanize(exp.classificacao_principal)}
-              </span>
-              <span>confiança {(exp.confianca * 100).toFixed(0)}%</span>
-            </div>
-            <p className="m-0 mb-1.5 leading-relaxed text-gray-900 dark:text-gray-100">{exp.narrativa}</p>
-            {papeis.length > 0 && (
-              <ul className="m-0 list-none p-0">
-                {papeis.map((p, i) => (
-                  <Bullet key={i} flag={FLAG_NATUREZA.test(p.natureza)}>
-                    <span
-                      title={p.seu_numero ? `DID ${p.seu_numero}` : undefined}
-                      className="font-mono tabular-nums font-medium"
-                    >
-                      {p.numero_documento || p.seu_numero}
-                    </span>
-                    <span className="text-gray-500 dark:text-gray-400">
-                      {" · "}
-                      {p.cedente_nome} → {p.sacado_nome} · {humanize(p.natureza)} ·{" "}
-                    </span>
-                    <span className={cx("font-mono tabular-nums font-medium", deltaTone(p.delta_brl))}>
-                      {fmtBRLSigned(p.delta_brl)}
-                    </span>
-                  </Bullet>
-                ))}
-              </ul>
-            )}
-          </>
-        ) : (
-          <ul className="m-0 list-none p-0">
-            <Bullet>
-              <span className="text-gray-600 dark:text-gray-400">
-                {isZero
-                  ? "Sem movimento no dia."
-                  : "Carrego de rotina · variação sem evento material destacado."}
-              </span>
-            </Bullet>
-          </ul>
+    <li className="flex items-start gap-2">
+      <span
+        className={cx(
+          "mt-[3px] shrink-0 text-[11px]",
+          ofensor.atipico ? "text-amber-600 dark:text-amber-500" : "text-gray-400 dark:text-gray-600",
         )}
+        aria-hidden
+      >
+        {ofensor.atipico ? <RiAlertFill className="size-3.5" /> : "—"}
+      </span>
+      <div className="min-w-0 flex-1 text-[12.5px]">
+        <span className="font-medium text-gray-900 dark:text-gray-100">{ofensor.label}</span>{" "}
+        <span className={cx("font-mono tabular-nums font-medium", impactoTone(ofensor.impacto_pl_sub))}>
+          {fmtBRLSigned(ofensor.impacto_pl_sub)}
+        </span>
+        {ofensor.atipico && (
+          <Badge variant="warning" className="ml-1.5 align-middle">atípico</Badge>
+        )}
+        <span className="text-gray-600 dark:text-gray-400"> — {ofensor.bullet}</span>
       </div>
-    </div>
+    </li>
   )
 }
 
-// ─── Constatação (4.N) ──────────────────────────────────────────────────────
+// ─── Grupo (Accordion item) ─────────────────────────────────────────────────
 
-function ConstatacaoFinding({ num, alerta }: { num: string; alerta: AgenteSinalAlerta }) {
+function GrupoItem({ grupo }: { grupo: AgenteGrupoAnalise }) {
   return (
-    <div className="mt-3">
-      <SubHead num={num} title={alerta.entidade} />
-      <div className="pl-9">
-        <div className="mb-1.5 flex flex-wrap items-baseline gap-2">
-          <Chip tone={SEV_TONE[alerta.severidade]} label={SEV_LABEL[alerta.severidade]} />
-          <span className="text-[10px] font-medium uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
-            {humanize(alerta.tipo)}
+    <AccordionItem value={grupo.key}>
+      <AccordionTrigger>
+        <div className="flex flex-1 items-center justify-between gap-3 pr-2">
+          <span className="flex items-center gap-2 text-left">
+            {grupo.atipico && (
+              <RiAlertFill className="size-3.5 shrink-0 text-amber-600 dark:text-amber-500" aria-hidden />
+            )}
+            <span className="font-medium text-gray-900 dark:text-gray-100">{grupo.label}</span>
+            {grupo.atipico && <Badge variant="warning">atípico</Badge>}
+          </span>
+          <span className={cx("shrink-0 font-mono text-[12px] tabular-nums font-medium", impactoTone(grupo.impacto_pl_sub))}>
+            {fmtBRLSigned(grupo.impacto_pl_sub)}
           </span>
         </div>
-        <p className="m-0 mb-1.5 text-[12.5px] font-medium text-gray-900 dark:text-gray-100">
-          {alerta.descricao}
-        </p>
-        {alerta.evidencia && (
-          <>
-            <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
-              Evidência
-            </p>
-            <pre className="m-0 whitespace-pre-wrap rounded bg-gray-50 px-2.5 py-2 font-mono text-[11px] leading-relaxed tabular-nums text-gray-600 dark:bg-gray-900 dark:text-gray-400">
-              {alerta.evidencia}
-            </pre>
-          </>
-        )}
-      </div>
-    </div>
+      </AccordionTrigger>
+      <AccordionContent>
+        <div className="flex flex-col gap-2 text-[12.5px]">
+          {grupo.atipicidade && (
+            <div className="flex items-start gap-2 rounded bg-amber-50 px-2.5 py-1.5 text-[12px] text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+              <RiAlertFill className="mt-[2px] size-3.5 shrink-0" aria-hidden />
+              <span>{grupo.atipicidade.motivo}</span>
+            </div>
+          )}
+          {grupo.classificacao && (
+            <div>
+              <Badge variant="neutral">{humanize(grupo.classificacao)}</Badge>
+            </div>
+          )}
+          {grupo.bullets.length > 0 && (
+            <ul className="m-0 flex list-none flex-col gap-1 p-0">
+              {grupo.bullets.map((b, i) => (
+                <li key={i} className="relative pl-4 leading-relaxed">
+                  <span className="absolute left-0 top-0 text-gray-400 dark:text-gray-600" aria-hidden>—</span>
+                  {b}
+                </li>
+              ))}
+            </ul>
+          )}
+          {grupo.explicacao && (
+            <p className="m-0 leading-relaxed text-gray-700 dark:text-gray-300">{grupo.explicacao}</p>
+          )}
+          {grupo.papeis.length > 0 && <PapeisInline papeis={grupo.papeis} />}
+          <div className="text-[10px] tabular-nums text-gray-400 dark:text-gray-600">
+            D-1 {fmtBRL.format(grupo.d1)} → D0 {fmtBRL.format(grupo.d0)} · Δ {fmtBRLSigned(grupo.delta)}
+          </div>
+        </div>
+      </AccordionContent>
+    </AccordionItem>
   )
 }
 
-// ─── Papéis citados (5.0) ───────────────────────────────────────────────────
-
-function PapeisTable({ papeis }: { papeis: AgentePapelMencionado[] }) {
+function PapeisInline({ papeis }: { papeis: AgentePapelMencionado[] }) {
   return (
-    <table className="mt-2 w-full border-collapse text-[11px]">
-      <thead>
-        <tr>
-          <Th>Documento</Th>
-          <Th>Cedente → Sacado</Th>
-          <Th>Evento</Th>
-          <Th right>Δ no dia</Th>
-        </tr>
-      </thead>
+    <table className="w-full border-collapse text-[11px]">
       <tbody>
         {papeis.map((p, i) => (
           <tr key={i}>
-            <td className="border-b border-dashed border-gray-200 py-1.5 pr-2 font-mono font-medium tabular-nums dark:border-gray-800">
+            <td
+              className="border-b border-dashed border-gray-200 py-1 pr-2 font-mono font-medium tabular-nums dark:border-gray-800"
+              title={p.seu_numero ? `DID ${p.seu_numero}` : undefined}
+            >
               {p.numero_documento || p.seu_numero}
             </td>
-            <td className="border-b border-dashed border-gray-200 py-1.5 pr-2 text-gray-600 dark:border-gray-800 dark:text-gray-400">
+            <td className="border-b border-dashed border-gray-200 py-1 pr-2 text-gray-500 dark:border-gray-800 dark:text-gray-400">
               {p.cedente_nome} → {p.sacado_nome}
-            </td>
-            <td className="border-b border-dashed border-gray-200 py-1.5 pr-2 text-[10px] uppercase tracking-[0.04em] text-gray-400 dark:border-gray-800 dark:text-gray-600">
-              {humanize(p.natureza)}
+              <span className="text-[10px] uppercase tracking-[0.04em] text-gray-400 dark:text-gray-600"> · {humanize(p.natureza)}</span>
             </td>
             <td
               className={cx(
-                "border-b border-dashed border-gray-200 py-1.5 text-right font-mono font-medium tabular-nums dark:border-gray-800",
-                deltaTone(p.delta_brl),
+                "border-b border-dashed border-gray-200 py-1 text-right font-mono font-medium tabular-nums dark:border-gray-800",
+                impactoTone(p.delta_brl),
               )}
             >
               {fmtBRLSigned(p.delta_brl)}
@@ -629,141 +473,69 @@ function PapeisTable({ papeis }: { papeis: AgentePapelMencionado[] }) {
   )
 }
 
-function Th({ children, right }: { children: React.ReactNode; right?: boolean }) {
+// ─── Alertas ────────────────────────────────────────────────────────────────
+
+function AlertaCard({ alerta }: { alerta: AgenteSinalAlerta }) {
+  const sev = alerta.severidade as Severidade
+  const tone =
+    sev === "critico"
+      ? "border-l-red-500 dark:border-l-red-500"
+      : sev === "atencao"
+        ? "border-l-amber-400 dark:border-l-amber-500"
+        : "border-l-gray-300 dark:border-l-gray-700"
   return (
-    <th
-      className={cx(
-        "border-b border-gray-200 py-1 pr-2 text-[9px] font-medium uppercase tracking-[0.06em] text-gray-400 dark:border-gray-800 dark:text-gray-600",
-        right ? "text-right" : "text-left",
+    <Card className={cx("border-l-2 p-3", tone)}>
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <Badge variant={SEV_BADGE[sev]}>{SEV_LABEL[sev]}</Badge>
+        <span className="text-[10px] font-medium uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
+          {humanize(alerta.tipo)}
+        </span>
+        <span className="text-[12px] font-medium text-gray-900 dark:text-gray-100">{alerta.entidade}</span>
+      </div>
+      <p className="m-0 text-[12.5px] text-gray-800 dark:text-gray-200">{alerta.descricao}</p>
+      {alerta.evidencia && (
+        <p className="m-0 mt-1 font-mono text-[11px] leading-relaxed tabular-nums text-gray-500 dark:text-gray-400">
+          {alerta.evidencia}
+        </p>
       )}
-    >
-      {children}
-    </th>
+    </Card>
   )
 }
 
-// ─── Ação (6.N) ─────────────────────────────────────────────────────────────
+// ─── Footer (proveniencia §14) ──────────────────────────────────────────────
 
-function AcaoSubsection({ num, sugestao }: { num: string; sugestao: AgenteSugestaoAcao }) {
-  return (
-    <div className="mt-3">
-      <div className="mb-1 grid grid-cols-[36px_1fr_auto] items-baseline gap-1">
-        <span className="font-mono text-[12px] font-medium tabular-nums text-red-600 dark:text-red-400">{num}</span>
-        <p className="m-0 text-[12px] font-medium italic text-gray-900 dark:text-gray-100">{sugestao.acao}</p>
-        <Chip tone={sugestao.prioridade} label={PRIO_LABEL[sugestao.prioridade]} />
-      </div>
-      <div className="pl-9">
-        <ul className="m-0 list-none p-0">
-          <Bullet>
-            <span className="text-gray-700 dark:text-gray-300">{sugestao.detalhe}</span>
-          </Bullet>
-        </ul>
-      </div>
-    </div>
-  )
-}
-
-// ─── Primitivos do documento ────────────────────────────────────────────────
-
-function Section({ children }: { children: React.ReactNode }) {
-  return <div className="mt-5">{children}</div>
-}
-
-function SectionHead({ num, title }: { num: string; title: string }) {
-  return (
-    <div className="mb-2 grid grid-cols-[36px_1fr] items-baseline gap-1">
-      <span className="font-mono text-[13px] font-medium tabular-nums text-gray-900 dark:text-gray-100">{num}</span>
-      <h3 className="m-0 text-[13px] font-medium uppercase tracking-[0.01em] text-gray-900 dark:text-gray-100">
-        {title}
-      </h3>
-    </div>
-  )
-}
-
-function SubHead({
-  num,
-  title,
-  meta,
-  metaTone,
+function Footer({
+  metadata,
+  analise,
 }: {
-  num: string
-  title: string
-  meta?: string
-  metaTone?: string
+  metadata: AgenteVariacaoRunResponse["metadata"]
+  analise: AgenteAnaliseVariacao
 }) {
   return (
-    <div className="mb-1 grid grid-cols-[36px_1fr_auto] items-baseline gap-1">
-      <span className="font-mono text-[12px] font-medium tabular-nums text-red-600 dark:text-red-400">{num}</span>
-      <p className="m-0 text-[12px] font-medium italic text-gray-900 dark:text-gray-100">{title}</p>
-      {meta ? (
-        <span className={cx("whitespace-nowrap text-right font-mono text-[12px] font-medium tabular-nums", metaTone)}>
-          {meta}
-        </span>
-      ) : (
-        <span />
-      )}
+    <div className="mt-2 border-t border-gray-200 pt-2 text-center dark:border-gray-800">
+      <p className="m-0 text-[10px] text-gray-400 dark:text-gray-600">
+        Confidencial · A7 Credit / Strata · {metadata.model_used}
+        {metadata.from_cache ? " · cache" : ""} · {fmtDateBR(analise.data)}
+      </p>
+      <p className="m-0 mt-1 font-mono text-[9px] text-gray-300 dark:text-gray-700">
+        audit {metadata.audit_version} · run {metadata.analysis_run_id}
+      </p>
     </div>
   )
 }
 
-function GroupHead({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="mb-1 mt-4 border-b border-dashed border-gray-200 pb-1 pl-9 text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400 dark:border-gray-800 dark:text-gray-600">
-      {children}
-    </p>
-  )
-}
+// ─── Section head ────────────────────────────────────────────────────────────
 
-function Bullet({ flag, children }: { flag?: boolean; children: React.ReactNode }) {
+function SectionHead({ title, hint }: { title: string; hint?: string }) {
   return (
-    <li className="relative py-[3px] pl-4 text-[12.5px] leading-relaxed">
-      <span
-        className={cx(
-          "absolute left-0 top-[3px] text-[11px]",
-          flag ? "font-medium text-amber-600 dark:text-amber-500" : "text-gray-500 dark:text-gray-400",
-        )}
-        aria-hidden
-      >
-        {flag ? "!" : "—"}
-      </span>
-      {children}
-    </li>
-  )
-}
-
-function KpiRow({ label, value, residuo }: { label: string; value: string; residuo?: boolean }) {
-  return (
-    <tr>
-      <td
-        className={cx(
-          "border-b border-gray-200 px-2.5 py-1.5 dark:border-gray-800",
-          residuo ? "font-medium text-red-600 dark:text-red-400" : "text-gray-600 dark:text-gray-400",
-        )}
-      >
-        {label}
-      </td>
-      <td
-        className={cx(
-          "border-b border-gray-200 px-2.5 py-1.5 text-right font-mono font-medium tabular-nums dark:border-gray-800",
-          residuo ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-gray-100",
-        )}
-      >
-        {value}
-      </td>
-    </tr>
-  )
-}
-
-function Chip({ tone, label }: { tone: ChipTone; label: string }) {
-  return (
-    <span
-      className={cx(
-        "rounded-[2px] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.06em]",
-        CHIP_TONE[tone],
+    <div className="flex items-baseline justify-between">
+      <h3 className="m-0 text-[12px] font-medium uppercase tracking-[0.04em] text-gray-900 dark:text-gray-100">
+        {title}
+      </h3>
+      {hint && (
+        <span className="text-[10px] uppercase tracking-[0.04em] text-gray-400 dark:text-gray-600">{hint}</span>
       )}
-    >
-      {label}
-    </span>
+    </div>
   )
 }
 

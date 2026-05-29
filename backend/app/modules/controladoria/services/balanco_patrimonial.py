@@ -312,12 +312,17 @@ def _linha_estrutural(
     *, key: str, label: str, natureza: str, grupo: str, grupo_label: str,
     source: str, v1: Decimal, v0: Decimal, drill_key: str | None = None,
 ) -> BalancoLinhaEstrutural:
+    delta = v0 - v1
+    # Impacto no PL Sub com sinal corrigido: ativo soma; contra_ativo (PDD) e
+    # passivo subtraem (crescer reduz o PL Sub). Alimenta o ranking de ofensores.
+    impacto = delta if natureza == "ativo" else -delta
     return BalancoLinhaEstrutural(
         key=key, label=label,
         natureza=natureza,  # type: ignore[arg-type]
         grupo=grupo,  # type: ignore[arg-type]
         grupo_label=grupo_label,
-        d1=v1, d0=v0, delta=v0 - v1,
+        d1=v1, d0=v0, delta=delta,
+        impacto_pl_sub=impacto,
         source=source,
         drill_key=drill_key,  # type: ignore[arg-type]
     )
