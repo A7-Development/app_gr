@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from app.agentic.engine.output_schemas import (
     AnalysisVariacaoCotaResponse,
+    AuditoriaPddResponse,
     AuditoriaResultadoResponse,
     AuditoriaVariacaoCarteiraResponse,
     CommercialVisitAnalysis,
@@ -418,5 +419,28 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         thinking_budget_tokens=8000,
         timeout_seconds=300,
         section_id="auditor_resultado",
+    ),
+    # ─── Controladoria · auditor de PROVISAO/PDD ────────────────────────
+    # Especialista (2026-05-30): lente de provisao. Le get_drill_pdd. Separa
+    # PDD propria (titulo vencido) de PDD por arrasto (efeito vagao), nas duas
+    # direcoes (constituicao forward / reversao por liberacao).
+    "auditor_pdd": SpecialistAgentSpec(
+        name="auditor_pdd",
+        description=(
+            "Audita a variacao da PROVISAO (PDD) da carteira no dia: separa "
+            "constituicao PROPRIA (titulo vencido) de constituicao por ARRASTO "
+            "(efeito vagao — puxador arrasta os a-vencer), e reversao por "
+            "LIQUIDACAO (titulo proprio pagou) de reversao por LIBERACAO (vagao "
+            "reverso — puxador liquidou e soltou os a-vencer). NAO audita "
+            "estoque, renda nem caixa."
+        ),
+        prompt_name="agent.controladoria.auditor_pdd",
+        tools=("get_drill_pdd",),
+        output_schema=AuditoriaPddResponse,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=8000,
+        timeout_seconds=300,
+        section_id="auditor_pdd",
     ),
 }

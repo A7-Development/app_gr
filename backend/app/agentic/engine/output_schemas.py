@@ -560,3 +560,110 @@ class AuditoriaResultadoResponse(BaseModel):
     conclusao: str = Field(
         description="1-3 frases: o que rendeu o dia e a composicao (contratada vs extra vs perda)."
     )
+
+
+# ─── Auditor de Provisao/PDD — especialista 2026-05-30 ─────────────────────
+#
+# Lente de PROVISAO (contra-ativo): por que a PDD ex-WOP mexeu entre D-1 e D0.
+# A pegadinha: PDD nasce do titulo VENCIDO do sacado, mas ARRASTA os demais
+# titulos do mesmo sacado (efeito vagao). Auditor separa PDD PROPRIA (titulo
+# vencido) de PDD por ARRASTO (puxado por irmao vencido) — nas duas direcoes:
+# constituicao (forward: puxador arrasta) e reversao (reverso: puxador liquida
+# e libera). Le get_drill_pdd. NAO audita estoque/renda/caixa.
+
+
+class VagaoPddForward(BaseModel):
+    """Constituicao por ARRASTO: puxador vencido arrasta os a-vencer p/ faixa pior."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sacado_nome:         str
+    faixa_para:          str = Field(description="Faixa de destino comum (pior).")
+    documento_puxador:   str = Field(description="numero_documento do titulo VENCIDO que puxou.")
+    qtd_arrastados:      int = Field(description="Titulos a vencer arrastados pra mesma faixa.")
+    sum_delta_pdd:       float = Field(description="ΔPDD do grupo (>0, constituicao). R$.")
+    bullet:              str = Field(description="1 linha factual ancorada em R$.")
+
+
+class VagaoPddReverso(BaseModel):
+    """Reversao por LIBERACAO: puxador vencido liquidou, liberou os a-vencer."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sacado_nome:         str
+    documento_liberador: str = Field(description="numero_documento do VENCIDO liquidado (ex-puxador).")
+    qtd_liberados:       int = Field(description="Titulos a vencer liberados (PDD revertido).")
+    sum_delta_pdd:       float = Field(description="ΔPDD do grupo (<0, reversao). R$.")
+    bullet:              str = Field(description="1 linha factual ancorada em R$.")
+
+
+class PontoAtencaoPdd(BaseModel):
+    """Ponto de atencao do PDD (anomalia de provisao)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    severidade: Literal["info", "atencao", "critico"]
+    tipo: Literal[
+        "sacado_problematico", "write_off", "divergencia_consolidado_granular", "outro"
+    ]
+    titulo: str
+    descricao: str
+    evidencia: str = Field(
+        description="Cite por numero_documento (NUNCA o DID) + valores R$."
+    )
+
+
+class AuditoriaPddResponse(BaseModel):
+    """Output do agente `controladoria.auditor_pdd` (2026-05-30).
+
+    Lente de PROVISAO: por que a PDD ex-WOP mexeu. Separa constituicao PROPRIA
+    (titulo vencido) de constituicao por ARRASTO (efeito vagao forward), e
+    reversao por LIQUIDACAO (titulo proprio pagou) de reversao por LIBERACAO
+    (vagao reverso: puxador liquidou e soltou os a-vencer). NAO audita estoque,
+    renda nem caixa.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    fundo_nome: str
+    data: str = Field(description="ISO yyyy-mm-dd da data D0.")
+    data_anterior: str = Field(description="ISO yyyy-mm-dd da data D-1.")
+
+    resumo: str = Field(
+        description="Leitura 5s: PDD ex-WOP variou R$ X (constituicao ou reversao), "
+                    "impacto no PL Sub, e o que dominou (proprio vs arrasto/liberacao)."
+    )
+
+    pdd_ex_wop_d1: float = Field(description="Σ valor_pdd faixas A-H em D-1. R$.")
+    pdd_ex_wop_d0: float = Field(description="Σ valor_pdd faixas A-H em D0. R$.")
+    delta: float = Field(description="pdd_ex_wop_d0 - pdd_ex_wop_d1. R$.")
+    impacto_pl_sub: float = Field(
+        description="-delta. PDD que sobe REDUZ o PL Sub; PDD que cai AUMENTA. R$."
+    )
+    direcao: Literal["constituicao", "reversao", "neutro"]
+
+    # ── Constituicao (PDD subiu) ───────────────────────────────────────────
+    constituicao_total: float = Field(description="Σ ΔPDD>0 (PDD constituida). R$.")
+    constituicao_por_arrasto: float = Field(
+        description="Parte da constituicao via efeito vagao (puxador arrastou a-vencer). R$."
+    )
+    vagoes_forward: list[VagaoPddForward] = Field(default_factory=list)
+
+    # ── Reversao (PDD caiu) ────────────────────────────────────────────────
+    reversao_total: float = Field(description="Σ ΔPDD<0 (PDD revertida). R$.")
+    reversao_por_liquidacao: float = Field(
+        description="Reversao porque o PROPRIO titulo liquidou. R$ (<=0)."
+    )
+    reversao_por_liberacao: float = Field(
+        description="Reversao por LIBERACAO do vagao (puxador saiu, soltou os a-vencer). R$ (<=0)."
+    )
+    vagoes_reversos: list[VagaoPddReverso] = Field(default_factory=list)
+
+    atencao: list[PontoAtencaoPdd] = Field(
+        default_factory=list,
+        description="Anomalias de provisao: sacado problematico (arrasto material), "
+                    "write-off, divergencia consolidado x granular. Dia limpo = [].",
+    )
+    conclusao: str = Field(
+        description="1-3 frases: o que o controller leva sobre a provisao do dia."
+    )
