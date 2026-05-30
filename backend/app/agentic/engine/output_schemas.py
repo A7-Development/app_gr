@@ -388,3 +388,96 @@ class AnalysisVariacaoCotaResponse(BaseModel):
         default_factory=list,
         description="So os atipicos materiais que merecem registro/acao.",
     )
+
+
+# ─── Auditor de Variacao de Carteira (DC) — especialista 2026-05-30 ────────
+#
+# Audita a CONSISTENCIA da variacao da carteira de Direitos Creditorios (DC)
+# entre D-1 e D0: o que moveu o estoque, separa atipico de rotina, da o selo
+# de fechamento. NAO julga qualidade de credito; NAO concilia caixa (isso e o
+# Auditor de Variacao de Caixa). Le SO a tool get_variacao_carteira.
+
+
+class MotorCarteira(BaseModel):
+    """Um motor da variacao do ESTOQUE DC no dia (os 5 buckets que fecham)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: Literal[
+        "aquisicoes", "liquidacoes", "migracao_wop", "apropriacao", "mutacao"
+    ]
+    label: str
+    valor: float = Field(description="Impacto no estoque DC (R$, com sinal natural).")
+    natureza: Literal["rotina", "atencao"] = Field(
+        description="rotina = movimento esperado (carrego, giro); atencao = foge do padrao."
+    )
+    bullet: str = Field(description="1 linha factual, leitura 5s, ancorada em R$.")
+
+
+class ConsistenciaCarteira(BaseModel):
+    """Selo de fechamento da decomposicao — a assinatura do auditor."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    fecha: bool = Field(
+        description="True quando a decomposicao bate o estoque D0 (residuo dentro da tolerancia)."
+    )
+    residuo: float = Field(description="saldo_d0 - (saldo_d1 + Σ motores). R$.")
+    nota: str = Field(
+        description="'Fecha por construcao' OU, se nao fecha, 'residuo R$ X — "
+                    "desalinhamento de pipeline (nao e erro do fundo)'."
+    )
+
+
+class PontoAtencaoCarteira(BaseModel):
+    """Um movimento atipico no estoque DC que merece atencao."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    severidade: Literal["info", "atencao", "critico"]
+    tipo: Literal[
+        "mutacao_silenciosa", "apropriacao_anormal", "write_off",
+        "liquidacao_atipica", "outro",
+    ]
+    titulo: str = Field(description="Headline curto do ponto de atencao (1 frase).")
+    descricao: str
+    evidencia: str = Field(
+        description="Cite o papel por numero_documento (NUNCA o DID/seu_numero) + valores R$."
+    )
+
+
+class AuditoriaVariacaoCarteiraResponse(BaseModel):
+    """Output do agente `controladoria.auditor_variacao_carteira` (2026-05-30).
+
+    Lente da DECOMPOSICAO do estoque DC: a carteira variou de saldo_d1 -> saldo_d0
+    por 5 motores (aquisicoes, liquidacoes, migracao WOP, apropriacao, mutacao),
+    que FECHAM por construcao. O auditor separa rotina de atipico, detalha a
+    apropriacao (normal vs antecipada) e da o selo de consistencia.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    fundo_nome: str
+    data: str = Field(description="ISO yyyy-mm-dd da data D0 analisada.")
+    data_anterior: str = Field(description="ISO yyyy-mm-dd da data D-1.")
+
+    resumo: str = Field(
+        description="Leitura 5s: a carteira variou R$ X, fecha?, motor dominante, ha atipico?"
+    )
+
+    saldo_d1: float = Field(description="Σ VP do estoque ex-WOP em D-1. R$.")
+    saldo_d0: float = Field(description="Σ VP do estoque ex-WOP em D0. R$.")
+    delta: float = Field(description="saldo_d0 - saldo_d1. R$.")
+
+    motores: list[MotorCarteira] = Field(
+        default_factory=list,
+        description="Os 5 motores do estoque com movimento relevante (pule ~0).",
+    )
+    consistencia: ConsistenciaCarteira
+    atencao: list[PontoAtencaoCarteira] = Field(
+        default_factory=list,
+        description="So os movimentos atipicos. Dia limpo = [].",
+    )
+    conclusao: str = Field(
+        description="1-3 frases: o que o controller leva do dia (destaca o atipico).",
+    )

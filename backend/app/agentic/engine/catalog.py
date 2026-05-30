@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from app.agentic.engine.output_schemas import (
     AnalysisVariacaoCotaResponse,
+    AuditoriaVariacaoCarteiraResponse,
     CommercialVisitAnalysis,
     CrossReferenceAnalysis,
     DocumentExtraction,
@@ -371,5 +372,28 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         thinking_budget_tokens=15000,
         timeout_seconds=600,
         section_id="cota_sub_analise_variacao",
+    ),
+    # ─── Controladoria · auditor de variacao de CARTEIRA (DC) ────────────
+    # Especialista (2026-05-30): segmentacao do monolito. Audita SO a
+    # consistencia da variacao do estoque DC (decomposicao D-1 vs D0) — 1 tool.
+    # Conciliacao de caixa = outro agente (auditor_variacao_caixa).
+    "auditor_variacao_carteira": SpecialistAgentSpec(
+        name="auditor_variacao_carteira",
+        description=(
+            "Audita a consistencia da variacao da carteira de Direitos "
+            "Creditorios (DC) entre D-1 e D0: decompoe o ΔDC em 5 motores "
+            "(aquisicoes, liquidacoes, migracao WOP, apropriacao, mutacao), "
+            "separa rotina de atipico, detalha apropriacao (normal vs "
+            "antecipada) e da o selo de fechamento. NAO julga credito nem "
+            "concilia caixa."
+        ),
+        prompt_name="agent.controladoria.auditor_variacao_carteira",
+        tools=("get_variacao_carteira",),
+        output_schema=AuditoriaVariacaoCarteiraResponse,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=8000,
+        timeout_seconds=300,
+        section_id="auditor_variacao_carteira",
     ),
 }
