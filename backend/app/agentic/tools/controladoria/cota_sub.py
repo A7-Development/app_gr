@@ -1,9 +1,11 @@
 """Tools agenticas pra analise da variacao da Cota Sub Jr.
 
-9 tools registradas (5 wrappers de services existentes + 4 novas pra
-cruzamentos que o agente faz manualmente em conversas com Ricardo).
-O 5o wrapper (get_decomposicao_classes, 2026-05-26) decompoe o ΔPL de
-cada classe de cota em efeito-capital (aporte/resgate) vs valorizacao.
+10 tools registradas. A 10a (get_conferencia_cessao, 2026-05-30) confere as
+AQUISICOES de recebiveis do dia contra os DEBITOS de caixa aos cedentes no
+extrato bancario (reconciliacao DC<->caixa: erro de lancamento / furo de sync
+do extrato / fluxo extra ao cedente). As demais: 5 wrappers de drills/balanco +
+get_decomposicao_classes (ΔPL por classe: capital vs valorizacao) + 3 de
+investigacao de papel.
 
 **Convencao de scope:**
 
@@ -128,20 +130,23 @@ async def get_balanco_patrimonial(scope: ScopedContext, args: dict[str, Any]) ->
 
 
 @register_tool(
-    name="get_drill_dc",
+    name="get_variacao_carteira",
     description=(
-        "Decompoe a variacao da linha Direitos Creditorios entre D-1 e D0 "
-        "em 5 buckets a partir do granular wh_estoque_recebivel: "
-        "aquisicoes (papeis novos), liquidacoes (papeis baixados pelo VP), "
-        "migracao WOP (papeis que viraram write-off), apropriacao de juros "
-        "(populacao constante sem mudanca de parametro), mutacao silenciosa "
-        "(papeis que mudaram valor_nominal/taxa/vencimento sem evento). "
-        "Identidade fecha por construcao (residuo ~ R$ 0).\n\n"
+        "Decompoe a variacao da carteira de recebiveis (linha Direitos "
+        "Creditorios) entre D-1 e D0 em 5 buckets a partir do granular "
+        "wh_estoque_recebivel: aquisicoes (papeis novos), liquidacoes "
+        "(papeis baixados pelo VP), migracao WOP (papeis que viraram "
+        "write-off), apropriacao de juros (populacao constante sem mudanca "
+        "de parametro), mutacao (papeis que mudaram valor_nominal/taxa/"
+        "vencimento). Identidade fecha por construcao (residuo ~ R$ 0).\n\n"
         "JA VEM PRONTO o bloco `resultado_do_dia` com os MOTORES DE RENDA da "
         "DC e SINAL DE IMPACTO no PL Sub corrigido (voce NAO precisa flipar o "
-        "ajuste): carrego_apropriacao, renda_multa_juros (= -Σajuste<0, sempre "
-        ">=0), desconto_concedido (>=0, custo), ajuste_liquido_resultado, "
-        "mutacao_total, migracao_wop_total, giro_aquisicoes/giro_liquidacoes "
+        "ajuste): carrego_apropriacao, apropriacao_antecipada (= -Σajuste<0 de "
+        "quitacoes ANTES do vencimento; carrego futuro ja contratado trazido pra "
+        "frente, NAO e receita extra), juros_mora (= -Σajuste<0 de pagamentos em "
+        "ATRASO; renda extra), desconto_concedido (>=0, custo), "
+        "ajuste_liquido_resultado, mutacao_total, migracao_wop_total, "
+        "giro_aquisicoes/giro_liquidacoes "
         "(NAO movem a cota), motor_dominante e resultado_outlier. Em cada "
         "liquidacao (por_tipo e top) use `impacto_resultado_brl` (= -ajuste) "
         "como delta_brl do papel — NUNCA `ganho_liquido`. O bloco `sugestao` "
@@ -158,8 +163,12 @@ async def get_balanco_patrimonial(scope: ScopedContext, args: dict[str, Any]) ->
     cost_hint="cheap",
     cacheable=True,
 )
-async def get_drill_dc(scope: ScopedContext, args: dict[str, Any]) -> str:
+async def get_variacao_carteira(scope: ScopedContext, args: dict[str, Any]) -> str:
     """Wrap de compute_drill_dc + camada de sugestao (tools grossas, 2026-05-29).
+
+    Nome agente-facing = `get_variacao_carteira` (otica de variacao/auditoria da
+    carteira). O servico/UI continua `compute_drill_dc` / rota `/drill/dc` —
+    la "drill" e o conceito correto (drill-down da linha no balanco).
 
     O service ja devolve `resultado_do_dia` com sinais de impacto corrigidos
     (dominio puro, serve UI tambem). Aqui acrescentamos o que e contrato do
@@ -211,10 +220,12 @@ def _sugestao_drill_dc(r: Any) -> dict[str, Any]:
     # com uma mutacao material — que vira ALERTA, nao headline (caso 20/05).
     # Independente de `motor_dominante` (que vira "misto" quando carrego e
     # multa/juros sao ambos grandes — caso REALINVEST 14/05).
-    ajuste_liq = abs(res.ajuste_liquido_resultado)
+    # Evento NAO-contratado (mora - desconto). A apropriacao antecipada NAO
+    # entra aqui — e carrego (rotina), nao evento pontual.
+    evento_liq = abs(res.juros_mora - res.desconto_concedido)
     if not res.resultado_outlier:
         classificacao = "carrego_normal"
-    elif abs(mutacao) >= ajuste_liq:
+    elif abs(mutacao) >= evento_liq:
         classificacao = "mutacao_silenciosa_pura"
     else:
         classificacao = "evento_pontual_explicado"
@@ -239,7 +250,8 @@ def _sugestao_drill_dc(r: Any) -> dict[str, Any]:
 
     resumo = (
         f"Resultado DC do dia: carrego R$ {float(res.carrego_apropriacao):+,.2f}; "
-        f"multa/juros R$ {float(res.renda_multa_juros):+,.2f}; "
+        f"apropriacao antecipada R$ {float(res.apropriacao_antecipada):+,.2f}; "
+        f"juros de mora R$ {float(res.juros_mora):+,.2f}; "
         f"desconto R$ {float(res.desconto_concedido):,.2f}; "
         f"mutacao R$ {float(res.mutacao_total):+,.2f}. "
         f"Motor dominante: {res.motor_dominante}"
@@ -1049,3 +1061,48 @@ async def check_identidade_contabil(
         "alerta_sugerido": alerta,
         "acao_sugerida": acao,
     })
+
+
+# ─── Tool: conferencia de cessao (aquisicao DC vs caixa/extrato) ───────────
+
+
+@register_tool(
+    name="get_conferencia_cessao",
+    description=(
+        "Confere as AQUISICOES de recebiveis do dia (cessao) contra os DEBITOS "
+        "de caixa aos cedentes no extrato bancario. Por cedente: valor_aquisicao "
+        "(Σ valor_compra que o fundo registrou pagar) vs valor_debito_caixa (Σ "
+        "debitos ao cedente no extrato, janela [D, D+janela_dias]), com `status`:\n"
+        "  - 'casa' = debito bate a aquisicao (cessao liquidada certo);\n"
+        "  - 'descasa' = extrato existe mas o cedente NAO bate (valor diverge ou "
+        "sem debito) -> CANDIDATO A ERRO DE LANCAMENTO DC<->caixa;\n"
+        "  - 'sem_extrato' = extrato nao sincronizado pro periodo (NAO da pra "
+        "conferir — NAO e erro de dado do fundo).\n"
+        "REGRA: se `extrato_disponivel=False`, o dia inteiro caiu em furo de sync "
+        "do extrato — informe isso, NAO acuse descasamento. `match_exato=True` "
+        "quando um debito UNICO == a aquisicao (TED de cessao limpa). Achado: a "
+        "cessao liquida como TED ao cedente no valor exato da compra, mesmo dia. "
+        "Use quando houver aquisicao material no dia OU pra auditar consistencia "
+        "caixa<->DC."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+    module=Module.CONTROLADORIA,
+    min_permission=Permission.READ,
+    cost_hint="cheap",
+    cacheable=True,
+)
+async def get_conferencia_cessao(scope: ScopedContext, args: dict[str, Any]) -> str:
+    """Wrap de compute_conferencia_cessao. ua_id+data vem do scope."""
+    from app.modules.controladoria.services.conferencia_cessao import (
+        compute_conferencia_cessao,
+    )
+
+    ua_id, data_d0 = _parse_scope_inputs(scope)
+    r = await compute_conferencia_cessao(
+        scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
+    )
+    return _to_json(r)

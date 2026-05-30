@@ -40,7 +40,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.cadastros.public import UnidadeAdministrativa
@@ -140,15 +140,23 @@ async def _liquidacoes_do_dia(
     """Liquidacoes do dia + agrupamento por `tipo_movimento` + top N individuais.
 
     Retorna (por_tipo, top_individuais, qtd_total, total_valor_aquisicao,
-    renda_multa_juros, desconto_concedido).
+    apropriacao_antecipada, juros_mora, desconto_concedido).
 
-    - `total_valor_aquisicao` e o que sai do estoque (custo no FIDC); usado
-      na formula da apropriacao.
-    - `renda_multa_juros` = -Σ(ajuste<0): sacado pagou ACIMA do vencimento
-      (multa/juros de mora). Sempre >= 0 (renda).
-    - `desconto_concedido` = Σ(ajuste>0): sacado pagou ABAIXO do vencimento
-      (abatimento). Magnitude >= 0 (custo). Split por sinal feito em SQL
-      (case por linha), entao tipos com ajuste misto contam corretamente.
+    Convencao de sinal (ajuste): `ajuste<0` AUMENTA o ativo (renda, bom pra
+    nos); `ajuste>0` e perda/abatimento. O `ajuste<0` e desmembrado por TIMING
+    do pagamento (data_posicao vs data_vencimento), porque sao naturezas
+    DIFERENTES:
+
+    - `apropriacao_antecipada` = -Σ(ajuste<0 com data_posicao <= vencimento):
+      titulo quitado ANTES do vencimento. NAO e receita extra — e o carrego
+      futuro (juros ja contratado na curva) apropriado de uma vez. Mesma
+      natureza do carrego diario, so realizado antes. Sempre >= 0.
+    - `juros_mora` = -Σ(ajuste<0 com data_posicao > vencimento, ou venc nulo):
+      sacado pagou em ATRASO. Renda EXTRA (penalidade). Sempre >= 0.
+    - `desconto_concedido` = Σ(ajuste>0): abatimento/perda. Magnitude >= 0.
+
+    Split feito em SQL (case por linha), entao tipos com ajuste misto contam
+    corretamente. `total_valor_aquisicao` = custo que sai do estoque.
     """
     base = (
         select(LiquidacaoRecebivel)
@@ -172,10 +180,38 @@ async def _liquidacoes_do_dia(
             func.coalesce(func.sum(LiquidacaoRecebivel.valor_aquisicao), ZERO).label("sum_aq"),
             func.coalesce(func.sum(LiquidacaoRecebivel.valor_vencimento), ZERO).label("sum_venc"),
             func.coalesce(func.sum(LiquidacaoRecebivel.ajuste), ZERO).label("sum_aj"),
+            # ajuste<0 quitado ANTES do vencimento -> apropriacao antecipada.
             func.coalesce(
-                func.sum(case((LiquidacaoRecebivel.ajuste < 0, LiquidacaoRecebivel.ajuste), else_=ZERO)),
+                func.sum(case(
+                    (
+                        and_(
+                            LiquidacaoRecebivel.ajuste < 0,
+                            LiquidacaoRecebivel.data_vencimento.isnot(None),
+                            LiquidacaoRecebivel.data_posicao <= LiquidacaoRecebivel.data_vencimento,
+                        ),
+                        LiquidacaoRecebivel.ajuste,
+                    ),
+                    else_=ZERO,
+                )),
                 ZERO,
-            ).label("sum_aj_neg"),
+            ).label("sum_aj_antecip"),
+            # ajuste<0 pago em ATRASO (ou venc nulo) -> juros de mora.
+            func.coalesce(
+                func.sum(case(
+                    (
+                        and_(
+                            LiquidacaoRecebivel.ajuste < 0,
+                            or_(
+                                LiquidacaoRecebivel.data_vencimento.is_(None),
+                                LiquidacaoRecebivel.data_posicao > LiquidacaoRecebivel.data_vencimento,
+                            ),
+                        ),
+                        LiquidacaoRecebivel.ajuste,
+                    ),
+                    else_=ZERO,
+                )),
+                ZERO,
+            ).label("sum_aj_mora"),
             func.coalesce(
                 func.sum(case((LiquidacaoRecebivel.ajuste > 0, LiquidacaoRecebivel.ajuste), else_=ZERO)),
                 ZERO,
@@ -198,16 +234,21 @@ async def _liquidacoes_do_dia(
     por_tipo: list[DrillDcLiquidacaoPorTipo] = []
     qtd_total = 0
     sum_aquisicao_total = ZERO
-    renda_multa_juros = ZERO  # -Σ(ajuste<0), acumulado por linha via SQL
-    desconto_concedido = ZERO  # Σ(ajuste>0)
-    for tipo, qtd, sum_pago, sum_aq, sum_venc, sum_aj, sum_aj_neg, sum_aj_pos in agg_rows:
+    apropriacao_antecipada = ZERO  # -Σ(ajuste<0, antes do venc): carrego antecipado
+    juros_mora = ZERO              # -Σ(ajuste<0, em atraso): renda extra de mora
+    desconto_concedido = ZERO      # Σ(ajuste>0): abatimento/perda
+    for (
+        tipo, qtd, sum_pago, sum_aq, sum_venc, sum_aj,
+        sum_aj_antecip, sum_aj_mora, sum_aj_pos,
+    ) in agg_rows:
         sum_pago_d = Decimal(sum_pago or 0)
         sum_aq_d = Decimal(sum_aq or 0)
         sum_aj_d = Decimal(sum_aj or 0)
         qtd_total += int(qtd or 0)
         sum_aquisicao_total += sum_aq_d
-        renda_multa_juros += -Decimal(sum_aj_neg or 0)  # ajuste<0 -> renda positiva
-        desconto_concedido += Decimal(sum_aj_pos or 0)  # ajuste>0 -> custo (magnitude)
+        apropriacao_antecipada += -Decimal(sum_aj_antecip or 0)  # ajuste<0 antes venc
+        juros_mora += -Decimal(sum_aj_mora or 0)                 # ajuste<0 em atraso
+        desconto_concedido += Decimal(sum_aj_pos or 0)           # ajuste>0 -> custo
         por_tipo.append(
             DrillDcLiquidacaoPorTipo(
                 tipo_movimento=tipo or "—",
@@ -247,7 +288,7 @@ async def _liquidacoes_do_dia(
 
     return (
         por_tipo, top_individuais, qtd_total, sum_aquisicao_total,
-        renda_multa_juros, desconto_concedido,
+        apropriacao_antecipada, juros_mora, desconto_concedido,
     )
 
 
@@ -480,28 +521,41 @@ async def _decompor_delta_dc(
 def _build_resultado_do_dia(
     *,
     decomposicao: DrillDcDecomposicao,
-    renda_multa_juros: Decimal,
+    apropriacao_antecipada: Decimal,
+    juros_mora: Decimal,
     desconto_concedido: Decimal,
 ) -> DrillDcResultadoDoDia:
     """Consolida os motores de renda da DC com sinal de IMPACTO no PL Sub.
 
     Move pra dentro da tool a "regra dura de sinal" que o prompt do agente
-    carregava: renda de multa/juros e SEMPRE positiva (= -Σajuste<0), desconto
-    e custo (Σajuste>0), e o agente nao precisa mais flipar o `ajuste` de cabeca
-    (fonte do erro de ~3x ao confundir com `ganho_liquido`).
+    carregava: ajuste<0 e renda (aumenta o ativo), ajuste>0 e custo — o agente
+    nao precisa flipar o `ajuste` de cabeca (fonte do erro de ~3x ao confundir
+    com `ganho_liquido`).
+
+    Distincao chave (2026-05-30): o `ajuste<0` separa-se em
+    `apropriacao_antecipada` (quitacao antes do vencimento = carrego futuro JA
+    CONTRATADO, so trazido pra frente — NAO e receita extra) e `juros_mora`
+    (atraso = renda extra). Por isso a apropriacao antecipada entra JUNTO do
+    carrego na dominancia/outlier: um dia de muitas quitacoes antecipadas e
+    rotina de apropriacao, nao um evento atipico.
 
     `motor_dominante` e `resultado_outlier` sao descritores de DOMINIO (nao
     enums do agente) — a tool wrapper deriva deles a `classificacao_sugerida`.
     """
     carrego = decomposicao.apropriacao_total
-    ajuste_liquido = renda_multa_juros - desconto_concedido
+    # Apropriacao contratada do dia = carrego diario + carrego antecipado por
+    # quitacao (mesma natureza: juros ja na curva). E a "rotina" do dia.
+    apropriacao_contratada = carrego + apropriacao_antecipada
+    # Eventos NAO-contratados das liquidacoes (o que realmente foge da rotina).
+    evento_liquido = juros_mora - desconto_concedido
+    ajuste_liquido = apropriacao_antecipada + juros_mora - desconto_concedido  # = -Σajuste
     mutacao = decomposicao.mutacao_total
     wop = decomposicao.migracao_wop_total
 
-    # Motor dominante: maior magnitude entre os motores de renda/correcao.
+    # Motor dominante: maior magnitude. Apropriacao antecipada conta no carrego.
     candidatos: dict[str, Decimal] = {
-        "carrego": abs(carrego),
-        "multa_juros": abs(renda_multa_juros),
+        "carrego": abs(apropriacao_contratada),
+        "mora": abs(juros_mora),
         "desconto": abs(desconto_concedido),
         "mutacao": abs(mutacao),
         "write_off": abs(wop),
@@ -512,14 +566,18 @@ def _build_resultado_do_dia(
     segundo = sorted(candidatos.values(), reverse=True)[1] if len(candidatos) > 1 else ZERO
     motor_dominante = "misto" if top_val > ZERO and segundo >= top_val * Decimal("0.7") else top
 
-    # Outlier: carrego deixou de ser o motor (ajuste OU mutacao supera o carrego).
+    # Outlier: a apropriacao contratada (carrego + antecipada) deixou de dominar
+    # — um evento (mora/desconto) OU mutacao supera a rotina do dia.
     resultado_outlier = (
-        abs(ajuste_liquido) > abs(carrego) or abs(mutacao) > abs(carrego)
+        abs(evento_liquido) > abs(apropriacao_contratada)
+        or abs(mutacao) > abs(apropriacao_contratada)
     )
 
     return DrillDcResultadoDoDia(
         carrego_apropriacao=carrego,
-        renda_multa_juros=renda_multa_juros,
+        apropriacao_antecipada=apropriacao_antecipada,
+        apropriacao_total_dia=apropriacao_contratada,
+        juros_mora=juros_mora,
         desconto_concedido=desconto_concedido,
         ajuste_liquido_resultado=ajuste_liquido,
         mutacao_total=mutacao,
@@ -583,7 +641,7 @@ async def compute_drill_dc(
 
     (
         por_tipo, top_liq, liquidacoes_qtd, liquidacoes_total,
-        renda_multa_juros, desconto_concedido,
+        apropriacao_antecipada, juros_mora, desconto_concedido,
     ) = await _liquidacoes_do_dia(
         db,
         tenant_id=tenant_id,
@@ -608,7 +666,8 @@ async def compute_drill_dc(
 
     resultado_do_dia = _build_resultado_do_dia(
         decomposicao=decomposicao,
-        renda_multa_juros=renda_multa_juros,
+        apropriacao_antecipada=apropriacao_antecipada,
+        juros_mora=juros_mora,
         desconto_concedido=desconto_concedido,
     )
 

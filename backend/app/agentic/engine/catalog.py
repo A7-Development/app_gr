@@ -354,7 +354,7 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         tools=(
             "check_identidade_contabil",
             "get_balanco_patrimonial",
-            "get_drill_dc",
+            "get_variacao_carteira",
             "get_drill_pdd",
             "get_drill_cpr",
             "get_decomposicao_classes",

@@ -269,17 +269,30 @@ class DrillDcResultadoDoDia(BaseModel):
         description="= decomposicao.apropriacao_total. Juros + MtM da populacao "
                     "constante. Motor 'normal' do dia. Positivo = renda.",
     )
-    renda_multa_juros:        Decimal = Field(
-        description="= -Σ(ajuste<0) das liquidacoes. Multa + juros de mora (sacado "
-                    "pagou ACIMA do vencimento). Sempre >= 0 (renda).",
+    apropriacao_antecipada:   Decimal = Field(
+        description="= -Σ(ajuste<0 com pagamento ATE o vencimento). Titulo quitado "
+                    "ANTES do vencimento: o carrego futuro (juros ja contratado na "
+                    "curva) e apropriado de uma vez. NAO e receita extra — e a MESMA "
+                    "renda do carrego, so antecipada. Sempre >= 0.",
+    )
+    apropriacao_total_dia:    Decimal = Field(
+        description="= carrego_apropriacao + apropriacao_antecipada. Total de juros "
+                    "APROPRIADOS no dia (renda ja contratada na curva). USE para "
+                    "explicar uma apropriacao acima/abaixo da media ao usuario: quanto "
+                    "veio de carrego normal (carteira) vs antecipado por quitacoes "
+                    "adiantadas. Apresente os dois componentes SEPARADOS, nunca so o total.",
+    )
+    juros_mora:               Decimal = Field(
+        description="= -Σ(ajuste<0 com pagamento APOS o vencimento). Sacado pagou em "
+                    "ATRASO — renda EXTRA (penalidade de mora). Sempre >= 0.",
     )
     desconto_concedido:       Decimal = Field(
-        description="= Σ(ajuste>0) das liquidacoes. Abatimento concedido (sacado "
-                    "pagou ABAIXO do vencimento). Magnitude >= 0 (custo).",
+        description="= Σ(ajuste>0) das liquidacoes. Abatimento/perda concedido. "
+                    "Magnitude >= 0 (custo).",
     )
     ajuste_liquido_resultado: Decimal = Field(
-        description="= renda_multa_juros - desconto_concedido = -Σajuste. Impacto "
-                    "liquido das liquidacoes no resultado do dia.",
+        description="= apropriacao_antecipada + juros_mora - desconto_concedido = "
+                    "-Σajuste. Impacto liquido total das liquidacoes no resultado.",
     )
     mutacao_total:            Decimal = Field(
         description="= decomposicao.mutacao_total. ΔVP de papeis que mudaram "
@@ -296,11 +309,13 @@ class DrillDcResultadoDoDia(BaseModel):
 
     # ── Heuristica de leitura (descritores de dominio, nao enums do agente) ──
     motor_dominante:          Literal[
-        "carrego", "multa_juros", "desconto", "mutacao", "write_off", "misto"
-    ] = Field(description="Qual motor tem maior magnitude de impacto no dia.")
+        "carrego", "mora", "desconto", "mutacao", "write_off", "misto"
+    ] = Field(description="Qual motor tem maior magnitude de impacto no dia. "
+                          "'carrego' inclui a apropriacao antecipada (mesma natureza).")
     resultado_outlier:        bool = Field(
-        description="True quando |ajuste_liquido_resultado| ou |mutacao_total| supera "
-                    "o carrego_apropriacao — dia foge do padrao (carrego nao domina).",
+        description="True quando o evento liquido (mora - desconto) ou |mutacao_total| "
+                    "supera a apropriacao contratada do dia (carrego + antecipada) — "
+                    "dia foge da rotina de apropriacao.",
     )
 
 

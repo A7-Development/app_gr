@@ -296,8 +296,9 @@ class PapelMencionado(BaseModel):
     sacado_nome: str
     delta_brl: float = Field(description="Impacto do papel na linha.")
     natureza: str = Field(
-        description="ex.: 'mutacao_silenciosa', 'multa_juros', 'desconto_concedido', "
-                    "'write_off', 'migracao_wop', 'aquisicao_novo', 'efeito_vagao'",
+        description="ex.: 'mutacao_silenciosa', 'apropriacao_antecipada', 'juros_mora', "
+                    "'desconto_concedido', 'write_off', 'migracao_wop', "
+                    "'aquisicao_novo', 'efeito_vagao'",
     )
 
 
