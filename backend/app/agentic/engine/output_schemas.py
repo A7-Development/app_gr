@@ -481,3 +481,82 @@ class AuditoriaVariacaoCarteiraResponse(BaseModel):
     conclusao: str = Field(
         description="1-3 frases: o que o controller leva do dia (destaca o atipico).",
     )
+
+
+# ─── Auditor de Resultado (renda/P&L da carteira) — especialista 2026-05-30 ──
+#
+# Lente de RESULTADO/P&L: o que a carteira RENDEU no dia. Le SO o bloco
+# resultado_do_dia da tool get_variacao_carteira. Separa 3 naturezas:
+# CONTRATADA (carrego + antecipada), EXTRA (juros de mora), PERDA (desconto).
+# NAO audita o estoque (= Auditor de Variacao de Carteira) nem caixa.
+
+
+class ComponenteRenda(BaseModel):
+    """Um componente da renda do dia, com a natureza explicita."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: Literal[
+        "apropriacao_normal", "apropriacao_antecipada", "juros_mora", "desconto"
+    ]
+    label: str
+    valor: float = Field(
+        description="R$. Apropriacao e mora positivos (renda); desconto = magnitude da perda."
+    )
+    natureza: Literal["contratada", "extra", "perda"] = Field(
+        description="contratada = carrego/antecipada (ja na curva); extra = mora (atraso); perda = desconto."
+    )
+    bullet: str = Field(description="1 linha factual, ancorada em R$.")
+
+
+class DestaqueRenda(BaseModel):
+    """Concentracao/destaque na renda (ex.: mora num par cedente/sacado)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    descricao: str
+    evidencia: str = Field(
+        description="Cite por numero_documento (NUNCA o DID/seu_numero) + valores R$."
+    )
+
+
+class AuditoriaResultadoResponse(BaseModel):
+    """Output do agente `controladoria.auditor_resultado` (2026-05-30).
+
+    Lente de RESULTADO/P&L: o que a carteira RENDEU no dia, separando renda
+    CONTRATADA (apropriacao normal + antecipada — ja na curva, NAO extra) da
+    renda EXTRA (juros de mora, por atraso) e da PERDA (desconto). NAO audita
+    o estoque (Auditor de Variacao de Carteira) nem o caixa.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    fundo_nome: str
+    data: str = Field(description="ISO yyyy-mm-dd da data D0 analisada.")
+    data_anterior: str = Field(description="ISO yyyy-mm-dd da data D-1.")
+
+    resumo: str = Field(
+        description="Leitura 5s: a carteira rendeu R$ X — quanto contratada (carrego+antecipada) "
+                    "vs extra (mora) vs perda (desconto)."
+    )
+
+    apropriacao_contratada: float = Field(
+        description="apropriacao_normal + apropriacao_antecipada (renda ja contratada na curva). R$."
+    )
+    resultado_liquido: float = Field(
+        description="apropriacao_contratada + juros_mora - desconto (resultado da renda no dia). R$."
+    )
+
+    componentes: list[ComponenteRenda] = Field(
+        default_factory=list,
+        description="Componentes da renda com valor relevante (pule ~0). Apropriacao normal e "
+                    "antecipada SEMPRE separadas — a antecipada NAO e receita extra.",
+    )
+    destaques: list[DestaqueRenda] = Field(
+        default_factory=list,
+        description="Concentracoes/destaques (ex.: mora concentrada num par cedente/sacado). "
+                    "Mora e renda NORMAL, nao anomalia — so destaque informativo.",
+    )
+    conclusao: str = Field(
+        description="1-3 frases: o que rendeu o dia e a composicao (contratada vs extra vs perda)."
+    )

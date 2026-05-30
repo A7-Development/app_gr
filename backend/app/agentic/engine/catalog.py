@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from app.agentic.engine.output_schemas import (
     AnalysisVariacaoCotaResponse,
+    AuditoriaResultadoResponse,
     AuditoriaVariacaoCarteiraResponse,
     CommercialVisitAnalysis,
     CrossReferenceAnalysis,
@@ -395,5 +396,27 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         thinking_budget_tokens=8000,
         timeout_seconds=300,
         section_id="auditor_variacao_carteira",
+    ),
+    # ─── Controladoria · auditor de RESULTADO (renda/P&L da carteira) ────
+    # Especialista (2026-05-30): lente de P&L. Le SO o bloco resultado_do_dia
+    # da tool get_variacao_carteira (renda: carrego, antecipada, mora, desconto).
+    # Espelho do Auditor de Variacao de Carteira, na lente de resultado.
+    "auditor_resultado": SpecialistAgentSpec(
+        name="auditor_resultado",
+        description=(
+            "Audita o RESULTADO/renda da carteira de Direitos Creditorios no "
+            "dia: separa renda CONTRATADA (apropriacao normal + antecipada — "
+            "ja na curva) da EXTRA (juros de mora, por atraso) e da PERDA "
+            "(desconto). Detalha apropriacao normal vs antecipada. NAO audita "
+            "o estoque nem o caixa."
+        ),
+        prompt_name="agent.controladoria.auditor_resultado",
+        tools=("get_variacao_carteira",),
+        output_schema=AuditoriaResultadoResponse,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=8000,
+        timeout_seconds=300,
+        section_id="auditor_resultado",
     ),
 }
