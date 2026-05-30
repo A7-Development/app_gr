@@ -470,6 +470,28 @@ class DrillPddEfeitoVagao(BaseModel):
     )
 
 
+class DrillPddVagaoReverso(BaseModel):
+    """Sacado cujos titulos A VENCER foram LIBERADOS do PDD pela saida do puxador.
+
+    Efeito vagao REVERSO (2026-05-30): quando o titulo VENCIDO que arrastava os
+    demais (o puxador) e LIQUIDADO/pago, os outros titulos do MESMO sacado —
+    inclusive os a vencer — melhoram de faixa e tem o PDD revertido em cascata.
+    Espelho do forward (DrillPddEfeitoVagao), no sentido da REDUCAO.
+    """
+
+    sacado_doc:             str
+    sacado_nome:            str
+    qtd_liberados:          int = Field(description="Titulos a vencer que melhoraram de faixa (liberados).")
+    sum_delta_pdd:          Decimal = Field(description="Σ delta_valor_pdd dos liberados (negativo = reversao).")
+    documento_liberador:    str = Field(
+        description="numero_documento do titulo VENCIDO liquidado que liberou o vagao (ex-puxador).",
+    )
+    documentos_liberados:   list[str] = Field(
+        default_factory=list,
+        description="numeros_documento dos titulos a vencer liberados.",
+    )
+
+
 class DrillPddResponse(BaseModel):
     """Drill da categoria PDD (Provisao para Devedores Duvidosos)."""
 
@@ -516,6 +538,17 @@ class DrillPddResponse(BaseModel):
     # detectado. Opcionais (default None/[]) por retrocompat com a UI atual.
     resumo:                      DrillPddResumo | None = None
     efeito_vagao:                list[DrillPddEfeitoVagao] = Field(default_factory=list)
+
+    # Efeito vagao REVERSO + split da reversao por causa (2026-05-30).
+    vagao_reverso:               list[DrillPddVagaoReverso] = Field(default_factory=list)
+    reversao_por_liquidacao:     Decimal = Field(
+        default=Decimal("0"),
+        description="Reversao de PDD porque o PROPRIO titulo liquidou (pagou, saiu do estoque). <= 0.",
+    )
+    reversao_por_liberacao:      Decimal = Field(
+        default=Decimal("0"),
+        description="Reversao de PDD por LIBERACAO do vagao (a-vencer melhorou de faixa pela saida do puxador vencido). <= 0.",
+    )
 
     matriz:                      list[DrillPddMigracaoCelula]
 
