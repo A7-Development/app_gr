@@ -57,7 +57,7 @@ from app.agentic.memory import AnalysisSession
 from app.agentic.playbooks.services.resolver import resolve_templates
 from app.agentic.tools._base import AgentTool
 from app.agentic.tools.registry import ToolRegistry
-from app.core.enums import Module
+from app.core.enums import Module, Permission
 from app.modules.integracoes.adapters.llm.anthropic.config import (
     CredentialNotFoundError,
     get_active_anthropic_credential,
@@ -960,12 +960,21 @@ async def _invoke_with_validation(
     if scope_override is not None:
         scope = scope_override
     else:
+        # Fallback de invocacao INTERNA de workflow (sem scope_override). A
+        # autorizacao do usuario ja aconteceu no trigger do workflow
+        # (require_module no endpoint que dispara o dossie); o agente interno
+        # e confiavel e so enxerga as tools curadas em `spec.tools` (o filtro
+        # `allowed` do registry restringe a isso de qualquer forma). Por isso
+        # concede ADMIN em todos os modulos — senao o filtro de permissao do
+        # ToolRegistry derruba TODAS as tools (permissions={} -> NONE nao
+        # satisfaz READ) e o agente roda sem tool. F2.b trara permissions
+        # reais do user via AgentDefinition.
         scope = ScopedContext(
             tenant_id=ctx.tenant_id,
             empresa_id=None,
             user_id=ctx.initiated_by,
             module=Module.CREDITO,
-            permissions={},
+            permissions=dict.fromkeys(Module, Permission.ADMIN),
             db=db,
             extras={
                 "dossier_id": ctx.trigger_data.get("dossier_id"),
