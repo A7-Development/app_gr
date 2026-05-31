@@ -847,3 +847,66 @@ class AuditoriaNotaComercialResponse(BaseModel):
     conclusao: str = Field(
         description="1-3 frases: o que mexeu na carteira de NC e se ha algo a acompanhar."
     )
+
+
+# ─── Auditor de Aplicacoes (Fundos DI + linhas menores) — 2026-05-31 ────────
+#
+# Lente do grupo "Aplicacoes" do balanco, EXCETO Op. Estruturadas/NC (auditor
+# proprio). Materialidade concentrada em Fundos DI externo (ITAU SOBERANO, caixa
+# ocioso estacionado). Decompoe por fundo em CAPITAL (aplicacao/resgate) vs
+# VALORIZACAO (rendimento DI); cruzamento LIMPO com o demonstrativo de caixa.
+# NAO audita DC, NC, caixa-fluxo, renda nem provisao.
+
+
+class MovimentoFundoItem(BaseModel):
+    """Um fundo DI externo narrado."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    fundo_nome:        str
+    tipo:              Literal["aplicacao", "resgate", "so_valorizacao"]
+    capital:           float = Field(description="Aplicacao/resgate liquido (Δqtd x cota). >0 aplicou, <0 resgatou. R$.")
+    valorizacao:       float = Field(description="Rendimento DI do dia. R$.")
+    caixa_confirma:    bool = Field(description="O net de caixa do demonstrativo bate o capital?")
+    bullet:            str = Field(description="1 linha factual: fundo, capital vs valorizacao, R$.")
+
+
+class AuditoriaAplicacoesResponse(BaseModel):
+    """Output do agente `controladoria.auditor_aplicacoes` (2026-05-31).
+
+    Lente do grupo Aplicacoes (Fundos DI deep + TPF/Compromissada/Outros light),
+    exceto NC. Decompoe Fundos DI em capital (aplicacao/resgate, cruzado com o
+    demonstrativo de caixa) vs valorizacao (rendimento DI). NAO audita DC, NC,
+    caixa-fluxo, renda nem provisao.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    fundo_nome: str
+    data: str = Field(description="ISO yyyy-mm-dd da data D0.")
+    data_anterior: str = Field(description="ISO yyyy-mm-dd do dia anterior.")
+
+    resumo: str = Field(
+        description="Leitura 5s: o grupo Aplicacoes variou R$ X — quanto foi caixa "
+                    "aplicado/resgatado nos fundos DI vs rendimento DI."
+    )
+
+    delta_aplicacoes_total: float = Field(description="ΔSaldo do grupo Aplicacoes (exceto NC). R$.")
+    total_capital_liquido: float = Field(description="Net de caixa aplicado(+)/resgatado(-) nos fundos DI. R$.")
+    total_valorizacao: float = Field(description="Σ rendimento DI do dia. R$.")
+
+    fundos: list[MovimentoFundoItem] = Field(
+        default_factory=list, description="Fundos DI externos com movimento. So-valorizacao imaterial pode ser resumido.",
+    )
+    linhas_menores: str = Field(
+        description="1 frase sobre TPF/Compromissada/Outros (geralmente imaterial/vazio). "
+                    "So vira destaque se houver movimento relevante."
+    )
+    atencao: list[PontoAtencaoNC] = Field(
+        default_factory=list,
+        description="Sinais: aplicacao/resgate de fundo sem confirmacao no demonstrativo (tipo=outro), "
+                    "linha menor com movimento material inesperado. Dia rotineiro = [].",
+    )
+    conclusao: str = Field(
+        description="1-3 frases: o que mexeu nas Aplicacoes e se ha algo a acompanhar."
+    )

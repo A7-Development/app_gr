@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from app.agentic.engine.output_schemas import (
     AnalysisVariacaoCotaResponse,
+    AuditoriaAplicacoesResponse,
     AuditoriaNotaComercialResponse,
     AuditoriaPddResponse,
     AuditoriaResultadoResponse,
@@ -493,5 +494,30 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         thinking_budget_tokens=8000,
         timeout_seconds=300,
         section_id="auditor_notas_comerciais",
+    ),
+    # ─── Controladoria · auditor de APLICACOES (Fundos DI + linhas menores) ─
+    # Especialista (2026-05-31): lente do grupo "Aplicacoes" do balanco, EXCETO
+    # Op. Estruturadas/NC (auditor proprio). Deep em Fundos DI externo (caixa
+    # ocioso): capital (aplicacao/resgate) vs valorizacao (rendimento DI),
+    # cruzado com o demonstrativo de caixa. Light em TPF/Compromissada/Outros.
+    # NAO audita DC, NC, caixa-fluxo, renda nem provisao.
+    "auditor_aplicacoes": SpecialistAgentSpec(
+        name="auditor_aplicacoes",
+        description=(
+            "Audita o grupo 'Aplicacoes' do balanco (exceto NC): decompoe os "
+            "Fundos DI externos (ITAU SOBERANO etc.) em CAPITAL (aplicacao/resgate "
+            "= Δqtd x cota, cruzado com o demonstrativo de caixa) vs VALORIZACAO "
+            "(rendimento DI). TPF/Compromissada/Outros entram como linhas menores "
+            "(ΔSaldo, geralmente imaterial). NAO audita DC, NC, caixa-fluxo, renda "
+            "nem provisao."
+        ),
+        prompt_name="agent.controladoria.auditor_aplicacoes",
+        tools=("get_movimento_aplicacoes",),
+        output_schema=AuditoriaAplicacoesResponse,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=8000,
+        timeout_seconds=300,
+        section_id="auditor_aplicacoes",
     ),
 }
