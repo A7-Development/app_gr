@@ -1111,3 +1111,51 @@ async def get_conferencia_cessao(scope: ScopedContext, args: dict[str, Any]) -> 
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
     return _to_json(r)
+
+
+@register_tool(
+    name="get_conferencia_liquidacao",
+    description=(
+        "Confere a ENTRADA de caixa por liquidacao do dia (D0) contra as "
+        "liquidacoes que a originaram. A entrada vem por canais com timing "
+        "distinto:\n"
+        "  - FLOATING (forte, point-in-time): `prov_lotes` decompoe o bucket "
+        "'LIQUIDADOS TOTAL - PROV' de D0 (caixa de cobranca que pingou hoje); "
+        "cada lote casa POR VALOR com a Σ das cobrancas que floatam (NORMAL + "
+        "CARTÓRIO + PARCIAL) de um dia anterior (`dia_origem`, `defasagem_dias`: "
+        "1=d+1, 2=d+2). `status='casa'` = rastreado; 'origem_nao_identificada' = "
+        "lote sem origem (ATENCAO). `floating_status='casa'` quando todo o PROV de "
+        "D0 rastreia (residuo ~0); 'diverge' quando sobra lote sem origem.\n"
+        "  - IMEDIATA (fraca): `sacado_hoje` (BAIXA POR DEPOSITO SACADO) credita no "
+        "mesmo dia, AGREGADO no extrato — use `extrato_credito_dia` so como contexto "
+        "(inclui creditos nao-liquidacao); `extrato_disponivel=False` = gap de sync "
+        "(NAO conferivel, NAO acuse divergencia).\n"
+        "  - HONRA do cedente (`honra_cedente_*` = DEPOSITO CEDENTE + RECOMPRA): "
+        "`todos_atrasados=True` e sinal de inadimplencia.\n"
+        "  - `floating_hoje` = cobrancas de D0 que so pingam no PROXIMO dia util "
+        "(PROJECAO, NAO conferencia — point-in-time).\n"
+        "DIRECAO: a conferencia e PRA TRAS (caixa que caiu hoje <- origem em dias "
+        "anteriores), verificavel hoje. NAO trate `floating_hoje` como conferido. "
+        "Use pra auditar a entrada de caixa por liquidacao do dia."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+    module=Module.CONTROLADORIA,
+    min_permission=Permission.READ,
+    cost_hint="cheap",
+    cacheable=True,
+)
+async def get_conferencia_liquidacao(scope: ScopedContext, args: dict[str, Any]) -> str:
+    """Wrap de compute_conferencia_liquidacao. ua_id+data vem do scope."""
+    from app.modules.controladoria.services.conferencia_liquidacao import (
+        compute_conferencia_liquidacao,
+    )
+
+    ua_id, data_d0 = _parse_scope_inputs(scope)
+    r = await compute_conferencia_liquidacao(
+        scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
+    )
+    return _to_json(r)

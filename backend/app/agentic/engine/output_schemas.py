@@ -667,3 +667,101 @@ class AuditoriaPddResponse(BaseModel):
     conclusao: str = Field(
         description="1-3 frases: o que o controller leva sobre a provisao do dia."
     )
+
+
+# ─── Auditor de Variacao de Caixa — especialista 2026-05-31 ────────────────
+#
+# Lente de FLUXO DE CAIXA: o que entrou (liquidacao) e saiu (cessao) bate com o
+# registrado? Duas pernas + 2 tools:
+#   - get_conferencia_liquidacao (entrada): floating NORMAL+CARTÓRIO -> PROV(d+1
+#     util) e casa por lote; deposito sacado = imediato/agregado.
+#   - get_conferencia_cessao (saida): TED exata ao cedente.
+# DIRECAO point-in-time: confere PRA TRAS (caixa que caiu hoje <- origem). A
+# cobranca de D0 que so pinga amanha entra como PROJECAO, nao conferencia.
+
+
+class LoteFloatingCaixa(BaseModel):
+    """Um lote do bucket PROV de D0, narrado: caixa de floating que pingou hoje."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    valor:          float = Field(description="R$ do lote (1 linha LIQUIDADOS TOTAL - PROV).")
+    dia_origem:     str | None = Field(
+        default=None, description="ISO yyyy-mm-dd do dia cuja cobranca (NORMAL+CARTÓRIO) originou o lote."
+    )
+    defasagem_dias: int | None = Field(default=None, description="1=d+1, 2=d+2 (dias corridos).")
+    status:         Literal["casa", "origem_nao_identificada"]
+    bullet:         str = Field(description="1 linha factual ancorada em R$ e dia-origem.")
+
+
+class PontoAtencaoCaixa(BaseModel):
+    """Sinal de atencao no fluxo de caixa."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    severidade: Literal["info", "atencao", "critico"]
+    tipo: Literal[
+        "lote_sem_origem", "floating_diverge", "honra_cedente_inadimplencia",
+        "cessao_descasa", "extrato_gap", "outro",
+    ]
+    descricao: str
+    evidencia: str = Field(description="Ancore em R$ + dia/cedente. extrato_gap NAO e erro do fundo.")
+
+
+class AuditoriaVariacaoCaixaResponse(BaseModel):
+    """Output do agente `controladoria.auditor_variacao_caixa` (2026-05-31).
+
+    Lente de FLUXO DE CAIXA: confere a ENTRADA (liquidacao) e a SAIDA (cessao) de
+    caixa do dia contra o registrado. Espinha PRA TRAS (point-in-time): o caixa que
+    CAIU hoje rastreia a origem em dias anteriores. NAO audita estoque, renda nem
+    provisao (sao dos outros 3 auditores).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    fundo_nome: str
+    data: str = Field(description="ISO yyyy-mm-dd da data D0.")
+    data_anterior: str = Field(description="ISO yyyy-mm-dd do dia de pregao anterior.")
+
+    resumo: str = Field(
+        description="Leitura 5s: o caixa de liquidacao que pingou hoje rastreia (floating casa?), "
+                    "e a cessao do dia liquidou certo (saida)?"
+    )
+
+    # ── ENTRADA por liquidacao — perna FLOATING (forte) ─────────────────────
+    floating_status: Literal["casa", "diverge"] = Field(
+        description="casa = todo o PROV de D0 rastreia a cobranca de dias anteriores; diverge = sobra lote."
+    )
+    prov_total: float = Field(description="R$ do bucket PROV de D0 (floating que pingou hoje).")
+    floating_residuo: float = Field(description="prov_total - Σ lotes casados (0 = tudo rastreado).")
+    lotes_floating: list[LoteFloatingCaixa] = Field(default_factory=list)
+
+    # ── ENTRADA — perna IMEDIATA (fraca) + honra ────────────────────────────
+    sacado_imediato: float = Field(description="Σ DEPOSITO SACADO de D0 (credito imediato, agregado no extrato).")
+    extrato_status: Literal["conferivel_agregado", "sem_extrato"] = Field(
+        description="sem_extrato = gap de sync (NAO conferivel, nao e erro do fundo)."
+    )
+    honra_cedente_total: float = Field(description="Σ DEPOSITO CEDENTE + RECOMPRA de D0 (cedente honrou).")
+    honra_cedente_atrasada: bool = Field(description="True = 100% da honra paga em atraso (inadimplencia).")
+
+    # ── PROJECAO forward (NAO conferencia) ──────────────────────────────────
+    floating_projetado_proximo_dia: float = Field(
+        description="Σ cobranca (NORMAL+CARTÓRIO) de D0 que deve pingar como PROV no proximo dia util."
+    )
+
+    # ── SAIDA por cessao ────────────────────────────────────────────────────
+    cessao_total_aquisicoes: float = Field(description="Σ valor_compra das aquisicoes de D0 (saida esperada).")
+    cessao_status: Literal["casa", "descasa", "sem_extrato", "sem_cessao"] = Field(
+        description="casa = TED ao cedente bate a compra; descasa = diverge (erro de lancamento); "
+                    "sem_extrato = gap; sem_cessao = nao houve aquisicao material."
+    )
+    cessao_n_descasa: int = Field(default=0, description="Qtd de cedentes que descasaram.")
+
+    atencao: list[PontoAtencaoCaixa] = Field(
+        default_factory=list,
+        description="Sinais: lote sem origem, floating diverge, honra cedente em atraso, cessao descasa. "
+                    "extrato_gap e info (nao erro). Dia limpo = [].",
+    )
+    conclusao: str = Field(
+        description="1-3 frases: o que o controller leva sobre o caixa do dia (entrada + saida)."
+    )

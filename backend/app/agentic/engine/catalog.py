@@ -27,6 +27,7 @@ from app.agentic.engine.output_schemas import (
     AnalysisVariacaoCotaResponse,
     AuditoriaPddResponse,
     AuditoriaResultadoResponse,
+    AuditoriaVariacaoCaixaResponse,
     AuditoriaVariacaoCarteiraResponse,
     CommercialVisitAnalysis,
     CrossReferenceAnalysis,
@@ -442,5 +443,29 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         thinking_budget_tokens=8000,
         timeout_seconds=300,
         section_id="auditor_pdd",
+    ),
+    # ─── Controladoria · auditor de VARIACAO DE CAIXA (fluxo de caixa) ───
+    # Especialista (2026-05-31): lente de FLUXO. Confere a ENTRADA (liquidacao)
+    # e a SAIDA (cessao) de caixa do dia. Floating NORMAL+CARTÓRIO -> PROV(d+1
+    # util) casa por lote; deposito sacado = imediato/agregado; cessao = TED
+    # exata ao cedente. Direcao point-in-time: confere PRA TRAS (caixa que caiu
+    # hoje <- origem). NAO audita estoque, renda nem provisao.
+    "auditor_variacao_caixa": SpecialistAgentSpec(
+        name="auditor_variacao_caixa",
+        description=(
+            "Audita o FLUXO DE CAIXA do dia: ENTRADA por liquidacao (floating "
+            "NORMAL+CARTÓRIO que pingou no PROV de hoje, casado por lote ao "
+            "dia-origem; deposito sacado imediato/agregado; honra do cedente) e "
+            "SAIDA por cessao (TED exata ao cedente). Confere PRA TRAS (caixa que "
+            "caiu hoje <- origem). NAO audita estoque, renda nem provisao."
+        ),
+        prompt_name="agent.controladoria.auditor_variacao_caixa",
+        tools=("get_conferencia_liquidacao", "get_conferencia_cessao"),
+        output_schema=AuditoriaVariacaoCaixaResponse,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=8000,
+        timeout_seconds=300,
+        section_id="auditor_variacao_caixa",
     ),
 }
