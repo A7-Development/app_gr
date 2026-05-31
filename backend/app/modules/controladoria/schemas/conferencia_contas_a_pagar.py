@@ -41,6 +41,21 @@ TipoMovimentoProvisao = Literal["apropriacao", "nova_provisao", "baixa", "quitad
 CanalPagamento = Literal["codigo_proprio", "tarifa_ted", "ted_fornecedor"]
 
 
+class CprForaEscopo(BaseModel):
+    """Item CPR<0 que NAO e despesa — capital de cotista, ajuste, nao classificado.
+
+    Antes do classificador por natureza (2026-05-31) esses itens vazavam pra
+    dentro da decomposicao de provisao como se fossem despesa (ex.: Cotas a
+    Resgatar -R$3M era tratada como uma 'baixa de provisao'). Agora ficam fora
+    do escopo de despesa e sao SINALIZADOS aqui, com a natureza e o auditor dono.
+    """
+
+    descricao: str = Field(description="Descricao normalizada do item CPR.")
+    natureza:  str = Field(description="capital_cotista | ajuste_estorno | nao_classificado.")
+    saldo_d0:  Decimal = Field(description="Saldo do item em D0 (com sinal).")
+    dono:      str = Field(description="Auditor a quem pertence (ex.: 'cotas', 'reconciliacao').")
+
+
 class MovimentoProvisao(BaseModel):
     """Movimento de UMA provisao de despesa (CPR<0) entre D-1 e D0."""
 
@@ -77,9 +92,11 @@ class ConferenciaContasAPagarResponse(BaseModel):
     data:            date
     data_anterior:   date | None = None
 
-    # ── Provisoes (CPR < 0) ─────────────────────────────────────────────────
-    saldo_cpr_d1:    Decimal = Field(description="Σ CPR<0 em D-1 (a linha Contas a Pagar).")
-    saldo_cpr_d0:    Decimal = Field(description="Σ CPR<0 em D0.")
+    # ── Provisoes (CPR < 0, SO natureza despesa/imposto) ────────────────────
+    # Filtrado por classify_cpr_nature: despesa_a_pagar + imposto_a_recolher.
+    # Capital de cotista / ajuste / nao classificado saem para `fora_escopo`.
+    saldo_cpr_d1:    Decimal = Field(description="Σ CPR<0 de DESPESA em D-1 (exclui capital de cotista).")
+    saldo_cpr_d0:    Decimal = Field(description="Σ CPR<0 de DESPESA em D0.")
     delta_cpr:       Decimal = Field(description="saldo_cpr_d0 - saldo_cpr_d1 (= ΔSaldo da linha).")
     total_apropriacao: Decimal = Field(description="Σ provisao apropriada no dia (accrual; magnitude >0).")
     total_baixa:     Decimal = Field(description="Σ provisao baixada no dia (paga ou estornada; magnitude >0).")
@@ -97,4 +114,12 @@ class ConferenciaContasAPagarResponse(BaseModel):
                     ">0 reduz o PL Sub no dia. E o que explica quedas inesperadas da cota: a provisao "
                     "ja paga e neutra (apropriada antes), so o excesso/nao-provisionado bate agora. "
                     "= max(0, total_pago - total_nao_provisionado - total_baixa) + total_nao_provisionado."
+    )
+
+    # ── Fora do escopo de despesa (sinalizado, nao silenciado) ──────────────
+    fora_escopo: list[CprForaEscopo] = Field(
+        default_factory=list,
+        description="Itens CPR<0 que NAO sao despesa (capital de cotista, ajuste, nao "
+                    "classificado). Antes vazavam como 'provisao'; agora ficam de fora e "
+                    "sao sinalizados com a natureza e o auditor dono. Lista vazia = dia limpo.",
     )

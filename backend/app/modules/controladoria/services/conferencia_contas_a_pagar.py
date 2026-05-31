@@ -21,8 +21,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.cadastros.public import UnidadeAdministrativa
 from app.modules.controladoria.schemas.conferencia_contas_a_pagar import (
     ConferenciaContasAPagarResponse,
+    CprForaEscopo,
     MovimentoProvisao,
     PagamentoDespesa,
+)
+from app.modules.controladoria.services.cpr_natureza import (
+    NATUREZA_INFO,
+    classify_cpr_nature,
 )
 from app.modules.integracoes.public import dia_util_anterior_qitech
 from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel
@@ -125,7 +130,13 @@ async def compute_movimento_contas_a_pagar(
     )
 
     # ── Provisoes CPR<0 por descricao normalizada (saldo por tipo) ──────────
-    async def _load_cpr(data: date) -> dict[str, Decimal]:
+    # SO natureza despesa: classify_cpr_nature filtra despesa_a_pagar +
+    # imposto_a_recolher. Capital de cotista (Cotas a Resgatar/Aporte), ajuste e
+    # nao classificado NAO sao despesa -> saem para `fora_escopo` (sinalizado).
+    nat_despesa = {"despesa_a_pagar", "imposto_a_recolher"}
+    fora: dict[str, tuple[str, Decimal]] = {}  # desc -> (natureza, saldo_d0)
+
+    async def _load_cpr(data: date, *, collect_fora: bool) -> dict[str, Decimal]:
         stmt = (
             select(CprMovimento.descricao, CprMovimento.valor)
             .where(CprMovimento.tenant_id == tenant_id)
@@ -135,12 +146,19 @@ async def compute_movimento_contas_a_pagar(
         )
         acc: dict[str, Decimal] = {}
         for desc, valor in (await db.execute(stmt)).all():
-            key = _norm_desc(desc)
-            acc[key] = acc.get(key, ZERO) + Decimal(valor or 0)
+            natureza = classify_cpr_nature(desc)
+            v = Decimal(valor or 0)
+            if natureza in nat_despesa:
+                key = _norm_desc(desc)
+                acc[key] = acc.get(key, ZERO) + v
+            elif collect_fora:
+                key = _norm_desc(desc)
+                prev = fora.get(key, (natureza, ZERO))
+                fora[key] = (natureza, prev[1] + v)
         return acc
 
-    cpr1 = await _load_cpr(d1)
-    cpr0 = await _load_cpr(data_d0)
+    cpr1 = await _load_cpr(d1, collect_fora=False)
+    cpr0 = await _load_cpr(data_d0, collect_fora=True)
 
     saldo_cpr_d1 = sum(cpr1.values(), ZERO)
     saldo_cpr_d0 = sum(cpr0.values(), ZERO)
@@ -262,6 +280,17 @@ async def compute_movimento_contas_a_pagar(
     excesso = max(ZERO, (tot_pago - tot_nao_prov) - tot_baixa)
     impacto_nao_prov = excesso + tot_nao_prov
 
+    # Itens CPR<0 que nao sao despesa (capital de cotista etc.) — sinalizados.
+    fora_escopo = [
+        CprForaEscopo(
+            descricao=desc, natureza=nat, saldo_d0=saldo,
+            dono=NATUREZA_INFO[nat][2],  # type: ignore[index]
+        )
+        for desc, (nat, saldo) in fora.items()
+        if abs(saldo) >= _TOL
+    ]
+    fora_escopo.sort(key=lambda f: abs(f.saldo_d0), reverse=True)
+
     return ConferenciaContasAPagarResponse(
         fundo_id=str(ua_id),
         fundo_nome=ua.nome,
@@ -277,4 +306,5 @@ async def compute_movimento_contas_a_pagar(
         total_pago=tot_pago,
         total_nao_provisionado=tot_nao_prov,
         impacto_resultado_nao_provisionado=impacto_nao_prov,
+        fora_escopo=fora_escopo,
     )
