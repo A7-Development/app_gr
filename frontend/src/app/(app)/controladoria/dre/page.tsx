@@ -89,13 +89,16 @@ function labelMonth(d: Date): string {
   return format(d, "MMM/yyyy", { locale: ptBR })
 }
 
-// Fonte: opcoes vem dos 3 tipo_origem do bronze Bitfin (etl v2.0.0).
-// Default "Todas" agrega todos (servico ignora filtro se vazio).
+// Fonte: filtra a coluna `fonte` do silver wh_dre_mensal. Os valores DEVEM
+// casar com os canonicos gravados pelo ETL (_TIPO_TO_FONTE em etl.py); antes
+// mandavamos os nomes de tipo_origem (dre_legacy/pagamento_opcao/...) que
+// nunca casavam -> filtro retornava vazio em silencio. Default "Todas" agrega
+// todos (servico ignora o filtro quando vazio).
 const FONTE_OPTIONS = [
-  { value: "",                   label: "Todas" },
-  { value: "dre_legacy",         label: "DRE legacy" },
-  { value: "pagamento_opcao",    label: "Pagamento opcao" },
-  { value: "comissao_fechamento", label: "Comissao fechamento" },
+  { value: "",                label: "Todas" },
+  { value: "DRE_OPERACIONAL", label: "Operacional" },
+  { value: "CONTAS_A_PAGAR",  label: "Contas a pagar" },
+  { value: "COMISSAO",        label: "Comissao" },
 ] as const
 
 const MOCK_PROVENANCE: ProvenanceSource[] = [

@@ -37,6 +37,10 @@ from app.modules.controladoria.services.dre import (
 )
 from app.modules.integracoes.adapters.erp.bitfin.config import BitfinConfig
 from app.modules.integracoes.adapters.erp.bitfin.connection import fetch_rows
+from app.modules.integracoes.adapters.erp.bitfin.dre_natureza import (
+    NaturezaMap,
+    load_dre_natureza,
+)
 from app.modules.integracoes.adapters.erp.bitfin.hashing import sha256_of_row
 from app.modules.integracoes.adapters.erp.bitfin.queries import analytics, bitfin
 from app.modules.integracoes.adapters.erp.bitfin.version import ADAPTER_VERSION
@@ -47,6 +51,7 @@ from app.warehouse.bitfin_raw_dre import (
     TIPO_ORIGEM_PAGAMENTO,
     BitfinRawDre,
 )
+from app.warehouse.bitfin_tarifa_catalogo import WhBitfinTarifaCatalogo
 from app.warehouse.caixa_snapshot import CaixaSnapshot
 from app.warehouse.dim import DimProduto, DimUnidadeAdministrativa
 from app.warehouse.dre import DreMensal
@@ -364,13 +369,19 @@ def _silver_source_id(
     descricao: str,
     entidade_id: int | None,
     produto_id: int | None,
+    unidade_administrativa_id: int | None,
     fonte: str,
 ) -> str:
     """source_id sintetico para wh_dre_mensal (vide uq_wh_dre_mensal_source).
-    Estavel entre runs com mesma classificacao -> idempotencia do upsert."""
+    Estavel entre runs com mesma classificacao -> idempotencia do upsert.
+
+    `unidade_administrativa_id` E PARTE DA CHAVE: o mesmo cedente+produto+
+    descricao pode operar em >1 fundo (A7 + RealInvest) na mesma competencia;
+    sem o ua_id na chave, as linhas colidem e o upsert descarta a do fundo
+    'perdedor' (bug que subcontava o A7). Ver project_dre_bitfin."""
     return (
         f"{competencia}|{grupo_dre}|{subgrupo}|{descricao}|"
-        f"{entidade_id}|{produto_id}|{fonte}"
+        f"{entidade_id}|{produto_id}|{unidade_administrativa_id}|{fonte}"
     )
 
 
@@ -429,6 +440,7 @@ def _bronze_row_to_silver(
     tipo_origem: str,
     bronze_row: dict[str, Any],
     classifier: DreClassifier,
+    natureza_map: NaturezaMap,
     tenant_id: UUID,
 ) -> dict | None:
     """Converte 1 row do payload bronze em 1 row do silver wh_dre_mensal.
@@ -462,6 +474,8 @@ def _bronze_row_to_silver(
             "produto_id": produto_id,
             "unidade_administrativa_id": ua_id,
             "fonte": fonte,
+            "fonte_integracao": "bitfin",
+            "natureza": natureza_map.get((fonte, categoria, descricao)),
             "receita": _to_decimal(bronze_row.get("total_apurado")),
             "custo": _to_decimal(bronze_row.get("total_do_custo")),
             "resultado": _to_decimal(bronze_row.get("resultado")),
@@ -473,6 +487,7 @@ def _bronze_row_to_silver(
                 descricao=descricao,
                 entidade_id=entidade_id,
                 produto_id=produto_id,
+                unidade_administrativa_id=ua_id,
                 fonte=fonte,
             ),
         }
@@ -505,6 +520,8 @@ def _bronze_row_to_silver(
             "produto_id": None,
             "unidade_administrativa_id": ua_id,
             "fonte": fonte,
+            "fonte_integracao": "bitfin",
+            "natureza": None,
             "receita": _ZERO,
             "custo": valor,
             "resultado": -valor,
@@ -516,6 +533,7 @@ def _bronze_row_to_silver(
                 descricao=categoria,
                 entidade_id=None,
                 produto_id=None,
+                unidade_administrativa_id=ua_id,
                 fonte=fonte,
             ),
         }
@@ -546,6 +564,8 @@ def _bronze_row_to_silver(
             "produto_id": None,
             "unidade_administrativa_id": ua_id,
             "fonte": fonte,
+            "fonte_integracao": "bitfin",
+            "natureza": None,
             "receita": _ZERO,
             "custo": comissao,
             "resultado": -comissao,
@@ -557,6 +577,7 @@ def _bronze_row_to_silver(
                 descricao=categoria,
                 entidade_id=None,
                 produto_id=None,
+                unidade_administrativa_id=ua_id,
                 fonte=fonte,
             ),
         }
@@ -605,6 +626,7 @@ async def sync_dre_mensal(
 
     async with AsyncSessionLocal() as db:
         classifier = await load_dre_classifier(db, tenant_id)
+        natureza_map = await load_dre_natureza(db, tenant_id)
 
         for tipo_origem in (
             TIPO_ORIGEM_DEMONSTRATIVO,
@@ -623,6 +645,7 @@ async def sync_dre_mensal(
                         tipo_origem=tipo_origem,
                         bronze_row=bronze_row,
                         classifier=classifier,
+                        natureza_map=natureza_map,
                         tenant_id=tenant_id,
                     )
                     if silver_row is None:
@@ -852,6 +875,41 @@ async def sync_dim_produto(
     return {"table": "wh_dim_produto", "rows": count}
 
 
+async def sync_bitfin_tarifa_catalogo(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
+    """Full refresh do catalogo de tarifas (OrganizacaoTarifa) -> dim.
+
+    Ancora a classificacao por natureza do DRE (Tipo nativo) e permite
+    detectar itens de catalogo novos (presentes aqui, ausentes nas regras
+    de natureza). ~60 linhas; full refresh, custo desprezivel. `since`
+    ignorado (catalogo nao e temporal)."""
+    rows = await asyncio.to_thread(
+        fetch_rows, config, config.database_bitfin, bitfin.SELECT_ORGANIZACAO_TARIFA
+    )
+    now = datetime.now(UTC)
+    mapped = [
+        {
+            "tenant_id": tenant_id,
+            "categoria": r["categoria"],
+            "descricao": r["descricao"],
+            "tipo": int(r["tipo"]),
+            "comissionada": bool(r["comissionada"]),
+            "fetched_at": now,
+            "fetched_by_version": ADAPTER_VERSION,
+        }
+        for r in rows
+    ]
+    async with AsyncSessionLocal() as db:
+        count = await _bulk_upsert(
+            db,
+            WhBitfinTarifaCatalogo,
+            mapped,
+            ["tenant_id", "categoria", "descricao"],
+        )
+    return {"table": "wh_bitfin_tarifa_catalogo", "rows": count}
+
+
 async def sync_caixa_snapshot(
     tenant_id: UUID, config: BitfinConfig, since: date | None = None
 ) -> dict[str, Any]:
@@ -880,6 +938,7 @@ async def sync_caixa_snapshot(
 SYNC_PIPELINE = [
     sync_dim_ua,
     sync_dim_produto,
+    sync_bitfin_tarifa_catalogo,
     # `sync_titulo_snapshot` ainda depende de ANALYTICS.dbo.elig_snapshot_titulo
     # -- followup separado pra eliminar (CLAUDE.md secao 13: multi-tenant
     # absoluto). Mantemos no pipeline para A7 Credit hoje; quando o tenant

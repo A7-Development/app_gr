@@ -18,6 +18,12 @@ via `wh_titulo_snapshot.snapshot_id == wh_operacao_item.titulo_id` que
 juntava 2 espacos numericos diferentes e trazia cedentes errados (bug
 visivel no drill 'Operacoes do dia' do /bi/operacoes4). Modelo e 1:1
 (uma op tem um cedente, via conta operacional).
+
+v2.2.0 (2026-05-31): ingestao do catalogo de tarifas
+(`OrganizacaoTarifa` -> wh_bitfin_tarifa_catalogo) + classificacao da
+RECEITA do DRE por NATUREZA (Desagio/Tarifa/Multa/Juros/Ad Valorem/Imposto)
+ancorada no `Tipo` nativo do catalogo via `wh_bitfin_dre_natureza_rule`.
+Silver `wh_dre_mensal` ganha colunas `natureza` + `fonte_integracao`.
 """
 
-ADAPTER_VERSION = "bitfin_adapter_v2.1.0"
+ADAPTER_VERSION = "bitfin_adapter_v2.2.0"

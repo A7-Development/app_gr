@@ -18,6 +18,8 @@ Camadas (CLAUDE.md secao 13.2):
 """
 
 from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel
+from app.warehouse.bitfin_dre_natureza_rule import WhBitfinDreNaturezaRule
+from app.warehouse.bitfin_tarifa_catalogo import WhBitfinTarifaCatalogo
 from app.warehouse.caixa_snapshot import CaixaSnapshot
 from app.warehouse.cpr_movimento import CprMovimento
 from app.warehouse.dia_util_qitech import DiaUtilQitech
@@ -75,7 +77,6 @@ __all__ = [
     "DimDreClassificacao",
     "DimMes",
     "DreMensal",
-    "WhDreClassificationRule",
     "EstoqueRecebivel",
     "LiquidacaoRecebivel",
     "MecEvolucaoCotas",
@@ -109,4 +110,7 @@ __all__ = [
     "SerasaPjSocio",
     "Titulo",
     "TituloSnapshot",
+    "WhBitfinDreNaturezaRule",
+    "WhBitfinTarifaCatalogo",
+    "WhDreClassificationRule",
 ]

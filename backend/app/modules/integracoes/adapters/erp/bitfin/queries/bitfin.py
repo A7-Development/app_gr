@@ -43,6 +43,20 @@ WHERE DATEFROMPARTS(Ano, Mes, 1) >= ?
 ORDER BY competencia, EntidadeId, Categoria, Descricao
 """
 
+# Catalogo de tarifas/encargos (OrganizacaoTarifa) -- template da organizacao.
+# Vocabulario CONTROLADO de (Categoria, Descricao) + Tipo (1=tarifa fixa,
+# 2=encargo variavel) que ancora a classificacao por NATUREZA do DRE
+# (wh_bitfin_dre_natureza_rule). ~60 linhas; full refresh por sync.
+SELECT_ORGANIZACAO_TARIFA = """
+SELECT
+    Categoria AS categoria,
+    Descricao AS descricao,
+    Tipo AS tipo,
+    Comissionada AS comissionada
+FROM dbo.OrganizacaoTarifa
+ORDER BY Categoria, Descricao
+"""
+
 # Bronze: PagamentoOpcaoDePagamento (despesas administrativas — bloco 2
 # do DRE). Vw_DRE original usa INNER JOIN com DREClassificacao filtrando
 # `Ativo=1`; aqui mantemos LEFT JOIN com Fornecedor/Entidade (preservando
