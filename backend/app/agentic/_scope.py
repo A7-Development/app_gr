@@ -63,5 +63,7 @@ class ScopedContext:
     def has_permission(self, module: Module, required: Permission) -> bool:
         """Check if user has at least `required` permission for `module`."""
         owned = self.permissions.get(module, Permission.NONE)
-        # Permission enum is ordered: NONE < READ < WRITE < ADMIN.
-        return owned.value >= required.value
+        # Permission e StrEnum (value = 'none'/'read'/'write'/'admin'): comparar
+        # `.value` daria ordem ALFABETICA ('admin' < 'read' -> ADMIN nao satisfaz
+        # READ). Usa `.satisfies()` do enum, que compara pela ESCALA correta.
+        return owned.satisfies(required)
