@@ -1,13 +1,15 @@
 """Mapper: payload /netreport/report/market/demonstrativo-caixa/{data} -> dict canonico.
 
-QiTech NAO devolve id estavel — pode ter dois lancamentos com mesma
-descricao no mesmo dia (ex.: 2 resgates de mesmo fundo). Por isso o
-`source_id` inclui sha16 do payload do item: garante unicidade.
+Business key da silver = (tenant_id, raw_id, seq_no), via replace-by-partition
+(`_replace_canonical_partition`). `seq_no` e a posicao do item no array do
+snapshot — desambigua lancamentos byte-iguais legitimos (ex.: 2 resgates do
+mesmo fundo no mesmo dia). raw_id e injetado pela camada de persistencia.
 
-source_id = `{clienteId}|{YYYY-MM-DD}|{sha16(item)}`.
-
-Trade-off documentado: se a QiTech corrigir um typo numa descricao, a row
-canonica vira nova linha em vez de update. Aceitavel pra MVP.
+`source_id` (= `{clienteId}|{YYYY-MM-DD}|{sha16(item)}`) continua sendo
+gravado, mas como PROVENIENCIA pura — NAO e mais unique. Motivo: o item
+carrega `saldo` corrente (acumulado, volatil), que entrava no sha16 e
+fazia o hash driftar entre re-fetches do mesmo dia -> antes da migration
+f4a2c9d8e1b7 (2026-05-30) isso acumulava 1 duplicata por re-sync.
 """
 
 from __future__ import annotations
@@ -53,7 +55,7 @@ def map_demonstrativo_caixa(
     data_iso = data_posicao.isoformat()
     rows: list[dict[str, Any]] = []
 
-    for item in items:
+    for seq_no, item in enumerate(items):
         if not isinstance(item, dict):
             continue
 
@@ -72,6 +74,9 @@ def map_demonstrativo_caixa(
         rows.append(
             {
                 "tenant_id": tenant_id,
+                # Posicao no snapshot — business key da partition junto com
+                # raw_id (injetado pelo _replace_canonical_partition).
+                "seq_no": seq_no,
                 "data_liquidacao": data_liquidacao,
                 "carteira_cliente_id": cliente_id,
                 "carteira_cliente_nome": str(item.get("clienteNome", "")),

@@ -1,11 +1,17 @@
 """wh_movimento_caixa -- demonstrativo de caixa (entradas/saidas/saldo).
 
-Granularidade: 1 linha por (tenant, dataLiquidacao, hash do conteudo do
-movimento). QiTech NAO devolve id estavel — pode ter dois lancamentos com
-mesma descricao no mesmo dia (ex.: 2 resgates de mesmo fundo). Por isso
-`source_id` inclui sha16 do item completo: garante unicidade. Trade-off:
-se a QiTech corrigir um typo numa descricao, vira linha nova em vez de
-update (aceitavel pra MVP — documentado no plano).
+Granularidade: 1 linha por (tenant, raw_id, seq_no) -- replace-by-partition
+no scope do raw payload (`_replace_canonical_partition`). `seq_no` e a
+posicao do item no snapshot; QiTech NAO devolve id estavel e pode repetir
+lancamentos byte-iguais no mesmo dia (ex.: 2 resgates do mesmo fundo), entao
+o seq_no desambigua. Re-fetch do mesmo dia gera o mesmo raw_id (UQ do raw
+bate -> UPDATE in-place) -> os mesmos seq_no sao re-avaliados; rows que
+sumiram do snapshot viram orfas e sao deletadas.
+
+Historico (ate 2026-05-30, migration f4a2c9d8e1b7): a UQ era
+(tenant, source_id) com source_id=sha16(item). O `saldo` corrente (volatil)
+entrava no hash -> drift entre re-fetches -> acumulava duplicata por sync.
+Trocado por raw_id+seq_no; `source_id` virou proveniencia pura.
 
 Fonte: QiTech `/v2/netreport/report/market/demonstrativo-caixa/{data}`.
 """
@@ -37,7 +43,15 @@ class MovimentoCaixa(Auditable, Base):
 
     __tablename__ = "wh_movimento_caixa"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "source_id", name="uq_wh_movimento_caixa"),
+        # Business key da partition (replace-by-partition, _replace_canonical_
+        # partition). `seq_no` (posicao no snapshot) desambigua lancamentos
+        # byte-iguais legitimos (ex.: 2 resgates identicos no mesmo dia).
+        # Linhas legacy (raw_id NULL) ficam isentas — NULLs distintos no PG.
+        # `source_id` deixou de ser unico: virou proveniencia pura (o `saldo`
+        # corrente volatil entrava no sha16 e drifta entre re-fetches).
+        UniqueConstraint(
+            "tenant_id", "raw_id", "seq_no", name="uq_wh_movimento_caixa_raw_seq"
+        ),
         Index(
             "ix_wh_movimento_caixa_tenant_data",
             "tenant_id",
@@ -105,4 +119,20 @@ class MovimentoCaixa(Auditable, Base):
     # Fluxo. Saidas vem negativas da QiTech.
     entradas: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     saidas: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    # `saldo` e corrente/acumulado (volatil entre re-fetches) — por isso NAO
+    # entra na business key; e so dado, atualizado in-place pelo replace.
     saldo: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+
+    # raw_id -- FK pra wh_qitech_raw_relatorio. Partition key do
+    # _replace_canonical_partition. Nullable pra retrocompat com linhas
+    # legacy ingeridas antes desta migration (f4a2c9d8e1b7, 2026-05-30).
+    raw_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("wh_qitech_raw_relatorio.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    # seq_no -- posicao do item no snapshot do demonstrativo. Desambigua
+    # lancamentos byte-iguais legitimos dentro de um mesmo raw (ex.: 2
+    # resgates identicos no mesmo dia). Nullable em linhas legacy.
+    seq_no: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -812,11 +812,11 @@ async def sync_demonstrativo_caixa(
         tipo_de_mercado="demonstrativo-caixa",
         mapper=map_demonstrativo_caixa,
         model=MovimentoCaixa,
-        # EXCECAO: wh_movimento_caixa NAO migrou pra business key porque a
-        # QiTech publica lancamentos byte-iguais legitimamente (ex.: 2 resgates
-        # do mesmo fundo no mesmo dia) — 75 colisoes detectadas em REALINVEST.
-        # Mantem (tenant_id, source_id) com sha16(item) ate refactor c/ seq_no.
-        conflict_columns=["tenant_id", "source_id"],
+        # Business key da partition — ver uq_wh_movimento_caixa_raw_seq
+        # (migration f4a2c9d8e1b7, 2026-05-30). `seq_no` (posicao no snapshot)
+        # desambigua os lancamentos byte-iguais legitimos que antes barravam a
+        # business key. raw_id e injetado por _replace_canonical_partition.
+        conflict_columns=["tenant_id", "raw_id", "seq_no"],
         tenant_id=tenant_id,
         environment=environment,
         config=config,
