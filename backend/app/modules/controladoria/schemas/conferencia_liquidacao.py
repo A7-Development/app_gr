@@ -120,3 +120,12 @@ class ConferenciaLiquidacaoResponse(BaseModel):
                     "devem pingar como PROV no proximo dia util (projecao, nao conferencia). "
                     "Achado: cartorio tambem floata (PROV(20/05) incluiu NORMAL+CARTÓRIO de 19/05)."
     )
+
+    # ── Disponibilidades — saldo de fechamento (onde o caixa parou) ─────────
+    # Tesouraria (classe Sub) e Conta Corrente (net das contas, ~0) sao o
+    # RESIDUO do fluxo de caixa do dia. Imateriais na REALINVEST (sobra <~R$ 1k);
+    # entram como contexto de fechamento, nao auditoria profunda.
+    tesouraria_d0:          Decimal = Field(default=Decimal("0"), description="Saldo em Tesouraria (classe Sub) em D0.")
+    tesouraria_delta:       Decimal = Field(default=Decimal("0"), description="Δ Tesouraria (D0 - D-1).")
+    conta_corrente_d0:      Decimal = Field(default=Decimal("0"), description="Saldo conta corrente net (BRADESCO+SOCOPA+CONCILIA, ~0) em D0.")
+    conta_corrente_delta:   Decimal = Field(default=Decimal("0"), description="Δ Conta Corrente net (D0 - D-1).")

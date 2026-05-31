@@ -757,6 +757,14 @@ class AuditoriaVariacaoCaixaResponse(BaseModel):
     )
     cessao_n_descasa: int = Field(default=0, description="Qtd de cedentes que descasaram.")
 
+    # ── Disponibilidades — saldo de fechamento (onde o caixa parou) ─────────
+    disponibilidades_fechamento: str = Field(
+        default="",
+        description="1 frase sobre o saldo de fechamento das Disponibilidades (Tesouraria + Conta "
+                    "Corrente) — o residuo do fluxo do dia. Imaterial na REALINVEST (sobra <~R$ 1k); "
+                    "so vira destaque se o saldo crescer muito (caixa ocioso nao aplicado).",
+    )
+
     atencao: list[PontoAtencaoCaixa] = Field(
         default_factory=list,
         description="Sinais: lote sem origem, floating diverge, honra cedente em atraso, cessao descasa. "

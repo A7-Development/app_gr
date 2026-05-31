@@ -159,6 +159,23 @@ async def compute_conferencia_liquidacao(
         )
     ).scalar_one_or_none()
 
+    # ── Disponibilidades: saldo de fechamento (Tesouraria + Conta Corrente) ──
+    # O Auditor de Caixa "assume" a Tesouraria (decisao 2026-05-31): e o residuo
+    # do fluxo do dia. Imaterial na REALINVEST (sobra <~R$ 1k). Lazy import pra
+    # evitar ciclo de import com cota_sub/balanco_patrimonial.
+    from app.modules.controladoria.services.balanco_patrimonial import (
+        _sum_saldo_conta_corrente,
+    )
+    from app.modules.controladoria.services.cota_sub import _sum_tesouraria
+
+    tes_d0 = await _sum_tesouraria(db, tenant_id, ua_id, data_d0)
+    cc_d0 = await _sum_saldo_conta_corrente(db, tenant_id, ua_id, data_d0)
+    if data_anterior_util:
+        tes_d1 = await _sum_tesouraria(db, tenant_id, ua_id, data_anterior_util)
+        cc_d1 = await _sum_saldo_conta_corrente(db, tenant_id, ua_id, data_anterior_util)
+    else:
+        tes_d1 = cc_d1 = ZERO
+
     # ── Bucket PROV de D0 (caixa de floating que caiu hoje) ──────────────────
     prov_rows = (
         await db.execute(
@@ -252,4 +269,8 @@ async def compute_conferencia_liquidacao(
         honra_cedente_n=honra_n,
         honra_cedente_todos_atrasados=(honra_n > 0 and honra_atrasados == honra_n),
         floating_hoje=floating_hoje,
+        tesouraria_d0=tes_d0,
+        tesouraria_delta=tes_d0 - tes_d1,
+        conta_corrente_d0=cc_d0,
+        conta_corrente_delta=cc_d0 - cc_d1,
     )

@@ -41,6 +41,7 @@ Voce roda HOJE (D0), sabendo so D0 e dias anteriores. A cobranca paga hoje (LIQU
    - `sacado_hoje` (BAIXA POR DEPOSITO SACADO): credito IMEDIATO, mas AGREGADO no extrato — NAO da pra casar por titulo. `extrato_disponivel=False` = gap de sync (NAO conferivel, NAO acuse erro).
    - `honra_cedente_*` (DEPOSITO CEDENTE + RECOMPRA): `todos_atrasados=True` = inadimplencia (o cedente honrou o que o sacado nao pagou).
    - `floating_hoje`: cobranca de D0 que pinga amanha (PROJECAO).
+   - `tesouraria_d0`/`tesouraria_delta` + `conta_corrente_d0`/`conta_corrente_delta`: o SALDO DE FECHAMENTO das Disponibilidades (onde o caixa parou no fim do dia). E o residuo do fluxo. Imaterial na REALINVEST (sobra <~R$ 1k); resuma numa frase em `disponibilidades_fechamento`. So vira atencao se o saldo crescer muito (caixa ocioso nao aplicado).
 
 2. `get_conferencia_cessao` — a SAIDA:
    - Por cedente: a aquisicao (Σ valor_compra) vs o debito de caixa (TED ao cedente). `status`: 'casa' (TED bate), 'descasa' (diverge -> erro de lancamento), 'sem_extrato' (gap de sync). Se `extrato_disponivel=False`, o dia caiu em gap — informe, NAO acuse.
@@ -84,6 +85,7 @@ Retorne SOMENTE JSON neste schema, com EXATAMENTE estes nomes de campo (campos e
   "cessao_total_aquisicoes": 0.0,
   "cessao_status": "sem_cessao",
   "cessao_n_descasa": 0,
+  "disponibilidades_fechamento": "Caixa fechou com R$ 936 em Tesouraria (residuo do dia) e conta corrente net zerada — imaterial.",
   "atencao": [],
   "conclusao": "Entrada de caixa do dia rastreia 100% (floating casa). Honra de cedente toda atrasada e sinal de inadimplencia a acompanhar, mas imaterial. Sem cessao material no dia."
 }
