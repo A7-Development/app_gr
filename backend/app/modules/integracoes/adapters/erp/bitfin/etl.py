@@ -45,6 +45,7 @@ from app.modules.integracoes.adapters.erp.bitfin.hashing import sha256_of_row
 from app.modules.integracoes.adapters.erp.bitfin.queries import analytics, bitfin
 from app.modules.integracoes.adapters.erp.bitfin.version import ADAPTER_VERSION
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
+from app.warehouse.bitfin_entidade import WhBitfinEntidade
 from app.warehouse.bitfin_raw_dre import (
     TIPO_ORIGEM_COMISSAO,
     TIPO_ORIGEM_DEMONSTRATIVO,
@@ -910,6 +911,36 @@ async def sync_bitfin_tarifa_catalogo(
     return {"table": "wh_bitfin_tarifa_catalogo", "rows": count}
 
 
+async def sync_bitfin_entidade(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
+    """Full refresh da dim de entidades (cedentes) referenciadas no DRE.
+
+    Resolve entidade_id -> nome/documento (receita por cedente). Ingere so
+    o subconjunto de Entidade que aparece no DemonstrativoDeResultado
+    (~90 de ~20k). `since` ignorado."""
+    rows = await asyncio.to_thread(
+        fetch_rows, config, config.database_bitfin, bitfin.SELECT_ENTIDADE_DRE
+    )
+    now = datetime.now(UTC)
+    mapped = [
+        {
+            "tenant_id": tenant_id,
+            "entidade_id": int(r["entidade_id"]),
+            "nome": r["nome"],
+            "documento": r["documento"],
+            "fetched_at": now,
+            "fetched_by_version": ADAPTER_VERSION,
+        }
+        for r in rows
+    ]
+    async with AsyncSessionLocal() as db:
+        count = await _bulk_upsert(
+            db, WhBitfinEntidade, mapped, ["tenant_id", "entidade_id"]
+        )
+    return {"table": "wh_bitfin_entidade", "rows": count}
+
+
 async def sync_caixa_snapshot(
     tenant_id: UUID, config: BitfinConfig, since: date | None = None
 ) -> dict[str, Any]:
@@ -939,6 +970,7 @@ SYNC_PIPELINE = [
     sync_dim_ua,
     sync_dim_produto,
     sync_bitfin_tarifa_catalogo,
+    sync_bitfin_entidade,
     # `sync_titulo_snapshot` ainda depende de ANALYTICS.dbo.elig_snapshot_titulo
     # -- followup separado pra eliminar (CLAUDE.md secao 13: multi-tenant
     # absoluto). Mantemos no pipeline para A7 Credit hoje; quando o tenant

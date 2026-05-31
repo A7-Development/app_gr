@@ -21,8 +21,11 @@ from sqlalchemy import ColumnElement, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.controladoria.schemas.dre import (
+    DreBreakdownResponse,
+    DreBreakdownRow,
     DreCelula,
     DreDescricao,
+    DreDimensao,
     DreFornecedor,
     DreFornecedoresResponse,
     DreFornecedorRow,
@@ -35,6 +38,8 @@ from app.modules.controladoria.schemas.dre import (
     DreReceitaTipo,
     DreSubgrupo,
 )
+from app.warehouse.bitfin_entidade import WhBitfinEntidade
+from app.warehouse.dim import DimProduto
 from app.warehouse.dre import DreMensal
 
 ZERO = Decimal("0")
@@ -481,6 +486,135 @@ async def compute_receita_por_natureza(
         naturezas=naturezas_out,
         valores_total=valores_total,
         total=sum((v.receita for v in valores_total), start=ZERO),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Breakdown generico da receita por dimensao (abas da DRE profunda do mes)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_NATUREZA_LABEL = {
+    "DESAGIO": "Deságio",
+    "TARIFA": "Tarifa",
+    "MULTA": "Multa",
+    "JUROS": "Juros",
+    "AD_VALOREM": "Ad Valorem",
+    "IMPOSTO": "Imposto",
+    "NAO_CLASSIFICADO": "Não classificado",
+}
+
+
+async def compute_breakdown(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    competencia: date,
+    dim: DreDimensao,
+    fundo_id: int | None = None,
+    produto_id: int | None = None,
+    entidade_id: int | None = None,
+    natureza: str | None = None,
+    subgrupo: str | None = None,
+) -> DreBreakdownResponse:
+    """Receita operacional de UM mes agregada por uma dimensao.
+
+    `dim` ∈ {natureza, cedente, produto, subgrupo}. Os filtros opcionais
+    `entidade_id`/`natureza`/`subgrupo` servem o DRILL (ex.: dim=natureza
+    + entidade_id=X = naturezas daquele cedente). Receita = SO linhas de
+    RECEITA_OPERACIONAL; custo/resultado vem junto p/ analise de margem.
+    """
+    dim_col = {
+        "natureza": DreMensal.natureza,
+        "cedente": DreMensal.entidade_id,
+        "produto": DreMensal.produto_id,
+        "subgrupo": DreMensal.subgrupo,
+    }[dim]
+
+    stmt = (
+        select(
+            dim_col.label("chave"),
+            func.sum(DreMensal.receita).label("receita"),
+            func.sum(DreMensal.custo).label("custo"),
+            func.sum(DreMensal.resultado).label("resultado"),
+        )
+        .where(
+            DreMensal.grupo_dre == "RECEITA_OPERACIONAL",
+            DreMensal.receita != 0,
+        )
+        .group_by(dim_col)
+    )
+    stmt = _apply_filters(
+        stmt,
+        tenant_id=tenant_id,
+        competencia_de=competencia,
+        competencia_ate=competencia,
+        fundo_id=fundo_id,
+        produto_id=produto_id,
+    )
+    # Filtros de DRILL (cortes dentro da dimensao, nao filtros globais).
+    if entidade_id is not None:
+        stmt = stmt.where(DreMensal.entidade_id == entidade_id)
+    if natureza is not None:
+        stmt = stmt.where(DreMensal.natureza == natureza)
+    if subgrupo is not None:
+        stmt = stmt.where(DreMensal.subgrupo == subgrupo)
+
+    rows = (await db.execute(stmt)).all()
+
+    # Resolucao de rotulos por dimensao.
+    labels: dict[int, str] = {}
+    if dim in ("cedente", "produto"):
+        ids = [r.chave for r in rows if r.chave is not None]
+        if ids and dim == "cedente":
+            ent = (
+                await db.execute(
+                    select(WhBitfinEntidade.entidade_id, WhBitfinEntidade.nome).where(
+                        WhBitfinEntidade.tenant_id == tenant_id,
+                        WhBitfinEntidade.entidade_id.in_(ids),
+                    )
+                )
+            ).all()
+            labels = {e.entidade_id: e.nome for e in ent}
+        elif ids and dim == "produto":
+            prod = (
+                await db.execute(
+                    select(DimProduto.produto_id, DimProduto.nome).where(
+                        DimProduto.tenant_id == tenant_id,
+                        DimProduto.produto_id.in_(ids),
+                    )
+                )
+            ).all()
+            labels = {p.produto_id: p.nome for p in prod}
+
+    def _label(chave: object) -> str:
+        if dim == "natureza":
+            return _NATUREZA_LABEL.get(chave or "NAO_CLASSIFICADO", str(chave))
+        if dim == "subgrupo":
+            return str(chave) if chave else "(sem subgrupo)"
+        # cedente / produto
+        if chave is None:
+            return "(sem cedente)" if dim == "cedente" else "(sem produto)"
+        return labels.get(chave, f"#{chave}")
+
+    linhas = [
+        DreBreakdownRow(
+            chave="" if r.chave is None else str(r.chave),
+            label=_label(r.chave),
+            receita=r.receita or ZERO,
+            custo=r.custo or ZERO,
+            resultado=r.resultado or ZERO,
+        )
+        for r in rows
+    ]
+    linhas.sort(key=lambda x: x.receita, reverse=True)
+
+    return DreBreakdownResponse(
+        competencia=competencia,
+        dim=dim,
+        linhas=linhas,
+        total_receita=sum((x.receita for x in linhas), start=ZERO),
+        total_custo=sum((x.custo for x in linhas), start=ZERO),
+        total_resultado=sum((x.resultado for x in linhas), start=ZERO),
     )
 
 

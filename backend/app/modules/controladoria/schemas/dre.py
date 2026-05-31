@@ -172,6 +172,35 @@ class DreReceitaNaturezaResponse(BaseModel):
     total: Decimal
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Breakdown generico da receita por dimensao (natureza/cedente/produto/subgrupo)
+# Serve as abas da DRE profunda do mes. Receita = RECEITA_OPERACIONAL.
+# ─────────────────────────────────────────────────────────────────────────────
+
+DreDimensao = Literal["natureza", "cedente", "produto", "subgrupo"]
+
+
+class DreBreakdownRow(BaseModel):
+    """Uma linha do breakdown (um valor da dimensao escolhida)."""
+
+    chave: str = Field(description="Valor cru da dimensao (id ou codigo)")
+    label: str = Field(description="Rotulo de exibicao")
+    receita: Decimal
+    custo: Decimal
+    resultado: Decimal
+
+
+class DreBreakdownResponse(BaseModel):
+    """Resposta do GET /breakdown — receita agregada por uma dimensao."""
+
+    competencia: date
+    dim: DreDimensao
+    linhas: list[DreBreakdownRow]
+    total_receita: Decimal
+    total_custo: Decimal
+    total_resultado: Decimal
+
+
 class DreFornecedorRow(BaseModel):
     """Uma linha do drill por fornecedor."""
 
