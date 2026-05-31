@@ -1200,3 +1200,44 @@ async def get_movimento_nota_comercial(scope: ScopedContext, args: dict[str, Any
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
     return _to_json(r)
+
+
+@register_tool(
+    name="get_movimento_aplicacoes",
+    description=(
+        "Abre a variacao do grupo 'Aplicacoes' do balanco (exceto Op. "
+        "Estruturadas/NC, que tem auditor proprio) entre D-1 e D0. DEEP em "
+        "Fundos DI EXTERNO (ITAU SOBERANO etc. — onde o fundo estaciona caixa "
+        "ocioso): por fundo, decompoe o ΔSaldo em CAPITAL (`aplicacao_resgate` = "
+        "Δqtd x cota; >0 aplicou caixa, <0 resgatou) vs VALORIZACAO (rendimento "
+        "DI = residuo). `tipo` = aplicacao | resgate | so_valorizacao. Cross-ref "
+        "LIMPO: `caixa_aplicacao`/`caixa_resgate` vem do demonstrativo de caixa "
+        "('Aplicacao no Fundo X'/'Resgate do Fundo X'), e `caixa_confirma`=True "
+        "quando o net de caixa bate o capital da posicao. LIGHT nas linhas "
+        "menores (`outras_linhas`: Titulos Publicos, Compromissada, Outros) — so "
+        "ΔSaldo, geralmente imaterial/vazio. Totais: total_capital_liquido (net "
+        "aplicado/resgatado), total_valorizacao (rendimento DI), delta_fundos_di, "
+        "delta_aplicacoes_total. Fundos INTERNOS (REALINVEST A VENCER/VENCIDOS) "
+        "sao DC e ficam fora. Use pra explicar a variacao de Aplicacoes."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+    module=Module.CONTROLADORIA,
+    min_permission=Permission.READ,
+    cost_hint="cheap",
+    cacheable=True,
+)
+async def get_movimento_aplicacoes(scope: ScopedContext, args: dict[str, Any]) -> str:
+    """Wrap de compute_movimento_aplicacoes. ua_id+data vem do scope."""
+    from app.modules.controladoria.services.conferencia_aplicacoes import (
+        compute_movimento_aplicacoes,
+    )
+
+    ua_id, data_d0 = _parse_scope_inputs(scope)
+    r = await compute_movimento_aplicacoes(
+        scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
+    )
+    return _to_json(r)
