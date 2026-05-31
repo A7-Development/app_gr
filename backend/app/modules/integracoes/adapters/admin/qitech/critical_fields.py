@@ -122,11 +122,17 @@ CRITICAL_FIELDS_BY_TABLE: dict[str, list[str]] = {
         "contrapartida_doc",
     ],
 
-    # ─── Excluso: wh_movimento_caixa ────────────────────────────────────
-    # Tech debt registrada em [[project_qitech_business_key_uq]]: usa
-    # (tenant_id, source_id) como UQ (sha16 do item), nao business key
-    # explicita. Fica fora de replace-by-partition ate refactor com
-    # `seq_no`. Nao adicionar aqui.
+    # ─── Demonstrativo de caixa (raw_relatorio) ─────────────────────────
+    # Migrado pra replace-by-partition em 2026-05-30 (migration
+    # f4a2c9d8e1b7): ganhou raw_id + seq_no. Business key = (tenant, raw_id,
+    # seq_no). Snapshot de orfas captura o fluxo do lancamento removido.
+    "wh_movimento_caixa": [
+        "entradas",
+        "saidas",
+        "saldo",
+        "descricao",  # identifica o bucket (LIQUIDADOS TOTAL - PROV, etc)
+        "tipo_de_registro",
+    ],
 }
 
 
