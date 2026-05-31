@@ -42,6 +42,7 @@ class DreMensal(Auditable, Base):
             "descricao",
             "entidade_id",
             "produto_id",
+            "unidade_administrativa_id",
             "fonte",
             name="uq_wh_dre_mensal",
         ),
@@ -74,6 +75,15 @@ class DreMensal(Auditable, Base):
     produto_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     unidade_administrativa_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fonte: Mapped[str] = mapped_column(String(30), nullable=False)
+
+    # Integracao que alimentou a linha (Caminho A: silver canonico agnostico,
+    # alimentavel por N integracoes). 'bitfin' hoje; outro ERP no futuro.
+    fonte_integracao: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+
+    # Natureza da RECEITA (so faz sentido em linhas de RECEITA_OPERACIONAL):
+    # DESAGIO/TARIFA/MULTA/JUROS/AD_VALOREM/IMPOSTO. Derivada do catalogo Bitfin
+    # via wh_bitfin_dre_natureza_rule. NULL = nao classificada (flag).
+    natureza: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
 
     # Medidas
     receita: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)

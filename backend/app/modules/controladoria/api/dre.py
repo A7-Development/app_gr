@@ -22,12 +22,15 @@ from app.core.enums import Module, Permission
 from app.core.module_guard import require_module
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.modules.controladoria.schemas.dre import (
+    DreFonte,
     DreFornecedoresResponse,
     DrePivotResponse,
+    DreReceitaNaturezaResponse,
 )
 from app.modules.controladoria.services.dre import (
     compute_drill_fornecedores,
     compute_pivot,
+    compute_receita_por_natureza,
     listar_competencias,
 )
 
@@ -46,8 +49,8 @@ async def competencias_disponiveis(
     ] = None,
     produto_id: Annotated[int | None, Query(description="Produto Bitfin (opcional)")] = None,
     fonte: Annotated[
-        str | None,
-        Query(description="dre_legacy | pagamento_opcao | comissao_fechamento"),
+        DreFonte | None,
+        Query(description="DRE_OPERACIONAL | CONTAS_A_PAGAR | COMISSAO"),
     ] = None,
     _: None = _Guard,
 ) -> list[date]:
@@ -83,8 +86,8 @@ async def pivot(
     ] = None,
     produto_id: Annotated[int | None, Query(description="Produto Bitfin (opcional)")] = None,
     fonte: Annotated[
-        str | None,
-        Query(description="dre_legacy | pagamento_opcao | comissao_fechamento"),
+        DreFonte | None,
+        Query(description="DRE_OPERACIONAL | CONTAS_A_PAGAR | COMISSAO"),
     ] = None,
     _: None = _Guard,
 ) -> DrePivotResponse:
@@ -111,6 +114,44 @@ async def pivot(
     )
 
 
+@router.get("/receita-por-natureza", response_model=DreReceitaNaturezaResponse)
+async def receita_por_natureza(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    competencia_de: Annotated[
+        date, Query(description="Primeira competencia (1o dia do mes) inclusive.")
+    ],
+    competencia_ate: Annotated[
+        date, Query(description="Ultima competencia (1o dia do mes) inclusive.")
+    ],
+    fundo_id: Annotated[
+        int | None,
+        Query(description="UnidadeAdministrativa.Id do Bitfin (opcional)"),
+    ] = None,
+    produto_id: Annotated[int | None, Query(description="Produto Bitfin (opcional)")] = None,
+    _: None = _Guard,
+) -> DreReceitaNaturezaResponse:
+    """Receita operacional por NATUREZA (Desagio/Tarifa/Multa/Juros/Ad
+    Valorem/Imposto) x competencia, com drill ate o tipo (descricao).
+
+    Receita = SO `receita` (total_apurado) de RECEITA_OPERACIONAL. Naturezas
+    ancoradas no catalogo Bitfin (wh_bitfin_dre_natureza_rule).
+    """
+    if competencia_ate < competencia_de:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="competencia_ate deve ser maior ou igual a competencia_de",
+        )
+    return await compute_receita_por_natureza(
+        db,
+        tenant_id=principal.tenant_id,
+        competencia_de=competencia_de,
+        competencia_ate=competencia_ate,
+        fundo_id=fundo_id,
+        produto_id=produto_id,
+    )
+
+
 @router.get("/drill/fornecedores", response_model=DreFornecedoresResponse)
 async def drill_fornecedores(
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
@@ -122,7 +163,10 @@ async def drill_fornecedores(
     descricao: Annotated[str | None, Query(description="Refina o corte (opcional)")] = None,
     fundo_id: Annotated[int | None, Query()] = None,
     produto_id: Annotated[int | None, Query()] = None,
-    fonte: Annotated[str | None, Query()] = None,
+    fonte: Annotated[
+        DreFonte | None,
+        Query(description="DRE_OPERACIONAL | CONTAS_A_PAGAR | COMISSAO"),
+    ] = None,
     top: Annotated[
         int,
         Query(ge=1, le=200, description="Limite de fornecedores retornados"),

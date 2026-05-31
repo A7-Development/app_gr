@@ -18,8 +18,17 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+# Valores canonicos da coluna `fonte` em wh_dre_mensal -- espelham
+# `_TIPO_TO_FONTE` no ETL Bitfin (etl.py). Usado pra validar o filtro `fonte`
+# dos endpoints: valor fora dessa lista vira 422 (em vez de silenciosamente
+# retornar zero linhas, como acontecia quando o frontend mandava os nomes de
+# tipo_origem -- dre_legacy/pagamento_opcao/comissao_fechamento -- que nunca
+# casavam com a coluna silver).
+DreFonte = Literal["DRE_OPERACIONAL", "CONTAS_A_PAGAR", "COMISSAO"]
 
 
 class DreCelula(BaseModel):
@@ -114,6 +123,53 @@ class DrePivotResponse(BaseModel):
     totais: DreLinhaTotais = Field(
         description="Total geral no periodo inteiro",
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Receita por NATUREZA (Desagio/Tarifa/Multa/Juros/Ad Valorem/Imposto)
+# Estrutura: natureza -> tipo (descricao) x competencia. Receita = SO receita
+# (total_apurado); custos descem para outras secoes do DRE.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class DreReceitaCelula(BaseModel):
+    """Receita de um no em uma competencia (mes)."""
+
+    competencia: date = Field(description="Primeiro dia do mes (YYYY-MM-01)")
+    receita: Decimal
+    quantidade: int
+
+
+class DreReceitaTipo(BaseModel):
+    """Folha: um tipo (descricao do catalogo) dentro de uma natureza.
+
+    `produtos` = subgrupos Bitfin onde o tipo aparece (ex.: Desagio aparece
+    em Operação e Crédito Estruturado) — contexto preservado sem ramificar
+    a hierarquia.
+    """
+
+    descricao: str
+    produtos: list[str]
+    valores: list[DreReceitaCelula]
+    total: Decimal
+
+
+class DreReceitaNatureza(BaseModel):
+    """No de natureza (Desagio/Tarifa/Multa/Juros/Ad Valorem/Imposto)."""
+
+    natureza: str
+    tipos: list[DreReceitaTipo]
+    valores: list[DreReceitaCelula]
+    total: Decimal
+
+
+class DreReceitaNaturezaResponse(BaseModel):
+    """Resposta do GET /receita-por-natureza."""
+
+    competencias: list[date]
+    naturezas: list[DreReceitaNatureza]
+    valores_total: list[DreReceitaCelula]
+    total: Decimal
 
 
 class DreFornecedorRow(BaseModel):
