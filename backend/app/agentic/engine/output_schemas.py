@@ -984,3 +984,68 @@ class AuditoriaContasAPagarResponse(BaseModel):
     conclusao: str = Field(
         description="1-3 frases: o que mexeu em Contas a Pagar e se ha pagamento a acompanhar."
     )
+
+
+# ─── Auditor de Cotas (passivo de cotistas: prioritarias + obrigacoes) ──────
+#
+# Lente do lado COTISTA/PATRIMONIO: Cotas Prioritarias (Sr/Mez, capital vs
+# valorizacao) + Obrigacoes com Cotistas (CPR capital_cotista: Cotas a Resgatar,
+# Aporte, Resgate). Fecha o passivo do balanco. NAO audita DC, NC, aplicacoes,
+# caixa-fluxo, renda, PDD nem despesa (Contas a Pagar).
+
+
+class ComponenteCota(BaseModel):
+    """Movimento de uma classe de cota narrado (capital e/ou valorizacao)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    classe: Literal["sub_jr", "mezanino", "senior"]
+    label:  str
+    classificacao: Literal["aporte", "resgate", "apenas_valorizacao"]
+    efeito_capital: float = Field(description="Fluxo de cotistas (aporte>0/resgate<0). R$.")
+    efeito_valorizacao: float = Field(description="Remuneracao/custo da cota (carrego). R$.")
+    impacto_pl_sub: float = Field(description="Impacto no PL Sub (prioritaria reduz; Sub e residual). R$.")
+    bullet: str = Field(description="1 linha factual ancorada em R$.")
+
+
+class AuditoriaCotasResponse(BaseModel):
+    """Output do agente `controladoria.auditor_cotas` (2026-05-31).
+
+    Lente do passivo de cotistas: Cotas Prioritarias (Sr/Mez, capital vs
+    valorizacao) + Obrigacoes com Cotistas (CPR capital_cotista). Fecha o lado
+    patrimonio do balanco Cota Sub. NAO audita DC, NC, aplicacoes, caixa, renda,
+    PDD nem despesa.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    fundo_nome: str
+    data: str = Field(description="ISO yyyy-mm-dd da data D0.")
+    data_anterior: str = Field(description="ISO yyyy-mm-dd do dia anterior.")
+
+    resumo: str = Field(
+        description="Leitura 5s: as prioritarias remuneraram R$ X (carrego que a Sub paga), "
+                    "houve aporte/resgate de R$ Y, e as obrigacoes com cotistas mexeram R$ Z."
+    )
+
+    custo_prioritarias: float = Field(description="Σ valorizacao das prioritarias = carrego que a Sub paga no dia. R$.")
+    capital_prioritarias: float = Field(description="Σ capital (aporte/resgate) das prioritarias — diluiu/concentrou a Sub. R$.")
+    obrigacoes_delta: float = Field(description="Δ da linha Obrigacoes com Cotistas (CPR capital_cotista). R$.")
+
+    classes: list[ComponenteCota] = Field(
+        default_factory=list,
+        description="Sub Jr / Mezanino / Senior com capital + valorizacao. Carrego-so imaterial pode ser resumido.",
+    )
+    obrigacoes: str = Field(
+        description="1-2 frases sobre as Obrigacoes com Cotistas (Cotas a Resgatar / Aporte / Resgate). "
+                    "Vazio/imaterial = uma frase dizendo que nao houve movimento."
+    )
+    atencao: list[PontoAtencaoNC] = Field(
+        default_factory=list,
+        description="Sinais (tipo=outro): aporte/resgate material numa prioritaria (evento de capital, dilui/"
+                    "concentra a Sub), obrigacao com cotista grande aberta (resgate solicitado nao pago), "
+                    "aporte engaiolado. Dia so de carrego rotineiro = [].",
+    )
+    conclusao: str = Field(
+        description="1-3 frases: o que mexeu no passivo de cotistas e se ha evento de capital a acompanhar."
+    )

@@ -27,6 +27,7 @@ from app.agentic.engine.output_schemas import (
     AnalysisVariacaoCotaResponse,
     AuditoriaAplicacoesResponse,
     AuditoriaContasAPagarResponse,
+    AuditoriaCotasResponse,
     AuditoriaNotaComercialResponse,
     AuditoriaPddResponse,
     AuditoriaResultadoResponse,
@@ -545,5 +546,23 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         thinking_budget_tokens=8000,
         timeout_seconds=300,
         section_id="auditor_contas_a_pagar",
+    ),
+    "auditor_cotas": SpecialistAgentSpec(
+        name="auditor_cotas",
+        description=(
+            "Audita o PASSIVO de cotistas do balanco: Cotas Prioritarias "
+            "(Senior/Mezanino — capital de aporte/resgate vs valorizacao/carrego "
+            "que a Sub paga) + Obrigacoes com Cotistas (CPR capital_cotista: Cotas "
+            "a Resgatar, Aporte, Resgate). Fecha o lado patrimonio na otica Sub Jr. "
+            "NAO audita DC, NC, aplicacoes, caixa, renda, PDD nem despesa."
+        ),
+        prompt_name="agent.controladoria.auditor_cotas",
+        tools=("get_movimento_cotas",),
+        output_schema=AuditoriaCotasResponse,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=8000,
+        timeout_seconds=300,
+        section_id="auditor_cotas",
     ),
 }
