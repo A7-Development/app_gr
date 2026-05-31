@@ -89,5 +89,12 @@ class ConferenciaContasAPagarResponse(BaseModel):
     pagamentos:      list[PagamentoDespesa] = Field(default_factory=list)
     total_pago:      Decimal = Field(description="Σ pagamentos de despesa do dia (>0).")
     total_nao_provisionado: Decimal = Field(
-        description="Σ pagamentos sem provisao compativel (tarifas + despesa inesperada). >0."
+        description="Σ pagamentos sem NENHUMA provisao compativel (tarifas + despesa inesperada). >0."
+    )
+    impacto_resultado_nao_provisionado: Decimal = Field(
+        description="Despesa que bateu no PL Sub HOJE sem ter sido provisionada = "
+                    "(excesso de pagamento sobre a provisao baixada) + (pagamentos sem provisao). "
+                    ">0 reduz o PL Sub no dia. E o que explica quedas inesperadas da cota: a provisao "
+                    "ja paga e neutra (apropriada antes), so o excesso/nao-provisionado bate agora. "
+                    "= max(0, total_pago - total_nao_provisionado - total_baixa) + total_nao_provisionado."
     )

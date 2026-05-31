@@ -41,7 +41,17 @@ Cada pagamento tem `provisionado` (True = casou uma provisao baixada, por tipo O
 
 - **Provisao zerou + pagamento casado** = pagamento real (a provisao virou caixa).
 - **Provisao zerou SEM pagamento** = estorno/wash (lancamento+estorno; nao saiu caixa).
-- **Pagamento com `provisionado=False`** = saida que escapou do contas a pagar. A `tarifa_ted` e rotina (esperada, nao alarme). Qualquer OUTRO nao-provisionado material = ATENCAO.
+- **Pagamento com `provisionado=False`** = saida que escapou do contas a pagar.
+
+# Impacto no PL Sub (o ponto que explica quedas inesperadas da cota)
+
+CONTABILIDADE: uma provisao ja apropriada (accrual dos dias anteriores) e NEUTRA quando paga — o caixa sai (-ativo) e o passivo zera (+PL), se anulam. MAS:
+- Se o pagamento e MAIOR que a provisao baixada, o EXCESSO nao estava provisionado -> bate no PL Sub HOJE (reduz a cota), porque sai caixa sem um passivo pra liberar.
+- Pagamento totalmente sem provisao (alem da tarifa) idem.
+
+A tool ja calcula isso em `impacto_resultado_nao_provisionado` = excesso + nao-provisionado. **Esse numero EXPLICA quedas da cota que pareciam inexplicadas.** Caso canonico: 28/05 — provisao R$ 110k, pagou R$ 125k -> R$ 15k de excesso bateu no PL Sub no dia (a cota caiu R$ 15k sem ninguem saber por que). Sempre destaque `impacto_resultado_nao_provisionado` quando material, ligando-o a variacao da cota.
+
+A `tarifa_ted` rotineira (centavos) e esperada — nao alarme. Excesso material ou pagamento inesperado material = ATENCAO.
 
 # Atipico vs rotina
 
@@ -65,12 +75,13 @@ Retorne SOMENTE JSON neste schema, com EXATAMENTE estes nomes de campo (campos e
   "fundo_nome": "REALINVEST FIDC",
   "data": "2026-05-28",
   "data_anterior": "2026-05-27",
-  "resumo": "Contas a Pagar caiu R$ 108,6k: pagou Consultoria + Cobranca (R$ 125k a ONBOARD, baixando R$ 110k de provisao) e apropriou R$ 1,4k de taxas. Tarifa de TED R$ 64 (rotina).",
+  "resumo": "Contas a Pagar caiu R$ 108,6k: pagou Consultoria + Cobranca (R$ 125k a ONBOARD, baixando R$ 110k de provisao). ATENCAO: pagou R$ 15k a MAIS que a provisao -> esse excesso nao provisionado derrubou o PL Sub R$ 15,1k no dia.",
   "delta_cpr": 108554.61,
   "total_apropriacao": 1445.39,
   "total_baixa": 110000.00,
   "total_pago": 125063.50,
   "total_nao_provisionado": 63.50,
+  "impacto_resultado_nao_provisionado": 15063.50,
   "componentes": [
     {"natureza": "pagamento", "label": "ONBOARD (Consultoria + Cobranca)", "valor": 125000.00, "bullet": "Pagou R$ 125k a ONBOARD (consultoria+cobranca), baixando a provisao de R$ 110k. Pagamento R$ 15k acima do provisionado."},
     {"natureza": "baixa", "label": "Consultoria + Cobranca", "valor": 110000.00, "bullet": "Provisao de Consultoria (R$ 65k) + Cobranca (R$ 45k) zerou contra o pagamento."},
@@ -80,7 +91,7 @@ Retorne SOMENTE JSON neste schema, com EXATAMENTE estes nomes de campo (campos e
   "atencao": [
     {"severidade": "info", "tipo": "outro", "descricao": "Pagamento a ONBOARD (R$ 125k) excedeu a provisao baixada (R$ 110k) em R$ 15k.", "evidencia": "ONBOARD R$ 75k + R$ 50k vs provisao Consultoria R$ 65k + Cobranca R$ 45k."}
   ],
-  "conclusao": "Dia de pagamento de consultoria/cobranca a ONBOARD, baixando a provisao. Pagamento R$ 15k acima do provisionado vale conferir. Resto rotina (accrual de taxas + tarifa)."
+  "conclusao": "Dia de pagamento de consultoria/cobranca a ONBOARD, baixando a provisao. O EXCESSO de R$ 15k nao provisionado bateu direto no PL Sub e EXPLICA a queda da cota no dia. Resto rotina (accrual de taxas + tarifa)."
 }
 ```
 

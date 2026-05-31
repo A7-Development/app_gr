@@ -955,7 +955,13 @@ class AuditoriaContasAPagarResponse(BaseModel):
     total_apropriacao: float = Field(description="Σ provisao apropriada no dia (accrual de taxas). R$.")
     total_baixa: float = Field(description="Σ provisao baixada (paga ou estornada). R$.")
     total_pago: float = Field(description="Σ pagamentos de despesa do caixa no dia. R$.")
-    total_nao_provisionado: float = Field(description="Σ pagamentos sem provisao (tarifas + inesperado). R$.")
+    total_nao_provisionado: float = Field(description="Σ pagamentos sem NENHUMA provisao (tarifas + inesperado). R$.")
+    impacto_resultado_nao_provisionado: float = Field(
+        description="Despesa que reduziu o PL Sub HOJE sem ter sido provisionada = excesso de "
+                    "pagamento sobre a provisao baixada + pagamentos sem provisao. >0 = derrubou a cota "
+                    "no dia (a provisao ja paga e neutra; so o excesso/nao-provisionado bate agora). "
+                    "EXPLICA quedas inesperadas da cota — destaque-o quando material."
+    )
 
     componentes: list[ComponenteContasAPagar] = Field(
         default_factory=list,

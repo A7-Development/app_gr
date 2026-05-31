@@ -255,6 +255,13 @@ async def compute_movimento_contas_a_pagar(
         )
     pagamentos.sort(key=lambda p: (-p.valor))
 
+    # Despesa que bateu no PL Sub HOJE sem ter sido provisionada: o EXCESSO de
+    # pagamento sobre a provisao baixada (provisao ja apropriada = neutra; o que
+    # passa dela bate agora) + os pagamentos sem nenhuma provisao. Explica quedas
+    # inesperadas da cota (ex.: 28/05 — provisao R$110k, pagou R$125k -> -R$15k).
+    excesso = max(ZERO, (tot_pago - tot_nao_prov) - tot_baixa)
+    impacto_nao_prov = excesso + tot_nao_prov
+
     return ConferenciaContasAPagarResponse(
         fundo_id=str(ua_id),
         fundo_nome=ua.nome,
@@ -269,4 +276,5 @@ async def compute_movimento_contas_a_pagar(
         pagamentos=pagamentos,
         total_pago=tot_pago,
         total_nao_provisionado=tot_nao_prov,
+        impacto_resultado_nao_provisionado=impacto_nao_prov,
     )
