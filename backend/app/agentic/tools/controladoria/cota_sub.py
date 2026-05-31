@@ -1241,3 +1241,49 @@ async def get_movimento_aplicacoes(scope: ScopedContext, args: dict[str, Any]) -
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
     return _to_json(r)
+
+
+@register_tool(
+    name="get_movimento_contas_a_pagar",
+    description=(
+        "Abre a linha 'Contas a Pagar' do balanco (provisoes de despesa, CPR<0) "
+        "entre D-1 e D0, com o lado de PAGAMENTO. Duas metades:\n"
+        "  - PROVISOES (`provisoes[]`, por descricao normalizada — datas do texto "
+        "ignoradas): `tipo` = apropriacao (provisao de taxa CRESCEU = accrual do "
+        "dia) | nova_provisao | baixa (reduziu) | quitada (zerou). Totais: "
+        "total_apropriacao (accrual), total_baixa (provisao que saiu). `delta_cpr` "
+        "= ΔSaldo da linha.\n"
+        "  - PAGAMENTOS de despesa no caixa (`pagamentos[]`), classificados pelo "
+        "CODIGO `historico` do extrato: `canal` = codigo_proprio (debito direto da "
+        "administradora: custodia/adm/CVM/ANBIMA/auditoria/registradora/IR/IOF...) "
+        "| ted_fornecedor (TED 0307 a fornecedor: ONBOARD consultoria/cobranca, "
+        "rating, etc.) | tarifa_ted (tarifa bancaria 0770). `provisionado`=True "
+        "quando casa uma provisao baixada (por tipo OU por valor exato). "
+        "total_nao_provisionado = pagamentos sem provisao (tarifas + despesa "
+        "inesperada).\n"
+        "REGRA: provisao que ZEROU + pagamento casado = pagamento real; provisao "
+        "que zerou SEM pagamento = estorno/wash. Pagamento com provisionado=False "
+        "(fora tarifa rotineira) = ATENCAO (saida que escapou do contas a pagar). "
+        "Use pra auditar a variacao de Contas a Pagar e os pagamentos do dia."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+    module=Module.CONTROLADORIA,
+    min_permission=Permission.READ,
+    cost_hint="cheap",
+    cacheable=True,
+)
+async def get_movimento_contas_a_pagar(scope: ScopedContext, args: dict[str, Any]) -> str:
+    """Wrap de compute_movimento_contas_a_pagar. ua_id+data vem do scope."""
+    from app.modules.controladoria.services.conferencia_contas_a_pagar import (
+        compute_movimento_contas_a_pagar,
+    )
+
+    ua_id, data_d0 = _parse_scope_inputs(scope)
+    r = await compute_movimento_contas_a_pagar(
+        scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
+    )
+    return _to_json(r)
