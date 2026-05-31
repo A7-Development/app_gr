@@ -49,6 +49,7 @@ from app.modules.controladoria.schemas.cota_sub import (
     PlCategoria,
     SaldoTesourariaEvidencia,
 )
+from app.modules.controladoria.services.cpr_natureza import classify_cpr_nature
 from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel
 from app.warehouse.cpr_movimento import CprMovimento
 from app.warehouse.estoque_recebivel import EstoqueRecebivel
@@ -586,6 +587,47 @@ async def _sum_cpr_por_sinal(
     )
     receber, pagar = (await db.execute(stmt)).one()
     return Decimal(receber or 0), Decimal(pagar or 0)
+
+
+async def _sum_cpr_buckets(
+    db: AsyncSession, tenant_id: UUID, ua_id: UUID, data: date
+) -> tuple[Decimal, Decimal, Decimal]:
+    """CPR segregado por NATUREZA (nao por sinal) em 3 baldes do balanco.
+
+    Refactor 2026-05-31 (classify_cpr_nature). Antes `_sum_cpr_por_sinal` jogava
+    TODO CPR<0 em "Contas a Pagar" — inclusive capital de cotista (Cotas a
+    Resgatar, Aporte), que NAO e despesa. Agora o capital sai pra linha propria.
+
+    Retorna (receber, pagar, capital) — particao completa do snapshot do dia:
+      - receber = Σ naturezas ATIVAS (floating_a_receber + despesa_diferida +
+        valor_a_receber). >= 0. -> linha "Contas a Receber".
+      - pagar   = Σ despesa_a_pagar + imposto_a_recolher + ajuste + nao_class.
+        <= 0 (mantem sinal). -> linha "Contas a Pagar".
+      - capital = Σ capital_cotista (Cotas a Resgatar/Aporte/Resgate). Com sinal.
+        -> linha NOVA "Obrigacoes com Cotistas".
+
+    Invariante: receber + pagar + capital == net do snapshot (cada item cai em
+    exatamente um balde) -> reconciliacao do balanco preservada.
+    """
+    rows = (
+        await db.execute(
+            select(CprMovimento.descricao, CprMovimento.valor)
+            .where(CprMovimento.tenant_id == tenant_id)
+            .where(CprMovimento.unidade_administrativa_id == ua_id)
+            .where(CprMovimento.data_posicao == data)
+        )
+    ).all()
+    receber = pagar = capital = ZERO
+    for desc, valor in rows:
+        v = Decimal(valor or 0)
+        nat = classify_cpr_nature(desc)
+        if nat == "capital_cotista":
+            capital += v
+        elif nat in ("floating_a_receber", "despesa_diferida", "valor_a_receber"):
+            receber += v
+        else:  # despesa_a_pagar, imposto_a_recolher, ajuste_estorno, nao_classificado
+            pagar += v
+    return receber, pagar, capital
 
 
 async def _sum_tesouraria(

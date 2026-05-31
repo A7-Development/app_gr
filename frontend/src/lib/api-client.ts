@@ -2945,6 +2945,7 @@ export type CategoriaPatrimonialKey =
   | "tesouraria"
   | "saldo_conta_corrente"
   | "cpr_pagar"
+  | "cpr_obrigacoes_cotistas"
   | "mezanino"
   | "senior"
   | "pdd"

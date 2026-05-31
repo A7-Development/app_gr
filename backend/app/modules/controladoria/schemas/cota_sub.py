@@ -418,6 +418,7 @@ CategoriaPatrimonialKey = Literal[
     "saldo_conta_corrente",
     # Passivos / redutores
     "cpr_pagar",
+    "cpr_obrigacoes_cotistas",
     "mezanino",
     "senior",
     "pdd",
