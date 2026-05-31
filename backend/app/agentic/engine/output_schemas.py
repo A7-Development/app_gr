@@ -765,3 +765,85 @@ class AuditoriaVariacaoCaixaResponse(BaseModel):
     conclusao: str = Field(
         description="1-3 frases: o que o controller leva sobre o caixa do dia (entrada + saida)."
     )
+
+
+# ─── Auditor de Notas Comerciais (Op. Estruturadas) — especialista 2026-05-31 ──
+#
+# Lente da linha "Op. Estruturadas" do balanco (= Notas Comerciais, papeis NCPX/
+# VCNC/PDDNC em wh_posicao_renda_fixa). POSICAO-FIRST: a posicao e a fonte
+# autoritativa do movimento; o extrato so confirma valor (a liquidacao da NC vem
+# como transferencia interna do fundo, generica a DC+NC, sem mostrar o devedor).
+# NAO audita DC, caixa, renda nem provisao.
+
+
+class PontoAtencaoNC(BaseModel):
+    """Sinal de atencao numa NC."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    severidade: Literal["info", "atencao", "critico"]
+    tipo: Literal[
+        "amortizacao_sem_extrato", "emitente_tambem_cedente",
+        "aquisicao_sem_debito", "vencido_nao_quitado", "outro",
+    ]
+    descricao: str
+    evidencia: str = Field(description="Ancore em R$ + codigo/emitente.")
+
+
+class MovimentoNCItem(BaseModel):
+    """Um movimento de NC narrado (aquisicao/amortizacao/quitacao/apropriacao)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    codigo:       str
+    emitente:     str
+    tipo:         Literal["aquisicao", "amortizacao", "quitacao", "apropriacao"]
+    valor:        float = Field(
+        description="R$ do evento: valor aplicado (aquisicao) | reducao liquida (amort/quit) | carrego (apropriacao)."
+    )
+    extrato_confirma: bool = Field(
+        description="Sinal SOFT: existe lancamento de valor compativel no extrato? Indicio, nao prova."
+    )
+    bullet:       str = Field(description="1 linha factual: codigo, emitente, R$.")
+
+
+class AuditoriaNotaComercialResponse(BaseModel):
+    """Output do agente `controladoria.auditor_notas_comerciais` (2026-05-31).
+
+    Lente de Op. Estruturadas (Notas Comerciais). Abre o ΔSaldo da linha em
+    aquisicao / amortizacao / quitacao / apropriacao por codigo. POSICAO-FIRST:
+    a posicao manda; o extrato e sinal soft (liquidacao da NC = transferencia
+    interna do fundo, nao mostra o devedor). NAO audita DC, caixa nem provisao.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    fundo_nome: str
+    data: str = Field(description="ISO yyyy-mm-dd da data D0.")
+    data_anterior: str = Field(description="ISO yyyy-mm-dd do dia anterior.")
+
+    resumo: str = Field(
+        description="Leitura 5s: a posicao de NC variou R$ X — quanto foi aquisicao nova, "
+                    "amortizacao/quitacao (caixa entrou) e carrego (juros)."
+    )
+
+    posicao_d1: float = Field(description="Σ valor_bruto das NCs em D-1. R$.")
+    posicao_d0: float = Field(description="Σ valor_bruto das NCs em D0. R$.")
+    delta_posicao: float = Field(description="posicao_d0 - posicao_d1 (= ΔSaldo da linha Op. Estruturadas). R$.")
+
+    total_aquisicao: float = Field(description="Σ valor aplicado em NCs novas (caixa que saiu). R$.")
+    total_amortizacao: float = Field(description="Σ reducao liquida (amortizacao + quitacao; caixa que entrou). R$.")
+    total_apropriacao: float = Field(description="Σ carrego do dia (juros das NCs que ficaram). R$.")
+
+    movimentos: list[MovimentoNCItem] = Field(
+        default_factory=list,
+        description="Movimentos materiais por NC. Carrego imaterial pode ser omitido.",
+    )
+    atencao: list[PontoAtencaoNC] = Field(
+        default_factory=list,
+        description="Sinais: amortizacao/quitacao sem confirmacao no extrato, emitente que "
+                    "tambem e cedente de DC (ambiguidade), NC vencida nao quitada. Dia rotineiro = [].",
+    )
+    conclusao: str = Field(
+        description="1-3 frases: o que mexeu na carteira de NC e se ha algo a acompanhar."
+    )

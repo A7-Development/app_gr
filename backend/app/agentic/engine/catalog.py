@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from app.agentic.engine.output_schemas import (
     AnalysisVariacaoCotaResponse,
+    AuditoriaNotaComercialResponse,
     AuditoriaPddResponse,
     AuditoriaResultadoResponse,
     AuditoriaVariacaoCaixaResponse,
@@ -467,5 +468,30 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         thinking_budget_tokens=8000,
         timeout_seconds=300,
         section_id="auditor_variacao_caixa",
+    ),
+    # ─── Controladoria · auditor de NOTAS COMERCIAIS (Op. Estruturadas) ──
+    # Especialista (2026-05-31): lente da linha "Op. Estruturadas" do balanco
+    # (= Notas Comerciais, papeis NCPX/VCNC/PDDNC). POSICAO-FIRST: a posicao
+    # manda; a amortizacao reduz valor_bruto (nao some); o extrato so confirma
+    # valor (liquidacao da NC = transferencia interna do fundo). NAO audita DC,
+    # caixa, renda nem provisao.
+    "auditor_notas_comerciais": SpecialistAgentSpec(
+        name="auditor_notas_comerciais",
+        description=(
+            "Audita a linha 'Op. Estruturadas' do balanco (= Notas Comerciais): "
+            "abre o ΔSaldo em aquisicao (codigo novo, caixa saiu) | amortizacao "
+            "(valor_bruto cai em parcela) | quitacao (zerou) | apropriacao "
+            "(carrego). POSICAO-FIRST — a posicao manda, o extrato so confirma "
+            "valor (a liquidacao da NC e transferencia interna do fundo). NAO "
+            "audita DC, caixa, renda nem provisao."
+        ),
+        prompt_name="agent.controladoria.auditor_notas_comerciais",
+        tools=("get_movimento_nota_comercial",),
+        output_schema=AuditoriaNotaComercialResponse,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=8000,
+        timeout_seconds=300,
+        section_id="auditor_notas_comerciais",
     ),
 }

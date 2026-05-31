@@ -1159,3 +1159,44 @@ async def get_conferencia_liquidacao(scope: ScopedContext, args: dict[str, Any])
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
     return _to_json(r)
+
+
+@register_tool(
+    name="get_movimento_nota_comercial",
+    description=(
+        "Abre a linha 'Op. Estruturadas' do balanco (= Notas Comerciais) em "
+        "movimentos por codigo de NC, entre D-1 e D0. POSICAO-FIRST: a fonte "
+        "autoritativa do que mexeu e a posicao (wh_posicao_renda_fixa), nao o "
+        "caixa. Por NC: `tipo` = aquisicao (codigo novo -> valor_aplicado saiu do "
+        "caixa) | amortizacao (valor_bruto caiu, LIQUIDO do carrego -> NC paga em "
+        "parcela) | quitacao (zerou/sumiu -> liquidada inteira) | apropriacao "
+        "(valor_bruto subiu -> so carrego/juros do dia, NAO e caixa). Cada "
+        "movimento traz `caixa_evento` (<0 saida, >0 entrada, 0 carrego) e um "
+        "`extrato_sinal` SOFT (indicio de valor compativel no extrato — NUNCA "
+        "prova: a liquidacao da NC vem como transferencia interna do fundo, "
+        "generica a DC+NC, e nao mostra o devedor). Totais: total_aquisicao, "
+        "total_amortizacao, total_apropriacao, e delta_posicao (= ΔSaldo da linha "
+        "do balanco). Use pra explicar a variacao de Op. Estruturadas. A "
+        "amortizacao e LIQUIDA do carrego — o bruto recebido ~ |delta| + carrego."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+    module=Module.CONTROLADORIA,
+    min_permission=Permission.READ,
+    cost_hint="cheap",
+    cacheable=True,
+)
+async def get_movimento_nota_comercial(scope: ScopedContext, args: dict[str, Any]) -> str:
+    """Wrap de compute_conferencia_nota_comercial. ua_id+data vem do scope."""
+    from app.modules.controladoria.services.conferencia_nota_comercial import (
+        compute_conferencia_nota_comercial,
+    )
+
+    ua_id, data_d0 = _parse_scope_inputs(scope)
+    r = await compute_conferencia_nota_comercial(
+        scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
+    )
+    return _to_json(r)
