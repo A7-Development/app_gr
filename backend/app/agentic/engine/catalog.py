@@ -25,6 +25,10 @@ from typing import TYPE_CHECKING
 
 from app.agentic.engine.output_schemas import (
     AnalysisVariacaoCotaResponse,
+    AuditoriaPddResponse,
+    AuditoriaResultadoResponse,
+    AuditoriaVariacaoCaixaResponse,
+    AuditoriaVariacaoCarteiraResponse,
     CommercialVisitAnalysis,
     CrossReferenceAnalysis,
     DocumentExtraction,
@@ -354,7 +358,7 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         tools=(
             "check_identidade_contabil",
             "get_balanco_patrimonial",
-            "get_drill_dc",
+            "get_variacao_carteira",
             "get_drill_pdd",
             "get_drill_cpr",
             "get_decomposicao_classes",
@@ -371,5 +375,97 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         thinking_budget_tokens=15000,
         timeout_seconds=600,
         section_id="cota_sub_analise_variacao",
+    ),
+    # ─── Controladoria · auditor de variacao de CARTEIRA (DC) ────────────
+    # Especialista (2026-05-30): segmentacao do monolito. Audita SO a
+    # consistencia da variacao do estoque DC (decomposicao D-1 vs D0) — 1 tool.
+    # Conciliacao de caixa = outro agente (auditor_variacao_caixa).
+    "auditor_variacao_carteira": SpecialistAgentSpec(
+        name="auditor_variacao_carteira",
+        description=(
+            "Audita a consistencia da variacao da carteira de Direitos "
+            "Creditorios (DC) entre D-1 e D0: decompoe o ΔDC em 5 motores "
+            "(aquisicoes, liquidacoes, migracao WOP, apropriacao, mutacao), "
+            "separa rotina de atipico, detalha apropriacao (normal vs "
+            "antecipada) e da o selo de fechamento. NAO julga credito nem "
+            "concilia caixa."
+        ),
+        prompt_name="agent.controladoria.auditor_variacao_carteira",
+        tools=("get_variacao_carteira",),
+        output_schema=AuditoriaVariacaoCarteiraResponse,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=8000,
+        timeout_seconds=300,
+        section_id="auditor_variacao_carteira",
+    ),
+    # ─── Controladoria · auditor de RESULTADO (renda/P&L da carteira) ────
+    # Especialista (2026-05-30): lente de P&L. Le SO o bloco resultado_do_dia
+    # da tool get_variacao_carteira (renda: carrego, antecipada, mora, desconto).
+    # Espelho do Auditor de Variacao de Carteira, na lente de resultado.
+    "auditor_resultado": SpecialistAgentSpec(
+        name="auditor_resultado",
+        description=(
+            "Audita o RESULTADO/renda da carteira de Direitos Creditorios no "
+            "dia: separa renda CONTRATADA (apropriacao normal + antecipada — "
+            "ja na curva) da EXTRA (juros de mora, por atraso) e da PERDA "
+            "(desconto). Detalha apropriacao normal vs antecipada. NAO audita "
+            "o estoque nem o caixa."
+        ),
+        prompt_name="agent.controladoria.auditor_resultado",
+        tools=("get_variacao_carteira",),
+        output_schema=AuditoriaResultadoResponse,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=8000,
+        timeout_seconds=300,
+        section_id="auditor_resultado",
+    ),
+    # ─── Controladoria · auditor de PROVISAO/PDD ────────────────────────
+    # Especialista (2026-05-30): lente de provisao. Le get_drill_pdd. Separa
+    # PDD propria (titulo vencido) de PDD por arrasto (efeito vagao), nas duas
+    # direcoes (constituicao forward / reversao por liberacao).
+    "auditor_pdd": SpecialistAgentSpec(
+        name="auditor_pdd",
+        description=(
+            "Audita a variacao da PROVISAO (PDD) da carteira no dia: separa "
+            "constituicao PROPRIA (titulo vencido) de constituicao por ARRASTO "
+            "(efeito vagao — puxador arrasta os a-vencer), e reversao por "
+            "LIQUIDACAO (titulo proprio pagou) de reversao por LIBERACAO (vagao "
+            "reverso — puxador liquidou e soltou os a-vencer). NAO audita "
+            "estoque, renda nem caixa."
+        ),
+        prompt_name="agent.controladoria.auditor_pdd",
+        tools=("get_drill_pdd",),
+        output_schema=AuditoriaPddResponse,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=8000,
+        timeout_seconds=300,
+        section_id="auditor_pdd",
+    ),
+    # ─── Controladoria · auditor de VARIACAO DE CAIXA (fluxo de caixa) ───
+    # Especialista (2026-05-31): lente de FLUXO. Confere a ENTRADA (liquidacao)
+    # e a SAIDA (cessao) de caixa do dia. Floating NORMAL+CARTÓRIO -> PROV(d+1
+    # util) casa por lote; deposito sacado = imediato/agregado; cessao = TED
+    # exata ao cedente. Direcao point-in-time: confere PRA TRAS (caixa que caiu
+    # hoje <- origem). NAO audita estoque, renda nem provisao.
+    "auditor_variacao_caixa": SpecialistAgentSpec(
+        name="auditor_variacao_caixa",
+        description=(
+            "Audita o FLUXO DE CAIXA do dia: ENTRADA por liquidacao (floating "
+            "NORMAL+CARTÓRIO que pingou no PROV de hoje, casado por lote ao "
+            "dia-origem; deposito sacado imediato/agregado; honra do cedente) e "
+            "SAIDA por cessao (TED exata ao cedente). Confere PRA TRAS (caixa que "
+            "caiu hoje <- origem). NAO audita estoque, renda nem provisao."
+        ),
+        prompt_name="agent.controladoria.auditor_variacao_caixa",
+        tools=("get_conferencia_liquidacao", "get_conferencia_cessao"),
+        output_schema=AuditoriaVariacaoCaixaResponse,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=8000,
+        timeout_seconds=300,
+        section_id="auditor_variacao_caixa",
     ),
 }
