@@ -1287,3 +1287,46 @@ async def get_movimento_contas_a_pagar(scope: ScopedContext, args: dict[str, Any
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
     return _to_json(r)
+
+
+@register_tool(
+    name="get_movimento_cotas",
+    description=(
+        "Abre o PASSIVO de cotistas do balanco Cota Sub entre D-1 e D0 — a unica "
+        "lente que fecha o lado patrimonio. Duas metades:\n"
+        "  - CLASSES (`classes[]`: sub_jr/mezanino/senior): cada uma com ΔPL "
+        "decomposto em `efeito_capital` (aporte/resgate de cotistas no MEC, >0 "
+        "aporte <0 resgate) vs `efeito_valorizacao` (remuneracao da cota = carrego). "
+        "`classificacao` = aporte|resgate|apenas_valorizacao. `impacto_pl_sub` ja "
+        "vem com o SINAL na otica Sub: prioritaria (Sr/Mez) e passivo, seu ΔPL "
+        "REDUZ a Sub (impacto = -delta_pl); a propria Sub Jr e o residual. "
+        "`custo_prioritarias_valorizacao` = carrego que a Sub PAGA as prioritarias "
+        "no dia; `capital_liquido_prioritarias` = aporte que diluiu a Sub.\n"
+        "  - OBRIGACOES com cotistas (`obrigacoes[]`, CPR natureza capital_cotista): "
+        "Cotas a Resgatar (resgate solicitado nao pago), Aporte (capital nao "
+        "integralizado / a devolver), Resgate. `tipo` = nova|aumento|reducao|"
+        "quitada. `obrigacoes_delta` = Δ da linha 'Obrigacoes com Cotistas'.\n"
+        "Use pra auditar Cotas Prioritarias + Obrigacoes com Cotistas. NAO audita "
+        "DC, NC, aplicacoes, caixa, renda nem despesa (Contas a Pagar)."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+    module=Module.CONTROLADORIA,
+    min_permission=Permission.READ,
+    cost_hint="cheap",
+    cacheable=True,
+)
+async def get_movimento_cotas(scope: ScopedContext, args: dict[str, Any]) -> str:
+    """Wrap de compute_movimento_cotas. ua_id+data vem do scope."""
+    from app.modules.controladoria.services.conferencia_cotas import (
+        compute_movimento_cotas,
+    )
+
+    ua_id, data_d0 = _parse_scope_inputs(scope)
+    r = await compute_movimento_cotas(
+        scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
+    )
+    return _to_json(r)
