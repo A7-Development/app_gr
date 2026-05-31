@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 from app.agentic.engine.output_schemas import (
     AnalysisVariacaoCotaResponse,
     AuditoriaAplicacoesResponse,
+    AuditoriaContasAPagarResponse,
     AuditoriaNotaComercialResponse,
     AuditoriaPddResponse,
     AuditoriaResultadoResponse,
@@ -519,5 +520,30 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         thinking_budget_tokens=8000,
         timeout_seconds=300,
         section_id="auditor_aplicacoes",
+    ),
+    # ─── Controladoria · auditor de CONTAS A PAGAR (despesa: CPR<0 + pagamento)
+    # Especialista (2026-05-31): lente do lado de SAIDA/despesa. Decompoe a
+    # provisao (CPR<0) em apropriacao (accrual de taxa) vs baixa, e concilia com
+    # os pagamentos de despesa do caixa (classificados pelo codigo `historico`).
+    # Pagamento sem provisao -> sinalizado. NAO audita DC, NC, aplicacoes,
+    # caixa-entrada, renda nem PDD.
+    "auditor_contas_a_pagar": SpecialistAgentSpec(
+        name="auditor_contas_a_pagar",
+        description=(
+            "Audita a linha 'Contas a Pagar' do balanco (provisoes de despesa, "
+            "CPR<0) + os pagamentos de despesa do caixa. Decompoe a provisao em "
+            "apropriacao (accrual de taxa) vs baixa (paga/estornada), e concilia "
+            "com os pagamentos classificados por codigo bancario. Sinaliza "
+            "pagamento NAO provisionado (tarifa, despesa inesperada). NAO audita "
+            "DC, NC, aplicacoes, caixa-entrada nem PDD."
+        ),
+        prompt_name="agent.controladoria.auditor_contas_a_pagar",
+        tools=("get_movimento_contas_a_pagar",),
+        output_schema=AuditoriaContasAPagarResponse,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=8000,
+        timeout_seconds=300,
+        section_id="auditor_contas_a_pagar",
     ),
 }

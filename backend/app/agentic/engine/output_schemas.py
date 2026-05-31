@@ -910,3 +910,63 @@ class AuditoriaAplicacoesResponse(BaseModel):
     conclusao: str = Field(
         description="1-3 frases: o que mexeu nas Aplicacoes e se ha algo a acompanhar."
     )
+
+
+# ─── Auditor de Contas a Pagar (CPR<0 + pagamentos) — 2026-05-31 ────────────
+#
+# Lente do lado de SAIDA/despesa: a linha "Contas a Pagar" do balanco (provisoes
+# CPR<0) + os pagamentos de despesa do caixa. Provisao apropria (accrual) e baixa
+# (paga contra caixa ou estorna). Pagamento sem provisao = sinalizado. NAO audita
+# DC, NC, aplicacoes, caixa-entrada, renda nem provisao PDD.
+
+
+class ComponenteContasAPagar(BaseModel):
+    """Um item da variacao de Contas a Pagar (provisao ou pagamento) narrado."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    natureza: Literal["apropriacao", "baixa", "pagamento", "nao_provisionado"]
+    label:    str = Field(description="Tipo de despesa ou fornecedor.")
+    valor:    float = Field(description="R$ (magnitude > 0).")
+    bullet:   str = Field(description="1 linha factual ancorada em R$.")
+
+
+class AuditoriaContasAPagarResponse(BaseModel):
+    """Output do agente `controladoria.auditor_contas_a_pagar` (2026-05-31).
+
+    Lente de Contas a Pagar (despesa): decompoe a provisao (CPR<0) em apropriacao
+    (accrual) vs baixa, e concilia com os pagamentos de despesa do caixa
+    (classificados por codigo). Pagamento sem provisao -> sinalizado. NAO audita
+    DC, NC, aplicacoes, caixa-entrada nem PDD.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    fundo_nome: str
+    data: str = Field(description="ISO yyyy-mm-dd da data D0.")
+    data_anterior: str = Field(description="ISO yyyy-mm-dd do dia anterior.")
+
+    resumo: str = Field(
+        description="Leitura 5s: a provisao de Contas a Pagar mexeu R$ X (apropriou "
+                    "taxa / baixou ao pagar), e o caixa pagou R$ Y de despesa — quanto provisionado."
+    )
+
+    delta_cpr: float = Field(description="ΔSaldo da linha Contas a Pagar (CPR<0). R$.")
+    total_apropriacao: float = Field(description="Σ provisao apropriada no dia (accrual de taxas). R$.")
+    total_baixa: float = Field(description="Σ provisao baixada (paga ou estornada). R$.")
+    total_pago: float = Field(description="Σ pagamentos de despesa do caixa no dia. R$.")
+    total_nao_provisionado: float = Field(description="Σ pagamentos sem provisao (tarifas + inesperado). R$.")
+
+    componentes: list[ComponenteContasAPagar] = Field(
+        default_factory=list,
+        description="Itens materiais: apropriacoes de taxa, baixas, pagamentos, nao-provisionados. "
+                    "Accrual imaterial de centavos pode ser resumido.",
+    )
+    atencao: list[PontoAtencaoNC] = Field(
+        default_factory=list,
+        description="Sinais: pagamento NAO provisionado material (fora tarifa rotineira), provisao "
+                    "que zerou sem caixa (estorno suspeito), pagamento > provisao. Dia rotineiro = [].",
+    )
+    conclusao: str = Field(
+        description="1-3 frases: o que mexeu em Contas a Pagar e se ha pagamento a acompanhar."
+    )

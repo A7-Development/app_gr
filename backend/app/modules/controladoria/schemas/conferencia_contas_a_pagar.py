@@ -1,0 +1,93 @@
+"""Pydantic schemas — Controladoria · Movimento de Contas a Pagar (CPR < 0).
+
+A linha "Contas a Pagar" do balanco Cota Sub = provisoes de despesa (CPR negativo
+em wh_cpr_movimento). O lado de saida/despesa do fundo. Tres dinamicas:
+
+  - APROPRIACAO: a provisao de taxa CRESCE dia a dia (accrual de custodia/gestao/
+    administracao ate pagar). Despesa do dia, ainda nao paga.
+  - BAIXA: a provisao some/reduz. Pode ser PAGAMENTO (zera contra saida de caixa)
+    ou ESTORNO/WASH (zera sem caixa — lancamento+estorno).
+  - PAGAMENTO NAO PROVISIONADO: saida de caixa de despesa que NUNCA passou pelo
+    CPR (tarifas bancarias `0770`, debitos inesperados) — sinalizado.
+
+Classificacao do pagamento pelo CODIGO `historico` do extrato (dicionario
+levantado em toda a historia 2021-2026):
+  - despesa com codigo proprio (debito direto da administradora SINGULARE):
+    0887 custodia, 0869/0870 adm, 0941 banco liquidante, 0917 ANBIMA, 0919 CVM,
+    0918 distribuicao, 3053 registradora, 3051/3057 auditoria, 3045 IOF,
+    3043/0920 IR, 0948/0915/0916/0914 reembolsos, 0603 reg.cobranca, 0943 SELIC.
+  - 0770 = TARIFA DE TED -> sempre NAO provisionada.
+  - 0307 = TED generico -> despesa SO quando contrapartida e fornecedor
+    (nao-cedente, nao-emitente de NC, nao o proprio fundo): ONBOARD (consultoria/
+    cobranca), AUSTIN RATING, Confiance (auditoria), etc.
+  - internos (fora do escopo): 0902, 0123, 0835, 0950, 0875, 0859, estornos.
+
+ARMADILHA (memoria): wh_cpr_movimento.valor = SALDO ACUMULADO por lote (pico,
+nao soma). Tracking por delta de data_posicao. Datas de pagamento no TEXTO sao
+erradas — usar so as colunas de data (data_lancamento do extrato).
+
+Silver-only (§13.2.1): wh_cpr_movimento + wh_extrato_bancario.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+from decimal import Decimal
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+TipoMovimentoProvisao = Literal["apropriacao", "nova_provisao", "baixa", "quitada"]
+CanalPagamento = Literal["codigo_proprio", "tarifa_ted", "ted_fornecedor"]
+
+
+class MovimentoProvisao(BaseModel):
+    """Movimento de UMA provisao de despesa (CPR<0) entre D-1 e D0."""
+
+    descricao:  str = Field(description="Descricao normalizada (sem a data do texto).")
+    saldo_d1:   Decimal = Field(description="Saldo da provisao em D-1 (<=0).")
+    saldo_d0:   Decimal = Field(description="Saldo da provisao em D0 (<=0).")
+    delta:      Decimal = Field(description="saldo_d0 - saldo_d1. <0 = apropriou (cresceu); >0 = baixou.")
+    tipo:       TipoMovimentoProvisao
+
+
+class PagamentoDespesa(BaseModel):
+    """Um pagamento de despesa no caixa do dia (debito do extrato classificado)."""
+
+    canal:        CanalPagamento
+    historico:    str = Field(description="Codigo de transacao bancaria do extrato.")
+    label:        str = Field(description="Tipo da despesa (do codigo) ou nome do fornecedor (TED).")
+    contrapartida: str | None = Field(default=None, description="Nome da contraparte (TED a fornecedor).")
+    valor:        Decimal = Field(description="Magnitude paga (R$ > 0).")
+    provisionado: bool = Field(
+        description="Tem provisao CPR compativel que baixou no dia? False = pagamento NAO provisionado."
+    )
+
+
+class ConferenciaContasAPagarResponse(BaseModel):
+    """Movimento de Contas a Pagar de um dia (D0): provisoes (CPR<0) + pagamentos.
+
+    Decompoe o ΔSaldo da linha Contas a Pagar em apropriacao (accrual) vs baixa
+    (pagamento/estorno), e lista os pagamentos de despesa do caixa classificados
+    por codigo. Pagamento sem provisao -> sinalizado.
+    """
+
+    fundo_id:        str
+    fundo_nome:      str
+    data:            date
+    data_anterior:   date | None = None
+
+    # ── Provisoes (CPR < 0) ─────────────────────────────────────────────────
+    saldo_cpr_d1:    Decimal = Field(description="Σ CPR<0 em D-1 (a linha Contas a Pagar).")
+    saldo_cpr_d0:    Decimal = Field(description="Σ CPR<0 em D0.")
+    delta_cpr:       Decimal = Field(description="saldo_cpr_d0 - saldo_cpr_d1 (= ΔSaldo da linha).")
+    total_apropriacao: Decimal = Field(description="Σ provisao apropriada no dia (accrual; magnitude >0).")
+    total_baixa:     Decimal = Field(description="Σ provisao baixada no dia (paga ou estornada; magnitude >0).")
+    provisoes:       list[MovimentoProvisao] = Field(default_factory=list)
+
+    # ── Pagamentos de despesa no caixa (D0) ─────────────────────────────────
+    pagamentos:      list[PagamentoDespesa] = Field(default_factory=list)
+    total_pago:      Decimal = Field(description="Σ pagamentos de despesa do dia (>0).")
+    total_nao_provisionado: Decimal = Field(
+        description="Σ pagamentos sem provisao compativel (tarifas + despesa inesperada). >0."
+    )
