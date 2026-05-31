@@ -47,7 +47,7 @@ from app.modules.controladoria.services.cota_sub import (
     _is_sub_jr,
     _mec_classes,
     _sum_compromissada,
-    _sum_cpr_por_sinal,
+    _sum_cpr_buckets,
     _sum_cpr_snapshot,
     _sum_dc,
     _sum_fundos_di,
@@ -362,9 +362,11 @@ async def compute_balanco_estrutural(
     s1 = await _snapshot(db, tenant_id=tenant_id, ua_id=ua_id, ua_nome=ua.nome, data=d1)
     s0 = await _snapshot(db, tenant_id=tenant_id, ua_id=ua_id, ua_nome=ua.nome, data=data_d0)
 
-    # CPR por sinal (substitui o net do snapshot). cpr_pag* vem <= 0.
-    cpr_rec_d1, cpr_pag_d1 = await _sum_cpr_por_sinal(db, tenant_id, ua_id, d1)
-    cpr_rec_d0, cpr_pag_d0 = await _sum_cpr_por_sinal(db, tenant_id, ua_id, data_d0)
+    # CPR por NATUREZA (2026-05-31). 3 baldes: receber (ativo) + pagar (despesa,
+    # <=0) + capital de cotista (Obrigacoes com Cotistas, linha propria — antes
+    # vazava pra dentro de "Contas a Pagar"). receber+pagar+capital == net.
+    cpr_rec_d1, cpr_pag_d1, cpr_cap_d1 = await _sum_cpr_buckets(db, tenant_id, ua_id, d1)
+    cpr_rec_d0, cpr_pag_d0, cpr_cap_d0 = await _sum_cpr_buckets(db, tenant_id, ua_id, data_d0)
 
     ativos: list[BalancoLinhaEstrutural] = [
         _linha_estrutural(
@@ -440,8 +442,14 @@ async def compute_balanco_estrutural(
         _linha_estrutural(
             key="cpr_pagar", label="Contas a Pagar", natureza="passivo",
             grupo="operacional", grupo_label="Operacional",
-            source="wh_cpr_movimento (Σ valor < 0: despesas/taxas/IOF a recolher)",
+            source="wh_cpr_movimento (natureza despesa: taxas/consultoria/auditoria + IOF/IR a recolher)",
             v1=-cpr_pag_d1, v0=-cpr_pag_d0, drill_key="cpr_pagar",
+        ),
+        _linha_estrutural(
+            key="cpr_obrigacoes_cotistas", label="Obrigações com Cotistas", natureza="passivo",
+            grupo="operacional", grupo_label="Operacional",
+            source="wh_cpr_movimento (natureza capital_cotista: Cotas a Resgatar, Aporte, Resgate)",
+            v1=-cpr_cap_d1, v0=-cpr_cap_d0, drill_key=None,
         ),
         _linha_estrutural(
             key="senior", label="Cota Senior", natureza="passivo",
