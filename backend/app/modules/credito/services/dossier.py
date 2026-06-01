@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agentic.playbooks.models.definition import PlaybookDefinition
@@ -17,13 +17,16 @@ from app.core.enums import (
     CompanyRole,
     DossierStatus,
     NodeRunStatus,
+    OpinionRecommendation,
     PersonRole,
     PlaybookRunStatus,
 )
 from app.modules.credito.models.analysis import CreditDossierAnalysis
 from app.modules.credito.models.company import CreditDossierCompany
 from app.modules.credito.models.dossier import CreditDossier
+from app.modules.credito.models.opinion import CreditDossierOpinion
 from app.modules.credito.models.person import CreditDossierPerson
+from app.modules.credito.models.red_flag import CreditDossierRedFlag
 
 
 class DossierServiceError(RuntimeError):
@@ -535,6 +538,154 @@ async def save_bureau_analysis(
     return analysis
 
 
+async def create_opinion(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    dossier_id: UUID,
+    executive_summary: str,
+    recommendation: OpinionRecommendation,
+    strengths: list[str],
+    concerns: list[str],
+    conditions: list[str],
+    ai_draft: str | None,
+    analyst_id: UUID | None,
+) -> CreditDossierOpinion:
+    """Create a new (current) opinion version for the dossier.
+
+    Demotes any previous current opinion and bumps the version. The analyst's
+    edited text lands in `analyst_final` + `executive_summary`; `ai_draft`
+    keeps the deterministic draft assembled from flags/gate (audit trail).
+    """
+    await db.execute(
+        update(CreditDossierOpinion)
+        .where(
+            CreditDossierOpinion.tenant_id == tenant_id,
+            CreditDossierOpinion.dossier_id == dossier_id,
+            CreditDossierOpinion.is_current.is_(True),
+        )
+        .values(is_current=False)
+    )
+    max_version = (
+        await db.execute(
+            select(func.max(CreditDossierOpinion.version)).where(
+                CreditDossierOpinion.tenant_id == tenant_id,
+                CreditDossierOpinion.dossier_id == dossier_id,
+            )
+        )
+    ).scalar()
+    opinion = CreditDossierOpinion(
+        tenant_id=tenant_id,
+        dossier_id=dossier_id,
+        version=(max_version or 0) + 1,
+        is_current=True,
+        executive_summary=executive_summary,
+        strengths=strengths,
+        concerns=concerns,
+        recommendation=recommendation,
+        conditions=conditions,
+        ai_draft=ai_draft,
+        analyst_final=executive_summary,
+        signed_by=analyst_id,
+        signed_at=datetime.now(UTC),
+    )
+    db.add(opinion)
+    await db.flush()
+    return opinion
+
+
+def _downstream_nodes(graph: dict[str, Any], node_id: str) -> set[str]:
+    """All nodes reachable downstream of `node_id` via edges (exclusive)."""
+    edges = (graph or {}).get("edges") or []
+    adjacency: dict[str, list[str]] = {}
+    for e in edges:
+        src = e.get("source")
+        tgt = e.get("target")
+        if src and tgt:
+            adjacency.setdefault(src, []).append(tgt)
+    seen: set[str] = set()
+    stack: list[str] = list(adjacency.get(node_id, []))
+    while stack:
+        n = stack.pop()
+        if n in seen:
+            continue
+        seen.add(n)
+        stack.extend(adjacency.get(n, []))
+    return seen
+
+
+async def rerun_node(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    dossier_id: UUID,
+    node_id: str,
+) -> None:
+    """Re-execute a node (and everything downstream of it).
+
+    Deletes the target node's run + all downstream node runs (so they are no
+    longer "settled" and re-execute), removes the red_flags those runs raised
+    (avoid duplicates), resets the run to RUNNING, and resumes. Decision_log
+    entries are append-only and preserved (audit trail). Used after the
+    analyst edits inputs / re-attaches a document.
+    """
+    dossier = await get_dossier(db, tenant_id=tenant_id, dossier_id=dossier_id)
+    if dossier is None or dossier.workflow_run_id is None:
+        raise DossierServiceError("Dossie sem workflow run para reprocessar.")
+
+    wf_def = (
+        await db.execute(
+            select(PlaybookDefinition).where(
+                PlaybookDefinition.id == dossier.workflow_definition_id
+            )
+        )
+    ).scalar_one_or_none()
+    graph = wf_def.graph if wf_def is not None else {}
+    targets = _downstream_nodes(graph, node_id) | {node_id}
+
+    run_steps = (
+        await db.execute(
+            select(PlaybookRunStep).where(
+                PlaybookRunStep.run_id == dossier.workflow_run_id,
+                PlaybookRunStep.node_id.in_(targets),
+            )
+        )
+    ).scalars().all()
+
+    flag_ids: list[UUID] = []
+    for step in run_steps:
+        for fid in (step.output_data or {}).get("flag_ids") or []:
+            try:
+                flag_ids.append(UUID(str(fid)))
+            except (ValueError, TypeError):
+                continue
+    if flag_ids:
+        await db.execute(
+            delete(CreditDossierRedFlag).where(
+                CreditDossierRedFlag.tenant_id == tenant_id,
+                CreditDossierRedFlag.dossier_id == dossier_id,
+                CreditDossierRedFlag.id.in_(flag_ids),
+            )
+        )
+    for step in run_steps:
+        await db.delete(step)
+    await db.flush()
+
+    run = (
+        await db.execute(
+            select(PlaybookRun).where(PlaybookRun.id == dossier.workflow_run_id)
+        )
+    ).scalar_one_or_none()
+    if run is not None:
+        run.status = PlaybookRunStatus.RUNNING
+        run.completed_at = None
+        await db.flush()
+
+    await workflow_engine.resume_run(
+        db, run_id=dossier.workflow_run_id, pending_inputs={}
+    )
+
+
 def _status_from_run(run: PlaybookRun) -> DossierStatus:
     """Derive DossierStatus from PlaybookRunStatus + node-level signals."""
     rs = run.status
@@ -695,9 +846,11 @@ __all__ = [
     "absorb_identity_from_human_input",
     "compute_progress_map",
     "create_dossier",
+    "create_opinion",
     "delete_dossier",
     "get_dossier",
     "list_dossiers",
+    "rerun_node",
     "save_bureau_analysis",
     "sync_status_from_workflow",
 ]

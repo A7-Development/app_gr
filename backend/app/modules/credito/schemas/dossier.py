@@ -9,7 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.enums import DossierStatus
+from app.core.enums import DossierStatus, OpinionRecommendation
 
 # Next-action enum used by the listing to drive UI decisions:
 #   "human_input"        — paused on a human_input node, waiting for the analyst
@@ -110,6 +110,31 @@ class DossierListItem(BaseModel):
     next_node_id: str | None = None
 
 
+class OpinionInput(BaseModel):
+    """Parecer rascunho editavel pelo analista no checkpoint (Fatia 1).
+
+    Recomendacao default 'conditional' (rascunho neutro — decisao 2026-06-01);
+    o analista edita por cima antes de finalizar.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    executive_summary: str = Field(..., min_length=1)
+    recommendation: OpinionRecommendation = OpinionRecommendation.CONDITIONAL
+    strengths: list[str] = []
+    concerns: list[str] = []
+    conditions: list[str] = []
+
+
+class FinalizePayload(BaseModel):
+    """Finaliza o dossie: cria o parecer e conclui o node de revisao."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    node_id: str
+    opinion: OpinionInput
+
+
 class NodeSubmitPayload(BaseModel):
     """Payload submitted by the analyst when resuming a paused human node.
 
@@ -137,3 +162,7 @@ class DossierStateResponse(BaseModel):
     run: dict | None  # serialized PlaybookRunRead (avoid forward ref headaches)
     node_runs: list[dict]
     pending_node: dict | None  # the WAITING_INPUT node, if any (with form descriptor)
+    # Flags de cruzamento (credit_dossier_red_flag) com proveniencia
+    # estruturada — a unidade-produto da esteira. O cockpit renderiza no
+    # track de inconsistencias do EvidencePanel + na view do deterministic_check.
+    red_flags: list[dict] = []

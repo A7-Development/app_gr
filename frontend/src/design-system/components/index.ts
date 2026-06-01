@@ -130,9 +130,9 @@ export {
 export {
   AgentOutputRenderer,
   OpinionView, IndebtednessView, FinancialView, LegalView, PartnerView,
-  CrossReferenceView, DocumentExtractorView, JsonView,
+  CrossReferenceView, DocumentExtractorView, JsonView, DeterministicCheckView,
   type AgentOutputRendererProps, type Recommendation, type RedFlag,
-  type OpinionDraft, type IndebtednessAnalysis,
+  type OpinionDraft, type IndebtednessAnalysis, type DeterministicFlag,
 } from "./AgentOutputRenderer"
 export {
   FileUploadZone,
