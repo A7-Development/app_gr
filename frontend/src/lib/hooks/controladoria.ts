@@ -19,6 +19,7 @@ import {
   type EvolucaoClasse,
   type EvolucaoGranularidade,
   type DreBaseFilters,
+  type DreBreakdownFilters,
   type DreDrillFornecedoresFilters,
   type DrePivotFilters,
 } from "@/lib/api-client"
@@ -74,6 +75,8 @@ const KEYS = {
     ["controladoria", "dre", "pivot", f] as const,
   dreFornecedores: (f: DreDrillFornecedoresFilters) =>
     ["controladoria", "dre", "fornecedores", f] as const,
+  dreBreakdown: (f: DreBreakdownFilters) =>
+    ["controladoria", "dre", "breakdown", f] as const,
 }
 
 export function useDatasDisponiveis(
@@ -450,6 +453,15 @@ export function useDreFornecedores(
     queryFn:  () => controladoria.dreDrillFornecedores(filters!),
     enabled:
       !!filters?.grupoDre && !!filters?.competenciaDe && !!filters?.competenciaAte,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useDreBreakdown(filters: DreBreakdownFilters | null | undefined) {
+  return useQuery({
+    queryKey: KEYS.dreBreakdown(filters ?? ({} as DreBreakdownFilters)),
+    queryFn:  () => controladoria.dreBreakdown(filters!),
+    enabled:  !!filters?.competencia && !!filters?.dim,
     staleTime: 5 * 60 * 1000,
   })
 }

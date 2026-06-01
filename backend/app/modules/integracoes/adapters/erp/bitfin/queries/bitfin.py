@@ -57,6 +57,20 @@ FROM dbo.OrganizacaoTarifa
 ORDER BY Categoria, Descricao
 """
 
+# Dim de entidades (cedentes) -- resolve entidade_id -> nome/documento para
+# os agregados do DRE. Entidade tem ~20k linhas; ingerimos so o subconjunto
+# referenciado pelo DemonstrativoDeResultado (~90). Full refresh por sync.
+SELECT_ENTIDADE_DRE = """
+SELECT e.EntidadeId AS entidade_id, e.Nome AS nome, e.Documento AS documento
+FROM dbo.Entidade e
+WHERE e.EntidadeId IN (
+    SELECT DISTINCT EntidadeId
+    FROM dbo.DemonstrativoDeResultado
+    WHERE EntidadeId IS NOT NULL
+)
+ORDER BY e.EntidadeId
+"""
+
 # Bronze: PagamentoOpcaoDePagamento (despesas administrativas — bloco 2
 # do DRE). Vw_DRE original usa INNER JOIN com DREClassificacao filtrando
 # `Ativo=1`; aqui mantemos LEFT JOIN com Fornecedor/Entidade (preservando

@@ -25,8 +25,8 @@ from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.modules.controladoria.schemas.qitech_estoque_carteira import (
     CarteiraBundleResponse,
 )
-from app.modules.controladoria.services import reports as reports_service
 from app.modules.controladoria.services import qitech_estoque_carteira as service
+from app.modules.controladoria.services import reports as reports_service
 
 _SLUG = "qitech-estoque-carteira"
 

@@ -22,12 +22,15 @@ from app.core.enums import Module, Permission
 from app.core.module_guard import require_module
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.modules.controladoria.schemas.dre import (
+    DreBreakdownResponse,
+    DreDimensao,
     DreFonte,
     DreFornecedoresResponse,
     DrePivotResponse,
     DreReceitaNaturezaResponse,
 )
 from app.modules.controladoria.services.dre import (
+    compute_breakdown,
     compute_drill_fornecedores,
     compute_pivot,
     compute_receita_por_natureza,
@@ -149,6 +152,37 @@ async def receita_por_natureza(
         competencia_ate=competencia_ate,
         fundo_id=fundo_id,
         produto_id=produto_id,
+    )
+
+
+@router.get("/breakdown", response_model=DreBreakdownResponse)
+async def breakdown(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    competencia: Annotated[date, Query(description="Competencia (1o dia do mes).")],
+    dim: Annotated[
+        DreDimensao, Query(description="natureza | cedente | produto | subgrupo")
+    ],
+    fundo_id: Annotated[int | None, Query(description="UnidadeAdministrativa.Id Bitfin")] = None,
+    produto_id: Annotated[int | None, Query()] = None,
+    entidade_id: Annotated[int | None, Query(description="Drill: filtra um cedente")] = None,
+    natureza: Annotated[str | None, Query(description="Drill: filtra uma natureza")] = None,
+    subgrupo: Annotated[str | None, Query(description="Drill: filtra um subgrupo")] = None,
+    _: None = _Guard,
+) -> DreBreakdownResponse:
+    """Receita operacional de UM mes agregada por `dim` (natureza/cedente/
+    produto/subgrupo), com receita/custo/resultado. Filtros `entidade_id`/
+    `natureza`/`subgrupo` permitem DRILL (cruzar dimensoes)."""
+    return await compute_breakdown(
+        db,
+        tenant_id=principal.tenant_id,
+        competencia=competencia,
+        dim=dim,
+        fundo_id=fundo_id,
+        produto_id=produto_id,
+        entidade_id=entidade_id,
+        natureza=natureza,
+        subgrupo=subgrupo,
     )
 
 

@@ -19,6 +19,7 @@ from app.modules.controladoria.services.dre.classifier import (
     load_dre_classifier,
 )
 from app.modules.controladoria.services.dre.leitura import (
+    compute_breakdown,
     compute_drill_fornecedores,
     compute_pivot,
     compute_receita_por_natureza,
@@ -28,6 +29,7 @@ from app.modules.controladoria.services.dre.leitura import (
 __all__ = [
     "DreClassification",
     "DreClassifier",
+    "compute_breakdown",
     "compute_drill_fornecedores",
     "compute_pivot",
     "compute_receita_por_natureza",
