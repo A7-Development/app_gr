@@ -106,6 +106,7 @@ import { NaoReconhecidosPanel } from "./_components/NaoReconhecidosPanel"
 import { CategoriaDrillSheet } from "./_components/CategoriaDrillSheet"
 import { DrillCprContent } from "./_components/DrillCprContent"
 import { DrillDcContent } from "./_components/DrillDcContent"
+import { DrillCotasContent } from "./_components/DrillCotasContent"
 import { DrillOrigemContent } from "./_components/DrillOrigemContent"
 import { DrillPddContent } from "./_components/DrillPddContent"
 import { VariacaoHeadline } from "./_components/VariacaoHeadline"
@@ -147,7 +148,11 @@ function toInspectorCategoria(
 // prova de fechamento). DC/PDD/CPR tem drills ricos proprios e ficam fora.
 const ORIGEM_KEYS: ReadonlySet<CategoriaPatrimonialKey> = new Set<CategoriaPatrimonialKey>([
   "titulos_publicos", "op_estruturadas", "fundos_di", "compromissada",
-  "outros_ativos", "tesouraria", "saldo_conta_corrente", "senior", "mezanino",
+  "outros_ativos", "tesouraria", "saldo_conta_corrente",
+])
+// Linhas de Cota/Passivo de cotista -> drill rico do Auditor de Cotas (2026-05-31).
+const COTAS_KEYS: ReadonlySet<CategoriaPatrimonialKey> = new Set<CategoriaPatrimonialKey>([
+  "senior", "mezanino", "cpr_obrigacoes_cotistas",
 ])
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -1147,6 +1152,13 @@ export default function CotaSubPage() {
                               side="pagar"
                             />
                           )}
+                          {drilledCategoria && COTAS_KEYS.has(drilledCategoria) && fundoId && (
+                            <DrillCotasContent
+                              fundoId={fundoId}
+                              data={balancoEstruturalQuery.data?.data ?? dayIso}
+                              dataAnterior={balancoEstruturalQuery.data?.data_anterior}
+                            />
+                          )}
                           {drilledCategoria && ORIGEM_KEYS.has(drilledCategoria) && fundoId && (
                             <DrillOrigemContent
                               fundoId={fundoId}
@@ -1232,6 +1244,13 @@ export default function CotaSubPage() {
             data={balancoEstruturalQuery.data?.data ?? dayIso}
             dataAnterior={balancoEstruturalQuery.data?.data_anterior}
             side="pagar"
+          />
+        )}
+        {drilledCategoria && COTAS_KEYS.has(drilledCategoria) && fundoId && (
+          <DrillCotasContent
+            fundoId={fundoId}
+            data={balancoEstruturalQuery.data?.data ?? dayIso}
+            dataAnterior={balancoEstruturalQuery.data?.data_anterior}
           />
         )}
         {drilledCategoria && ORIGEM_KEYS.has(drilledCategoria) && fundoId && (

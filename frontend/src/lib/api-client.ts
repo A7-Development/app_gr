@@ -3004,6 +3004,44 @@ export type VariacaoHeadlineResponse = {
   flags:                  HeadlineFlag[]
 }
 
+// Endpoint /controladoria/cota-sub/drill/cotas — detalhe do Auditor de Cotas
+// (passivo de cotistas). Money ja coercido p/ number.
+export type ClasseCotaMovimento = {
+  classe:             "sub_jr" | "mezanino" | "senior"
+  label:              string
+  patrimonio_d1:      number
+  patrimonio_d0:      number
+  delta_pl:           number
+  valor_cota_d1:      number
+  valor_cota_d0:      number
+  delta_quantidade:   number
+  efeito_capital:     number
+  efeito_valorizacao: number
+  classificacao:      "aporte" | "resgate" | "apenas_valorizacao"
+  impacto_pl_sub:     number
+}
+
+export type ObrigacaoCotista = {
+  descricao: string
+  saldo_d1:  number
+  saldo_d0:  number
+  delta:     number
+  tipo:      "nova" | "aumento" | "reducao" | "quitada"
+}
+
+export type ConferenciaCotasResponse = {
+  fundo_id:                        string
+  fundo_nome:                      string
+  data:                            string
+  data_anterior:                   string | null
+  classes:                         ClasseCotaMovimento[]
+  custo_prioritarias_valorizacao:  number
+  capital_liquido_prioritarias:    number
+  obrigacoes:                      ObrigacaoCotista[]
+  obrigacoes_saldo_d0:             number
+  obrigacoes_delta:                number
+}
+
 
 // Endpoint /controladoria/cota-sub/balanco-estrutural — redesign 2026-05-27.
 // Coerente por natureza + sinal: PDD = contra-ativo (abate DC), CPR dividido
@@ -4156,6 +4194,40 @@ export const controladoria = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       flags: (raw.flags ?? []).map((f: any) => ({ ...f, valor: num(f.valor) })),
     } as VariacaoHeadlineResponse
+  },
+
+  cotaSubDrillCotas: async (
+    fundoId: string,
+    data: string,           // YYYY-MM-DD
+    dataAnterior?: string,
+  ): Promise<ConferenciaCotasResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await apiClient.get<any>(
+      `/controladoria/cota-sub/drill/cotas?${params.toString()}`,
+    )
+    const num = (v: unknown) => Number(v ?? 0)
+    return {
+      ...raw,
+      custo_prioritarias_valorizacao: num(raw.custo_prioritarias_valorizacao),
+      capital_liquido_prioritarias:   num(raw.capital_liquido_prioritarias),
+      obrigacoes_saldo_d0:            num(raw.obrigacoes_saldo_d0),
+      obrigacoes_delta:               num(raw.obrigacoes_delta),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      classes: (raw.classes ?? []).map((c: any) => ({
+        ...c,
+        patrimonio_d1: num(c.patrimonio_d1), patrimonio_d0: num(c.patrimonio_d0),
+        delta_pl: num(c.delta_pl), valor_cota_d1: num(c.valor_cota_d1),
+        valor_cota_d0: num(c.valor_cota_d0), delta_quantidade: num(c.delta_quantidade),
+        efeito_capital: num(c.efeito_capital), efeito_valorizacao: num(c.efeito_valorizacao),
+        impacto_pl_sub: num(c.impacto_pl_sub),
+      })),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      obrigacoes: (raw.obrigacoes ?? []).map((o: any) => ({
+        ...o, saldo_d1: num(o.saldo_d1), saldo_d0: num(o.saldo_d0), delta: num(o.delta),
+      })),
+    } as ConferenciaCotasResponse
   },
 
   cotaSubVariacoesDia: async (

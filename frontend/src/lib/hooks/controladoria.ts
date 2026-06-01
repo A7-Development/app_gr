@@ -167,6 +167,22 @@ export function useVariacaoHeadline(
   })
 }
 
+export function useDrillCotas(
+  fundoId: string | null | undefined,
+  data: string | null | undefined,
+  dataAnterior?: string | null,
+  enabledExtra = true,
+) {
+  // Drill das linhas de Cota/Passivo (Sr/Mez/Obrigacoes) — Auditor de Cotas.
+  const enabled = !!fundoId && !!data && enabledExtra
+  return useQuery({
+    queryKey: ["controladoria", "cota-sub", "drill-cotas", fundoId ?? "", data ?? "", dataAnterior ?? null] as const,
+    queryFn: () => controladoria.cotaSubDrillCotas(fundoId!, data!, dataAnterior ?? undefined),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
 export function useVariacoesDia(
   fundoId: string | null | undefined,
   data: string | null | undefined,

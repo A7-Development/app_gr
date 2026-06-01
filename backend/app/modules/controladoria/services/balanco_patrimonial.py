@@ -449,7 +449,7 @@ async def compute_balanco_estrutural(
             key="cpr_obrigacoes_cotistas", label="Obrigações com Cotistas", natureza="passivo",
             grupo="operacional", grupo_label="Operacional",
             source="wh_cpr_movimento (natureza capital_cotista: Cotas a Resgatar, Aporte, Resgate)",
-            v1=-cpr_cap_d1, v0=-cpr_cap_d0, drill_key=None,
+            v1=-cpr_cap_d1, v0=-cpr_cap_d0, drill_key="cpr_obrigacoes_cotistas",
         ),
         _linha_estrutural(
             key="senior", label="Cota Senior", natureza="passivo",
