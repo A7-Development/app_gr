@@ -3341,6 +3341,26 @@ export type DrillDcMigracaoWopPapel = Omit<
   valor_pdd_d1: number
 }
 
+// resultado_do_dia: ja separa VALUE-MOVERS (movem a cota) de GIRO (troca
+// DC<->caixa, neutro). O backend sempre devolveu; a UI ignorava — por isso o
+// drill parecia "DC +R$521k" (98% giro). Smart drill (2026-05-31) resurface.
+export type DrillDcResultadoDoDia = {
+  carrego_apropriacao:      number
+  apropriacao_antecipada:   number
+  apropriacao_total_dia:    number
+  juros_mora:               number
+  desconto_concedido:       number
+  ajuste_liquido_resultado: number
+  mutacao_total:            number
+  migracao_wop_total:       number
+  giro_aquisicoes:          number
+  giro_liquidacoes:         number
+  motor_dominante:          "carrego" | "mora" | "desconto" | "mutacao" | "write_off" | "misto"
+  resultado_outlier:        boolean
+}
+
+type DrillDcResultadoDoDiaDTO = Record<keyof DrillDcResultadoDoDia, number | string | boolean>
+
 type DrillDcResponseDTO = {
   fundo_id:               string
   fundo_nome:             string
@@ -3355,6 +3375,7 @@ type DrillDcResponseDTO = {
   liquidacoes_top:        DrillDcLiquidacaoLinhaDTO[]
   apropriacao:            DrillDcApropriacaoDTO
   decomposicao:           DrillDcDecomposicaoDTO
+  resultado_do_dia:       DrillDcResultadoDoDiaDTO
   mutacao_papeis:         DrillDcMutacaoPapelDTO[]
   migracao_wop_papeis:    DrillDcMigracaoWopPapelDTO[]
 }
@@ -3372,6 +3393,7 @@ export type DrillDcResponse = {
   liquidacoes_top:        DrillDcLiquidacaoLinha[]
   apropriacao:            DrillDcApropriacao
   decomposicao:           DrillDcDecomposicao
+  resultado_do_dia:       DrillDcResultadoDoDia
   mutacao_papeis:         DrillDcMutacaoPapel[]
   migracao_wop_papeis:    DrillDcMigracaoWopPapel[]
 }
@@ -3475,6 +3497,20 @@ function _coerceDrillDc(r: DrillDcResponseDTO): DrillDcResponse {
       apropriacao:       Number(r.apropriacao.apropriacao),
     },
     decomposicao:        _coerceDrillDcDecomposicao(r.decomposicao),
+    resultado_do_dia: {
+      carrego_apropriacao:      Number(r.resultado_do_dia.carrego_apropriacao),
+      apropriacao_antecipada:   Number(r.resultado_do_dia.apropriacao_antecipada),
+      apropriacao_total_dia:    Number(r.resultado_do_dia.apropriacao_total_dia),
+      juros_mora:               Number(r.resultado_do_dia.juros_mora),
+      desconto_concedido:       Number(r.resultado_do_dia.desconto_concedido),
+      ajuste_liquido_resultado: Number(r.resultado_do_dia.ajuste_liquido_resultado),
+      mutacao_total:            Number(r.resultado_do_dia.mutacao_total),
+      migracao_wop_total:       Number(r.resultado_do_dia.migracao_wop_total),
+      giro_aquisicoes:          Number(r.resultado_do_dia.giro_aquisicoes),
+      giro_liquidacoes:         Number(r.resultado_do_dia.giro_liquidacoes),
+      motor_dominante:          r.resultado_do_dia.motor_dominante as DrillDcResultadoDoDia["motor_dominante"],
+      resultado_outlier:        Boolean(r.resultado_do_dia.resultado_outlier),
+    },
     mutacao_papeis:      r.mutacao_papeis.map(_coerceDrillDcMutacaoPapel),
     migracao_wop_papeis: r.migracao_wop_papeis.map(_coerceDrillDcMigracaoWopPapel),
   }
