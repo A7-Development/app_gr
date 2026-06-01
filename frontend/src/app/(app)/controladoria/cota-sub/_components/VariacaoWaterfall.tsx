@@ -3,100 +3,30 @@
 /**
  * VariacaoWaterfall — o "O que moveu a cota" da aba Resumo do dia (2026-06-01).
  *
- * Waterfall de NIVEL: PL Sub D-1 (MEC) -> 6 transformacoes (os grupos de balanco,
- * impacto giro-limpo) -> PL Sub D0 (MEC). Ancoras = MEC (oficial); se a variacao
- * apresentada (Σ grupos) divergir da do MEC, o gap aparece como barra de RESIDUO.
- *
- * Sinal pela natureza (ja resolvido no backend em impacto_pl_sub): ativo que sobe
- * = verde; PDD/passivo que sobe = vermelho. Giro = nota neutra (nao e barra).
- * Clicar numa barra de grupo abre o drill. Zero LLM.
+ * Wrapper FINO sobre o `VarianceBridgeCard` canonico (mesmo waterfall do
+ * bi/operacoes2) — NAO reinventa o chart. Mapeia os 6 grupos do resumo para
+ * `Operacoes2VarianceBridgeData`:
+ *   - ancoras = PL Sub D-1 / D0 do MEC (oficial)
+ *   - cada grupo = 1 driver (contribution_brl = impacto giro-limpo no PL Sub)
+ *   - residuo (calc - MEC) entra como driver extra para o waterfall fechar
+ *     exatamente na ancora MEC final; some quando ~0
+ * Header KPI = Δ da cota; reconciliacao + giro no footer. Click numa barra de
+ * grupo abre o drill (residuo nao e clicavel).
  */
 
 import * as React from "react"
-import type { EChartsOption } from "echarts"
 
-import { EChartsCard } from "@/design-system/components/EChartsCard"
-import type { VariacaoResumoResponse } from "@/lib/api-client"
-
-const POS = "#10B981"      // emerald-500 — ajudou a cota
-const NEG = "#F43F5E"      // rose-500 — pressionou
-const ANCHOR = "#475569"   // slate-600 — ancoras MEC (visivel em light/dark)
-const RESIDUO = "#94A3B8"  // slate-400 — gap nao explicado vs MEC
-
-// Labels curtos do eixo X (2 linhas) por chave de grupo.
-const AXIS_LABEL: Record<string, string> = {
-  direitos_creditorios: "Direitos\nCreditórios",
-  pdd_wop:              "(−) PDD\n& WOP",
-  aplicacoes:           "Aplicações",
-  disponibilidades:     "Disponi-\nbilidades",
-  obrigacoes_provisoes: "Obrig. e\nProvisões",
-  cotas_prioritarias:   "Cotas\nPrioritárias",
-}
+import { Card } from "@/components/tremor/Card"
+import { VarianceBridgeCard } from "@/design-system/components/VarianceBridgeCard"
+import type {
+  Operacoes2DriverContribution,
+  Operacoes2VarianceBridgeData,
+  VariacaoResumoResponse,
+} from "@/lib/api-client"
 
 const fmtBRLFull = (v: number) =>
-  "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const fmtMi = (v: number) =>
-  (v / 1e6).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + " mi"
-const fmtK = (v: number) => {
-  const s = v >= 0 ? "+" : "−"
-  return `${s}R$ ${Math.abs(v / 1000).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}k`
-}
-
-type BarKind = "anchor" | "step" | "residuo"
-type Bar = {
-  category: string
-  base:     number
-  bar:      number
-  color:    string
-  real:     number
-  kind:     BarKind
-  drillKey: string | null
-}
-
-function buildBars(data: VariacaoResumoResponse): Bar[] {
-  const mecD1 = data.pl_sub_mec_d1
-  const mecD0 = data.pl_sub_mec_d0
-  const residuo = data.reconciliacao.residuo // calc − MEC
-  const resStep = Math.abs(residuo) >= 1 ? -residuo : 0 // leva o running ate o MEC D0
-
-  // 1a passada: pontos do running para achar piso/teto.
-  const pts: number[] = [mecD1]
-  let run = mecD1
-  for (const g of data.grupos) { run += g.impacto_pl_sub; pts.push(run) }
-  if (resStep) { run += resStep; pts.push(run) }
-  pts.push(mecD0)
-  const lo = Math.min(...pts), hi = Math.max(...pts)
-  const pad = (hi - lo) * 0.18 || 1000
-  const piso = lo - pad
-
-  const bars: Bar[] = []
-  bars.push({ category: "PL Sub\nD-1", base: piso, bar: mecD1 - piso, color: ANCHOR, real: mecD1, kind: "anchor", drillKey: null })
-  run = mecD1
-  for (const g of data.grupos) {
-    const v = g.impacto_pl_sub
-    const positive = v >= 0
-    bars.push({
-      category: AXIS_LABEL[g.key] ?? g.label,
-      base: positive ? run : run + v,
-      bar: Math.abs(v),
-      color: positive ? POS : NEG,
-      real: v,
-      kind: "step",
-      drillKey: g.drill_key,
-    })
-    run += v
-  }
-  if (resStep) {
-    const positive = resStep >= 0
-    bars.push({
-      category: "Resíduo", base: positive ? run : run + resStep, bar: Math.abs(resStep),
-      color: RESIDUO, real: resStep, kind: "residuo", drillKey: null,
-    })
-    run += resStep
-  }
-  bars.push({ category: "PL Sub\nD0", base: piso, bar: mecD0 - piso, color: ANCHOR, real: mecD0, kind: "anchor", drillKey: null })
-  return bars
-}
+  "R$ " + Math.abs(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmtSigned = (v: number) => (v >= 0 ? "+" : "−") + fmtBRLFull(v)
 
 export type VariacaoWaterfallProps = {
   data?:         VariacaoResumoResponse
@@ -105,94 +35,69 @@ export type VariacaoWaterfallProps = {
 }
 
 export function VariacaoWaterfall({ data, loading, onDrillGrupo }: VariacaoWaterfallProps) {
-  const bars = React.useMemo(() => (data ? buildBars(data) : []), [data])
+  const bridge = React.useMemo<Operacoes2VarianceBridgeData | null>(() => {
+    if (!data) return null
+    const drivers: Operacoes2DriverContribution[] = data.grupos.map((g) => ({
+      member_id:        g.key,
+      member_label:     g.label,
+      contribution_brl: g.impacto_pl_sub,
+      contribution_pct: null,
+      prior_value:      0,
+      current_value:    0,
+    }))
+    // Resíduo (calc − MEC): barra que fecha o waterfall na âncora MEC. Some ~0.
+    const residuo = data.reconciliacao.residuo
+    if (Math.abs(residuo) >= 1) {
+      drivers.push({
+        member_id: "residuo", member_label: "Resíduo",
+        contribution_brl: -residuo, contribution_pct: null, prior_value: 0, current_value: 0,
+      })
+    }
+    return {
+      prior_anchor_label:   "PL Sub D-1",
+      prior_anchor_value:   data.pl_sub_mec_d1,
+      current_anchor_label: "PL Sub D0",
+      current_anchor_value: data.pl_sub_mec_d0,
+      delta_brl:            data.cota_delta,
+      delta_pct:            data.pl_sub_mec_d1 ? (data.cota_delta / data.pl_sub_mec_d1) * 100 : null,
+      drivers,
+      outros_rollup:        null,
+      unidade:              "BRL",
+    }
+  }, [data])
 
-  const option: EChartsOption = React.useMemo(() => ({
-    grid: { top: 24, right: 12, bottom: 54, left: 56 },
-    xAxis: {
-      type: "category",
-      data: bars.map((b) => b.category),
-      axisLabel: {
-        fontSize: 9, interval: 0, lineHeight: 11,
-        formatter: (v: string, i: number) => (bars[i]?.kind === "anchor" ? `{a|${v}}` : v),
-        rich: { a: { fontWeight: "bold", fontSize: 9, lineHeight: 11 } },
-      },
-      axisTick: { show: false },
-    },
-    yAxis: {
-      type: "value",
-      scale: true,
-      axisLabel: {
-        fontSize: 9,
-        formatter: (v: number) => (v / 1e6).toFixed(2).replace(".", ",") + "M",
-      },
-      splitLine: { lineStyle: { type: "dashed", opacity: 0.4 } },
-    },
-    tooltip: {
-      trigger: "item",
-      formatter: (p: unknown) => {
-        const { seriesName, dataIndex } = p as { seriesName: string; dataIndex: number }
-        if (seriesName === "base") return ""
-        const b = bars[dataIndex]
-        if (!b) return ""
-        const label = b.category.replace(/\n/g, " ")
-        if (b.kind === "anchor") return `<b>${label}</b><br/>${fmtBRLFull(b.real)}`
-        if (b.kind === "residuo") return `<b>Resíduo não explicado</b><br/>${fmtBRLFull(b.real)} (gap vs MEC)`
-        if (Math.abs(b.real) < 1) return `<b>${label}</b><br/>impacto 0 (giro neutro)`
-        return `<b>${label}</b><br/>${fmtK(b.real)} na cota`
-      },
-    },
-    series: [
-      {
-        name: "base", type: "bar", stack: "w", silent: true,
-        itemStyle: { color: "rgba(0,0,0,0)" }, emphasis: { disabled: true },
-        data: bars.map((b) => b.base),
-      },
-      {
-        name: "v", type: "bar", stack: "w", barCategoryGap: "34%", cursor: "pointer",
-        data: bars.map((b) => ({ value: b.bar, itemStyle: { color: b.color, borderRadius: 2 } })),
-        label: {
-          show: true, position: "top", fontSize: 9,
-          formatter: (p: { dataIndex: number }) => {
-            const b = bars[p.dataIndex]
-            if (!b) return ""
-            if (b.kind === "anchor") return fmtMi(b.real)
-            if (Math.abs(b.real) < 1) return "0"
-            return fmtK(b.real)
-          },
-        },
-      },
-    ],
-  }), [bars])
+  const handleDriverClick = React.useCallback((driver: Operacoes2DriverContribution) => {
+    if (!data || !onDrillGrupo) return
+    const g = data.grupos.find((x) => x.key === driver.member_id)
+    if (g?.drill_key) onDrillGrupo(g.drill_key)
+  }, [data, onDrillGrupo])
 
-  const handleEvents = React.useMemo(() => ({
-    click: (params: { componentType: string; dataIndex: number }) => {
-      if (params.componentType !== "series") return
-      const b = bars[params.dataIndex]
-      if (b?.kind === "step" && b.drillKey && onDrillGrupo) onDrillGrupo(b.drillKey)
-    },
-  }), [bars, onDrillGrupo])
-
-  const headerKpi = data
-    ? {
-        value: (data.cota_delta >= 0 ? "+" : "−") + fmtBRLFull(Math.abs(data.cota_delta)),
-        delta: data.pl_sub_mec_d1
-          ? { value: (data.cota_delta / data.pl_sub_mec_d1) * 100, suffix: "%", good: data.cota_delta >= 0 }
-          : undefined,
-        deltaSub: "variação do dia",
-      }
-    : undefined
+  if (loading && !data) {
+    return (
+      <Card className="flex h-[420px] animate-pulse flex-col gap-3">
+        <div className="h-5 w-40 rounded bg-gray-200 dark:bg-gray-800" />
+        <div className="h-8 w-48 rounded bg-gray-200 dark:bg-gray-800" />
+        <div className="flex-1 rounded bg-gray-100 dark:bg-gray-900" />
+      </Card>
+    )
+  }
+  if (!data || !bridge) return null
 
   return (
-    <EChartsCard
+    <VarianceBridgeCard
+      data={bridge}
       title="O que moveu a cota"
       caption="PL Sub D-1 (MEC) → transformações → PL Sub D0 (MEC)"
-      headerKpi={headerKpi}
-      option={option}
+      headerKpi={{
+        value: fmtSigned(data.cota_delta),
+        delta: bridge.delta_pct != null
+          ? { value: bridge.delta_pct, suffix: "%", good: data.cota_delta >= 0 }
+          : undefined,
+        deltaSub: "variação do dia",
+      }}
+      onDriverClick={handleDriverClick}
       height={300}
-      loading={loading}
-      echartsProps={{ onEvents: handleEvents }}
-      footer={data ? <WaterfallFooter data={data} /> : undefined}
+      footer={<WaterfallFooter data={data} />}
     />
   )
 }
@@ -210,16 +115,16 @@ function WaterfallFooter({ data }: { data: VariacaoResumoResponse }) {
       <div className="rounded-md border border-gray-200 bg-gray-50/70 px-3 py-2 dark:border-gray-800 dark:bg-gray-900/40">
         <div className="flex items-center justify-between text-[11px]">
           <span className="text-gray-500 dark:text-gray-400">Variação apresentada (decomposta)</span>
-          <span className="font-medium tabular-nums text-gray-900 dark:text-gray-100">{fmtBRLFull(r.variacao_apresentada)}</span>
+          <span className="font-medium tabular-nums text-gray-900 dark:text-gray-100">{fmtSigned(r.variacao_apresentada)}</span>
         </div>
         <div className="flex items-center justify-between text-[11px]">
           <span className="text-gray-500 dark:text-gray-400">Variação MEC <span className="text-gray-400 dark:text-gray-600">· QiTech, oficial</span></span>
-          <span className="font-medium tabular-nums text-gray-900 dark:text-gray-100">{fmtBRLFull(r.variacao_mec)}</span>
+          <span className="font-medium tabular-nums text-gray-900 dark:text-gray-100">{fmtSigned(r.variacao_mec)}</span>
         </div>
         <div className="mt-1 flex items-center justify-between border-t border-gray-200 pt-1 text-[11px] dark:border-gray-800">
           <span className="font-medium text-gray-700 dark:text-gray-300">Resíduo não explicado</span>
           <span className={r.fecha ? "font-semibold tabular-nums text-emerald-600 dark:text-emerald-400" : "font-semibold tabular-nums text-amber-600 dark:text-amber-400"}>
-            {fmtBRLFull(r.residuo)} {r.fecha ? "✓" : "⚠"}
+            {fmtSigned(r.residuo)} {r.fecha ? "✓" : "⚠"}
           </span>
         </div>
       </div>
