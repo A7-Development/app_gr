@@ -17,6 +17,7 @@ from app.agentic.playbooks.nodes._placeholder import PlaceholderNode
 from app.agentic.playbooks.nodes.bureau_query import BureauQueryNode
 from app.agentic.playbooks.nodes.conditional_branch import ConditionalBranchNode
 from app.agentic.playbooks.nodes.consolidator import ConsolidatorNode
+from app.agentic.playbooks.nodes.deterministic_check import DeterministicCheckNode
 from app.agentic.playbooks.nodes.document_extractor import DocumentExtractorNode
 from app.agentic.playbooks.nodes.document_request import DocumentRequestNode
 from app.agentic.playbooks.nodes.http_request import HttpRequestNode
@@ -224,6 +225,42 @@ NODE_TYPES: dict[str, NodeTypeMeta] = {
         ),
     ),
     # ─── Logica (n8n-style) ──────────────────────────────────────────────
+    "deterministic_check": NodeTypeMeta(
+        type="deterministic_check",
+        cls=DeterministicCheckNode,
+        label="Validacao Deterministica",
+        category="logica",
+        description=(
+            "Roda um check deterministico (Python puro, sem IA) sobre o grafo "
+            "do dossie — ex.: idade da empresa (gate de elegibilidade), soma "
+            "de participacoes dos socios. Grava decision_log (RULE_EVALUATION) "
+            "e materializa red_flags estruturadas. Expoe `result` (bool) pra "
+            "rotear via Branch Condicional."
+        ),
+        available=True,
+        icon="RiShieldCheckLine",
+        config_schema=(
+            {
+                "key": "check",
+                "type": "string",
+                "label": "Check",
+                "placeholder": "company_founding_age",
+                "required": True,
+            },
+            {
+                "key": "policy_name",
+                "type": "string",
+                "label": "Politica (credit_policy)",
+                "placeholder": "default",
+            },
+            {
+                "key": "tolerance_pct",
+                "type": "number",
+                "label": "Tolerancia (%) — checks de soma",
+                "placeholder": "0.5",
+            },
+        ),
+    ),
     "conditional_branch": NodeTypeMeta(
         type="conditional_branch",
         cls=ConditionalBranchNode,
