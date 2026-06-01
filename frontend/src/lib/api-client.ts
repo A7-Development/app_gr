@@ -3005,6 +3005,67 @@ export type VariacaoHeadlineResponse = {
   flags:                  HeadlineFlag[]
 }
 
+// Endpoint /controladoria/cota-sub/variacao/resumo — a aba "Resumo do dia"
+// (redesign 2026-06-01). Decomposicao causal por grupo de balanco (6 grupos
+// giro-limpo) + ancoras MEC + reconciliacao + atencoes. Money coercido p/ number.
+export type GrupoResumoKey =
+  | "direitos_creditorios" | "pdd_wop" | "aplicacoes"
+  | "disponibilidades" | "obrigacoes_provisoes" | "cotas_prioritarias"
+
+export type GrupoResumoLinha = {
+  key:            string
+  label:          string
+  impacto_pl_sub: number
+  resumo:         string
+  drill_key:      string | null
+  severidade:     "rotina" | "atencao"
+}
+
+export type GrupoResumo = {
+  key:            GrupoResumoKey
+  label:          string
+  natureza:       "ativo" | "contra_ativo" | "passivo"
+  impacto_pl_sub: number
+  resumo:         string
+  drill_key:      string | null
+  severidade:     "rotina" | "atencao"
+  linhas:         GrupoResumoLinha[]
+}
+
+export type ReconciliacaoResumo = {
+  variacao_apresentada: number
+  variacao_mec:         number
+  residuo:              number
+  fecha:                boolean
+  residuo_saldo_d0:     number
+}
+
+export type AtencaoResumo = {
+  tipo:         "mutacao" | "despesa_nao_provisionada" | "write_off" | "capital" | "reconciliacao" | "nao_reconhecido"
+  descricao:    string
+  valor:        number
+  grupo_key:    GrupoResumoKey | null
+  grupo_label:  string
+  drill_key:    string | null
+  investigavel: boolean
+}
+
+export type VariacaoResumoResponse = {
+  fundo_id:       string
+  fundo_nome:     string
+  data:           string
+  data_anterior:  string
+  pl_sub_mec_d1:  number
+  pl_sub_mec_d0:  number
+  pl_sub_calc_d1: number
+  pl_sub_calc_d0: number
+  cota_delta:     number
+  grupos:         GrupoResumo[]
+  giro_total:     number
+  reconciliacao:  ReconciliacaoResumo
+  atencoes:       AtencaoResumo[]
+}
+
 // Endpoint /controladoria/cota-sub/drill/cotas — detalhe do Auditor de Cotas
 // (passivo de cotistas). Money ja coercido p/ number.
 export type ClasseCotaMovimento = {
@@ -4261,6 +4322,46 @@ export const controladoria = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       flags: (raw.flags ?? []).map((f: any) => ({ ...f, valor: num(f.valor) })),
     } as VariacaoHeadlineResponse
+  },
+
+  cotaSubVariacaoResumo: async (
+    fundoId: string,
+    data: string,
+    dataAnterior?: string,
+  ): Promise<VariacaoResumoResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await apiClient.get<any>(
+      `/controladoria/cota-sub/variacao/resumo?${params.toString()}`,
+    )
+    const num = (v: unknown) => Number(v ?? 0)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const grupo = (g: any): GrupoResumo => ({
+      ...g,
+      impacto_pl_sub: num(g.impacto_pl_sub),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      linhas: (g.linhas ?? []).map((l: any) => ({ ...l, impacto_pl_sub: num(l.impacto_pl_sub) })),
+    })
+    return {
+      ...raw,
+      pl_sub_mec_d1:  num(raw.pl_sub_mec_d1),
+      pl_sub_mec_d0:  num(raw.pl_sub_mec_d0),
+      pl_sub_calc_d1: num(raw.pl_sub_calc_d1),
+      pl_sub_calc_d0: num(raw.pl_sub_calc_d0),
+      cota_delta:     num(raw.cota_delta),
+      giro_total:     num(raw.giro_total),
+      grupos: (raw.grupos ?? []).map(grupo),
+      reconciliacao: {
+        ...raw.reconciliacao,
+        variacao_apresentada: num(raw.reconciliacao?.variacao_apresentada),
+        variacao_mec:         num(raw.reconciliacao?.variacao_mec),
+        residuo:              num(raw.reconciliacao?.residuo),
+        residuo_saldo_d0:     num(raw.reconciliacao?.residuo_saldo_d0),
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      atencoes: (raw.atencoes ?? []).map((a: any) => ({ ...a, valor: num(a.valor) })),
+    } as VariacaoResumoResponse
   },
 
   cotaSubVariacaoChat: async (
