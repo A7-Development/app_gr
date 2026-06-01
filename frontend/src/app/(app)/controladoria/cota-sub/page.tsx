@@ -109,6 +109,7 @@ import { DrillCprContent } from "./_components/DrillCprContent"
 import { DrillDcContent } from "./_components/DrillDcContent"
 import { ChatVariacaoDrawer } from "./_components/ChatVariacaoDrawer"
 import { DetalhamentoPanel } from "./_components/DetalhamentoPanel"
+import { DrillContasAPagarContent } from "./_components/DrillContasAPagarContent"
 import { DrillCotasContent } from "./_components/DrillCotasContent"
 import { DrillOrigemContent } from "./_components/DrillOrigemContent"
 import { DrillPddContent } from "./_components/DrillPddContent"
@@ -1161,11 +1162,10 @@ export default function CotaSubPage() {
                             />
                           )}
                           {drilledCategoria === "cpr_pagar" && fundoId && (
-                            <DrillCprContent
+                            <DrillContasAPagarContent
                               fundoId={fundoId}
                               data={balancoEstruturalQuery.data?.data ?? dayIso}
                               dataAnterior={balancoEstruturalQuery.data?.data_anterior}
-                              side="pagar"
                             />
                           )}
                           {drilledCategoria && COTAS_KEYS.has(drilledCategoria) && fundoId && (
@@ -1267,11 +1267,10 @@ export default function CotaSubPage() {
           />
         )}
         {drilledCategoria === "cpr_pagar" && fundoId && (
-          <DrillCprContent
+          <DrillContasAPagarContent
             fundoId={fundoId}
             data={balancoEstruturalQuery.data?.data ?? dayIso}
             dataAnterior={balancoEstruturalQuery.data?.data_anterior}
-            side="pagar"
           />
         )}
         {drilledCategoria && COTAS_KEYS.has(drilledCategoria) && fundoId && (

@@ -185,6 +185,22 @@ export function useVariacaoDetalhamento(
   })
 }
 
+export function useDrillContasAPagar(
+  fundoId: string | null | undefined,
+  data: string | null | undefined,
+  dataAnterior?: string | null,
+) {
+  // Drill da linha Contas a Pagar — Auditor de Contas a Pagar (provisoes +
+  // pagamentos + impacto nao provisionado).
+  const enabled = !!fundoId && !!data
+  return useQuery({
+    queryKey: ["controladoria", "cota-sub", "drill-contas-a-pagar", fundoId ?? "", data ?? "", dataAnterior ?? null] as const,
+    queryFn: () => controladoria.cotaSubDrillContasAPagar(fundoId!, data!, dataAnterior ?? undefined),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
 export function useDrillCotas(
   fundoId: string | null | undefined,
   data: string | null | undefined,
