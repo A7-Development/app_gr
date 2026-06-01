@@ -137,11 +137,11 @@ async def compute_variacao_resumo(
         aplic_resumo += f" · carrego NC {_fmt(nc.total_apropriacao)}"
     aplic_linhas: list[GrupoResumoLinha] = [
         GrupoResumoLinha(key="fundos_di", label="Fundos DI", impacto_pl_sub=aplic.total_valorizacao,
-                         resumo="rendimento DI (líquido de IR)", drill_key=None),
+                         resumo="rendimento DI (líquido de IR)", drill_key="aplicacoes"),
         GrupoResumoLinha(key="op_estruturadas", label="Op. Estruturadas", impacto_pl_sub=nc.total_apropriacao,
-                         resumo=f"carrego · {nc.n_notas_d0} nota(s)", drill_key=None),
+                         resumo=f"carrego · {nc.n_notas_d0} nota(s)", drill_key="aplicacoes"),
         GrupoResumoLinha(key="titulos_publicos", label="Títulos Públicos", impacto_pl_sub=tpf_marcacao,
-                         resumo="marcação a mercado", drill_key=None),
+                         resumo="marcação a mercado", drill_key="aplicacoes"),
     ]
 
     # ── 5. Obrigacoes e Provisoes — a DESPESA que move a cota = impacto da
@@ -203,10 +203,10 @@ async def compute_variacao_resumo(
                     impacto_pl_sub=pdd_impacto, resumo=pdd_resumo, drill_key="pdd",
                     severidade="atencao" if n_wop else "rotina"),
         GrupoResumo(key="aplicacoes", label=_GRUPO_LABEL["aplicacoes"], natureza="ativo",
-                    impacto_pl_sub=aplic_impacto, resumo=aplic_resumo, drill_key=None,
+                    impacto_pl_sub=aplic_impacto, resumo=aplic_resumo, drill_key="aplicacoes",
                     linhas=aplic_linhas),
         GrupoResumo(key="disponibilidades", label=_GRUPO_LABEL["disponibilidades"], natureza="ativo",
-                    impacto_pl_sub=disp_impacto, resumo=disp_resumo, drill_key=None,
+                    impacto_pl_sub=disp_impacto, resumo=disp_resumo, drill_key="disponibilidades",
                     linhas=disp_linhas),
         GrupoResumo(key="obrigacoes_provisoes", label=_GRUPO_LABEL["obrigacoes_provisoes"],
                     natureza="passivo", impacto_pl_sub=obrig_impacto, resumo=obrig_resumo,
