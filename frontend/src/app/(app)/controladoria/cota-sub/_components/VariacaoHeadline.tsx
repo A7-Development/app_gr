@@ -101,8 +101,8 @@ export function VariacaoHeadline({ data, loading, onDrillCategoria }: VariacaoHe
             <RiErrorWarningLine className="size-4 text-red-500" aria-hidden />
           )}
           {data.reconciliacao_ok
-            ? "fecha com o MEC"
-            : `não fecha (${fmtBRL.format(data.reconciliacao_residuo)})`}
+            ? "saldo bate com o MEC"
+            : `saldo não bate (${fmtBRL.format(data.reconciliacao_saldo)})`}
         </span>
         {data.n_atencao > 0 && (
           <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[12px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">

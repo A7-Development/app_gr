@@ -28,6 +28,8 @@ from app.modules.controladoria.schemas.variacao_headline import (
 ZERO = Decimal("0")
 # Abaixo disso, um motor/flag e ruido — vira "rotina" / nao sobe.
 _TOL_MATERIAL = Decimal("1000")
+# Saldo da cota bate com o MEC se o residuo do SALDO (D0) e < isto (rounding).
+_TOL_SALDO = Decimal("10")
 
 
 def _fmt(v: Decimal) -> str:
@@ -190,11 +192,13 @@ async def compute_variacao_headline(
                 valor=o.saldo_d0, drill_key=None,
             ))
 
-    if not bal.reconciliacao.dentro_tolerancia:
+    # Flag SO quando o SALDO nao bate (a cota de verdade). O delta FORA sozinho e
+    # lag de timing do dia anterior — nao acende flag (assustava sem motivo).
+    if abs(bal.reconciliacao.residuo_d0) >= _TOL_SALDO:
         flags.append(HeadlineFlag(
             tipo="reconciliacao",
-            descricao="Variacao nao fecha com o MEC dentro da tolerancia",
-            valor=bal.reconciliacao.residuo_delta, drill_key=None, investigavel=True,
+            descricao="Saldo da cota nao bate com o MEC",
+            valor=bal.reconciliacao.residuo_d0, drill_key=None, investigavel=True,
         ))
 
     for nr in (getattr(bal, "nao_reconhecidos", None) or []):
@@ -218,8 +222,9 @@ async def compute_variacao_headline(
         cota_sub_delta=cota_delta,
         delta_ativo=bal.total_ativo_delta,
         delta_passivo=bal.total_passivo_delta,
+        reconciliacao_saldo=bal.reconciliacao.residuo_d0,
         reconciliacao_residuo=bal.reconciliacao.residuo_delta,
-        reconciliacao_ok=bal.reconciliacao.dentro_tolerancia,
+        reconciliacao_ok=abs(bal.reconciliacao.residuo_d0) < _TOL_SALDO,
         n_atencao=len(flags),
         drivers=drivers,
         giro_aquisicoes=res.giro_aquisicoes,

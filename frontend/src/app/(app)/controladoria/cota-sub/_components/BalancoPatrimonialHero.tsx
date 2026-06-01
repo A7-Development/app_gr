@@ -175,8 +175,8 @@ function buildTree(data: BalancoEstruturalResponse): Row[] {
       tooltip: "PL Sub Jr lido direto do MEC publicado pela QiTech. Check externo de reconciliação.",
     },
     {
-      id: "residuo", kind: "residuo", label: "Resíduo de reconciliação (dia)",
-      d1: null, d0: null, delta: r.residuo_delta,
+      id: "residuo", kind: "residuo", label: "Resíduo do saldo (vs MEC)",
+      d1: null, d0: null, delta: r.residuo_d0,
     },
   ]
 }
@@ -409,7 +409,7 @@ export function BalancoPatrimonialHero({
   onExplicarVariacao,
   explicarVariacaoLoading = false,
 }: BalancoPatrimonialHeroProps) {
-  const residuo = data ? data.reconciliacao.residuo_delta : 0
+  const residuo = data ? data.reconciliacao.residuo_d0 : 0
   const residuoAbs = Math.abs(residuo)
   const residuoStatus: "ok" | "warn" | "error" =
     residuoAbs < RESIDUO_AMBER_BRL ? "ok" : residuoAbs < RESIDUO_RED_BRL ? "warn" : "error"
