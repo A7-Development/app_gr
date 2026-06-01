@@ -445,7 +445,8 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
                 {fmtBRLSigned(resultado)}
               </div>
               <div className="mt-2 space-y-1 text-[11px]">
-                {line("carrego", r.carrego_apropriacao + r.apropriacao_antecipada)}
+                {line("carrego", r.carrego_apropriacao)}
+                {r.apropriacao_antecipada > 0 && line("carrego antecipado", r.apropriacao_antecipada)}
                 {r.juros_mora > 0 && line("mora", r.juros_mora)}
                 {r.desconto_concedido > 0 && line("desconto", -r.desconto_concedido)}
                 {Math.abs(r.mutacao_total) >= 1 && line("mutação", r.mutacao_total, { alert: r.mutacao_total < 0 })}
