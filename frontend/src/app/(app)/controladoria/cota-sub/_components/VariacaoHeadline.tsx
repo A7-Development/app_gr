@@ -33,6 +33,15 @@ const fmtBRL = new Intl.NumberFormat("pt-BR", {
 })
 const fmtSigned = (v: number) => (v >= 0 ? "+" : "−") + fmtBRL.format(Math.abs(v))
 
+// Variacao percentual sobre o PL Sub de D-1 (a base pedida). null quando D-1 ~0.
+function pctVsD1(delta: number, d1: number): number | null {
+  return Math.abs(d1) < 1 ? null : (delta / d1) * 100
+}
+const fmtPctSigned = (v: number) =>
+  (v >= 0 ? "+" : "−") +
+  Math.abs(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+  "%"
+
 // Tom de impacto na otica Sub: positivo aumentou a cota (verde), negativo reduziu
 // (vermelho), giro/reclassificacao e neutro (cinza).
 function toneClass(v: number, neutral = false): string {
@@ -80,6 +89,17 @@ export function VariacaoHeadline({ data, loading, onDrillCategoria }: VariacaoHe
         <span className={cx("text-2xl font-semibold tabular-nums", toneClass(data.cota_sub_delta))}>
           {fmtSigned(data.cota_sub_delta)}
         </span>
+        {(() => {
+          const pct = pctVsD1(data.cota_sub_delta, data.cota_sub_d1)
+          return pct === null ? null : (
+            <span
+              className={cx("text-base font-medium tabular-nums", toneClass(data.cota_sub_delta))}
+              title="Variação sobre o PL da Cota Sub do dia anterior (D-1)"
+            >
+              {fmtPctSigned(pct)}
+            </span>
+          )
+        })()}
         <span className="flex items-center gap-1 text-[13px] text-gray-500 dark:text-gray-400">
           {data.reconciliacao_ok ? (
             <RiCheckLine className="size-4 text-emerald-500" aria-hidden />
