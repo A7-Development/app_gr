@@ -24,6 +24,7 @@ from app.modules.credito.schemas.dossier import (
     DossierRead,
     DossierStateResponse,
     DossierUpdate,
+    FinalizePayload,
     NodeSubmitPayload,
 )
 from app.modules.credito.services import dossier as dossier_svc
@@ -216,11 +217,51 @@ async def get_dossie_state(
                 if pending_node is None and nr.status == NodeRunStatus.WAITING_INPUT:
                     pending_node = row
 
+    # Flags de cruzamento do dossie (com proveniencia estruturada). Sao a
+    # unidade-produto — o cockpit as mostra no EvidencePanel + na view do
+    # deterministic_check. Mais recentes primeiro; criticas no topo.
+    from app.modules.credito.models.red_flag import CreditDossierRedFlag
+
+    severity_rank = {"critical": 0, "important": 1, "informational": 2}
+    flag_rows = (
+        await db.execute(
+            select(CreditDossierRedFlag).where(
+                CreditDossierRedFlag.tenant_id == principal.tenant_id,
+                CreditDossierRedFlag.dossier_id == dossier_id,
+            )
+        )
+    ).scalars().all()
+    red_flags = sorted(
+        (
+            {
+                "id": str(f.id),
+                "section": f.section,
+                "severity": f.severity,
+                "title": f.title,
+                "description": f.description,
+                "evidence": f.evidence,
+                "check_type": f.check_type,
+                "provenance": f.provenance,
+                "decision_log_id": str(f.decision_log_id) if f.decision_log_id else None,
+                "raised_by_agent": f.raised_by_agent,
+                "analyst_resolution": f.analyst_resolution,
+                "analyst_notes": f.analyst_notes,
+                "created_at": f.created_at.isoformat() if f.created_at else None,
+            }
+            for f in flag_rows
+        ),
+        key=lambda r: (
+            severity_rank.get(r["severity"], 9),
+            r["created_at"] or "",
+        ),
+    )
+
     return DossierStateResponse(
         dossier=DossierRead.model_validate(dossier),
         run=run,
         node_runs=node_runs_data,
         pending_node=pending_node,
+        red_flags=red_flags,
     )
 
 
@@ -321,4 +362,110 @@ async def submit_node_input(
         dossier_id=dossier_id,
         principal=principal,
         db=db,
+    )
+
+
+@router.post("/dossies/{dossier_id}/finalize", response_model=DossierStateResponse)
+async def finalize_dossie(
+    dossier_id: UUID,
+    payload: FinalizePayload,
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = Depends(require_module(Module.CREDITO, Permission.WRITE)),
+) -> DossierStateResponse:
+    """Finaliza o dossie: cria o parecer (credit_dossier_opinion) e conclui o
+    node de revisao (human_review), levando o run ao fim.
+
+    O parecer rascunho ja vem editado pelo analista no checkpoint; o texto
+    final vai em analyst_final/executive_summary, com recommendation escolhida
+    (default 'conditional'). Idempotente por versao — cada finalize cria uma
+    nova versao current do parecer.
+    """
+    dossier = await dossier_svc.get_dossier(
+        db, tenant_id=principal.tenant_id, dossier_id=dossier_id
+    )
+    if dossier is None:
+        raise HTTPException(status_code=404, detail="Dossie nao encontrado.")
+    if dossier.workflow_run_id is None:
+        raise HTTPException(
+            status_code=400, detail="Dossie nao tem workflow run associado."
+        )
+
+    waiting = (
+        await db.execute(
+            select(PlaybookRunStep).where(
+                PlaybookRunStep.run_id == dossier.workflow_run_id,
+                PlaybookRunStep.node_id == payload.node_id,
+                PlaybookRunStep.status == NodeRunStatus.WAITING_INPUT,
+            )
+        )
+    ).scalar_one_or_none()
+    if waiting is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No '{payload.node_id}' nao esta aguardando revisao. "
+                "Talvez ja tenha sido finalizado."
+            ),
+        )
+
+    await dossier_svc.create_opinion(
+        db,
+        tenant_id=principal.tenant_id,
+        dossier_id=dossier_id,
+        executive_summary=payload.opinion.executive_summary,
+        recommendation=payload.opinion.recommendation,
+        strengths=payload.opinion.strengths,
+        concerns=payload.opinion.concerns,
+        conditions=payload.opinion.conditions,
+        ai_draft=None,
+        analyst_id=principal.user_id,
+    )
+
+    await db.delete(waiting)
+    await db.flush()
+    await workflow_engine.resume_run(
+        db,
+        run_id=dossier.workflow_run_id,
+        pending_inputs={payload.node_id: {"approved": True}},
+    )
+    await dossier_svc.sync_status_from_workflow(db, dossier=dossier)
+    await db.commit()
+    return await get_dossie_state(
+        dossier_id=dossier_id, principal=principal, db=db
+    )
+
+
+@router.post(
+    "/dossies/{dossier_id}/nodes/{node_id}/rerun",
+    response_model=DossierStateResponse,
+)
+async def rerun_node_endpoint(
+    dossier_id: UUID,
+    node_id: str,
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = Depends(require_module(Module.CREDITO, Permission.WRITE)),
+) -> DossierStateResponse:
+    """Reprocessa um node e tudo a jusante (apos o analista editar inputs ou
+    re-anexar um documento). Remove os node_runs alvo + suas flags e re-executa.
+    """
+    dossier = await dossier_svc.get_dossier(
+        db, tenant_id=principal.tenant_id, dossier_id=dossier_id
+    )
+    if dossier is None:
+        raise HTTPException(status_code=404, detail="Dossie nao encontrado.")
+    try:
+        await dossier_svc.rerun_node(
+            db,
+            tenant_id=principal.tenant_id,
+            dossier_id=dossier_id,
+            node_id=node_id,
+        )
+    except dossier_svc.DossierServiceError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    await dossier_svc.sync_status_from_workflow(db, dossier=dossier)
+    await db.commit()
+    return await get_dossie_state(
+        dossier_id=dossier_id, principal=principal, db=db
     )

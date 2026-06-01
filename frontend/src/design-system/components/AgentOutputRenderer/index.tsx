@@ -655,6 +655,166 @@ function formatBRL(v: number | null | undefined): string {
   })
 }
 
+// ─── DeterministicCheckView (node deterministic_check — gate + cruzamentos) ──
+//
+// Renderiza o output de um node `deterministic_check`: veredito Aprovado/
+// Reprovado (gate) + as flags de cruzamento com proveniencia estruturada
+// (qual campo divergiu, esperado vs observado). E a vitrine do produto —
+// a flag auditavel, nao texto solto.
+
+export type DeterministicFlag = {
+  id?: string
+  severity: RedFlag["severity"]
+  title: string
+  description: string
+  evidence?: string | null
+  provenance?: Record<string, unknown> | null
+}
+
+export function DeterministicCheckView({
+  passed,
+  summary,
+  checkLabel,
+  flags,
+  className,
+}: {
+  passed: boolean
+  summary?: string | null
+  checkLabel?: string | null
+  flags: DeterministicFlag[]
+  className?: string
+}) {
+  const sorted = [...flags].sort((a, b) => {
+    const order: Record<RedFlag["severity"], number> = {
+      critical: 0,
+      important: 1,
+      informational: 2,
+    }
+    return order[a.severity] - order[b.severity]
+  })
+
+  return (
+    <div className={cx("space-y-4", className)}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-gray-900 dark:text-gray-50">
+            Validação determinística
+          </p>
+          <p className={cx(tableTokens.cellSecondary, "mt-0.5")}>
+            {checkLabel ?? "Regra / cruzamento (sem IA)"}
+          </p>
+        </div>
+        <span
+          className={cx(
+            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold uppercase tracking-wide",
+            passed
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+              : "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300",
+          )}
+        >
+          {passed ? (
+            <RiCheckboxCircleFill className="size-4" aria-hidden />
+          ) : (
+            <RiCloseCircleFill className="size-4" aria-hidden />
+          )}
+          {passed ? "Aprovado" : "Reprovado"}
+        </span>
+      </div>
+
+      {summary && (
+        <p className="text-sm leading-relaxed text-gray-800 dark:text-gray-200">
+          {summary}
+        </p>
+      )}
+
+      {sorted.length > 0 ? (
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+            Flags de cruzamento ({sorted.length})
+          </p>
+          <ul className="space-y-2">
+            {sorted.map((flag, i) => {
+              const sevMeta = SEVERITY_META[flag.severity]
+              const SevIcon = sevMeta.icon
+              return (
+                <li
+                  key={flag.id ?? i}
+                  className="flex gap-2 rounded-md border border-gray-100 bg-gray-50/50 p-2.5 dark:border-gray-900 dark:bg-gray-950/50"
+                >
+                  <SevIcon
+                    className={cx(
+                      "mt-0.5 size-4 shrink-0",
+                      flag.severity === "critical" && "text-red-500",
+                      flag.severity === "important" && "text-amber-500",
+                      flag.severity === "informational" && "text-gray-500",
+                    )}
+                    aria-hidden
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        {flag.title}
+                      </span>
+                      <span className={cx(tableTokens.badge, sevMeta.tone)}>
+                        {sevMeta.label}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-gray-700 dark:text-gray-300">
+                      {flag.description}
+                    </p>
+                    <ProvenanceLine
+                      provenance={flag.provenance}
+                      fallbackEvidence={flag.evidence}
+                    />
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      ) : (
+        <p className={tableTokens.cellSecondary}>
+          Nenhuma inconsistência encontrada neste cruzamento.
+        </p>
+      )}
+    </div>
+  )
+}
+
+function ProvenanceLine({
+  provenance,
+  fallbackEvidence,
+}: {
+  provenance?: Record<string, unknown> | null
+  fallbackEvidence?: string | null
+}) {
+  if (
+    provenance &&
+    (provenance.expected_value !== undefined ||
+      provenance.actual_value !== undefined)
+  ) {
+    const field =
+      typeof provenance.field === "string" ? provenance.field : null
+    return (
+      <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-500">
+        {field ? <span className="font-medium">{field}: </span> : null}
+        esperado{" "}
+        <span className="font-mono">{String(provenance.expected_value)}</span>{" "}
+        · observado{" "}
+        <span className="font-mono">{String(provenance.actual_value)}</span>
+      </p>
+    )
+  }
+  if (fallbackEvidence) {
+    return (
+      <p className="mt-1 text-[11px] italic text-gray-500 dark:text-gray-500">
+        Evidência: {fallbackEvidence}
+      </p>
+    )
+  }
+  return null
+}
+
 function consistencyLabel(
   c: IndebtednessAnalysis["declared_vs_scr_consistency"],
 ): { label: string; tone: string } {

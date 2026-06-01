@@ -334,15 +334,45 @@ export type NodeRunSummary = {
   attempt_number: number
 }
 
+export type RedFlagItem = {
+  id: string
+  section: string | null
+  severity: "critical" | "important" | "informational"
+  title: string
+  description: string
+  evidence: string
+  check_type: string | null
+  provenance: Record<string, unknown> | null
+  decision_log_id: string | null
+  raised_by_agent: string | null
+  analyst_resolution: string | null
+  analyst_notes: string | null
+  created_at: string | null
+}
+
 export type DossierStateResponse = {
   dossier: DossierRead
   run: WorkflowRunSummary | null
   node_runs: NodeRunSummary[]
   pending_node: NodeRunSummary | null
+  red_flags: RedFlagItem[]
 }
 
 export type NodeSubmitPayload = {
   values: Record<string, unknown>
+}
+
+export type OpinionInput = {
+  executive_summary: string
+  recommendation: "approve" | "deny" | "conditional"
+  strengths?: string[]
+  concerns?: string[]
+  conditions?: string[]
+}
+
+export type FinalizePayload = {
+  node_id: string
+  opinion: OpinionInput
 }
 
 // ─── Labels (pt-BR) ──────────────────────────────────────────────────────
@@ -551,6 +581,17 @@ export const credito = {
       apiClient.patch<NodeDraftResponse>(
         `/credito/dossies/${id}/nodes/${nodeId}/draft`,
         { values },
+      ),
+    /** Finaliza: cria o parecer (credit_dossier_opinion) e conclui o checkpoint. */
+    finalize: (id: string, payload: FinalizePayload) =>
+      apiClient.post<DossierStateResponse>(
+        `/credito/dossies/${id}/finalize`,
+        payload,
+      ),
+    /** Reprocessa um node (e tudo a jusante). Sem body. */
+    rerunNode: (id: string, nodeId: string) =>
+      apiClient.post<DossierStateResponse>(
+        `/credito/dossies/${id}/nodes/${nodeId}/rerun`,
       ),
   },
   attachments: {

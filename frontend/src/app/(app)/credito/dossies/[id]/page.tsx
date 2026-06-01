@@ -19,10 +19,11 @@
 import * as React from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { RiFilePdf2Line } from "@remixicon/react"
+import { RiFilePdf2Line, RiLoopLeftLine } from "@remixicon/react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/tremor/Button"
+import { Textarea } from "@/components/tremor/Textarea"
 import { DynamicForm } from "@/design-system/components/DynamicForm"
 import {
   WizardMultiStep,
@@ -31,9 +32,11 @@ import {
 import {
   AgentLiveStatus,
   AgentOutputRenderer,
+  DeterministicCheckView,
   OpinionView,
   type EvidenceFilterScope,
   type FileListItem,
+  type InconsistencyItem,
   type IndebtednessAnalysis,
   type LinkListItem,
   type OpinionDraft,
@@ -51,6 +54,8 @@ import {
   type NodeRunSummary,
   type NodeSpec,
   type NoteRead,
+  type OpinionInput,
+  type RedFlagItem,
 } from "@/lib/credito-client"
 import {
   useDossierAttachments,
@@ -152,6 +157,34 @@ export default function DossierDetailPage() {
     onError: (e) => toast.error(`Erro ao salvar: ${(e as Error).message}`),
   })
 
+  // ── Finalizar (checkpoint -> parecer) ───────────────────────────────────
+  const finalizeMutation = useMutation({
+    mutationFn: (vars: { nodeId: string; opinion: OpinionInput }) =>
+      credito.dossies.finalize(dossierId, {
+        node_id: vars.nodeId,
+        opinion: vars.opinion,
+      }),
+    onSuccess: () => {
+      toast.success("Parecer gerado. Analise finalizada.")
+      queryClient.invalidateQueries({
+        queryKey: ["credito", "dossie-state", dossierId],
+      })
+    },
+    onError: (e) => toast.error(`Erro ao finalizar: ${(e as Error).message}`),
+  })
+
+  // ── Reprocessar (re-run de um node + downstream) ────────────────────────
+  const rerunMutation = useMutation({
+    mutationFn: (nodeId: string) => credito.dossies.rerunNode(dossierId, nodeId),
+    onSuccess: () => {
+      toast.success("Reprocessando a partir desta etapa...")
+      queryClient.invalidateQueries({
+        queryKey: ["credito", "dossie-state", dossierId],
+      })
+    },
+    onError: (e) => toast.error(`Erro ao reprocessar: ${(e as Error).message}`),
+  })
+
   // ── Auto-save de rascunho ───────────────────────────────────────────────
   const draft = useStepDraft(
     dossierId,
@@ -214,6 +247,23 @@ export default function DossierDetailPage() {
     : null
   const completedSteps = steps.filter((s) => s.state === "completed").length
 
+  // Flags de cruzamento -> track de inconsistencias do EvidencePanel.
+  // critical->high, important->medium, informational->info.
+  const inconsistencyItems: InconsistencyItem[] = (state.red_flags ?? []).map(
+    (f: RedFlagItem): InconsistencyItem => ({
+      id: f.id,
+      severity:
+        f.severity === "critical"
+          ? "high"
+          : f.severity === "important"
+            ? "medium"
+            : "info",
+      title: f.title,
+      description: f.description,
+      evidence: f.evidence,
+    }),
+  )
+
   const opinion = extractAgentOutput<OpinionDraft>(steps, "opinion_writer")
   const indebtedness = extractAgentOutput<IndebtednessAnalysis>(
     steps,
@@ -222,6 +272,20 @@ export default function DossierDetailPage() {
 
   // ── Render hooks pro Workspace ──────────────────────────────────────────
   const renderWaitingInput = (step: WizardMultiStepStep) => {
+    // Checkpoint de revisao (human_review): rever flags + editar parecer +
+    // finalizar. Substitui o "Continuar" seco.
+    if (step.nodeType === "human_review") {
+      return (
+        <CheckpointReview
+          flags={state.red_flags ?? []}
+          initialSummary={buildDraftSummary(state.red_flags ?? [])}
+          submitting={finalizeMutation.isPending}
+          onFinalize={(opinion) =>
+            finalizeMutation.mutate({ nodeId: step.id, opinion })
+          }
+        />
+      )
+    }
     const descriptor = (step.formDescriptor ?? {}) as {
       fields?: FormField[]
       submit_label?: string
@@ -290,13 +354,79 @@ export default function DossierDetailPage() {
     )
   }
 
-  const renderCompleted = (step: WizardMultiStepStep) => {
+  const RERUNNABLE = new Set([
+    "deterministic_check",
+    "specialist_agent",
+    "document_extractor",
+    "bureau_query",
+    "http_request",
+  ])
+
+  const renderCompletedBody = (step: WizardMultiStepStep) => {
+    // Node deterministico (gate/cruzamento) — nao e agente. Veredito +
+    // flags com proveniencia (filtradas por flag_ids do output).
+    if (step.nodeType === "deterministic_check") {
+      const out = (step.output ?? {}) as {
+        passed?: boolean
+        result?: boolean
+        summary?: string
+        check?: string
+        flag_ids?: string[]
+      }
+      const ids = new Set(out.flag_ids ?? [])
+      const flags = (state.red_flags ?? [])
+        .filter((f) => ids.has(f.id))
+        .map((f) => ({
+          id: f.id,
+          severity: f.severity,
+          title: f.title,
+          description: f.description,
+          evidence: f.evidence,
+          provenance: f.provenance,
+        }))
+      return (
+        <DeterministicCheckView
+          passed={Boolean(out.passed ?? out.result)}
+          summary={out.summary}
+          checkLabel={out.check}
+          flags={flags}
+        />
+      )
+    }
     const inputData = (step.input ?? {}) as { agent?: string }
     const agentName = inputData.agent ?? null
     if (agentName === "opinion_writer" && opinion) {
       return <OpinionView output={opinion} indebtedness={indebtedness} />
     }
     return <AgentOutputRenderer agentName={agentName} output={step.output} />
+  }
+
+  const renderCompleted = (step: WizardMultiStepStep) => {
+    const body = renderCompletedBody(step)
+    if (!RERUNNABLE.has(step.nodeType ?? "")) return body
+    return (
+      <div className="space-y-3">
+        <div className="flex justify-end">
+          <Button
+            variant="ghost"
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Reprocessar esta etapa e as seguintes? As analises serao refeitas.",
+                )
+              ) {
+                rerunMutation.mutate(step.id)
+              }
+            }}
+            isLoading={rerunMutation.isPending}
+          >
+            <RiLoopLeftLine className="size-4" aria-hidden />
+            Reprocessar
+          </Button>
+        </div>
+        {body}
+      </div>
+    )
   }
 
   // ── Top actions ─────────────────────────────────────────────────────────
@@ -387,7 +517,7 @@ export default function DossierDetailPage() {
             })
           },
           onDeleteLink: (id) => deleteLinkMut.mutate(id),
-          inconsistencies: undefined, // TODO: extrair do cross_reference_analyst
+          inconsistencies: inconsistencyItems,
           currentUserId: me?.user.id,
         }}
       />
@@ -613,4 +743,185 @@ function linkToLinkListItem(l: LinkRead): LinkListItem {
     added_by_label: null,
     node_id: l.node_id,
   }
+}
+
+// ─── Checkpoint de revisao (human_review) ────────────────────────────────────
+// Mostra as flags de cruzamento, deixa o analista editar o parecer rascunho e
+// escolher a recomendacao (default Condicional — rascunho neutro), e finaliza.
+
+function buildDraftSummary(flags: RedFlagItem[]): string {
+  if (flags.length === 0) {
+    return (
+      "Analise concluida sem inconsistencias deterministicas. " +
+      "Revise e finalize o parecer."
+    )
+  }
+  const crit = flags.filter((f) => f.severity === "critical").length
+  const imp = flags.filter((f) => f.severity === "important").length
+  const parts: string[] = []
+  if (crit) parts.push(`${crit} critica(s)`)
+  if (imp) parts.push(`${imp} importante(s)`)
+  const top = flags
+    .slice(0, 3)
+    .map((f) => f.title)
+    .join("; ")
+  return (
+    `Analise identificou ${flags.length} inconsistencia(s)` +
+    `${parts.length ? ` (${parts.join(", ")})` : ""}. Principais: ${top}. ` +
+    "Revise e ajuste o parecer."
+  )
+}
+
+const RECO_OPTIONS: Array<{
+  value: OpinionInput["recommendation"]
+  label: string
+  tone: string
+}> = [
+  {
+    value: "approve",
+    label: "Aprovar",
+    tone: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300",
+  },
+  {
+    value: "conditional",
+    label: "Condicional",
+    tone: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300",
+  },
+  {
+    value: "deny",
+    label: "Negar",
+    tone: "border-red-300 bg-red-50 text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300",
+  },
+]
+
+function flagSeverityBadge(severity: RedFlagItem["severity"]): {
+  label: string
+  tone: string
+} {
+  if (severity === "critical") {
+    return {
+      label: "Critico",
+      tone: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300",
+    }
+  }
+  if (severity === "important") {
+    return {
+      label: "Importante",
+      tone: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
+    }
+  }
+  return {
+    label: "Informativo",
+    tone: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+  }
+}
+
+function CheckpointReview({
+  flags,
+  initialSummary,
+  submitting,
+  onFinalize,
+}: {
+  flags: RedFlagItem[]
+  initialSummary: string
+  submitting: boolean
+  onFinalize: (opinion: OpinionInput) => void
+}) {
+  const [summary, setSummary] = React.useState(initialSummary)
+  const [recommendation, setRecommendation] =
+    React.useState<OpinionInput["recommendation"]>("conditional")
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <p className="text-sm font-medium text-gray-900 dark:text-gray-50">
+          Conferencia final
+        </p>
+        <p className={cx(tableTokens.cellSecondary, "mt-0.5")}>
+          Revise as flags, ajuste o parecer e finalize.
+        </p>
+      </div>
+
+      {flags.length > 0 ? (
+        <ul className="space-y-2">
+          {flags.map((f) => {
+            const sev = flagSeverityBadge(f.severity)
+            return (
+              <li
+                key={f.id}
+                className="rounded-md border border-gray-100 bg-gray-50/50 p-2.5 dark:border-gray-900 dark:bg-gray-950/50"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    {f.title}
+                  </span>
+                  <span className={cx(tableTokens.badge, sev.tone)}>
+                    {sev.label}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-gray-700 dark:text-gray-300">
+                  {f.description}
+                </p>
+              </li>
+            )
+          })}
+        </ul>
+      ) : (
+        <p className={tableTokens.cellSecondary}>
+          Nenhuma inconsistencia deterministica encontrada.
+        </p>
+      )}
+
+      <div>
+        <p className="mb-1.5 text-xs font-medium text-gray-700 dark:text-gray-300">
+          Recomendacao
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {RECO_OPTIONS.map((opt) => (
+            // MOTIVO: <button> cru — segmento compacto; Button Tremor infla.
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setRecommendation(opt.value)}
+              className={cx(
+                "rounded-md border px-3 py-1.5 text-xs font-medium",
+                recommendation === opt.value
+                  ? opt.tone
+                  : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-400",
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-1.5 text-xs font-medium text-gray-700 dark:text-gray-300">
+          Parecer (rascunho editavel)
+        </p>
+        <Textarea
+          value={summary}
+          onChange={(e) => setSummary(e.target.value)}
+          rows={5}
+        />
+      </div>
+
+      <div className="flex justify-end">
+        <Button
+          onClick={() =>
+            onFinalize({
+              executive_summary: summary,
+              recommendation,
+              concerns: flags.map((f) => f.title),
+            })
+          }
+          isLoading={submitting}
+          disabled={!summary.trim()}
+        >
+          Finalizar analise
+        </Button>
+      </div>
+    </div>
+  )
 }
