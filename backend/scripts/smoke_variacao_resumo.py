@@ -101,7 +101,8 @@ async def main() -> None:
             print("ERRO: REALINVEST nao encontrado.")
             sys.exit(1)
         tenant_id, ua_id = row
-        for d in (date(2026, 5, 29), date(2026, 5, 20), date(2026, 5, 14)):
+        for d in (date(2026, 5, 28), date(2026, 5, 29), date(2026, 5, 27),
+                  date(2026, 5, 26), date(2026, 5, 20), date(2026, 5, 14)):
             try:
                 await _cenario(db, tenant_id=tenant_id, ua_id=ua_id, data_d0=d)
             except Exception as exc:  # noqa: BLE001

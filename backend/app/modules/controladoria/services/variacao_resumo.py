@@ -144,18 +144,31 @@ async def compute_variacao_resumo(
                          resumo="marcação a mercado", drill_key=None),
     ]
 
-    # ── 5. Obrigacoes e Provisoes — so DESPESA (cpr_pagar). O capital de cotista
-    # (Obrigacoes com Cotistas) sai pra giro_capital (e neutro pro PL Sub).
-    obrig_impacto = _imp("cpr_pagar")
-    obrig_resumo = f"provisão {_fmt(cap.total_apropriacao)} · pago {_fmt(cap.total_pago)}"
+    # ── 5. Obrigacoes e Provisoes — a DESPESA que move a cota = impacto da
+    # provisao (cpr_pagar) MENOS a quitacao GENUINA de provisao antiga MENOS o
+    # nao-provisionado (ja saiu direto no caixa). "Quitacao genuina" = quanto a
+    # baixa de provisoes EXCEDE as provisoes novas do dia:
+    #   - 28/05: Consultoria 65k + Cobranca 45k quitadas, SEM nova -> genuina 110k
+    #            (paga/estornada, neutra). Sem isso o impacto inflava (+108k) e o
+    #            plug ia pra -122k.
+    #   - 29/05: "Tx Apropriada" quitada vira "Tx Bruta" nova (reclassificacao de
+    #            nome, pago=R$101) -> baixa ~= novas -> genuina 0. A despesa segue
+    #            provisionada; impacto_balanco(cpr_pagar) ja e o liquido correto.
+    quitada_total = sum((p.delta for p in cap.provisoes if p.tipo == "quitada"), ZERO)
+    nova_total = sum((abs(p.delta) for p in cap.provisoes if p.tipo == "nova_provisao"), ZERO)
+    quitacao_genuina = max(ZERO, quitada_total - nova_total)
+    obrig_impacto = _imp("cpr_pagar") - quitacao_genuina - cap.impacto_resultado_nao_provisionado
+    obrig_resumo = f"despesa do dia {_fmt(cap.total_apropriacao)}"
     obrig_severidade = "rotina"
     if cap.impacto_resultado_nao_provisionado >= _TOL:
         obrig_resumo += f" · ⚠ não provisionado {_fmt(cap.impacto_resultado_nao_provisionado)}"
         obrig_severidade = "atencao"
+    if quitacao_genuina >= _TOL:
+        obrig_resumo += f" · quitação {_fmt(quitacao_genuina)} (neutra)"
     obrig_linhas = [
         GrupoResumoLinha(
-            key="cpr_pagar", label="Contas a Pagar", impacto_pl_sub=_imp("cpr_pagar"),
-            resumo=f"provisão {_fmt(cap.total_apropriacao)} · pago {_fmt(cap.total_pago)}",
+            key="cpr_pagar", label="Contas a Pagar", impacto_pl_sub=obrig_impacto,
+            resumo=f"despesa {_fmt(cap.total_apropriacao)} · pago {_fmt(cap.total_pago)}",
             drill_key="cpr_pagar", severidade=obrig_severidade,
         ),
     ]
@@ -237,6 +250,11 @@ async def compute_variacao_resumo(
     if abs(compr) >= _TOL:
         giro_capital.append(GiroCapitalItem(
             tipo="outros", label="Compromissada (overnight)", valor=compr,
+        ))
+    if quitacao_genuina >= _TOL:
+        giro_capital.append(GiroCapitalItem(
+            tipo="outros", label="Quitação de despesa provisionada", valor=quitacao_genuina,
+            nota="provisão apropriada antes — pagar/estornar é neutro no PL Sub",
         ))
     giro_capital.sort(key=lambda g: abs(g.valor), reverse=True)
     giro_total = sum((abs(g.valor) for g in giro_capital), ZERO)
