@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.controladoria.schemas.variacao_resumo import (
     AtencaoResumo,
+    GiroCapitalItem,
     GrupoResumo,
     GrupoResumoLinha,
     ReconciliacaoResumo,
@@ -109,7 +110,6 @@ async def compute_variacao_resumo(
             res.carrego_apropriacao + res.apropriacao_antecipada
             + res.juros_mora - res.desconto_concedido + res.mutacao_total
         )
-        giro_dc = res.giro_aquisicoes + res.giro_liquidacoes
         dc_resumo = f"carrego {_fmt(res.apropriacao_total_dia)}"
         if abs(res.juros_mora) >= _TOL:
             dc_resumo += f" · mora {_fmt(res.juros_mora)}"
@@ -117,7 +117,6 @@ async def compute_variacao_resumo(
             dc_resumo += f" · mutação {_fmt(res.mutacao_total)}"
     else:  # fallback retrocompat: usa o delta bruto do balanco (com giro)
         dc_impacto = _imp("dc_bruto")
-        giro_dc = ZERO
         dc_resumo = "resultado do dia"
     dc_severidade = "atencao" if (res is not None and res.mutacao_total <= -_TOL) else "rotina"
 
@@ -128,32 +127,26 @@ async def compute_variacao_resumo(
     if n_wop:
         pdd_resumo += f" · {n_wop} em WOP"
 
-    # ── 3. Aplicacoes — valorizacao (DI) + carrego NC + linhas menores ──────
-    menores_delta = sum((ln.delta for ln in aplic.outras_linhas), ZERO)
-    aplic_impacto = aplic.total_valorizacao + nc.total_apropriacao + menores_delta
+    # ── 3. Aplicacoes — GIRO-LIMPO: rendimento DI + carrego NC + marcacao TPF.
+    # Capital (aplicacao/resgate de fundo DI) e giro (compromissada) saem pra
+    # giro_capital. Σ sublinhas == aplic_impacto (coerente com o drill).
+    tpf_marcacao = _imp("titulos_publicos")
+    aplic_impacto = aplic.total_valorizacao + nc.total_apropriacao + tpf_marcacao
     aplic_resumo = f"rendimento DI {_fmt(aplic.total_valorizacao)}"
     if abs(nc.total_apropriacao) >= _TOL:
         aplic_resumo += f" · carrego NC {_fmt(nc.total_apropriacao)}"
-
     aplic_linhas: list[GrupoResumoLinha] = [
-        GrupoResumoLinha(
-            key="fundos_di", label="Fundos DI", impacto_pl_sub=aplic.total_valorizacao,
-            resumo=f"rendimento · capital {_fmt(aplic.total_capital_liquido)} (giro)",
-            drill_key="fundos_di",
-        ),
-        GrupoResumoLinha(
-            key="op_estruturadas", label="Op. Estruturadas", impacto_pl_sub=nc.total_apropriacao,
-            resumo=f"carrego · {nc.n_notas_d0} nota(s)", drill_key="op_estruturadas",
-        ),
+        GrupoResumoLinha(key="fundos_di", label="Fundos DI", impacto_pl_sub=aplic.total_valorizacao,
+                         resumo="rendimento DI (líquido de IR)", drill_key=None),
+        GrupoResumoLinha(key="op_estruturadas", label="Op. Estruturadas", impacto_pl_sub=nc.total_apropriacao,
+                         resumo=f"carrego · {nc.n_notas_d0} nota(s)", drill_key=None),
+        GrupoResumoLinha(key="titulos_publicos", label="Títulos Públicos", impacto_pl_sub=tpf_marcacao,
+                         resumo="marcação a mercado", drill_key=None),
     ]
-    for ln in aplic.outras_linhas:
-        aplic_linhas.append(GrupoResumoLinha(
-            key=ln.linha, label=ln.label, impacto_pl_sub=ln.delta,
-            resumo=ln.nota, drill_key=ln.linha,
-        ))
 
-    # ── 5. Obrigacoes e Provisoes — despesa + obrigacoes com cotistas ───────
-    obrig_impacto = _imp("cpr_pagar", "cpr_obrigacoes_cotistas")
+    # ── 5. Obrigacoes e Provisoes — so DESPESA (cpr_pagar). O capital de cotista
+    # (Obrigacoes com Cotistas) sai pra giro_capital (e neutro pro PL Sub).
+    obrig_impacto = _imp("cpr_pagar")
     obrig_resumo = f"provisão {_fmt(cap.total_apropriacao)} · pago {_fmt(cap.total_pago)}"
     obrig_severidade = "rotina"
     if cap.impacto_resultado_nao_provisionado >= _TOL:
@@ -162,44 +155,32 @@ async def compute_variacao_resumo(
     obrig_linhas = [
         GrupoResumoLinha(
             key="cpr_pagar", label="Contas a Pagar", impacto_pl_sub=_imp("cpr_pagar"),
-            resumo=f"provisão {_fmt(cap.total_apropriacao)}", drill_key="cpr_pagar",
-            severidade=obrig_severidade,
-        ),
-        GrupoResumoLinha(
-            key="cpr_obrigacoes_cotistas", label="Obrigações com Cotistas",
-            impacto_pl_sub=_imp("cpr_obrigacoes_cotistas"),
-            resumo=f"saldo {_fmt(cot.obrigacoes_saldo_d0)}", drill_key="cpr_obrigacoes_cotistas",
+            resumo=f"provisão {_fmt(cap.total_apropriacao)} · pago {_fmt(cap.total_pago)}",
+            drill_key="cpr_pagar", severidade=obrig_severidade,
         ),
     ]
 
-    # ── 6. Cotas Prioritarias — carrego Sr/Mez + capital ────────────────────
-    cotas_impacto = _imp("senior", "mezanino")
+    # ── 6. Cotas Prioritarias — so CARREGO (remuneracao Sr/Mez que a Sub paga).
+    # O capital (aporte/resgate) sai pra giro_capital. Σ sublinhas (carrego por
+    # classe) == cotas_impacto.
+    cotas_impacto = -cot.custo_prioritarias_valorizacao
     cotas_resumo = f"carrego Sr+Mez {_fmt(cot.custo_prioritarias_valorizacao)}"
-    cotas_severidade = "rotina"
-    if abs(cot.capital_liquido_prioritarias) >= _TOL:
-        cotas_resumo += f" · capital {_fmt(cot.capital_liquido_prioritarias)}"
-        cotas_severidade = "atencao"
+    cotas_severidade = "atencao" if abs(cot.capital_liquido_prioritarias) >= _TOL else "rotina"
     cotas_linhas = [
-        GrupoResumoLinha(key="senior", label="Cota Senior", impacto_pl_sub=_imp("senior"),
-                         resumo="carrego prioritário", drill_key="senior"),
-        GrupoResumoLinha(key="mezanino", label="Cota Mezanino", impacto_pl_sub=_imp("mezanino"),
-                         resumo="carrego prioritário", drill_key="mezanino"),
+        GrupoResumoLinha(
+            key=c.classe, label=c.label, impacto_pl_sub=-c.efeito_valorizacao,
+            resumo="carrego (remuneração da cota)", drill_key="senior",
+        )
+        for c in cot.classes if c.classe != "sub_jr"
     ]
 
-    # ── 4. Disponibilidades — o PLUG (fecha a soma) ─────────────────────────
-    # Σ 6 grupos == cota_delta por construcao: Disponibilidades = cota_delta - resto.
-    # Absorve o giro (caixa↔DC↔aplicacoes) + rendimento de caixa. ~0 em dia tipico.
+    # ── 4. Disponibilidades — rendimento LIQUIDO de caixa. Como os outros 5
+    # grupos ja sao giro/capital-limpos, o residuo (cota_delta - eles) e o
+    # rendimento real do caixa (pequeno). O giro/floating/capital do caixa vai
+    # pra giro_capital. Atomico (sem sublinhas): o detalhe vive na secao giro.
     disp_impacto = cota_delta - (dc_impacto + pdd_impacto + aplic_impacto + obrig_impacto + cotas_impacto)
-    disp_resumo = "caixa, tesouraria e contas a receber — giro do dia"
-    disp_linhas = [
-        GrupoResumoLinha(key="tesouraria", label="Tesouraria", impacto_pl_sub=_imp("tesouraria"),
-                         resumo="saldo de tesouraria", drill_key="tesouraria"),
-        GrupoResumoLinha(key="saldo_conta_corrente", label="Saldo Conta Corrente",
-                         impacto_pl_sub=_imp("saldo_conta_corrente"), resumo="contas bancárias",
-                         drill_key="saldo_conta_corrente"),
-        GrupoResumoLinha(key="cpr_receber", label="Contas a Receber", impacto_pl_sub=_imp("cpr_receber"),
-                         resumo="floating + diferidos (↺ giro)", drill_key="cpr_receber"),
-    ]
+    disp_resumo = "rendimento líquido de caixa — giro/floating do dia em 'Giro e capital'"
+    disp_linhas: list[GrupoResumoLinha] = []
 
     grupos = [
         GrupoResumo(key="direitos_creditorios", label=_GRUPO_LABEL["direitos_creditorios"],
@@ -209,10 +190,10 @@ async def compute_variacao_resumo(
                     impacto_pl_sub=pdd_impacto, resumo=pdd_resumo, drill_key="pdd",
                     severidade="atencao" if n_wop else "rotina"),
         GrupoResumo(key="aplicacoes", label=_GRUPO_LABEL["aplicacoes"], natureza="ativo",
-                    impacto_pl_sub=aplic_impacto, resumo=aplic_resumo, drill_key="fundos_di",
+                    impacto_pl_sub=aplic_impacto, resumo=aplic_resumo, drill_key=None,
                     linhas=aplic_linhas),
         GrupoResumo(key="disponibilidades", label=_GRUPO_LABEL["disponibilidades"], natureza="ativo",
-                    impacto_pl_sub=disp_impacto, resumo=disp_resumo, drill_key="cpr_receber",
+                    impacto_pl_sub=disp_impacto, resumo=disp_resumo, drill_key=None,
                     linhas=disp_linhas),
         GrupoResumo(key="obrigacoes_provisoes", label=_GRUPO_LABEL["obrigacoes_provisoes"],
                     natureza="passivo", impacto_pl_sub=obrig_impacto, resumo=obrig_resumo,
@@ -222,9 +203,43 @@ async def compute_variacao_resumo(
                     drill_key="senior", severidade=cotas_severidade, linhas=cotas_linhas),
     ]
 
-    # ── Giro (nota neutra) ──────────────────────────────────────────────────
-    giro_total = (giro_dc + abs(aplic.total_capital_liquido)
-                  + nc.total_aquisicao + nc.total_amortizacao)
+    # ── Giro e capital do dia (movimentos NEUTROS, fora do waterfall) ────────
+    giro_capital: list[GiroCapitalItem] = []
+    giro_carteira = (res.giro_aquisicoes - res.giro_liquidacoes) if res is not None else ZERO
+    if res is not None and abs(giro_carteira) >= _TOL:
+        giro_capital.append(GiroCapitalItem(
+            tipo="giro_carteira", label="Compra/liquidação de carteira", valor=giro_carteira,
+            nota=f"comprou {_fmt(res.giro_aquisicoes)} · liquidou {_fmt(res.giro_liquidacoes)}",
+        ))
+    if abs(cot.capital_liquido_prioritarias) >= _TOL:
+        giro_capital.append(GiroCapitalItem(
+            tipo="capital_cotista", label="Aporte/resgate em cota prioritária",
+            valor=cot.capital_liquido_prioritarias,
+            nota="entra/sai caixa e cota na mesma medida — neutro no PL Sub total",
+        ))
+    if abs(cot.obrigacoes_delta) >= _TOL:
+        giro_capital.append(GiroCapitalItem(
+            tipo="capital_cotista", label="Obrigações com cotistas",
+            valor=cot.obrigacoes_delta, nota="resgates/aportes a liquidar",
+        ))
+    if abs(aplic.total_capital_liquido) >= _TOL:
+        giro_capital.append(GiroCapitalItem(
+            tipo="capital_aplicacao", label="Aplicação/resgate em Fundos DI",
+            valor=aplic.total_capital_liquido, nota="caixa ocioso estacionado/retirado",
+        ))
+    floating = _imp("cpr_receber")
+    if abs(floating) >= _TOL:
+        giro_capital.append(GiroCapitalItem(
+            tipo="floating", label="Floating de liquidações (Contas a Receber)",
+            valor=floating, nota="recebíveis liquidados em trânsito",
+        ))
+    compr = _imp("compromissada")
+    if abs(compr) >= _TOL:
+        giro_capital.append(GiroCapitalItem(
+            tipo="outros", label="Compromissada (overnight)", valor=compr,
+        ))
+    giro_capital.sort(key=lambda g: abs(g.valor), reverse=True)
+    giro_total = sum((abs(g.valor) for g in giro_capital), ZERO)
 
     # ── Reconciliacao MEC ───────────────────────────────────────────────────
     r = bal.reconciliacao
@@ -307,6 +322,7 @@ async def compute_variacao_resumo(
         cota_delta=cota_delta,
         grupos=grupos,
         giro_total=giro_total,
+        giro_capital=giro_capital,
         reconciliacao=reconciliacao,
         atencoes=atencoes,
     )

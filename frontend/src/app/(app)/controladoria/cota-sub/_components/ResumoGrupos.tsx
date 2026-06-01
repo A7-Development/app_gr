@@ -10,7 +10,7 @@
  * abre o drill. Fecho "= Variacao do PL Sub" prova o fechamento. Zero LLM.
  */
 
-import { RiAlertLine, RiArrowRightSLine } from "@remixicon/react"
+import { RiAlertLine, RiArrowRightSLine, RiRefreshLine } from "@remixicon/react"
 
 import { cx } from "@/lib/utils"
 import { Card } from "@/components/tremor/Card"
@@ -153,6 +153,24 @@ export function ResumoGrupos({ data, loading, onDrillGrupo }: ResumoGruposProps)
         <span className="text-[13px] font-semibold text-gray-900 dark:text-gray-100">= Variação do PL Sub</span>
         <span className={cx("text-[13px] font-semibold tabular-nums", toneClass(data.cota_delta))}>{fmtBRL(data.cota_delta)}</span>
       </div>
+
+      {data.giro_capital.length > 0 && (
+        <div className="mt-3 rounded-md border border-gray-200 bg-gray-50/50 px-3 py-2 dark:border-gray-800 dark:bg-gray-900/30">
+          <div className="flex flex-wrap items-center gap-x-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">
+            <RiRefreshLine className="size-3.5" aria-hidden="true" />
+            Giro e capital do dia
+            <span className="font-normal normal-case tracking-normal text-gray-400 dark:text-gray-500">— movimentou caixa/posição, não afetou a cota</span>
+          </div>
+          <div className="mt-1.5 flex flex-col gap-1">
+            {data.giro_capital.map((gc, i) => (
+              <div key={i} className="flex items-baseline justify-between gap-3 px-1">
+                <span className="text-[12px] text-gray-600 dark:text-gray-400">{gc.label}</span>
+                <span className="shrink-0 text-[12px] font-medium tabular-nums text-gray-500 dark:text-gray-400">{fmtK(gc.valor)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </Card>
   )
 }

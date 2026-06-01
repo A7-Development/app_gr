@@ -20,6 +20,9 @@ from app.modules.controladoria.schemas.chat_variacao import (
     ChatVariacaoRequest,
     ChatVariacaoResposta,
 )
+from app.modules.controladoria.schemas.conferencia_aplicacoes import (
+    ConferenciaAplicacoesResponse,
+)
 from app.modules.controladoria.schemas.conferencia_contas_a_pagar import (
     ConferenciaContasAPagarResponse,
 )
@@ -43,6 +46,9 @@ from app.modules.controladoria.schemas.variacao_resumo import (
 )
 from app.modules.controladoria.services.balanco_patrimonial import (
     compute_balanco_estrutural,
+)
+from app.modules.controladoria.services.conferencia_aplicacoes import (
+    compute_movimento_aplicacoes,
 )
 from app.modules.controladoria.services.conferencia_contas_a_pagar import (
     compute_movimento_contas_a_pagar,
@@ -505,6 +511,36 @@ async def drill_cotas(
     """
     try:
         return await compute_movimento_cotas(
+            db,
+            tenant_id=principal.tenant_id,
+            ua_id=fundo_id,
+            data_d0=data,
+            data_d1=data_anterior,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/drill/aplicacoes", response_model=ConferenciaAplicacoesResponse)
+async def drill_aplicacoes(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0). D-1 e o dia util anterior.")],
+    data_anterior: Annotated[
+        date | None,
+        Query(description="Override opcional para D-1."),
+    ] = None,
+    _: None = _Guard,
+) -> ConferenciaAplicacoesResponse:
+    """Drill do grupo Aplicacoes — rendimento DI (valorizacao = a barra do
+    waterfall) vs capital (aplicacao/resgate de fundo DI, NEUTRO) por fundo +
+    linhas menores (TPF/Compromissada/Outros). Reusa a tool do detalhamento
+    (compute_movimento_aplicacoes). A barra giro-limpa bate com a soma das
+    valorizacoes; o capital aparece destacado como neutro.
+    """
+    try:
+        return await compute_movimento_aplicacoes(
             db,
             tenant_id=principal.tenant_id,
             ua_id=fundo_id,
