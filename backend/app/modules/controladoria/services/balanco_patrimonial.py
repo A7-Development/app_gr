@@ -376,7 +376,7 @@ async def compute_balanco_estrutural(
             v1=s1["dc"], v0=s0["dc"], drill_key="dc",
         ),
         _linha_estrutural(
-            key="pdd", label="PDD", natureza="contra_ativo",
+            key="pdd", label="PDD & WOP", natureza="contra_ativo",
             grupo="direitos_creditorios", grupo_label="Direitos Creditórios",
             source="wh_estoque_recebivel (Σ valor_pdd, exclui WOP)",
             v1=s1["pdd"], v0=s0["pdd"], drill_key="pdd",

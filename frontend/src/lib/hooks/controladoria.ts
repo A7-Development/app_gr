@@ -170,6 +170,22 @@ export function useVariacaoHeadline(
   })
 }
 
+export function useVariacaoResumo(
+  fundoId: string | null | undefined,
+  data: string | null | undefined,
+  dataAnterior?: string | null,
+) {
+  // A aba "Resumo do dia" (redesign 2026-06-01): waterfall por grupo de balanco
+  // (giro-limpo) + ancoras MEC + reconciliacao + atencoes. Substitui o headline.
+  const enabled = !!fundoId && !!data
+  return useQuery({
+    queryKey: ["controladoria", "cota-sub", "variacao-resumo", fundoId ?? "", data ?? "", dataAnterior ?? null] as const,
+    queryFn: () => controladoria.cotaSubVariacaoResumo(fundoId!, data!, dataAnterior ?? undefined),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
 export function useVariacaoDetalhamento(
   fundoId: string | null | undefined,
   data: string | null | undefined,

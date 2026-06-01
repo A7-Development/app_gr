@@ -101,20 +101,20 @@ import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 import { toast } from "sonner"
 
 import { ActiveBackfillJobsPanel } from "./_components/ActiveBackfillJobsPanel"
-import { BalancoInspector } from "./_components/BalancoInspector"
+import { AtencoesDoDia } from "./_components/AtencoesDoDia"
 import { BalancoPatrimonialHero } from "./_components/BalancoPatrimonialHero"
 import { NaoReconhecidosPanel } from "./_components/NaoReconhecidosPanel"
 import { CategoriaDrillSheet } from "./_components/CategoriaDrillSheet"
 import { DrillCprContent } from "./_components/DrillCprContent"
 import { DrillDcContent } from "./_components/DrillDcContent"
 import { ChatVariacaoDrawer } from "./_components/ChatVariacaoDrawer"
-import { DetalhamentoPanel } from "./_components/DetalhamentoPanel"
+import { ResumoGrupos } from "./_components/ResumoGrupos"
 import { DrillContasAPagarContent } from "./_components/DrillContasAPagarContent"
 import { DrillCotasContent } from "./_components/DrillCotasContent"
 import { DrillOrigemContent } from "./_components/DrillOrigemContent"
 import { DrillPddContent } from "./_components/DrillPddContent"
-import { VariacaoHeadline } from "./_components/VariacaoHeadline"
-import { useVariacaoDetalhamento, useVariacaoHeadline } from "@/lib/hooks/controladoria"
+import { VariacaoWaterfall } from "./_components/VariacaoWaterfall"
+import { useVariacaoResumo } from "@/lib/hooks/controladoria"
 import type {
   BalancoEstruturalResponse,
   CategoriaPatrimonial,
@@ -195,7 +195,8 @@ const MOCK_INSIGHTS: AIInsight[] = [
 // ───────────────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { key: "eventos",       label: "Eventos do dia" },
+  { key: "resumo",        label: "Resumo do dia" },
+  { key: "balanco",       label: "Balanço" },
   { key: "movimentacoes", label: "Movimentações" },
   { key: "cotistas",      label: "Cotistas" },
 ] as const
@@ -312,26 +313,6 @@ const topCotistasOption: EChartsOption = {
     },
   ],
   tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, formatter: "{b}: {c}%" },
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// useMediaQuery — SSR-safe matchMedia hook
-//
-// First paint = false (SSR sem `window`); useEffect atualiza no client.
-// Em xl+ pode haver um flash do Sheet antes do Inspector aparecer; aceitavel
-// na pratica porque o drill so abre por interacao do usuario (clique).
-// ───────────────────────────────────────────────────────────────────────────
-
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = React.useState(false)
-  React.useEffect(() => {
-    const mq = window.matchMedia(query)
-    setMatches(mq.matches)
-    const handler = (e: MediaQueryListEvent) => setMatches(e.matches)
-    mq.addEventListener("change", handler)
-    return () => mq.removeEventListener("change", handler)
-  }, [query])
-  return matches
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -664,7 +645,7 @@ export default function CotaSubPage() {
   const [tableStatus,  setTableStatus]  = React.useState<string>("Todos")
   const [tableCotista, setTableCotista] = React.useState<string>("Todos")
 
-  const [activeTab, setActiveTab] = React.useState<TabKey>("eventos")
+  const [activeTab, setActiveTab] = React.useState<TabKey>("resumo")
 
   // Atalhos Cmd/Ctrl + 1..4 para tabs (CLAUDE.md §11.6)
   React.useEffect(() => {
@@ -689,10 +670,6 @@ export default function CotaSubPage() {
   // Habilitado so pras 3 categorias da F2 via DRILL_ENABLED_F2 do BalancoPatrimonialHero.
   const [drilledCategoria, setDrilledCategoria] = React.useState<CategoriaPatrimonialKey | null>(null)
 
-  // F3 redesign 2026-05-24: em telas >= xl o detalhamento renderiza no slot
-  // direito da grid (BalancoInspector); em telas menores cai pro Sheet.
-  // matchMedia com SSR-safe init (false no first paint, atualiza no useEffect).
-  const isXl = useMediaQuery("(min-width: 1280px)")
 
   // Lookup do UUID da UA selecionada (endpoint backend exige fundo_id).
   const fundoId = React.useMemo(() => {
@@ -702,10 +679,8 @@ export default function CotaSubPage() {
 
   const dayIso          = React.useMemo(() => format(day, "yyyy-MM-dd"), [day])
   const balancoEstruturalQuery = useBalancoEstrutural(fundoId, dayIso)
-  // Headline estruturado (Fase 1) — o read de 10s. Substitui o monolito.
-  const headlineQuery   = useVariacaoHeadline(fundoId, dayIso)
-  // Detalhamento (60%) — uma area por card, default do slot direito.
-  const detalhamentoQuery = useVariacaoDetalhamento(fundoId, dayIso)
+  // Resumo do dia (redesign 2026-06-01) — waterfall por grupo + atencoes. 0 LLM.
+  const resumoQuery = useVariacaoResumo(fundoId, dayIso)
   // Chat-investigador (Camada 2) — summonable, o UNICO LLM da pagina.
   const [chatOpen, setChatOpen] = React.useState(false)
   const drilledCategoriaObj = React.useMemo(
@@ -1092,20 +1067,39 @@ export default function CotaSubPage() {
                 />
               ) : (
                 <>
-                  {activeTab === "eventos" && (
-                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">
-                      {/* Headline estruturado (Fase 1) — o read de 10s, full-width
-                          no topo. Veredito + drivers giro-limpos + flags. Drivers
-                          clicaveis abrem a evidencia (drill). Substitui o MOCK_INSIGHTS
-                          + o botao morto do monolito. */}
-                      <div className="xl:col-span-5">
-                        <VariacaoHeadline
-                          data={headlineQuery.data}
-                          loading={headlineQuery.isLoading}
-                          onDrillCategoria={setDrilledCategoria}
-                        />
+                  {activeTab === "resumo" && (
+                    <div className="flex flex-col gap-3">
+                      {/* Faixa "consciencia": mutacao / sem-provisao / WOP, ancoradas
+                          ao grupo-casa. Clicar abre o drill; investigavel abre o chat. */}
+                      <AtencoesDoDia
+                        atencoes={resumoQuery.data?.atencoes}
+                        loading={resumoQuery.isLoading}
+                        onDrillGrupo={(k) => setDrilledCategoria(k as CategoriaPatrimonialKey)}
+                        onInvestigar={() => setChatOpen(true)}
+                      />
+                      <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">
+                        {/* 40% — waterfall PL Sub D-1 (MEC) -> grupos -> D0 (MEC). */}
+                        <div className="xl:col-span-2">
+                          <VariacaoWaterfall
+                            data={resumoQuery.data}
+                            loading={resumoQuery.isLoading}
+                            onDrillGrupo={(k) => setDrilledCategoria(k as CategoriaPatrimonialKey)}
+                          />
+                        </div>
+                        {/* 60% — detalhamento por grupo de balanco (lista). */}
+                        <div className="xl:col-span-3">
+                          <ResumoGrupos
+                            data={resumoQuery.data}
+                            loading={resumoQuery.isLoading}
+                            onDrillGrupo={(k) => setDrilledCategoria(k as CategoriaPatrimonialKey)}
+                          />
+                        </div>
                       </div>
-                      <div className="xl:col-span-2">
+                    </div>
+                  )}
+                  {activeTab === "balanco" && (
+                    <div className="flex flex-col gap-3">
+                      {/* O balancete (posicao + prova) + reconciliacao MEC + nao-reconhecidos. */}
                       <BalancoPatrimonialHero
                         data={balancoEstruturalQuery.data}
                         loading={balancoEstruturalQuery.isLoading}
@@ -1117,93 +1111,10 @@ export default function CotaSubPage() {
                         onRetry={() => balancoEstruturalQuery.refetch()}
                         onDrillCategoria={setDrilledCategoria}
                       />
-                      </div>
-                      {/* F3 redesign 2026-05-24: slot direito vira BalancoInspector
-                          (in-layout, parte da grid). Em telas < xl o slot some
-                          (hidden) e o page.tsx cai pro CategoriaDrillSheet
-                          (overlay) controlado por isXl no render do Sheet. */}
-                      <div className="hidden xl:col-span-3 xl:block">
-                        {!drilledCategoria ? (
-                          /* Default do slot direito: o Detalhamento do dia (60%).
-                             Cada area da sua tool, clicavel -> abre o drill. */
-                          <DetalhamentoPanel
-                            data={detalhamentoQuery.data}
-                            loading={detalhamentoQuery.isLoading}
-                            onDrillCategoria={setDrilledCategoria}
-                          />
-                        ) : (
-                        <BalancoInspector
-                          categoria={drilledCategoriaObj}
-                          fundoNome={balancoEstruturalQuery.data?.fundo_nome ?? ""}
-                          data={balancoEstruturalQuery.data?.data ?? dayIso}
-                          dataAnterior={balancoEstruturalQuery.data?.data_anterior ?? ""}
-                          onClose={() => setDrilledCategoria(null)}
-                        >
-                          {drilledCategoria === "dc" && fundoId && (
-                            <DrillDcContent
-                              fundoId={fundoId}
-                              data={balancoEstruturalQuery.data?.data ?? dayIso}
-                              dataAnterior={balancoEstruturalQuery.data?.data_anterior}
-                            />
-                          )}
-                          {drilledCategoria === "pdd" && fundoId && (
-                            <DrillPddContent
-                              fundoId={fundoId}
-                              data={balancoEstruturalQuery.data?.data ?? dayIso}
-                              dataAnterior={balancoEstruturalQuery.data?.data_anterior}
-                            />
-                          )}
-                          {drilledCategoria === "cpr_receber" && fundoId && (
-                            <DrillCprContent
-                              fundoId={fundoId}
-                              data={balancoEstruturalQuery.data?.data ?? dayIso}
-                              dataAnterior={balancoEstruturalQuery.data?.data_anterior}
-                              side="receber"
-                            />
-                          )}
-                          {drilledCategoria === "cpr_pagar" && fundoId && (
-                            <DrillContasAPagarContent
-                              fundoId={fundoId}
-                              data={balancoEstruturalQuery.data?.data ?? dayIso}
-                              dataAnterior={balancoEstruturalQuery.data?.data_anterior}
-                            />
-                          )}
-                          {drilledCategoria && COTAS_KEYS.has(drilledCategoria) && fundoId && (
-                            <DrillCotasContent
-                              fundoId={fundoId}
-                              data={balancoEstruturalQuery.data?.data ?? dayIso}
-                              dataAnterior={balancoEstruturalQuery.data?.data_anterior}
-                            />
-                          )}
-                          {drilledCategoria && ORIGEM_KEYS.has(drilledCategoria) && fundoId && (
-                            <DrillOrigemContent
-                              fundoId={fundoId}
-                              data={balancoEstruturalQuery.data?.data ?? dayIso}
-                              linha={drilledCategoria}
-                            />
-                          )}
-                        </BalancoInspector>
-                        )}
-                      </div>
-                      {/* Detector de nao-reconhecidos (2026-05-27, pos-VCNC):
-                          spanned full-width sob a reconciliacao que ele explica. */}
-                      <div className="xl:col-span-5">
-                        <NaoReconhecidosPanel
-                          itens={balancoEstruturalQuery.data?.nao_reconhecidos}
-                          loading={balancoEstruturalQuery.isLoading}
-                        />
-                      </div>
-                      {/* Barra fina do chat-investigador (Camada 2). Descobrível
-                          sempre, grande só quando aberto. O único LLM da página. */}
-                      <button
-                        type="button"
-                        onClick={() => setChatOpen(true)}
-                        disabled={!fundoId}
-                        className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-left text-[13px] text-gray-500 transition-colors hover:border-violet-300 hover:bg-violet-50/40 disabled:opacity-50 dark:border-gray-800 dark:bg-[#090E1A] dark:text-gray-400 dark:hover:border-violet-800 dark:hover:bg-violet-950/20 xl:col-span-5"
-                      >
-                        <RiSparkling2Line className="size-4 text-violet-500" aria-hidden />
-                        Perguntar sobre o dia — por que a cota mexeu, o que vigiar, investigar uma linha…
-                      </button>
+                      <NaoReconhecidosPanel
+                        itens={balancoEstruturalQuery.data?.nao_reconhecidos}
+                        loading={balancoEstruturalQuery.isLoading}
+                      />
                     </div>
                   )}
                   {activeTab === "movimentacoes" && (
@@ -1237,7 +1148,7 @@ export default function CotaSubPage() {
           F3 redesign 2026-05-24: Sheet vira FALLBACK pra < xl. Em xl+ o slot
           direito da grid renderiza o BalancoInspector com o mesmo conteudo. */}
       <CategoriaDrillSheet
-        open={drilledCategoria !== null && !isXl}
+        open={drilledCategoria !== null}
         onClose={() => setDrilledCategoria(null)}
         categoria={drilledCategoriaObj}
         fundoNome={balancoEstruturalQuery.data?.fundo_nome ?? ""}
@@ -1360,8 +1271,20 @@ export default function CotaSubPage() {
         )}
       </DrillDownSheet>
 
-      {/* Chat-investigador (Camada 2) — o ÚNICO LLM da página, sob demanda.
-          Pré-carregado (backend) com o headline + detalhamento do dia. */}
+      {/* Chat-investigador — FAB flutuante (Camada 2, o ÚNICO LLM da página).
+          Descobrível sempre, grande só quando aberto. */}
+      {fundoSelecionado && !chatOpen && (
+        <button
+          type="button"
+          onClick={() => setChatOpen(true)}
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-violet-600 px-4 py-3 text-[13px] font-medium text-white shadow-lg shadow-violet-600/30 transition-colors hover:bg-violet-700"
+        >
+          <RiSparkling2Line className="size-4" aria-hidden />
+          Perguntar sobre o dia
+        </button>
+      )}
+
+      {/* Chat-investigador (Camada 2) — pré-carregado (backend) com o resumo do dia. */}
       <ChatVariacaoDrawer
         fundoId={fundoId}
         data={dayIso}

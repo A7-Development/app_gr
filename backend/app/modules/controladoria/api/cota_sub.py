@@ -38,6 +38,9 @@ from app.modules.controladoria.schemas.detalhamento_dia import DetalhamentoDiaRe
 from app.modules.controladoria.schemas.variacao_headline import (
     VariacaoHeadlineResponse,
 )
+from app.modules.controladoria.schemas.variacao_resumo import (
+    VariacaoResumoResponse,
+)
 from app.modules.controladoria.services.balanco_patrimonial import (
     compute_balanco_estrutural,
 )
@@ -52,6 +55,9 @@ from app.modules.controladoria.services.cota_sub_drill_pdd import compute_drill_
 from app.modules.controladoria.services.detalhamento_dia import compute_detalhamento_dia
 from app.modules.controladoria.services.variacao_headline import (
     compute_variacao_headline,
+)
+from app.modules.controladoria.services.variacao_resumo import (
+    compute_variacao_resumo,
 )
 from app.modules.controladoria.services.variacoes_dia import compute_variacoes_dia
 from app.modules.integracoes.public import listar_datas_disponiveis_qitech
@@ -120,6 +126,37 @@ async def variacao_headline(
     """
     try:
         return await compute_variacao_headline(
+            db,
+            tenant_id=principal.tenant_id,
+            ua_id=fundo_id,
+            data_d0=data,
+            data_d1=data_anterior,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/variacao/resumo", response_model=VariacaoResumoResponse)
+async def variacao_resumo(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0). D-1 e o dia util anterior.")],
+    data_anterior: Annotated[
+        date | None,
+        Query(description="Override opcional para D-1."),
+    ] = None,
+    _: None = _Guard,
+) -> VariacaoResumoResponse:
+    """Resumo do dia — decomposicao causal da variacao da Cota Sub por grupo de
+    balanco (waterfall + detalhamento + atencoes), 100% estruturado (zero LLM).
+
+    Os 6 grupos vem com impacto giro-limpo; Disponibilidades e o plug (Σ grupos ==
+    cota_delta por construcao). Ancoras = MEC; reconciliacao expoe o residuo vs
+    oficial. Substitui o /variacao/headline na aba Resumo do dia (2026-06-01).
+    """
+    try:
+        return await compute_variacao_resumo(
             db,
             tenant_id=principal.tenant_id,
             ua_id=fundo_id,
