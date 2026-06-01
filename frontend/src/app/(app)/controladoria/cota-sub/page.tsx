@@ -100,7 +100,6 @@ import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 import { toast } from "sonner"
 
 import { ActiveBackfillJobsPanel } from "./_components/ActiveBackfillJobsPanel"
-import { AgenteVariacaoPanel } from "./_components/AgenteVariacaoPanel"
 import { BalancoInspector } from "./_components/BalancoInspector"
 import { BalancoPatrimonialHero } from "./_components/BalancoPatrimonialHero"
 import { NaoReconhecidosPanel } from "./_components/NaoReconhecidosPanel"
@@ -109,7 +108,8 @@ import { DrillCprContent } from "./_components/DrillCprContent"
 import { DrillDcContent } from "./_components/DrillDcContent"
 import { DrillOrigemContent } from "./_components/DrillOrigemContent"
 import { DrillPddContent } from "./_components/DrillPddContent"
-import { useAgenteVariacaoStream } from "@/lib/hooks/controladoria"
+import { VariacaoHeadline } from "./_components/VariacaoHeadline"
+import { useVariacaoHeadline } from "@/lib/hooks/controladoria"
 import type {
   BalancoEstruturalResponse,
   CategoriaPatrimonial,
@@ -685,13 +685,6 @@ export default function CotaSubPage() {
   // matchMedia com SSR-safe init (false no first paint, atualiza no useEffect).
   const isXl = useMediaQuery("(min-width: 1280px)")
 
-  // Agente IA — analise da variacao da Cota Sub Jr (2026-05-25).
-  // Streaming SSE (2026-05-26): o trabalho do agente chega ao vivo — tool
-  // calls + raciocinio narrado — via run-stream. Cache no backend evita
-  // rerodar com mesmos params (cache hit = result imediato, sem steps).
-  const [agentePanelOpen, setAgentePanelOpen] = React.useState(false)
-  const agente = useAgenteVariacaoStream()
-
   // Lookup do UUID da UA selecionada (endpoint backend exige fundo_id).
   const fundoId = React.useMemo(() => {
     if (fundo === "Todos") return null
@@ -700,6 +693,8 @@ export default function CotaSubPage() {
 
   const dayIso          = React.useMemo(() => format(day, "yyyy-MM-dd"), [day])
   const balancoEstruturalQuery = useBalancoEstrutural(fundoId, dayIso)
+  // Headline estruturado (Fase 1) — o read de 10s. Substitui o monolito.
+  const headlineQuery   = useVariacaoHeadline(fundoId, dayIso)
   const drilledCategoriaObj = React.useMemo(
     () => toInspectorCategoria(balancoEstruturalQuery.data, drilledCategoria),
     [balancoEstruturalQuery.data, drilledCategoria],
@@ -1086,6 +1081,17 @@ export default function CotaSubPage() {
                 <>
                   {activeTab === "eventos" && (
                     <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">
+                      {/* Headline estruturado (Fase 1) — o read de 10s, full-width
+                          no topo. Veredito + drivers giro-limpos + flags. Drivers
+                          clicaveis abrem a evidencia (drill). Substitui o MOCK_INSIGHTS
+                          + o botao morto do monolito. */}
+                      <div className="xl:col-span-5">
+                        <VariacaoHeadline
+                          data={headlineQuery.data}
+                          loading={headlineQuery.isLoading}
+                          onDrillCategoria={setDrilledCategoria}
+                        />
+                      </div>
                       <div className="xl:col-span-2">
                       <BalancoPatrimonialHero
                         data={balancoEstruturalQuery.data}
@@ -1097,15 +1103,6 @@ export default function CotaSubPage() {
                         }
                         onRetry={() => balancoEstruturalQuery.refetch()}
                         onDrillCategoria={setDrilledCategoria}
-                        onExplicarVariacao={
-                          fundoId
-                            ? () => {
-                                setAgentePanelOpen(true)
-                                void agente.run(fundoId, dayIso)
-                              }
-                            : undefined
-                        }
-                        explicarVariacaoLoading={agente.state.status === "streaming"}
                       />
                       </div>
                       {/* F3 redesign 2026-05-24: slot direito vira BalancoInspector
@@ -1317,21 +1314,9 @@ export default function CotaSubPage() {
         )}
       </DrillDownSheet>
 
-      {/* Agente IA — analise da variacao da Cota Sub Jr (streaming SSE) */}
-      <AgenteVariacaoPanel
-        open={agentePanelOpen}
-        onClose={() => setAgentePanelOpen(false)}
-        status={agente.state.status}
-        toolsLog={agente.state.toolsLog}
-        startedAt={agente.state.startedAt}
-        result={agente.state.result}
-        error={agente.state.error}
-        onRetry={
-          fundoId
-            ? () => void agente.run(fundoId, dayIso)
-            : undefined
-        }
-      />
+      {/* Monolito (analista_variacao_cota) APOSENTADO 2026-05-31: o read da
+          variacao agora e o VariacaoHeadline estruturado (Fase 1). O LLM volta
+          como chat-investigador sob demanda na Fase 4. */}
 
     </div>
   )
