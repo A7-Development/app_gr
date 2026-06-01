@@ -218,12 +218,19 @@ async def request_fidc_estoque_report(
             )
         except httpx.HTTPError as e:
             raise QiTechHttpError(
-                status_code=0,
-                detail=f"erro de rede: {type(e).__name__}: {e}",
+                f"falha de rede em POST /v2/queue/scheduler/report/fidc-estoque: "
+                f"{type(e).__name__}({e!r})",
+                status_code=None,
+                detail=f"{type(e).__name__}: {e!r}",
             ) from e
 
     if resp.status_code >= 400:
-        raise QiTechHttpError(status_code=resp.status_code, detail=resp.text[:500])
+        raise QiTechHttpError(
+            f"QiTech devolveu {resp.status_code} em "
+            f"POST /v2/queue/scheduler/report/fidc-estoque",
+            status_code=resp.status_code,
+            detail=resp.text[:500],
+        )
 
     try:
         post_body = resp.json()

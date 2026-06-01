@@ -89,7 +89,10 @@ async def _list_qitech_jobs_for_tenant(
         )
     if resp.status_code >= 400:
         raise QiTechHttpError(
-            status_code=resp.status_code, detail=resp.text[:500]
+            f"QiTech devolveu {resp.status_code} em "
+            f"GET /v2/queue/job?reportType={report_type}",
+            status_code=resp.status_code,
+            detail=resp.text[:500],
         )
     body = resp.json()
     return list(body.get("jobs") or [])
