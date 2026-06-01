@@ -3066,6 +3066,47 @@ export type DetalhamentoDiaResponse = {
 export type ChatMensagem = { role: "user" | "assistant"; content: string }
 export type ChatVariacaoResposta = { resposta: string; tools_usadas: string[] }
 
+// Endpoint /controladoria/cota-sub/drill/contas-a-pagar — detalhe do Auditor de
+// Contas a Pagar (provisoes + PAGAMENTOS + impacto nao provisionado). Money coercido.
+export type MovimentoProvisao = {
+  descricao: string
+  saldo_d1:  number
+  saldo_d0:  number
+  delta:     number
+  tipo:      "apropriacao" | "nova_provisao" | "baixa" | "quitada"
+}
+export type PagamentoDespesa = {
+  canal:         "codigo_proprio" | "tarifa_ted" | "ted_fornecedor"
+  historico:     string
+  label:         string
+  contrapartida: string | null
+  valor:         number
+  provisionado:  boolean
+}
+export type CprForaEscopo = {
+  descricao: string
+  natureza:  string
+  saldo_d0:  number
+  dono:      string
+}
+export type ConferenciaContasAPagarResponse = {
+  fundo_id:        string
+  fundo_nome:      string
+  data:            string
+  data_anterior:   string | null
+  saldo_cpr_d1:    number
+  saldo_cpr_d0:    number
+  delta_cpr:       number
+  total_apropriacao: number
+  total_baixa:     number
+  provisoes:       MovimentoProvisao[]
+  pagamentos:      PagamentoDespesa[]
+  total_pago:      number
+  total_nao_provisionado: number
+  impacto_resultado_nao_provisionado: number
+  fora_escopo:     CprForaEscopo[]
+}
+
 
 // Endpoint /controladoria/cota-sub/balanco-estrutural — redesign 2026-05-27.
 // Coerente por natureza + sinal: PDD = contra-ativo (abate DC), CPR dividido
@@ -4249,6 +4290,36 @@ export const controladoria = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       areas: (raw.areas ?? []).map((a: any) => ({ ...a, delta: Number(a.delta ?? 0) })),
     } as DetalhamentoDiaResponse
+  },
+
+  cotaSubDrillContasAPagar: async (
+    fundoId: string,
+    data: string,
+    dataAnterior?: string,
+  ): Promise<ConferenciaContasAPagarResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await apiClient.get<any>(
+      `/controladoria/cota-sub/drill/contas-a-pagar?${params.toString()}`,
+    )
+    const num = (v: unknown) => Number(v ?? 0)
+    return {
+      ...raw,
+      saldo_cpr_d1: num(raw.saldo_cpr_d1), saldo_cpr_d0: num(raw.saldo_cpr_d0),
+      delta_cpr: num(raw.delta_cpr), total_apropriacao: num(raw.total_apropriacao),
+      total_baixa: num(raw.total_baixa), total_pago: num(raw.total_pago),
+      total_nao_provisionado: num(raw.total_nao_provisionado),
+      impacto_resultado_nao_provisionado: num(raw.impacto_resultado_nao_provisionado),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      provisoes: (raw.provisoes ?? []).map((p: any) => ({
+        ...p, saldo_d1: num(p.saldo_d1), saldo_d0: num(p.saldo_d0), delta: num(p.delta),
+      })),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      pagamentos: (raw.pagamentos ?? []).map((p: any) => ({ ...p, valor: num(p.valor) })),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      fora_escopo: (raw.fora_escopo ?? []).map((f: any) => ({ ...f, saldo_d0: num(f.saldo_d0) })),
+    } as ConferenciaContasAPagarResponse
   },
 
   cotaSubDrillCotas: async (

@@ -20,6 +20,9 @@ from app.modules.controladoria.schemas.chat_variacao import (
     ChatVariacaoRequest,
     ChatVariacaoResposta,
 )
+from app.modules.controladoria.schemas.conferencia_contas_a_pagar import (
+    ConferenciaContasAPagarResponse,
+)
 from app.modules.controladoria.schemas.conferencia_cotas import ConferenciaCotasResponse
 from app.modules.controladoria.schemas.cota_sub import (
     BalancoEstruturalResponse,
@@ -37,6 +40,9 @@ from app.modules.controladoria.schemas.variacao_headline import (
 )
 from app.modules.controladoria.services.balanco_patrimonial import (
     compute_balanco_estrutural,
+)
+from app.modules.controladoria.services.conferencia_contas_a_pagar import (
+    compute_movimento_contas_a_pagar,
 )
 from app.modules.controladoria.services.conferencia_cotas import compute_movimento_cotas
 from app.modules.controladoria.services.cota_sub_drill_cpr import compute_drill_cpr
@@ -402,6 +408,39 @@ async def drill_cpr(
             data_d0=data,
             data_d1=data_anterior,
             side=side,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/drill/contas-a-pagar", response_model=ConferenciaContasAPagarResponse)
+async def drill_contas_a_pagar(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0). D-1 e o dia util anterior.")],
+    data_anterior: Annotated[
+        date | None,
+        Query(description="Override opcional para D-1."),
+    ] = None,
+    _: None = _Guard,
+) -> ConferenciaContasAPagarResponse:
+    """Drill da linha Contas a Pagar — o detalhe COMPLETO do Auditor de Contas a
+    Pagar (nao so a provisao).
+
+    Duas metades + o impacto: (1) provisoes (CPR<0) por apropriacao/baixa; (2)
+    PAGAMENTOS do caixa classificados por codigo do extrato, com flag de
+    `provisionado`; e o campo-chave `impacto_resultado_nao_provisionado` — a
+    despesa que saiu de caixa ALEM da provisao e bateu no PL Sub no dia (ex.: o
+    R$ 15k do 28/05). Reusa compute_movimento_contas_a_pagar (tool do agente).
+    """
+    try:
+        return await compute_movimento_contas_a_pagar(
+            db,
+            tenant_id=principal.tenant_id,
+            ua_id=fundo_id,
+            data_d0=data,
+            data_d1=data_anterior,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
