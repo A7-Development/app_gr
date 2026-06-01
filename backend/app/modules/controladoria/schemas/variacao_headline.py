@@ -81,6 +81,9 @@ class VariacaoHeadlineResponse(BaseModel):
     cota_sub_d1:    Decimal
     cota_sub_d0:    Decimal
     cota_sub_delta: Decimal = Field(description="ΔPL Sub Jr (o numero que estamos explicando).")
+    # A equacao do balanco (a verdade concreta, sem abstracao): Ativo - Passivo = Sub.
+    delta_ativo:    Decimal = Field(description="Δ total do Ativo (giro JA netado no total).")
+    delta_passivo:  Decimal = Field(description="Δ total do Passivo (inclui Contas a Pagar + Cotas Sr/Mez).")
     reconciliacao_residuo: Decimal = Field(description="Residuo do dia vs MEC. ~0 = fecha.")
     reconciliacao_ok:      bool
     n_atencao:      int = Field(description="Quantidade de flags (atencoes do dia).")

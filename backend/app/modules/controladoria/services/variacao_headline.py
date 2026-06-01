@@ -154,7 +154,17 @@ async def compute_variacao_headline(
         papel = dc.mutacao_papeis[0] if dc.mutacao_papeis else None
         desc = "Mutacao silenciosa na carteira"
         if papel is not None:
-            desc = f"Mutacao: {papel.cedente_nome[:24]}->{papel.sacado_nome[:18]} (VN {_fmt(papel.vn_d1)}->{_fmt(papel.vn_d0)})"
+            # O que MUTOU (a causa) = o parametro editado; o IMPACTO = ΔVP.
+            mudou: list[str] = []
+            if papel.mudou_vn:
+                pct_vn = ((papel.vn_d0 - papel.vn_d1) / papel.vn_d1 * 100) if papel.vn_d1 else ZERO
+                mudou.append(f"VN {pct_vn:+.0f}% ({_fmt(papel.vn_d1)}->{_fmt(papel.vn_d0)})")
+            if papel.mudou_taxa:
+                mudou.append(f"taxa {float(papel.taxa_d1):.4f}->{float(papel.taxa_d0):.4f}")
+            if papel.mudou_venc:
+                mudou.append("vencimento")
+            causa = " · ".join(mudou) if mudou else "parametro"
+            desc = f"Mutacao {papel.cedente_nome[:22]}->{papel.sacado_nome[:16]}: {causa}"
         flags.append(HeadlineFlag(
             tipo="mutacao", descricao=desc, valor=res.mutacao_total,
             drill_key="dc", investigavel=True,
@@ -206,6 +216,8 @@ async def compute_variacao_headline(
         cota_sub_d1=bal.pl_sub_d1,
         cota_sub_d0=bal.pl_sub_d0,
         cota_sub_delta=cota_delta,
+        delta_ativo=bal.total_ativo_delta,
+        delta_passivo=bal.total_passivo_delta,
         reconciliacao_residuo=bal.reconciliacao.residuo_delta,
         reconciliacao_ok=bal.reconciliacao.dentro_tolerancia,
         n_atencao=len(flags),
