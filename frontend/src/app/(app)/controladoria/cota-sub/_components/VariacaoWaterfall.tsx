@@ -86,6 +86,7 @@ export function VariacaoWaterfall({ data, loading, onDrillGrupo }: VariacaoWater
   return (
     <VarianceBridgeCard
       data={bridge}
+      zoomToActivity
       title="O que moveu a cota"
       caption="PL Sub D-1 (MEC) → transformações → PL Sub D0 (MEC)"
       headerKpi={{

@@ -119,14 +119,38 @@ function shortAxisLabel(memberId: string, memberLabel: string): string {
  *
  * Anchors sao "fixos" (do zero) — facilita leitura visual de "valor total".
  */
-function buildBars(data: Operacoes2VarianceBridgeData): BridgeBar[] {
+/**
+ * Piso do eixo quando `zoomToActivity`: o menor nivel (ancoras + running dos
+ * drivers) menos uma folga. Faz o eixo dar ZOOM na faixa onde a acao acontece —
+ * essencial quando o nivel (ex.: PL de fundo R$ 12 mi) e ordens de magnitude
+ * maior que as variacoes (alguns milhares). Escala-agnostico: serve a qualquer PL.
+ */
+function computeFloor(data: Operacoes2VarianceBridgeData): number {
+  const pts: number[] = [data.prior_anchor_value]
+  let run = data.prior_anchor_value
+  const middle = [...data.drivers]
+  if (data.outros_rollup) middle.push(data.outros_rollup)
+  for (const d of middle) {
+    run += d.contribution_brl
+    pts.push(run)
+  }
+  pts.push(data.current_anchor_value)
+  const lo = Math.min(...pts)
+  const hi = Math.max(...pts)
+  const pad = (hi - lo) * 0.18 || Math.abs(hi) * 0.002 || 1
+  return lo - pad
+}
+
+function buildBars(data: Operacoes2VarianceBridgeData, floor = 0): BridgeBar[] {
   const bars: BridgeBar[] = []
-  // Prior anchor — anchors usam o mesmo label em axis e tooltip.
+  // Prior anchor — anchors usam o mesmo label em axis e tooltip. Com `floor`
+  // (zoomToActivity), a ancora desenha do piso ao valor (barra "flutuante"),
+  // nao do zero — senao o nivel do PL esmaga as variacoes.
   bars.push({
     category: data.prior_anchor_label,
     fullLabel: data.prior_anchor_label,
-    bar: data.prior_anchor_value,
-    base: 0,
+    bar: data.prior_anchor_value - floor,
+    base: floor,
     color: COLOR_ANCHOR,
     colorDark: COLOR_ANCHOR_DARK,
     kind: "anchor",
@@ -157,12 +181,12 @@ function buildBars(data: Operacoes2VarianceBridgeData): BridgeBar[] {
     running += contrib
   }
 
-  // Current anchor (do zero)
+  // Current anchor (do piso quando zoom, senao do zero)
   bars.push({
     category: data.current_anchor_label,
     fullLabel: data.current_anchor_label,
-    bar: data.current_anchor_value,
-    base: 0,
+    bar: data.current_anchor_value - floor,
+    base: floor,
     color: COLOR_ANCHOR,
     colorDark: COLOR_ANCHOR_DARK,
     kind: "anchor",
@@ -195,6 +219,14 @@ export interface VarianceBridgeCardProps {
   actions?: React.ReactNode
   /** Forca dark colors (provider deve detectar de useEChartsTheme normalmente). */
   className?: string
+  /**
+   * Zoom dinamico na faixa de atividade: o eixo Y vai de (menor nivel - folga)
+   * ao (maior nivel + folga) e as ancoras flutuam do piso, em vez de barras
+   * plenas do zero. Use quando o NIVEL (PL de fundo, NAV) e ordens de magnitude
+   * maior que as VARIACOES — senao o eixo do-zero esmaga os drivers. Serve a
+   * qualquer escala de PL. Default false (mantem o comportamento do operacoes2).
+   */
+  zoomToActivity?: boolean
 }
 
 export function VarianceBridgeCard({
@@ -207,8 +239,13 @@ export function VarianceBridgeCard({
   footer,
   actions,
   className,
+  zoomToActivity = false,
 }: VarianceBridgeCardProps) {
-  const bars = React.useMemo(() => buildBars(data), [data])
+  const floor = React.useMemo(
+    () => (zoomToActivity ? computeFloor(data) : 0),
+    [data, zoomToActivity],
+  )
+  const bars = React.useMemo(() => buildBars(data, floor), [data, floor])
 
   // KPI auto-derivado quando o caller nao passou explicitamente:
   // value = current anchor (ex.: VOP MTD), delta = delta_pct (MTD same-period).
@@ -269,8 +306,10 @@ export function VarianceBridgeCard({
         type: "value",
         // scale=true: eixo nao parte do zero, encaixa nos dados. Faz com que
         // os segments de drivers (que sao pequenos vs anchors) ocupem fracao
-        // legivel da altura do chart.
+        // legivel da altura do chart. Com zoomToActivity, ancora explicitamente
+        // no piso calculado (anchors flutuam — zoom na faixa do nivel do PL).
         scale: true,
+        min: zoomToActivity ? floor : undefined,
         axisLabel: {
           formatter: (v: number) => fmtBRLCompact.format(v),
           fontSize: 10,
