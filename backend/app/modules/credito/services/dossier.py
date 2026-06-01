@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agentic.playbooks.models.definition import PlaybookDefinition
 from app.agentic.playbooks.models.run import PlaybookRun, PlaybookRunStep
 from app.agentic.playbooks.services import engine as workflow_engine
-from app.core.enums import DossierStatus, NodeRunStatus, PlaybookRunStatus
+from app.core.enums import (
+    CompanyRole,
+    DossierStatus,
+    NodeRunStatus,
+    PersonRole,
+    PlaybookRunStatus,
+)
 from app.modules.credito.models.analysis import CreditDossierAnalysis
+from app.modules.credito.models.company import CreditDossierCompany
 from app.modules.credito.models.dossier import CreditDossier
+from app.modules.credito.models.person import CreditDossierPerson
 
 
 class DossierServiceError(RuntimeError):
@@ -257,6 +267,234 @@ async def absorb_identity_from_human_input(
     await db.flush()
 
 
+# ─── Graph persistence (handoff esteira-credito §3) ─────────────────────────
+#
+# Persiste o "grafo de entrada societario" coletado por nodes human_input:
+# empresa-alvo (role TARGET) + coligadas (GROUP_MEMBER) + socios (PARTNER com
+# %participacao). Antes desta camada o dado morria no output do node.
+
+_GRAPH_TARGET_CNPJ_KEYS = {"cnpj", "target_cnpj"}
+_GRAPH_NAME_KEYS = {"razao_social", "target_name", "nome", "name"}
+_GRAPH_FOUNDING_KEYS = {"data_fundacao", "founding_date", "data_constituicao", "fundacao"}
+_GRAPH_SOCIOS_KEYS = {"socios", "partners", "quadro_societario"}
+_GRAPH_COLIGADAS_KEYS = {"outros_cnpjs", "coligadas", "group_cnpjs"}
+
+_SOCIO_NAME_KEYS = ("nome", "name", "razao_social")
+_SOCIO_CPF_KEYS = ("cpf", "documento", "doc")
+_SOCIO_PCT_KEYS = ("participacao_pct", "ownership_pct", "participacao", "percentual", "pct")
+_COLIGADA_CNPJ_KEYS = ("cnpj", "documento", "doc")
+_COLIGADA_NAME_KEYS = ("nome", "name", "razao_social")
+
+
+def _pick(d: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    """Case-insensitive lookup of the first matching key in a dict."""
+    lowered = {k.lower(): v for k, v in d.items()}
+    for k in keys:
+        if k in lowered:
+            return lowered[k]
+    return None
+
+
+def _first_str(submitted: dict[str, Any], keys: set[str]) -> str | None:
+    for k, v in submitted.items():
+        if k.lower() in keys and isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
+
+
+def _first_list(submitted: dict[str, Any], keys: set[str]) -> list | None:
+    for k, v in submitted.items():
+        if k.lower() in keys and isinstance(v, list):
+            return v
+    return None
+
+
+def _parse_date_loose(value: str | None) -> date | None:
+    """Parse YYYY-MM-DD (ISO) or DD/MM/YYYY into a date; None if unparseable."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    s = value.strip()
+    try:
+        return date.fromisoformat(s[:10])
+    except ValueError:
+        pass
+    parts = s.replace("-", "/").split("/")
+    if len(parts) == 3 and 1 <= len(parts[0]) <= 2:
+        try:
+            d_, m_, y_ = int(parts[0]), int(parts[1]), int(parts[2])
+            return date(y_, m_, d_)
+        except ValueError:
+            return None
+    return None
+
+
+def _parse_pct(value: Any) -> Decimal | None:
+    """Parse an ownership percentage: accepts 40, 40.5, '40,5', '40%'."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            return None
+    if isinstance(value, str):
+        s = value.strip().rstrip("%").strip().replace(",", ".")
+        if not s:
+            return None
+        try:
+            return Decimal(s)
+        except (InvalidOperation, ValueError):
+            return None
+    return None
+
+
+async def absorb_graph_from_human_input(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    dossier_id: UUID,
+    submitted: dict[str, Any],
+) -> None:
+    """Persist the entry societary graph (target company + group + partners).
+
+    Scans the human_input `submitted` dict for company / partner keys and
+    writes `credit_dossier_company` (TARGET + GROUP_MEMBER) and
+    `credit_dossier_person` (PARTNER with ownership_pct). No-op when the form
+    carried no graph-related fields, so it can run on every submit (like
+    `absorb_identity_from_human_input`).
+
+    Idempotent: re-submitting re-syncs — the partner set for the target is
+    replaced, the target company is updated in place.
+    """
+    if not submitted:
+        return
+
+    raw_cnpj = _first_str(submitted, _GRAPH_TARGET_CNPJ_KEYS)
+    target_cnpj: str | None = None
+    if raw_cnpj:
+        digits = _digits(raw_cnpj)
+        if len(digits) == 14:
+            target_cnpj = digits
+    name = _first_str(submitted, _GRAPH_NAME_KEYS)
+    founding = _parse_date_loose(_first_str(submitted, _GRAPH_FOUNDING_KEYS))
+    socios = _first_list(submitted, _GRAPH_SOCIOS_KEYS)
+    coligadas = _first_list(submitted, _GRAPH_COLIGADAS_KEYS)
+
+    if not (target_cnpj or name or founding or socios or coligadas):
+        return
+
+    # ── Empresa-alvo (TARGET) — upsert (1 por dossie) ───────────────────
+    target = (
+        await db.execute(
+            select(CreditDossierCompany).where(
+                CreditDossierCompany.tenant_id == tenant_id,
+                CreditDossierCompany.dossier_id == dossier_id,
+                CreditDossierCompany.role == CompanyRole.TARGET,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if target is None and target_cnpj:
+        dossier = await get_dossier(db, tenant_id=tenant_id, dossier_id=dossier_id)
+        fallback_name = name or (dossier.target_name if dossier else None) or target_cnpj
+        target = CreditDossierCompany(
+            tenant_id=tenant_id,
+            dossier_id=dossier_id,
+            cnpj=target_cnpj,
+            name=fallback_name[:255],
+            role=CompanyRole.TARGET,
+            founding_date=founding,
+        )
+        db.add(target)
+    elif target is not None:
+        if target_cnpj:
+            target.cnpj = target_cnpj
+        if name:
+            target.name = name[:255]
+        if founding is not None:
+            target.founding_date = founding
+    await db.flush()
+
+    company_cnpj = target.cnpj if target is not None else target_cnpj
+
+    # ── Socios (PARTNER) — replace set p/ idempotencia ──────────────────
+    if socios is not None and company_cnpj is not None:
+        await db.execute(
+            delete(CreditDossierPerson).where(
+                CreditDossierPerson.tenant_id == tenant_id,
+                CreditDossierPerson.dossier_id == dossier_id,
+                CreditDossierPerson.role == PersonRole.PARTNER,
+                CreditDossierPerson.company_cnpj == company_cnpj,
+            )
+        )
+        for item in socios:
+            if not isinstance(item, dict):
+                continue
+            snome = _pick(item, _SOCIO_NAME_KEYS)
+            if not isinstance(snome, str) or not snome.strip():
+                continue
+            cpf_red: str | None = None
+            scpf = _pick(item, _SOCIO_CPF_KEYS)
+            if isinstance(scpf, str):
+                cd = _digits(scpf)
+                if cd:
+                    cpf_red = cd[-4:]
+            db.add(
+                CreditDossierPerson(
+                    tenant_id=tenant_id,
+                    dossier_id=dossier_id,
+                    name=snome.strip()[:255],
+                    role=PersonRole.PARTNER,
+                    company_cnpj=company_cnpj,
+                    cpf_redacted=cpf_red,
+                    ownership_pct=_parse_pct(_pick(item, _SOCIO_PCT_KEYS)),
+                )
+            )
+        await db.flush()
+
+    # ── Coligadas (GROUP_MEMBER) — upsert (sem docs, lente de risco) ────
+    if coligadas:
+        for item in coligadas:
+            ccnpj: str | None = None
+            cname: str | None = None
+            if isinstance(item, str):
+                cd = _digits(item)
+                if len(cd) == 14:
+                    ccnpj = cd
+            elif isinstance(item, dict):
+                rawc = _pick(item, _COLIGADA_CNPJ_KEYS)
+                if isinstance(rawc, str):
+                    cd = _digits(rawc)
+                    if len(cd) == 14:
+                        ccnpj = cd
+                cn = _pick(item, _COLIGADA_NAME_KEYS)
+                if isinstance(cn, str) and cn.strip():
+                    cname = cn.strip()
+            if ccnpj is None:
+                continue
+            exists = (
+                await db.execute(
+                    select(CreditDossierCompany).where(
+                        CreditDossierCompany.tenant_id == tenant_id,
+                        CreditDossierCompany.dossier_id == dossier_id,
+                        CreditDossierCompany.cnpj == ccnpj,
+                        CreditDossierCompany.role == CompanyRole.GROUP_MEMBER,
+                    )
+                )
+            ).scalar_one_or_none()
+            if exists is None:
+                db.add(
+                    CreditDossierCompany(
+                        tenant_id=tenant_id,
+                        dossier_id=dossier_id,
+                        cnpj=ccnpj,
+                        name=(cname or ccnpj)[:255],
+                        role=CompanyRole.GROUP_MEMBER,
+                    )
+                )
+        await db.flush()
+
+
 async def save_bureau_analysis(
     db: AsyncSession,
     *,
@@ -453,6 +691,7 @@ async def compute_progress_map(
 __all__ = [
     "DossierServiceError",
     "NodeRunStatus",
+    "absorb_graph_from_human_input",
     "absorb_identity_from_human_input",
     "compute_progress_map",
     "create_dossier",

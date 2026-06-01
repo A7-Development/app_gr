@@ -1,9 +1,10 @@
 """CreditDossierCompany — companies linked to a dossier (target + economic group)."""
 
+from datetime import date
 from uuid import UUID, uuid4
 
+from sqlalchemy import Date, ForeignKey, String
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy import ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -43,6 +44,12 @@ class CreditDossierCompany(Base):
         ),
         nullable=False,
     )
+
+    # Data de fundacao/constituicao. Na Fatia 1 vem auto-declarada do cadastro
+    # (source self_declared); quando a Receita entrar, o adapter valida/cruza
+    # (familia cross-fonte). Lida pelo check `company_founding_age` (gate de
+    # elegibilidade: idade > N anos).
+    founding_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # Optional canonical data from Receita Federal / Junta Comercial
     receita_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

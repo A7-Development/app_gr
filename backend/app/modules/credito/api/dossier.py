@@ -300,6 +300,18 @@ async def submit_node_input(
         submitted=submitted,
     )
 
+    # If the human_input collected the entry societary graph (empresa-alvo,
+    # data de fundacao, socios com %participacao, coligadas), persist it into
+    # credit_dossier_company / credit_dossier_person. No-op caso o form nao
+    # carregue campos de grafo. Insumo dos checks deterministicos (idade da
+    # empresa, soma de participacoes).
+    await dossier_svc.absorb_graph_from_human_input(
+        db,
+        tenant_id=principal.tenant_id,
+        dossier_id=dossier_id,
+        submitted=submitted,
+    )
+
     # Sync dossier status from updated workflow run.
     await dossier_svc.sync_status_from_workflow(db, dossier=dossier)
     await db.commit()

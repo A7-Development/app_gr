@@ -14,6 +14,7 @@ from app.modules.credito.models.financial import CreditDossierFinancial
 from app.modules.credito.models.opinion import CreditDossierOpinion
 from app.modules.credito.models.person import CreditDossierPerson
 from app.modules.credito.models.pleito import CreditDossierPleito
+from app.modules.credito.models.policy import CreditPolicy, CreditPolicyActive
 from app.modules.credito.models.red_flag import CreditDossierRedFlag
 
 __all__ = [
@@ -30,6 +31,8 @@ __all__ = [
     "CreditDossierPerson",
     "CreditDossierPleito",
     "CreditDossierRedFlag",
+    "CreditPolicy",
+    "CreditPolicyActive",
     "DossierAttachment",
     "DossierStepLink",
     "DossierStepNote",
