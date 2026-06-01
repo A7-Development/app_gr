@@ -419,6 +419,54 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
           : `Diverge · resíduo ${fmtBRLSigned(dec.residuo)}`}
       </DrillClosureBadge>
 
+      {/* ── 0. Resultado do dia (smart) — separa GIRO (neutro) de VALUE-MOVER ──
+          O backend ja entrega resultado_do_dia; ate 2026-05-31 a UI ignorava e
+          mostrava o waterfall plano (DC +R$521k parecia a noticia, mas era 98%
+          giro). Aqui o que MOVE a cota fica em cima; o giro, neutro, ao lado. */}
+      {(() => {
+        const r = d.resultado_do_dia
+        const resultado =
+          r.carrego_apropriacao + r.apropriacao_antecipada + r.juros_mora
+          - r.desconto_concedido + r.mutacao_total
+        const giroLiq = r.giro_aquisicoes - r.giro_liquidacoes
+        const line = (label: string, v: number, opts?: { muted?: boolean; alert?: boolean }) => (
+          <div className="flex items-center justify-between">
+            <span className={cx(tableTokens.cellSecondary, opts?.alert && "text-amber-700 dark:text-amber-400")}>{label}</span>
+            <span className={cx("tabular-nums", opts?.muted ? "text-gray-500 dark:text-gray-400" : toneClass(v))}>{fmtBRLSigned(v)}</span>
+          </div>
+        )
+        return (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="rounded border border-gray-200 p-3 dark:border-gray-800">
+              <div className="text-[10px] uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
+                Resultado da carteira · move a cota
+              </div>
+              <div className={cx("mt-1 text-lg font-semibold tabular-nums", toneClass(resultado))}>
+                {fmtBRLSigned(resultado)}
+              </div>
+              <div className="mt-2 space-y-1 text-[11px]">
+                {line("carrego", r.carrego_apropriacao + r.apropriacao_antecipada)}
+                {r.juros_mora > 0 && line("mora", r.juros_mora)}
+                {r.desconto_concedido > 0 && line("desconto", -r.desconto_concedido)}
+                {Math.abs(r.mutacao_total) >= 1 && line("mutação", r.mutacao_total, { alert: r.mutacao_total < 0 })}
+              </div>
+            </div>
+            <div className="rounded border border-dashed border-gray-200 p-3 dark:border-gray-800">
+              <div className="text-[10px] uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
+                Giro · troca DC⇄caixa · neutro
+              </div>
+              <div className="mt-1 text-lg font-semibold tabular-nums text-gray-500 dark:text-gray-400">
+                {fmtBRL.format(giroLiq)}
+              </div>
+              <div className="mt-2 space-y-1 text-[11px]">
+                {line("compra", r.giro_aquisicoes, { muted: true })}
+                {line("liquidação", -r.giro_liquidacoes, { muted: true })}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* ── 1. Decomposicao do estoque ── */}
       <section>
         <DrillSectionTitle
