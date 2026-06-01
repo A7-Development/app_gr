@@ -49,12 +49,14 @@ import {
   AIPanel,
   useAIPanel,
 } from "@/design-system/components/AIPanel"
+import { TabNavigation, TabNavigationLink } from "@/components/tremor/TabNavigation"
 import { useUAs } from "@/lib/hooks/cadastros"
-import { useDrePivot } from "@/lib/hooks/controladoria"
+import { useDrePivot, useDreBreakdown } from "@/lib/hooks/controladoria"
 import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 
 import { DrePivotTable } from "./_components/DrePivotTable"
-import type { DrePivotFilters } from "@/lib/api-client"
+import { DreBreakdownTable } from "./_components/DreBreakdownTable"
+import type { DrePivotFilters, DreBreakdownFilters, DreDimensao } from "@/lib/api-client"
 
 // ───────────────────────────────────────────────────────────────────────────
 // Helpers / formatters
@@ -106,6 +108,15 @@ const MOCK_PROVENANCE: ProvenanceSource[] = [
   { label: "Classifier",    updated: "v2.0.0",    sla: "—",       stale: false },
 ]
 
+// Abas L3: Demonstracao (pivot, periodo) + breakdowns da receita (1 mes).
+const TABS = [
+  { key: "demonstracao", label: "Demonstração", dim: null },
+  { key: "natureza",     label: "Por Natureza", dim: "natureza" },
+  { key: "cedente",      label: "Por Cedente",  dim: "cedente" },
+  { key: "produto",      label: "Por Produto",  dim: "produto" },
+] as const
+type TabKey = (typeof TABS)[number]["key"]
+
 // ───────────────────────────────────────────────────────────────────────────
 // Page
 // ───────────────────────────────────────────────────────────────────────────
@@ -126,6 +137,8 @@ export default function DrePage() {
 
   const [fonte, setFonte] = React.useState<string>("")  // "" = Todas
 
+  const [activeTab, setActiveTab] = React.useState<TabKey>("demonstracao")
+
   const ai = useAIPanel()
 
   // Filtro do pivot principal
@@ -141,6 +154,19 @@ export default function DrePage() {
 
   const pivotQuery = useDrePivot(pivotFilters)
   const pivot = pivotQuery.data
+
+  // Breakdown da receita (1 mes = competencia "Fim"). So quando a aba e de breakdown.
+  const breakdownFilters = React.useMemo<DreBreakdownFilters | null>(() => {
+    const dim = TABS.find((t) => t.key === activeTab)?.dim
+    if (!dim) return null
+    return {
+      competencia: isoFirstOfMonth(competenciaAte),
+      dim: dim as DreDimensao,
+      fundoId: fundoBitfinId ?? undefined,
+    }
+  }, [activeTab, competenciaAte, fundoBitfinId])
+
+  const breakdownQuery = useDreBreakdown(breakdownFilters)
 
   // ────────────────────────────────────────────────────────────────────────
   // KpiHeadline — derivado dos totais agregados do pivot
@@ -370,7 +396,27 @@ export default function DrePage() {
           </div>
         </div>
 
-        {/* Z3/Z4 — KpiHeadline + DrePivotTable */}
+        {/* Z2.5 — Abas L3 (Demonstracao + breakdowns da receita) */}
+        <div className="shrink-0 border-b border-gray-200 bg-white px-6 dark:border-gray-800 dark:bg-gray-950">
+          <TabNavigation>
+            {TABS.map((t, i) => (
+              <TabNavigationLink
+                key={t.key}
+                href="#"
+                active={activeTab === t.key}
+                onClick={(e) => {
+                  e.preventDefault()
+                  setActiveTab(t.key)
+                }}
+                title={`Cmd/Ctrl + ${i + 1}`}
+              >
+                {t.label}
+              </TabNavigationLink>
+            ))}
+          </TabNavigation>
+        </div>
+
+        {/* Z3/Z4 — conteudo da aba ativa */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4">
           {fundoSemBitfin ? (
             <EmptyState
@@ -379,7 +425,7 @@ export default function DrePage() {
               description="O fundo selecionado nao tem bitfin_ua_id. Cadastre o mapping em Cadastros · UAs para habilitar a DRE."
               className="mt-4"
             />
-          ) : (
+          ) : activeTab === "demonstracao" ? (
             <div className="flex flex-col gap-4">
               <KpiHeadline
                 statement="Resultado do periodo"
@@ -391,6 +437,24 @@ export default function DrePage() {
               <DrePivotTable
                 pivot={pivot}
                 loading={pivotQuery.isLoading}
+              />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <KpiHeadline
+                statement={`Receita de ${labelMonth(competenciaAte)}`}
+                primary={{
+                  value: fmtBRLCompact.format(breakdownQuery.data?.totalReceita ?? 0),
+                  sub: `por ${TABS.find((t) => t.key === activeTab)?.label.toLowerCase()}`,
+                  tone: "positive" as const,
+                }}
+                diagnostics={[]}
+                loading={breakdownQuery.isLoading && !breakdownQuery.data}
+              />
+
+              <DreBreakdownTable
+                data={breakdownQuery.data}
+                loading={breakdownQuery.isLoading}
               />
             </div>
           )}

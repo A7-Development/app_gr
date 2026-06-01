@@ -4191,6 +4191,24 @@ export const controladoria = {
     )
     return _coerceDreFornecedores(raw)
   },
+
+  // Breakdown da receita de UM mes por dimensao (natureza/cedente/produto/
+  // subgrupo). Filtros entidadeId/natureza/subgrupo = drill (cruzar dimensoes).
+  dreBreakdown: async (
+    filters: DreBreakdownFilters,
+  ): Promise<DreBreakdownResponse> => {
+    const params = _dreParams(filters)
+    params.set("competencia", filters.competencia)
+    params.set("dim", filters.dim)
+    if (filters.entidadeId !== undefined)
+      params.set("entidade_id", String(filters.entidadeId))
+    if (filters.natureza) params.set("natureza", filters.natureza)
+    if (filters.subgrupo) params.set("subgrupo", filters.subgrupo)
+    const raw = await apiClient.get<DreBreakdownResponseRaw>(
+      `/controladoria/dre/breakdown?${params.toString()}`,
+    )
+    return _coerceDreBreakdown(raw)
+  },
 }
 
 // ── DRE — Tipos + helpers ──────────────────────────────────────────────────
@@ -4211,6 +4229,33 @@ export type DreDrillFornecedoresFilters = DrePivotFilters & {
   subgrupo?:  string
   descricao?: string
   top?:       number
+}
+
+export type DreDimensao = "natureza" | "cedente" | "produto" | "subgrupo"
+
+export type DreBreakdownFilters = DreBaseFilters & {
+  competencia: string  // YYYY-MM-DD (1o dia do mes)
+  dim:         DreDimensao
+  entidadeId?: number  // drill: filtra um cedente
+  natureza?:   string  // drill
+  subgrupo?:   string  // drill
+}
+
+export type DreBreakdownRow = {
+  chave:     string
+  label:     string
+  receita:   number
+  custo:     number
+  resultado: number
+}
+
+export type DreBreakdownResponse = {
+  competencia:     string
+  dim:             DreDimensao
+  linhas:          DreBreakdownRow[]
+  totalReceita:    number
+  totalCusto:      number
+  totalResultado:  number
 }
 
 function _dreParams(f: DreBaseFilters): URLSearchParams {
@@ -4443,6 +4488,40 @@ function _coerceDreFornecedores(r: DreFornecedoresResponseRaw): DreFornecedoresR
       quantidade:          f.quantidade,
     })),
     totalFornecedores: r.total_fornecedores,
+  }
+}
+
+type DreBreakdownRowRaw = {
+  chave:     string
+  label:     string
+  receita:   number | string
+  custo:     number | string
+  resultado: number | string
+}
+
+type DreBreakdownResponseRaw = {
+  competencia:     string
+  dim:             DreDimensao
+  linhas:          DreBreakdownRowRaw[]
+  total_receita:   number | string
+  total_custo:     number | string
+  total_resultado: number | string
+}
+
+function _coerceDreBreakdown(r: DreBreakdownResponseRaw): DreBreakdownResponse {
+  return {
+    competencia:    r.competencia,
+    dim:            r.dim,
+    linhas: r.linhas.map((l) => ({
+      chave:     l.chave,
+      label:     l.label,
+      receita:   Number(l.receita),
+      custo:     Number(l.custo),
+      resultado: Number(l.resultado),
+    })),
+    totalReceita:   Number(r.total_receita),
+    totalCusto:     Number(r.total_custo),
+    totalResultado: Number(r.total_resultado),
   }
 }
 
