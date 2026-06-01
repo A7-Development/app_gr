@@ -33,6 +33,7 @@ import {
   RiEqualizerLine,
   RiFundsLine,
   RiPlayLine,
+  RiSparkling2Line,
 } from "@remixicon/react"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 import type { EChartsOption } from "echarts"
@@ -106,11 +107,13 @@ import { NaoReconhecidosPanel } from "./_components/NaoReconhecidosPanel"
 import { CategoriaDrillSheet } from "./_components/CategoriaDrillSheet"
 import { DrillCprContent } from "./_components/DrillCprContent"
 import { DrillDcContent } from "./_components/DrillDcContent"
+import { ChatVariacaoDrawer } from "./_components/ChatVariacaoDrawer"
+import { DetalhamentoPanel } from "./_components/DetalhamentoPanel"
 import { DrillCotasContent } from "./_components/DrillCotasContent"
 import { DrillOrigemContent } from "./_components/DrillOrigemContent"
 import { DrillPddContent } from "./_components/DrillPddContent"
 import { VariacaoHeadline } from "./_components/VariacaoHeadline"
-import { useVariacaoHeadline } from "@/lib/hooks/controladoria"
+import { useVariacaoDetalhamento, useVariacaoHeadline } from "@/lib/hooks/controladoria"
 import type {
   BalancoEstruturalResponse,
   CategoriaPatrimonial,
@@ -700,6 +703,10 @@ export default function CotaSubPage() {
   const balancoEstruturalQuery = useBalancoEstrutural(fundoId, dayIso)
   // Headline estruturado (Fase 1) — o read de 10s. Substitui o monolito.
   const headlineQuery   = useVariacaoHeadline(fundoId, dayIso)
+  // Detalhamento (60%) — uma area por card, default do slot direito.
+  const detalhamentoQuery = useVariacaoDetalhamento(fundoId, dayIso)
+  // Chat-investigador (Camada 2) — summonable, o UNICO LLM da pagina.
+  const [chatOpen, setChatOpen] = React.useState(false)
   const drilledCategoriaObj = React.useMemo(
     () => toInspectorCategoria(balancoEstruturalQuery.data, drilledCategoria),
     [balancoEstruturalQuery.data, drilledCategoria],
@@ -1115,6 +1122,15 @@ export default function CotaSubPage() {
                           (hidden) e o page.tsx cai pro CategoriaDrillSheet
                           (overlay) controlado por isXl no render do Sheet. */}
                       <div className="hidden xl:col-span-3 xl:block">
+                        {!drilledCategoria ? (
+                          /* Default do slot direito: o Detalhamento do dia (60%).
+                             Cada area da sua tool, clicavel -> abre o drill. */
+                          <DetalhamentoPanel
+                            data={detalhamentoQuery.data}
+                            loading={detalhamentoQuery.isLoading}
+                            onDrillCategoria={setDrilledCategoria}
+                          />
+                        ) : (
                         <BalancoInspector
                           categoria={drilledCategoriaObj}
                           fundoNome={balancoEstruturalQuery.data?.fundo_nome ?? ""}
@@ -1167,6 +1183,7 @@ export default function CotaSubPage() {
                             />
                           )}
                         </BalancoInspector>
+                        )}
                       </div>
                       {/* Detector de nao-reconhecidos (2026-05-27, pos-VCNC):
                           spanned full-width sob a reconciliacao que ele explica. */}
@@ -1176,6 +1193,17 @@ export default function CotaSubPage() {
                           loading={balancoEstruturalQuery.isLoading}
                         />
                       </div>
+                      {/* Barra fina do chat-investigador (Camada 2). Descobrível
+                          sempre, grande só quando aberto. O único LLM da página. */}
+                      <button
+                        type="button"
+                        onClick={() => setChatOpen(true)}
+                        disabled={!fundoId}
+                        className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-left text-[13px] text-gray-500 transition-colors hover:border-violet-300 hover:bg-violet-50/40 disabled:opacity-50 dark:border-gray-800 dark:bg-[#090E1A] dark:text-gray-400 dark:hover:border-violet-800 dark:hover:bg-violet-950/20 xl:col-span-5"
+                      >
+                        <RiSparkling2Line className="size-4 text-violet-500" aria-hidden />
+                        Perguntar sobre o dia — por que a cota mexeu, o que vigiar, investigar uma linha…
+                      </button>
                     </div>
                   )}
                   {activeTab === "movimentacoes" && (
@@ -1333,9 +1361,14 @@ export default function CotaSubPage() {
         )}
       </DrillDownSheet>
 
-      {/* Monolito (analista_variacao_cota) APOSENTADO 2026-05-31: o read da
-          variacao agora e o VariacaoHeadline estruturado (Fase 1). O LLM volta
-          como chat-investigador sob demanda na Fase 4. */}
+      {/* Chat-investigador (Camada 2) — o ÚNICO LLM da página, sob demanda.
+          Pré-carregado (backend) com o headline + detalhamento do dia. */}
+      <ChatVariacaoDrawer
+        fundoId={fundoId}
+        data={dayIso}
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+      />
 
     </div>
   )

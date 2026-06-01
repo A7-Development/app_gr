@@ -170,6 +170,21 @@ export function useVariacaoHeadline(
   })
 }
 
+export function useVariacaoDetalhamento(
+  fundoId: string | null | undefined,
+  data: string | null | undefined,
+  dataAnterior?: string | null,
+) {
+  // O painel dos 60% — uma area por card com o resumo da sua tool, clicavel.
+  const enabled = !!fundoId && !!data
+  return useQuery({
+    queryKey: ["controladoria", "cota-sub", "variacao-detalhamento", fundoId ?? "", data ?? "", dataAnterior ?? null] as const,
+    queryFn: () => controladoria.cotaSubVariacaoDetalhamento(fundoId!, data!, dataAnterior ?? undefined),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
 export function useDrillCotas(
   fundoId: string | null | undefined,
   data: string | null | undefined,

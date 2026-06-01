@@ -16,6 +16,10 @@ from app.modules.controladoria.schemas.agente_variacao_cota import (
     AgenteVariacaoRunMetadata,
     AgenteVariacaoRunResponse,
 )
+from app.modules.controladoria.schemas.chat_variacao import (
+    ChatVariacaoRequest,
+    ChatVariacaoResposta,
+)
 from app.modules.controladoria.schemas.conferencia_cotas import ConferenciaCotasResponse
 from app.modules.controladoria.schemas.cota_sub import (
     BalancoEstruturalResponse,
@@ -27,6 +31,7 @@ from app.modules.controladoria.schemas.cota_sub_drill import (
     DrillOrigemResponse,
     DrillPddResponse,
 )
+from app.modules.controladoria.schemas.detalhamento_dia import DetalhamentoDiaResponse
 from app.modules.controladoria.schemas.variacao_headline import (
     VariacaoHeadlineResponse,
 )
@@ -38,6 +43,7 @@ from app.modules.controladoria.services.cota_sub_drill_cpr import compute_drill_
 from app.modules.controladoria.services.cota_sub_drill_dc import compute_drill_dc
 from app.modules.controladoria.services.cota_sub_drill_origem import compute_drill_origem
 from app.modules.controladoria.services.cota_sub_drill_pdd import compute_drill_pdd
+from app.modules.controladoria.services.detalhamento_dia import compute_detalhamento_dia
 from app.modules.controladoria.services.variacao_headline import (
     compute_variacao_headline,
 )
@@ -116,6 +122,117 @@ async def variacao_headline(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/variacao/detalhamento", response_model=DetalhamentoDiaResponse)
+async def variacao_detalhamento(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0). D-1 e o dia util anterior.")],
+    data_anterior: Annotated[
+        date | None,
+        Query(description="Override opcional para D-1."),
+    ] = None,
+    _: None = _Guard,
+) -> DetalhamentoDiaResponse:
+    """Detalhamento do dia — o painel dos 60%. Uma area por card (Ativo/Passivo)
+    com o resumo de 1 linha da sua tool + delta + drill_key. Orquestra as tools
+    (compute_drill_dc, compute_drill_pdd, conferencia_*), zero LLM. Clicar um card
+    abre o drill profundo daquela area.
+    """
+    try:
+        return await compute_detalhamento_dia(
+            db,
+            tenant_id=principal.tenant_id,
+            ua_id=fundo_id,
+            data_d0=data,
+            data_d1=data_anterior,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+def _fmt_brl(v: object) -> str:
+    return f"R$ {float(v):,.0f}".replace(",", ".")
+
+
+@router.post("/variacao/chat", response_model=ChatVariacaoResposta)
+async def variacao_chat(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    body: ChatVariacaoRequest,
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0).")],
+    _: None = _Guard,
+) -> ChatVariacaoResposta:
+    """Chat-investigador da variacao da Cota Sub (Camada 2, sob demanda).
+
+    Pre-carrega o contexto estruturado do dia (headline + detalhamento) e passa
+    pro agente `controladoria.investigador_cota`, que responde do contexto quando
+    da e investiga com as tools (cross-reference) quando precisa. O LLM so entra
+    AQUI — o read e os detalhes da pagina sao 100% estruturados.
+    """
+    from app.agentic._scope import ScopedContext
+    from app.agentic.engine.runtime import run_standalone_agent
+    from app.core.enums import Module as _Module
+    from app.core.enums import Permission as _Permission
+
+    try:
+        headline = await compute_variacao_headline(
+            db, tenant_id=principal.tenant_id, ua_id=fundo_id, data_d0=data,
+        )
+        det = await compute_detalhamento_dia(
+            db, tenant_id=principal.tenant_id, ua_id=fundo_id, data_d0=data,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    # Contexto estruturado pre-carregado (= o que deixa o chat rapido e ancorado).
+    linhas = [
+        f"Variacao da Cota Sub: {_fmt_brl(headline.cota_sub_delta)} "
+        f"(Ativo {_fmt_brl(headline.delta_ativo)} - Passivo {_fmt_brl(headline.delta_passivo)}). "
+        f"Reconcilia: {'sim' if headline.reconciliacao_ok else f'NAO ({_fmt_brl(headline.reconciliacao_residuo)})'}.",
+        "",
+        "Detalhamento por area (impacto no PL Sub | resumo da tool):",
+    ]
+    linhas += [f"  - [{a.grupo}] {a.label}: {_fmt_brl(a.delta)} | {a.resumo}" for a in det.areas]
+    if headline.flags:
+        linhas.append("")
+        linhas.append("Flags (atencao):")
+        linhas += [f"  - {f.descricao} ({_fmt_brl(f.valor)})" for f in headline.flags]
+    contexto = "\n".join(linhas)
+
+    historico = "\n".join(
+        f"{'Controller' if m.role == 'user' else 'Voce'}: {m.content}" for m in body.historico
+    ) or "(inicio da conversa)"
+
+    scope = ScopedContext(
+        tenant_id=principal.tenant_id,
+        empresa_id=None,
+        user_id=principal.user_id,
+        module=_Module.CONTROLADORIA,
+        permissions=dict.fromkeys(_Module, _Permission.ADMIN),
+        db=db,
+        extras={"ua_id": str(fundo_id), "data_d0": data.isoformat()},
+    )
+    result = await run_standalone_agent(
+        agent_name="controladoria.investigador_cota",
+        scope=scope,
+        user_context={
+            "fundo_nome": headline.fundo_nome,
+            "data_d0": data.isoformat(),
+            "contexto": contexto,
+            "historico": historico,
+            "pergunta": body.pergunta,
+        },
+        db=db,
+    )
+    out = result.output_data or {}
+    return ChatVariacaoResposta(
+        resposta=str(out.get("resposta", "Nao consegui responder agora.")),
+        tools_usadas=list(out.get("tools_usadas", []) or []),
+    )
 
 
 @router.get("/datas-disponiveis", response_model=list[date])
