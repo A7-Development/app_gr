@@ -112,6 +112,8 @@ import { ResumoGrupos } from "./_components/ResumoGrupos"
 import { DrillContasAPagarContent } from "./_components/DrillContasAPagarContent"
 import { DrillCotasContent } from "./_components/DrillCotasContent"
 import { DrillOrigemContent } from "./_components/DrillOrigemContent"
+import { DrillAplicacoesContent } from "./_components/DrillAplicacoesContent"
+import { DrillDisponibilidadesContent } from "./_components/DrillDisponibilidadesContent"
 import { DrillPddContent } from "./_components/DrillPddContent"
 import { VariacaoWaterfall } from "./_components/VariacaoWaterfall"
 import { useVariacaoResumo } from "@/lib/hooks/controladoria"
@@ -158,6 +160,10 @@ const ORIGEM_KEYS: ReadonlySet<CategoriaPatrimonialKey> = new Set<CategoriaPatri
 const COTAS_KEYS: ReadonlySet<CategoriaPatrimonialKey> = new Set<CategoriaPatrimonialKey>([
   "senior", "mezanino", "cpr_obrigacoes_cotistas",
 ])
+
+// Grupos do waterfall que NAO sao linha do balanco — drill sintetico (header
+// montado do resumo, nao do balanco estrutural). Ver drilledCategoriaObj.
+type DrillKey = CategoriaPatrimonialKey | "aplicacoes" | "disponibilidades"
 
 // ───────────────────────────────────────────────────────────────────────────
 // Tipos + Mocks
@@ -668,7 +674,7 @@ export default function CotaSubPage() {
 
   // Drill da F2 — abre Sheet lateral direito com DrillDcContent/PddContent/CprContent.
   // Habilitado so pras 3 categorias da F2 via DRILL_ENABLED_F2 do BalancoPatrimonialHero.
-  const [drilledCategoria, setDrilledCategoria] = React.useState<CategoriaPatrimonialKey | null>(null)
+  const [drilledCategoria, setDrilledCategoria] = React.useState<DrillKey | null>(null)
 
 
   // Lookup do UUID da UA selecionada (endpoint backend exige fundo_id).
@@ -683,10 +689,25 @@ export default function CotaSubPage() {
   const resumoQuery = useVariacaoResumo(fundoId, dayIso)
   // Chat-investigador (Camada 2) — summonable, o UNICO LLM da pagina.
   const [chatOpen, setChatOpen] = React.useState(false)
-  const drilledCategoriaObj = React.useMemo(
-    () => toInspectorCategoria(balancoEstruturalQuery.data, drilledCategoria),
-    [balancoEstruturalQuery.data, drilledCategoria],
-  )
+  const drilledCategoriaObj = React.useMemo<CategoriaPatrimonial | undefined>(() => {
+    // Aplicacoes/Disponibilidades NAO sao linha do balanco — header sintetico a
+    // partir do grupo do resumo (delta = impacto giro-limpo da barra).
+    if (drilledCategoria === "aplicacoes" || drilledCategoria === "disponibilidades") {
+      const g = resumoQuery.data?.grupos.find((x) => x.key === drilledCategoria)
+      if (!g) return undefined
+      return {
+        key:    drilledCategoria as CategoriaPatrimonial["key"],
+        label:  g.label,
+        tipo:   "ativo",
+        d1:     0,
+        d0:     0,
+        delta:  g.impacto_pl_sub,
+        source: drilledCategoria === "aplicacoes" ? "wh_posicao_cota_fundo" : "wh_movimento_caixa",
+        contra: false,
+      }
+    }
+    return toInspectorCategoria(balancoEstruturalQuery.data, drilledCategoria as CategoriaPatrimonialKey | null)
+  }, [balancoEstruturalQuery.data, drilledCategoria, resumoQuery.data])
   const fundoSelecionado = fundoId !== null
 
   // Datas em que a QiTech publicou snapshot — Calendar bloqueia tudo o que nao
@@ -1074,7 +1095,7 @@ export default function CotaSubPage() {
                       <AtencoesDoDia
                         atencoes={resumoQuery.data?.atencoes}
                         loading={resumoQuery.isLoading}
-                        onDrillGrupo={(k) => setDrilledCategoria(k as CategoriaPatrimonialKey)}
+                        onDrillGrupo={(k) => setDrilledCategoria(k as DrillKey)}
                         onInvestigar={() => setChatOpen(true)}
                       />
                       <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">
@@ -1083,7 +1104,7 @@ export default function CotaSubPage() {
                           <VariacaoWaterfall
                             data={resumoQuery.data}
                             loading={resumoQuery.isLoading}
-                            onDrillGrupo={(k) => setDrilledCategoria(k as CategoriaPatrimonialKey)}
+                            onDrillGrupo={(k) => setDrilledCategoria(k as DrillKey)}
                           />
                         </div>
                         {/* 60% — detalhamento por grupo de balanco (lista). */}
@@ -1091,7 +1112,7 @@ export default function CotaSubPage() {
                           <ResumoGrupos
                             data={resumoQuery.data}
                             loading={resumoQuery.isLoading}
-                            onDrillGrupo={(k) => setDrilledCategoria(k as CategoriaPatrimonialKey)}
+                            onDrillGrupo={(k) => setDrilledCategoria(k as DrillKey)}
                           />
                         </div>
                       </div>
@@ -1184,18 +1205,31 @@ export default function CotaSubPage() {
             dataAnterior={balancoEstruturalQuery.data?.data_anterior}
           />
         )}
-        {drilledCategoria && COTAS_KEYS.has(drilledCategoria) && fundoId && (
+        {drilledCategoria && COTAS_KEYS.has(drilledCategoria as CategoriaPatrimonialKey) && fundoId && (
           <DrillCotasContent
             fundoId={fundoId}
             data={balancoEstruturalQuery.data?.data ?? dayIso}
             dataAnterior={balancoEstruturalQuery.data?.data_anterior}
           />
         )}
-        {drilledCategoria && ORIGEM_KEYS.has(drilledCategoria) && fundoId && (
+        {drilledCategoria && ORIGEM_KEYS.has(drilledCategoria as CategoriaPatrimonialKey) && fundoId && (
           <DrillOrigemContent
             fundoId={fundoId}
             data={balancoEstruturalQuery.data?.data ?? dayIso}
-            linha={drilledCategoria}
+            linha={drilledCategoria as CategoriaPatrimonialKey}
+          />
+        )}
+        {drilledCategoria === "aplicacoes" && fundoId && (
+          <DrillAplicacoesContent
+            fundoId={fundoId}
+            data={balancoEstruturalQuery.data?.data ?? dayIso}
+            dataAnterior={balancoEstruturalQuery.data?.data_anterior}
+          />
+        )}
+        {drilledCategoria === "disponibilidades" && (
+          <DrillDisponibilidadesContent
+            rendimento={resumoQuery.data?.grupos.find((g) => g.key === "disponibilidades")?.impacto_pl_sub ?? 0}
+            giroCapital={resumoQuery.data?.giro_capital ?? []}
           />
         )}
       </CategoriaDrillSheet>

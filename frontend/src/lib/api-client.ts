@@ -3112,6 +3112,45 @@ export type ConferenciaCotasResponse = {
   obrigacoes_delta:                number
 }
 
+// Endpoint /controladoria/cota-sub/drill/aplicacoes — drill do grupo Aplicacoes.
+// Fundos DI externo decompostos em CAPITAL (aplicacao/resgate, neutro) vs
+// VALORIZACAO (rendimento DI = impacto na cota) + linhas menores (TPF/Compr/Outros).
+export type MovimentoFundoDI = {
+  fundo_nome:        string
+  valor_d1:          number
+  valor_d0:          number
+  delta_valor:       number
+  aplicacao_resgate: number
+  valorizacao:       number
+  tipo:              "aplicacao" | "resgate" | "so_valorizacao"
+  caixa_aplicacao:   number
+  caixa_resgate:     number
+  caixa_confirma:    boolean
+  bullet:            string
+}
+
+export type LinhaAplicacaoMenor = {
+  linha:    string
+  label:    string
+  valor_d1: number
+  valor_d0: number
+  delta:    number
+  nota:     string
+}
+
+export type ConferenciaAplicacoesResponse = {
+  fundo_id:               string
+  fundo_nome:             string
+  data:                   string
+  data_anterior:          string | null
+  fundos_di:              MovimentoFundoDI[]
+  delta_fundos_di:        number
+  total_capital_liquido:  number
+  total_valorizacao:      number
+  outras_linhas:          LinhaAplicacaoMenor[]
+  delta_aplicacoes_total: number
+}
+
 // Endpoint /controladoria/cota-sub/variacao/detalhamento — o painel dos 60%.
 // Uma area por card com o resumo de 1 linha da sua tool. Money coercido.
 export type AreaDetalhe = {
@@ -4467,6 +4506,38 @@ export const controladoria = {
         ...o, saldo_d1: num(o.saldo_d1), saldo_d0: num(o.saldo_d0), delta: num(o.delta),
       })),
     } as ConferenciaCotasResponse
+  },
+
+  cotaSubDrillAplicacoes: async (
+    fundoId: string,
+    data: string,           // YYYY-MM-DD
+    dataAnterior?: string,
+  ): Promise<ConferenciaAplicacoesResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await apiClient.get<any>(
+      `/controladoria/cota-sub/drill/aplicacoes?${params.toString()}`,
+    )
+    const num = (v: unknown) => Number(v ?? 0)
+    return {
+      ...raw,
+      delta_fundos_di:        num(raw.delta_fundos_di),
+      total_capital_liquido:  num(raw.total_capital_liquido),
+      total_valorizacao:      num(raw.total_valorizacao),
+      delta_aplicacoes_total: num(raw.delta_aplicacoes_total),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      fundos_di: (raw.fundos_di ?? []).map((f: any) => ({
+        ...f,
+        valor_d1: num(f.valor_d1), valor_d0: num(f.valor_d0), delta_valor: num(f.delta_valor),
+        aplicacao_resgate: num(f.aplicacao_resgate), valorizacao: num(f.valorizacao),
+        caixa_aplicacao: num(f.caixa_aplicacao), caixa_resgate: num(f.caixa_resgate),
+      })),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      outras_linhas: (raw.outras_linhas ?? []).map((l: any) => ({
+        ...l, valor_d1: num(l.valor_d1), valor_d0: num(l.valor_d0), delta: num(l.delta),
+      })),
+    } as ConferenciaAplicacoesResponse
   },
 
   cotaSubVariacoesDia: async (

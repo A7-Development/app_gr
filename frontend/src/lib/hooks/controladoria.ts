@@ -233,6 +233,23 @@ export function useDrillCotas(
   })
 }
 
+export function useDrillAplicacoes(
+  fundoId: string | null | undefined,
+  data: string | null | undefined,
+  dataAnterior?: string | null,
+  enabledExtra = true,
+) {
+  // Drill do grupo Aplicacoes — rendimento DI (valorizacao = a barra) vs capital
+  // (aplicacao/resgate, neutro) por fundo DI + linhas menores.
+  const enabled = !!fundoId && !!data && enabledExtra
+  return useQuery({
+    queryKey: ["controladoria", "cota-sub", "drill-aplicacoes", fundoId ?? "", data ?? "", dataAnterior ?? null] as const,
+    queryFn: () => controladoria.cotaSubDrillAplicacoes(fundoId!, data!, dataAnterior ?? undefined),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
 export function useVariacoesDia(
   fundoId: string | null | undefined,
   data: string | null | undefined,
