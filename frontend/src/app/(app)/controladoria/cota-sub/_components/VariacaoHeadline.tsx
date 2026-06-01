@@ -18,7 +18,6 @@
 
 import {
   RiAlertLine,
-  RiArrowRightLine,
   RiCheckLine,
   RiErrorWarningLine,
   RiSearchLine,
@@ -74,11 +73,6 @@ export function VariacaoHeadline({ data, loading, onDrillCategoria }: VariacaoHe
   }
   if (!data) return null
 
-  const max = Math.max(
-    1,
-    ...data.drivers.filter((d) => d.key !== "giro_reclassificacao").map((d) => Math.abs(d.impacto_pl_sub)),
-  )
-
   return (
     <Card className="flex flex-col gap-4">
       {/* ── 1. VEREDITO ─────────────────────────────────────────────── */}
@@ -118,65 +112,39 @@ export function VariacaoHeadline({ data, loading, onDrillCategoria }: VariacaoHe
         )}
       </div>
 
-      {/* ── 2. DRIVERS ──────────────────────────────────────────────── */}
+      {/* ── 2. A EQUACAO DO BALANCO (Ativo − Passivo = Sub) ──────────────
+          Sem abstracao: a cota e o ativo menos o passivo. O giro ja netou no
+          total do Ativo. O detalhe de cada linha (e o giro do DC) vive no
+          balancete (40%) e no drill — nao aqui. */}
       <div className="flex flex-col gap-1.5">
         <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
-          O que moveu a cota
+          Como a cota se formou
         </span>
-        {data.drivers.map((d) => {
-          const neutral = d.key === "giro_reclassificacao"
-          const drillable = !!d.drill_key && DRILLABLE.has(d.drill_key) && !!onDrillCategoria
-          const pct = Math.round((Math.abs(d.impacto_pl_sub) / max) * 100)
-          return (
-            <button
-              key={d.key}
-              type="button"
-              disabled={!drillable}
-              onClick={
-                drillable
-                  ? () => onDrillCategoria!(d.drill_key as CategoriaPatrimonialKey)
-                  : undefined
-              }
-              className={cx(
-                "group flex items-center gap-3 rounded px-2 py-1.5 text-left",
-                drillable
-                  ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/50"
-                  : "cursor-default",
-              )}
-            >
-              {d.severidade === "atencao" ? (
-                <RiAlertLine className="size-4 shrink-0 text-amber-500" aria-hidden />
-              ) : (
-                <span className="size-4 shrink-0" />
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className={cx(
-                    "truncate text-[13px]",
-                    neutral ? "text-gray-500 dark:text-gray-400" : "font-medium text-gray-900 dark:text-gray-100",
-                  )}>
-                    {d.label}
-                  </span>
-                  <span className={cx("shrink-0 text-[13px] font-semibold tabular-nums", toneClass(d.impacto_pl_sub, neutral))}>
-                    {fmtSigned(d.impacto_pl_sub)}
-                  </span>
-                </div>
-                <div className="mt-0.5 flex items-center gap-2">
-                  <div className="h-1 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-900">
-                    <div
-                      className={cx("h-full rounded-full", neutral ? "bg-gray-300 dark:bg-gray-700" : d.impacto_pl_sub >= 0 ? "bg-emerald-400/70" : "bg-red-400/70")}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <span className="truncate text-[11px] text-gray-500 dark:text-gray-400">{d.detalhe}</span>
-                  {drillable && (
-                    <RiArrowRightLine className="size-3.5 shrink-0 text-gray-300 transition-colors group-hover:text-blue-500 dark:text-gray-600" aria-hidden />
-                  )}
-                </div>
-              </div>
-            </button>
-          )
-        })}
+        <div className="flex items-center justify-between px-1 text-[13px]">
+          <span className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+            <span className="size-1.5 rounded-full bg-gray-400 dark:bg-gray-500" aria-hidden />
+            Ativo
+          </span>
+          <span className="font-medium tabular-nums text-gray-900 dark:text-gray-100">
+            {fmtSigned(data.delta_ativo)}
+          </span>
+        </div>
+        <div className="flex items-center justify-between px-1 text-[13px]">
+          <span className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+            <span className="size-1.5 rounded-full bg-gray-400 dark:bg-gray-500" aria-hidden />
+            − Passivo
+            <span className="text-[11px] text-gray-400 dark:text-gray-500">(Contas a Pagar + Cotas Sr/Mez)</span>
+          </span>
+          <span className="font-medium tabular-nums text-gray-900 dark:text-gray-100">
+            {fmtSigned(data.delta_passivo)}
+          </span>
+        </div>
+        <div className="mt-0.5 flex items-center justify-between border-t border-gray-200 px-1 pt-1.5 dark:border-gray-800">
+          <span className="text-[13px] font-semibold text-gray-900 dark:text-gray-100">= Variação da Sub</span>
+          <span className={cx("text-[15px] font-semibold tabular-nums", toneClass(data.cota_sub_delta))}>
+            {fmtSigned(data.cota_sub_delta)}
+          </span>
+        </div>
       </div>
 
       {/* ── 3. FLAGS ────────────────────────────────────────────────── */}

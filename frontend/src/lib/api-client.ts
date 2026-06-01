@@ -2993,6 +2993,8 @@ export type VariacaoHeadlineResponse = {
   cota_sub_d1:            number
   cota_sub_d0:            number
   cota_sub_delta:         number
+  delta_ativo:            number
+  delta_passivo:          number
   reconciliacao_residuo:  number
   reconciliacao_ok:       boolean
   n_atencao:              number
@@ -4144,6 +4146,8 @@ export const controladoria = {
       cota_sub_d1:           num(raw.cota_sub_d1),
       cota_sub_d0:           num(raw.cota_sub_d0),
       cota_sub_delta:        num(raw.cota_sub_delta),
+      delta_ativo:           num(raw.delta_ativo),
+      delta_passivo:         num(raw.delta_passivo),
       reconciliacao_residuo: num(raw.reconciliacao_residuo),
       giro_aquisicoes:       num(raw.giro_aquisicoes),
       giro_liquidacoes:      num(raw.giro_liquidacoes),
