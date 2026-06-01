@@ -1049,3 +1049,28 @@ class AuditoriaCotasResponse(BaseModel):
     conclusao: str = Field(
         description="1-3 frases: o que mexeu no passivo de cotistas e se ha evento de capital a acompanhar."
     )
+
+
+# ─── Investigador de Cota (chat-bisturi, Camada 2) — 2026-05-31 ─────────────
+#
+# Chat conversacional sobre a variacao do dia. Recebe o contexto estruturado
+# (headline + detalhamento) JA pre-carregado e responde a pergunta do controller,
+# investigando com as tools (auditores + cross-reference) so quando o estruturado
+# nao basta. Saida em texto livre (nao um schema rigido de dominio).
+
+
+class ChatVariacaoResponse(BaseModel):
+    """Output do agente `controladoria.investigador_cota` (chat-bisturi)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    resposta: str = Field(
+        description="A resposta ao controller, em pt-BR, ancorada em R$ e nos dados. Direta, "
+                    "sem enrolar. Markdown simples (negrito, bullets) permitido. Se a pergunta "
+                    "ja e respondida pelo contexto pre-carregado, responda direto sem chamar tool."
+    )
+    tools_usadas: list[str] = Field(
+        default_factory=list,
+        description="Nomes das tools que voce chamou pra responder (auditoria). Vazio se respondeu "
+                    "so do contexto.",
+    )

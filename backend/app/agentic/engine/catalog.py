@@ -33,6 +33,7 @@ from app.agentic.engine.output_schemas import (
     AuditoriaResultadoResponse,
     AuditoriaVariacaoCaixaResponse,
     AuditoriaVariacaoCarteiraResponse,
+    ChatVariacaoResponse,
     CommercialVisitAnalysis,
     CrossReferenceAnalysis,
     DocumentExtraction,
@@ -564,5 +565,31 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         thinking_budget_tokens=8000,
         timeout_seconds=300,
         section_id="auditor_cotas",
+    ),
+    "investigador_cota": SpecialistAgentSpec(
+        name="investigador_cota",
+        description=(
+            "Chat-investigador da variacao da Cota Sub (Camada 2, sob demanda). "
+            "Recebe o contexto estruturado do dia (headline + detalhamento) JA "
+            "pre-carregado e responde perguntas do controller. So chama tool quando "
+            "o estruturado nao basta — pra investigar (cruzar extrato/historico, "
+            "achar a causa de uma mutacao, etc.). Tem o toolset completo da cota-sub."
+        ),
+        prompt_name="agent.controladoria.investigador_cota",
+        tools=(
+            "get_balanco_patrimonial", "get_variacao_carteira", "get_drill_pdd",
+            "get_drill_cpr", "get_decomposicao_classes", "get_movimento_cotas",
+            "get_movimento_contas_a_pagar", "get_movimento_nota_comercial",
+            "get_movimento_aplicacoes", "get_conferencia_liquidacao",
+            "get_conferencia_cessao", "get_eventos_liquidacao_adjacentes",
+            "get_historico_estoque_papel", "get_papeis_mesmo_cedente_sacado",
+            "check_identidade_contabil",
+        ),
+        output_schema=ChatVariacaoResponse,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=6000,
+        timeout_seconds=300,
+        section_id="investigador_cota",
     ),
 }

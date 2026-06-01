@@ -3062,6 +3062,10 @@ export type DetalhamentoDiaResponse = {
   areas:         AreaDetalhe[]
 }
 
+// Endpoint /controladoria/cota-sub/variacao/chat — o chat-investigador (Camada 2).
+export type ChatMensagem = { role: "user" | "assistant"; content: string }
+export type ChatVariacaoResposta = { resposta: string; tools_usadas: string[] }
+
 
 // Endpoint /controladoria/cota-sub/balanco-estrutural — redesign 2026-05-27.
 // Coerente por natureza + sinal: PDD = contra-ativo (abate DC), CPR dividido
@@ -4214,6 +4218,19 @@ export const controladoria = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       flags: (raw.flags ?? []).map((f: any) => ({ ...f, valor: num(f.valor) })),
     } as VariacaoHeadlineResponse
+  },
+
+  cotaSubVariacaoChat: async (
+    fundoId: string,
+    data: string,
+    pergunta: string,
+    historico: ChatMensagem[] = [],
+  ): Promise<ChatVariacaoResposta> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    return apiClient.post<ChatVariacaoResposta>(
+      `/controladoria/cota-sub/variacao/chat?${params.toString()}`,
+      { pergunta, historico },
+    )
   },
 
   cotaSubVariacaoDetalhamento: async (
