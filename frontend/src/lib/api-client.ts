@@ -3042,6 +3042,26 @@ export type ConferenciaCotasResponse = {
   obrigacoes_delta:                number
 }
 
+// Endpoint /controladoria/cota-sub/variacao/detalhamento — o painel dos 60%.
+// Uma area por card com o resumo de 1 linha da sua tool. Money coercido.
+export type AreaDetalhe = {
+  key:        string
+  label:      string
+  grupo:      "ativo" | "passivo"
+  delta:      number
+  resumo:     string
+  drill_key:  string | null
+  severidade: "rotina" | "atencao"
+}
+
+export type DetalhamentoDiaResponse = {
+  fundo_id:      string
+  fundo_nome:    string
+  data:          string
+  data_anterior: string | null
+  areas:         AreaDetalhe[]
+}
+
 
 // Endpoint /controladoria/cota-sub/balanco-estrutural — redesign 2026-05-27.
 // Coerente por natureza + sinal: PDD = contra-ativo (abate DC), CPR dividido
@@ -4194,6 +4214,24 @@ export const controladoria = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       flags: (raw.flags ?? []).map((f: any) => ({ ...f, valor: num(f.valor) })),
     } as VariacaoHeadlineResponse
+  },
+
+  cotaSubVariacaoDetalhamento: async (
+    fundoId: string,
+    data: string,
+    dataAnterior?: string,
+  ): Promise<DetalhamentoDiaResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await apiClient.get<any>(
+      `/controladoria/cota-sub/variacao/detalhamento?${params.toString()}`,
+    )
+    return {
+      ...raw,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      areas: (raw.areas ?? []).map((a: any) => ({ ...a, delta: Number(a.delta ?? 0) })),
+    } as DetalhamentoDiaResponse
   },
 
   cotaSubDrillCotas: async (

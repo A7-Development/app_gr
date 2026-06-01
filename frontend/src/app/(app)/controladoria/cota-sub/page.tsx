@@ -106,11 +106,12 @@ import { NaoReconhecidosPanel } from "./_components/NaoReconhecidosPanel"
 import { CategoriaDrillSheet } from "./_components/CategoriaDrillSheet"
 import { DrillCprContent } from "./_components/DrillCprContent"
 import { DrillDcContent } from "./_components/DrillDcContent"
+import { DetalhamentoPanel } from "./_components/DetalhamentoPanel"
 import { DrillCotasContent } from "./_components/DrillCotasContent"
 import { DrillOrigemContent } from "./_components/DrillOrigemContent"
 import { DrillPddContent } from "./_components/DrillPddContent"
 import { VariacaoHeadline } from "./_components/VariacaoHeadline"
-import { useVariacaoHeadline } from "@/lib/hooks/controladoria"
+import { useVariacaoDetalhamento, useVariacaoHeadline } from "@/lib/hooks/controladoria"
 import type {
   BalancoEstruturalResponse,
   CategoriaPatrimonial,
@@ -700,6 +701,8 @@ export default function CotaSubPage() {
   const balancoEstruturalQuery = useBalancoEstrutural(fundoId, dayIso)
   // Headline estruturado (Fase 1) — o read de 10s. Substitui o monolito.
   const headlineQuery   = useVariacaoHeadline(fundoId, dayIso)
+  // Detalhamento (60%) — uma area por card, default do slot direito.
+  const detalhamentoQuery = useVariacaoDetalhamento(fundoId, dayIso)
   const drilledCategoriaObj = React.useMemo(
     () => toInspectorCategoria(balancoEstruturalQuery.data, drilledCategoria),
     [balancoEstruturalQuery.data, drilledCategoria],
@@ -1115,6 +1118,15 @@ export default function CotaSubPage() {
                           (hidden) e o page.tsx cai pro CategoriaDrillSheet
                           (overlay) controlado por isXl no render do Sheet. */}
                       <div className="hidden xl:col-span-3 xl:block">
+                        {!drilledCategoria ? (
+                          /* Default do slot direito: o Detalhamento do dia (60%).
+                             Cada area da sua tool, clicavel -> abre o drill. */
+                          <DetalhamentoPanel
+                            data={detalhamentoQuery.data}
+                            loading={detalhamentoQuery.isLoading}
+                            onDrillCategoria={setDrilledCategoria}
+                          />
+                        ) : (
                         <BalancoInspector
                           categoria={drilledCategoriaObj}
                           fundoNome={balancoEstruturalQuery.data?.fundo_nome ?? ""}
@@ -1167,6 +1179,7 @@ export default function CotaSubPage() {
                             />
                           )}
                         </BalancoInspector>
+                        )}
                       </div>
                       {/* Detector de nao-reconhecidos (2026-05-27, pos-VCNC):
                           spanned full-width sob a reconciliacao que ele explica. */}

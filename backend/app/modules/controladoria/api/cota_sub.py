@@ -27,6 +27,7 @@ from app.modules.controladoria.schemas.cota_sub_drill import (
     DrillOrigemResponse,
     DrillPddResponse,
 )
+from app.modules.controladoria.schemas.detalhamento_dia import DetalhamentoDiaResponse
 from app.modules.controladoria.schemas.variacao_headline import (
     VariacaoHeadlineResponse,
 )
@@ -38,6 +39,7 @@ from app.modules.controladoria.services.cota_sub_drill_cpr import compute_drill_
 from app.modules.controladoria.services.cota_sub_drill_dc import compute_drill_dc
 from app.modules.controladoria.services.cota_sub_drill_origem import compute_drill_origem
 from app.modules.controladoria.services.cota_sub_drill_pdd import compute_drill_pdd
+from app.modules.controladoria.services.detalhamento_dia import compute_detalhamento_dia
 from app.modules.controladoria.services.variacao_headline import (
     compute_variacao_headline,
 )
@@ -108,6 +110,35 @@ async def variacao_headline(
     """
     try:
         return await compute_variacao_headline(
+            db,
+            tenant_id=principal.tenant_id,
+            ua_id=fundo_id,
+            data_d0=data,
+            data_d1=data_anterior,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/variacao/detalhamento", response_model=DetalhamentoDiaResponse)
+async def variacao_detalhamento(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0). D-1 e o dia util anterior.")],
+    data_anterior: Annotated[
+        date | None,
+        Query(description="Override opcional para D-1."),
+    ] = None,
+    _: None = _Guard,
+) -> DetalhamentoDiaResponse:
+    """Detalhamento do dia — o painel dos 60%. Uma area por card (Ativo/Passivo)
+    com o resumo de 1 linha da sua tool + delta + drill_key. Orquestra as tools
+    (compute_drill_dc, compute_drill_pdd, conferencia_*), zero LLM. Clicar um card
+    abre o drill profundo daquela area.
+    """
+    try:
+        return await compute_detalhamento_dia(
             db,
             tenant_id=principal.tenant_id,
             ua_id=fundo_id,
