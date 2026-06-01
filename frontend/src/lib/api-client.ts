@@ -2965,6 +2965,44 @@ export type CategoriaPatrimonial = {
 }
 
 
+// Endpoint /controladoria/cota-sub/variacao/headline — o read de 10s (Fase 1,
+// 2026-05-31). Montado SO de campos estruturados (zero LLM): veredito + drivers
+// ranqueados por impacto LIMPO (giro separado) + flags. Money ja coercido p/ number.
+export type HeadlineDriver = {
+  key:            string
+  label:          string
+  impacto_pl_sub: number
+  detalhe:        string
+  drill_key:      string | null
+  severidade:     "rotina" | "atencao"
+}
+
+export type HeadlineFlag = {
+  tipo:         "mutacao" | "despesa_nao_provisionada" | "capital" | "reconciliacao" | "nao_reconhecido"
+  descricao:    string
+  valor:        number
+  drill_key:    string | null
+  investigavel: boolean
+}
+
+export type VariacaoHeadlineResponse = {
+  fundo_id:               string
+  fundo_nome:             string
+  data:                   string
+  data_anterior:          string | null
+  cota_sub_d1:            number
+  cota_sub_d0:            number
+  cota_sub_delta:         number
+  reconciliacao_residuo:  number
+  reconciliacao_ok:       boolean
+  n_atencao:              number
+  drivers:                HeadlineDriver[]
+  giro_aquisicoes:        number
+  giro_liquidacoes:       number
+  flags:                  HeadlineFlag[]
+}
+
+
 // Endpoint /controladoria/cota-sub/balanco-estrutural — redesign 2026-05-27.
 // Coerente por natureza + sinal: PDD = contra-ativo (abate DC), CPR dividido
 // por sinal (a receber=ativo / a pagar=passivo), Senior+Mezanino agrupados como
@@ -4051,6 +4089,33 @@ export const controladoria = {
       `/controladoria/cota-sub/balanco-estrutural?${params.toString()}`,
     )
     return _coerceBalancoEstrutural(raw)
+  },
+
+  cotaSubVariacaoHeadline: async (
+    fundoId: string,
+    data: string,           // YYYY-MM-DD
+    dataAnterior?: string,  // YYYY-MM-DD opcional (override de D-1)
+  ): Promise<VariacaoHeadlineResponse> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, data })
+    if (dataAnterior) params.set("data_anterior", dataAnterior)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await apiClient.get<any>(
+      `/controladoria/cota-sub/variacao/headline?${params.toString()}`,
+    )
+    const num = (v: unknown) => Number(v ?? 0)
+    return {
+      ...raw,
+      cota_sub_d1:           num(raw.cota_sub_d1),
+      cota_sub_d0:           num(raw.cota_sub_d0),
+      cota_sub_delta:        num(raw.cota_sub_delta),
+      reconciliacao_residuo: num(raw.reconciliacao_residuo),
+      giro_aquisicoes:       num(raw.giro_aquisicoes),
+      giro_liquidacoes:      num(raw.giro_liquidacoes),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      drivers: (raw.drivers ?? []).map((d: any) => ({ ...d, impacto_pl_sub: num(d.impacto_pl_sub) })),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      flags: (raw.flags ?? []).map((f: any) => ({ ...f, valor: num(f.valor) })),
+    } as VariacaoHeadlineResponse
   },
 
   cotaSubVariacoesDia: async (

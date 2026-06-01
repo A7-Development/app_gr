@@ -26,6 +26,9 @@ from app.modules.controladoria.schemas.cota_sub_drill import (
     DrillOrigemResponse,
     DrillPddResponse,
 )
+from app.modules.controladoria.schemas.variacao_headline import (
+    VariacaoHeadlineResponse,
+)
 from app.modules.controladoria.services.balanco_patrimonial import (
     compute_balanco_estrutural,
 )
@@ -33,6 +36,9 @@ from app.modules.controladoria.services.cota_sub_drill_cpr import compute_drill_
 from app.modules.controladoria.services.cota_sub_drill_dc import compute_drill_dc
 from app.modules.controladoria.services.cota_sub_drill_origem import compute_drill_origem
 from app.modules.controladoria.services.cota_sub_drill_pdd import compute_drill_pdd
+from app.modules.controladoria.services.variacao_headline import (
+    compute_variacao_headline,
+)
 from app.modules.controladoria.services.variacoes_dia import compute_variacoes_dia
 from app.modules.integracoes.public import listar_datas_disponiveis_qitech
 
@@ -63,6 +69,43 @@ async def balanco_estrutural(
     """
     try:
         return await compute_balanco_estrutural(
+            db,
+            tenant_id=principal.tenant_id,
+            ua_id=fundo_id,
+            data_d0=data,
+            data_d1=data_anterior,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/variacao/headline", response_model=VariacaoHeadlineResponse)
+async def variacao_headline(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0). D-1 e o dia util anterior.")],
+    data_anterior: Annotated[
+        date | None,
+        Query(description="Override opcional para D-1."),
+    ] = None,
+    _: None = _Guard,
+) -> VariacaoHeadlineResponse:
+    """Headline da variacao da Cota Sub — o read de 10s, montado SO de campos
+    estruturados (zero LLM).
+
+    Orquestra as tools (compute_balanco_estrutural, compute_drill_dc,
+    compute_movimento_cotas, compute_movimento_contas_a_pagar) e entrega:
+    veredito (Δ cota + reconciliacao) + drivers ranqueados por impacto LIMPO
+    (giro separado do resultado, via resultado_do_dia) + flags (mutacao,
+    despesa nao provisionada, capital, residuo, nao-reconhecidos).
+
+    Substitui o trabalho do monolito (analista_variacao_cota) por algo
+    deterministico, reproduzivel e auditavel (§14). O LLM (chat) so entra
+    depois, sob demanda, pra investigar o que o headline aponta.
+    """
+    try:
+        return await compute_variacao_headline(
             db,
             tenant_id=principal.tenant_id,
             ua_id=fundo_id,

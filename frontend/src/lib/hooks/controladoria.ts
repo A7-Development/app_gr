@@ -34,6 +34,8 @@ import { useSourceCoverage } from "./integracoes"
 const KEYS = {
   balancoEstrutural: (fundoId: string, data: string, dataAnterior?: string) =>
     ["controladoria", "cota-sub", "balanco-estrutural", fundoId, data, dataAnterior ?? null] as const,
+  variacaoHeadline: (fundoId: string, data: string, dataAnterior?: string) =>
+    ["controladoria", "cota-sub", "variacao-headline", fundoId, data, dataAnterior ?? null] as const,
   variacoesDia: (fundoId: string, data: string, dataAnterior?: string) =>
     ["controladoria", "cota-sub", "variacoes-dia", fundoId, data, dataAnterior ?? null] as const,
   datasDisponiveis: (fundoId: string) =>
@@ -135,6 +137,27 @@ export function useBalancoEstrutural(
   return useQuery({
     queryKey: KEYS.balancoEstrutural(fundoId ?? "", data ?? "", dataAnterior ?? undefined),
     queryFn: () => controladoria.cotaSubBalancoEstrutural(
+      fundoId!,
+      data!,
+      dataAnterior ?? undefined,
+    ),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useVariacaoHeadline(
+  fundoId: string | null | undefined,
+  data: string | null | undefined,
+  dataAnterior?: string | null,
+) {
+  // O read de 10s (Fase 1, 2026-05-31): veredito + drivers giro-limpos + flags.
+  // Estruturado, deterministico, monta das tools. Substitui o MOCK_INSIGHTS + o
+  // botao morto do monolito.
+  const enabled = !!fundoId && !!data
+  return useQuery({
+    queryKey: KEYS.variacaoHeadline(fundoId ?? "", data ?? "", dataAnterior ?? undefined),
+    queryFn: () => controladoria.cotaSubVariacaoHeadline(
       fundoId!,
       data!,
       dataAnterior ?? undefined,
