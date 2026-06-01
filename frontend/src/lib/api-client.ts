@@ -3050,6 +3050,13 @@ export type AtencaoResumo = {
   investigavel: boolean
 }
 
+export type GiroCapitalItem = {
+  tipo:  "giro_carteira" | "capital_cotista" | "capital_aplicacao" | "floating" | "outros"
+  label: string
+  valor: number
+  nota:  string
+}
+
 export type VariacaoResumoResponse = {
   fundo_id:       string
   fundo_nome:     string
@@ -3062,6 +3069,7 @@ export type VariacaoResumoResponse = {
   cota_delta:     number
   grupos:         GrupoResumo[]
   giro_total:     number
+  giro_capital:   GiroCapitalItem[]
   reconciliacao:  ReconciliacaoResumo
   atencoes:       AtencaoResumo[]
 }
@@ -4352,6 +4360,8 @@ export const controladoria = {
       cota_delta:     num(raw.cota_delta),
       giro_total:     num(raw.giro_total),
       grupos: (raw.grupos ?? []).map(grupo),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      giro_capital: (raw.giro_capital ?? []).map((g: any) => ({ ...g, valor: num(g.valor) })),
       reconciliacao: {
         ...raw.reconciliacao,
         variacao_apresentada: num(raw.reconciliacao?.variacao_apresentada),

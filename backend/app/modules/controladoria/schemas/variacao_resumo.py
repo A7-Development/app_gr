@@ -122,6 +122,29 @@ class AtencaoResumo(BaseModel):
     investigavel: bool = Field(default=False, description="True = vale 'investigar' (chat — o porque exige cruzar tools).")
 
 
+GiroCapitalTipo = Literal[
+    "giro_carteira",      # compra/liquidacao de recebiveis (caixa <-> DC)
+    "capital_cotista",    # aporte/resgate em cota prioritaria + obrigacoes com cotistas
+    "capital_aplicacao",  # aplicacao/resgate em fundo DI
+    "floating",           # liquidacoes em transito (Contas a Receber)
+    "outros",             # compromissada (overnight) e afins
+]
+
+
+class GiroCapitalItem(BaseModel):
+    """Um movimento NEUTRO do dia: movimentou caixa/posicao mas NAO afetou o PL Sub.
+
+    E o que antes poluia as barras (giro de carteira, aporte/resgate, floating).
+    Agora sai do waterfall e vem aqui como contexto — magnitude movimentada, com
+    impacto 0 na cota. Soma das magnitudes != 0 e so a movimentacao bruta.
+    """
+
+    tipo:  GiroCapitalTipo
+    label: str
+    valor: Decimal = Field(description="Magnitude movimentada (com sinal). Impacto na cota = 0.")
+    nota:  str = Field(default="")
+
+
 class VariacaoResumoResponse(BaseModel):
     """GET /controladoria/cota-sub/variacao/resumo — a aba 'Resumo do dia'.
 
@@ -151,6 +174,14 @@ class VariacaoResumoResponse(BaseModel):
         default=Decimal("0"),
         description="Movimentacao de giro do dia (compra/liquidacao de recebivel + aplicacoes). "
                     "PL-neutro — mostrado como nota, nao como barra.",
+    )
+
+    # ── Giro e capital do dia (movimentos NEUTROS, lista informativa) ────────
+    giro_capital:  list[GiroCapitalItem] = Field(
+        default_factory=list,
+        description="Movimentos que movimentaram caixa/posicao mas NAO afetaram o PL Sub "
+                    "(compra/liquidacao de carteira, aporte/resgate de cotista, aplicacao DI, "
+                    "floating). Contexto, fora do waterfall — cada um com impacto 0 na cota.",
     )
 
     # ── Reconciliacao MEC + atencoes ────────────────────────────────────────

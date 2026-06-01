@@ -54,7 +54,11 @@ async def _cenario(db, *, tenant_id, ua_id, data_d0: date) -> None:
         print(f"    {g.label:26} {_fmt(g.impacto_pl_sub):>16}   [{g.natureza}]")
     print(f"    {'= Sigma grupos':26} {_fmt(soma):>16}")
     print(f"  cota_delta (apresentada) = {_fmt(r.cota_delta)}")
-    print(f"  giro_total (nota neutra) = {_fmt(r.giro_total)}")
+    print("  --- Giro e capital (NEUTRO, fora do waterfall) ---")
+    for gc in r.giro_capital:
+        print(f"    [{gc.tipo:18}] {gc.label[:42]:42} {_fmt(gc.valor):>16}")
+    disp = next((g.impacto_pl_sub for g in r.grupos if g.key == "disponibilidades"), Decimal("0"))
+    print(f"  >>> Disponibilidades (deve ser PEQUENO = rendimento de caixa): {_fmt(disp)}")
     print(f"  Reconciliacao: apresentada={_fmt(r.reconciliacao.variacao_apresentada)} "
           f"MEC={_fmt(r.reconciliacao.variacao_mec)} "
           f"residuo={_fmt(r.reconciliacao.residuo)} fecha={r.reconciliacao.fecha}")
@@ -75,6 +79,8 @@ async def _cenario(db, *, tenant_id, ua_id, data_d0: date) -> None:
            "residuo == apresentada - MEC")
     # 4. 6 grupos presentes.
     _check(len(r.grupos) == 6, "6 grupos no waterfall")
+    # 5. Disponibilidades = rendimento de caixa (pequeno) — nao mais o plug-lixeira.
+    _check(abs(disp) < Decimal("50000"), "Disponibilidades pequeno (rendimento de caixa, < R$ 50k)")
 
 
 async def main() -> None:
