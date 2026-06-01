@@ -16,6 +16,7 @@ from app.modules.controladoria.schemas.agente_variacao_cota import (
     AgenteVariacaoRunMetadata,
     AgenteVariacaoRunResponse,
 )
+from app.modules.controladoria.schemas.conferencia_cotas import ConferenciaCotasResponse
 from app.modules.controladoria.schemas.cota_sub import (
     BalancoEstruturalResponse,
     VariacoesDiaResponse,
@@ -32,6 +33,7 @@ from app.modules.controladoria.schemas.variacao_headline import (
 from app.modules.controladoria.services.balanco_patrimonial import (
     compute_balanco_estrutural,
 )
+from app.modules.controladoria.services.conferencia_cotas import compute_movimento_cotas
 from app.modules.controladoria.services.cota_sub_drill_cpr import compute_drill_cpr
 from app.modules.controladoria.services.cota_sub_drill_dc import compute_drill_dc
 from app.modules.controladoria.services.cota_sub_drill_origem import compute_drill_origem
@@ -283,6 +285,38 @@ async def drill_cpr(
             data_d0=data,
             data_d1=data_anterior,
             side=side,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/drill/cotas", response_model=ConferenciaCotasResponse)
+async def drill_cotas(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    data: Annotated[date, Query(description="Dia analisado (D0). D-1 e o dia util anterior.")],
+    data_anterior: Annotated[
+        date | None,
+        Query(description="Override opcional para D-1."),
+    ] = None,
+    _: None = _Guard,
+) -> ConferenciaCotasResponse:
+    """Drill das linhas de Cota/Passivo de cotista (Senior, Mezanino, Obrigacoes
+    com Cotistas) — o detalhe do Auditor de Cotas.
+
+    Decompoe as Cotas Prioritarias (Sr/Mez) em CAPITAL (aporte/resgate) vs
+    VALORIZACAO (carrego que a Sub paga), e lista as Obrigacoes com Cotistas
+    (CPR capital_cotista: Cotas a Resgatar, Aporte, Resgate). Reusa a mesma tool
+    do agente `controladoria.auditor_cotas` (compute_movimento_cotas).
+    """
+    try:
+        return await compute_movimento_cotas(
+            db,
+            tenant_id=principal.tenant_id,
+            ua_id=fundo_id,
+            data_d0=data,
+            data_d1=data_anterior,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
