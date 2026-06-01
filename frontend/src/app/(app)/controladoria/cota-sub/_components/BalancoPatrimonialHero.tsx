@@ -67,6 +67,14 @@ const fmtNumSigned = (v: number): string => {
   return `${sign}${fmtNum.format(Math.abs(v))}`
 }
 
+// Variacao % sobre o PL de D-1 (base = saldo do dia anterior). Usada no PL Sub Jr.
+const fmtPctSigned = (delta: number, base: number): string | null => {
+  if (Math.abs(base) < 1) return null
+  const v = (delta / base) * 100
+  const sign = v >= 0 ? "+" : "−"
+  return `${sign}${Math.abs(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
+}
+
 const fmtDate = (iso: string): string => {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
   return m ? `${m[3]}/${m[2]}` : iso
@@ -314,6 +322,8 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
         // PDD e contra-ativo (redutor): subir o saldo PIORA o PL Sub, entao
         // delta positivo = vermelho / negativo = verde (polaridade invertida).
         const bom = row.contra ? v < 0 : v > 0
+        // PL Sub Jr: mostra tambem a variacao % sobre o PL de D-1.
+        const pct = row.kind === "pl-sub" && row.d1 != null ? fmtPctSigned(v, row.d1) : null
         return (
           <div
             style={{ textAlign: "right" }}
@@ -324,6 +334,11 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
             )}
           >
             {fmtNumSigned(v)}
+            {pct && (
+              <div className="text-[10px] font-medium tabular-nums opacity-80" title="Variação sobre o PL da Cota Sub de D-1">
+                {pct}
+              </div>
+            )}
           </div>
         )
       },
