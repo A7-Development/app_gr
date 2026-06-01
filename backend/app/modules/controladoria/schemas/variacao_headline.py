@@ -84,8 +84,12 @@ class VariacaoHeadlineResponse(BaseModel):
     # A equacao do balanco (a verdade concreta, sem abstracao): Ativo - Passivo = Sub.
     delta_ativo:    Decimal = Field(description="Δ total do Ativo (giro JA netado no total).")
     delta_passivo:  Decimal = Field(description="Δ total do Passivo (inclui Contas a Pagar + Cotas Sr/Mez).")
-    reconciliacao_residuo: Decimal = Field(description="Residuo do dia vs MEC. ~0 = fecha.")
-    reconciliacao_ok:      bool
+    # O que IMPORTA: o residuo do SALDO (D0 absoluto). Se ~0, a cota BATE com o
+    # MEC. O residuo do MOVIMENTO (delta) pode estar FORA so por lag de timing do
+    # dia anterior (gap que abre num dia e fecha no outro) — secundario.
+    reconciliacao_saldo:   Decimal = Field(description="Residuo do SALDO: calc_d0 - MEC_d0. ~0 = a cota bate.")
+    reconciliacao_residuo: Decimal = Field(description="Residuo do MOVIMENTO (delta D-1->D0). Lag de timing, secundario.")
+    reconciliacao_ok:      bool = Field(description="True quando o SALDO bate (|residuo_saldo| pequeno).")
     n_atencao:      int = Field(description="Quantidade de flags (atencoes do dia).")
 
     # ── Drivers (o que moveu, ranqueado por |impacto| limpo) ────────────────
