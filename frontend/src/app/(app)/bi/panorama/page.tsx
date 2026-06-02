@@ -29,6 +29,10 @@ import { cx } from "@/lib/utils"
 import { Button } from "@/components/tremor/Button"
 import { Card } from "@/components/tremor/Card"
 
+import {
+  TabNavigation,
+  TabNavigationLink,
+} from "@/components/tremor/TabNavigation"
 import { PageHeader } from "@/design-system/components/PageHeader"
 import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
 import { FilterChip } from "@/design-system/components/FilterBar"
@@ -54,6 +58,28 @@ import type {
   PanoramaVisaoGeralData,
 } from "@/lib/api-client"
 
+import { PlayersTab } from "./_components/PlayersTab"
+import { LastroPrazoTab } from "./_components/LastroPrazoTab"
+import { RiscoLiquidezTab } from "./_components/RiscoLiquidezTab"
+import { RealinvestTab } from "./_components/RealinvestTab"
+
+// ─── Abas (L3) ──────────────────────────────────────────────────────────────
+
+type TabKey =
+  | "visao-geral"
+  | "players"
+  | "risco-liquidez"
+  | "lastro-prazo"
+  | "realinvest"
+
+const TABS: ReadonlyArray<{ key: TabKey; label: string }> = [
+  { key: "visao-geral", label: "Visão geral" },
+  { key: "players", label: "Players" },
+  { key: "risco-liquidez", label: "Risco & Liquidez" },
+  { key: "lastro-prazo", label: "Lastro & Prazo" },
+  { key: "realinvest", label: "REALINVEST vs Mercado" },
+]
+
 // ─── Opcoes de filtro (estruturadas — campos CVM) ──────────────────────────
 
 const CONDOM_OPTS: ReadonlyArray<{ value: PanoramaCondom; label: string }> = [
@@ -77,6 +103,7 @@ const TIPO_CARTEIRA_OPTS: ReadonlyArray<{
 
 export default function BiPanoramaPage() {
   const [filters, setFilters] = React.useState<PanoramaFilters>({})
+  const [activeTab, setActiveTab] = React.useState<TabKey>("visao-geral")
 
   const q = useQuery({
     queryKey: ["bi", "panorama", "visao-geral", filters],
@@ -153,13 +180,40 @@ export default function BiPanoramaPage() {
           />
         </div>
 
-        {/* Toolbar de filtros (Z3) */}
+        {/* Tabs L3 (Z2) */}
+        <div className="shrink-0 border-b border-gray-200 bg-white px-6 dark:border-gray-800 dark:bg-gray-950">
+          <TabNavigation className="border-0">
+            {TABS.map((t, i) => (
+              <TabNavigationLink
+                key={t.key}
+                href="#"
+                active={activeTab === t.key}
+                onClick={(e) => {
+                  e.preventDefault()
+                  setActiveTab(t.key)
+                }}
+                title={`Cmd/Ctrl + ${i + 1}`}
+              >
+                {t.label}
+              </TabNavigationLink>
+            ))}
+          </TabNavigation>
+        </div>
+
+        {/* Toolbar de filtros (Z3) — escondida na aba de fundo unico */}
         <div
           className={cx(
             "shrink-0 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
             scrolled && "scroll-shadow",
           )}
         >
+          {activeTab === "realinvest" ? (
+            <div className="flex h-[52px] items-center px-6">
+              <span className="text-[12px] text-gray-500 dark:text-gray-400">
+                Análise de um fundo específico vs o mercado — filtros globais não se aplicam.
+              </span>
+            </div>
+          ) : (
           <div className="flex h-[52px] items-center gap-2 px-6">
             <FilterChip
               label="Condomínio"
@@ -221,23 +275,32 @@ export default function BiPanoramaPage() {
               {q.isFetching ? "Atualizando…" : "Atualizado"}
             </span>
           </div>
+          )}
         </div>
 
         {/* Conteudo (Z4) */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4">
           <div className="flex flex-col gap-4">
-            {q.isLoading && <PaginaSkeleton />}
-            {q.isError && (
-              <Card className={cx(cardTokens.body, "py-12 text-center")}>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Não foi possível carregar o Panorama do mercado.
-                </p>
-                <Button variant="ghost" className="mt-2" onClick={() => q.refetch()}>
-                  Tentar novamente
-                </Button>
-              </Card>
+            {activeTab === "visao-geral" && (
+              <>
+                {q.isLoading && <PaginaSkeleton />}
+                {q.isError && (
+                  <Card className={cx(cardTokens.body, "py-12 text-center")}>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Não foi possível carregar o Panorama do mercado.
+                    </p>
+                    <Button variant="ghost" className="mt-2" onClick={() => q.refetch()}>
+                      Tentar novamente
+                    </Button>
+                  </Card>
+                )}
+                {data && <VisaoGeral data={data} />}
+              </>
             )}
-            {data && <VisaoGeral data={data} />}
+            {activeTab === "players" && <PlayersTab filters={filters} />}
+            {activeTab === "risco-liquidez" && <RiscoLiquidezTab filters={filters} />}
+            {activeTab === "lastro-prazo" && <LastroPrazoTab filters={filters} />}
+            {activeTab === "realinvest" && <RealinvestTab />}
           </div>
         </div>
 

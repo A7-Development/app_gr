@@ -23,10 +23,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.bi.schemas.common import Provenance
 from app.modules.bi.schemas.panorama import (
+    AdminRankingItem,
     CondominioItem,
+    FundoComparativoData,
+    FundoMetricaComparada,
+    LastroPrazoData,
+    LiquidezCell,
+    LiquidezSeriePonto,
     PanoramaFilters,
     PanoramaKpis,
+    PlayersData,
     PlPonto,
+    PrazoFaixa,
+    RiscoLiquidezData,
     TamanhoBucket,
     VisaoGeralData,
 )
@@ -255,3 +264,428 @@ async def get_visao_geral(
         distribuicao_tamanho=distribuicao_tamanho,
     )
     return data, _build_provenance(comp, n_fidc)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Aba Players — ranking de administradoras
+# ════════════════════════════════════════════════════════════════════════
+
+_RANKING_LIMIT = 25
+
+
+async def get_players(db: AsyncSession, f: PanoramaFilters) -> tuple[PlayersData, Provenance]:
+    """Ranking de administradoras: qtd, PL, PL medio/mediano, liquidez."""
+    comp = await _resolve_competencia(db, f.competencia)
+    where_c, params = _filter_where(f, include_competencia=True)
+    params = {**params, "comp": comp}
+
+    rows = (
+        await db.execute(
+            text(
+                f"WITH base AS ("
+                f"  SELECT i.cnpj_admin AS cnpj_admin, i.admin AS admin, "
+                f"         iv.tab_iv_a_vl_pl AS pl, {_LIQ} AS liq "
+                f"  {_FROM} WHERE {where_c}"
+                f") "
+                f"SELECT cnpj_admin, max(admin) AS admin, count(*) AS qtd, "
+                f"       sum(pl) AS pl, avg(pl) AS pl_medio, "
+                f"       percentile_cont(0.5) WITHIN GROUP (ORDER BY pl) AS pl_mediano, "
+                f"       100.0 * sum(liq) / nullif(sum(pl), 0) AS liquidez_pct "
+                f"FROM base GROUP BY cnpj_admin ORDER BY pl DESC NULLS LAST"
+            ),
+            params,
+        )
+    ).mappings().all()
+
+    total_n = sum(int(r["qtd"]) for r in rows)
+    total_pl = sum(float(r["pl"] or 0) for r in rows)
+    ranking = [
+        AdminRankingItem(
+            cnpj_admin=str(r["cnpj_admin"] or "—"),
+            admin=str(r["admin"] or "—"),
+            qtd=int(r["qtd"]),
+            pct_qtd=round(100.0 * int(r["qtd"]) / total_n, 2) if total_n else 0.0,
+            pl=float(r["pl"] or 0),
+            pct_pl=round(100.0 * float(r["pl"] or 0) / total_pl, 2) if total_pl else 0.0,
+            pl_medio=float(r["pl_medio"] or 0),
+            pl_mediano=float(r["pl_mediano"] or 0),
+            liquidez_pct=round(float(r["liquidez_pct"] or 0), 2),
+        )
+        for r in rows[:_RANKING_LIMIT]
+    ]
+    data = PlayersData(
+        competencia=comp.strftime("%Y-%m"),
+        total_fidc=total_n,
+        pl_total=total_pl,
+        ranking=ranking,
+    )
+    return data, _build_provenance(comp, total_n)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Aba Lastro & Prazo — distribuicao da carteira a vencer por faixa
+# ════════════════════════════════════════════════════════════════════════
+
+# 10 faixas do informe (tab_v com risco + tab_vi sem risco). Faixa +1080d e
+# ABERTA — por isso reportamos distribuicao, nunca prazo medio em dias.
+_PRAZO_FAIXAS: list[tuple[str, str, str]] = [
+    ("ate 30d", "tab_v_a1_vl_prazo_venc_30", "tab_vi_a1_vl_prazo_venc_30"),
+    ("31-60d", "tab_v_a2_vl_prazo_venc_60", "tab_vi_a2_vl_prazo_venc_60"),
+    ("61-90d", "tab_v_a3_vl_prazo_venc_90", "tab_vi_a3_vl_prazo_venc_90"),
+    ("91-120d", "tab_v_a4_vl_prazo_venc_120", "tab_vi_a4_vl_prazo_venc_120"),
+    ("121-150d", "tab_v_a5_vl_prazo_venc_150", "tab_vi_a5_vl_prazo_venc_150"),
+    ("151-180d", "tab_v_a6_vl_prazo_venc_180", "tab_vi_a6_vl_prazo_venc_180"),
+    ("181-360d", "tab_v_a7_vl_prazo_venc_360", "tab_vi_a7_vl_prazo_venc_360"),
+    ("361-720d", "tab_v_a8_vl_prazo_venc_720", "tab_vi_a8_vl_prazo_venc_720"),
+    ("721-1080d", "tab_v_a9_vl_prazo_venc_1080", "tab_vi_a9_vl_prazo_venc_1080"),
+    ("+1080d", "tab_v_a10_vl_prazo_venc_maior_1080", "tab_vi_a10_vl_prazo_venc_maior_1080"),
+]
+
+# JOIN tab_v + tab_vi + tab_i + tab_iv (os dois ultimos para os filtros globais).
+_FROM_PRAZO = (
+    "FROM cvm_remote.tab_v v "
+    "JOIN cvm_remote.tab_vi w ON w.competencia = v.competencia "
+    "  AND w.cnpj_fundo_classe = v.cnpj_fundo_classe "
+    "JOIN cvm_remote.tab_i i ON i.competencia = v.competencia "
+    "  AND i.cnpj_fundo_classe = v.cnpj_fundo_classe "
+    "JOIN cvm_remote.tab_iv iv ON iv.competencia = v.competencia "
+    "  AND iv.cnpj_fundo_classe = v.cnpj_fundo_classe"
+)
+
+
+async def get_lastro_prazo(
+    db: AsyncSession, f: PanoramaFilters
+) -> tuple[LastroPrazoData, Provenance]:
+    """Distribuicao da carteira a vencer por faixa de prazo (sem media)."""
+    comp = await _resolve_competencia(db, f.competencia)
+    where_c, params = _filter_where(f, include_competencia=True)
+    params = {**params, "comp": comp}
+
+    selects = ", ".join(
+        f"sum(coalesce(v.{vcol},0)+coalesce(w.{wcol},0)) AS f{idx}"
+        for idx, (_, vcol, wcol) in enumerate(_PRAZO_FAIXAS)
+    )
+    row = (
+        await db.execute(
+            text(f"SELECT {selects} {_FROM_PRAZO} WHERE {where_c}"), params
+        )
+    ).mappings().one()
+
+    valores = [float(row[f"f{idx}"] or 0) for idx in range(len(_PRAZO_FAIXAS))]
+    total = sum(valores)
+    distribuicao = [
+        PrazoFaixa(
+            faixa=label,
+            valor=valores[idx],
+            pct=round(100.0 * valores[idx] / total, 1) if total else 0.0,
+        )
+        for idx, (label, _, _) in enumerate(_PRAZO_FAIXAS)
+    ]
+    data = LastroPrazoData(
+        competencia=comp.strftime("%Y-%m"),
+        total_a_vencer=total,
+        distribuicao_prazo=distribuicao,
+    )
+    n = int((await db.execute(text(f"SELECT count(*) {_FROM} WHERE {where_c}"), params)).scalar_one())
+    return data, _build_provenance(comp, n)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Aba Risco & Liquidez — matriz porte x condominio + serie do indice
+# ════════════════════════════════════════════════════════════════════════
+
+# Expressao de bucket de porte (rotulo + ordem) reutilizada na matriz.
+_PORTE_CASE_ORD = (
+    "CASE WHEN iv.tab_iv_a_vl_pl < 50e6 THEN 1 WHEN iv.tab_iv_a_vl_pl < 200e6 THEN 2 "
+    "WHEN iv.tab_iv_a_vl_pl < 500e6 THEN 3 WHEN iv.tab_iv_a_vl_pl < 1000e6 THEN 4 ELSE 5 END"
+)
+_PORTE_CASE_LBL = (
+    "CASE WHEN iv.tab_iv_a_vl_pl < 50e6 THEN '< R$ 50 mi' "
+    "WHEN iv.tab_iv_a_vl_pl < 200e6 THEN 'R$ 50-200 mi' "
+    "WHEN iv.tab_iv_a_vl_pl < 500e6 THEN 'R$ 200-500 mi' "
+    "WHEN iv.tab_iv_a_vl_pl < 1000e6 THEN 'R$ 500 mi-1 bi' ELSE '> R$ 1 bi' END"
+)
+
+
+async def get_risco_liquidez(
+    db: AsyncSession, f: PanoramaFilters
+) -> tuple[RiscoLiquidezData, Provenance]:
+    """Matriz porte x condominio do indice de liquidez + serie ponderado/mediano."""
+    comp = await _resolve_competencia(db, f.competencia)
+    where_c, params = _filter_where(f, include_competencia=True)
+    params = {**params, "comp": comp}
+
+    matriz_rows = (
+        await db.execute(
+            text(
+                f"WITH f AS ("
+                f"  SELECT initcap(lower(i.condom)) AS condom, iv.tab_iv_a_vl_pl AS pl, "
+                f"         {_LIQ} AS liq, {_PORTE_CASE_ORD} AS ord, {_PORTE_CASE_LBL} AS porte "
+                f"  {_FROM} WHERE {where_c}"
+                f") "
+                f"SELECT porte, ord, condom, "
+                f"  100.0 * sum(liq) / nullif(sum(pl), 0) AS pond, "
+                f"  100 * percentile_cont(0.5) WITHIN GROUP (ORDER BY liq / nullif(pl,0)) AS med, "
+                f"  count(*) AS n "
+                f"FROM f GROUP BY porte, ord, condom ORDER BY ord, condom"
+            ),
+            params,
+        )
+    ).mappings().all()
+    matriz = [
+        LiquidezCell(
+            porte=str(r["porte"]),
+            condom=str(r["condom"] or "—"),
+            indice_ponderado=round(float(r["pond"] or 0), 2),
+            mediana=round(float(r["med"] or 0), 2),
+            n_fidc=int(r["n"]),
+        )
+        for r in matriz_rows
+    ]
+
+    where_all, params_all = _filter_where(f, include_competencia=False)
+    serie_rows = (
+        await db.execute(
+            text(
+                f"WITH f AS ("
+                f"  SELECT i.competencia AS competencia, iv.tab_iv_a_vl_pl AS pl, {_LIQ} AS liq "
+                f"  {_FROM} WHERE {where_all}"
+                f") "
+                f"SELECT to_char(competencia, 'YYYY-MM') AS mes, "
+                f"  100.0 * sum(liq) / nullif(sum(pl), 0) AS pond, "
+                f"  100 * percentile_cont(0.5) WITHIN GROUP (ORDER BY liq / nullif(pl,0)) AS med "
+                f"FROM f GROUP BY competencia ORDER BY competencia"
+            ),
+            params_all,
+        )
+    ).mappings().all()
+    serie = [
+        LiquidezSeriePonto(
+            competencia=str(r["mes"]),
+            indice_ponderado=round(float(r["pond"] or 0), 2),
+            mediana=round(float(r["med"] or 0), 2),
+        )
+        for r in serie_rows
+    ]
+
+    n = sum(c.n_fidc for c in matriz)
+    data = RiscoLiquidezData(competencia=comp.strftime("%Y-%m"), matriz=matriz, serie=serie)
+    return data, _build_provenance(comp, n)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Aba REALINVEST vs Mercado — tear-sheet + percentis
+# ════════════════════════════════════════════════════════════════════════
+
+# Fundo "nosso" default. TODO: vir de config do tenant em vez de hardcode
+# quando o cockpit A7-vs-mercado virar multi-tenant.
+_FUNDO_PADRAO_CNPJ = "42.449.234/0001-60"
+
+# Soma ponderada por ponto medio das faixas (dias) — prazo medio de UM fundo.
+# Confiavel so para carteira curta (faixa +1080d aberta); REALINVEST e curtissimo.
+_PRAZO_WSUM = (
+    "15*(coalesce(v.tab_v_a1_vl_prazo_venc_30,0)+coalesce(w.tab_vi_a1_vl_prazo_venc_30,0))"
+    "+45*(coalesce(v.tab_v_a2_vl_prazo_venc_60,0)+coalesce(w.tab_vi_a2_vl_prazo_venc_60,0))"
+    "+75*(coalesce(v.tab_v_a3_vl_prazo_venc_90,0)+coalesce(w.tab_vi_a3_vl_prazo_venc_90,0))"
+    "+105*(coalesce(v.tab_v_a4_vl_prazo_venc_120,0)+coalesce(w.tab_vi_a4_vl_prazo_venc_120,0))"
+    "+135*(coalesce(v.tab_v_a5_vl_prazo_venc_150,0)+coalesce(w.tab_vi_a5_vl_prazo_venc_150,0))"
+    "+165*(coalesce(v.tab_v_a6_vl_prazo_venc_180,0)+coalesce(w.tab_vi_a6_vl_prazo_venc_180,0))"
+    "+270*(coalesce(v.tab_v_a7_vl_prazo_venc_360,0)+coalesce(w.tab_vi_a7_vl_prazo_venc_360,0))"
+    "+540*(coalesce(v.tab_v_a8_vl_prazo_venc_720,0)+coalesce(w.tab_vi_a8_vl_prazo_venc_720,0))"
+    "+900*(coalesce(v.tab_v_a9_vl_prazo_venc_1080,0)+coalesce(w.tab_vi_a9_vl_prazo_venc_1080,0))"
+    "+1440*(coalesce(v.tab_v_a10_vl_prazo_venc_maior_1080,0)+coalesce(w.tab_vi_a10_vl_prazo_venc_maior_1080,0))"
+)
+_PRAZO_TOT = "(coalesce(v.tab_v_a_vl_dircred_prazo,0)+coalesce(w.tab_vi_a_vl_dircred_prazo,0))"
+
+
+async def get_fundo_comparativo(
+    db: AsyncSession, cnpj: str | None = None
+) -> tuple[FundoComparativoData, Provenance]:
+    """Tear-sheet de um fundo (default REALINVEST) posicionado vs o mercado."""
+    cnpj = cnpj or _FUNDO_PADRAO_CNPJ
+    comp = await _resolve_competencia(db, None)
+
+    # 1. Perfil + PL + liquidez ratio + porte/condom do fundo.
+    prof = (
+        await db.execute(
+            text(
+                f"SELECT i.denom_social, i.condom, i.admin, iv.tab_iv_a_vl_pl AS pl, "
+                f"  {_LIQ} AS liq, {_PORTE_CASE_ORD} AS porte_ord "
+                f"{_FROM} WHERE i.competencia = :comp AND i.cnpj_fundo_classe = :cnpj"
+            ),
+            {"comp": comp, "cnpj": cnpj},
+        )
+    ).mappings().first()
+
+    if prof is None:
+        data = FundoComparativoData(
+            competencia=comp.strftime("%Y-%m"), cnpj=cnpj, nome="(não encontrado)",
+            condom=None, admin=None, pl=0.0, evolucao_pl=[], metricas=[], encontrado=False,
+        )
+        return data, _build_provenance(comp, 0)
+
+    pl = float(prof["pl"] or 0)
+    liq_ratio = (float(prof["liq"] or 0) / pl) if pl else 0.0
+    porte_ord = int(prof["porte_ord"])
+    condom = str(prof["condom"] or "").strip().lower() or None
+
+    # 2. Prazo medio do fundo (dias).
+    prazo_row = (
+        await db.execute(
+            text(
+                f"SELECT {_PRAZO_WSUM} AS wsum, {_PRAZO_TOT} AS tot "
+                f"FROM cvm_remote.tab_v v "
+                f"JOIN cvm_remote.tab_vi w ON w.competencia=v.competencia AND w.cnpj_fundo_classe=v.cnpj_fundo_classe "
+                f"WHERE v.competencia=:comp AND v.cnpj_fundo_classe=:cnpj"
+            ),
+            {"comp": comp, "cnpj": cnpj},
+        )
+    ).mappings().first()
+    prazo_tot = float(prazo_row["tot"] or 0) if prazo_row else 0.0
+    prazo_medio = (float(prazo_row["wsum"] or 0) / prazo_tot) if prazo_tot else 0.0
+
+    # 3. Rating AA% (scr operacao) + inadimplencia (bucket com risco).
+    rating_row = (
+        await db.execute(
+            text(
+                "SELECT tab_x_scr_risco_oper_aa::numeric AS aa, "
+                "(tab_x_scr_risco_oper_aa::numeric+tab_x_scr_risco_oper_a::numeric"
+                "+tab_x_scr_risco_oper_b::numeric+tab_x_scr_risco_oper_c::numeric"
+                "+tab_x_scr_risco_oper_d::numeric+tab_x_scr_risco_oper_e::numeric"
+                "+tab_x_scr_risco_oper_f::numeric+tab_x_scr_risco_oper_g::numeric"
+                "+tab_x_scr_risco_oper_h::numeric) AS tot "
+                "FROM cvm_remote.tab_x WHERE competencia=:comp AND cnpj_fundo_classe=:cnpj"
+            ),
+            {"comp": comp, "cnpj": cnpj},
+        )
+    ).mappings().first()
+    rating_aa = (
+        100.0 * float(rating_row["aa"] or 0) / float(rating_row["tot"])
+        if rating_row and float(rating_row["tot"] or 0) > 0
+        else 0.0
+    )
+    inad_row = (
+        await db.execute(
+            text(
+                "SELECT 100.0*tab_v_b_vl_dircred_inad/"
+                "nullif(tab_v_a_vl_dircred_prazo+tab_v_b_vl_dircred_inad,0) AS inad "
+                "FROM cvm_remote.tab_v WHERE competencia=:comp AND cnpj_fundo_classe=:cnpj"
+            ),
+            {"comp": comp, "cnpj": cnpj},
+        )
+    ).scalar()
+    inad_pct = float(inad_row or 0)
+
+    # 4. Serie do PL do fundo.
+    serie_rows = (
+        await db.execute(
+            text(
+                "SELECT to_char(competencia,'YYYY-MM') AS mes, tab_iv_a_vl_pl AS pl "
+                "FROM cvm_remote.tab_iv WHERE cnpj_fundo_classe=:cnpj ORDER BY competencia"
+            ),
+            {"cnpj": cnpj},
+        )
+    ).mappings().all()
+    evolucao_pl = [
+        PlPonto(competencia=str(r["mes"]), pl=float(r["pl"] or 0), n_fidc=1)
+        for r in serie_rows
+    ]
+
+    # 5. Percentis (liquidez + prazo) vs mercado e vs pares (mesmo condom+porte).
+    liq_pct_mkt, liq_pct_peer, liq_med_mkt = await _percentil_liquidez(
+        db, comp, liq_ratio, condom, porte_ord
+    )
+    prazo_pct_mkt, prazo_pct_peer, prazo_med_mkt = await _percentil_prazo(
+        db, comp, prazo_medio, condom, porte_ord
+    )
+
+    metricas = [
+        FundoMetricaComparada(label="PL", valor=pl, unidade="BRL"),
+        FundoMetricaComparada(
+            label="Prazo médio da carteira", valor=round(prazo_medio, 0), unidade="dias",
+            mercado_mediana=prazo_med_mkt, percentil_mercado=prazo_pct_mkt,
+            percentil_pares=prazo_pct_peer,
+        ),
+        FundoMetricaComparada(
+            label="Liquidez / PL", valor=round(100 * liq_ratio, 2), unidade="%",
+            mercado_mediana=liq_med_mkt, percentil_mercado=liq_pct_mkt,
+            percentil_pares=liq_pct_peer,
+        ),
+        FundoMetricaComparada(label="Rating AA (operação)", valor=round(rating_aa, 1), unidade="%"),
+        FundoMetricaComparada(label="Inadimplência", valor=round(inad_pct, 2), unidade="%"),
+    ]
+    data = FundoComparativoData(
+        competencia=comp.strftime("%Y-%m"),
+        cnpj=cnpj,
+        nome=str(prof["denom_social"] or cnpj),
+        condom=str(prof["condom"]) if prof["condom"] else None,
+        admin=str(prof["admin"]) if prof["admin"] else None,
+        pl=pl,
+        evolucao_pl=evolucao_pl,
+        metricas=metricas,
+        encontrado=True,
+    )
+    return data, _build_provenance(comp, 1)
+
+
+async def _percentil_liquidez(
+    db: AsyncSession, comp: date, valor: float, condom: str | None, porte_ord: int
+) -> tuple[float | None, float | None, float | None]:
+    """Percentil do indice de liquidez do fundo vs mercado e vs pares + mediana mkt."""
+    row = (
+        await db.execute(
+            text(
+                f"WITH f AS ("
+                f"  SELECT lower(i.condom) AS condom, {_PORTE_CASE_ORD} AS ord, "
+                f"         {_LIQ}/nullif(iv.tab_iv_a_vl_pl,0) AS r "
+                f"  {_FROM} WHERE i.competencia=:comp AND iv.tab_iv_a_vl_pl>0"
+                f") "
+                f"SELECT "
+                f"  100.0*count(*) FILTER (WHERE r <= :v)/nullif(count(*),0) AS pct_mkt, "
+                f"  100.0*count(*) FILTER (WHERE r <= :v AND condom=:condom AND ord=:ord)"
+                f"    /nullif(count(*) FILTER (WHERE condom=:condom AND ord=:ord),0) AS pct_peer, "
+                f"  100*percentile_cont(0.5) WITHIN GROUP (ORDER BY r) AS med_mkt "
+                f"FROM f"
+            ),
+            {"comp": comp, "v": valor, "condom": condom, "ord": porte_ord},
+        )
+    ).mappings().one()
+    return (
+        _round_or_none(row["pct_mkt"]),
+        _round_or_none(row["pct_peer"]),
+        _round_or_none(row["med_mkt"]),
+    )
+
+
+async def _percentil_prazo(
+    db: AsyncSession, comp: date, valor: float, condom: str | None, porte_ord: int
+) -> tuple[float | None, float | None, float | None]:
+    """Percentil do prazo medio do fundo vs mercado e vs pares + mediana mkt."""
+    row = (
+        await db.execute(
+            text(
+                f"WITH f AS ("
+                f"  SELECT lower(i.condom) AS condom, {_PORTE_CASE_ORD} AS ord, "
+                f"         ({_PRAZO_WSUM})/nullif({_PRAZO_TOT},0) AS pm "
+                f"  {_FROM_PRAZO} WHERE v.competencia=:comp AND iv.tab_iv_a_vl_pl>0 "
+                f"    AND {_PRAZO_TOT} > 0"
+                f") "
+                f"SELECT "
+                f"  100.0*count(*) FILTER (WHERE pm <= :v)/nullif(count(*),0) AS pct_mkt, "
+                f"  100.0*count(*) FILTER (WHERE pm <= :v AND condom=:condom AND ord=:ord)"
+                f"    /nullif(count(*) FILTER (WHERE condom=:condom AND ord=:ord),0) AS pct_peer, "
+                f"  percentile_cont(0.5) WITHIN GROUP (ORDER BY pm) AS med_mkt "
+                f"FROM f"
+            ),
+            {"comp": comp, "v": valor, "condom": condom, "ord": porte_ord},
+        )
+    ).mappings().one()
+    return (
+        _round_or_none(row["pct_mkt"]),
+        _round_or_none(row["pct_peer"]),
+        _round_or_none(row["med_mkt"], 0),
+    )
+
+
+def _round_or_none(v: Any, ndigits: int = 1) -> float | None:
+    return round(float(v), ndigits) if v is not None else None
