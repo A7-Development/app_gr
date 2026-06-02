@@ -75,3 +75,110 @@ class VisaoGeralData(BaseModel):
     evolucao_pl: list[PlPonto]
     por_condominio: list[CondominioItem]
     distribuicao_tamanho: list[TamanhoBucket]
+
+
+# ── Aba Players (administradoras) ───────────────────────────────────────────
+
+
+class AdminRankingItem(BaseModel):
+    """Linha do ranking de administradoras."""
+
+    cnpj_admin: str
+    admin: str
+    qtd: int
+    pct_qtd: float
+    pl: float
+    pct_pl: float
+    pl_medio: float
+    pl_mediano: float
+    liquidez_pct: float
+
+
+class PlayersData(BaseModel):
+    """Payload da aba Players."""
+
+    competencia: str
+    total_fidc: int
+    pl_total: float
+    ranking: list[AdminRankingItem]  # top-N por PL
+
+
+# ── Aba Lastro & Prazo ──────────────────────────────────────────────────────
+
+
+class PrazoFaixa(BaseModel):
+    """Faixa de prazo de vencimento da carteira a vencer."""
+
+    faixa: str  # 'ate 30d', '31-60d', ...
+    valor: float
+    pct: float
+
+
+class LastroPrazoData(BaseModel):
+    """Payload da aba Lastro & Prazo.
+
+    Decisao metodologica: distribuicao por faixa, NUNCA prazo medio em dias
+    (a faixa +1080d e aberta/censurada — media seria artefato). Ver conversa
+    2026-06-01.
+    """
+
+    competencia: str
+    total_a_vencer: float
+    distribuicao_prazo: list[PrazoFaixa]
+
+
+# ── Aba Risco & Liquidez ────────────────────────────────────────────────────
+
+
+class LiquidezCell(BaseModel):
+    """Celula da matriz porte x condominio do indice de liquidez."""
+
+    porte: str  # rotulo de faixa de PL
+    condom: str  # 'Aberto' | 'Fechado'
+    indice_ponderado: float  # % (liquidez ponderada / PL)
+    mediana: float  # % (fundo mediano)
+    n_fidc: int
+
+
+class LiquidezSeriePonto(BaseModel):
+    """Ponto da serie do indice de liquidez (ponderado vs mediano)."""
+
+    competencia: str
+    indice_ponderado: float
+    mediana: float
+
+
+class RiscoLiquidezData(BaseModel):
+    """Payload da aba Risco & Liquidez."""
+
+    competencia: str
+    matriz: list[LiquidezCell]
+    serie: list[LiquidezSeriePonto]
+
+
+# ── Aba REALINVEST vs Mercado (cockpit comparativo) ─────────────────────────
+
+
+class FundoMetricaComparada(BaseModel):
+    """Uma metrica do fundo + posicionamento vs mercado/pares."""
+
+    label: str
+    valor: float
+    unidade: str  # 'BRL' | '%' | 'dias'
+    mercado_mediana: float | None = None  # mediana do mercado (mesma unidade)
+    percentil_mercado: float | None = None  # 0-100 (posicao do fundo no mercado)
+    percentil_pares: float | None = None  # 0-100 (vs pares: mesmo condominio + porte)
+
+
+class FundoComparativoData(BaseModel):
+    """Payload da aba REALINVEST vs Mercado (tear-sheet + percentis)."""
+
+    competencia: str
+    cnpj: str
+    nome: str
+    condom: str | None
+    admin: str | None
+    pl: float
+    evolucao_pl: list[PlPonto]  # serie do proprio fundo
+    metricas: list[FundoMetricaComparada]
+    encontrado: bool  # False se o CNPJ nao reporta na competencia

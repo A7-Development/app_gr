@@ -1149,10 +1149,93 @@ function panoramaFiltersToQuery(f: PanoramaFilters): string {
   return s ? `?${s}` : ""
 }
 
+// ── Aba Players ─────────────────────────────────────────────────────────────
+export type PanoramaAdminRankingItem = {
+  cnpj_admin: string
+  admin: string
+  qtd: number
+  pct_qtd: number
+  pl: number
+  pct_pl: number
+  pl_medio: number
+  pl_mediano: number
+  liquidez_pct: number
+}
+export type PanoramaPlayersData = {
+  competencia: string
+  total_fidc: number
+  pl_total: number
+  ranking: PanoramaAdminRankingItem[]
+}
+
+// ── Aba Lastro & Prazo ────────────────────────────────────────────────────────
+export type PanoramaPrazoFaixa = { faixa: string; valor: number; pct: number }
+export type PanoramaLastroPrazoData = {
+  competencia: string
+  total_a_vencer: number
+  distribuicao_prazo: PanoramaPrazoFaixa[]
+}
+
+// ── Aba Risco & Liquidez ──────────────────────────────────────────────────────
+export type PanoramaLiquidezCell = {
+  porte: string
+  condom: string
+  indice_ponderado: number
+  mediana: number
+  n_fidc: number
+}
+export type PanoramaLiquidezSeriePonto = {
+  competencia: string
+  indice_ponderado: number
+  mediana: number
+}
+export type PanoramaRiscoLiquidezData = {
+  competencia: string
+  matriz: PanoramaLiquidezCell[]
+  serie: PanoramaLiquidezSeriePonto[]
+}
+
+// ── Aba REALINVEST vs Mercado ─────────────────────────────────────────────────
+export type PanoramaFundoMetrica = {
+  label: string
+  valor: number
+  unidade: string // 'BRL' | '%' | 'dias'
+  mercado_mediana: number | null
+  percentil_mercado: number | null
+  percentil_pares: number | null
+}
+export type PanoramaFundoComparativoData = {
+  competencia: string
+  cnpj: string
+  nome: string
+  condom: string | null
+  admin: string | null
+  pl: number
+  evolucao_pl: PanoramaPlPonto[]
+  metricas: PanoramaFundoMetrica[]
+  encontrado: boolean
+}
+
 export const biPanorama = {
   visaoGeral: (f: PanoramaFilters = {}) =>
     apiClient.get<BIResponse<PanoramaVisaoGeralData>>(
       `/bi/panorama/visao-geral${panoramaFiltersToQuery(f)}`,
+    ),
+  players: (f: PanoramaFilters = {}) =>
+    apiClient.get<BIResponse<PanoramaPlayersData>>(
+      `/bi/panorama/players${panoramaFiltersToQuery(f)}`,
+    ),
+  lastroPrazo: (f: PanoramaFilters = {}) =>
+    apiClient.get<BIResponse<PanoramaLastroPrazoData>>(
+      `/bi/panorama/lastro-prazo${panoramaFiltersToQuery(f)}`,
+    ),
+  riscoLiquidez: (f: PanoramaFilters = {}) =>
+    apiClient.get<BIResponse<PanoramaRiscoLiquidezData>>(
+      `/bi/panorama/risco-liquidez${panoramaFiltersToQuery(f)}`,
+    ),
+  fundoComparativo: (cnpj?: string) =>
+    apiClient.get<BIResponse<PanoramaFundoComparativoData>>(
+      `/bi/panorama/fundo-comparativo${cnpj ? `?cnpj=${encodeURIComponent(cnpj)}` : ""}`,
     ),
 }
 
