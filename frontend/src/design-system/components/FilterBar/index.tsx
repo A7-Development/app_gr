@@ -3,12 +3,18 @@
 // FilterBar — Z3 canonica dos patterns DashboardBiPadrao / DashboardOperacional /
 // ListagemComDrilldown. Ver CLAUDE.md §7.1.
 //
-// ANATOMY (refinamento 2026-05-01)
+// ANATOMY (flat — canonica 2026-06-02; ver CLAUDE.md §7.1)
 // ─────────────────────────────────────────────────────────────────────────────
-// Faixa sticky externa (bg-gray-50) + Card interno (bg-white border rounded
-// p-3) — mesma estrutura visual de `/credito/workflows` (ListagemCrudCards).
-// A faixa cinza mascara conteudo passando por baixo durante scroll; o Card
-// delimita visualmente a zona de filtros sem brigar com a TabNavigation acima.
+// Linha branca sticky com `border-b` — os chips lem como parte da pagina, sem
+// Card-em-faixa-cinza empilhado. Mais leve, sobra respiro vertical pro conteudo.
+// `scroll-shadow` (shadow-xs quando scrolled) mascara o conteudo passando por
+// baixo durante scroll — mesma funcao que a faixa cinza tinha, com menos chrome.
+// Decisao: o flat (ja de-facto em operacoes2/3/4 e panorama) virou o canonico
+// dos dashboards BI; o antigo Card-em-faixa-cinza foi aposentado.
+//
+// HISTORICO: ate 2026-06-01 a anatomy era "faixa sticky bg-gray-50 + Card
+// interno bg-white border rounded p-3" (estilo /credito/workflows). Trocada
+// pela linha flat apos avaliacao de que ela e mais limpa e ja era maioria.
 //
 // CONTROLES — altura e tipografia canonica
 // ─────────────────────────────────────────────────────────────────────────────
@@ -92,22 +98,22 @@ export function FilterBar({ children, extraActions, className }: FilterBarProps)
   return (
     <>
       <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
-      {/* Faixa sticky com fundo da pagina — mascara conteudo que passa por baixo durante scroll. */}
+      {/* Linha de filtros FLAT (canonica): branca, border-b, sticky. O
+          scroll-shadow mascara o conteudo passando por baixo. -mx-6/px-6 sangra
+          ate as bordas do container (px-6) e re-aplica o padding interno. */}
       <div
         className={cx(
-          "sticky top-0 z-10 -mx-6 px-6 pt-2 pb-3",
-          "bg-gray-50 dark:bg-gray-950",
+          "sticky top-0 z-10 -mx-6 border-b px-6",
+          "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
           scrolled && "shadow-xs",
           "transition-shadow duration-150",
         )}
       >
-        {/* Card visualmente delimitado — mesma anatomia de /credito/workflows. */}
         <div
           role="toolbar"
           aria-label="Filtros"
           className={cx(
-            "flex flex-wrap items-center gap-2 rounded border p-3",
-            "border-gray-200 bg-white dark:border-gray-900 dark:bg-[#090E1A]",
+            "flex min-h-[52px] flex-wrap items-center gap-2 py-2.5",
             className,
           )}
         >
