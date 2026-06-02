@@ -3944,6 +3944,48 @@ export type DrillPddPapel = Omit<
   delta_valor_pdd: number
 }
 
+type DrillPddResumoDTO = {
+  constituicao_total: number | string
+  reversao_total:     number | string
+  delta_liquido:      number | string
+  direcao:            "constituicao" | "reversao" | "neutro"
+  impacto_pl_sub:     number | string
+}
+export type DrillPddResumo = {
+  constituicao_total: number
+  reversao_total:     number
+  delta_liquido:      number
+  direcao:            "constituicao" | "reversao" | "neutro"
+  impacto_pl_sub:     number
+}
+
+type DrillPddEfeitoVagaoDTO = {
+  sacado_doc:              string
+  sacado_nome:             string
+  faixa_para:              PddFaixaKey
+  qtd_papeis:              number
+  qtd_vencidos:            number
+  qtd_a_vencer_arrastados: number
+  sum_delta_pdd:           number | string
+  documento_puxador:       string
+  documentos_arrastados:   string[]
+}
+export type DrillPddEfeitoVagao = Omit<DrillPddEfeitoVagaoDTO, "sum_delta_pdd"> & {
+  sum_delta_pdd: number
+}
+
+type DrillPddVagaoReversoDTO = {
+  sacado_doc:           string
+  sacado_nome:          string
+  qtd_liberados:        number
+  sum_delta_pdd:        number | string
+  documento_liberador:  string
+  documentos_liberados: string[]
+}
+export type DrillPddVagaoReverso = Omit<DrillPddVagaoReversoDTO, "sum_delta_pdd"> & {
+  sum_delta_pdd: number
+}
+
 type DrillPddResponseDTO = {
   fundo_id:                       string
   fundo_nome:                     string
@@ -3961,6 +4003,11 @@ type DrillPddResponseDTO = {
   estoque_disponivel_d1:          boolean
   estoque_disponivel_d0:          boolean
   motivo_indisponivel:            string | null
+  resumo:                         DrillPddResumoDTO | null
+  efeito_vagao:                   DrillPddEfeitoVagaoDTO[]
+  vagao_reverso:                  DrillPddVagaoReversoDTO[]
+  reversao_por_liquidacao:        number | string
+  reversao_por_liberacao:         number | string
   matriz:                         DrillPddMigracaoCelulaDTO[]
   papeis_wop:                     DrillPddPapelDTO[]
   papeis_wop_total_pdd_d1:        number | string
@@ -3986,6 +4033,11 @@ export type DrillPddResponse = {
   estoque_disponivel_d1:          boolean
   estoque_disponivel_d0:          boolean
   motivo_indisponivel:            string | null
+  resumo:                         DrillPddResumo | null
+  efeito_vagao:                   DrillPddEfeitoVagao[]
+  vagao_reverso:                  DrillPddVagaoReverso[]
+  reversao_por_liquidacao:        number
+  reversao_por_liberacao:         number
   matriz:                         DrillPddMigracaoCelula[]
   papeis_wop:                     DrillPddPapel[]
   papeis_wop_total_pdd_d1:        number
@@ -4037,6 +4089,25 @@ function _coerceDrillPdd(r: DrillPddResponseDTO): DrillPddResponse {
     estoque_disponivel_d1:          r.estoque_disponivel_d1,
     estoque_disponivel_d0:          r.estoque_disponivel_d0,
     motivo_indisponivel:            r.motivo_indisponivel,
+    resumo: r.resumo
+      ? {
+          constituicao_total: Number(r.resumo.constituicao_total),
+          reversao_total:     Number(r.resumo.reversao_total),
+          delta_liquido:      Number(r.resumo.delta_liquido),
+          direcao:            r.resumo.direcao,
+          impacto_pl_sub:     Number(r.resumo.impacto_pl_sub),
+        }
+      : null,
+    efeito_vagao: (r.efeito_vagao ?? []).map((v) => ({
+      ...v,
+      sum_delta_pdd: Number(v.sum_delta_pdd),
+    })),
+    vagao_reverso: (r.vagao_reverso ?? []).map((v) => ({
+      ...v,
+      sum_delta_pdd: Number(v.sum_delta_pdd),
+    })),
+    reversao_por_liquidacao:        Number(r.reversao_por_liquidacao ?? 0),
+    reversao_por_liberacao:         Number(r.reversao_por_liberacao ?? 0),
     matriz:                         r.matriz.map(_coerceDrillPddCelula),
     papeis_wop:                     r.papeis_wop.map(_coerceDrillPddPapel),
     papeis_wop_total_pdd_d1:        Number(r.papeis_wop_total_pdd_d1),
