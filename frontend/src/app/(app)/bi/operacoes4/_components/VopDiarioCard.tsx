@@ -1,15 +1,13 @@
 // L2 esquerda do redesign /bi/operacoes4 (handoff 2026-05-21).
 //
-// VOP DIÁRIO com header de 3 linhas (eyebrow + KPI + Média/DU) + SegmentSwitch
-// de UA no actions slot (com fallback FilterChip quando ha > 3 UAs).
+// VOP DIÁRIO no padrao canonico: reusa `EvolucaoDiariaCard` (DS) -> EChartsCard.
+// Header = eyebrow (title) + headerKpi (R$ valor + delta VOP-DU) + caption
+// (competencia + DUs) + actions (SegmentSwitch de UA, com fallback FilterChip
+// quando ha > 3 UAs). Sem header customizado — todos os slots sao do EChartsCard.
 //
-// Reusa `EvolucaoDiariaCard` (DS) — apenas envolve com header customizado
-// e o seletor de UA.
-//
-// TODO_PR4 (polishing): a "Média/DU R$ X" deveria viver entre o KPI principal
-// e o caption. EChartsCard atual nao expoe slot para esse segundo metric —
-// solucao temporaria coloca no actions slot a direita. Aceitavel em PR1,
-// pixel-perfect na PR4.
+// HISTORICO: ate 2026-06-02 havia um 2o metrico "Média/DU R$ X" espremido no
+// actions slot (EChartsCard nao tem slot pra metrico secundario). Removido a
+// pedido do Ricardo — o card ficou no padrao canonico puro.
 
 "use client"
 
@@ -160,8 +158,6 @@ export function VopDiarioCard({
     return ua?.valor_mtd ?? 0
   }, [selectedUaId, vop, vopMtdPorUa])
 
-  const mediaPorDu = duDecorridos > 0 ? kpiValor / duDecorridos : 0
-
   // Overlay 1: VOP acumulado MTD — cumsum do chartData. Em dias sem dado
   // (fim de semana, feriado, dia util sem operacao) a linha NAO some — ela
   // anda de lado, repetindo o ultimo acc. Null apenas para dias futuros.
@@ -260,28 +256,20 @@ export function VopDiarioCard({
       height={260}
       onPointClick={onPointClick}
       actions={
-        <div className="flex items-center gap-3">
-          <span className="hidden text-[11px] text-gray-500 sm:inline dark:text-gray-400">
-            Média/DU{" "}
-            <span className="font-medium tabular-nums text-gray-700 dark:text-gray-300">
-              {fmtBRLCompact.format(mediaPorDu)}
-            </span>
-          </span>
-          {useSegment ? (
-            <SegmentSwitch<string>
-              value={segmentValue}
-              onChange={handleSegmentChange}
-              options={segmentOptions}
-              ariaLabel="Filtrar VOP diário por UA"
-            />
-          ) : (
-            <UaFilterChip
-              uas={uas}
-              selected={selectedUaId}
-              onChange={setSelectedUaId}
-            />
-          )}
-        </div>
+        useSegment ? (
+          <SegmentSwitch<string>
+            value={segmentValue}
+            onChange={handleSegmentChange}
+            options={segmentOptions}
+            ariaLabel="Filtrar VOP diário por UA"
+          />
+        ) : (
+          <UaFilterChip
+            uas={uas}
+            selected={selectedUaId}
+            onChange={setSelectedUaId}
+          />
+        )
       }
     />
   )
