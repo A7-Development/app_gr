@@ -350,3 +350,23 @@ LEFT JOIN dbo.ContaBancariaTrava trv
     ON trv.ContaBancariaId = cb.ContaBancariaId
 """
 
+# Posicao de debentures AO VIVO (snapshot diario). `DebentureSubscricao.
+# TotalBruto/TotalLiquido/Valor` sao mantidos pela Bitfin com correcao diaria
+# (CorrecaoDiaria=1, CDI+spread) -- e por subscricao (cada uma acumula sobre o
+# seu proprio principal/data de integralizacao). Conferido: SUM(TotalBruto) das
+# Integralizadas == fechamento mensal de PosicaoHistoricaDebenture do mes
+# corrente. UA via DebentureEscritura.UnidadeAdministrativaId.
+SELECT_DEBENTURE_POSICAO_LIVE = """
+SELECT s.SubscricaoId               AS subscricao_id,
+       esc.UnidadeAdministrativaId  AS ua_id,
+       s.QuantidadeDeDebenturesAtual AS quantidade,
+       s.Valor                      AS valor,
+       s.TotalBruto                 AS total_bruto,
+       s.TotalLiquido               AS total_liquido
+FROM dbo.DebentureSubscricao s
+JOIN dbo.DebentureSerie se     ON se.SerieId = s.SerieId
+JOIN dbo.DebentureEscritura esc ON esc.EscrituraId = se.EscrituraId
+WHERE s.Status = 'Integralizada'
+ORDER BY esc.UnidadeAdministrativaId, s.SubscricaoId
+"""
+

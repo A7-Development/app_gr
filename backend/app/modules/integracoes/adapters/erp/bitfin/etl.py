@@ -25,7 +25,7 @@ from itertools import islice
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,6 +46,10 @@ from app.modules.integracoes.adapters.erp.bitfin.queries import analytics, bitfi
 from app.modules.integracoes.adapters.erp.bitfin.version import ADAPTER_VERSION
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 from app.warehouse.bitfin_entidade import WhBitfinEntidade
+from app.warehouse.bitfin_raw_debenture import (
+    TIPO_ORIGEM_VALOR_ATUALIZADO_DIA,
+    BitfinRawDebenture,
+)
 from app.warehouse.bitfin_raw_dre import (
     TIPO_ORIGEM_COMISSAO,
     TIPO_ORIGEM_DEMONSTRATIVO,
@@ -57,6 +61,7 @@ from app.warehouse.caixa_snapshot import CaixaSnapshot
 from app.warehouse.dim import DimProduto, DimUnidadeAdministrativa
 from app.warehouse.dre import DreMensal
 from app.warehouse.operacao import Operacao, OperacaoItem
+from app.warehouse.posicao_debenture import ORIGEM_SNAPSHOT, PosicaoDebentureDia
 from app.warehouse.titulo import Titulo
 from app.warehouse.titulo_snapshot import TituloSnapshot
 
@@ -964,6 +969,123 @@ async def sync_caixa_snapshot(
     return {"table": "wh_caixa_snapshot", "rows": count}
 
 
+# ---- Debentures (snapshot diario da posicao) ----
+
+
+async def _upsert_bronze_debenture(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    data_referencia: date,
+    payload: list[dict],
+) -> bool:
+    """Grava 1 row de bronze (snapshot diario). Dedup via sha (ON CONFLICT
+    DO NOTHING) -- re-run no mesmo dia com mesmo conteudo e no-op."""
+    sha = sha256_of_row({"items": payload})
+    row = {
+        "tenant_id": tenant_id,
+        "tipo_origem": TIPO_ORIGEM_VALOR_ATUALIZADO_DIA,
+        "data_referencia": data_referencia,
+        "payload": payload,
+        "row_count": len(payload),
+        "payload_sha256": sha,
+        "fetched_at": datetime.now(UTC),
+        "fetched_by_version": ADAPTER_VERSION,
+    }
+    stmt = pg_insert(BitfinRawDebenture.__table__).values(row).on_conflict_do_nothing(
+        constraint="uq_wh_bitfin_raw_debenture"
+    )
+    result = await db.execute(stmt)
+    return result.rowcount > 0
+
+
+async def sync_debenture_posicao(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
+    """Snapshot diario da posicao de debentures (going-forward).
+
+    `DebentureSubscricao.TotalBruto/Liquido/Valor` sao mantidos pela Bitfin com
+    correcao diaria (CDI+spread, por subscricao). Fotografamos o estado atual:
+      - bronze `wh_bitfin_raw_debenture` (tipo_origem=valor_atualizado_dia): 1
+        row/dia com o payload de todas as subscricoes Integralizadas (auditavel);
+      - silver `wh_posicao_debenture_dia`: 1 row por UA para o DIA de hoje
+        (origem=snapshot), pl_bruto = SUM(TotalBruto), etc.
+
+    Idempotente: re-run no mesmo dia faz dedup do bronze (sha) e upsert do
+    silver (business key tenant/ua/dia). `since` ignorado -- e sempre o estado
+    corrente. A Bitfin faz a conta do CDI; nos so capturamos (zero CDI nosso).
+    """
+    rows = await asyncio.to_thread(
+        fetch_rows,
+        config,
+        config.database_bitfin,
+        bitfin.SELECT_DEBENTURE_POSICAO_LIVE,
+    )
+    today = datetime.now(UTC).date()
+    if not rows:
+        return {"table": "wh_posicao_debenture_dia", "rows": 0, "uas": 0}
+
+    # Agrega por UA para o silver.
+    by_ua: dict[int, dict[str, Any]] = {}
+    for r in rows:
+        ua = int(r["ua_id"])
+        acc = by_ua.setdefault(
+            ua,
+            {"bruto": _ZERO, "valor": _ZERO, "liquido": _ZERO, "qtd": _ZERO, "n": 0},
+        )
+        acc["bruto"] += _to_decimal(r["total_bruto"])
+        acc["valor"] += _to_decimal(r["valor"])
+        acc["liquido"] += _to_decimal(r["total_liquido"])
+        acc["qtd"] += _to_decimal(r["quantidade"])
+        acc["n"] += 1
+
+    cent = Decimal("0.01")
+    async with AsyncSessionLocal() as db:
+        await _upsert_bronze_debenture(
+            db, tenant_id=tenant_id, data_referencia=today, payload=rows
+        )
+        n_silver = 0
+        for ua, acc in by_ua.items():
+            silver_row = {
+                "tenant_id": tenant_id,
+                "unidade_administrativa_id": ua,
+                "data_posicao": today,
+                "pl_bruto": acc["bruto"].quantize(cent),
+                "pl_valor": acc["valor"].quantize(cent),
+                "pl_liquido": acc["liquido"].quantize(cent),
+                "quantidade_debentures": acc["qtd"],
+                "n_subscricoes": acc["n"],
+                "origem": ORIGEM_SNAPSHOT,
+                "source_type": SourceType.ERP_BITFIN,
+                "source_id": f"{ua}|{today.isoformat()}",
+                "ingested_by_version": ADAPTER_VERSION,
+                "trust_level": TrustLevel.HIGH,
+            }
+            stmt = pg_insert(PosicaoDebentureDia.__table__).values(silver_row)
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_wh_posicao_debenture_dia",
+                set_={
+                    "pl_bruto": stmt.excluded.pl_bruto,
+                    "pl_valor": stmt.excluded.pl_valor,
+                    "pl_liquido": stmt.excluded.pl_liquido,
+                    "quantidade_debentures": stmt.excluded.quantidade_debentures,
+                    "n_subscricoes": stmt.excluded.n_subscricoes,
+                    "origem": stmt.excluded.origem,
+                    "ingested_at": func.now(),
+                },
+            )
+            await db.execute(stmt)
+            n_silver += 1
+        await db.commit()
+
+    return {
+        "table": "wh_posicao_debenture_dia",
+        "rows": n_silver,
+        "uas": len(by_ua),
+        "data": today.isoformat(),
+    }
+
+
 # ---- Master orchestrator ----
 
 SYNC_PIPELINE = [
@@ -987,6 +1109,9 @@ SYNC_PIPELINE = [
     sync_bitfin_raw_dre_comissao,
     sync_dre_mensal,
     sync_caixa_snapshot,
+    # Snapshot diario da posicao de debentures (going-forward; Bitfin faz o
+    # CDI, nos capturamos). Alimenta o denominador do ROA bruto da DRE.
+    sync_debenture_posicao,
 ]
 
 
