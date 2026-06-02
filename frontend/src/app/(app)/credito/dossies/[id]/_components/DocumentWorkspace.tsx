@@ -10,7 +10,6 @@ import * as React from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   RiCheckboxCircleFill,
-  RiErrorWarningLine,
   RiFileTextLine,
   RiLoader4Line,
   RiSparkling2Line,
