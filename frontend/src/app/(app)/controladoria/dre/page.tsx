@@ -51,7 +51,7 @@ import {
 } from "@/design-system/components/AIPanel"
 import { TabNavigation, TabNavigationLink } from "@/components/tremor/TabNavigation"
 import { useUAs } from "@/lib/hooks/cadastros"
-import { useDrePivot, useDreBreakdown } from "@/lib/hooks/controladoria"
+import { useDrePivot, useDreBreakdown, useDreRoa } from "@/lib/hooks/controladoria"
 import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 
 import { DrePivotTable } from "./_components/DrePivotTable"
@@ -155,6 +155,14 @@ export default function DrePage() {
   const pivotQuery = useDrePivot(pivotFilters)
   const pivot = pivotQuery.data
 
+  // ROA bruto 30d — mesma janela/fundo do pivot (filtros globais §7.2).
+  const roaQuery = useDreRoa(pivotFilters)
+  // ROA da competencia "Fim" (mes mais recente do periodo) p/ a headline.
+  const roaAtual = React.useMemo(() => {
+    const alvo = isoFirstOfMonth(competenciaAte)
+    return roaQuery.data?.competencias.find((c) => c.competencia === alvo) ?? null
+  }, [roaQuery.data, competenciaAte])
+
   // Breakdown da receita (1 mes = competencia "Fim"). So quando a aba e de breakdown.
   const breakdownFilters = React.useMemo<DreBreakdownFilters | null>(() => {
     const dim = TABS.find((t) => t.key === activeTab)?.dim
@@ -220,8 +228,22 @@ export default function DrePage() {
       })
     }
 
+    // ROA bruto 30d (mes mais recente). Numerador = desagio normalizado a 30d +
+    // multa/mora/tarifas; denominador = PL medio diario (cotas/MEC ou
+    // debentures, conforme o funding do fundo). Numero deterministico (§14).
+    if (roaAtual) {
+      const roa = roaAtual.roaCotas30d ?? roaAtual.roaDebentures30d
+      if (roa != null) {
+        const base = roaAtual.roaCotas30d != null ? "PL cotas" : "PL debêntures"
+        out.push({
+          label: `ROA bruto 30d ${fmtPct.format(roa * 100)}%/mês · ${base}`,
+          tone:  "info",
+        })
+      }
+    }
+
     return out
-  }, [pivot])
+  }, [pivot, roaAtual])
 
   // ────────────────────────────────────────────────────────────────────────
   // Header actions

@@ -4775,6 +4775,18 @@ export const controladoria = {
     )
     return _coerceDreBreakdown(raw)
   },
+
+  // ROA bruto 30d por competencia. Denominador (PL cotas/MEC ou PL debentures)
+  // decidido pelo backend conforme a estrutura de funding do fundo.
+  dreRoa: async (filters: DreRoaFilters): Promise<DreRoaResponse> => {
+    const params = _dreParams(filters)
+    params.set("competencia_de", filters.competenciaDe)
+    params.set("competencia_ate", filters.competenciaAte)
+    const raw = await apiClient.get<DreRoaResponseRaw>(
+      `/controladoria/dre/roa?${params.toString()}`,
+    )
+    return _coerceDreRoa(raw)
+  },
 }
 
 // ── DRE — Tipos + helpers ──────────────────────────────────────────────────
@@ -5088,6 +5100,80 @@ function _coerceDreBreakdown(r: DreBreakdownResponseRaw): DreBreakdownResponse {
     totalReceita:   Number(r.total_receita),
     totalCusto:     Number(r.total_custo),
     totalResultado: Number(r.total_resultado),
+  }
+}
+
+// ── DRE — ROA bruto 30d ────────────────────────────────────────────────────
+
+export type DreRoaFilters = DreBaseFilters & {
+  competenciaDe:  string  // YYYY-MM-DD (1o dia do mes)
+  competenciaAte: string  // YYYY-MM-DD (1o dia do mes)
+}
+
+type DreRoaCompetenciaRaw = {
+  competencia:           string
+  desagio:               number | string
+  prazo_medio:           number | string
+  desagio_30d:           number | string
+  demais_receitas:       number | string
+  numerador:             number | string
+  pl_cotas_medio:        number | string | null
+  pl_debentures_medio:   number | string | null
+  roa_cotas_30d:         number | string | null
+  roa_debentures_30d:    number | string | null
+  pl_debentures_origens: string[]
+}
+
+export type DreRoaCompetencia = {
+  competencia:          string
+  desagio:              number
+  prazoMedio:           number
+  desagio30d:           number
+  demaisReceitas:       number
+  numerador:            number
+  plCotasMedio:         number | null
+  plDebenturesMedio:    number | null
+  roaCotas30d:          number | null  // fracao (0.0347 = 3,47%)
+  roaDebentures30d:     number | null
+  plDebenturesOrigens:  string[]
+}
+
+type DreRoaResponseRaw = {
+  competencia_de:  string
+  competencia_ate: string
+  fundo_id:        number | null
+  competencias:    DreRoaCompetenciaRaw[]
+}
+
+export type DreRoaResponse = {
+  competenciaDe:  string
+  competenciaAte: string
+  fundoId:        number | null
+  competencias:   DreRoaCompetencia[]
+}
+
+function _numOrNull(v: number | string | null): number | null {
+  return v === null || v === undefined ? null : Number(v)
+}
+
+function _coerceDreRoa(r: DreRoaResponseRaw): DreRoaResponse {
+  return {
+    competenciaDe:  r.competencia_de,
+    competenciaAte: r.competencia_ate,
+    fundoId:        r.fundo_id,
+    competencias: r.competencias.map((c) => ({
+      competencia:         c.competencia,
+      desagio:             Number(c.desagio),
+      prazoMedio:          Number(c.prazo_medio),
+      desagio30d:          Number(c.desagio_30d),
+      demaisReceitas:      Number(c.demais_receitas),
+      numerador:           Number(c.numerador),
+      plCotasMedio:        _numOrNull(c.pl_cotas_medio),
+      plDebenturesMedio:   _numOrNull(c.pl_debentures_medio),
+      roaCotas30d:         _numOrNull(c.roa_cotas_30d),
+      roaDebentures30d:    _numOrNull(c.roa_debentures_30d),
+      plDebenturesOrigens: c.pl_debentures_origens ?? [],
+    })),
   }
 }
 

@@ -20,6 +20,7 @@ Camadas (CLAUDE.md secao 13.2):
 from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel
 from app.warehouse.bitfin_dre_natureza_rule import WhBitfinDreNaturezaRule
 from app.warehouse.bitfin_entidade import WhBitfinEntidade
+from app.warehouse.bitfin_raw_debenture import BitfinRawDebenture
 from app.warehouse.bitfin_tarifa_catalogo import WhBitfinTarifaCatalogo
 from app.warehouse.caixa_snapshot import CaixaSnapshot
 from app.warehouse.cpr_movimento import CprMovimento
@@ -37,6 +38,7 @@ from app.warehouse.operacao import Operacao, OperacaoItem
 from app.warehouse.operacao_remessa import OperacaoRemessa
 from app.warehouse.posicao_compromissada import PosicaoCompromissada
 from app.warehouse.posicao_cota_fundo import PosicaoCotaFundo
+from app.warehouse.posicao_debenture import PosicaoDebentureDia
 from app.warehouse.posicao_outros_ativos import PosicaoOutrosAtivos
 from app.warehouse.posicao_renda_fixa import PosicaoRendaFixa
 from app.warehouse.qitech_raw_relatorio import QiTechRawRelatorio
@@ -71,6 +73,7 @@ from app.warehouse.titulo_snapshot import TituloSnapshot
 
 __all__ = [
     "AquisicaoRecebivel",
+    "BitfinRawDebenture",
     "CaixaSnapshot",
     "CprMovimento",
     "DiaUtilQitech",
@@ -88,6 +91,7 @@ __all__ = [
     "OperacaoRemessa",
     "PosicaoCompromissada",
     "PosicaoCotaFundo",
+    "PosicaoDebentureDia",
     "PosicaoOutrosAtivos",
     "PosicaoRendaFixa",
     "QiTechRawRelatorio",
