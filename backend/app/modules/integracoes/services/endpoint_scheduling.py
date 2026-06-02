@@ -20,7 +20,7 @@ de novo.
 
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -40,6 +40,20 @@ from app.modules.integracoes.services.endpoint_routing import (
 # Timezone do schedule daily_at — todos os HH:MM viajam em America/Sao_Paulo
 # (alinhado com o scheduler em `app/scheduler/scheduler.py`).
 SP_TZ = ZoneInfo("America/Sao_Paulo")
+
+
+def anchor_datetime_utc(*, day: date, hhmm: str) -> datetime:
+    """Converte uma data SP + 'HH:MM' (SP, 24h) no instante em UTC.
+
+    Centraliza a matematica de ancora reutilizada pelo schedule `daily_at`
+    (`_is_due_daily_at`/`compute_next_sync_legacy`) e pelo gate de ancora da
+    state machine (`state_machine_dispatcher._anchor_defer_at`). DST-aware via
+    `astimezone` (Brasil sem horario de verao hoje, mas robusto se voltar).
+    """
+    hh, mm = hhmm.split(":")
+    return datetime.combine(
+        day, time(hour=int(hh), minute=int(mm)), tzinfo=SP_TZ
+    ).astimezone(UTC)
 
 # Timeout de sync zumbi — `last_sync_status='em_progresso'` ha mais de N
 # horas considera zombi. Default 2h cobre 99% dos casos sem ficar agressivo

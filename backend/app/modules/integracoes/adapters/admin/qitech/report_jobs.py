@@ -402,15 +402,18 @@ async def process_fidc_estoque_callback(
     #     200, mandou callback com fileLink valido, mas o CSV baixado tem 0
     #     bytes — nem header. Sem esse check, o mapper produz 0 linhas e o
     #     job vai pra SUCCESS silencioso, e a UI exibe "Disponivel" pra um
-    #     snapshot vazio. Marcamos EMPTY pra deixar explicito que foi falha
-    #     do lado da QiTech (distinto de ERROR, que e falha de rede/HTTP).
+    #     snapshot vazio. Marcamos EMPTY (estado de ESPERA, nao de falha): o
+    #     0-byte significa "a QiTech ainda nao tem o dado dessa data de
+    #     referencia" — o mesmo POST passa a devolver o CSV quando o dado dela
+    #     chega. A state machine trata EMPTY como NOT_PUBLISHED (sem raw ->
+    #     backoff por tolerancia), distinto de ERROR (falha de rede/HTTP).
     #     Heuristica conservadora: SO 0 bytes. Header presente + 0 linhas
     #     fica como SUCCESS (pode ser fundo legitimamente sem posicao).
     csv_bytes = len(csv_text.encode("utf-8"))
     if csv_bytes == 0:
         job.error_message = (
-            "QiTech retornou arquivo vazio (0 bytes) — provavel falha na "
-            "geracao do relatorio do lado da QiTech. Re-disparar pode resolver."
+            "QiTech ainda nao disponibilizou o relatorio desta data de "
+            "referencia (arquivo de 0 bytes) — aguardando proxima janela."
         )
         job.status = QitechJobStatus.EMPTY
         job.result_downloaded_at = datetime.now(UTC)
