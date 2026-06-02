@@ -154,6 +154,7 @@ export const MODULES: ModuleDefinition[] = [
         enabled: true,
         icon: RiBookOpenLine,
         children: [
+          { name: "Panorama do mercado", href: "/bi/panorama", enabled: true },
           { name: "Benchmark", href: "/bi/benchmark", enabled: true },
           { name: "Benchmark2", href: "/bi/benchmark2", enabled: true },
         ],
