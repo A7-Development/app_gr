@@ -375,6 +375,27 @@ export type FinalizePayload = {
   opinion: OpinionInput
 }
 
+export type CreditDocumentRead = {
+  id: string
+  dossier_id: string
+  doc_type: string
+  original_filename: string
+  mime_type: string | null
+  file_size_bytes: number
+  extraction_status: string // pending|processing|success|error|validated
+  ai_extraction: Record<string, unknown> | null
+  ai_model_used: string | null
+  ai_prompt_version: string | null
+  extraction_confidence: string | null
+  extraction_error: string | null
+  uploaded_at: string
+}
+
+export type ExtractionUpdatePayload = {
+  extracted_fields: Record<string, unknown>
+  confidence?: number | null
+}
+
 // ─── Labels (pt-BR) ──────────────────────────────────────────────────────
 
 export const DOSSIER_STATUS_LABEL: Record<DossierStatus, string> = {
@@ -625,6 +646,39 @@ export const credito = {
         process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1"
       return `${apiUrl}/credito/dossies/${dossierId}/attachments/${attachmentId}/download`
     },
+  },
+  documents: {
+    list: (dossierId: string) =>
+      apiClient.get<CreditDocumentRead[]>(
+        `/credito/dossies/${dossierId}/documents`,
+      ),
+    upload: (dossierId: string, file: File, docType: string) => {
+      const form = new FormData()
+      form.append("file", file)
+      form.append("doc_type", docType)
+      return _uploadMultipart<CreditDocumentRead>(
+        `/credito/dossies/${dossierId}/documents`,
+        form,
+      )
+    },
+    /** Dispara a extracao multimodal sob demanda (o "Processar"). */
+    extract: (dossierId: string, documentId: string) =>
+      apiClient.post<CreditDocumentRead>(
+        `/credito/dossies/${dossierId}/documents/${documentId}/extract`,
+      ),
+    updateExtraction: (
+      dossierId: string,
+      documentId: string,
+      payload: ExtractionUpdatePayload,
+    ) =>
+      apiClient.patch<CreditDocumentRead>(
+        `/credito/dossies/${dossierId}/documents/${documentId}/extraction`,
+        payload,
+      ),
+    remove: (dossierId: string, documentId: string) =>
+      apiClient.delete<void>(
+        `/credito/dossies/${dossierId}/documents/${documentId}`,
+      ),
   },
   notes: {
     list: (dossierId: string, nodeId?: string | null) => {

@@ -29,6 +29,7 @@ import {
   WizardMultiStep,
   type WizardMultiStepStep,
 } from "@/design-system/patterns/WizardMultiStep"
+import { DocumentWorkspace } from "./_components/DocumentWorkspace"
 import {
   AgentLiveStatus,
   AgentOutputRenderer,
@@ -272,6 +273,21 @@ export default function DossierDetailPage() {
 
   // ── Render hooks pro Workspace ──────────────────────────────────────────
   const renderWaitingInput = (step: WizardMultiStepStep) => {
+    // Coleta de documentos (document_request): painel de upload + Processar
+    // (IA extrai) + validar. O node re-checa os obrigatorios no Continuar.
+    if (step.nodeType === "document_request") {
+      const out = (step.output ?? {}) as { required?: string[] }
+      return (
+        <DocumentWorkspace
+          dossierId={dossierId}
+          requiredDocTypes={Array.isArray(out.required) ? out.required : []}
+          continuing={submitMutation.isPending}
+          onContinue={() =>
+            submitMutation.mutate({ nodeId: step.id, values: {} })
+          }
+        />
+      )
+    }
     // Checkpoint de revisao (human_review): rever flags + editar parecer +
     // finalizar. Substitui o "Continuar" seco.
     if (step.nodeType === "human_review") {
