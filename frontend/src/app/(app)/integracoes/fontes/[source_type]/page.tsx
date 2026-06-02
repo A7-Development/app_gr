@@ -18,11 +18,12 @@
 import Link from "next/link"
 import * as React from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
-import { RiArrowLeftLine } from "@remixicon/react"
+import { RiArrowLeftLine, RiBuilding2Line } from "@remixicon/react"
 import { useQuery } from "@tanstack/react-query"
 
 import { PageHeader } from "@/design-system/components/PageHeader"
 import { AdapterStatusBadge, statusFrom } from "@/design-system/components/AdapterStatusBadge"
+import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 import { Button } from "@/components/tremor/Button"
 import {
@@ -182,6 +183,15 @@ export default function SourceDetailPage() {
     router.replace(buildHref(sourceType, activeTab, environment, nextUaId))
   }
 
+  // Fonte multi-UA sem UA escolhida: sync/backfill nasceriam com `ua=None` e
+  // falhariam silenciosamente (job fica 'done' com tudo em dates_failed, pois
+  // o endpoint custodia.*/market.* nao acha tenant_source_config pra ua=None).
+  // Gateia os tabs acionaveis (Endpoints, Cobertura) ate o usuario escolher a
+  // UA no seletor do header. Single-UA ja auto-seleciona (effect acima), entao
+  // este caso so dispara em tenant multi-fundo.
+  const needsUaSelection =
+    hasEndpoints && !uaIdParam && !uasQuery.isLoading && uas.length >= 1
+
   return (
     <div className="flex flex-col gap-6 px-12 py-6 pb-28">
       <PageHeader
@@ -283,18 +293,26 @@ export default function SourceDetailPage() {
             <CredenciaisTab detail={data} sourceType={sourceType} />
           )}
           {!isLoading && data && activeTab === "endpoints" && (
-            <EndpointsTab
-              sourceType={sourceType}
-              environment={environment}
-              uaId={uaIdParam}
-            />
+            needsUaSelection ? (
+              <UaRequiredNotice />
+            ) : (
+              <EndpointsTab
+                sourceType={sourceType}
+                environment={environment}
+                uaId={uaIdParam}
+              />
+            )
           )}
           {!isLoading && data && activeTab === "cobertura" && (
-            <CoberturaTab
-              sourceType={sourceType}
-              uaId={uaIdParam}
-              environment={environment}
-            />
+            needsUaSelection ? (
+              <UaRequiredNotice />
+            ) : (
+              <CoberturaTab
+                sourceType={sourceType}
+                uaId={uaIdParam}
+                environment={environment}
+              />
+            )
           )}
           {!isLoading && data && activeTab === "contas-bancarias" && (
             <ContasBancariasTab detail={data} sourceType={sourceType} />
@@ -305,5 +323,18 @@ export default function SourceDetailPage() {
         </>
       )}
     </div>
+  )
+}
+
+// Aviso quando a fonte e multi-UA e nenhuma UA esta selecionada. Aponta o
+// usuario pro seletor do header — sem UA, o sync/backfill falha por falta de
+// credencial (tenant_source_config e por-UA).
+function UaRequiredNotice() {
+  return (
+    <EmptyState
+      icon={RiBuilding2Line}
+      title="Selecione uma Unidade Administrativa"
+      description="Esta fonte atende várias UAs. Escolha a UA no seletor acima para ver os endpoints e sincronizar — sem ela, a sincronização não encontra a credencial e falha."
+    />
   )
 }

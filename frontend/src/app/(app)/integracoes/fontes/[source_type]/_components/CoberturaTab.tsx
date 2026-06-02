@@ -89,6 +89,14 @@ export function CoberturaTab({
 
   const handleBackfill = React.useCallback(
     async (endpointName: string, dates: string[]) => {
+      // Guarda defensivo: sem UA o backfill nasce com ua=None e falha por
+      // falta de credencial (job 'done' com tudo em dates_failed). A pagina
+      // ja gateia este tab quando ha UAs e nenhuma escolhida, mas mantemos a
+      // checagem aqui caso o tab seja montado em outro contexto.
+      if (!uaId) {
+        toast.error("Selecione a Unidade Administrativa antes de sincronizar.")
+        return null
+      }
       try {
         const job = await createBackfillMut.mutateAsync({
           endpointName,
