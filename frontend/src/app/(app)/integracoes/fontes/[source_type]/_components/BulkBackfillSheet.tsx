@@ -216,7 +216,7 @@ export function BulkBackfillSheet({
             />
             <ToggleRow
               label="Pular dias já coletados"
-              description="Exclui dias com status OK e payload completo."
+              description="Exclui dias com status OK e payload completo. Desligado, todos os dias do período são re-buscados e sobrescritos."
               checked={skipAlreadyOk}
               onCheckedChange={setSkipAlreadyOk}
             />
@@ -248,11 +248,18 @@ export function BulkBackfillSheet({
                 </p>
               )}
               {selectedDates.length > 0 && !overCap && (
-                <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                  Worker dispara as chamadas sequencialmente respeitando timing
-                  entre elas. Acompanhe o progresso na própria linha da
-                  Cobertura.
-                </p>
+                <>
+                  <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-300">
+                    Re-busca da QiTech: o <strong>raw (dados brutos)</strong> e a{" "}
+                    <strong>camada silver</strong> desses dias serão{" "}
+                    <strong>sobrescritos</strong> (upsert + re-mapeamento).
+                  </p>
+                  <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                    Worker dispara as chamadas sequencialmente respeitando timing
+                    entre elas. Acompanhe o progresso na própria linha da
+                    Cobertura.
+                  </p>
+                </>
               )}
             </div>
             {selectedDates.length > 0 && selectedDates.length <= 60 && (
