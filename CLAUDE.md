@@ -379,12 +379,14 @@ Patterns e surfaces sao **copy-paste-edit** — nao componentes black-box. Copie
 
 ### 7.1 FilterBar (Z3) — anatomy canonica + controles
 
-**Estrutura visual** (refinamento 2026-05-01): a Z3 do `DashboardBiPadrao` (e tambem usada em `DashboardOperacional` e `ListagemComDrilldown`) renderiza como **Card branco dentro de uma faixa sticky cinza-50** — mesma anatomy de `/credito/workflows` (`ListagemCrudCards`):
+**Estrutura visual** (canonica 2026-06-02 — anatomy FLAT): a Z3 do `DashboardBiPadrao` (e tambem `DashboardOperacional` e `ListagemComDrilldown`) renderiza como **linha branca sticky com `border-b`** — chips direto sobre a linha, SEM Card-em-faixa-cinza. Mais leve; os filtros lem como parte da pagina e sobra respiro vertical pro conteudo:
 
-- Faixa externa: `sticky top-0 z-10 -mx-6 px-6 pt-2 pb-3 bg-gray-50 dark:bg-gray-950` + `shadow-xs` quando scrolled. E ela quem mascara conteudo passando por baixo durante scroll.
-- Card interno: `flex flex-wrap items-center gap-2 rounded border p-3 border-gray-200 bg-white dark:border-gray-900 dark:bg-[#090E1A]` (mesmas classes do `<Card>` Tremor canonico).
+- Linha sticky: `sticky top-0 z-10 -mx-6 px-6 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950` + `shadow-xs` quando scrolled (`scroll-shadow`). E o shadow que mascara o conteudo passando por baixo durante scroll (antes era a faixa cinza).
+- Toolbar interna: `flex min-h-[52px] flex-wrap items-center gap-2 py-2.5`. Chips/controles direto, `extraActions` empurrados pra direita (`ml-auto`).
 
-Implementacao oficial em [`src/design-system/components/FilterBar/index.tsx`](frontend/src/design-system/components/FilterBar/index.tsx). Nenhuma pagina deve recriar essa estrutura inline — composer com `<FilterBar>` + filhos canonicos.
+> **Decisao 2026-06-02 (Ricardo):** o flat — que ja era de-facto em `operacoes2/3/4` e `panorama` — virou o canonico dos dashboards BI; o antigo **Card branco em faixa cinza-50** (refinamento 2026-05-01, estilo `/credito/workflows`) foi **aposentado** para dashboards. O `<FilterBar>` component foi achatado, entao todas as paginas que o consomem (benchmark, pagamento-diario, integracoes/operacao) convergiram automaticamente. Listagens CRUD de cards (`/credito/workflows` etc.) podem manter o Card-em-faixa se fizer sentido pra aquele pattern — a regra flat vale para os **dashboards** (Bi/Operacional).
+
+Implementacao oficial em [`src/design-system/components/FilterBar/index.tsx`](frontend/src/design-system/components/FilterBar/index.tsx). Nenhuma pagina deve recriar essa estrutura inline — composer com `<FilterBar>` + filhos canonicos. (Tech-debt conhecido: `operacoes2/3/4` e `panorama` ainda usam uma toolbar inline equivalente em vez do componente — visual ja identico; unificar pro componente e follow-up.)
 
 **Altura canonica dos controles** = ~30px (alinhada com `HEADER_BTN_CLASS` do `DashboardHeaderActions`). Todos os controles do FilterBar (FilterChip, FilterSearch, RemovableChip, MoreFiltersButton, SavedViewsDropdown) usam `h-[30px] px-2.5 text-[13px]` explicito. Botoes do header tambem chegam em ~30px via `py-1 text-[13px]`. Esses dois valores (`h-[30px]`, `text-[13px]`) sao candidatos a token (`tokens.controls.height`/`text`) na varredura final do Modo Iteracao de Design — por enquanto continuam como arbitrary values padronizados.
 
