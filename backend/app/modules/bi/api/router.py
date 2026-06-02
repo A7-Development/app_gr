@@ -8,6 +8,7 @@ from app.modules.bi.api import (
     metadata,
     operacoes2,
     operacoes4,
+    panorama,
 )
 
 router = APIRouter()
@@ -29,6 +30,10 @@ router.include_router(benchmark.router)
 
 # L2 Benchmark2 (lista completa de fundos CVM — usa <DataTableShell>).
 router.include_router(benchmark2.router)
+
+# L2 Panorama (Observatorio FIDC — analise ampla do segmento CVM via
+# postgres_fdw, CLAUDE.md 13.1). Fase 1: aba Visao Geral.
+router.include_router(panorama.router)
 
 # Endpoints de taxonomia/metadata usados pelos filtros do frontend.
 router.include_router(metadata.router)

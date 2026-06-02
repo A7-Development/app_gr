@@ -1079,6 +1079,84 @@ function filtersToQueryString(f: BIFilters): string {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// BI · Panorama (Observatorio FIDC — analise ampla do segmento CVM)
+// Espelha backend/app/modules/bi/{schemas,services,api}/panorama.py.
+// Dado publico CVM via postgres_fdw (sem tenant). Fonte: cvm_remote.*.
+// ───────────────────────────────────────────────────────────────────────────
+
+export type PanoramaCondom = "aberto" | "fechado"
+export type PanoramaFaixaPl =
+  | "lt50"
+  | "50_200"
+  | "200_500"
+  | "500_1000"
+  | "gt1000"
+export type PanoramaTipoCarteira = "propria" | "cotas"
+
+export type PanoramaFilters = {
+  /** 'YYYY-MM'. Ausente => ultima competencia disponivel (resolvida no backend). */
+  competencia?: string | null
+  condom?: PanoramaCondom | null
+  faixaPl?: PanoramaFaixaPl | null
+  tipoCarteira?: PanoramaTipoCarteira | null
+  adminCnpj?: string | null
+}
+
+export type PanoramaKpis = {
+  pl_total: number
+  n_fidc: number
+  pl_medio: number
+  delta_fundos: number
+  /** Indice de liquidez ampla / PL (ponderado, %). */
+  liquidez_pct: number
+}
+
+export type PanoramaPlPonto = {
+  competencia: string // 'YYYY-MM'
+  pl: number
+  n_fidc: number
+}
+
+export type PanoramaCondominioItem = {
+  condom: string // 'Aberto' | 'Fechado'
+  n_fidc: number
+  pl: number
+  pct_pl: number
+}
+
+export type PanoramaTamanhoBucket = {
+  faixa: string
+  n_fidc: number
+  pl: number
+}
+
+export type PanoramaVisaoGeralData = {
+  competencia: string // 'YYYY-MM' resolvida
+  kpis: PanoramaKpis
+  evolucao_pl: PanoramaPlPonto[]
+  por_condominio: PanoramaCondominioItem[]
+  distribuicao_tamanho: PanoramaTamanhoBucket[]
+}
+
+function panoramaFiltersToQuery(f: PanoramaFilters): string {
+  const p = new URLSearchParams()
+  if (f.competencia) p.set("competencia", f.competencia)
+  if (f.condom) p.set("condom", f.condom)
+  if (f.faixaPl) p.set("faixa_pl", f.faixaPl)
+  if (f.tipoCarteira) p.set("tipo_carteira", f.tipoCarteira)
+  if (f.adminCnpj) p.set("admin_cnpj", f.adminCnpj)
+  const s = p.toString()
+  return s ? `?${s}` : ""
+}
+
+export const biPanorama = {
+  visaoGeral: (f: PanoramaFilters = {}) =>
+    apiClient.get<BIResponse<PanoramaVisaoGeralData>>(
+      `/bi/panorama/visao-geral${panoramaFiltersToQuery(f)}`,
+    ),
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // BI · Operacoes2 (refatoracao 2026-05-03 — KPI Strip + 4 abas)
 // ───────────────────────────────────────────────────────────────────────────
 
