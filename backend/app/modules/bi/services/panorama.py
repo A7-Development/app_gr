@@ -124,6 +124,33 @@ def _filter_where(f: PanoramaFilters, *, include_competencia: bool) -> tuple[str
     return " AND ".join(clauses), params
 
 
+def _needs_tab_i_join(f: PanoramaFilters) -> bool:
+    """True se algum filtro exige a tabela tab_i (condom/admin/tipo de carteira).
+
+    `faixa_pl` atua sobre `tab_iv_a_vl_pl` (em tab_iv), entao NAO exige o join.
+    Usado para evitar o cross-join FDW patologico em series de 28 meses: sem
+    filtro de tab_i, o planner do postgres_fdw puxa as duas foreign tables
+    inteiras e junta local (~86s); a serie de PL so precisa de tab_iv, que
+    agrega remotamente em ~80ms.
+    """
+    return bool(f.condom or f.admin_cnpj or f.tipo_carteira)
+
+
+def _serie_where_tab_iv(f: PanoramaFilters) -> tuple[str, dict[str, Any]]:
+    """WHERE da serie sobre tab_iv sozinha (quando nao ha filtro de tab_i)."""
+    clauses = ["tab_iv_a_vl_pl > 0"]
+    params: dict[str, Any] = {}
+    if f.faixa_pl in _FAIXA_PL:
+        lo, hi = _FAIXA_PL[f.faixa_pl]
+        if lo is not None:
+            clauses.append("tab_iv_a_vl_pl >= :pl_min")
+            params["pl_min"] = lo
+        if hi is not None:
+            clauses.append("tab_iv_a_vl_pl < :pl_max")
+            params["pl_max"] = hi
+    return " AND ".join(clauses), params
+
+
 def _prev_month(d: date) -> date:
     """Primeiro dia do mes anterior."""
     return date(d.year - 1, 12, 1) if d.month == 1 else date(d.year, d.month - 1, 1)
@@ -185,18 +212,25 @@ async def get_visao_geral(
     delta_fundos = n_fidc - int(prev_n)
 
     # 3. Evolucao do PL — serie mensal (janela aberta, filtros aplicados por mes).
-    where_all, params_all = _filter_where(f, include_competencia=False)
-    serie_rows = (
-        await db.execute(
-            text(
-                f"SELECT to_char(i.competencia, 'YYYY-MM') AS mes, "
-                f"       sum(iv.tab_iv_a_vl_pl) AS pl, count(*) AS n "
-                f"{_FROM} WHERE {where_all} "
-                f"GROUP BY i.competencia ORDER BY i.competencia"
-            ),
-            params_all,
+    # Sem filtro de tab_i: tab_iv sozinha (agrega remoto, ~80ms). Com filtro de
+    # tab_i: join (rapido — o filtro empurra pro remoto). Ver _needs_tab_i_join.
+    if _needs_tab_i_join(f):
+        where_all, params_all = _filter_where(f, include_competencia=False)
+        serie_sql = (
+            f"SELECT to_char(i.competencia, 'YYYY-MM') AS mes, "
+            f"       sum(iv.tab_iv_a_vl_pl) AS pl, count(*) AS n "
+            f"{_FROM} WHERE {where_all} "
+            f"GROUP BY i.competencia ORDER BY i.competencia"
         )
-    ).mappings().all()
+    else:
+        where_iv, params_all = _serie_where_tab_iv(f)
+        serie_sql = (
+            f"SELECT to_char(competencia, 'YYYY-MM') AS mes, "
+            f"       sum(tab_iv_a_vl_pl) AS pl, count(*) AS n "
+            f"FROM cvm_remote.tab_iv WHERE {where_iv} "
+            f"GROUP BY competencia ORDER BY competencia"
+        )
+    serie_rows = (await db.execute(text(serie_sql), params_all)).mappings().all()
     evolucao_pl = [
         PlPonto(competencia=str(r["mes"]), pl=float(r["pl"] or 0), n_fidc=int(r["n"]))
         for r in serie_rows
@@ -443,6 +477,12 @@ async def get_risco_liquidez(
         for r in matriz_rows
     ]
 
+    # A serie cruza tab_i x tab_iv em 28 meses. Sem filtro seletivo, o
+    # postgres_fdw (estimativas default) escolhe MERGE JOIN O(n^2) -> ~87s.
+    # Forcar HASH JOIN local (O(n)) derruba pra ~2s. SET LOCAL = escopo da
+    # transacao da request; nao vaza pro pool nem afeta queries ja executadas.
+    await db.execute(text("SET LOCAL enable_mergejoin = off"))
+    await db.execute(text("SET LOCAL enable_nestloop = off"))
     where_all, params_all = _filter_where(f, include_competencia=False)
     serie_rows = (
         await db.execute(
