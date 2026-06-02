@@ -117,6 +117,11 @@ export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContent
   const d = q.data
   const pddDisponivel = !d.motivo_indisponivel
 
+  // Split constituicao (Δ+) vs reversao (Δ−) p/ o contador — reversoes precisam
+  // ser visiveis (pedido Ricardo 2026-06-02). Papeis liquidados entram como Δ<0.
+  const nDown = d.top_papeis.filter((p) => p.delta_valor_pdd < 0).length
+  const nUp = d.top_papeis.length - nDown
+
   // Sets do efeito vagao p/ rotular cada papel na coluna "Motivo".
   const arrastadoDocs = new Set<string>()
   const puxadorDocs = new Set<string>()
@@ -180,12 +185,7 @@ export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContent
             counter={`${d.papeis_wop.length} papel(eis) · Σ PDD que saiu ${fmtBRL.format(d.papeis_wop_total_pdd_d1)}`}
           />
           <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-            Migraram de faixa A-H para WOP sem aparecer em{" "}
-            <code className="font-mono">wh_liquidacao_recebivel</code>. O papel
-            sai do estoque (DC) <strong>e</strong> da PDD ao mesmo tempo — quando
-            já estava 100% provisionado em D-1, a <strong>cota não mexe</strong>{" "}
-            (transferência neutra). Só há perda nova quando o papel ia para WOP
-            com provisão &lt; 100%.
+            Saiu de A-H para WOP: leva DC e PDD juntos — <strong>neutro na cota</strong> se já 100% provisionado.
           </p>
           <WopTable papeis={d.papeis_wop} />
         </section>
@@ -198,18 +198,14 @@ export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContent
           label="Papéis com variação de PDD"
           counter={
             d.top_papeis_total_acima_threshold > d.top_papeis.length
-              ? `${d.top_papeis.length} listados · ${d.top_papeis_total_acima_threshold} no total`
-              : `${d.top_papeis.length} papel(eis)`
+              ? `${nUp}↑ ${nDown}↓ · ${d.top_papeis.length} de ${d.top_papeis_total_acima_threshold}`
+              : `${nUp}↑ ${nDown}↓ · ${d.top_papeis.length} papel(eis)`
           }
         />
         <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-          Todos os papéis ex-WOP cujo <code className="font-mono">valor_pdd</code>{" "}
-          mudou entre D-1 e D0 (write-off do dia já listado na seção anterior).
-          A coluna <strong>Motivo</strong> separa provisão do próprio título
-          (vencido) de provisão por <strong>arrasto</strong> do sacado (efeito
-          vagão). Ordenado por magnitude decrescente.
+          Papéis ex-WOP com Δ de PDD — constituições (Δ+) <strong>e reversões (Δ−)</strong>. Motivo: próprio (vencido) vs arrasto (vagão).
           {d.top_papeis_total_acima_threshold > d.top_papeis.length && (
-            <> Lista cortada nos {d.top_papeis.length} primeiros — há mais {d.top_papeis_total_acima_threshold - d.top_papeis.length} papéis com variação menor abaixo desse corte.</>
+            <> Lista cortada nos {d.top_papeis.length} primeiros — há mais {d.top_papeis_total_acima_threshold - d.top_papeis.length} com variação menor.</>
           )}
         </p>
         {d.top_papeis.length === 0 ? (
