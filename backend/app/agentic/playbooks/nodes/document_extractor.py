@@ -14,10 +14,15 @@ Config schema:
 
 from __future__ import annotations
 
+import logging
+from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agentic.playbooks.nodes._base import BaseNode, NodeContext, NodeOutput
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentExtractorNode(BaseNode):
@@ -78,6 +83,26 @@ class DocumentExtractorNode(BaseNode):
                     ctx=ctx,
                     db=db,
                 )
+                # Popula silver financeiro (DRE/balanco/faturamento): o agente
+                # extraiu valores crus; o service calcula os indices em Python.
+                # Best-effort — falha aqui nao invalida a extracao ja salva.
+                try:
+                    from app.modules.credito.services.financial import (
+                        persist_financial_from_extraction,
+                    )
+
+                    await persist_financial_from_extraction(
+                        db,
+                        tenant_id=ctx.tenant_id,
+                        dossier_id=UUID(str(dossier_id)),
+                        document=doc,
+                    )
+                except Exception as fin_exc:
+                    logger.warning(
+                        "Falha ao popular financial do doc %s: %s",
+                        doc.id,
+                        fin_exc,
+                    )
                 results.append({
                     "document_id": str(doc.id),
                     "doc_type": doc.doc_type.value if hasattr(doc.doc_type, "value") else str(doc.doc_type),

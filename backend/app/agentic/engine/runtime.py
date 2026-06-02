@@ -28,12 +28,15 @@ diferente de chat simples.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
+import mimetypes
 import re
 import time
 from dataclasses import dataclass
 from decimal import Decimal
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from anthropic import APIStatusError as AnthropicAPIError  # type: ignore[no-redef]
@@ -57,6 +60,7 @@ from app.agentic.memory import AnalysisSession
 from app.agentic.playbooks.services.resolver import resolve_templates
 from app.agentic.tools._base import AgentTool
 from app.agentic.tools.registry import ToolRegistry
+from app.core.config import get_settings
 from app.core.enums import Module, Permission
 from app.modules.integracoes.adapters.llm.anthropic.config import (
     CredentialNotFoundError,
@@ -493,6 +497,52 @@ async def run_specialist_agent(
     )
 
 
+def _load_document_content_block(document: Any) -> list[dict[str, Any]]:
+    """Carrega o arquivo do documento e monta o bloco de content multimodal.
+
+    Suporta PDF (bloco `document`) e imagens (bloco `image`) — e o que faz o
+    Claude Vision realmente "ver" o arquivo enviado. O caminho e resolvido sob
+    DOSSIER_STORAGE_ROOT (defense: nao pode escapar do root).
+    """
+    root = Path(get_settings().DOSSIER_STORAGE_ROOT).resolve()
+    rel = (getattr(document, "file_path", "") or "").lstrip("/\\")
+    path = (root / rel).resolve()
+    if path != root and root not in path.parents:
+        raise ValueError("file_path do documento escapa do storage root.")
+    if not path.exists():
+        raise ValueError(
+            f"Arquivo do documento nao encontrado no storage: {document.file_path}"
+        )
+    data = path.read_bytes()
+    b64 = base64.standard_b64encode(data).decode("ascii")
+    mime = (
+        getattr(document, "mime_type", None)
+        or mimetypes.guess_type(str(path))[0]
+        or ""
+    )
+    if mime == "application/pdf" or path.suffix.lower() == ".pdf":
+        return [
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": b64,
+                },
+            }
+        ]
+    if mime.startswith("image/"):
+        return [
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": mime, "data": b64},
+            }
+        ]
+    raise ValueError(
+        f"Tipo de arquivo nao suportado p/ extracao multimodal: {mime or path.suffix}"
+    )
+
+
 async def run_document_extraction(
     *,
     spec: SpecialistAgentSpec,
@@ -545,6 +595,10 @@ async def run_document_extraction(
     )
     user_text = "\n\n".join(user_parts)
 
+    # Anexa o arquivo (PDF/imagem) como bloco multimodal — sem isto o agente
+    # nao "ve" o documento (a chamada iria so com texto).
+    content_blocks = _load_document_content_block(document)
+
     output_data, usage, resolved_models = await _invoke_with_validation(
         spec=spec,
         system_text=system_text,
@@ -552,6 +606,7 @@ async def run_document_extraction(
         ctx=ctx,
         db=db,
         tools_override=[],  # extractor nao usa tools
+        user_content_blocks=content_blocks,
     )
 
     document.ai_extraction = output_data
@@ -909,6 +964,7 @@ async def _invoke_with_validation(
     ctx: NodeContext,
     db: AsyncSession,
     tools_override: list[AgentTool] | None = None,
+    user_content_blocks: list[dict[str, Any]] | None = None,
     resolved: ResolvedAgent | None = None,
     session: AnalysisSession | None = None,
     agent_full_id: str | None = None,
@@ -1008,6 +1064,7 @@ async def _invoke_with_validation(
             system_text=system_text,
             user_text=user_text,
             tools=tools,
+            user_content_blocks=user_content_blocks,
             scope=scope,
             session=session,
             agent_full_id=agent_full_id,
@@ -1041,6 +1098,7 @@ async def _invoke_with_validation(
             system_text=system_text,
             user_text=correction_prompt,
             tools=tools,
+            user_content_blocks=user_content_blocks,
             scope=scope,
             session=session,
             agent_full_id=agent_full_id,
@@ -1075,6 +1133,7 @@ async def _run_tool_loop(
     system_text: str,
     user_text: str,
     tools: list[AgentTool],
+    user_content_blocks: list[dict[str, Any]] | None = None,
     scope: ScopedContext | None = None,
     session: AnalysisSession | None = None,
     agent_full_id: str | None = None,
@@ -1108,8 +1167,18 @@ async def _run_tool_loop(
     tool_definitions = [t.to_api_definition() for t in tools] if tools else None
     tool_dispatch: dict[str, AgentTool] = {t.name: t for t in tools}
 
+    # Quando ha blocos de documento (extracao multimodal), a primeira mensagem
+    # do user vira uma lista [<doc/imagem>, ..., {type:text}] — e como o Claude
+    # Vision "ve" o arquivo. Sem blocos, mantem o content como string (texto).
+    if user_content_blocks:
+        first_user_content: Any = [
+            *user_content_blocks,
+            {"type": "text", "text": user_text},
+        ]
+    else:
+        first_user_content = user_text
     messages: list[dict[str, Any]] = [
-        {"role": "user", "content": user_text},
+        {"role": "user", "content": first_user_content},
     ]
 
     usage = _Usage()
