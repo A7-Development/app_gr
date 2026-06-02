@@ -22,6 +22,7 @@ import {
   type DreBreakdownFilters,
   type DreDrillFornecedoresFilters,
   type DrePivotFilters,
+  type DreRoaFilters,
 } from "@/lib/api-client"
 import {
   buildCoverageStripEntry,
@@ -77,6 +78,8 @@ const KEYS = {
     ["controladoria", "dre", "fornecedores", f] as const,
   dreBreakdown: (f: DreBreakdownFilters) =>
     ["controladoria", "dre", "breakdown", f] as const,
+  dreRoa: (f: DreRoaFilters) =>
+    ["controladoria", "dre", "roa", f] as const,
 }
 
 export function useDatasDisponiveis(
@@ -526,6 +529,15 @@ export function useDreBreakdown(filters: DreBreakdownFilters | null | undefined)
     queryKey: KEYS.dreBreakdown(filters ?? ({} as DreBreakdownFilters)),
     queryFn:  () => controladoria.dreBreakdown(filters!),
     enabled:  !!filters?.competencia && !!filters?.dim,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useDreRoa(filters: DreRoaFilters | null | undefined) {
+  return useQuery({
+    queryKey: KEYS.dreRoa(filters ?? ({} as DreRoaFilters)),
+    queryFn:  () => controladoria.dreRoa(filters!),
+    enabled:  !!filters?.competenciaDe && !!filters?.competenciaAte,
     staleTime: 5 * 60 * 1000,
   })
 }

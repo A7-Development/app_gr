@@ -28,12 +28,14 @@ from app.modules.controladoria.schemas.dre import (
     DreFornecedoresResponse,
     DrePivotResponse,
     DreReceitaNaturezaResponse,
+    DreRoaResponse,
 )
 from app.modules.controladoria.services.dre import (
     compute_breakdown,
     compute_drill_fornecedores,
     compute_pivot,
     compute_receita_por_natureza,
+    compute_roa,
     listar_competencias,
 )
 
@@ -183,6 +185,44 @@ async def breakdown(
         entidade_id=entidade_id,
         natureza=natureza,
         subgrupo=subgrupo,
+    )
+
+
+@router.get("/roa", response_model=DreRoaResponse)
+async def roa(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    competencia_de: Annotated[
+        date, Query(description="Primeira competencia (1o dia do mes) inclusive.")
+    ],
+    competencia_ate: Annotated[
+        date, Query(description="Ultima competencia (1o dia do mes) inclusive.")
+    ],
+    fundo_id: Annotated[
+        int | None,
+        Query(description="UnidadeAdministrativa.Id do Bitfin (define o denominador)"),
+    ] = None,
+    _: None = _Guard,
+) -> DreRoaResponse:
+    """ROA bruto 30d por competencia: numerador (desagio normalizado a 30d +
+    multa/mora/tarifas) / PL medio diario do mes.
+
+    Dois denominadores possiveis -- PL cotas (MEC) ou PL debentures
+    (wh_posicao_debenture_dia). O serviço decide qual aplica pela estrutura de
+    funding do fundo (debenture-funded -> ROA debentures; senao -> ROA cotas).
+    Numero deterministico (CLAUDE.md §14, silver-only §13.2.1).
+    """
+    if competencia_ate < competencia_de:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="competencia_ate deve ser maior ou igual a competencia_de",
+        )
+    return await compute_roa(
+        db,
+        tenant_id=principal.tenant_id,
+        competencia_de=competencia_de,
+        competencia_ate=competencia_ate,
+        fundo_id=fundo_id,
     )
 
 

@@ -25,6 +25,7 @@ from app.modules.controladoria.services.dre.leitura import (
     compute_receita_por_natureza,
     listar_competencias,
 )
+from app.modules.controladoria.services.dre.roa import compute_roa
 
 __all__ = [
     "DreClassification",
@@ -33,6 +34,7 @@ __all__ = [
     "compute_drill_fornecedores",
     "compute_pivot",
     "compute_receita_por_natureza",
+    "compute_roa",
     "listar_competencias",
     "load_dre_classifier",
 ]

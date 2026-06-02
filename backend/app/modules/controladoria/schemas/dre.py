@@ -224,3 +224,58 @@ class DreFornecedoresResponse(BaseModel):
     total_fornecedores: int = Field(
         description="Total de fornecedores distintos no corte (antes do limit)",
     )
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# ROA bruto 30d
+# ───────────────────────────────────────────────────────────────────────────
+# Numerador = desagio normalizado a 30 dias + (multa + mora + tarifas, cheios).
+# So o desagio normaliza (e o componente proporcional ao prazo); normalizar a
+# 30d elimina o efeito de operacoes longas gerarem mais receita so por prazo.
+#   desagio_30d = desagio * 30 / prazo_medio   (prazo real, pond. por face)
+#   numerador   = desagio_30d + demais_receitas
+#   ROA_30d     = numerador / PL_medio_do_mes  (PL medio DIARIO)
+# Dois denominadores (CLAUDE.md §14 — numero deterministico, fora de LLM):
+#   - PL cotas  = media diaria do patrimonio do MEC (wh_mec_evolucao_cotas).
+#   - PL deb    = media diaria de wh_posicao_debenture_dia (por UA).
+# A UI mostra o ROA cujo denominador casa com a estrutura de funding do fundo
+# (cotas p/ FIDC com cotas; debentures p/ fundo capitalizado via debenture).
+
+
+class DreRoaCompetencia(BaseModel):
+    """ROA bruto 30d de UMA competencia (mes)."""
+
+    competencia: date = Field(description="Primeiro dia do mes (YYYY-MM-01)")
+
+    # Numerador
+    desagio: Decimal = Field(description="Desagio bruto do mes (receita 'Deságio')")
+    prazo_medio: Decimal = Field(
+        description="Prazo medio real ponderado por face (dias) das ops do mes"
+    )
+    desagio_30d: Decimal = Field(description="Desagio normalizado a 30 dias")
+    demais_receitas: Decimal = Field(
+        description="Multa + mora + tarifas (receita operacional menos desagio)"
+    )
+    numerador: Decimal = Field(description="desagio_30d + demais_receitas")
+
+    # Denominadores (PL medio diario do mes; None quando sem dado para o fundo)
+    pl_cotas_medio: Decimal | None = Field(default=None)
+    pl_debentures_medio: Decimal | None = Field(default=None)
+
+    # ROA por lente (numerador / PL); None quando o PL correspondente e None
+    roa_cotas_30d: Decimal | None = Field(default=None)
+    roa_debentures_30d: Decimal | None = Field(default=None)
+
+    # Proveniencia do PL debentures (mix de ancora_mensal/interpolado/snapshot)
+    pl_debentures_origens: list[str] = Field(default_factory=list)
+
+
+class DreRoaResponse(BaseModel):
+    """Serie de ROA bruto 30d por competencia para um fundo."""
+
+    competencia_de: date
+    competencia_ate: date
+    fundo_id: int | None = Field(
+        default=None, description="UnidadeAdministrativa.Id do Bitfin (None = todos)"
+    )
+    competencias: list[DreRoaCompetencia]
