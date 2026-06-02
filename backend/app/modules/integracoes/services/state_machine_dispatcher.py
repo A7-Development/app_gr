@@ -60,6 +60,7 @@ from app.modules.integracoes.services.tolerance import (
     PublicationState,
     ToleranceWindow,
     compute_publication_state,
+    count_business_days_between,
     resolve_tolerance_window,
 )
 from app.shared.endpoint_catalog import EndpointSpec
@@ -156,6 +157,51 @@ async def _load_business_days(
     )
     rows = (await db.execute(stmt)).scalars().all()
     return frozenset(rows)
+
+
+def _publishable_defer_at(
+    *,
+    reference_date: date,
+    today: date,
+    business_days_set: frozenset[date],
+    window: ToleranceWindow,
+) -> datetime | None:
+    """Gate de data-futura — re-agenda rows cujo dado ainda nao pode existir.
+
+    O seeder (`state_machine_seeder.py`) cria rows com `SEED_AHEAD_BD` dias
+    uteis A FRENTE de hoje, todas com `next_attempt_at=now` (ja vencidas). A
+    fonte nunca tem o dado de uma `reference_date` cujo `expected_lag` ainda
+    nao decorreu — postar so gera relatorio vazio 0-byte a cada tick (o estado
+    ESPERADO retenta a cada 30min). Antes deste gate, ~70% das chamadas QiTech
+    de `fidc_estoque` eram queimadas em datas futuras.
+
+    Returns:
+        O instante (manha do dia em que o dado vira publicavel) pra re-agendar
+        SEM tocar a fonte, OU None quando o dado ja pode existir (segue o fluxo
+        normal de POST + transition). Endpoints com `expected_lag=0` (mesmo dia)
+        nunca sao barrados — `bd_since_ref` e sempre >= 0.
+    """
+    bd_since_ref = count_business_days_between(
+        reference_date=reference_date,
+        today=today,
+        business_days_set=business_days_set,
+    )
+    if bd_since_ref >= window.expected_lag_business_days:
+        return None
+    # Dia publicavel = `expected_lag`-esimo dia util estritamente apos a
+    # referencia (expected_lag >= 1 garantido: lag=0 nunca chega aqui).
+    future_bds = sorted(d for d in business_days_set if d > reference_date)
+    if len(future_bds) >= window.expected_lag_business_days:
+        target_day = future_bds[window.expected_lag_business_days - 1]
+    else:
+        # Calendario carregado nao alcanca o dia publicavel (referencia muito
+        # a frente) — re-avalia amanha; converge quando a janela passa a
+        # cobri-lo. Barato: re-agendamento e DB-only, sem POST.
+        target_day = today + timedelta(days=1)
+    # 09:00 UTC = 06:00 SP — manha, antes do horario usual de publicacao.
+    return datetime(
+        target_day.year, target_day.month, target_day.day, 9, 0, tzinfo=UTC
+    )
 
 
 async def _fetch_latest_raw_status(
@@ -326,6 +372,38 @@ async def _process_async_report_row(
         business_days_set=business_days_set,
         window=window,
     )
+
+    # Gate de data-futura: se a `data_referencia` ainda nao atingiu o lag
+    # minimo de publicacao, o dado nao existe na fonte — re-agenda pro dia em
+    # que vira publicavel SEM POSTar (evita job vazio 0-byte a cada tick).
+    # `has_data` tem precedencia: se um webhook ja entregou o dado (caso raro
+    # de data "futura" com payload), segue pro transition normal -> COMPLETE.
+    defer_at = (
+        None
+        if has_data
+        else _publishable_defer_at(
+            reference_date=row.data_referencia,
+            today=today,
+            business_days_set=business_days_set,
+            window=window,
+        )
+    )
+    if defer_at is not None:
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                update(EndpointDateState)
+                .where(EndpointDateState.id == row.id)
+                .values(
+                    state=EndpointDateStateValue.NOT_STARTED.value,
+                    next_attempt_at=defer_at,
+                    updated_at=now,
+                )
+            )
+            await db.commit()
+        out["ok"] = True
+        out["new_state"] = EndpointDateStateValue.NOT_STARTED.value
+        out["deferred_future_reference"] = True
+        return out
 
     posted = False
     # 3. Sem dado ainda E dentro da janela de give_up — dispara POST so se nao
@@ -510,44 +588,13 @@ async def _process_row(
 
     source_type = SourceType(row.source_type)
     environment = Environment(row.environment)
-
-    # Chama o sync — captura excecoes pra nao derrubar o tick.
-    http_status: int | None = None
-    completeness: str | None = None
-    sync_error: str | None = None
-    try:
-        await run_sync_endpoint(
-            row.tenant_id,
-            source_type,
-            row.endpoint_name,
-            environment=environment,
-            since=row.data_referencia,
-            triggered_by=f"state_machine:{row.id}",
-            unidade_administrativa_id=row.unidade_administrativa_id,
-        )
-    except Exception as e:
-        sync_error = f"{type(e).__name__}: {e}"
-        logger.exception(
-            "state_machine: sync falhou pra row=%s endpoint=%s data=%s",
-            row.id,
-            row.endpoint_name,
-            row.data_referencia,
-        )
-
-    # Le resultado do raw layer (ou retorna None,None se nao gravou).
     now = datetime.now(UTC)
     today = now.date()
-    async with AsyncSessionLocal() as db:
-        if sync_error is None:
-            http_status, completeness = await _fetch_latest_raw_status(
-                db,
-                tenant_id=row.tenant_id,
-                unidade_administrativa_id=row.unidade_administrativa_id,
-                source_type=source_type,
-                endpoint_name=row.endpoint_name,
-                data_referencia=row.data_referencia,
-            )
 
+    # Resolve tolerancia + calendario ANTES de chamar o sync — pra barrar
+    # `data_referencia` ainda nao publicavel (seed +N d.u. a frente) sem bater
+    # na fonte (geraria chamada inutil / 0-byte a cada tick). Ver gate abaixo.
+    async with AsyncSessionLocal() as db:
         window = await _load_tolerance_for_endpoint(
             db,
             tenant_id=row.tenant_id,
@@ -583,6 +630,66 @@ async def _process_row(
         business_days_set = await _load_business_days(
             db, tenant_id=row.tenant_id, start=cal_start, end=cal_end
         )
+
+    # Gate de data-futura (mesma logica do branch async): nao chama o sync
+    # pra data cujo dado ainda nao pode existir — re-agenda e sai.
+    defer_at = _publishable_defer_at(
+        reference_date=row.data_referencia,
+        today=today,
+        business_days_set=business_days_set,
+        window=window,
+    )
+    if defer_at is not None:
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                update(EndpointDateState)
+                .where(EndpointDateState.id == row.id)
+                .values(
+                    state=EndpointDateStateValue.NOT_STARTED.value,
+                    next_attempt_at=defer_at,
+                    updated_at=now,
+                )
+            )
+            await db.commit()
+        out["ok"] = True
+        out["new_state"] = EndpointDateStateValue.NOT_STARTED.value
+        out["deferred_future_reference"] = True
+        return out
+
+    # Chama o sync — captura excecoes pra nao derrubar o tick.
+    http_status: int | None = None
+    completeness: str | None = None
+    sync_error: str | None = None
+    try:
+        await run_sync_endpoint(
+            row.tenant_id,
+            source_type,
+            row.endpoint_name,
+            environment=environment,
+            since=row.data_referencia,
+            triggered_by=f"state_machine:{row.id}",
+            unidade_administrativa_id=row.unidade_administrativa_id,
+        )
+    except Exception as e:
+        sync_error = f"{type(e).__name__}: {e}"
+        logger.exception(
+            "state_machine: sync falhou pra row=%s endpoint=%s data=%s",
+            row.id,
+            row.endpoint_name,
+            row.data_referencia,
+        )
+
+    # Le resultado do raw layer (ou retorna None,None se nao gravou).
+    async with AsyncSessionLocal() as db:
+        if sync_error is None:
+            http_status, completeness = await _fetch_latest_raw_status(
+                db,
+                tenant_id=row.tenant_id,
+                unidade_administrativa_id=row.unidade_administrativa_id,
+                source_type=source_type,
+                endpoint_name=row.endpoint_name,
+                data_referencia=row.data_referencia,
+            )
 
     updates = transition(
         data_referencia=row.data_referencia,

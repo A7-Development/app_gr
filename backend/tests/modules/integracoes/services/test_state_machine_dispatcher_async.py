@@ -54,6 +54,14 @@ def _recent_business_day() -> date:
     return d
 
 
+def _future_business_day() -> date:
+    """Proximo dia util estritamente apos hoje (seed +N d.u. a frente)."""
+    d = datetime.now(UTC).date() + timedelta(days=1)
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d
+
+
 def _fake_row(data_referencia: date):
     return SimpleNamespace(
         id=uuid4(),
@@ -210,3 +218,115 @@ async def test_async_abandona_apos_give_up(monkeypatch, _patch_common):
     assert out["ok"] is True
     assert out["new_state"] == EndpointDateStateValue.ABANDONED.value
     assert posted == [], "data vencida (FURO_DEFINITIVO) nao deve disparar POST"
+
+
+async def test_async_data_futura_reagenda_sem_postar(monkeypatch, _patch_common):
+    """Data de referencia A FRENTE de hoje (seed +N d.u.) ainda nao atingiu
+    `expected_lag` -> nao dispara POST (geraria 0-byte); re-agenda pra data
+    publicavel e fica retentavel (NOT_STARTED). Esse era o vazamento: ~70% das
+    chamadas QiTech de fidc_estoque queimadas em datas futuras."""
+    row = _fake_row(_future_business_day())
+
+    async def fake_raw(*a, **kw):
+        return (None, None)
+
+    async def fake_active(*a, **kw):
+        return False
+
+    posted = []
+
+    async def fake_run_sync(*a, **kw):
+        posted.append(kw)
+
+    monkeypatch.setattr(smd, "_fetch_latest_raw_status", fake_raw)
+    monkeypatch.setattr(smd, "_has_active_async_report_job", fake_active)
+    monkeypatch.setattr(smd, "run_sync_endpoint", fake_run_sync)
+
+    out = await smd._process_async_report_row(row, spec=_spec())
+
+    assert out["ok"] is True
+    assert out["new_state"] == EndpointDateStateValue.NOT_STARTED.value
+    assert out["deferred_future_reference"] is True
+    assert posted == [], "data futura nao deve disparar POST"
+
+
+async def test_async_referencia_hoje_reagenda_sem_postar(monkeypatch, _patch_common):
+    """`expected_lag=1`: o dado de hoje (D) so e publicado em D+1 — referencia
+    == hoje ainda nao e publicavel, nao deve POSTar."""
+    row = _fake_row(datetime.now(UTC).date())
+
+    async def fake_raw(*a, **kw):
+        return (None, None)
+
+    async def fake_active(*a, **kw):
+        return False
+
+    posted = []
+
+    async def fake_run_sync(*a, **kw):
+        posted.append(kw)
+
+    monkeypatch.setattr(smd, "_fetch_latest_raw_status", fake_raw)
+    monkeypatch.setattr(smd, "_has_active_async_report_job", fake_active)
+    monkeypatch.setattr(smd, "run_sync_endpoint", fake_run_sync)
+
+    out = await smd._process_async_report_row(row, spec=_spec())
+
+    assert out["ok"] is True
+    assert out["deferred_future_reference"] is True
+    assert posted == [], "referencia=hoje (D) nao e publicavel ate D+1"
+
+
+def test_publishable_defer_at_barra_futuro_e_libera_passado():
+    """Unit do gate puro: data futura -> instante de defer (manha, UTC, > hoje);
+    data ja publicavel (D-1+) -> None (segue fluxo normal)."""
+    window = ToleranceWindow(
+        expected_lag_business_days=1,
+        tolerance_business_days=2,
+        give_up_business_days=7,
+    )
+    bdays = _business_days()
+    today = datetime.now(UTC).date()
+
+    futuro = smd._publishable_defer_at(
+        reference_date=_future_business_day(),
+        today=today,
+        business_days_set=bdays,
+        window=window,
+    )
+    assert futuro is not None
+    assert futuro.tzinfo is UTC
+    assert futuro.hour == 9
+    assert futuro.date() > today, "defer deve cair num dia futuro"
+
+    # Referencia ~1 semana atras: sempre >= 1 dia util decorrido (robusto a
+    # qualquer dia da semana em que o teste rode).
+    passado = smd._publishable_defer_at(
+        reference_date=today - timedelta(days=7),
+        today=today,
+        business_days_set=bdays,
+        window=window,
+    )
+    assert passado is None, "dado ja publicavel nao deve ser barrado"
+
+
+def test_publishable_defer_at_lag_zero_nunca_barra():
+    """Endpoint same-day (`expected_lag=0`): nunca barra — o dado pode existir
+    no proprio dia da referencia."""
+    window = ToleranceWindow(
+        expected_lag_business_days=0,
+        tolerance_business_days=1,
+        give_up_business_days=5,
+    )
+    bdays = _business_days()
+    today = datetime.now(UTC).date()
+
+    assert (
+        smd._publishable_defer_at(
+            reference_date=today,
+            today=today,
+            business_days_set=bdays,
+            window=window,
+        )
+        is None
+    )
