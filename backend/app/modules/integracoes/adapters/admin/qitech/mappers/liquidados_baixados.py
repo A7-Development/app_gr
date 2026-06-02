@@ -78,11 +78,18 @@ def map_liquidados_baixados(
             continue
 
         id_recebivel = str(item.get("idRecebivel", ""))
-        source_id = f"{cnpj_fundo_norm}|{id_recebivel}|liq"
 
         dt_posicao = parse_iso_or_none(item.get("dataDaPosicao"))
         dt_aquisicao = parse_iso_or_none(item.get("dataAquisicao"))
         dt_vencimento = parse_iso_or_none(item.get("dataVencimento"))
+
+        # source_id inclui a data do movimento: um recebivel tem N movimentos
+        # (LIQUIDACAO PARCIAL em datas distintas + BAIXA final). Sem a data, os
+        # upserts colapsavam tudo numa linha (so a ultima sobrevivia). Ver UQ
+        # `uq_wh_liquidacao_recebivel` (tenant, fundo, id_recebivel, data_posicao,
+        # tipo_movimento) e migration c3f8b1d6e4a2.
+        dt_posicao_key = dt_posicao.date().isoformat() if dt_posicao else "sem-data"
+        source_id = f"{cnpj_fundo_norm}|{id_recebivel}|{dt_posicao_key}|liq"
 
         rows.append(
             {

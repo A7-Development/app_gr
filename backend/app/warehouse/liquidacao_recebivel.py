@@ -1,7 +1,11 @@
 """wh_liquidacao_recebivel -- recebiveis liquidados/baixados num periodo.
 
-Granularidade: 1 linha por baixa de recebivel. Como cada `idRecebivel` so
-tem 1 baixa final, source_id = `{cnpj_fundo}|{idRecebivel}|liq`.
+Granularidade: 1 linha por MOVIMENTO de baixa de recebivel. Um `idRecebivel`
+pode ter N movimentos (LIQUIDACAO PARCIAL em datas distintas + BAIXA final),
+por isso a business key inclui `data_posicao` + `tipo_movimento`:
+source_id = `{cnpj_fundo}|{idRecebivel}|{data_posicao}|liq`.
+(Premissa antiga "1 baixa final por recebivel" era falsa — ver migration
+c3f8b1d6e4a2.)
 
 Fonte: QiTech `/v2/fidc-custodia/report/liquidados-baixados/v2/{cnpj}/{di}/{df}`.
 
@@ -39,11 +43,14 @@ class LiquidacaoRecebivel(Auditable, Base):
 
     __tablename__ = "wh_liquidacao_recebivel"
     __table_args__ = (
-        # Business key: id_recebivel e estavel; cada recebivel tem 1 baixa final.
+        # Business key: um recebivel tem N movimentos (parciais + baixa final)
+        # em datas distintas. data_posicao + tipo_movimento distinguem cada um.
         UniqueConstraint(
             "tenant_id",
             "fundo_doc",
             "id_recebivel",
+            "data_posicao",
+            "tipo_movimento",
             name="uq_wh_liquidacao_recebivel",
         ),
         Index(

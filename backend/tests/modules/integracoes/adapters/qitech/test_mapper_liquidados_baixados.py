@@ -95,7 +95,9 @@ def test_source_id(payload: dict, tenant_id: UUID) -> None:
     rows = map_liquidados_baixados(
         payload=payload, tenant_id=tenant_id, cnpj_fundo=CNPJ
     )
-    assert rows[0]["source_id"] == f"{CNPJ}|382258959|liq"
+    # source_id inclui data_posicao: um recebivel tem N movimentos em datas
+    # distintas (parciais + baixa final). data_posicao do r0 = 2026-01-02.
+    assert rows[0]["source_id"] == f"{CNPJ}|382258959|2026-01-02|liq"
 
 
 def test_source_ids_unicos(payload: dict, tenant_id: UUID) -> None:

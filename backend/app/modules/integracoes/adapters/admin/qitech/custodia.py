@@ -427,8 +427,12 @@ async def sync_liquidados_baixados(
         cnpj_fundo=cnpj,
         data_referencia=data_final,
         unidade_administrativa_id=unidade_administrativa_id,
-        # Business key — ver uq_wh_liquidacao_recebivel.
-        conflict_columns=["tenant_id", "fundo_doc", "id_recebivel"],
+        # Business key — ver uq_wh_liquidacao_recebivel. Inclui data_posicao +
+        # tipo_movimento: um recebivel tem N movimentos (parciais + baixa final)
+        # em datas distintas; sem a data o upsert colapsava tudo numa linha.
+        conflict_columns=[
+            "tenant_id", "fundo_doc", "id_recebivel", "data_posicao", "tipo_movimento",
+        ],
         split_window=(data_inicial, data_final),
         split_items_field="liquidadosBaixados",
         split_item_date_field="dataDaPosicao",
