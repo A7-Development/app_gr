@@ -8,7 +8,14 @@ User=app_gr
 Group=app_gr
 WorkingDirectory=/opt/app_gr/backend
 EnvironmentFile=/opt/app_gr/backend/.env
-ExecStart=/opt/app_gr/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 2
+# --workers 1: cada worker uvicorn instancia seu proprio APScheduler
+# (lifespan roda por processo). Com workers=2 cada endpoint disparava 2x
+# por tick, dobrando chamadas a fontes externas (ex.: QiTech). Decisao
+# 2026-05-09: 1 worker e suficiente pra carga atual; quando precisar de
+# paralelismo HTTP, separar processo do scheduler do processo HTTP em
+# vez de aumentar workers aqui. Detalhe: com `--workers 1`, uvicorn nao
+# faz fork — main process eh o worker tambem (sem multiprocessing).
+ExecStart=/opt/app_gr/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
 Restart=on-failure
 RestartSec=3
 StandardOutput=append:/var/log/gr-api/stdout.log
