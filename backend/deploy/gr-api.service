@@ -27,6 +27,13 @@ PrivateTmp=yes
 ProtectSystem=strict
 ReadWritePaths=/var/log/gr-api /opt/app_gr/backend
 ProtectHome=yes
+# Storage de uploads de dossie (DOSSIER_STORAGE_ROOT=/var/lib/gr/dossier-attachments).
+# StateDirectory cria /var/lib/gr (dono app_gr, 0755) E o adiciona ao conjunto
+# gravavel do sandbox ProtectSystem=strict. Sem isto, gravar anexos/documentos
+# de dossie estoura `OSError: Read-only file system` -> 500 sem header CORS no
+# upload (o ServerErrorMiddleware fica fora do CORSMiddleware, entao o browser
+# mascara como erro de CORS). Robusto a rebuild: garante a pasta em maquina nova.
+StateDirectory=gr
 
 [Install]
 WantedBy=multi-user.target
