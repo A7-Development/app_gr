@@ -37,7 +37,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-TipoMovimentoProvisao = Literal["apropriacao", "nova_provisao", "baixa", "quitada"]
+TipoMovimentoProvisao = Literal["apropriacao", "nova_provisao", "baixa", "quitada", "estavel"]
 CanalPagamento = Literal["codigo_proprio", "tarifa_ted", "ted_fornecedor"]
 
 

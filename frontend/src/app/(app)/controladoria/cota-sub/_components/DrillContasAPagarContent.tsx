@@ -29,6 +29,7 @@ import {
 
 const TIPO: Record<string, string> = {
   apropriacao: "Apropriou", nova_provisao: "Nova", baixa: "Baixou", quitada: "Quitada",
+  estavel: "Estável",
 }
 const CANAL: Record<string, string> = {
   codigo_proprio: "Débito direto", tarifa_ted: "Tarifa de TED", ted_fornecedor: "TED a fornecedor",

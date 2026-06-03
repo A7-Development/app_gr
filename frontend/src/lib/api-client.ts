@@ -3343,7 +3343,7 @@ export type MovimentoProvisao = {
   saldo_d1:  number
   saldo_d0:  number
   delta:     number
-  tipo:      "apropriacao" | "nova_provisao" | "baixa" | "quitada"
+  tipo:      "apropriacao" | "nova_provisao" | "baixa" | "quitada" | "estavel"
 }
 export type PagamentoDespesa = {
   canal:         "codigo_proprio" | "tarifa_ted" | "ted_fornecedor"
