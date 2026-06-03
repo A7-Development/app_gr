@@ -243,8 +243,11 @@ async def drill_fornecedores(
     ] = None,
     top: Annotated[
         int,
-        Query(ge=1, le=200, description="Limite de fornecedores retornados"),
-    ] = 20,
+        Query(ge=1, le=5000, description="Limite de fornecedores retornados. Default 2000 "
+                                         "(§14.6: mostra todos na pratica; cliente reduz "
+                                         "conscientemente se quiser). `total_fornecedores` "
+                                         "na resposta sinaliza se houve corte."),
+    ] = 2000,
     _: None = _Guard,
 ) -> DreFornecedoresResponse:
     """Top N fornecedores em um corte da DRE.

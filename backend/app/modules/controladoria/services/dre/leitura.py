@@ -630,7 +630,7 @@ async def compute_drill_fornecedores(
     fundo_id: int | None = None,
     produto_id: int | None = None,
     fonte: str | None = None,
-    top: int = 20,
+    top: int = 2000,  # §14.6: default = mostra todos na pratica (sem corte silencioso)
 ) -> DreFornecedoresResponse:
     """Top N fornecedores dentro de um corte (grupo + opcional subgrupo + descricao).
 

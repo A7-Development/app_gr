@@ -559,7 +559,7 @@ function PerfisLadoALado({ data }: { data: ComparativoResponse }) {
               {setoresTop.length > 0 && (
                 <div>
                   <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    Top setores
+                    Top 5 setores
                   </span>
                   <BarList
                     data={setoresTop}
@@ -572,7 +572,7 @@ function PerfisLadoALado({ data }: { data: ComparativoResponse }) {
               {scrTop.length > 0 && (
                 <div>
                   <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    SCR devedor (top)
+                    SCR devedor (top 5)
                   </span>
                   <BarList
                     data={scrTop}

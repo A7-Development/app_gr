@@ -331,7 +331,9 @@ export function MercadoTab() {
           title="Top 10 administradoras por PL sob administracao"
           info={
             adminsData?.competencia
-              ? `Snapshot em ${fmtYmLong(adminsData.competencia)}.`
+              ? `Snapshot em ${fmtYmLong(adminsData.competencia)}. ${
+                  adminsData.total_admins
+                } administradoras distintas no mercado.`
               : undefined
           }
         >
