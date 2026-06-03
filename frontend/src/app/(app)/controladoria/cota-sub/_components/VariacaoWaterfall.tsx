@@ -28,6 +28,10 @@ const fmtBRLFull = (v: number) =>
   "R$ " + Math.abs(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtSigned = (v: number) => (v >= 0 ? "+" : "−") + fmtBRLFull(v)
 
+// ISO "YYYY-MM-DD" -> "DD/MM" via slice (sem Date, evita drift de fuso).
+const ddmm = (iso: string | null | undefined) =>
+  iso && iso.length >= 10 ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : (iso ?? "")
+
 export type VariacaoWaterfallProps = {
   data?:         VariacaoResumoResponse
   loading?:      boolean
@@ -54,9 +58,9 @@ export function VariacaoWaterfall({ data, loading, onDrillGrupo }: VariacaoWater
       })
     }
     return {
-      prior_anchor_label:   "PL Sub D-1",
+      prior_anchor_label:   `PL ${ddmm(data.data_anterior)}`,
       prior_anchor_value:   data.pl_sub_mec_d1,
-      current_anchor_label: "PL Sub D0",
+      current_anchor_label: `PL ${ddmm(data.data)}`,
       current_anchor_value: data.pl_sub_mec_d0,
       delta_brl:            data.cota_delta,
       delta_pct:            data.pl_sub_mec_d1 ? (data.cota_delta / data.pl_sub_mec_d1) * 100 : null,
@@ -88,11 +92,11 @@ export function VariacaoWaterfall({ data, loading, onDrillGrupo }: VariacaoWater
       data={bridge}
       zoomToActivity
       title="O que moveu a cota"
-      caption="PL Sub D-1 (MEC) → transformações → PL Sub D0 (MEC)"
+      caption={`PL ${ddmm(data.data_anterior)} (MEC) → transformações → PL ${ddmm(data.data)} (MEC)`}
       headerKpi={{
         value: fmtSigned(data.cota_delta),
         delta: bridge.delta_pct != null
-          ? { value: bridge.delta_pct, suffix: "%", good: data.cota_delta >= 0 }
+          ? { value: bridge.delta_pct, suffix: "%", good: data.cota_delta >= 0, fractionDigits: 2 }
           : undefined,
         deltaSub: "variação do dia",
       }}

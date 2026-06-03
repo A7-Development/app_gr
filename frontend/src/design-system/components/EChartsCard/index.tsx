@@ -42,6 +42,12 @@ export type EChartsCardHeaderKpiDelta = {
   value: number
   /** Sufixo (ex.: "%", "pp", "d"). Default: "". */
   suffix?: string
+  /**
+   * Casas decimais FIXAS (min = max). Quando definido, o delta sempre mostra
+   * exatamente N casas (ex.: `2` -> "4,20%"). Quando undefined, mantem o
+   * comportamento legado (ate 2 casas, sem minimo: "4,2%").
+   */
+  fractionDigits?: number
   /** Direcao do indicador. Default: infere do sinal. */
   direction?: "up" | "down"
   /**
@@ -88,7 +94,8 @@ function HeaderKpiInline({ kpi }: { kpi: EChartsCardHeaderKpi }) {
             aria-hidden="true"
           />
           {Math.abs(kpi.delta.value).toLocaleString("pt-BR", {
-            maximumFractionDigits: 2,
+            minimumFractionDigits: kpi.delta.fractionDigits ?? 0,
+            maximumFractionDigits: kpi.delta.fractionDigits ?? 2,
           })}
           {kpi.delta.suffix ?? ""}
         </span>
