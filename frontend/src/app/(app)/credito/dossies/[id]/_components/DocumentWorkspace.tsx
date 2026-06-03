@@ -367,7 +367,6 @@ function DocCard({
 
         {processed && currentFields && (
           <ExtractionReview
-            docType={doc.doc_type.toLowerCase()}
             fields={viewFields}
             aiOriginal={aiOriginal}
             editing={editing}
@@ -459,13 +458,11 @@ function DocCard({
 // ─── Revisão da extração (formatada + editável) ───────────────────────────────
 
 function ExtractionReview({
-  docType,
   fields,
   aiOriginal,
   editing,
   onChange,
 }: {
-  docType: string
   fields: Fields
   aiOriginal: Fields | null
   editing: boolean
