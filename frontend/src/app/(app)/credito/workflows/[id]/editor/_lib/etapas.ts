@@ -53,8 +53,16 @@ export const JOURNEY_HINT: Record<JourneyCategory, string> = {
 // human_input: form_id e obrigatorio. Default "form" funciona out-of-the-box
 // e o usuario renomeia se quiser. Sem isso, validate_config falha, e o
 // RefField downstream nao acha as variaveis dos `fields`.
+//
+// document_extractor: o node-type que LE o arquivo (run_document_extraction
+// -> _load_document_content_block -> bloco multimodal). DocumentExtractorNode
+// .validate_config exige `for_each: "uploaded_documents"` + `agent`. Sem este
+// default o node nasce incompleto e falha na validacao/execucao (o Inspector
+// so deixa trocar o agente, nao seta o for_each). Nao confundir com o
+// specialist_agent homonimo, que roda o agente SEM anexar o documento.
 const TYPE_INITIAL_CONFIG: Record<string, Record<string, unknown>> = {
   human_input: { form_id: "form" },
+  document_extractor: { for_each: "uploaded_documents", agent: "document_extractor" },
 }
 
 // Mapa de categoria tecnica do backend → categoria-jornada visivel.
@@ -123,7 +131,11 @@ export const SPECIALIST_AGENT_PALETTE: Array<{
   description: string
   icon?: string
 }> = [
-  { agent: "document_extractor",       description: "IA extrai dados estruturados de PDFs e imagens (multimodal).",   icon: "RiFileSearchLine" },
+  // NOTA: `document_extractor` NAO entra aqui. A extracao multimodal que LE o
+  // arquivo e o node-type `document_extractor` (grupo Coletar / "Extrair
+  // Documentos"), nao um specialist_agent. Um specialist_agent com
+  // agent=document_extractor rodaria run_specialist_agent, que nao anexa o
+  // documento — extracao vazia. Ver TYPE_INITIAL_CONFIG acima.
   { agent: "social_contract_analyst",  description: "IA avalia QSA, poderes, restricoes do contrato social.",         icon: "RiFileList3Line" },
   { agent: "financial_analyst",        description: "IA avalia DRE/Balanco/Faturamento — indicadores e tendencias.",  icon: "RiBarChart2Line" },
   { agent: "indebtedness_analyst",     description: "IA estima capacidade de pagamento via SCR + dividas.",           icon: "RiBankLine" },
@@ -222,8 +234,8 @@ export const DATA_PRODUCT_PALETTE: Array<{
 // tracking de uso. Promover/despromover edita esta linha.
 const FEATURED_PALETTE_IDS = new Set<string>([
   "bureau_query:serasa_pj",
+  "document_extractor",
   "specialist_agent:financial_analyst",
-  "specialist_agent:document_extractor",
   "specialist_agent:opinion_writer",
   "conditional_branch",
 ])
