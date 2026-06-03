@@ -72,8 +72,15 @@ BITFIN_SNAPSHOT: list[tuple[str, str, str | None]] = [
 ]
 
 CATALOG_BY_SOURCE_TYPE: dict[str, list[tuple[str, str, str | None]]] = {
-    "admin:qitech": QITECH_SNAPSHOT,
-    "erp:bitfin": BITFIN_SNAPSHOT,
+    # Keys = SourceType enum NAMES (e.g. "ADMIN_QITECH"), nao VALUES
+    # (e.g. "admin:qitech"). SQLAlchemy `sa.Enum(SourceType)` sem
+    # `values_callable` armazena o name no DB, e a query abaixo
+    # (`SELECT source_type FROM tenant_source_config`) devolve o name.
+    # Mismatch silencioso: original usava values e o backfill nunca
+    # rodou — TSEC ficou vazia em todo deploy. Test em
+    # `tests/modules/integracoes/test_migration_d5bf3669b8a0.py` blinda.
+    "ADMIN_QITECH": QITECH_SNAPSHOT,
+    "ERP_BITFIN": BITFIN_SNAPSHOT,
     # Bureaus + document parsers nao tem catalogo (vazio).
 }
 
