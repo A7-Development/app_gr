@@ -171,9 +171,15 @@ async def compute_movimento_contas_a_pagar(
         s1 = cpr1.get(key, ZERO)
         s0 = cpr0.get(key, ZERO)
         delta = s0 - s1  # <0 apropriou (mais negativo), >0 baixou
-        if abs(delta) < _TOL:
+        moved = abs(delta) >= _TOL
+        # Item ESTAVEL (saldo nao mexeu) e mantido SE tem saldo — pra a lista
+        # reconciliar com o saldo total do balancete (ex.: provisao anual de
+        # auditoria R$20k que nao move no dia). Sem saldo nem movimento: ignora.
+        if not moved and abs(s0) < _TOL:
             continue
-        if key not in cpr1:
+        if not moved:
+            tipo = "estavel"
+        elif key not in cpr1:
             tipo = "nova_provisao"
         elif key not in cpr0 or abs(s0) < _TOL:
             tipo = "quitada"
@@ -181,9 +187,9 @@ async def compute_movimento_contas_a_pagar(
             tipo = "apropriacao"
         else:
             tipo = "baixa"
-        if delta < 0:
+        if moved and delta < 0:
             tot_aprop += -delta
-        else:
+        elif moved:
             tot_baixa += delta
             baixa_valores.append(delta)
             tk = _token(key)
