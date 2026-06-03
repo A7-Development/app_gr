@@ -44,6 +44,7 @@ import type {
   DrillDcAquisicao,
   DrillDcLiquidacaoPorTipo,
   DrillDcMutacaoPapel,
+  DrillDcLiquidacaoParcialPapel,
   DrillDcMigracaoWopPapel,
 } from "@/lib/api-client"
 import {
@@ -224,6 +225,37 @@ const MUTACAO_COLUMNS: ColumnDef<DrillDcMutacaoPapel, unknown>[] = [
   }) as ColumnDef<DrillDcMutacaoPapel, unknown>,
 ]
 
+// ── Colunas: Liquidacao parcial (ex-mutacao, casada com evento) ───────────────
+
+const lpCol = createColumnHelper<DrillDcLiquidacaoParcialPapel>()
+
+const LIQ_PARCIAL_COLUMNS: ColumnDef<DrillDcLiquidacaoParcialPapel, unknown>[] = [
+  lpCol.accessor("cedente_nome", {
+    id: "cedente", header: "Cedente", size: 150,
+    cell: (info) => <TextTrunc value={info.getValue<string>()} title={info.row.original.cedente_doc} />,
+  }) as ColumnDef<DrillDcLiquidacaoParcialPapel, unknown>,
+  lpCol.accessor("seu_numero", {
+    id: "titulo", header: "Título", size: 100,
+    cell: (info) => <MonoTrunc value={info.getValue<string>()} title={info.row.original.numero_documento} />,
+  }) as ColumnDef<DrillDcLiquidacaoParcialPapel, unknown>,
+  lpCol.accessor("tipo_movimento", {
+    id: "tipo_movimento", header: "Evento", size: 220,
+    cell: (info) => <TextTrunc value={info.getValue<string>()} title={info.getValue<string>()} />,
+  }) as ColumnDef<DrillDcLiquidacaoParcialPapel, unknown>,
+  lpCol.accessor("vp_d1", {
+    id: "vp_d1", header: "VP D-1", size: 120, meta: { align: "right" },
+    cell: (info) => <NumCell value={info.getValue<number>()} secondary />,
+  }) as ColumnDef<DrillDcLiquidacaoParcialPapel, unknown>,
+  lpCol.accessor("delta_vp", {
+    id: "delta_vp", header: "Δ VP (carteira)", size: 130, meta: { align: "right" },
+    cell: (info) => <ToneCell value={info.getValue<number>()} />,
+  }) as ColumnDef<DrillDcLiquidacaoParcialPapel, unknown>,
+  lpCol.accessor("valor_pago_evento", {
+    id: "valor_pago_evento", header: "Pago (caixa)", size: 120, meta: { align: "right" },
+    cell: (info) => <NumCell value={info.getValue<number>()} />,
+  }) as ColumnDef<DrillDcLiquidacaoParcialPapel, unknown>,
+]
+
 // ── Colunas: Migracao WOP ─────────────────────────────────────────────────────
 
 const wopCol = createColumnHelper<DrillDcMigracaoWopPapel>()
@@ -373,6 +405,9 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
   const mutVpD1Total = d.mutacao_papeis.reduce((s, p) => s + p.vp_d1, 0)
   const mutVpD0Total = d.mutacao_papeis.reduce((s, p) => s + p.vp_d0, 0)
   const mutDeltaTotal = d.mutacao_papeis.reduce((s, p) => s + p.delta_vp, 0)
+  const lpVpD1Total = d.liquidacao_parcial_papeis.reduce((s, p) => s + p.vp_d1, 0)
+  const lpDeltaTotal = d.liquidacao_parcial_papeis.reduce((s, p) => s + p.delta_vp, 0)
+  const lpPagoTotal = d.liquidacao_parcial_papeis.reduce((s, p) => s + p.valor_pago_evento, 0)
   const wopVpD1Total = d.migracao_wop_papeis.reduce((s, p) => s + p.vp_d1, 0)
   const wopPddD1Total = d.migracao_wop_papeis.reduce((s, p) => s + p.valor_pdd_d1, 0)
 
@@ -389,6 +424,11 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
       value: -dec.liquidacoes_total,
     },
     {
+      id: "liquidacao_parcial", kind: "bucket", label: "− Liquidação parcial", sign: "−",
+      detalhe: `${dec.liquidacao_parcial_n} título${dec.liquidacao_parcial_n === 1 ? "" : "s"} com parcela paga (casa com evento)`,
+      value: dec.liquidacao_parcial_total, muted: dec.liquidacao_parcial_n === 0,
+    },
+    {
       id: "wop", kind: "bucket", label: "− Migração WOP", sign: "−",
       detalhe: `${dec.migracao_wop_n} título${dec.migracao_wop_n === 1 ? "" : "s"} ${dec.migracao_wop_n === 1 ? "migrou" : "migraram"}`,
       value: -dec.migracao_wop_total, muted: dec.migracao_wop_n === 0,
@@ -400,7 +440,7 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
     },
     {
       id: "mutacao", kind: "bucket", label: "+ Mutação silenciosa", sign: "+",
-      detalhe: `${dec.mutacao_n} papel${dec.mutacao_n === 1 ? "" : "is"} com mudança de parâmetro`,
+      detalhe: `${dec.mutacao_n} papel${dec.mutacao_n === 1 ? "" : "is"} com mudança de parâmetro SEM evento`,
       value: dec.mutacao_total, muted: dec.mutacao_n === 0, alert: dec.mutacao_n > 0,
     },
   ]
@@ -559,6 +599,38 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
                 : `Mostrar todos os ${d.mutacao_papeis.length} papéis`}
             </button>
           )}
+        </section>
+      )}
+
+      {/* ── 2b. Detalhe Liquidacao parcial (so se houver) ── */}
+      {d.liquidacao_parcial_papeis.length > 0 && (
+        <section>
+          <DrillSectionTitle
+            icon={RiArchive2Line}
+            label="Títulos com liquidação parcial"
+            counter={`${d.liquidacao_parcial_papeis.length} papel${d.liquidacao_parcial_papeis.length === 1 ? "" : "is"}`}
+          />
+          <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+            Títulos que ficaram na carteira mas tiveram parcela paga no dia
+            (liquidação/recompra parcial, abatimento). A queda de VP casa com o
+            evento em liquidações — é giro carteira → caixa, <strong>não</strong> mutação
+            silenciosa. A perna de caixa entra na Tesouraria/Disponibilidades.
+          </p>
+          <div className="mt-2">
+            <DataTable<DrillDcLiquidacaoParcialPapel>
+              {...DT_PROPS}
+              data={d.liquidacao_parcial_papeis}
+              columns={LIQ_PARCIAL_COLUMNS}
+              renderFooter={() => (
+                <tr className={FOOT_ROW}>
+                  <td colSpan={3} className="px-3"><span className={tableTokens.cellStrong}>Total · {d.liquidacao_parcial_papeis.length} papel(eis)</span></td>
+                  <td className="px-3"><div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(lpVpD1Total)}</div></td>
+                  <td className="px-3"><div className={cx("text-right text-xs font-semibold tabular-nums", toneClass(lpDeltaTotal))}>{fmtBRLSigned(lpDeltaTotal)}</div></td>
+                  <td className="px-3"><div className={cx("text-right font-semibold", tableTokens.cellNumber)}>{fmtBRL.format(lpPagoTotal)}</div></td>
+                </tr>
+              )}
+            />
+          </div>
         </section>
       )}
 
