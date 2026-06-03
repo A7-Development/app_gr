@@ -33,6 +33,19 @@ def _storage_root() -> Path:
     return Path(get_settings().DOSSIER_STORAGE_ROOT).resolve()
 
 
+def resolve_storage_path(document: CreditDossierDocument) -> Path:
+    """Absolute on-disk path of a document, guarded against path escape.
+
+    Used to stream the original file back to the analyst ("Ver documento").
+    """
+    root = _storage_root()
+    rel = (document.file_path or "").lstrip("/\\")
+    path = (root / rel).resolve()
+    if not str(path).startswith(str(root)):
+        raise DocumentServiceError("file_path invalido (escapa do storage root).")
+    return path
+
+
 async def _ensure_dossier(
     db: AsyncSession, *, tenant_id: UUID, dossier_id: UUID
 ) -> CreditDossier:

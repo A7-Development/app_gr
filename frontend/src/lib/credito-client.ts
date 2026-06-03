@@ -679,6 +679,29 @@ export const credito = {
       apiClient.delete<void>(
         `/credito/dossies/${dossierId}/documents/${documentId}`,
       ),
+    /** Busca o arquivo original com auth (Bearer no header — nao da pra
+     *  abrir via <a href>) e devolve um object URL. O caller deve revogar
+     *  com URL.revokeObjectURL apos uso. */
+    fileObjectUrl: async (
+      dossierId: string,
+      documentId: string,
+    ): Promise<string> => {
+      const apiUrl =
+        process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1"
+      const headers: Record<string, string> = {}
+      if (typeof window !== "undefined") {
+        const token = window.localStorage.getItem("gr.token")
+        if (token) headers["Authorization"] = `Bearer ${token}`
+      }
+      const res = await fetch(
+        `${apiUrl}/credito/dossies/${dossierId}/documents/${documentId}/file`,
+        { headers, cache: "no-store" },
+      )
+      if (!res.ok) {
+        throw new Error(`Falha ao abrir documento (HTTP ${res.status})`)
+      }
+      return URL.createObjectURL(await res.blob())
+    },
   },
   notes: {
     list: (dossierId: string, nodeId?: string | null) => {
