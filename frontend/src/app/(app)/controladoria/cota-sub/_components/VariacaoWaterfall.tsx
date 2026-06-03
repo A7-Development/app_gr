@@ -6,10 +6,11 @@
  * Wrapper FINO sobre o `VarianceBridgeCard` canonico (mesmo waterfall do
  * bi/operacoes2) — NAO reinventa o chart. Mapeia os 6 grupos do resumo para
  * `Operacoes2VarianceBridgeData`:
- *   - ancoras = PL Sub D-1 / D0 do MEC (oficial)
+ *   - ancoras = PL Sub D-1 / D0 CALCULADO por nos (pl_sub_calc), nao o MEC.
+ *     Σ drivers == cota_delta == calc_d0 - calc_d1, entao o bridge fecha exato
+ *     na ancora calc (sem barra de residuo). A comparacao com o MEC oficial
+ *     (Variacao MEC + Residuo) vive no footer.
  *   - cada grupo = 1 driver (contribution_brl = impacto giro-limpo no PL Sub)
- *   - residuo (calc - MEC) entra como driver extra para o waterfall fechar
- *     exatamente na ancora MEC final; some quando ~0
  * Header KPI = Δ da cota; reconciliacao + giro no footer. Click numa barra de
  * grupo abre o drill (residuo nao e clicavel).
  */
@@ -49,21 +50,18 @@ export function VariacaoWaterfall({ data, loading, onDrillGrupo }: VariacaoWater
       prior_value:      0,
       current_value:    0,
     }))
-    // Resíduo (calc − MEC): barra que fecha o waterfall na âncora MEC. Some ~0.
-    const residuo = data.reconciliacao.residuo
-    if (Math.abs(residuo) >= 1) {
-      drivers.push({
-        member_id: "residuo", member_label: "Resíduo",
-        contribution_brl: -residuo, contribution_pct: null, prior_value: 0, current_value: 0,
-      })
-    }
+    // Bridge CALCULADO: ancoras = PL Sub calculado por nos (pl_sub_calc), nao o
+    // MEC. Os drivers sao a NOSSA decomposicao e Σ drivers == cota_delta ==
+    // pl_sub_calc_d0 - pl_sub_calc_d1 (disponibilidades e o plug), entao o
+    // waterfall fecha EXATO na ancora calc — sem barra de "Residuo". A
+    // comparacao com o MEC oficial (Variacao MEC + Residuo) fica no footer.
     return {
       prior_anchor_label:   `PL ${ddmm(data.data_anterior)}`,
-      prior_anchor_value:   data.pl_sub_mec_d1,
+      prior_anchor_value:   data.pl_sub_calc_d1,
       current_anchor_label: `PL ${ddmm(data.data)}`,
-      current_anchor_value: data.pl_sub_mec_d0,
+      current_anchor_value: data.pl_sub_calc_d0,
       delta_brl:            data.cota_delta,
-      delta_pct:            data.pl_sub_mec_d1 ? (data.cota_delta / data.pl_sub_mec_d1) * 100 : null,
+      delta_pct:            data.pl_sub_calc_d1 ? (data.cota_delta / data.pl_sub_calc_d1) * 100 : null,
       drivers,
       outros_rollup:        null,
       unidade:              "BRL",
@@ -92,7 +90,7 @@ export function VariacaoWaterfall({ data, loading, onDrillGrupo }: VariacaoWater
       data={bridge}
       zoomToActivity
       title="O que moveu a cota"
-      caption={`PL ${ddmm(data.data_anterior)} (MEC) → transformações → PL ${ddmm(data.data)} (MEC)`}
+      caption={`PL ${ddmm(data.data_anterior)} → transformações → PL ${ddmm(data.data)} (calculado)`}
       headerKpi={{
         value: fmtSigned(data.cota_delta),
         delta: bridge.delta_pct != null
