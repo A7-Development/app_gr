@@ -105,13 +105,17 @@ def upgrade() -> None:
             ).bindparams(n=p["name"])
         ).first()
         if not exists:
+            # cache_strategy guarda o NOME do membro do enum CacheStrategy
+            # (SAEnum native_enum=False sem values_callable persiste/le por
+            # .name). Gravar 'after_system' (o .value) quebra o load com
+            # ValueError. As demais migrations de prompt usam 'AFTER_SYSTEM'.
             bind.execute(
                 sa.text(
                     "INSERT INTO ai_prompt "
                     "(id, name, version, system_text, model, temperature, "
                     " max_tokens, cache_strategy, description) "
                     "VALUES (gen_random_uuid(), :n, 'v1', :st, :m, 0.1, 4096, "
-                    " 'after_system', :d)"
+                    " 'AFTER_SYSTEM', :d)"
                 ).bindparams(
                     n=p["name"], st=p["system_text"], m=_MODEL, d=p["description"]
                 )
