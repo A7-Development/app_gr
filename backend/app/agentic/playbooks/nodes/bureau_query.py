@@ -247,6 +247,10 @@ async def _persist_serasa_to_dossier(
         # o workflow — agentes leem o que houver e seguem.
         return
 
+    # Zero ocultacao (§14.6): dossie de credito mostra TODOS os socios e
+    # restricoes — sem `.limit`. `qtd_socios` abaixo reflete a lista completa
+    # (antes era len() de uma lista capada em 5 -> mentia quando havia mais).
+    # `order_by` so define a ORDEM de apresentacao, nao corta.
     socios_rows = (
         await db.execute(
             select(SerasaPjSocio)
@@ -255,7 +259,6 @@ async def _persist_serasa_to_dossier(
                 SerasaPjSocio.consulta_id == consulta_id,
             )
             .order_by(SerasaPjSocio.percentual.desc().nullslast())
-            .limit(5)
         )
     ).scalars().all()
 
@@ -267,7 +270,6 @@ async def _persist_serasa_to_dossier(
                 SerasaPjRestricao.consulta_id == consulta_id,
             )
             .order_by(SerasaPjRestricao.valor.desc().nullslast())
-            .limit(10)
         )
     ).scalars().all()
 
