@@ -15,6 +15,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -122,6 +123,41 @@ async def extract_document(
         raise HTTPException(status_code=502, detail=str(e)) from e
     await db.commit()
     return DocumentRead.model_validate(doc)
+
+
+@router.get("/dossies/{dossier_id}/documents/{document_id}/file")
+async def get_document_file(
+    dossier_id: UUID,
+    document_id: UUID,
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = Depends(require_module(Module.CREDITO, Permission.READ)),
+) -> FileResponse:
+    """Serve o arquivo original do documento (inline) — "Ver documento".
+
+    Escopado por tenant via get_document; o path e resolvido com guarda
+    anti path-escape (resolve_storage_path).
+    """
+    doc = await document_svc.get_document(
+        db,
+        tenant_id=principal.tenant_id,
+        dossier_id=dossier_id,
+        document_id=document_id,
+    )
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Documento nao encontrado.")
+    try:
+        path = document_svc.resolve_storage_path(doc)
+    except DocumentServiceError as e:
+        raise _service_error(e) from e
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Arquivo nao encontrado no storage.")
+    return FileResponse(
+        path,
+        media_type=doc.mime_type or "application/octet-stream",
+        filename=doc.original_filename,
+        content_disposition_type="inline",
+    )
 
 
 @router.patch(
