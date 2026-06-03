@@ -15,7 +15,11 @@ EnvironmentFile=/opt/app_gr/backend/.env
 # paralelismo HTTP, separar processo do scheduler do processo HTTP em
 # vez de aumentar workers aqui. Detalhe: com `--workers 1`, uvicorn nao
 # faz fork — main process eh o worker tambem (sem multiprocessing).
-ExecStart=/opt/app_gr/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+# --host 0.0.0.0: o TLS de callback.strataai.com.br e terminado por um proxy
+# EXTERNO a esta VM (nao ha :443 local) que alcanca o gr-api direto no IP de
+# LAN (192.168.100.26:8000). Bind em 127.0.0.1 derruba TODO o trafego externo
+# (login/webhooks) -> manter 0.0.0.0. O firewall/rede restringe o acesso.
+ExecStart=/opt/app_gr/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 Restart=on-failure
 RestartSec=3
 StandardOutput=append:/var/log/gr-api/stdout.log
