@@ -62,9 +62,12 @@ class QitechJobStatus(enum.StrEnum):
     - TIMEOUT: job que ficou WAITING > N minutos sem callback (provavelmente
       perdido na fila).
     - EMPTY: callback chegou com fileLink valido mas o CSV baixado tem 0 bytes.
-      Sintoma observado: QiTech responde 200/SUCCESS mas o relatorio vem
-      vazio — caso real em 2026-05-08 (REALINVEST FIDC). Mantemos separado de
-      ERROR pra distinguir "QiTech falhou em gerar" de "download falhou".
+      QiTech responde 200/SUCCESS mas entrega arquivo vazio — interpretado como
+      "o dado dessa data de referencia ainda nao esta disponivel na fonte"
+      (NAO falha de geracao), pois o mesmo POST devolve o CSV quando o dado
+      dela chega. A state machine trata como NOT_PUBLISHED (aguardando, com
+      backoff por tolerancia). Mantemos separado de ERROR (falha de rede/HTTP).
+      Caso canonico: 2026-05-08 (REALINVEST FIDC).
     """
 
     WAITING = "WAITING"

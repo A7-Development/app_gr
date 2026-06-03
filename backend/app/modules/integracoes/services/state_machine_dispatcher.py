@@ -50,6 +50,10 @@ from app.modules.integracoes.models.tenant_source_endpoint_config import (
     TenantSourceEndpointConfig,
 )
 from app.modules.integracoes.public import endpoint_catalog
+from app.modules.integracoes.services.endpoint_scheduling import (
+    SP_TZ,
+    anchor_datetime_utc,
+)
 from app.modules.integracoes.services.state_machine import (
     RETRYABLE_STATES,
     EndpointDateStateValue,
@@ -60,6 +64,7 @@ from app.modules.integracoes.services.tolerance import (
     PublicationState,
     ToleranceWindow,
     compute_publication_state,
+    count_business_days_between,
     resolve_tolerance_window,
 )
 from app.shared.endpoint_catalog import EndpointSpec
@@ -141,6 +146,48 @@ async def _load_tolerance_for_endpoint(
         return None
 
 
+async def _load_schedule_for_endpoint(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    source_type: SourceType,
+    environment: Environment,
+    unidade_administrativa_id: UUID | None,
+    endpoint_name: str,
+    spec: EndpointSpec,
+) -> tuple[str, str | None]:
+    """Resolve (schedule_kind, schedule_value) efetivo do endpoint.
+
+    Override do TSEC OU default do catalogo. `schedule_kind` e NOT NULL no TSEC,
+    e kind+value sao acoplados pelo CHECK `ck_tsec_schedule_value_format`, entao
+    resolvemos o PAR (se ha linha TSEC, usa o par dela; senao, default do spec).
+    Usado pelo gate de ancora pra saber o horario de inicio do ciclo diario
+    (`daily_at` HH:MM em SP).
+    """
+    stmt = select(
+        TenantSourceEndpointConfig.schedule_kind,
+        TenantSourceEndpointConfig.schedule_value,
+    ).where(
+        TenantSourceEndpointConfig.tenant_id == tenant_id,
+        TenantSourceEndpointConfig.source_type == source_type,
+        TenantSourceEndpointConfig.environment == environment,
+        TenantSourceEndpointConfig.endpoint_name == endpoint_name,
+    )
+    if unidade_administrativa_id is None:
+        stmt = stmt.where(
+            TenantSourceEndpointConfig.unidade_administrativa_id.is_(None)
+        )
+    else:
+        stmt = stmt.where(
+            TenantSourceEndpointConfig.unidade_administrativa_id
+            == unidade_administrativa_id
+        )
+    row = (await db.execute(stmt)).first()
+    if row is not None and row[0]:
+        return (row[0], row[1])
+    return (spec.default_schedule_kind.value, spec.default_schedule_value)
+
+
 async def _load_business_days(
     db: AsyncSession,
     *,
@@ -156,6 +203,70 @@ async def _load_business_days(
     )
     rows = (await db.execute(stmt)).scalars().all()
     return frozenset(rows)
+
+
+def _anchor_defer_at(
+    *,
+    reference_date: date,
+    now: datetime,
+    business_days_set: frozenset[date],
+    window: ToleranceWindow,
+    schedule_kind: str,
+    schedule_value: str | None,
+) -> datetime | None:
+    """Gate pre-POST: re-agenda rows que ainda nao devem ser tentadas.
+
+    Combina DUAS regras numa so, devolvendo o instante (em UTC) ate o qual a
+    row deve dormir, ou None quando ela pode ser tentada agora:
+
+    1. **Publicabilidade** — a fonte nunca tem o dado de uma `reference_date`
+       cujo `expected_lag` (dias uteis) ainda nao decorreu. O seeder semeia
+       `SEED_AHEAD_BD` dias uteis A FRENTE com `next_attempt_at=now`; sem este
+       gate, ~70% das chamadas QiTech de `fidc_estoque` eram queimadas em datas
+       futuras (relatorio vazio 0-byte a cada tick).
+    2. **Ancora diaria** — para `schedule_kind='daily_at'`, o ciclo do dia so
+       comeca no horario HH:MM SP configurado (`schedule_value`, default 09:00
+       do catalogo). Antes da ancora nao se tenta; depois da meia-noite a row
+       fica retida ate a proxima ancora (hold overnight).
+
+    Implementacao unica: `target_day = max(publishable_day, today)` e
+    `earliest = ancora(target_day)`. Se `now < earliest`, devolve `earliest`.
+
+    - `publishable_day` = `expected_lag`-esimo dia util estritamente apos a
+      referencia (lag=0 -> a propria referencia). Fallback `today+1` quando o
+      calendario carregado nao alcanca (referencia muito a frente; converge).
+    - `daily_at` ancora em HH:MM SP; demais kinds (interval/on_demand, hoje
+      inexistentes entre endpoints state-machine) caem no floor de
+      publicabilidade 09:00 SP — equivalente ao comportamento anterior.
+
+    A data de "hoje" e derivada de `now` em SP (NAO a data UTC) — o ciclo
+    diario e definido em horario de Brasilia, e perto da meia-noite UTC a data
+    UTC ja virou enquanto em SP ainda e o mesmo dia.
+    """
+    today_sp = now.astimezone(SP_TZ).date()
+    bd_since_ref = count_business_days_between(
+        reference_date=reference_date,
+        today=today_sp,
+        business_days_set=business_days_set,
+    )
+    if bd_since_ref >= window.expected_lag_business_days:
+        publishable_day = today_sp
+    else:
+        future_bds = sorted(d for d in business_days_set if d > reference_date)
+        if len(future_bds) >= window.expected_lag_business_days:
+            # lag >= 1 garantido aqui (lag=0 -> bd_since_ref>=0 cai no ramo acima).
+            publishable_day = future_bds[window.expected_lag_business_days - 1]
+        else:
+            publishable_day = today_sp + timedelta(days=1)
+
+    target_day = max(publishable_day, today_sp)
+    hhmm = (
+        schedule_value
+        if (schedule_kind == "daily_at" and schedule_value)
+        else "09:00"
+    )
+    earliest = anchor_datetime_utc(day=target_day, hhmm=hhmm)
+    return earliest if now < earliest else None
 
 
 async def _fetch_latest_raw_status(
@@ -319,6 +430,15 @@ async def _process_async_report_row(
         business_days_set = await _load_business_days(
             db, tenant_id=row.tenant_id, start=cal_start, end=cal_end
         )
+        schedule_kind, schedule_value = await _load_schedule_for_endpoint(
+            db,
+            tenant_id=row.tenant_id,
+            source_type=source_type,
+            environment=environment,
+            unidade_administrativa_id=row.unidade_administrativa_id,
+            endpoint_name=row.endpoint_name,
+            spec=spec,
+        )
 
     tolerance_state = compute_publication_state(
         reference_date=row.data_referencia,
@@ -326,6 +446,40 @@ async def _process_async_report_row(
         business_days_set=business_days_set,
         window=window,
     )
+
+    # Gate de ancora: nao tenta antes do dado ser publicavel (expected_lag) NEM
+    # antes do horario de inicio do ciclo diario (daily_at HH:MM SP). Re-agenda
+    # SEM POSTar (evita job vazio 0-byte a cada tick e tentativas de madrugada).
+    # `has_data` tem precedencia: se um webhook ja entregou o dado (caso raro
+    # de data "futura" com payload), segue pro transition normal -> COMPLETE.
+    defer_at = (
+        None
+        if has_data
+        else _anchor_defer_at(
+            reference_date=row.data_referencia,
+            now=now,
+            business_days_set=business_days_set,
+            window=window,
+            schedule_kind=schedule_kind,
+            schedule_value=schedule_value,
+        )
+    )
+    if defer_at is not None:
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                update(EndpointDateState)
+                .where(EndpointDateState.id == row.id)
+                .values(
+                    state=EndpointDateStateValue.NOT_STARTED.value,
+                    next_attempt_at=defer_at,
+                    updated_at=now,
+                )
+            )
+            await db.commit()
+        out["ok"] = True
+        out["new_state"] = EndpointDateStateValue.NOT_STARTED.value
+        out["deferred_future_reference"] = True
+        return out
 
     posted = False
     # 3. Sem dado ainda E dentro da janela de give_up — dispara POST so se nao
@@ -510,44 +664,13 @@ async def _process_row(
 
     source_type = SourceType(row.source_type)
     environment = Environment(row.environment)
-
-    # Chama o sync — captura excecoes pra nao derrubar o tick.
-    http_status: int | None = None
-    completeness: str | None = None
-    sync_error: str | None = None
-    try:
-        await run_sync_endpoint(
-            row.tenant_id,
-            source_type,
-            row.endpoint_name,
-            environment=environment,
-            since=row.data_referencia,
-            triggered_by=f"state_machine:{row.id}",
-            unidade_administrativa_id=row.unidade_administrativa_id,
-        )
-    except Exception as e:
-        sync_error = f"{type(e).__name__}: {e}"
-        logger.exception(
-            "state_machine: sync falhou pra row=%s endpoint=%s data=%s",
-            row.id,
-            row.endpoint_name,
-            row.data_referencia,
-        )
-
-    # Le resultado do raw layer (ou retorna None,None se nao gravou).
     now = datetime.now(UTC)
     today = now.date()
-    async with AsyncSessionLocal() as db:
-        if sync_error is None:
-            http_status, completeness = await _fetch_latest_raw_status(
-                db,
-                tenant_id=row.tenant_id,
-                unidade_administrativa_id=row.unidade_administrativa_id,
-                source_type=source_type,
-                endpoint_name=row.endpoint_name,
-                data_referencia=row.data_referencia,
-            )
 
+    # Resolve tolerancia + calendario ANTES de chamar o sync — pra barrar
+    # `data_referencia` ainda nao publicavel (seed +N d.u. a frente) sem bater
+    # na fonte (geraria chamada inutil / 0-byte a cada tick). Ver gate abaixo.
+    async with AsyncSessionLocal() as db:
         window = await _load_tolerance_for_endpoint(
             db,
             tenant_id=row.tenant_id,
@@ -583,6 +706,77 @@ async def _process_row(
         business_days_set = await _load_business_days(
             db, tenant_id=row.tenant_id, start=cal_start, end=cal_end
         )
+        schedule_kind, schedule_value = await _load_schedule_for_endpoint(
+            db,
+            tenant_id=row.tenant_id,
+            source_type=source_type,
+            environment=environment,
+            unidade_administrativa_id=row.unidade_administrativa_id,
+            endpoint_name=row.endpoint_name,
+            spec=spec,
+        )
+
+    # Gate de ancora (mesma logica do branch async): nao chama o sync antes do
+    # dado ser publicavel NEM antes do horario de inicio do ciclo diario.
+    defer_at = _anchor_defer_at(
+        reference_date=row.data_referencia,
+        now=now,
+        business_days_set=business_days_set,
+        window=window,
+        schedule_kind=schedule_kind,
+        schedule_value=schedule_value,
+    )
+    if defer_at is not None:
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                update(EndpointDateState)
+                .where(EndpointDateState.id == row.id)
+                .values(
+                    state=EndpointDateStateValue.NOT_STARTED.value,
+                    next_attempt_at=defer_at,
+                    updated_at=now,
+                )
+            )
+            await db.commit()
+        out["ok"] = True
+        out["new_state"] = EndpointDateStateValue.NOT_STARTED.value
+        out["deferred_future_reference"] = True
+        return out
+
+    # Chama o sync — captura excecoes pra nao derrubar o tick.
+    http_status: int | None = None
+    completeness: str | None = None
+    sync_error: str | None = None
+    try:
+        await run_sync_endpoint(
+            row.tenant_id,
+            source_type,
+            row.endpoint_name,
+            environment=environment,
+            since=row.data_referencia,
+            triggered_by=f"state_machine:{row.id}",
+            unidade_administrativa_id=row.unidade_administrativa_id,
+        )
+    except Exception as e:
+        sync_error = f"{type(e).__name__}: {e}"
+        logger.exception(
+            "state_machine: sync falhou pra row=%s endpoint=%s data=%s",
+            row.id,
+            row.endpoint_name,
+            row.data_referencia,
+        )
+
+    # Le resultado do raw layer (ou retorna None,None se nao gravou).
+    async with AsyncSessionLocal() as db:
+        if sync_error is None:
+            http_status, completeness = await _fetch_latest_raw_status(
+                db,
+                tenant_id=row.tenant_id,
+                unidade_administrativa_id=row.unidade_administrativa_id,
+                source_type=source_type,
+                endpoint_name=row.endpoint_name,
+                data_referencia=row.data_referencia,
+            )
 
     updates = transition(
         data_referencia=row.data_referencia,
