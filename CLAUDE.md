@@ -909,6 +909,29 @@ Frontend exibe:
 - Botao `<ShowPremisesButton />` em qualquer visual que mostre calculo/projecao: abre modal com premissas usadas
 - Rodape de cada dashboard: "Dados sincronizados em XX/XX as HH:MM a partir de Bitfin"
 
+### 14.6 Zero ocultacao na apresentacao — reconciliacao obrigatoria (regra dura)
+
+> Decisao 2026-06-03 (Ricardo): nenhuma tabela, lista ou drill exibido ao usuario pode **excluir silenciosamente** linhas que um total/headline na mesma tela CONTA. Toda apresentacao de agregado **reconcilia on-screen**: a soma do que o usuario consegue alcancar = o total mostrado. Em mercado regulado (CVM/ANBIMA/Bacen), um numero que nao bate com o detalhe ao lado **destroi a confianca em TODOS os numeros da ferramenta** — e bug funcional de auditabilidade, nao polish. Origem: drill PDD escondia papeis com `|Δ|<R$100` (headline R$6.250,36 vs tabela R$6.155,02, gap R$95,34).
+
+**Proibido (ocultacao silenciosa):**
+
+1. **Corte por VALOR** (`threshold`, `|delta| > X`, `min_*`, `> _ALERTA_BRL`) que remove linhas da tabela enquanto o total/headline soma a populacao inteira. Os itens abaixo do corte somem da tabela mas contam no total -> nao reconcilia.
+2. **Corte por QUANTIDADE** (`top_n`, `LIMIT`, `[:N]`, `.slice(0,N)`) **sem** que (a) TODO o restante seja alcancavel (expand/paginacao) OU (b) exista uma linha explicita **"Outros (N itens) · R$ X"** agregando a cauda.
+3. **Contador maior que linhas alcancaveis:** expor `qtd_*` / `total_*` / `*_total_acima_threshold` MAIOR que o numero de linhas que o usuario consegue ver/alcancar. Contador > linhas-alcancaveis = o sistema mentindo sobre o universo.
+4. **Default de endpoint que corta** (ex.: `top_n=20`, `threshold_brl=100`) quando o frontend nao sobrescreve. **Default = mostrar tudo** (`threshold=0`, `top_n` alto o suficiente p/ nao cortar na pratica, alinhado com o default do service/tool).
+
+**Permitido (reconcilia — use estes padroes):**
+
+- **Render progressivo:** `.slice(0,N)` com botao "Mostrar todos os N" que revela a lista inteira E rodape (footer) somando o array **completo**. Ex.: `DrillDcContent` aquisicoes/mutacao.
+- **Virtualizacao** (`@tanstack/react-virtual`): janela renderizada, dataset completo, footer soma tudo.
+- **Linha "Outros (N) · valor":** top-N nomeados + 1 linha sintetica agregando a cauda, de modo que a soma visivel = total. Ex.: `AbaVolumeRitmo` (padrao canonico).
+- **Paginacao real:** lista com `total` / `page` / `page_size` expostos onde o usuario navega ate o resto (historicos: syncs, jobs, relatorios do catalogo). Nao e drill de reconciliacao.
+- **Top-N rotulado SEM total conflitante:** chart "Top 5 setores" explicitamente rotulado, sem um total ao lado que os 5 nao expliquem. Se houver um total que a selecao nao soma, vira caso (b) — precisa de "Outros".
+
+**Onde se aplica com forca total:** drills de decomposicao (cota-sub DC / PDD / CPR / Cotas / Origem / Contas a Pagar), conferencias e qualquer "headline + tabela que explica a headline". Ali a soma da(s) tabela(s) TEM que bater o headline (residuo ~0) — inclusive quando uma perna mora em tabela vizinha (ex.: WOP em `papeis_wop`): e o **conjunto** das tabelas exibidas que reconcilia, e a tela deve deixar isso explicito.
+
+**Em PR (bloqueador):** lista/drill que corta por valor ou quantidade sem reconciliar (sem "Outros", sem expand-revela-tudo, ou com contador > linhas alcancaveis) e rejeitado. Endpoint que retorna `top_*`/array capado junto de um `*_total` maior, sem o frontend ter como alcancar o resto, idem. Reviewer rejeita.
+
 ---
 
 ## 15. Backend -- Regras de codigo
@@ -969,6 +992,7 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] **PageHeader usa `info` (tooltip) + `subtitle` (eyebrow "Modulo · Categoria") + `actions` — nao so `title`?**
 - [ ] **Cells custom (inline ou em `_components/<X>Table.tsx`) usam `tableTokens.*` (nao escrevem `text-xs|sm|[Npx]` ou `text-gray-XXX` literais)?**
 - [ ] **Fuga do `<DataTableShell>`, do pattern, ou de `tableTokens.*` tem comentario `// MOTIVO:` no caller?**
+- [ ] **Zero ocultacao (§14.6): toda tabela/drill reconcilia com o total/headline da tela? Se corta com `.slice`/top-N, ou (a) tem expand "Mostrar todos" + footer somando o array inteiro, ou (b) linha explicita "Outros (N) · valor". Nenhum contador (`qtd_*`) maior que as linhas alcancaveis?**
 - [ ] `npx tsc --noEmit` passa?
 - [ ] `npm run build` passa?
 
@@ -995,6 +1019,7 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] Se e decisao/calculo, registra no `decision_log`?
 - [ ] **Servico/endpoint le APENAS de silver (`wh_<entidade>`), nunca de raw (`wh_<vendor>_raw_*`)?** Ver §13.2.1.
 - [ ] **Se for service de pagina BI: TODA query de agregado (KPI, chart, mini-chart, sparkline, breakdown) passa por `_apply_filters(stmt, tenant_id=..., **filters)` — zero query montando o WHERE a mao?** Ver §7.2.
+- [ ] **Zero ocultacao (§14.6): drill/decomposicao/listagem analitica nao corta linhas por valor (`threshold`) nem quantidade (`top_n`/`LIMIT`/`[:N]`) de forma que a lista nao some o total/headline retornado. Default de endpoint = mostrar tudo (`threshold=0`, `top_n` sem corte pratico). Nenhum `*_total`/`qtd_*` maior que as linhas que o cliente consegue alcancar.**
 - [ ] **Import cruzado entre modulos so passa por `modules/Y/public.py`? Zero import de internals de outro modulo?**
 - [ ] **Se introduziu modulo novo, atualizou enum `Module` + CLAUDE.md secao 11.1?**
 - [ ] Type hints completos? Zero `any`?
