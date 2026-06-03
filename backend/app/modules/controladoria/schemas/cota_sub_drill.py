@@ -166,6 +166,45 @@ class DrillDcMutacaoPapel(BaseModel):
     mudou_venc:                 bool = Field(description="data_vencimento_ajustada diferente")
 
 
+class DrillDcLiquidacaoParcialPapel(BaseModel):
+    """Papel da populacao constante (ficou em D-1 ∩ D0) cuja queda de saldo e
+    EXPLICADA por um evento de liquidacao parcial do dia.
+
+    Reconciliacao 2026-06-03: liquidacao PARCIAL nao tira o papel do estoque
+    (ele fica, com valor_nominal reduzido pela parcela paga). Antes esse caso
+    caia no bucket `mutacao` (porque `valor_nominal` mudou) e aparecia como
+    "mutacao silenciosa" — uma queda enorme de DC sem causa aparente. Mas a
+    causa existe: o evento esta em `wh_liquidacao_recebivel` (LIQUIDACAO
+    PARCIAL, RECOMPRA PARCIAL, ABATIMENTO CONCEDIDO, etc.). O casamento e por
+    business key `(cedente_doc, seu_numero, numero_documento)` + `data_posicao=D0`
+    + `ΔVN ≈ -Σvalor_pago` do(s) evento(s) (tolerancia R$ 1).
+
+    Natureza: GIRO (transferencia carteira -> caixa), NAO mutacao silenciosa.
+    A perna de caixa (`valor_pago`) entra na Tesouraria/Disponibilidades; aqui
+    fica so a perna da carteira (`delta_vp`, negativo).
+
+    Caso canonico 01/06 REALINVEST: DID100880 (RECOMPRA PARCIAL R$ 280.338,
+    ΔVP -279.835), 00000...044601 (LIQUIDACAO PARCIAL R$ 4.000), DID108054
+    (ABATIMENTO R$ 205).
+    """
+
+    cedente_doc:        str
+    cedente_nome:       str
+    sacado_doc:         str
+    sacado_nome:        str
+    seu_numero:         str
+    numero_documento:   str
+    tipo_recebivel:     str
+    vp_d1:              Decimal
+    vp_d0:              Decimal
+    delta_vp:           Decimal = Field(description="vp_d0 - vp_d1 (perna da carteira, < 0)")
+    vn_d1:              Decimal
+    vn_d0:              Decimal
+    tipo_movimento:     str = Field(description="tipo_movimento do evento casado (ex.: RECOMPRA PARCIAL SEM ADIANTAMENTO)")
+    valor_pago_evento:  Decimal = Field(description="Σ valor_pago do(s) evento(s) casado(s) no D0 (perna de caixa)")
+    reconcilia:         bool = Field(description="ΔVN do estoque casa com -Σvalor_pago do evento (R$ 1)? Se False, ha mudanca de parametro adicional alem da liquidacao.")
+
+
 class DrillDcMigracaoWopPapel(BaseModel):
     """Papel que MIGROU PARA WOP entre D-1 e D0.
 
@@ -197,8 +236,16 @@ class DrillDcDecomposicao(BaseModel):
                  - liquidacoes_total     (saidas: papeis ausentes em D0, pelo VP_d1)
                  - migracao_wop_total    (papeis que viraram WOP, saem do estoque)
                  + apropriacao_total     (juros do dia, populacao constante sem mudanca)
-                 + mutacao_total         (delta VP de papeis com mudanca de parametro)
+                 - liquidacao_parcial_total (papeis que ficaram mas tiveram parcela paga; casa com evento)
+                 + mutacao_total         (delta VP de papeis com mudanca de parametro SEM evento casado)
                  + residuo               (deve ser ~0; se != 0 alerta de pipeline)
+
+    Reconciliacao 2026-06-03: liquidacao PARCIAL (papel fica, valor_nominal cai
+    pela parcela paga) era engolida pelo bucket `mutacao` (aparecia como
+    "mutacao silenciosa"). Agora casa com o evento em `wh_liquidacao_recebivel`
+    e vai para `liquidacao_parcial_total` (GIRO carteira->caixa). `mutacao_total`
+    passa a ser RESIDUAL: so papel com mudanca de parametro SEM evento casado
+    (re-statement genuino, ex.: DID99746).
 
     Cross-check informativo com `wh_aquisicao_recebivel` e
     `wh_liquidacao_recebivel`: a diferenca entre o granular (calculado
@@ -223,8 +270,11 @@ class DrillDcDecomposicao(BaseModel):
     apropriacao_n:                  int
     apropriacao_total:              Decimal = Field(description="Σ ΔVP da populacao constante sem mudanca de parametro (= juros + valorizacao MtM)")
 
+    liquidacao_parcial_n:           int = Field(default=0, description="Papeis que ficaram mas tiveram parcela paga (casam com evento de liquidacao no D0)")
+    liquidacao_parcial_total:       Decimal = Field(default=Decimal("0"), description="Σ ΔVP dos papeis com liquidacao parcial casada (< 0; GIRO carteira->caixa, NAO mutacao)")
+
     mutacao_n:                      int
-    mutacao_total:                  Decimal = Field(description="Σ ΔVP da populacao constante COM mudanca de parametro (valor_nominal/taxa/venc) — F5 implicito")
+    mutacao_total:                  Decimal = Field(description="Σ ΔVP da populacao constante COM mudanca de parametro SEM evento de liquidacao casado (mutacao silenciosa RESIDUAL). Liquidacao parcial saiu daqui para liquidacao_parcial_total.")
 
     residuo:                        Decimal = Field(description="Esperado ~0; > R$ 1 indica desalinhamento")
 
@@ -306,6 +356,13 @@ class DrillDcResultadoDoDia(BaseModel):
     # ── Giro (NAO move a cota) ───────────────────────────────────────────────
     giro_aquisicoes:          Decimal = Field(description="Σ VP dos papeis novos (D0 \\ D-1).")
     giro_liquidacoes:         Decimal = Field(description="Σ VP_d1 dos papeis que sairam (D-1 \\ D0).")
+    giro_liquidacao_parcial:  Decimal = Field(
+        default=Decimal("0"),
+        description="= decomposicao.liquidacao_parcial_total. ΔVP de papeis que "
+                    "ficaram mas tiveram parcela paga (casam com evento). GIRO "
+                    "carteira->caixa, NAO move a cota (a perna de caixa entra na "
+                    "Tesouraria). Antes vazava como mutacao silenciosa.",
+    )
 
     # ── Heuristica de leitura (descritores de dominio, nao enums do agente) ──
     motor_dominante:          Literal[
@@ -350,7 +407,12 @@ class DrillDcResponse(BaseModel):
 
     mutacao_papeis:      list[DrillDcMutacaoPapel] = Field(
         default_factory=list,
-        description="Detalhe do bucket Mutacao (top N por |delta_vp|)",
+        description="Detalhe do bucket Mutacao RESIDUAL (top N por |delta_vp|) — "
+                    "so papeis sem evento de liquidacao casado",
+    )
+    liquidacao_parcial_papeis: list[DrillDcLiquidacaoParcialPapel] = Field(
+        default_factory=list,
+        description="Detalhe dos papeis com liquidacao parcial casada (ex-mutacao)",
     )
     migracao_wop_papeis: list[DrillDcMigracaoWopPapel] = Field(
         default_factory=list,

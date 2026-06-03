@@ -49,6 +49,7 @@ from app.modules.controladoria.schemas.cota_sub_drill import (
     DrillDcAquisicao,
     DrillDcDecomposicao,
     DrillDcLiquidacaoLinha,
+    DrillDcLiquidacaoParcialPapel,
     DrillDcLiquidacaoPorTipo,
     DrillDcMigracaoWopPapel,
     DrillDcMutacaoPapel,
@@ -74,6 +75,13 @@ _TOP_MUTACAO_N = 30
 # Limite minimo |delta_vp| pra entrar em mutacao (filtra ruido de
 # arredondamento da QiTech — diferencas menores que centavos).
 _MUTACAO_MIN_DELTA_BRL = Decimal("0.01")
+
+# Tolerancia pra casar a queda de valor_nominal do estoque com a soma de
+# valor_pago dos eventos de liquidacao do dia (mesma business key). Quando
+# `|ΔVN + Σvalor_pago| <= tol`, a queda do papel e uma LIQUIDACAO PARCIAL
+# (papel ficou, parcela paga) — nao mutacao silenciosa. R$ 1 alinha com o
+# residuo aceitavel da decomposicao.
+_LIQ_PARCIAL_MATCH_TOL_BRL = Decimal("1.0")
 
 
 async def _aquisicoes_do_dia(
@@ -296,12 +304,18 @@ async def _decompor_delta_dc(
     db: AsyncSession,
     *,
     tenant_id: UUID,
+    ua_id: UUID,
     fundo_doc: str,
     data_d1: date,
     data_d0: date,
     aquisicoes_evento_total: Decimal,
     liquidacoes_evento_total: Decimal,
-) -> tuple[DrillDcDecomposicao, list[DrillDcMutacaoPapel], list[DrillDcMigracaoWopPapel]]:
+) -> tuple[
+    DrillDcDecomposicao,
+    list[DrillDcMutacaoPapel],
+    list[DrillDcLiquidacaoParcialPapel],
+    list[DrillDcMigracaoWopPapel],
+]:
     """Decomposicao do ΔDC em 5 buckets a partir do granular `wh_estoque_recebivel`.
 
     Carrega TODOS os papeis das duas datas em memoria, classifica via
@@ -425,12 +439,48 @@ async def _decompor_delta_dc(
                 )
             )
 
-    # ── Buckets C/M: populacao constante nao-WOP ───────────────────────────
+    # ── Eventos de liquidacao do D0 por business key ───────────────────────
+    # Pra reconciliar papel que FICOU (mutacao aparente) com liquidacao PARCIAL
+    # real: a queda de valor_nominal casa com a soma de valor_pago do(s)
+    # evento(s). Estoque usa `numero_documento`; liquidacao usa `documento` —
+    # mesmo valor, mesma business key (cedente_doc, seu_numero, doc).
+    liq_stmt = (
+        select(
+            LiquidacaoRecebivel.cedente_doc,
+            LiquidacaoRecebivel.seu_numero,
+            LiquidacaoRecebivel.documento,
+            func.coalesce(func.sum(LiquidacaoRecebivel.valor_pago), ZERO).label("sum_pago"),
+            func.min(LiquidacaoRecebivel.tipo_movimento).label("tipo"),
+        )
+        .where(LiquidacaoRecebivel.tenant_id == tenant_id)
+        .where(LiquidacaoRecebivel.data_posicao == data_d0)
+        .where(
+            (LiquidacaoRecebivel.unidade_administrativa_id == ua_id)
+            | (
+                (LiquidacaoRecebivel.unidade_administrativa_id.is_(None))
+                & (LiquidacaoRecebivel.fundo_doc == fundo_doc)
+            )
+        )
+        .group_by(
+            LiquidacaoRecebivel.cedente_doc,
+            LiquidacaoRecebivel.seu_numero,
+            LiquidacaoRecebivel.documento,
+        )
+    )
+    liq_eventos: dict[tuple[str, str, str], tuple[Decimal, str]] = {
+        (r.cedente_doc, r.seu_numero, r.documento): (Decimal(r.sum_pago or 0), r.tipo or "—")
+        for r in (await db.execute(liq_stmt)).all()
+    }
+
+    # ── Buckets C/M/LP: populacao constante nao-WOP ─────────────────────────
     apropriacao_n = 0
     apropriacao_total = ZERO
     mutacao_n = 0
     mutacao_total = ZERO
+    liq_parcial_n = 0
+    liq_parcial_total = ZERO
     mutacao_papeis_all: list[DrillDcMutacaoPapel] = []
+    liq_parcial_papeis_all: list[DrillDcLiquidacaoParcialPapel] = []
     for k in intersecao:
         r1, r0 = d1_map[k], d0_map[k]
         # Pula migracao WOP (ja contada no bucket W).
@@ -442,19 +492,30 @@ async def _decompor_delta_dc(
             continue
 
         delta_vp = Decimal(r0.valor_presente) - Decimal(r1.valor_presente)
+        vn_d1 = Decimal(r1.valor_nominal)
+        vn_d0 = Decimal(r0.valor_nominal)
 
-        mudou_vn = Decimal(r1.valor_nominal) != Decimal(r0.valor_nominal)
+        mudou_vn = vn_d1 != vn_d0
         mudou_taxa = Decimal(r1.taxa_recebivel) != Decimal(r0.taxa_recebivel)
         mudou_venc = r1.data_vencimento_ajustada != r0.data_vencimento_ajustada
 
-        if mudou_vn or mudou_taxa or mudou_venc:
-            mutacao_n += 1
-            mutacao_total += delta_vp
-            # So registra na lista de detalhe se delta passar o threshold
-            # (filtra arredondamentos de centavos).
+        # Sem mudanca de parametro -> apropriacao (carrego).
+        if not (mudou_vn or mudou_taxa or mudou_venc):
+            apropriacao_n += 1
+            apropriacao_total += delta_vp
+            continue
+
+        # Mudou parametro. Antes de chamar de "mutacao silenciosa", tenta casar
+        # com evento de liquidacao parcial do dia: papel ficou + parcela paga.
+        # Criterio (recomendacao b): ΔVN ≈ -Σvalor_pago dentro da tolerancia.
+        evento = liq_eventos.get(k)
+        if evento is not None and abs((vn_d0 - vn_d1) + evento[0]) <= _LIQ_PARCIAL_MATCH_TOL_BRL:
+            sum_pago, tipo_mov = evento
+            liq_parcial_n += 1
+            liq_parcial_total += delta_vp
             if abs(delta_vp) >= _MUTACAO_MIN_DELTA_BRL:
-                mutacao_papeis_all.append(
-                    DrillDcMutacaoPapel(
+                liq_parcial_papeis_all.append(
+                    DrillDcLiquidacaoParcialPapel(
                         cedente_doc=r1.cedente_doc,
                         cedente_nome=r1.cedente_nome,
                         sacado_doc=r1.sacado_doc,
@@ -465,29 +526,60 @@ async def _decompor_delta_dc(
                         vp_d1=Decimal(r1.valor_presente),
                         vp_d0=Decimal(r0.valor_presente),
                         delta_vp=delta_vp,
-                        vn_d1=Decimal(r1.valor_nominal),
-                        vn_d0=Decimal(r0.valor_nominal),
-                        taxa_d1=Decimal(r1.taxa_recebivel),
-                        taxa_d0=Decimal(r0.taxa_recebivel),
-                        venc_d1=r1.data_vencimento_ajustada,
-                        venc_d0=r0.data_vencimento_ajustada,
-                        mudou_vn=mudou_vn,
-                        mudou_taxa=mudou_taxa,
-                        mudou_venc=mudou_venc,
+                        vn_d1=vn_d1,
+                        vn_d0=vn_d0,
+                        tipo_movimento=tipo_mov,
+                        valor_pago_evento=sum_pago,
+                        reconcilia=True,
                     )
                 )
-        else:
-            apropriacao_n += 1
-            apropriacao_total += delta_vp
+            continue
+
+        # Sem evento casado -> mutacao silenciosa RESIDUAL (re-statement genuino).
+        mutacao_n += 1
+        mutacao_total += delta_vp
+        # So registra na lista de detalhe se delta passar o threshold
+        # (filtra arredondamentos de centavos).
+        if abs(delta_vp) >= _MUTACAO_MIN_DELTA_BRL:
+            mutacao_papeis_all.append(
+                DrillDcMutacaoPapel(
+                    cedente_doc=r1.cedente_doc,
+                    cedente_nome=r1.cedente_nome,
+                    sacado_doc=r1.sacado_doc,
+                    sacado_nome=r1.sacado_nome,
+                    seu_numero=r1.seu_numero,
+                    numero_documento=r1.numero_documento,
+                    tipo_recebivel=r1.tipo_recebivel,
+                    vp_d1=Decimal(r1.valor_presente),
+                    vp_d0=Decimal(r0.valor_presente),
+                    delta_vp=delta_vp,
+                    vn_d1=vn_d1,
+                    vn_d0=vn_d0,
+                    taxa_d1=Decimal(r1.taxa_recebivel),
+                    taxa_d0=Decimal(r0.taxa_recebivel),
+                    venc_d1=r1.data_vencimento_ajustada,
+                    venc_d0=r0.data_vencimento_ajustada,
+                    mudou_vn=mudou_vn,
+                    mudou_taxa=mudou_taxa,
+                    mudou_venc=mudou_venc,
+                )
+            )
 
     # Top N mutacoes por |delta_vp| (UI corta — backend devolve mais pra
     # debug futuro nao quebrar).
     mutacao_papeis_all.sort(key=lambda p: abs(p.delta_vp), reverse=True)
     mutacao_papeis_top = mutacao_papeis_all[:_TOP_MUTACAO_N]
+    liq_parcial_papeis_all.sort(key=lambda p: abs(p.delta_vp), reverse=True)
+    liq_parcial_papeis_top = liq_parcial_papeis_all[:_TOP_MUTACAO_N]
 
-    # Identidade: saldo_d0 - (saldo_d1 + A - L - W + C + M) = residuo
+    # Identidade: saldo_d0 - (saldo_d1 + A - L - W + C + LP + M) = residuo
+    # LP (liquidacao parcial) e M (mutacao) sao ambos ΔVP de papeis que ficaram;
+    # so o rotulo difere (LP casa com evento, M nao). Somam igual na identidade.
     delta_saldo = saldo_d0 - saldo_d1
-    explicado = aquisicoes_total - liquidacoes_total - migracao_wop_total + apropriacao_total + mutacao_total
+    explicado = (
+        aquisicoes_total - liquidacoes_total - migracao_wop_total
+        + apropriacao_total + liq_parcial_total + mutacao_total
+    )
     residuo = delta_saldo - explicado
 
     # Cross-check com eventos publicados.
@@ -506,6 +598,8 @@ async def _decompor_delta_dc(
         migracao_wop_total=migracao_wop_total,
         apropriacao_n=apropriacao_n,
         apropriacao_total=apropriacao_total,
+        liquidacao_parcial_n=liq_parcial_n,
+        liquidacao_parcial_total=liq_parcial_total,
         mutacao_n=mutacao_n,
         mutacao_total=mutacao_total,
         residuo=residuo,
@@ -515,7 +609,7 @@ async def _decompor_delta_dc(
         cross_check_diff_liquidacoes=diff_li,
     )
 
-    return decomposicao, mutacao_papeis_top, migracao_wop_papeis
+    return decomposicao, mutacao_papeis_top, liq_parcial_papeis_top, migracao_wop_papeis
 
 
 def _build_resultado_do_dia(
@@ -584,6 +678,7 @@ def _build_resultado_do_dia(
         migracao_wop_total=wop,
         giro_aquisicoes=decomposicao.aquisicoes_total,
         giro_liquidacoes=decomposicao.liquidacoes_total,
+        giro_liquidacao_parcial=decomposicao.liquidacao_parcial_total,
         motor_dominante=motor_dominante,  # type: ignore[arg-type]
         resultado_outlier=resultado_outlier,
     )
@@ -654,9 +749,12 @@ async def compute_drill_dc(
     apropriacao_val = delta_estoque + liquidacoes_total - aquisicoes_total
 
     # F2 redesign: decomposicao em 5 buckets via granular.
-    decomposicao, mutacao_papeis, migracao_wop_papeis = await _decompor_delta_dc(
+    (
+        decomposicao, mutacao_papeis, liquidacao_parcial_papeis, migracao_wop_papeis
+    ) = await _decompor_delta_dc(
         db,
         tenant_id=tenant_id,
+        ua_id=ua_id,
         fundo_doc=ua.cnpj or "",
         data_d1=d1,
         data_d0=data_d0,
@@ -694,5 +792,6 @@ async def compute_drill_dc(
         decomposicao=decomposicao,
         resultado_do_dia=resultado_do_dia,
         mutacao_papeis=mutacao_papeis,
+        liquidacao_parcial_papeis=liquidacao_parcial_papeis,
         migracao_wop_papeis=migracao_wop_papeis,
     )
