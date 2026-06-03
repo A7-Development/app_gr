@@ -385,12 +385,16 @@ async def drill_pdd(
     ] = None,
     threshold_brl: Annotated[
         Decimal,
-        Query(description="Threshold |Δ valor_pdd| pra entrar no top papeis. Default R$ 100."),
-    ] = Decimal("100"),
+        Query(description="Threshold |Δ valor_pdd| pra entrar no top papeis. Default R$ 0 "
+                          "(zero ocultacao — a tabela soma EXATO a headline reversao/constituicao). "
+                          "Suba so se quiser filtrar ruido conscientemente."),
+    ] = Decimal("0"),
     top_n: Annotated[
         int,
-        Query(ge=1, le=200, description="Cap de papeis no top. Default 20."),
-    ] = 20,
+        Query(ge=1, le=5000, description="Cap de papeis no top. Default 2000 (= sem corte pratico "
+                                         "p/ carteira REALINVEST; alinhado com o servico/tool). "
+                                         "Garante que todo papel com variacao aparece na tabela."),
+    ] = 2000,
     _: None = _Guard,
 ) -> DrillPddResponse:
     """Drill da categoria PDD (Provisao para Devedores Duvidosos) do Balance hero.
