@@ -15,13 +15,30 @@
 - **Índice completo:** `curl https://docs.bigdatacorp.com.br/llms.txt` → ~700KB,
   **662 páginas / 254 datasets** (markdown, com descrição por linha).
 - **Página de cada dataset:** `…/plataforma/reference/<dataset>.md` — carrega
-  **descrição + dicionário de dados (campos) + preço/tier**. Baixar cru e ler
-  (sem passar pelo summarizer do WebFetch, que trunca).
-- **Preço:** vive na página de cada dataset (ex.: `empresas-dados-cadastrais-basicos`
-  = **R$ 0,02**). Não há lista única — puxar por dataset ao fiar o adapter.
+  descrição + **OpenAPI embutido** (schema request/response = **dicionário de
+  dados estruturado**). Baixar cru e ler (sem o summarizer do WebFetch).
+- **Preço:** via **API de Preços** (canônica, ver §0.1) — não raspar `.md`.
 
 > Regra: ao construir o adapter/mapper de um dataset, **puxar o `.md` dele** pra
-> ter o dicionário exato (semântica raw→silver, §13.2) + o preço atual.
+> ter o dicionário exato (OpenAPI → silver, §13.2); o preço vem da API de Preços.
+
+### 0.1 API de Preços (`POST plataforma.bigdatacorp.com.br/precos`)
+
+**Consulta gratuita** (não tem custo). Mesma auth da plataforma (`AccessToken` +
+`TokenId`). Dois modos:
+
+1. **Tabela completa** — body `{}` → **todos os datasets habilitados pro cliente
+   + tabela de preço com faixas de desconto**. → **fonte de verdade do nosso
+   catálogo de custo**; sincronizar periodicamente (alimenta o billing).
+2. **Preço estimado** — body `{"API":"People|Companies|...","Datasets":"basic_data, phones, ..."}`
+   → **custo total da consulta ANTES de rodar**. → é o **guard de orçamento**
+   (transversal #2): o node/agente estima o gasto e decide. Indica também se um
+   dataset está em outra API.
+
+> Nomes técnicos na API (ex.: `basic_data`, `phones`, `ondemand_rf_status`) são
+> **curtos e agrupados por API** (People/Companies/...) — diferentes do slug da
+> doc (`empresas-dados-cadastrais-basicos`). A Tabela Completa dá o **de-para
+> autoritativo** (nome técnico ↔ preço ↔ API) do que de fato temos contratado.
 
 ## 1. Modelo de credenciais e billing (decisão 2026-06-04)
 
