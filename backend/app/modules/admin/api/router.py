@@ -20,6 +20,7 @@ from app.modules.admin.api import (
     ai_provider_credentials,
     ai_subscriptions,
     ai_tools,
+    data_provider_credentials,
     tenants,
     users,
 )
@@ -33,5 +34,6 @@ router.include_router(ai_personas.router)
 router.include_router(ai_expertises.router)
 router.include_router(ai_agent_definitions.router)  # novo: /ia/agents (catalogo central)
 router.include_router(ai_tools.router)  # F2.c.4: /ia/tools (read-only)
+router.include_router(data_provider_credentials.router)  # /admin/data-providers
 router.include_router(tenants.router)
 router.include_router(users.router)
