@@ -172,6 +172,13 @@ function graphToReactFlow(
     id: e.id,
     source: e.source,
     target: e.target,
+    // Restaura a ancora persistida (top/right/bottom/left). Edges salvas ANTES
+    // do fix de persistencia nao tem handle: em vez de cair todas no primeiro
+    // handle ("top" -> bug visual), assume o fluxo vertical natural
+    // (sai por baixo "bottom", entra por cima "top"). O usuario re-arrasta o
+    // que quiser e salva — a partir dai a escolha dele persiste.
+    sourceHandle: e.source_handle ?? "bottom",
+    targetHandle: e.target_handle ?? "top",
     // `default` = curva bezier suave (React Flow default). Mais orgânica
     // que `smoothstep` (degraus 90° arredondados). markerEnd setado aqui
     // garante seta direcional em edges CARREGADAS do DB — defaultEdgeOptions
@@ -218,6 +225,10 @@ function reactFlowToGraph(nodes: Node[], edges: Edge[]): WorkflowGraph {
       id: e.id,
       source: e.source,
       target: e.target,
+      // Persiste a ancora (lado do node) que o usuario escolheu — sem isto,
+      // ao recarregar todas as edges caem no primeiro handle ("top").
+      source_handle: e.sourceHandle ?? null,
+      target_handle: e.targetHandle ?? null,
       condition: ((e.data as { condition?: string } | undefined)?.condition) ?? null,
     })),
   }

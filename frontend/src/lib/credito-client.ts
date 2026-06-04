@@ -41,6 +41,10 @@ export type EdgeSpec = {
   id: string
   source: string
   target: string
+  /** Ancora visual (lado do node) onde a edge sai/entra: top/right/bottom/left.
+   * Cosmetico — preserva o layout desenhado pelo usuario. Null = default. */
+  source_handle?: string | null
+  target_handle?: string | null
   condition: string | null
 }
 
