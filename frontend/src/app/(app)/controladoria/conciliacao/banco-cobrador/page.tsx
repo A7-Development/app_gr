@@ -37,7 +37,6 @@ import { Card } from "@/components/tremor/Card"
 import { PageHeader } from "@/design-system/components/PageHeader"
 import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
 import { FilterChip } from "@/design-system/components/FilterBar"
-import { KpiStrip, KpiCard } from "@/design-system/components/KpiStrip"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { AIPanel, useAIPanel } from "@/design-system/components/AIPanel"
 import { cardTokens } from "@/design-system/tokens/card"
@@ -53,6 +52,7 @@ import type {
 } from "@/lib/api-client"
 
 import { ConciliacaoBoletoTable } from "./_components/ConciliacaoBoletoTable"
+import { ResumoConciliacaoTable } from "./_components/ResumoConciliacaoTable"
 
 const fmtInt = new Intl.NumberFormat("pt-BR")
 
@@ -107,22 +107,6 @@ export default function ConciliacaoBancoCobradorPage() {
 
   const q = useConciliacaoBancoCobrador(dataRef)
   const conc = q.data
-
-  // Resumo do DIA (nao reage aos chips) — alimenta o KpiStrip.
-  const countByStatus = React.useMemo(() => {
-    const m = new Map<string, number>()
-    for (const r of conc?.resumo ?? []) m.set(r.status, r.quantidade)
-    return m
-  }, [conc])
-
-  const divergencias =
-    (countByStatus.get("divergencia_valor") ?? 0) +
-    (countByStatus.get("divergencia_vencimento") ?? 0)
-  const soBanco = countByStatus.get("so_em_banco") ?? 0
-  const taxaPct =
-    conc && conc.boletos_ativos > 0
-      ? (conc.conciliados / conc.boletos_ativos) * 100
-      : 0
 
   // Opcoes dos chips derivadas das linhas do dia.
   const bancoOpts = React.useMemo(
@@ -275,34 +259,9 @@ export default function ConciliacaoBancoCobradorPage() {
             />
           ) : (
             <div className="flex flex-col gap-4">
-              {/* KpiStrip — resumo do DIA (nao reage aos chips) */}
-              <KpiStrip cols={5}>
-                <KpiCard
-                  label="Títulos abertos"
-                  value={fmtInt.format(conc?.titulos_abertos ?? 0)}
-                  sub="elegíveis a boleto"
-                />
-                <KpiCard
-                  label="Boletos ativos"
-                  value={fmtInt.format(conc?.boletos_ativos ?? 0)}
-                  sub="nos bancos cobradores"
-                />
-                <KpiCard
-                  label="Conciliados"
-                  value={fmtInt.format(conc?.conciliados ?? 0)}
-                  sub={`${taxaPct.toFixed(0)}% dos boletos`}
-                />
-                <KpiCard
-                  label="Divergências"
-                  value={fmtInt.format(divergencias)}
-                  sub="valor + vencimento"
-                />
-                <KpiCard
-                  label="Só em banco"
-                  value={fmtInt.format(soBanco)}
-                  sub="boletos sem título"
-                />
-              </KpiStrip>
+              {/* Tabela-resumo do DIA (nao reage aos chips) — Entrega 3 §2.
+                  Substitui o KpiStrip; reconcilia on-screen (§14.6). */}
+              <ResumoConciliacaoTable resumo={conc?.resumo ?? []} />
 
               {/* DataTable — filtrada pelos chips + busca */}
               {q.isError ? (
