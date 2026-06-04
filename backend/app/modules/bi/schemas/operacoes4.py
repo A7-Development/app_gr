@@ -177,18 +177,34 @@ class Operacoes4TaxaBucket(BaseModel):
     is_tail: bool = Field(default=False)
 
 
+class Operacoes4TaxaPorProdutoItem(BaseModel):
+    """1 produto na quebra de taxa media ponderada (L3 card 2).
+
+    `taxa_wavg_pct` e a taxa media do produto ponderada por VOP MTD;
+    `vop_mtd` e o volume do produto no MTD (usado pra ordenacao/contexto).
+    """
+
+    produto: str = Field(description="Sigla do produto (ex.: 'FAT', 'CMS')")
+    taxa_wavg_pct: float = Field(description="Taxa wavg do produto (% a.m.)")
+    vop_mtd: Decimal = Field(description="VOP MTD do produto (BRL)")
+
+
 class Operacoes4LensTaxasData(BaseModel):
     """Bundle do endpoint `/bi/operacoes4/lens-taxas`.
 
-    Alimenta a L3 card 1 (Distribuicao de taxas · MTD). Histograma de 5 faixas
-    fixas ponderadas por VOP MTD + taxa media ponderada (wavg, identica ao
-    termometro) + mediana ponderada por VOP. `delta_pct` compara o wavg MTD vs
-    o wavg dos mesmos N DUs do mes anterior (paridade DU) — None quando nao ha
-    base. Toda query passa por `_apply_filters` com escopo de tenant (§7.2).
+    Alimenta a L3 card 1 (Distribuicao de taxas · MTD) e card 2 (por produto).
+    Histograma de 5 faixas fixas ponderadas por VOP MTD + taxa media ponderada
+    (wavg, identica ao termometro) + mediana ponderada por VOP + quebra por
+    produto. `delta_pct` compara o wavg MTD vs o wavg dos mesmos N DUs do mes
+    anterior (paridade DU) — None quando nao ha base. Toda query passa por
+    `_apply_filters` com escopo de tenant (§7.2).
     """
 
     histograma: list[Operacoes4TaxaBucket] = Field(
         description="Sempre 5 faixas, na ordem crescente de taxa"
+    )
+    por_produto: list[Operacoes4TaxaPorProdutoItem] = Field(
+        description="Taxa wavg por produto, ordenada por taxa desc"
     )
     wavg_pct: float = Field(
         description="Taxa media ponderada por VOP no MTD (% a.m.)"
@@ -198,6 +214,48 @@ class Operacoes4LensTaxasData(BaseModel):
     )
     delta_pct: float | None = Field(
         description="wavg MTD vs wavg dos mesmos N DUs do mes anterior (%)"
+    )
+    n_operacoes: int = Field(description="Operacoes efetivadas no MTD")
+
+    mes_label: str = Field(description="Ex.: 'jun/26'")
+    du_decorridos: int
+    du_totais_mes: int
+    du_disponivel: bool = Field(
+        description="False = wh_dim_dia_util vazia (degraded mode)"
+    )
+
+
+class Operacoes4PrazoBucket(BaseModel):
+    """1 faixa do histograma de prazo MTD (L3 card 3).
+
+    Faixas de 15 dias; ultima faixa (>90d) e cauda — pintada em laranja no
+    frontend. `vop_mtd` = volume das operacoes cujo prazo medio real cai na
+    faixa, no MTD.
+    """
+
+    label: str = Field(description="Ex.: '0-15', '15-30', '>90'")
+    vop_mtd: Decimal = Field(description="VOP MTD das operacoes na faixa (BRL)")
+    is_tail: bool = Field(default=False)
+
+
+class Operacoes4LensPrazoData(BaseModel):
+    """Bundle do endpoint `/bi/operacoes4/lens-prazo`.
+
+    Alimenta a L3 card 3 (Prazo · distribuicao). Histograma de 6 faixas de 15d
+    ponderado por VOP MTD + prazo medio ponderado (dias, identico ao
+    termometro) + `delta_dias` = prazo medio MTD menos prazo medio dos mesmos
+    N DUs do mes anterior (paridade DU), em dias. Toda query passa por
+    `_apply_filters` com escopo de tenant (§7.2).
+    """
+
+    histograma: list[Operacoes4PrazoBucket] = Field(
+        description="Sempre 6 faixas, na ordem crescente de prazo"
+    )
+    wavg_dias: float = Field(
+        description="Prazo medio ponderado por VOP no MTD (dias)"
+    )
+    delta_dias: float | None = Field(
+        description="prazo MTD menos prazo dos mesmos N DUs do mes anterior"
     )
     n_operacoes: int = Field(description="Operacoes efetivadas no MTD")
 

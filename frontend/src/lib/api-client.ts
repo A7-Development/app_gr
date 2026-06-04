@@ -1883,11 +1883,35 @@ export type Operacoes4TaxaBucket = {
   is_tail: boolean
 }
 
+export type Operacoes4TaxaPorProdutoItem = {
+  produto: string
+  taxa_wavg_pct: number
+  vop_mtd: string | number
+}
+
 export type Operacoes4LensTaxasData = {
   histograma: Operacoes4TaxaBucket[]
+  por_produto: Operacoes4TaxaPorProdutoItem[]
   wavg_pct: number
   mediana_pct: number
   delta_pct: number | null
+  n_operacoes: number
+  mes_label: string
+  du_decorridos: number
+  du_totais_mes: number
+  du_disponivel: boolean
+}
+
+export type Operacoes4PrazoBucket = {
+  label: string
+  vop_mtd: string | number
+  is_tail: boolean
+}
+
+export type Operacoes4LensPrazoData = {
+  histograma: Operacoes4PrazoBucket[]
+  wavg_dias: number
+  delta_dias: number | null
   n_operacoes: number
   mes_label: string
   du_decorridos: number
@@ -1924,6 +1948,10 @@ export const biOperacoes4 = {
   lensTaxas: (f: BIFilters) =>
     apiClient.get<BIResponse<Operacoes4LensTaxasData>>(
       `/bi/operacoes4/lens-taxas${filtersToQueryString(f)}`,
+    ),
+  lensPrazo: (f: BIFilters) =>
+    apiClient.get<BIResponse<Operacoes4LensPrazoData>>(
+      `/bi/operacoes4/lens-prazo${filtersToQueryString(f)}`,
     ),
   diaria: (f: BIFilters) =>
     apiClient.get<BIResponse<Operacoes4DiariaData>>(
