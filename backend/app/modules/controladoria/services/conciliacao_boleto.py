@@ -240,3 +240,16 @@ async def conciliar_boletos(
             result.linhas.append(linha)
 
     return result
+
+
+async def listar_datas_disponiveis(
+    db: AsyncSession, *, tenant_id: UUID
+) -> list[date]:
+    """Datas-base (data_ref) com boletos ingeridos para o tenant, desc."""
+    stmt = (
+        select(Boleto.data_ref)
+        .where(Boleto.tenant_id == tenant_id)
+        .distinct()
+        .order_by(Boleto.data_ref.desc())
+    )
+    return list((await db.execute(stmt)).scalars().all())
