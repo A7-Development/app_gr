@@ -241,7 +241,12 @@ export default function DossiesPage() {
             size: 56,
             cell: ({ row }) => (
               <div className="flex justify-end">
-                <DropdownMenu>
+                {/* modal={false}: a tabela tem onRowClick (navega pro dossie).
+                    Com o dropdown modal (default Radix), o clique no item
+                    "Excluir" fazia CLICK-THROUGH pra linha embaixo -> navegava
+                    pro dossie em vez de abrir o dialog. modal={false} corta o
+                    replay do evento. */}
+                <DropdownMenu modal={false}>
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"

@@ -41,6 +41,14 @@ import { toast } from "sonner"
 import { Button } from "@/components/tremor/Button"
 import { Card } from "@/components/tremor/Card"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/tremor/Dialog"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -158,6 +166,27 @@ export default function WorkflowsPage() {
     onError: (e) => toast.error(`Erro ao criar workflow: ${(e as Error).message}`),
   })
 
+  // Exclusao de playbook (versao DRAFT, nao-ativa, do tenant — o backend
+  // valida e recusa ACTIVE/ARCHIVED/template Strata). Estado local efemero.
+  const [pendingDelete, setPendingDelete] =
+    React.useState<WorkflowDefinitionRead | null>(null)
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => credito.workflows.remove(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["credito", "workflows"] })
+    },
+  })
+  const handleDeleteWorkflow = React.useCallback(async () => {
+    if (!pendingDelete) return
+    try {
+      await deleteMutation.mutateAsync(pendingDelete.id)
+      toast.success(`Playbook "${pendingDelete.name}" (v${pendingDelete.version}) excluido.`)
+      setPendingDelete(null)
+    } catch (e) {
+      toast.error((e as Error).message || "Falha ao excluir playbook.")
+    }
+  }, [deleteMutation, pendingDelete])
+
   const isEmpty = !isLoading && data.length === 0
   const noResults = !isEmpty && visible.length === 0
 
@@ -243,6 +272,7 @@ export default function WorkflowsPage() {
                   key={wf.id}
                   workflow={wf}
                   onOpen={() => openEditor(wf)}
+                  onDelete={() => setPendingDelete(wf)}
                 />
               ))}
             </div>
@@ -266,6 +296,49 @@ export default function WorkflowsPage() {
           />
         </div>
       </DrillDownSheet>
+
+      {/* Confirmacao de exclusao de playbook (admin). O backend so deleta
+          versao DRAFT, nao-ativa e do tenant — se for ACTIVE/ARCHIVED/template,
+          retorna 400 e o toast mostra o motivo. */}
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) =>
+          !open && !deleteMutation.isPending && setPendingDelete(null)
+        }
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir playbook</DialogTitle>
+            <DialogDescription>
+              Remove permanentemente a versao{" "}
+              <span className="font-medium text-gray-900 dark:text-gray-50">
+                {pendingDelete?.name} (v{pendingDelete?.version})
+              </span>
+              . Apenas versoes em rascunho (DRAFT) e nao-ativas podem ser
+              excluidas — versoes ativas precisam ser substituidas antes, e o
+              historico de versoes arquivadas/executadas e preservado. Nao pode
+              ser desfeito.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              onClick={() => setPendingDelete(null)}
+              disabled={deleteMutation.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteWorkflow}
+              disabled={deleteMutation.isPending}
+            >
+              <RiDeleteBinLine className="mr-1.5 size-4" aria-hidden />
+              Excluir playbook
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -339,9 +412,11 @@ function detectWorkflowIssues(wf: WorkflowDefinitionRead): {
 function WorkflowCard({
   workflow,
   onOpen,
+  onDelete,
 }: {
   workflow: WorkflowDefinitionRead
   onOpen: () => void
+  onDelete: () => void
 }) {
   const isStrata = workflow.tenant_id === null
   const nodeCount = workflow.graph.nodes.length
@@ -398,7 +473,10 @@ function WorkflowCard({
               </span>
             )}
           </div>
-          <DropdownMenu>
+          {/* modal={false}: o Card tem onClick (abre editor). Com dropdown
+              modal (default Radix), o clique no item fazia click-through pro
+              card -> abria o editor em vez da acao. */}
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
@@ -414,15 +492,13 @@ function WorkflowCard({
                 <RiPencilLine className="mr-2 size-4" aria-hidden />
                 Abrir editor
               </DropdownMenuItem>
-              {/* Excluir e Ativar versao virao quando endpoints estiverem prontos
-                  (ver plan F.1.b e F.3 — DELETE /credito/workflows/{id} e
-                  PUT /credito/workflows/{name}/active). */}
+              {/* Excluir: templates Strata (tenant_id NULL) sao imutaveis.
+                  O backend so deleta versao DRAFT nao-ativa do tenant. */}
               {!isStrata && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    disabled
-                    title="Disponivel quando o backend expor DELETE"
+                    onSelect={onDelete}
                     className="text-red-600 focus:text-red-700 dark:text-red-400 dark:focus:text-red-300"
                   >
                     <RiDeleteBinLine className="mr-2 size-4" aria-hidden />
