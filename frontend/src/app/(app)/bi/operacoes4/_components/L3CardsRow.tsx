@@ -115,9 +115,7 @@ function HistTaxasCard({
             data?.delta_pct != null
               ? { value: data.delta_pct, suffix: "%", fractionDigits: 1 }
               : undefined,
-          deltaSub: data
-            ? `wavg · med. ${fmtPct(data.mediana_pct)}`
-            : "wavg · med.",
+          deltaSub: "ponderada",
         }}
         actions={<DrillPill />}
         option={option}
