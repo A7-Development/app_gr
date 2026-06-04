@@ -16,7 +16,6 @@ import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 
 import { cx } from "@/lib/utils"
 import { DataTable } from "@/design-system/components/DataTable"
-import { Badge } from "@/components/tremor/Badge"
 import { tableTokens } from "@/design-system/tokens/table"
 import type {
   LinhaConciliacaoBoleto,
@@ -36,15 +35,16 @@ function fmtDateBR(iso: string | null): string {
   return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : iso
 }
 
+// tone = classes de cor (bg + texto) combinadas com tableTokens.badge (11px).
 const STATUS_META: Record<
   StatusConciliacaoBoleto,
-  { label: string; variant: "success" | "error" | "warning" | "default" | "neutral" }
+  { label: string; tone: string }
 > = {
-  conciliado:             { label: "Conciliado",  variant: "success" },
-  divergencia_valor:      { label: "Dif. valor",  variant: "error" },
-  divergencia_vencimento: { label: "Dif. venc.",  variant: "warning" },
-  so_em_bitfin:           { label: "Só BITFIN",   variant: "default" },
-  so_em_banco:            { label: "Só banco",    variant: "neutral" },
+  conciliado:             { label: "Conciliado",  tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400" },
+  divergencia_valor:      { label: "Dif. valor",  tone: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400" },
+  divergencia_vencimento: { label: "Dif. venc.",  tone: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400" },
+  so_em_bitfin:           { label: "Só BITFIN",   tone: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300" },
+  so_em_banco:            { label: "Só banco",    tone: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400" },
 }
 
 // ── Cells (via tableTokens) ─────────────────────────────────────────────────
@@ -89,10 +89,10 @@ const col = createColumnHelper<LinhaConciliacaoBoleto>()
 
 const COLUMNS: ColumnDef<LinhaConciliacaoBoleto, unknown>[] = [
   col.accessor("status", {
-    id: "status", header: "Status", size: 110,
+    id: "status", header: "Status", size: 92,
     cell: (info) => {
       const m = STATUS_META[info.getValue<StatusConciliacaoBoleto>()]
-      return <Badge variant={m.variant}>{m.label}</Badge>
+      return <span className={cx(tableTokens.badge, m.tone)}>{m.label}</span>
     },
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
   col.accessor("numero", {
@@ -189,6 +189,7 @@ export function ConciliacaoBoletoTable({
       showExport
       globalFilter={globalFilter}
       onExport={(_format, rows) => exportarCsv(rows)}
+      className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950"
     />
   )
 }
