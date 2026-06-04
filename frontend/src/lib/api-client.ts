@@ -4693,6 +4693,49 @@ export type EvolucaoPatrimonialResponse = {
   proveniencia:        EvolucaoProveniencia
 }
 
+// ── Conciliacao de boletos (Banco Cobrador) ──────────────────────────────────
+// Endpoint /controladoria/conciliacao/banco-cobrador. Cruza wh_titulo (aberto)
+// x wh_boleto (ativo). Decimal do backend chega como string -> coercao p/ number.
+
+export type StatusConciliacaoBoleto =
+  | "conciliado"
+  | "divergencia_valor"
+  | "divergencia_vencimento"
+  | "so_em_bitfin"
+  | "so_em_banco"
+
+export type ResumoStatusConciliacao = {
+  status:       StatusConciliacaoBoleto
+  quantidade:   number
+  percentual:   number
+  valor_bitfin: number
+  valor_banco:  number
+  diferenca:    number
+}
+
+export type LinhaConciliacaoBoleto = {
+  status:            StatusConciliacaoBoleto
+  numero:            string
+  valor_bitfin:      number | null
+  valor_banco:       number | null
+  diferenca_valor:   number | null
+  venc_bitfin:       string | null  // YYYY-MM-DD
+  venc_banco:        string | null
+  diferenca_dias:    number | null
+  produto:           string | null
+  banco:             string | null
+  cedente_documento: string | null
+}
+
+export type ConciliacaoBancoCobradorResponse = {
+  data_ref:        string
+  titulos_abertos: number
+  boletos_ativos:  number
+  conciliados:     number
+  resumo:          ResumoStatusConciliacao[]
+  linhas:          LinhaConciliacaoBoleto[]
+}
+
 export const controladoria = {
   evolucaoPatrimonialSerie: async (opts: {
     fundoId:        string
@@ -4709,6 +4752,55 @@ export const controladoria = {
     // float no backend -> number direto, sem coerce.
     return apiClient.get<EvolucaoPatrimonialResponse>(
       `/controladoria/evolucao-patrimonial/serie?${params.toString()}`,
+    )
+  },
+
+  conciliacaoBancoCobrador: async (
+    dataRef: string,  // YYYY-MM-DD
+  ): Promise<ConciliacaoBancoCobradorResponse> => {
+    const params = new URLSearchParams({ data_ref: dataRef })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await apiClient.get<any>(
+      `/controladoria/conciliacao/banco-cobrador?${params.toString()}`,
+    )
+    const num = (v: unknown) => Number(v ?? 0)
+    const numN = (v: unknown) =>
+      v === null || v === undefined ? null : Number(v)
+    return {
+      data_ref:        raw.data_ref,
+      titulos_abertos: raw.titulos_abertos,
+      boletos_ativos:  raw.boletos_ativos,
+      conciliados:     raw.conciliados,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      resumo: (raw.resumo ?? []).map((r: any) => ({
+        status:       r.status,
+        quantidade:   r.quantidade,
+        percentual:   num(r.percentual),
+        valor_bitfin: num(r.valor_bitfin),
+        valor_banco:  num(r.valor_banco),
+        diferenca:    num(r.diferenca),
+      })),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      linhas: (raw.linhas ?? []).map((l: any) => ({
+        status:            l.status,
+        numero:            l.numero,
+        valor_bitfin:      numN(l.valor_bitfin),
+        valor_banco:       numN(l.valor_banco),
+        diferenca_valor:   numN(l.diferenca_valor),
+        venc_bitfin:       l.venc_bitfin,
+        venc_banco:        l.venc_banco,
+        diferenca_dias:    numN(l.diferenca_dias),
+        produto:           l.produto,
+        banco:             l.banco,
+        cedente_documento: l.cedente_documento,
+      })),
+    }
+  },
+
+  conciliacaoBancoCobradorDatas: async (): Promise<string[]> => {
+    // Datas-base (ISO desc) com boletos ingeridos. Alimenta o seletor de data.
+    return apiClient.get<string[]>(
+      `/controladoria/conciliacao/banco-cobrador/datas`,
     )
   },
 
