@@ -89,6 +89,82 @@ export function categoryToJourney(meta: NodeTypeMeta): JourneyCategory {
   return TECH_TO_JOURNEY[meta.category] ?? "decisao"
 }
 
+// ─── Tipo de PRIMITIVO ─────────────────────────────────────────────────────
+//
+// Eixo ORTOGONAL a jornada. Jornada = "onde no fluxo" (Inicio/Coletar/IA/...);
+// tipo de primitivo = "que coisa e" (agente/check/externo/humano/logica/fluxo)
+// — o vocabulario travado da esteira. A UI sinaliza o tipo por COR (barra) +
+// chip muted, pra ficar claro o que e agente vs check vs consulta externa vs
+// passo humano (ex.: "Ler documentos com IA" e agente, mesmo morando em
+// Coletar). Derivado do nodeType (override) com fallback por categoria tecnica
+// — assim cobre tambem os nos "em breve" (placeholders por categoria).
+
+export type PrimitiveTypeKey =
+  | "agente"
+  | "check"
+  | "externo"
+  | "humano"
+  | "logica"
+  | "io"
+
+export type PrimitiveTypeMeta = {
+  key: PrimitiveTypeKey
+  label: string
+  /** Classe de COR da barra/realce do tipo (sinal pre-atentivo). */
+  bar: string
+}
+
+export const PRIMITIVE_TYPES: Record<PrimitiveTypeKey, PrimitiveTypeMeta> = {
+  agente: { key: "agente", label: "Agente", bar: "bg-violet-500" },
+  check: { key: "check", label: "Check", bar: "bg-emerald-500" },
+  externo: { key: "externo", label: "Externo", bar: "bg-amber-500" },
+  humano: { key: "humano", label: "Humano", bar: "bg-slate-400" },
+  logica: { key: "logica", label: "Logica", bar: "bg-sky-500" },
+  io: { key: "io", label: "Fluxo", bar: "bg-zinc-400" },
+}
+
+// Override por nodeType (precede a categoria). Resolve casos onde a categoria
+// tecnica nao separa o tipo — ex.: `coleta` tem document_request (humano) E
+// document_extractor (agente de percepcao via Vision).
+const PRIMITIVE_BY_NODE: Record<string, PrimitiveTypeKey> = {
+  trigger: "io",
+  human_input: "humano",
+  human_review: "humano",
+  document_request: "humano",
+  document_extractor: "agente",
+  bureau_query: "externo",
+  specialist_agent: "agente",
+  consolidator: "logica",
+  deterministic_check: "check",
+  conditional_branch: "logica",
+  http_request: "externo",
+  notification: "io",
+  output_generator: "io",
+}
+
+// Fallback por categoria tecnica do backend (cobre placeholders "em breve").
+const PRIMITIVE_BY_CATEGORY: Record<string, PrimitiveTypeKey> = {
+  triggers: "io",
+  humano: "humano",
+  coleta: "humano",
+  agentes: "agente",
+  logica: "logica",
+  transformar: "logica",
+  integracao: "externo",
+  output: "io",
+}
+
+export function primitiveTypeFor(
+  nodeType: string,
+  category?: string,
+): PrimitiveTypeMeta {
+  const key =
+    PRIMITIVE_BY_NODE[nodeType] ??
+    (category ? PRIMITIVE_BY_CATEGORY[category] : undefined) ??
+    "io"
+  return PRIMITIVE_TYPES[key]
+}
+
 // ─── PaletteEntry ────────────────────────────────────────────────────────
 //
 // Cada item arrastavel da palette. A maioria dos entries vira de
@@ -113,6 +189,9 @@ export type PaletteEntry = {
   available: boolean
   /** Categoria-jornada na palette. */
   journey: JourneyCategory
+  /** Tipo de primitivo (agente/check/externo/...) — eixo ortogonal a jornada,
+   *  sinalizado por cor (barra) + chip muted na UI. */
+  primitiveType: PrimitiveTypeKey
   /** Marca entries para aparecerem tambem no grupo virtual "Destaques" no
    *  topo da palette. Curado a mao (sem tracking) — flag em entries que
    *  o time decide promover (uso frequente, centrais ao caso de credito). */
@@ -258,6 +337,7 @@ export function buildPaletteEntries(nodeTypes: NodeTypeMeta[]): PaletteEntry[] {
           icon: ag.icon ?? meta.icon,
           available: meta.available,
           journey: "ia",
+          primitiveType: primitiveTypeFor("specialist_agent").key,
           featured: FEATURED_PALETTE_IDS.has(paletteId),
         })
       }
@@ -278,6 +358,7 @@ export function buildPaletteEntries(nodeTypes: NodeTypeMeta[]): PaletteEntry[] {
           icon: meta.icon,
           available: meta.available && p.available,
           journey: "enriquecer",
+          primitiveType: primitiveTypeFor("bureau_query").key,
           featured: FEATURED_PALETTE_IDS.has(paletteId),
         })
       }
@@ -293,6 +374,7 @@ export function buildPaletteEntries(nodeTypes: NodeTypeMeta[]): PaletteEntry[] {
       icon: meta.icon,
       available: meta.available,
       journey: categoryToJourney(meta),
+      primitiveType: primitiveTypeFor(meta.type, meta.category).key,
       featured: FEATURED_PALETTE_IDS.has(meta.type),
     })
   }
