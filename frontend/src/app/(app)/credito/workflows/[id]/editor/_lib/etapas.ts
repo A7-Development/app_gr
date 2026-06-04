@@ -12,7 +12,7 @@
 // linha propria da palette (ex.: "Analise financeira" arrastavel direto,
 // nao precisa arrastar specialist_agent generico e configurar `agent`).
 
-import type { NodeTypeMeta } from "@/lib/credito-client"
+import type { DataProduct, NodeTypeMeta } from "@/lib/credito-client"
 
 import { AGENT_FRIENDLY_LABEL, ETAPA_LABEL } from "./glossary"
 
@@ -133,6 +133,7 @@ const PRIMITIVE_BY_NODE: Record<string, PrimitiveTypeKey> = {
   document_request: "humano",
   document_extractor: "agente",
   bureau_query: "externo",
+  cadastral_enrichment: "externo",
   specialist_agent: "agente",
   consolidator: "logica",
   deterministic_check: "check",
@@ -320,7 +321,13 @@ const FEATURED_PALETTE_IDS = new Set<string>([
 ])
 
 
-export function buildPaletteEntries(nodeTypes: NodeTypeMeta[]): PaletteEntry[] {
+export function buildPaletteEntries(
+  nodeTypes: NodeTypeMeta[],
+  // Catalogo white-label de produtos de dado (GET /credito/data-products).
+  // Expande `cadastral_enrichment` em um entry por dataset habilitado — o
+  // vendor nunca aparece, so o public_code + label curado.
+  dataProducts: DataProduct[] = [],
+): PaletteEntry[] {
   const entries: PaletteEntry[] = []
 
   for (const meta of nodeTypes) {
@@ -338,6 +345,45 @@ export function buildPaletteEntries(nodeTypes: NodeTypeMeta[]): PaletteEntry[] {
           available: meta.available,
           journey: "ia",
           primitiveType: primitiveTypeFor("specialist_agent").key,
+          featured: FEATURED_PALETTE_IDS.has(paletteId),
+        })
+      }
+      continue
+    }
+
+    if (meta.type === "cadastral_enrichment") {
+      // Data-driven (white-label): um entry por dataset do catalogo
+      // (/credito/data-products). Cada um instancia o node ja com o
+      // public_code certo — o gerente nunca digita codigo nem ve vendor.
+      // Fallback: catalogo vazio/nao-carregado => entry generico (gerente
+      // preenche public_code no Inspector), pra paleta nunca ficar sem o node.
+      if (dataProducts.length === 0) {
+        entries.push({
+          paletteId: meta.type,
+          nodeType: meta.type,
+          initialConfig: { ...(TYPE_INITIAL_CONFIG[meta.type] ?? {}) },
+          label: ETAPA_LABEL[meta.type] ?? meta.label,
+          description: meta.description,
+          icon: meta.icon,
+          available: meta.available,
+          journey: "enriquecer",
+          primitiveType: primitiveTypeFor(meta.type, meta.category).key,
+          featured: FEATURED_PALETTE_IDS.has(meta.type),
+        })
+        continue
+      }
+      for (const dp of dataProducts) {
+        const paletteId = `cadastral_enrichment:${dp.public_code}`
+        entries.push({
+          paletteId,
+          nodeType: "cadastral_enrichment",
+          initialConfig: { public_code: dp.public_code },
+          label: dp.display_name,
+          description: dp.description ?? meta.description,
+          icon: meta.icon,
+          available: meta.available,
+          journey: "enriquecer",
+          primitiveType: primitiveTypeFor("cadastral_enrichment").key,
           featured: FEATURED_PALETTE_IDS.has(paletteId),
         })
       }

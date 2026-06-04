@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from app.agentic.playbooks.nodes._base import BaseNode
 from app.agentic.playbooks.nodes._placeholder import PlaceholderNode
 from app.agentic.playbooks.nodes.bureau_query import BureauQueryNode
+from app.agentic.playbooks.nodes.cadastral_enrichment import CadastralEnrichmentNode
 from app.agentic.playbooks.nodes.conditional_branch import ConditionalBranchNode
 from app.agentic.playbooks.nodes.consolidator import ConsolidatorNode
 from app.agentic.playbooks.nodes.deterministic_check import DeterministicCheckNode
@@ -186,6 +187,30 @@ NODE_TYPES: dict[str, NodeTypeMeta] = {
                 "type": "string",
                 "label": "Ambiente",
                 "placeholder": "production",
+            },
+        ),
+    ),
+    "cadastral_enrichment": NodeTypeMeta(
+        type="cadastral_enrichment",
+        cls=CadastralEnrichmentNode,
+        label="Enriquecimento Cadastral",
+        category="integracao",
+        description=(
+            "Consulta cadastral da empresa-alvo via codigo neutro de dataset "
+            "(public_code, ex.: CAD-PJ) e grava o silver "
+            "(situacao, CNAEs, capital, fundacao) em credit_dossier_company. "
+            "Resolve o provedor em runtime — o vendor nunca aparece. Alimenta "
+            "o gate de elegibilidade (checks de situacao/CNAE/idade)."
+        ),
+        available=True,
+        icon="RiBuilding4Line",
+        config_schema=(
+            {
+                "key": "public_code",
+                "type": "string",
+                "label": "Dataset (codigo)",
+                "placeholder": "CAD-PJ",
+                "required": True,
             },
         ),
     ),
