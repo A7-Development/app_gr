@@ -18,18 +18,23 @@ import pytest
 
 from app.modules.bi.schemas.operacoes4 import (
     Operacoes4LensReceitasData,
+    Operacoes4LensTaxasData,
     Operacoes4Mover,
     Operacoes4Movers,
     Operacoes4ReceitaComposicaoItem,
     Operacoes4ReceitaTipo,
+    Operacoes4TaxaBucket,
     Operacoes4YieldPonto,
 )
 from app.modules.bi.services.operacoes import _alocar_receita_por_cedente
 from app.modules.bi.services.operacoes4 import (
     _BUCKET_TO_ENUM,
     _BUCKETS_ORDER,
+    _TAXA_BUCKET_LABELS,
     _is_atypical,
     _pick_movers,
+    _taxa_bucket_index,
+    _weighted_median,
 )
 
 # ─── _is_atypical ──────────────────────────────────────────────────────────
@@ -183,7 +188,69 @@ def test_aloca_unico_cedente_recebe_toda_a_receita_da_op() -> None:
     assert out["Delta"][1] == pytest.approx(100.0)
 
 
+# ─── _taxa_bucket_index ────────────────────────────────────────────────────
+
+
+def test_taxa_bucket_index_cobre_5_faixas() -> None:
+    """Bordas (2,0 / 2,5 / 3,0 / 3,5) classificam nas 5 faixas esperadas."""
+    assert _taxa_bucket_index(0.0) == 0  # <2,0 (inclui taxa zero)
+    assert _taxa_bucket_index(1.99) == 0
+    assert _taxa_bucket_index(2.0) == 1  # borda inferior pertence a faixa
+    assert _taxa_bucket_index(2.49) == 1
+    assert _taxa_bucket_index(2.5) == 2
+    assert _taxa_bucket_index(2.99) == 2
+    assert _taxa_bucket_index(3.0) == 3
+    assert _taxa_bucket_index(3.49) == 3
+    assert _taxa_bucket_index(3.5) == 4  # cauda
+    assert _taxa_bucket_index(9.9) == 4
+    # indices cobrem exatamente os labels disponiveis
+    assert _taxa_bucket_index(9.9) == len(_TAXA_BUCKET_LABELS) - 1
+
+
+# ─── _weighted_median ──────────────────────────────────────────────────────
+
+
+def test_weighted_median_pondera_por_vop() -> None:
+    """Mediana ponderada: 50% do peso abaixo. Peso alto puxa a mediana."""
+    # taxa 3,0 carrega 80% do volume -> mediana cai em 3,0, nao em 2,0.
+    pairs = [(2.0, 100.0), (3.0, 900.0)]
+    assert _weighted_median(pairs) == pytest.approx(3.0)
+
+
+def test_weighted_median_ignora_peso_zero_e_vazio() -> None:
+    """Pesos zero nao contam; lista sem peso positivo -> 0.0."""
+    assert _weighted_median([(2.5, 0.0), (3.0, 0.0)]) == pytest.approx(0.0)
+    assert _weighted_median([]) == pytest.approx(0.0)
+    # taxa com peso zero nao desloca a mediana das demais
+    assert _weighted_median([(1.0, 0.0), (2.8, 500.0)]) == pytest.approx(2.8)
+
+
 # ─── schemas (validacao basica) ────────────────────────────────────────────
+
+
+def test_lens_taxas_schema_aceita_5_faixas() -> None:
+    """Schema valida histograma de 5 faixas + wavg/mediana/delta."""
+    data = Operacoes4LensTaxasData(
+        histograma=[
+            Operacoes4TaxaBucket(
+                label=label,
+                vop_mtd=Decimal("1000.00"),
+                is_tail=(i == len(_TAXA_BUCKET_LABELS) - 1),
+            )
+            for i, label in enumerate(_TAXA_BUCKET_LABELS)
+        ],
+        wavg_pct=2.45,
+        mediana_pct=2.70,
+        delta_pct=-1.2,
+        n_operacoes=36,
+        mes_label="jun/26",
+        du_decorridos=3,
+        du_totais_mes=21,
+        du_disponivel=True,
+    )
+    assert len(data.histograma) == 5
+    assert data.histograma[-1].is_tail is True
+    assert data.wavg_pct == pytest.approx(2.45)
 
 
 def test_buckets_order_bate_com_enum() -> None:

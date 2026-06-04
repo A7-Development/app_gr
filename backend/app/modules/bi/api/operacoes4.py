@@ -23,6 +23,7 @@ from app.modules.bi.schemas.common import BIFilters, BIResponse
 from app.modules.bi.schemas.operacoes4 import (
     Operacoes4DiariaData,
     Operacoes4LensReceitasData,
+    Operacoes4LensTaxasData,
 )
 from app.modules.bi.services import operacoes4 as svc
 
@@ -50,6 +51,25 @@ async def lens_receitas(
     `_apply_filters` (§7.2).
     """
     data, prov = await svc.get_lens_receitas(
+        db, principal.tenant_id, _filter_dict(filters)
+    )
+    return BIResponse(data=data, provenance=prov)
+
+
+@router.get("/lens-taxas", response_model=BIResponse[Operacoes4LensTaxasData])
+async def lens_taxas(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    filters: Annotated[BIFilters, Depends(bi_filters)],
+    _: None = _Guard,
+) -> BIResponse[Operacoes4LensTaxasData]:
+    """Distribuicao de taxas MTD — histograma 5 faixas + wavg + mediana.
+
+    Ponderado por VOP MTD (wh_operacao, regime caixa). wavg identico ao
+    termometro; mediana ponderada por VOP. `delta_pct` compara o wavg vs os
+    mesmos N DUs do mes anterior. Toda query passa por `_apply_filters` (§7.2).
+    """
+    data, prov = await svc.get_lens_taxas(
         db, principal.tenant_id, _filter_dict(filters)
     )
     return BIResponse(data=data, provenance=prov)
