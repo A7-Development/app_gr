@@ -3,12 +3,13 @@
 /**
  * ConciliacaoBoletoTable — tabela titulo-a-titulo da conciliacao de boletos.
  *
- * Recebe as `linhas` ja filtradas pelo status (segmento ativo) e renderiza na
- * `DataTable` CANONICA de listagem (density default + toolbar completa: column
- * manager, density toggle, export CSV; globalFilter via busca; virtualiza >100
- * linhas). Colunas unificadas com "—" onde nao se aplica (ex.: "So em banco"
- * nao tem valor BITFIN). Cells via `tableTokens` (regra dura §6). A coluna
- * Status ajuda no segmento "Todos"; nos demais e redundante (cheap).
+ * Recebe as `linhas` ja filtradas pelos chips globais (status/banco/produto/
+ * cedente) e renderiza na `DataTable` CANONICA de listagem (density ULTRA +
+ * toolbar completa: column manager, density toggle, export CSV; virtualiza >100
+ * linhas). A busca por palavra mora DENTRO do card da tabela (header proprio,
+ * acima da coluna Status) — alimenta o globalFilter do TanStack. Colunas
+ * unificadas com "—" onde nao se aplica (ex.: "So em banco" nao tem valor
+ * BITFIN). Cells via `tableTokens` (regra dura §6).
  */
 
 import * as React from "react"
@@ -16,6 +17,7 @@ import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 
 import { cx } from "@/lib/utils"
 import { DataTable } from "@/design-system/components/DataTable"
+import { FilterSearch } from "@/design-system/components/FilterBar"
 import { tableTokens } from "@/design-system/tokens/table"
 import type {
   LinhaConciliacaoBoleto,
@@ -174,22 +176,33 @@ function exportarCsv(rows: LinhaConciliacaoBoleto[]) {
 
 export function ConciliacaoBoletoTable({
   linhas,
-  globalFilter,
 }: {
   linhas: LinhaConciliacaoBoleto[]
-  globalFilter?: string
 }) {
+  // Busca por palavra mora DENTRO do card (acima da coluna Status), alimentando
+  // o globalFilter do TanStack — separada dos chips globais da pagina.
+  const [busca, setBusca] = React.useState("")
+
   return (
-    <DataTable
-      data={linhas}
-      columns={COLUMNS}
-      density="default"
-      showColumnManager
-      showDensityToggle
-      showExport
-      globalFilter={globalFilter}
-      onExport={(_format, rows) => exportarCsv(rows)}
-      className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950"
-    />
+    <div className="flex flex-col overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
+      <div className="flex shrink-0 items-center border-b border-gray-100 px-3 py-2 dark:border-gray-900">
+        <FilterSearch
+          placeholder="Buscar número, produto, cedente…"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          onClear={() => setBusca("")}
+        />
+      </div>
+      <DataTable
+        data={linhas}
+        columns={COLUMNS}
+        density="ultra"
+        showColumnManager
+        showDensityToggle
+        showExport
+        globalFilter={busca}
+        onExport={(_format, rows) => exportarCsv(rows)}
+      />
+    </div>
   )
 }
