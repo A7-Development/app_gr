@@ -124,6 +124,16 @@ class SourceType(enum.StrEnum):
     BUREAU_SERASA_PF = "bureau:serasa_pf"
     BUREAU_SCR_BACEN = "bureau:scr_bacen"
     DOCUMENT_NFE = "document:nfe"
+    # Cobranca (boletos / CNAB). COBRANCA (generico) e a fonte de TRANSPORTE:
+    # a "inbox" de arquivos de retorno -- uma pasta com retornos de varios
+    # bancos misturados (config de tenant_source_config). Os COBRANCA_<BANCO>
+    # sao a PROVENIENCIA de cada boleto em wh_boleto, detectada por arquivo
+    # pelo header CNAB (codigo do banco). A conciliacao le o canonico
+    # `wh_boleto`, nunca o raw CNAB (CLAUDE.md sec 13).
+    COBRANCA = "cobranca"
+    COBRANCA_BRADESCO = "cobranca:bradesco"
+    COBRANCA_ITAU = "cobranca:itau"
+    COBRANCA_GRAFENO = "cobranca:grafeno"
     SELF_DECLARED = "self_declared"
     PEER_DECLARED = "peer_declared"
     INTERNAL_NOTE = "internal_note"
