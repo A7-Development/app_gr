@@ -117,6 +117,15 @@ class DataProviderDataset(Base):
         String(64), nullable=True, unique=True, index=True
     )
 
+    # Nome TECNICO do dataset na QUERY (campo `Datasets` do POST /empresas).
+    # Difere do `provider_dataset_code` (que vem do /precos como CODIGO de
+    # billing, ex.: "BASIC_DATA_V1") — a query usa o nome tecnico minusculo
+    # (ex.: "basic_data"). Curado pelo mantenedor (preservado entre syncs).
+    # Quando NULL, o caller cai em `provider_dataset_code`.
+    provider_query_name: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+
     # Label pt-BR pra UI. NULL na descoberta (1o sync) — mantenedor preenche
     # depois. UI cai em `provider_dataset_code` quando NULL.
     display_name_pt_br: Mapped[str | None] = mapped_column(
