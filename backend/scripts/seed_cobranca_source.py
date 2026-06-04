@@ -1,0 +1,95 @@
+"""Seed/atualiza o `tenant_source_config` da INBOX de cobranca (CNAB).
+
+A pasta de retornos tem arquivos de varios bancos misturados; o banco se
+descobre lendo o header de cada arquivo (nao a config). Por isso ha UMA fonte
+generica `cobranca` (source_type COBRANCA) apontando o FileSource para a
+pasta. O `config` e cifrado (envelope Fernet) via `upsert_config`. Re-rodar
+atualiza a linha (idempotente por tenant+ambiente+UA).
+
+Uso:
+    uv run python scripts/seed_cobranca_source.py \
+        --tenant a7-credit \
+        --path "/mnt/bitfin/Banco/Cobranca/Retorno/Processado" \
+        --glob "*"
+
+Para upload manual em vez de path: `--mode upload --staging-path <dir>`.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+
+from sqlalchemy import select
+
+from app.core.database import AsyncSessionLocal
+from app.core.enums import Environment, SourceType
+from app.modules.integracoes.services.source_config import upsert_config
+from app.shared.identity.tenant import Tenant
+from app.warehouse.cnab_raw_arquivo import (
+    FILE_SOURCE_LOCAL_PATH,
+    FILE_SOURCE_UPLOAD,
+)
+
+
+async def _resolve_tenant_id(db, slug: str):
+    tenant = (
+        await db.execute(select(Tenant).where(Tenant.slug == slug))
+    ).scalar_one_or_none()
+    if tenant is None:
+        raise SystemExit(f"Tenant com slug {slug!r} nao encontrado.")
+    return tenant.id
+
+
+async def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--tenant", required=True, help="slug do tenant (ex.: a7-credit)")
+    ap.add_argument(
+        "--mode",
+        default=FILE_SOURCE_LOCAL_PATH,
+        choices=[FILE_SOURCE_LOCAL_PATH, FILE_SOURCE_UPLOAD],
+    )
+    ap.add_argument("--path", help="diretorio dos arquivos (mode local_path)")
+    ap.add_argument("--staging-path", help="diretorio de upload (mode upload)")
+    ap.add_argument("--glob", default="*", help="padrao de arquivo (default *)")
+    ap.add_argument("--disabled", action="store_true", help="cria a fonte desabilitada")
+    args = ap.parse_args()
+
+    if args.mode == FILE_SOURCE_LOCAL_PATH:
+        if not args.path:
+            raise SystemExit("--path e obrigatorio no mode local_path")
+        file_source = {"mode": args.mode, "path": args.path, "glob": args.glob}
+    else:  # upload
+        if not args.staging_path:
+            raise SystemExit("--staging-path e obrigatorio no mode upload")
+        file_source = {
+            "mode": args.mode,
+            "staging_path": args.staging_path,
+            "glob": args.glob,
+        }
+
+    # Sem `layout`: o banco/layout sao detectados por arquivo (header CNAB).
+    # `api` aceito como cadastro mas inerte: bloco preparado.
+    config = {
+        "file_source": file_source,
+        "api": {"base_url": None, "credential_ref": None},
+    }
+
+    async with AsyncSessionLocal() as db:
+        tenant_id = await _resolve_tenant_id(db, args.tenant)
+        await upsert_config(
+            db,
+            tenant_id,
+            SourceType.COBRANCA,
+            config,
+            environment=Environment.PRODUCTION,
+            enabled=not args.disabled,
+        )
+    print(
+        f"OK: fonte 'cobranca' (inbox) configurada para tenant {args.tenant} "
+        f"(mode={args.mode})."
+    )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -23,7 +23,10 @@ from app.warehouse.bitfin_dre_natureza_rule import WhBitfinDreNaturezaRule
 from app.warehouse.bitfin_entidade import WhBitfinEntidade
 from app.warehouse.bitfin_raw_debenture import BitfinRawDebenture
 from app.warehouse.bitfin_tarifa_catalogo import WhBitfinTarifaCatalogo
+from app.warehouse.boleto import Boleto
 from app.warehouse.caixa_snapshot import CaixaSnapshot
+from app.warehouse.cnab_raw_arquivo import CnabRawArquivo
+from app.warehouse.cnab_raw_ocorrencia import CnabRawOcorrencia
 from app.warehouse.cpr_movimento import CprMovimento
 from app.warehouse.dia_util_qitech import DiaUtilQitech
 from app.warehouse.dim import DimDreClassificacao, DimMes
@@ -76,7 +79,10 @@ __all__ = [
     "AquisicaoRecebivel",
     "BdcRawConsulta",
     "BitfinRawDebenture",
+    "Boleto",
     "CaixaSnapshot",
+    "CnabRawArquivo",
+    "CnabRawOcorrencia",
     "CprMovimento",
     "DiaUtilQitech",
     "DimDiaUtil",

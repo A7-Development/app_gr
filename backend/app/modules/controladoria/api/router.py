@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.modules.controladoria.api import (
+    conciliacao_boleto,
     cota_sub,
     dre,
     evolucao_patrimonial,
@@ -30,3 +31,6 @@ router.include_router(reports.router)
 # Tabela paginada de recebiveis continua via `GET /relatorios/{slug}` generico
 # acima.
 router.include_router(qitech_estoque_carteira.router)
+
+# L2 Conciliacoes > Banco Cobrador — carteira Bitfin x boletos CNAB.
+router.include_router(conciliacao_boleto.router)
