@@ -136,14 +136,19 @@ ONBOARDING_MINIMO_GRAPH = {
 def upgrade() -> None:
     bind = op.get_bind()
 
-    # ── 1. credit_policy default (por tenant) — idade > 3 anos ──────────
+    # ── 1. credit_policy default (por tenant) ──────────────────────────
+    # Regra (2026-06-04, Ricardo): fundacao >= 2 anos; CNAEs vetados; sem
+    # capital minimo; status cadastral ATIVA (params.status_permitidos).
     bind.execute(
         sa.text(
             "INSERT INTO credit_policy "
-            "(id, tenant_id, name, version, min_company_age_years, description, "
-            " created_at, updated_at) "
-            "SELECT gen_random_uuid(), t.id, 'default', 'v1', 3, "
-            "'Politica inicial: tempo de fundacao > 3 anos.', now(), now() "
+            "(id, tenant_id, name, version, min_company_age_years, "
+            " forbidden_cnae, params, description, created_at, updated_at) "
+            "SELECT gen_random_uuid(), t.id, 'default', 'v1', 2, "
+            "'[\"2550-1/02\",\"4789-0/09\",\"3311-2/00\",\"8541-4/00\"]'::jsonb, "
+            "'{\"status_permitidos\":[\"ATIVA\"]}'::jsonb, "
+            "'Politica inicial: fundacao >= 2 anos; CNAEs vetados; status ATIVA.', "
+            "now(), now() "
             "FROM tenants t"
         )
     )
