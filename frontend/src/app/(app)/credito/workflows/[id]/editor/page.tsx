@@ -186,7 +186,7 @@ function graphToReactFlow(
     labelStyle: {
       fontSize: 10,
       fill: "rgb(107 114 128)",
-      fontFamily: "var(--font-geist-mono)",
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
     },
     labelBgPadding: [4, 2],
     labelBgBorderRadius: 4,
