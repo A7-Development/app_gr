@@ -1,0 +1,80 @@
+// Metadados de status da conciliacao de boletos — compartilhados entre a
+// tabela-resumo (ResumoConciliacaoTable) e o detalhe titulo-a-titulo
+// (ConciliacaoBoletoTable). Unica fonte de label/cor/icone por status, pra
+// resumo e detalhe nao divergirem.
+
+import {
+  RiCheckboxCircleFill,
+  RiCloseCircleFill,
+  RiErrorWarningFill,
+  type RemixiconComponentType,
+} from "@remixicon/react"
+
+import type { StatusConciliacaoBoleto } from "@/lib/api-client"
+
+export type StatusMeta = {
+  label: string
+  /** Classes de bg+texto do badge (combinam com tableTokens.badge, 11px). */
+  tone: string
+  /** Cor do texto/label na linha do resumo. */
+  textTone: string
+  icon: RemixiconComponentType
+  /** Cor do icone no resumo. */
+  iconTone: string
+}
+
+export const STATUS_META: Record<StatusConciliacaoBoleto, StatusMeta> = {
+  conciliado: {
+    label: "Conciliado",
+    tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
+    textTone: "text-emerald-700 dark:text-emerald-400",
+    icon: RiCheckboxCircleFill,
+    iconTone: "text-emerald-500",
+  },
+  divergencia_valor: {
+    label: "Divergência de valor",
+    tone: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400",
+    textTone: "text-red-700 dark:text-red-400",
+    icon: RiErrorWarningFill,
+    iconTone: "text-red-500",
+  },
+  divergencia_vencimento: {
+    label: "Divergência de vencimento",
+    tone: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
+    textTone: "text-amber-700 dark:text-amber-400",
+    icon: RiErrorWarningFill,
+    iconTone: "text-amber-500",
+  },
+  so_em_bitfin: {
+    label: "Só em BITFIN",
+    tone: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
+    textTone: "text-gray-700 dark:text-gray-300",
+    icon: RiCloseCircleFill,
+    iconTone: "text-gray-400 dark:text-gray-500",
+  },
+  so_em_banco: {
+    label: "Só em banco",
+    tone: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
+    textTone: "text-amber-700 dark:text-amber-400",
+    icon: RiCloseCircleFill,
+    iconTone: "text-amber-500",
+  },
+}
+
+// Ordem canonica de exibicao (resumo + segmentos).
+export const STATUS_ORDER: StatusConciliacaoBoleto[] = [
+  "conciliado",
+  "divergencia_valor",
+  "divergencia_vencimento",
+  "so_em_bitfin",
+  "so_em_banco",
+]
+
+// Badge curto (cabe na coluna Status do detalhe).
+export const STATUS_BADGE_LABEL: Record<StatusConciliacaoBoleto, string> = {
+  conciliado: "Conciliado",
+  divergencia_valor: "Dif. valor",
+  divergencia_vencimento: "Dif. venc.",
+  so_em_bitfin: "Só BITFIN",
+  so_em_banco: "Só banco",
+}

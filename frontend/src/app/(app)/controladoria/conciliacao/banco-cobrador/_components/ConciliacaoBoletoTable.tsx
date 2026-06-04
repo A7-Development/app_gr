@@ -23,6 +23,7 @@ import type {
   LinhaConciliacaoBoleto,
   StatusConciliacaoBoleto,
 } from "@/lib/api-client"
+import { STATUS_BADGE_LABEL, STATUS_META } from "./status"
 
 const fmtBRL = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -35,18 +36,6 @@ function fmtDateBR(iso: string | null): string {
   if (!iso) return "—"
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
   return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : iso
-}
-
-// tone = classes de cor (bg + texto) combinadas com tableTokens.badge (11px).
-const STATUS_META: Record<
-  StatusConciliacaoBoleto,
-  { label: string; tone: string }
-> = {
-  conciliado:             { label: "Conciliado",  tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400" },
-  divergencia_valor:      { label: "Dif. valor",  tone: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400" },
-  divergencia_vencimento: { label: "Dif. venc.",  tone: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400" },
-  so_em_bitfin:           { label: "Só BITFIN",   tone: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300" },
-  so_em_banco:            { label: "Só banco",    tone: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400" },
 }
 
 // ── Cells (via tableTokens) ─────────────────────────────────────────────────
@@ -93,8 +82,8 @@ const COLUMNS: ColumnDef<LinhaConciliacaoBoleto, unknown>[] = [
   col.accessor("status", {
     id: "status", header: "Status", size: 92,
     cell: (info) => {
-      const m = STATUS_META[info.getValue<StatusConciliacaoBoleto>()]
-      return <span className={cx(tableTokens.badge, m.tone)}>{m.label}</span>
+      const s = info.getValue<StatusConciliacaoBoleto>()
+      return <span className={cx(tableTokens.badge, STATUS_META[s].tone)}>{STATUS_BADGE_LABEL[s]}</span>
     },
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
   col.accessor("numero", {
@@ -157,7 +146,7 @@ function exportarCsv(rows: LinhaConciliacaoBoleto[]) {
   }
   const corpo = rows.map((r) =>
     [
-      STATUS_META[r.status]?.label ?? r.status,
+      STATUS_META[r.status]?.label ?? r.status,  // label longo no CSV
       r.numero, r.produto ?? "", r.banco ?? "", r.cedente_documento ?? "",
       r.venc_bitfin ?? "", r.venc_banco ?? "",
       r.valor_bitfin ?? "", r.valor_banco ?? "",
@@ -184,7 +173,7 @@ export function ConciliacaoBoletoTable({
   const [busca, setBusca] = React.useState("")
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
+    <div className="flex flex-col overflow-hidden rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
       <div className="flex shrink-0 items-center border-b border-gray-100 px-3 py-2 dark:border-gray-900">
         <FilterSearch
           placeholder="Buscar número, produto, cedente…"
