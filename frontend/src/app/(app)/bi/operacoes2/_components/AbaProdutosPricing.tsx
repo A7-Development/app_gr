@@ -483,8 +483,10 @@ const RANKING_COLUMNS: ColumnDef<Operacoes2RankingProdutoLinha, unknown>[] = [
     size: 160,
     enableSorting: false,
     cell: (info) => (
+      // Mono (cellTextMono) — mesmo token do ALIAS de /admin/dados/provedores,
+      // por pedido do Ricardo (visual mais "definido").
       <span
-        className={cx(tableTokens.cellText, "block truncate")}
+        className={cx(tableTokens.cellTextMono, "block truncate")}
         title={info.row.original.sigla}
       >
         {info.getValue<string>()}
