@@ -126,6 +126,17 @@ export type AgentMeta = {
   inputs: AgentInputMeta[]
 }
 
+/** Produto de dado externo (WHITE-LABEL) exposto por GET /credito/data-products.
+ *  So campos NEUTROS — o vendor (provider_slug/api/dataset_code/preco) nunca
+ *  chega ao frontend. A paleta do builder usa isto pra criar nos
+ *  `cadastral_enrichment` ja com o `public_code` certo. */
+export type DataProduct = {
+  public_code: string
+  display_name: string
+  categoria_ui?: string | null
+  description?: string | null
+}
+
 // ─── Semantic validation (Fase 2) ────────────────────────────────────────
 
 export type SemanticValidationError = {
@@ -737,6 +748,7 @@ export const credito = {
     get: (id: string) => apiClient.get<WorkflowDefinitionRead>(`/credito/workflows/${id}`),
     nodeTypes: () => apiClient.get<NodeTypeMeta[]>("/credito/node-types"),
     agentCatalog: () => apiClient.get<AgentMeta[]>("/credito/agent-catalog"),
+    dataProducts: () => apiClient.get<DataProduct[]>("/credito/data-products"),
     create: (payload: WorkflowCreatePayload) =>
       apiClient.post<WorkflowDefinitionRead>("/credito/workflows", payload),
     update: (id: string, payload: WorkflowUpdatePayload) =>

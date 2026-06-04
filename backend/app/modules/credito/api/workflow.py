@@ -38,6 +38,7 @@ from app.core.database import get_db
 from app.core.enums import Module, Permission, PlaybookStatus
 from app.core.module_guard import require_module
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
+from app.shared.data_providers.models.dataset import DataProviderDataset
 
 router = APIRouter()
 
@@ -458,6 +459,58 @@ async def get_agent_catalog(
         }
         for spec in CATALOG.values()
     ]
+
+
+class DataProductRead(BaseModel):
+    """Dataset externo exposto ao TENANT — WHITE-LABEL.
+
+    SO campos neutros. `provider_slug`, `provider_api`, `provider_dataset_code`,
+    `provider_query_name`, preco/markup NUNCA aparecem aqui (decisao 2026-06-04).
+    O node `cadastral_enrichment` referencia o `public_code`; o vendor resolve
+    em runtime dentro de integracoes.
+    """
+
+    public_code: str
+    display_name: str
+    categoria_ui: str | None = None
+    description: str | None = None
+
+
+def _serialize_data_product(ds: DataProviderDataset) -> DataProductRead:
+    """Serializa um dataset para o contrato tenant-facing (sem vendor).
+
+    Funcao pura (testavel): garante que nenhum campo de vendor escapa. UI cai
+    em `public_code` quando `display_name_pt_br` nao foi curado.
+    """
+    return DataProductRead(
+        public_code=ds.public_code or "",
+        display_name=ds.display_name_pt_br or (ds.public_code or ""),
+        categoria_ui=ds.categoria_ui,
+        description=ds.description_pt_br,
+    )
+
+
+@router.get("/data-products", response_model=list[DataProductRead])
+async def list_data_products(
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_module(Module.CREDITO, Permission.READ)),
+) -> list[DataProductRead]:
+    """Lista datasets externos habilitados para a paleta do builder (white-label).
+
+    Data-driven: a paleta de "produtos de dado" vem do catalogo
+    (`provedor_dados_dataset` com `enabled_for_sale=true` e `public_code`
+    definido), NAO de lista hardcoded. Retorna apenas codigo neutro +
+    rotulo/categoria/descricao — o vendor nunca vaza pro tenant.
+    """
+    rows = (
+        await db.execute(
+            select(DataProviderDataset)
+            .where(DataProviderDataset.enabled_for_sale.is_(True))
+            .where(DataProviderDataset.public_code.isnot(None))
+            .order_by(DataProviderDataset.categoria_ui, DataProviderDataset.public_code)
+        )
+    ).scalars().all()
+    return [_serialize_data_product(r) for r in rows]
 
 
 # ─── Semantic validation ──────────────────────────────────────────────────

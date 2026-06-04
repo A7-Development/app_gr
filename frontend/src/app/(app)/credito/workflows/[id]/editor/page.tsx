@@ -79,6 +79,7 @@ import { PageHeader } from "@/design-system/components"
 import {
   credito,
   type AgentMeta,
+  type DataProduct,
   type NodeTypeMeta,
   type WorkflowDefinitionRead,
   type WorkflowGraph,
@@ -245,6 +246,11 @@ export default function WorkflowEditorPage() {
     queryFn: () => credito.workflows.agentCatalog(),
   })
 
+  const { data: dataProducts } = useQuery({
+    queryKey: ["credito", "data-products"],
+    queryFn: () => credito.workflows.dataProducts(),
+  })
+
   const { data: activeWorkflow } = useQuery({
     queryKey: ["credito", "workflow-active", workflow?.name],
     queryFn: async () => {
@@ -277,6 +283,7 @@ export default function WorkflowEditorPage() {
           activeWorkflow={activeWorkflow ?? null}
           nodeTypes={nodeTypes ?? []}
           agentCatalog={agentCatalog ?? []}
+          dataProducts={dataProducts ?? []}
           onBack={() => router.push("/credito/workflows")}
         />
       </ReactFlowProvider>
@@ -291,12 +298,14 @@ function EditorBody({
   activeWorkflow,
   nodeTypes,
   agentCatalog,
+  dataProducts,
   onBack,
 }: {
   workflow: WorkflowDefinitionRead
   activeWorkflow: WorkflowDefinitionRead | null
   nodeTypes: NodeTypeMeta[]
   agentCatalog: AgentMeta[]
+  dataProducts: DataProduct[]
   onBack: () => void
 }) {
   const queryClient = useQueryClient()
@@ -723,8 +732,8 @@ function EditorBody({
 
   // ─── Palette entries (build once from nodeTypes) ─────────────────────
   const paletteEntries = React.useMemo(
-    () => buildPaletteEntries(nodeTypes),
-    [nodeTypes],
+    () => buildPaletteEntries(nodeTypes, dataProducts),
+    [nodeTypes, dataProducts],
   )
 
   return (
