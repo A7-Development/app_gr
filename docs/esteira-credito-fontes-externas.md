@@ -1,77 +1,153 @@
 # Esteira de Crédito — Catálogo de Fontes Externas (BigDataCorp / Serasa / VADU)
 
 > **Status:** documento vivo (iniciado 2026-06-04). Organiza os endpoints de
-> dados externos que a esteira consome — por função, custo, modo e nível de
+> dados externos da esteira por **dimensão de análise**, custo, modo e nível de
 > credencial. Complementa [esteira-credito-ia-map.md](./esteira-credito-ia-map.md)
-> (Camada 1 — cesta de primitivos). Cada dataset tem **dicionário de dados**
-> próprio no BigDataCorp — puxar ao fiar o adapter/mapper (semântica de campo).
+> (Camada 1 — cesta de primitivos).
+>
+> **IN** = na fase exploratória (consultas baratas) · **DEFER** = entra quando
+> subir o tier de custo · `IN*` = entra se o custo confirmar barato.
 
-## 1. Modelo de credenciais e billing (decisão 2026-06-04, Ricardo)
+## 0. Como acessar o catálogo completo (mecanismo)
 
-- **Nível MANTENEDOR (global):** BigDataCorp (todos os datasets) + um **Serasa
-  próprio**. Credenciais cifradas no nível do mantenedor — espelha o padrão de
-  IA (`ai_provider_credential` global + `is_system_maintainer`, §19.2/§13).
-- **Nível TENANT:** **apenas Serasa**, e **opcional** — só quando o cliente tem
-  contrato próprio. Resolução em runtime: usa a credencial do tenant se existir;
-  senão **cai na do mantenedor** (nosso Serasa).
-- **Billing:** o tenant consome via sistema e **paga por consulta** conforme
-  política comercial (a definir). Metering por consulta, espelhando
-  `ai_usage_event`. Custo da fonte (tier abaixo) alimenta o preço.
+`curl` funciona do ambiente. A doc do BigDataCorp expõe um índice pra agentes:
+
+- **Índice completo:** `curl https://docs.bigdatacorp.com.br/llms.txt` → ~700KB,
+  **662 páginas / 254 datasets** (markdown, com descrição por linha).
+- **Página de cada dataset:** `…/plataforma/reference/<dataset>.md` — carrega
+  **descrição + dicionário de dados (campos) + preço/tier**. Baixar cru e ler
+  (sem passar pelo summarizer do WebFetch, que trunca).
+- **Preço:** vive na página de cada dataset (ex.: `empresas-dados-cadastrais-basicos`
+  = **R$ 0,02**). Não há lista única — puxar por dataset ao fiar o adapter.
+
+> Regra: ao construir o adapter/mapper de um dataset, **puxar o `.md` dele** pra
+> ter o dicionário exato (semântica raw→silver, §13.2) + o preço atual.
+
+## 1. Modelo de credenciais e billing (decisão 2026-06-04)
+
+- **Nível MANTENEDOR (global):** BigDataCorp (todos) + **Serasa próprio**.
+  Credenciais cifradas no mantenedor — espelha `ai_provider_credential` +
+  `is_system_maintainer` (§19.2/§13).
+- **Nível TENANT:** **só Serasa**, **opcional** (contrato próprio do cliente).
+  Runtime: usa a do tenant se existir; senão **cai na do mantenedor**.
+- **Billing:** tenant consome via sistema e **paga por consulta** (política
+  comercial a definir). Metering espelha `ai_usage_event`; o tier de custo
+  alimenta o preço.
 - **Implementação futura:** `data_provider_credential` (global) +
-  `tenant_source_config` (override Serasa por tenant) + metering + tabela de
-  preço por fonte. Não implementar agora — registrar a forma.
+  `tenant_source_config` (override Serasa) + metering + preço por fonte.
 
-## 2. Tiers de custo (combustível do guard de orçamento — transversal #2)
+## 2. Tiers de custo (régua do guard de orçamento — transversal #2)
 
-| Tier | Característica | Política de uso |
+| Tier | Característica | Uso |
 |---|---|---|
-| **Barato** | cadastral, ~R$ 0,02, sync | liberal; roda cedo (gate antes do pago) |
-| **Médio** | KYC, mídia, grupo, sync | node no grafo; sob orçamento |
-| **Caro / async** | `ondemand-*`, Relacionamentos (batch) | node explícito, **gated por alerta**; engine durável (suspend/resume) |
+| **Barato** | cadastral (~R$ 0,02), sync | liberal; roda cedo (gate antes do pago) |
+| **Médio** | KYC, mídia, risco, grupo, sync | node; sob orçamento |
+| **Caro/async** | `ondemand-*` (certidões), `relacionamentos` (batch) | node explícito, **gated por alerta**; engine durável |
 
-## 3. Catálogo BigDataCorp
+---
 
-> Todos no nível **MANTENEDOR**. Status: **IN** = na fase exploratória ·
-> **DEFER** = entra quando subir o tier de custo.
+## 3. Catálogo BigDataCorp por dimensão
 
-### 3.1 Empresa (PJ)
-| Dataset (técnico) | Função | Dimensão | Custo | Modo | Status |
-|---|---|---|---|---|---|
-| `empresas-dados-cadastrais-basicos` | CNAE, situação, idade, capital, natureza, regime, histórico | **Gate A2** + cross-checks + contexto financeiro | **R$ 0,02** | sync | **IN** |
-| `empresas-kyc-e-compliance` | sanções/PEP/restrições da PJ | Compliance | médio | sync | DEFER |
-| `empresas-kyc-e-compliance-dos-socios` | KYC do QSA | Compliance | médio | sync | DEFER |
-| `ondemand-receita-federal-qsa` | **QSA oficial da Receita** (sócios) | Societária (fonte-ouro p/ cross-check QSA × contrato) | caro/ondemand | async | DEFER |
-| `ondemand-receita-federal-representante-legal` | **representante legal oficial** (Receita) | Societária / poderes | caro/ondemand | async | DEFER |
-| `economic_group_kyc` | grupo econômico (empresas+pessoas, direto+indireto) | Vínculos/grupo | médio-alto | sync | DEFER |
-| `Relacionamentos` (+ `Relacionamentos do Grupo Econômico`) | **arestas** empresa→entidades (societário, trabalho, grupo) | Vínculos/grupo | alto | **async/batch** | DEFER |
+> Todos no nível **MANTENEDOR**. Datasets com `*-de-recencia-configuravel` deixam
+> ajustar o quão recente o dado precisa ser (trade-off custo×frescor).
 
-### 3.2 Pessoa (PF)
-| Dataset (técnico) | Função | Dimensão | Custo | Modo | Status |
-|---|---|---|---|---|---|
-| `pessoas-dados-cadastrais-basicos` | identidade do sócio | Identidade | barato | sync | **IN** |
-| `pessoas-historico-de-dados-basicos` | mudança cadastral (sinal de fachada) | Veracidade | barato | sync | **IN** |
-| `pessoas-nivel-de-envolvimento-politico` | **score PEP** (doações, eleições, cargo) | Exposição política/PEP | confirmar (público→provável barato) | sync | **IN*** |
-| `pessoas-candidatos-eleitorais` | foi candidato | PEP | confirmar | sync | **IN*** |
-| `pessoas-historico-politico-familiar` | PEP por família | PEP | confirmar | sync | **IN*** |
-| `pessoas-prestadores-de-servicos-eleitorais` | prestou serviço eleitoral (PEP indireto) | PEP | confirmar | sync | **IN*** |
-| `pessoas-kyc-e-compliance` | KYC do sócio | Compliance | médio | sync | DEFER |
-| `pessoas-kyc-e-compliance-familiares-primeiro-nivel` | **parentes 1º nível** + KYC | Vínculos (parentes) + Compliance | médio | sync | DEFER |
-| `pessoas-exposicao-e-perfil-na-midia` + `pessoas-dados-de-popularidade` | mídia adversa / reputação | Reputação | confirmar | sync | DEFER |
-| `ondemand-policia-civil-antecedentes-criminais-pessoa` | antecedentes criminais | Risco criminal | caro/ondemand | async | DEFER (gated) |
+### 3.1 Identidade & cadastral
+| Dataset (técnico) | Ent | Função | Status |
+|---|---|---|---|
+| `empresas-dados-cadastrais-basicos` | PJ | CNAE, situação, idade, capital, natureza, regime, histórico — **R$ 0,02** | **IN** |
+| `empresas-historico-de-dados-basicos` | PJ | mudanças cadastrais (sinal de fachada) | **IN** |
+| `empresas-evolucao-da-empresa` | PJ | evolução/porte ao longo do tempo | DEFER |
+| `empresas-dados-de-registro` | PJ | dados de registro detalhados | DEFER |
+| `empresas-dados-de-categoria-comercial-mcc` | PJ | MCC (categoria comercial) | DEFER |
+| `pessoas-dados-cadastrais-basicos` | PF | identidade do sócio | **IN** |
+| `pessoas-dados-cadastrais-de-recencia-configuravel` | PF | cadastral com frescor ajustável | DEFER |
+| `pessoas-historico-de-dados-basicos` | PF | mudança cadastral (fachada) | **IN** |
+| `pessoas-informacoes-socio-demograficas` | PF | perfil socio-demográfico | DEFER |
+| `empresas/pessoas-enderecos / -telefones / -emails` (+ `-de-pessoas-relacionadas`) | PJ/PF | contatos (e dos relacionados → vínculo) | DEFER |
 
-> *`IN*`* = entra na exploratória **se** o custo do cluster PEP confirmar barato
-> (dado público eleitoral). Senão, DEFER. Ricardo marcou PEP como importante.
+### 3.2 Societário, vínculos & grupo econômico
+| Dataset (técnico) | Ent | Função | Status |
+|---|---|---|---|
+| `empresas-qsa-de-recencia-configuravel` | PJ | **QSA** (sócios/admins) — mais barato que o ondemand Receita | `IN*` |
+| `ondemand-receita-federal-qsa` | PJ | **QSA oficial Receita** (fonte-ouro p/ cross-check) | DEFER (ondemand) |
+| `ondemand-receita-federal-representante-legal` | PJ | representante legal oficial | DEFER (ondemand) |
+| `empresas-relacionamentos` | PJ | **arestas** empresa→entidades (societário/trabalho) | DEFER (async) |
+| `empresas-relacionamentos-do-grupo-economico` | PJ | estrutura do grupo econômico | DEFER (async) |
+| `empresas-kyc-e-compliance-do-grupo-economico` | PJ | grupo (empresas+pessoas, direto+indireto) + KYC | DEFER |
+| `empresas-influencia-do-quadro-societario` | PJ | peso/influência dos sócios | DEFER |
+| `pessoas-kyc-e-compliance-familiares-primeiro-nivel` | PF | **parentes 1º nível** + KYC | DEFER |
+| `pessoas-enderecos/-telefones/-emails-de-pessoas-relacionadas` | PF | rede de relacionados | DEFER |
+
+### 3.3 Financeiro & risco
+| Dataset (técnico) | Ent | Função | Status |
+|---|---|---|---|
+| `empresas-comportamento-financeiro-digital` | PJ | comportamento financeiro digital | DEFER |
+| `empresas-indicadores-de-atividade` | PJ | indicadores de atividade/operação | DEFER |
+| `empresas-presenca-em-cobranca` | PJ | está em cobrança? | DEFER |
+| `empresas-devedores-do-governo` | PJ | dívida com governo | DEFER |
+| `empresas-mercado-financeiro` | PJ | exposição em mercado financeiro | DEFER |
+| `empresas-dados-de-fundos-de-investimento` | PJ | vínculo com fundos | DEFER |
+| `empresas-dados-unificados-para-modelagem-x1-5` | PJ | **bundle pronto p/ score** | DEFER |
+| `pessoas-risco-financeiro` (+ `-familiar`) | PF | score de risco financeiro | DEFER |
+| `pessoas-probabilidade-de-negativacao` | PF | prob. de negativação | DEFER |
+| `pessoas-presenca-em-cobranca` | PF | em cobrança? | DEFER |
+| `pessoas-informacoes-financeiras` (+ `-de-familiares`) | PF | informações financeiras | DEFER |
+| `pessoas-comportamento-financeiro-digital` | PF | comportamento financeiro | DEFER |
+| `pessoas-dados-unificados-para-modelagem-x1-5` | PF | bundle p/ score | DEFER |
+
+### 3.4 Jurídico & processos
+| Dataset (técnico) | Ent | Função | Status |
+|---|---|---|---|
+| `empresas-processos-judiciais-e-administrativos` (+ `-dos-socios`) | PJ | processos da empresa e sócios | DEFER |
+| `empresas-dados-de-distribuicao-de-processos-judiciais` (+ `-dos-socios`) | PJ | volume/distribuição de processos | DEFER |
+| `pessoas-processos-judiciais-e-administrativos` (+ `-de-familiares-de-primeiro-nivel`) | PF | processos da pessoa e familiares | DEFER |
+| `pessoas-dados-de-distribuicao-de-processos-judiciais` (+ familiares) | PF | distribuição de processos PF | DEFER |
+
+### 3.5 Compliance & exposição (PEP / sanções / mídia)
+| Dataset (técnico) | Ent | Função | Status |
+|---|---|---|---|
+| `empresas-kyc-e-compliance` (+ `-dos-socios` / `-dos-funcionarios`) | PJ | sanções/PEP/restrições | DEFER |
+| `pessoas-kyc-e-compliance` | PF | KYC do sócio | DEFER |
+| `pessoas-nivel-de-envolvimento-politico` | PF | **score PEP** (doações, eleições, cargo) | `IN*` |
+| `pessoas-candidatos-eleitorais` | PF | foi candidato | `IN*` |
+| `pessoas-doacoes-eleitorais` / `empresas-doacoes-eleitorais` (+socios) | PF/PJ | doações eleitorais | `IN*` |
+| `pessoas-historico-politico-familiar` | PF | PEP por família | `IN*` |
+| `pessoas-prestadores-de-servicos-eleitorais` / `empresas-…` | PF/PJ | serviço eleitoral (PEP indireto) | `IN*` |
+| `empresas-envolvimento-politico` | PJ | envolvimento político da PJ | DEFER |
+| `pessoas/empresas-exposicao-e-perfil-na-midia` | PF/PJ | mídia adversa | DEFER |
+| `pessoas-dados-de-popularidade` | PF | popularidade/exposição | DEFER |
+| `pessoas-presenca-online` (+ `-familiar`) / `-passagens-pela-web` | PF | pegada digital | DEFER |
+| `pessoas-propensao-aposta-online` / `pessoas-compliance-casas-de-apostas` | PF | exposição a apostas | DEFER |
+
+### 3.6 Certidões & regularidade (on-demand — caras/async, gated)
+| Dataset (técnico) | Ent | Função |
+|---|---|---|
+| `ondemand-receita-federal-situacao-cnpj` | PJ | situação CNPJ oficial |
+| `ondemand-pgfn` (+ `-pessoa`) | PJ/PF | dívida ativa PGFN |
+| `ondemand-debitos-trabalhistas-negativa` / `-debitos-estaduais-negativa` (+pessoa) | PJ/PF | débitos trabalhistas/estaduais |
+| `ondemand-cnj-negativa` (+pessoa) / `ondemand-cgu-negativa` / `-cgu-correcional-negativa-pessoa` | PJ/PF | CNJ / CGU |
+| `ondemand-acoes-trabalhistas` (+pessoa) / `ondemand-acoes-judiciais-nada-consta-pessoa` | PJ/PF | ações trabalhistas/judiciais |
+| `ondemand-policia-civil-antecedentes-criminais-pessoa` / `-policia-federal-…` | PF | antecedentes criminais |
+| `ondemand-optante-simples` / `-arrecadacao-simples-nacional-mei` / `-inscricao-municipal` / `-sintegra-empresa` | PJ | regime/fiscal |
+| `ondemand-fgts` / `-habilitacao-comex` / `-tse-quitacao-eleitoral-pessoa` | PJ/PF | regularidade diversa |
+| `ondemand-ibama-*` / `-licencas-sanitarias` / `-sicar` / `-siproquim` | PJ/PF | ambiental/sanitário (relevância setorial) |
+
+### 3.7 Contexto adicional (uso pontual)
+`empresas-dados-de-sites` · `-anuncios-online` · `-marketplaces` · `-avaliacoes-e-reputacao` · `-premios-e-certificacoes` · `-dados-de-obras-civis` · `-acordos-sindicais` · `-consciencia-social` · `-propriedades-industriais(+socios/func)` | `pessoas-dados-profissionais` · `-conselhos-de-classe` · `-servidores-publicos` · `-turnover-profissional` · `-veiculos-associados-a-pessoa` · `-historico-escolar-e-academico` · `-licencas-e-autorizacoes` · `-programas-de-beneficios-e-assistencia-social(+familiares)`.
+
+---
 
 ## 4. Serasa — DEFERIDO (fase posterior)
-- Nível **TENANT** (contrato próprio do cliente) **OU** **MANTENEDOR** (nosso Serasa).
-- Adapters já existem: `serasa_pj` wired. `serasa_pf` placeholder.
-- GOTCHA conhecido: `score_h4pj` 100% NULL no contrato A7 segmento 028.
+Nível **TENANT** (contrato próprio) **OU** **MANTENEDOR** (nosso Serasa). Adapters:
+`serasa_pj` wired; `serasa_pf` placeholder. GOTCHA: `score_h4pj` 100% NULL no
+contrato A7 segmento 028.
 
 ## 5. VADU — sem API → MANUAL
-- Não automatizável. Entra como **passo humano** (analista consulta e declara;
-  confrontado contra o descoberto pelas fontes automáticas).
+Não automatizável. Passo **humano** (analista consulta e declara; confrontado
+contra o descoberto pelas fontes automáticas).
 
-## 6. Dicionários de dados
-Cada dataset BigDataCorp tem um dicionário de dados próprio (semântica exata de
-cada campo). **Puxar o dicionário ao construir o adapter/mapper** de cada
-dataset — é o que garante o mapeamento raw→silver correto (§13.2).
+## 6. Conjunto IN-SCOPE da exploratória (resumo)
+`empresas-dados-cadastrais-basicos` (gate A2) · `empresas/pessoas-historico-de-dados-basicos`
+(fachada) · `pessoas-dados-cadastrais-basicos` (identidade) · cluster **PEP**
+(`IN*`, confirmar custo) · `empresas-qsa-de-recencia-configuravel` (`IN*`, QSA barato).
+Resto DEFER até subir o tier de custo.
