@@ -60,6 +60,14 @@ class EdgeSpec(BaseModel):
     source: str = Field(..., description="ID of the source node")
     target: str = Field(..., description="ID of the target node")
 
+    # Ancoras visuais do React Flow (qual lado do node a edge sai/entra:
+    # "top"/"right"/"bottom"/"left"). Puramente COSMETICO — o engine/resolver
+    # ignoram (so usam source/target/condition). Persistir preserva o layout
+    # que o usuario desenhou; sem isso, ao recarregar todas as edges caem no
+    # primeiro handle ("top"). Null = deixa o React Flow escolher o default.
+    source_handle: str | None = None
+    target_handle: str | None = None
+
     # Optional condition for branching (evaluated by the resolver).
     # Example: "{{node.score.output.value}} >= 700"
     condition: str | None = None
