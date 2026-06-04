@@ -1894,7 +1894,8 @@ export type Operacoes4LensTaxasData = {
   por_produto: Operacoes4TaxaPorProdutoItem[]
   wavg_pct: number
   mediana_pct: number
-  delta_pct: number | null
+  /** wavg MTD menos wavg mes ant. em pontos percentuais (diferenca direta). */
+  delta_pp: number | null
   n_operacoes: number
   mes_label: string
   du_decorridos: number
