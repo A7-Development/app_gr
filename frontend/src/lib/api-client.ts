@@ -450,6 +450,66 @@ export const invitations = {
     ),
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Admin · Provedores de DADOS (BigDataCorp, Infosimples...) — nivel mantenedor.
+// Espelha backend/app/modules/admin/api/data_provider_credentials.py
+// ───────────────────────────────────────────────────────────────────────────
+
+export type DataProviderRead = {
+  id: string
+  slug: string
+  name: string
+  enabled: boolean
+}
+
+export type DataProviderCredentialRead = {
+  id: string
+  provider_id: string
+  alias: string
+  zdr_enabled: boolean
+  active: boolean
+  rotated_at: string | null
+  notes: string | null
+  created_at: string
+}
+
+export type DataProviderCredentialCreatePayload = {
+  provider_id: string
+  alias: string
+  secret: Record<string, string>
+  zdr_enabled: boolean
+  notes?: string | null
+}
+
+export type DataProviderCredentialUpdatePayload = {
+  secret?: Record<string, string>
+  zdr_enabled?: boolean
+  active?: boolean
+  notes?: string | null
+}
+
+export const adminDataProviders = {
+  providers: () => apiClient.get<DataProviderRead[]>("/admin/data-providers"),
+  credentials: {
+    list: () =>
+      apiClient.get<DataProviderCredentialRead[]>(
+        "/admin/data-providers/credentials",
+      ),
+    create: (payload: DataProviderCredentialCreatePayload) =>
+      apiClient.post<DataProviderCredentialRead>(
+        "/admin/data-providers/credentials",
+        payload,
+      ),
+    update: (id: string, payload: DataProviderCredentialUpdatePayload) =>
+      apiClient.put<DataProviderCredentialRead>(
+        `/admin/data-providers/credentials/${id}`,
+        payload,
+      ),
+    remove: (id: string) =>
+      apiClient.delete<void>(`/admin/data-providers/credentials/${id}`),
+  },
+}
+
 export const adminAI = {
   providers: {
     list: () =>

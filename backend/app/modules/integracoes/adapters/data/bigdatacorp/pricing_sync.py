@@ -207,6 +207,44 @@ def _parse_pricing_payload(payload: dict[str, Any]) -> list[ParsedDataset]:
         if parsed:
             return parsed
 
+    # Shape D — BDC "Pricing_All": Locales -> Entities -> Datasets ->
+    # PricingRanges (chaves = quantidade minima da faixa). Prioriza pt-br.
+    pricing_all = payload.get("Pricing_All")
+    if isinstance(pricing_all, dict):
+        locales = pricing_all.get("Locales")
+        if isinstance(locales, dict) and locales:
+            locale_node = locales.get("pt-br") or next(iter(locales.values()), None)
+            entities = (
+                locale_node.get("Entities")
+                if isinstance(locale_node, dict)
+                else None
+            )
+            if isinstance(entities, dict):
+                parsed = []
+                for entity_name, entity_node in entities.items():
+                    datasets = (
+                        entity_node.get("Datasets")
+                        if isinstance(entity_node, dict)
+                        else None
+                    )
+                    if not isinstance(datasets, dict):
+                        continue
+                    for dataset_code, spec in datasets.items():
+                        if not isinstance(spec, dict):
+                            continue
+                        parsed.append(
+                            ParsedDataset(
+                                api=str(entity_name).title(),  # PEOPLE -> People
+                                code=str(dataset_code),
+                                tiers=_tiers_from_pricing_ranges(
+                                    spec.get("PricingRanges")
+                                ),
+                                provider_status=_extract_status(spec),
+                            )
+                        )
+                if parsed:
+                    return parsed
+
     # Nao deu. Mensagem de erro inclui as TOP-LEVEL keys pra usuario poder
     # ajustar o parser sem precisar redumpar.
     top_keys = (
@@ -272,6 +310,40 @@ def _extract_tiers(spec: dict[str, Any]) -> list[ParsedTier]:
                 up_to_quantity=up_to_int,
                 price_brl=price_dec,
             )
+        )
+    return tiers
+
+
+def _tiers_from_pricing_ranges(ranges: Any) -> list[ParsedTier]:
+    """Extrai tiers do shape BDC `PricingRanges`.
+
+    Chaves = quantidade MINIMA (string) da faixa; valor = {Pricing, FixedValue}.
+    Ordena por quantidade crescente: tier 0 = faixa de menor volume (maior preco
+    unitario), coerente com `_first_tier_price`. `up_to_quantity` = inicio da
+    proxima faixa (None na ultima). `FixedValue` (preco flat de faixa enterprise)
+    nao e modelado — usa-se `Pricing` (preco por consulta).
+    """
+    if not isinstance(ranges, dict):
+        return []
+    thresholds: list[int] = []
+    for k in ranges:
+        try:
+            thresholds.append(int(k))
+        except (ValueError, TypeError):
+            continue
+    thresholds.sort()
+    tiers: list[ParsedTier] = []
+    for idx, t in enumerate(thresholds):
+        spec = ranges.get(str(t))
+        if not isinstance(spec, dict):
+            continue
+        try:
+            price_dec = Decimal(str(spec.get("Pricing", 0)))
+        except (ValueError, ArithmeticError):
+            continue
+        up_to = thresholds[idx + 1] if idx + 1 < len(thresholds) else None
+        tiers.append(
+            ParsedTier(tier_index=idx, up_to_quantity=up_to, price_brl=price_dec)
         )
     return tiers
 
