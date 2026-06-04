@@ -4,8 +4,9 @@
 // (`design-system/patterns/DashboardBiPadrao.tsx`) com divergencias
 // documentadas abaixo.
 //
-// Chrome preservado: title row, toolbar 52px com tabs+filtros, InsightStrip,
-// ProvenanceFooter, AIPanel, DrillDownSheet.
+// Chrome (layout BI canonico, ref /bi/panorama): Z1 title row · Z2 tabs L3 em
+// banda propria · Z3 filtros globais em banda propria · InsightStrip ·
+// ProvenanceFooter · AIPanel · DrillDownSheet.
 //
 // AJUSTES vs `DashboardBiPadrao`:
 //   1. Dados dos KPIs: 5 indicadores reais de Operacoes (VOP, Taxa, Prazo,
@@ -285,7 +286,28 @@ export default function Operacoes2Page() {
           />
         </div>
 
-        {/* Toolbar unificada (52px) — tabs L3 + filtros + sync status. */}
+        {/* Tabs L3 (Z2) — banda propria. Layout BI canonico (ref /bi/panorama):
+            Titulo/Subtitulo · Tabs · Filtros globais em bandas separadas. */}
+        <div className="shrink-0 border-b border-gray-200 bg-white px-6 dark:border-gray-800 dark:bg-gray-950">
+          <TabNavigation className="border-0">
+            {TABS.map((t, i) => (
+              <TabNavigationLink
+                key={t.key}
+                href="#"
+                active={activeTab === t.key}
+                onClick={(e) => {
+                  e.preventDefault()
+                  setActiveTab(t.key)
+                }}
+                title={`Cmd/Ctrl + ${i + 1}`}
+              >
+                {t.label}
+              </TabNavigationLink>
+            ))}
+          </TabNavigation>
+        </div>
+
+        {/* Filtros globais (Z3) — banda propria, scroll-shadow no scroll do conteudo. */}
         <div
           className={cx(
             "shrink-0 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
@@ -293,28 +315,6 @@ export default function Operacoes2Page() {
           )}
         >
           <div className="flex h-[52px] items-center gap-2 px-6">
-            <TabNavigation className="border-0">
-              {TABS.map((t, i) => (
-                <TabNavigationLink
-                  key={t.key}
-                  href="#"
-                  active={activeTab === t.key}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    setActiveTab(t.key)
-                  }}
-                  title={`Cmd/Ctrl + ${i + 1}`}
-                >
-                  {t.label}
-                </TabNavigationLink>
-              ))}
-            </TabNavigation>
-
-            <div
-              aria-hidden="true"
-              className="mx-1 h-5 w-px bg-gray-200 dark:bg-gray-800"
-            />
-
             <FilterChip
               label="Período"
               value={preset ? PRESET_LABEL_MAP[preset] : "Personalizado"}
