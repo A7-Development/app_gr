@@ -426,6 +426,21 @@ function buildHistOption(
           emphasis: { itemStyle: { color: hoverColor } },
         })),
         barWidth: "60%",
+        // Rotulo de dados em milhoes, 1 casa (ex.: 1,8). Suprime barra zerada
+        // pra nao poluir (mesma logica do fmtMilhoesLabel do VOP DIARIO).
+        label: {
+          show: true,
+          position: "top",
+          formatter: (params) => {
+            const v = (params as { value: number | string }).value
+            const n = typeof v === "number" ? v : Number(v)
+            if (!n) return ""
+            return (n / 1_000_000).toFixed(1).replace(".", ",")
+          },
+          fontSize: 10,
+          fontWeight: 600,
+          color: "#374151",
+        },
       },
     ],
   }
