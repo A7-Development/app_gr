@@ -163,6 +163,18 @@ contrato A7 segmento 028.
 Não automatizável. Passo **humano** (analista consulta e declara; confrontado
 contra o descoberto pelas fontes automáticas).
 
+## 5.1 APIs de apoio / operação (BDC)
+
+Não são datasets de dado — são APIs operacionais que sustentam o adapter:
+
+| API | Função | Uso no desenho |
+|---|---|---|
+| **Status / Health** (`GET plataforma.bigdatacorp.com.br/pessoas` e `/empresas`) | API funcional? + **tempo de resposta médio (últimos 5 min)** | **health-gate do adapter**: checar saúde+latência antes de disparar consulta paga/async; circuit-breaker; decisão sync×async (§13 observabilidade) |
+| **API de Preços** (`POST /precos`) | tabela de preço + estimativa (gratuita) | sync de custo (billing) + **guard de orçamento** (§0.1) |
+| **API de Estatísticas de Uso** (`api-de-estatisticas-de-uso`) | consumo/uso por período | observabilidade de billing / conciliação de consumo |
+| **API de Monitoramento** (`api-de-monitoramento-*`: configurar/atualizar/detalhes/diferenças/desabilitar) | **monitora uma entidade e reporta mudanças** ao longo do tempo | **Fase G (monitoramento/reavaliação)** — reanalisar dossiê quando a entidade muda |
+| **Chamadas Assíncronas** (`chamadas-assincronas-obter-metadado`) | metadado de jobs async | suporte ao padrão async (Relacionamentos, ondemand) no engine durável |
+
 ## 6. Conjunto IN-SCOPE da exploratória (resumo)
 `empresas-dados-cadastrais-basicos` (gate A2) · `empresas/pessoas-historico-de-dados-basicos`
 (fachada) · `pessoas-dados-cadastrais-basicos` (identidade) · cluster **PEP**
