@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
-import { GeistSans } from "geist/font/sans"
 import { ThemeProvider } from "next-themes"
 import { Toaster } from "sonner"
+import { inter } from "@/lib/fonts"
 import { QueryProvider } from "@/lib/QueryProvider"
 import "./globals.css"
 
@@ -18,7 +18,7 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
-      className={`${GeistSans.className} antialiased bg-gray-50 dark:bg-gray-950`}
+      className={`${inter.variable} ${inter.className} antialiased bg-gray-50 dark:bg-gray-950`}
       suppressHydrationWarning
     >
       <body>

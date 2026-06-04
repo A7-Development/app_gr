@@ -5,6 +5,8 @@
 // Rule: tooltip is ALWAYS dark regardless of app theme (Stripe/Vercel/Linear pattern).
 // Rule: animationDurationUpdate = 0 (no re-render animation, only first-render).
 
+import { interFontFamily } from "@/lib/fonts"
+
 import { tokens } from "./index"
 
 export function getEChartsTheme(mode: "light" | "dark") {
@@ -13,13 +15,13 @@ export function getEChartsTheme(mode: "light" | "dark") {
     color: [...tokens.colors.chart],
     backgroundColor: "transparent",
     textStyle: {
-      fontFamily: "'Geist', 'Inter', system-ui, sans-serif",
+      fontFamily: interFontFamily,
       fontSize: 12,
       color: d ? "#F9FAFB" : "#111827",
     },
     title: {
       textStyle: {
-        fontFamily: "'Geist', system-ui, sans-serif",
+        fontFamily: interFontFamily,
         fontWeight: 600,
         fontSize: 14,
         color: d ? "#F9FAFB" : "#111827",
@@ -38,7 +40,7 @@ export function getEChartsTheme(mode: "light" | "dark") {
       lineStyle: { color: d ? "#374151" : "#D1D5DB" },
     },
     axisLabel: {
-      fontFamily: "'Geist', 'Inter', system-ui",
+      fontFamily: interFontFamily,
       fontSize: 11,
       color: d ? "#9CA3AF" : "#6B7280",
     },
@@ -58,7 +60,7 @@ export function getEChartsTheme(mode: "light" | "dark") {
       borderWidth: 1,
       textStyle: {
         color: "#F9FAFB",
-        fontFamily: "'Geist', 'Inter', system-ui",
+        fontFamily: interFontFamily,
         fontSize: 12,
       },
       extraCssText: [

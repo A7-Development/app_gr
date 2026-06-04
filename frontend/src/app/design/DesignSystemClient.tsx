@@ -171,7 +171,7 @@ export function DesignSystemClient() {
 
             <Card title="Typography & spacing">
               <div className="space-y-2 text-sm">
-                <p>Geist Sans (variable). Tabular nums on numbers. Mono on IDs.</p>
+                <p>Inter (next/font, variable). Tabular nums on numbers. Mono on IDs.</p>
                 <p className="font-mono tabular-nums text-blue-600 dark:text-blue-400">CCB-2024-001234</p>
                 <p className="tabular-nums">R$ 1.234.567,89 — 12,34%</p>
                 <p className="text-xs text-gray-500">

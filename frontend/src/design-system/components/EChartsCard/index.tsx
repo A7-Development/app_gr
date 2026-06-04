@@ -204,6 +204,21 @@ export function EChartsCard({
     return () => ro.disconnect()
   }, [])
 
+  // Canvas do ECharts NAO herda CSS nem reage sozinho quando a web font (Inter
+  // via next/font) termina de carregar — o 1o paint pode sair na fonte de
+  // fallback ate um resize/interacao. Forca um re-render quando as fontes
+  // ficam prontas. Resolve instantaneo se ja carregadas (preload no <head>).
+  React.useEffect(() => {
+    if (typeof document === "undefined" || !document.fonts?.ready) return
+    let cancelled = false
+    void document.fonts.ready.then(() => {
+      if (!cancelled) chartRef.current?.getEchartsInstance()?.resize()
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const mergedOption: EChartsOption = React.useMemo(() => {
     const themeOption = theme as unknown as EChartsOption
     return {
