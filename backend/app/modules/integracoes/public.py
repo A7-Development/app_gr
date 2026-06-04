@@ -20,6 +20,9 @@ from app.core.enums import SourceType
 from app.modules.integracoes.adapters.admin.qitech.endpoint_catalog import (
     QITECH_ENDPOINTS,
 )
+from app.modules.integracoes.adapters.data.bigdatacorp.mappers.cadastral import (
+    CadastralFields,
+)
 from app.modules.integracoes.adapters.erp.bitfin.endpoint_catalog import (
     BITFIN_ENDPOINTS,
 )
@@ -28,6 +31,10 @@ from app.modules.integracoes.report_catalog import (
     REPORTS_BY_SLUG,
     ReportCategory,
     ReportSpec,
+)
+from app.modules.integracoes.services.bdc_cadastral_query import (
+    CadastralQueryResult,
+    fetch_cadastral_pj,
 )
 from app.modules.integracoes.services.dia_util import (
     dia_util_anterior_qitech,
@@ -117,11 +124,14 @@ def get_report_spec(slug: str) -> ReportSpec | None:
 
 
 __all__ = [
+    "CadastralFields",
+    "CadastralQueryResult",
     "ReportCategory",
     "ReportSpec",
     "dia_util_anterior_qitech",
     "endpoint_catalog",
     "execute_serasa_pj_query",
+    "fetch_cadastral_pj",
     "get_report_spec",
     "is_source_enabled",
     "list_due_endpoints",
