@@ -11,8 +11,9 @@
 // globally by useSidebarCollapsed.
 //
 // Active sub-link visual: white card + ring + shadow + blue pill that replaces
-// a segment of the gray tree-line. Closed parents with active child get
-// font-semibold + a small blue dot — fixes Tremor's original weakness.
+// a segment of the gray tree-line. Parents with an active child get
+// font-semibold (open or closed) — plus a small blue dot only when CLOSED.
+// Fixes Tremor's original weakness.
 
 "use client"
 
