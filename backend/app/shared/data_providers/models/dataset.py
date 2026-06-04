@@ -109,6 +109,14 @@ class DataProviderDataset(Base):
 
     # ─── Camada A7 (curadoria do mantenedor — preservada entre syncs) ────────
 
+    # Codigo NEUTRO (white-label) exposto ao TENANT no lugar do vendor — evita
+    # engenharia reversa do provedor (decisao 2026-06-04). O tenant-facing ve
+    # SO public_code + display_name; provider_slug/provider_dataset_code NUNCA
+    # vazam pra UI/API do tenant. Mantenedor define (ex.: "CAD-PJ", "PEP-PF").
+    public_code: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True, index=True
+    )
+
     # Label pt-BR pra UI. NULL na descoberta (1o sync) — mantenedor preenche
     # depois. UI cai em `provider_dataset_code` quando NULL.
     display_name_pt_br: Mapped[str | None] = mapped_column(
