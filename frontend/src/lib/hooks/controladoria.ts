@@ -685,3 +685,22 @@ export function useAgenteVariacaoStream() {
 
   return { state, run, reset }
 }
+
+// ── Conciliacao de boletos (Banco Cobrador) ──────────────────────────────────
+
+export function useConciliacaoBancoCobradorDatas() {
+  // Datas-base (ISO desc) com boletos ingeridos. Alimenta o seletor de data.
+  return useQuery({
+    queryKey: ["controladoria", "conciliacao", "banco-cobrador", "datas"] as const,
+    queryFn: () => controladoria.conciliacaoBancoCobradorDatas(),
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useConciliacaoBancoCobrador(dataRef: string | null | undefined) {
+  return useQuery({
+    queryKey: ["controladoria", "conciliacao", "banco-cobrador", dataRef ?? null] as const,
+    queryFn: () => controladoria.conciliacaoBancoCobrador(dataRef!),
+    enabled: !!dataRef,
+  })
+}

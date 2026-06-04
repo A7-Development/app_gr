@@ -336,7 +336,7 @@ export const MODULES: ModuleDefinition[] = [
         icon: RiCheckDoubleLine,
         children: [
           { name: "Custodiante", href: "/controladoria/conciliacao/custodiante", enabled: false },
-          { name: "Banco Cobrador", href: "/controladoria/conciliacao/banco-cobrador", enabled: false },
+          { name: "Banco Cobrador", href: "/controladoria/conciliacao/banco-cobrador", enabled: true },
           // URL mantida (era filha do parent "Relatorios" original).
           { name: "Espelho Adm", href: "/controladoria/relatorios/espelho", enabled: true },
         ],
