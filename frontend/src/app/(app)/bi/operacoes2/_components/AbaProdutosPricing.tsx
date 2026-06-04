@@ -24,10 +24,12 @@
 
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
+import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 import type { EChartsOption } from "echarts"
 import { RiInformationLine } from "@remixicon/react"
 
 import { Card } from "@/components/tremor/Card"
+import { DataTable } from "@/design-system/components/DataTable"
 import { EChartsCard } from "@/design-system/components/EChartsCard"
 import { cardTokens } from "@/design-system/tokens/card"
 import { tableTokens } from "@/design-system/tokens/table"
@@ -440,10 +442,130 @@ function MiniDestaque({
   )
 }
 
-// ─── L2 Card A — RankingProdutosCard ──────────────────────────────────────
+// ─── L2 Card A — RankingProdutosCard (DataTable canonico) ─────────────────
+//
+// Reconstruido com <DataTable> canonico para ficar identico a tabela de
+// /admin/dados/provedores (mesma renderizacao: density compact, header
+// eyebrow, hover, bordas, tableTokens nas celulas). Sorting desligado por
+// coluna — e um ranking estatico ordenado por VOP desc.
 
-const RANKING_GRID =
-  "grid grid-cols-[16px_minmax(0,1.5fr)_72px_56px_56px_56px_56px_56px_44px_72px_56px] items-center gap-x-2"
+const rankCol = createColumnHelper<Operacoes2RankingProdutoLinha>()
+
+type NumTone = "default" | "secondary" | "positive" | "negative"
+
+/** Celula numerica canonica: token + tabular-nums + alinhada a direita. */
+function numCell(text: string, tone: NumTone = "default", strong = false) {
+  const token =
+    tone === "secondary"
+      ? tableTokens.cellNumberSecondary
+      : tone === "positive"
+        ? tableTokens.cellNumberPositive
+        : tone === "negative"
+          ? tableTokens.cellNumberNegative
+          : tableTokens.cellNumber
+  return (
+    <div className={cx(token, "text-right", strong && "font-medium")}>{text}</div>
+  )
+}
+
+const RANKING_COLUMNS: ColumnDef<Operacoes2RankingProdutoLinha, unknown>[] = [
+  rankCol.display({
+    id: "rank",
+    header: "#",
+    size: 40,
+    enableSorting: false,
+    meta: { align: "right" },
+    cell: ({ row }) => numCell(String(row.index + 1), "secondary"),
+  }) as ColumnDef<Operacoes2RankingProdutoLinha, unknown>,
+  rankCol.accessor((r) => r.nome ?? r.sigla, {
+    id: "produto",
+    header: "Produto",
+    size: 160,
+    enableSorting: false,
+    cell: (info) => (
+      <span
+        className={cx(tableTokens.cellText, "block truncate")}
+        title={info.row.original.sigla}
+      >
+        {info.getValue<string>()}
+      </span>
+    ),
+  }) as ColumnDef<Operacoes2RankingProdutoLinha, unknown>,
+  rankCol.accessor("vop", {
+    header: "VOP",
+    size: 88,
+    enableSorting: false,
+    meta: { align: "right" },
+    cell: (info) => numCell(fmtBRLMi(info.getValue<number>())),
+  }) as ColumnDef<Operacoes2RankingProdutoLinha, unknown>,
+  rankCol.accessor("pct", {
+    header: "% mix",
+    size: 72,
+    enableSorting: false,
+    meta: { align: "right" },
+    cell: (info) => numCell(fmtPct1(info.getValue<number>())),
+  }) as ColumnDef<Operacoes2RankingProdutoLinha, unknown>,
+  rankCol.accessor("delta_mom_pp", {
+    header: "Δ MoM",
+    size: 76,
+    enableSorting: false,
+    meta: { align: "right" },
+    cell: (info) => {
+      const v = info.getValue<number | null>()
+      if (v == null) return numCell("—", "secondary")
+      return numCell(fmtPp1(v), v >= 0 ? "positive" : "negative", true)
+    },
+  }) as ColumnDef<Operacoes2RankingProdutoLinha, unknown>,
+  rankCol.accessor("taxa_media", {
+    header: "Taxa",
+    size: 72,
+    enableSorting: false,
+    meta: { align: "right" },
+    cell: (info) => numCell(fmtPct2(info.getValue<number>())),
+  }) as ColumnDef<Operacoes2RankingProdutoLinha, unknown>,
+  rankCol.accessor("prazo_medio", {
+    header: "Prazo",
+    size: 72,
+    enableSorting: false,
+    meta: { align: "right" },
+    cell: (info) => numCell(fmtDays(info.getValue<number>())),
+  }) as ColumnDef<Operacoes2RankingProdutoLinha, unknown>,
+  rankCol.accessor("spread_medio", {
+    header: "Spread",
+    size: 76,
+    enableSorting: false,
+    meta: { align: "right" },
+    cell: (info) => numCell(fmtPct2(info.getValue<number>())),
+  }) as ColumnDef<Operacoes2RankingProdutoLinha, unknown>,
+  rankCol.accessor("n_operacoes", {
+    header: "Nº ops",
+    size: 64,
+    enableSorting: false,
+    meta: { align: "right" },
+    cell: (info) => numCell(fmtInt.format(info.getValue<number>()), "secondary"),
+  }) as ColumnDef<Operacoes2RankingProdutoLinha, unknown>,
+  rankCol.accessor("vop_mes_corrente", {
+    header: "VOP mês",
+    size: 88,
+    enableSorting: false,
+    meta: { align: "right" },
+    cell: (info) => (
+      <div
+        className={cx(tableTokens.cellNumberSecondary, "text-right")}
+        title={fmtBRLFull.format(info.getValue<number>())}
+      >
+        {fmtBRLMi(info.getValue<number>())}
+      </div>
+    ),
+  }) as ColumnDef<Operacoes2RankingProdutoLinha, unknown>,
+  rankCol.accessor("taxa_media_mes_corrente", {
+    header: "Taxa mês",
+    size: 76,
+    enableSorting: false,
+    meta: { align: "right" },
+    cell: (info) => numCell(fmtPct2(info.getValue<number>()), "secondary"),
+  }) as ColumnDef<Operacoes2RankingProdutoLinha, unknown>,
+]
 
 function RankingProdutosCard({
   ranking,
@@ -463,97 +585,16 @@ function RankingProdutosCard({
           são MTD do mês corrente
         </p>
       </div>
-      <div className={cx(cardTokens.body, "flex flex-col gap-2 overflow-x-auto")}>
-        {/* Header */}
-        <div
-          className={cx(
-            RANKING_GRID,
-            tableTokens.header,
-            "min-w-[680px] border-b border-gray-100 pb-1.5 text-gray-500 dark:border-gray-900 dark:text-gray-400",
-          )}
-        >
-          <span className="text-right">#</span>
-          <span>Produto</span>
-          <span className="text-right">VOP</span>
-          <span className="text-right">% mix</span>
-          <span className="text-right">Δ MoM</span>
-          <span className="text-right">Taxa</span>
-          <span className="text-right">Prazo</span>
-          <span className="text-right">Spread</span>
-          <span className="text-right">Nº ops</span>
-          <span
-            className="text-right text-gray-400 dark:text-gray-600"
-            title="VOP MTD do mês corrente"
-          >
-            VOP mês
-          </span>
-          <span
-            className="text-right text-gray-400 dark:text-gray-600"
-            title="Taxa média MTD do mês corrente"
-          >
-            Taxa mês
-          </span>
-        </div>
-        {sorted.map((r, i) => (
-          <RankingRow key={r.sigla} r={r} rank={i + 1} />
-        ))}
-      </div>
+      <DataTable
+        data={sorted}
+        columns={RANKING_COLUMNS}
+        density="compact"
+        showColumnManager={false}
+        showDensityToggle={false}
+        showExport={false}
+        virtualize={false}
+      />
     </Card>
-  )
-}
-
-function RankingRow({ r, rank }: { r: Operacoes2RankingProdutoLinha; rank: number }) {
-  const deltaClass =
-    r.delta_mom_pp == null
-      ? "text-gray-400 dark:text-gray-600"
-      : r.delta_mom_pp >= 0
-        ? "text-emerald-600 dark:text-emerald-400"
-        : "text-red-600 dark:text-red-400"
-  return (
-    <div className={cx(RANKING_GRID, "min-w-[680px] py-0.5")}>
-      <span className={cx(tableTokens.cellNumberSecondary, "text-right")}>
-        {rank}
-      </span>
-      <span className={cx(tableTokens.cellText, "truncate")} title={r.sigla}>
-        {r.nome ?? r.sigla}
-      </span>
-      <span className={cx(tableTokens.cellNumber, "text-right")}>
-        {fmtBRLMi(r.vop)}
-      </span>
-      <span className={cx(tableTokens.cellNumber, "text-right")}>
-        {fmtPct1(r.pct)}
-      </span>
-      <span
-        className={cx(
-          tableTokens.cellNumber,
-          "text-right tabular-nums font-medium",
-          deltaClass,
-        )}
-      >
-        {r.delta_mom_pp == null ? "—" : fmtPp1(r.delta_mom_pp)}
-      </span>
-      <span className={cx(tableTokens.cellNumber, "text-right")}>
-        {fmtPct2(r.taxa_media)}
-      </span>
-      <span className={cx(tableTokens.cellNumber, "text-right")}>
-        {fmtDays(r.prazo_medio)}
-      </span>
-      <span className={cx(tableTokens.cellNumber, "text-right")}>
-        {fmtPct2(r.spread_medio)}
-      </span>
-      <span className={cx(tableTokens.cellNumberSecondary, "text-right")}>
-        {fmtInt.format(r.n_operacoes)}
-      </span>
-      <span
-        className={cx(tableTokens.cellNumberSecondary, "text-right")}
-        title={fmtBRLFull.format(r.vop_mes_corrente)}
-      >
-        {fmtBRLMi(r.vop_mes_corrente)}
-      </span>
-      <span className={cx(tableTokens.cellNumberSecondary, "text-right")}>
-        {fmtPct2(r.taxa_media_mes_corrente)}
-      </span>
-    </div>
   )
 }
 
