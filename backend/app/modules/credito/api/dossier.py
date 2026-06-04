@@ -322,13 +322,15 @@ async def submit_node_input(
     await db.delete(waiting)
     await db.flush()
 
-    # Resume the workflow run with the submitted values.
     submitted = dict(payload.values)
-    await workflow_engine.resume_run(
-        db,
-        run_id=dossier.workflow_run_id,
-        pending_inputs={node_id: submitted},
-    )
+
+    # ORDEM CRITICA: persistir identidade + grafo ANTES de resumir o run.
+    # Nodes downstream (cadastral_enrichment, gates deterministicos) leem
+    # dossier.target_cnpj e credit_dossier_company(role=TARGET) na MESMA sessao.
+    # Se o absorb rodasse depois do resume_run (bug ate 2026-06-04), a
+    # empresa-alvo ainda nao existiria quando o enrichment executasse no resume
+    # -> falhava "dossie sem empresa-alvo". absorb usa `submitted` (payload
+    # cru), nao depende do output que o resume_run grava.
 
     # If the human_input collected an identity field (cnpj/cpf/razao_social/
     # nome), populate dossier.target_* retroactively. Lets fluxos genericos
@@ -345,12 +347,20 @@ async def submit_node_input(
     # data de fundacao, socios com %participacao, coligadas), persist it into
     # credit_dossier_company / credit_dossier_person. No-op caso o form nao
     # carregue campos de grafo. Insumo dos checks deterministicos (idade da
-    # empresa, soma de participacoes).
+    # empresa, soma de participacoes) + do enrichment cadastral.
     await dossier_svc.absorb_graph_from_human_input(
         db,
         tenant_id=principal.tenant_id,
         dossier_id=dossier_id,
         submitted=submitted,
+    )
+
+    # Resume the workflow run with the submitted values — os nodes downstream
+    # ja enxergam a identidade + grafo persistidos acima (mesma sessao).
+    await workflow_engine.resume_run(
+        db,
+        run_id=dossier.workflow_run_id,
+        pending_inputs={node_id: submitted},
     )
 
     # Sync dossier status from updated workflow run.
