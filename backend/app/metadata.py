@@ -71,6 +71,7 @@ from app.shared.identity.tenant import Tenant  # noqa: F401
 from app.shared.identity.user import User  # noqa: F401
 from app.shared.identity.user_permission import UserModulePermission  # noqa: F401
 from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel  # noqa: F401
+from app.warehouse.bdc_raw_consulta import BdcRawConsulta  # noqa: F401
 from app.warehouse.cpr_movimento import CprMovimento  # noqa: F401
 
 # Warehouse (populado pelo ETL)

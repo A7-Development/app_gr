@@ -45,10 +45,32 @@ class PricingResult:
     adapter_version: str = ADAPTER_VERSION
 
 
+@dataclass(frozen=True)
+class EntityQueryResult:
+    """Resultado de uma consulta on-demand de entidade (ex.: POST /empresas).
+
+    `payload` e o envelope BDC cru (`Result`, `QueryId`, `Status`, ...). O
+    parse/mapper fica fora do client (camada bronze + mapper) — aqui so
+    devolvemos o JSON bruto + metadados da chamada.
+    """
+
+    payload: dict[str, Any]
+    status_code: int
+    latency_ms: float
+    adapter_version: str = ADAPTER_VERSION
+
+
 # Endpoint pricing — POST sem body para listar TODA a tabela de precos
 # (datasets habilitados na conta + escada de precos por dataset).
 # Documentacao: https://docs.bigdatacorp.com.br/plataforma/reference/api-de-precos-requisicao
 _PRICING_PATH: str = "/precos/"
+
+# Endpoint de consulta de empresas (PJ). Body documentado:
+#   {"Datasets": "basic_data", "q": "doc{<14 digitos>}", "Limit": 1}
+# As chaves no `q` sao LITERAIS — a sintaxe de matchkey do BDC e `doc{...}`
+# (o MatchKeys do retorno ecoa `doc{...07}`).
+# Documentacao: https://docs.bigdatacorp.com.br/plataforma/reference/empresas-dados-cadastrais-basicos
+_EMPRESAS_PATH: str = "/empresas"
 
 
 async def query_pricing(
@@ -123,6 +145,108 @@ async def query_pricing(
         )
 
     return PricingResult(
+        payload=payload,
+        status_code=resp.status_code,
+        latency_ms=latency_ms,
+    )
+
+
+def _build_matchkey_doc(doc: str) -> str:
+    """Monta o matchkey `doc{<digitos>}` da query language do BDC.
+
+    Aceita CNPJ/CPF mascarado ou nao — extrai so digitos. As chaves sao
+    literais na sintaxe do vendor (nao sao placeholder de template).
+    """
+    digits = "".join(ch for ch in doc if ch.isdigit())
+    return f"doc{{{digits}}}"
+
+
+async def query_entity(
+    *,
+    config: BigDataCorpConfig,
+    base_url: str,
+    doc: str,
+    datasets: str,
+    limit: int = 1,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> EntityQueryResult:
+    """Chama POST /empresas com `q=doc{<cnpj>}` — consulta on-demand PJ.
+
+    Diferente de `query_pricing` (gratis), CADA chamada aqui e PAGA pelo
+    BDC conforme a faixa do dataset. Caller decide quando chamar (gate
+    barato antes, guard de orcamento na Fase de tool).
+
+    Args:
+        config: credencial decifrada (AccessToken/TokenId vao no header).
+        base_url: de `provedor_dados.base_url` (ex.: "https://plataforma.bigdatacorp.com.br").
+        doc: CNPJ (mascarado ou so digitos) — vira matchkey `doc{...}`.
+        datasets: nome(s) tecnico(s) do dataset (ex.: "basic_data"). Vai
+            literal no campo `Datasets` do body.
+        limit: teto de candidatos retornados (default 1 — consulta por CNPJ
+            exato devolve no maximo 1).
+        transport: MockTransport pra tests.
+
+    Returns:
+        `EntityQueryResult` com o envelope BDC cru. `Result: []` = "sem
+        dados" (CNPJ nao encontrado) — caller trata como ausencia, nao erro.
+
+    Raises:
+        BigDataCorpAuthError: credencial vazia ou recusada (401/403).
+        BigDataCorpHttpError: 4xx/5xx, timeout, DNS.
+        BigDataCorpPayloadError: resposta nao-JSON ou nao-dict.
+    """
+    if not config.has_credentials():
+        raise BigDataCorpAuthError(
+            "BDC config sem access_token/token_id — nao chama /empresas"
+        )
+
+    body = {
+        "Datasets": datasets,
+        "q": _build_matchkey_doc(doc),
+        "Limit": limit,
+    }
+
+    t0 = time.monotonic()
+    async with build_async_client(
+        config=config, base_url=base_url, transport=transport
+    ) as client:
+        try:
+            resp = await client.post(_EMPRESAS_PATH, json=body)
+        except httpx.HTTPError as e:
+            raise BigDataCorpHttpError(
+                f"falha de rede em {_EMPRESAS_PATH}: {type(e).__name__}({e!r})",
+                status_code=None,
+                detail=f"{type(e).__name__}: {e!r}",
+            ) from e
+
+    latency_ms = round((time.monotonic() - t0) * 1000, 1)
+
+    if resp.status_code in (401, 403):
+        raise BigDataCorpAuthError(
+            f"BDC rejeitou credencial em {_EMPRESAS_PATH} "
+            f"(status {resp.status_code}, body[:200]={resp.text[:200]!r})"
+        )
+
+    if resp.status_code >= 400:
+        raise BigDataCorpHttpError(
+            f"BDC devolveu {resp.status_code} em {_EMPRESAS_PATH}",
+            status_code=resp.status_code,
+            detail=(resp.text[:1000] if resp.text else "<empty body>"),
+        )
+
+    try:
+        payload = resp.json()
+    except ValueError as e:
+        raise BigDataCorpPayloadError(
+            f"resposta nao-JSON em {_EMPRESAS_PATH}: {resp.text[:500]}"
+        ) from e
+
+    if not isinstance(payload, dict):
+        raise BigDataCorpPayloadError(
+            f"payload de {_EMPRESAS_PATH} inesperado: {type(payload).__name__}"
+        )
+
+    return EntityQueryResult(
         payload=payload,
         status_code=resp.status_code,
         latency_ms=latency_ms,
