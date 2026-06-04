@@ -88,15 +88,48 @@ async def enrich_target_cadastral(
     ).scalar_one_or_none()
 
     if target is None:
-        return CadastralEnrichmentOutcome(
-            ok=False,
-            found=False,
-            cnpj=None,
-            company_id=None,
-            raw_id=None,
-            applied=[],
-            errors=["dossie sem empresa-alvo (TARGET) — cadastro nao persistido"],
+        # Fallback find-or-create: a empresa-alvo (TARGET) normalmente nasce em
+        # absorb_graph_from_human_input no submit do cadastro. Mas o node de
+        # enriquecimento NAO pode depender dessa ordem/forma — playbook custom
+        # pode nao ter um cadastro com as chaves de grafo, ou o node pode rodar
+        # antes. Como o dossie ja conhece o alvo (target_cnpj/target_name
+        # setados na criacao OU por absorb_identity), criamos a TARGET aqui.
+        # absorb_graph depois faz upsert na mesma linha (role=TARGET), sem
+        # duplicar.
+        from app.modules.credito.services.dossier import get_dossier
+
+        dossier = await get_dossier(
+            db, tenant_id=tenant_id, dossier_id=dossier_id
         )
+        dossier_cnpj = (
+            "".join(ch for ch in (dossier.target_cnpj or "") if ch.isdigit())
+            if dossier
+            else ""
+        )
+        if len(dossier_cnpj) != 14:
+            return CadastralEnrichmentOutcome(
+                ok=False,
+                found=False,
+                cnpj=(dossier.target_cnpj if dossier else None),
+                company_id=None,
+                raw_id=None,
+                applied=[],
+                errors=[
+                    "dossie sem empresa-alvo: nao ha TARGET persistido nem "
+                    "target_cnpj valido (14 digitos) no dossie"
+                ],
+            )
+        target = CreditDossierCompany(
+            tenant_id=tenant_id,
+            dossier_id=dossier_id,
+            cnpj=dossier_cnpj,
+            name=(dossier.target_name or dossier_cnpj)[:255]
+            if dossier
+            else dossier_cnpj,
+            role=CompanyRole.TARGET,
+        )
+        db.add(target)
+        await db.flush()
 
     cnpj_digits = "".join(ch for ch in (target.cnpj or "") if ch.isdigit())
     if len(cnpj_digits) != 14:
