@@ -1,6 +1,7 @@
 // src/design-system/tokens/typography.ts
 // Typography scale + utility helpers.
-// Font loading is handled by Next.js layout.tsx via the `geist` npm package.
+// Font loading is handled by Next.js layout.tsx via `@/lib/fonts` (Inter,
+// next/font/google). Ver CLAUDE.md §2.
 
 export const tabular = 'tabular-nums font-[feature-settings:"lnum","tnum"]' as const
 

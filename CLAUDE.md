@@ -63,7 +63,7 @@
 > - §10 **multi-tenant absoluto** (backend) — toda tabela tem `tenant_id`, toda query escopada.
 > - §13 **adapter pattern** (backend).
 > - §14 **proveniencia + auditabilidade** (DNA do sistema).
-> - Idioma da UI em pt-BR, alias `@/*` nos imports, `cx()` em vez de `cn()`, icones Remix, fonte Geist.
+> - Idioma da UI em pt-BR, alias `@/*` nos imports, `cx()` em vez de `cn()`, icones Remix, fonte Inter.
 >
 > **Quando este modo se desliga:**
 >
@@ -125,7 +125,7 @@
 > - §11.3 **bounded contexts (backend)** — cross-import entre modulos so via `public.py`.
 > - §13 **adapter pattern** (backend).
 > - §14 **proveniencia + auditabilidade** (DNA do sistema).
-> - Idioma da UI em pt-BR, alias `@/*` nos imports, `cx()` em vez de `cn()`, icones Remix, fonte Geist.
+> - Idioma da UI em pt-BR, alias `@/*` nos imports, `cx()` em vez de `cn()`, icones Remix, fonte Inter.
 >
 > ### Hook `audit-page-consistency`
 >
@@ -174,7 +174,7 @@ Tremor Raw e referencia, nao cela. Quando "fazer como o Tremor faz" conflitar co
 | Utilitario de classes | `cx()` de `@/lib/utils` | `cn()`, `clsx()` direto, `classnames` |
 | Variantes | `tailwind-variants` | `class-variance-authority`, objetos de variantes manuais |
 | Icones | `@remixicon/react` (Ri*) | `lucide-react`, `react-icons`, `heroicons`, SVG ad-hoc |
-| Fonte | `GeistSans` | Inter, Roboto, Arial, qualquer outra |
+| Fonte | `Inter` (via `next/font/google`, centralizada em `@/lib/fonts`; tema ECharts usa `interFontFamily` para o canvas) | GeistSans, Roboto, Arial, qualquer outra |
 | Charts (core) | `src/components/charts/*` (Recharts por tras) | Nivo, Chart.js, Victory, Plotly |
 | Charts (BI complexo) | ECharts **apenas** se o chart do Tremor nao suportar o caso | ECharts para qualquer chart que o Tremor ja tenha |
 | Forms | `react-hook-form` + `zod` | Formik, uncontrolled manual |
