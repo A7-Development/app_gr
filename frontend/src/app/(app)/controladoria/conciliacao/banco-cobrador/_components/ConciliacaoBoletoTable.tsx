@@ -4,10 +4,11 @@
  * ConciliacaoBoletoTable — tabela titulo-a-titulo da conciliacao de boletos.
  *
  * Recebe as `linhas` ja filtradas pelo status (segmento ativo) e renderiza na
- * `DataTable` canonica (density compact, virtualiza >100 linhas). Colunas
- * unificadas com "—" onde nao se aplica (ex.: "So em banco" nao tem valor
- * BITFIN). Cells via `tableTokens` (regra dura §6). A coluna Status ajuda no
- * segmento "Todos"; nos demais e redundante (cheap).
+ * `DataTable` CANONICA de listagem (density default + toolbar completa: column
+ * manager, density toggle, export CSV; globalFilter via busca; virtualiza >100
+ * linhas). Colunas unificadas com "—" onde nao se aplica (ex.: "So em banco"
+ * nao tem valor BITFIN). Cells via `tableTokens` (regra dura §6). A coluna
+ * Status ajuda no segmento "Todos"; nos demais e redundante (cheap).
  */
 
 import * as React from "react"
@@ -143,16 +144,51 @@ const COLUMNS: ColumnDef<LinhaConciliacaoBoleto, unknown>[] = [
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
 ]
 
-export function ConciliacaoBoletoTable({ linhas }: { linhas: LinhaConciliacaoBoleto[] }) {
+function exportarCsv(rows: LinhaConciliacaoBoleto[]) {
+  const head = [
+    "Status", "Numero", "Produto", "Banco", "Cedente", "Venc BITFIN",
+    "Venc banco", "Valor BITFIN", "Valor banco", "Dif valor", "Dif dias",
+  ]
+  const esc = (v: string | number | null | undefined) => {
+    const s = v === null || v === undefined ? "" : String(v)
+    return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const corpo = rows.map((r) =>
+    [
+      STATUS_META[r.status]?.label ?? r.status,
+      r.numero, r.produto ?? "", r.banco ?? "", r.cedente_documento ?? "",
+      r.venc_bitfin ?? "", r.venc_banco ?? "",
+      r.valor_bitfin ?? "", r.valor_banco ?? "",
+      r.diferenca_valor ?? "", r.diferenca_dias ?? "",
+    ].map(esc).join(";"),
+  )
+  const csv = [head.join(";"), ...corpo].join("\n")
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = "conciliacao-boletos.csv"
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export function ConciliacaoBoletoTable({
+  linhas,
+  globalFilter,
+}: {
+  linhas: LinhaConciliacaoBoleto[]
+  globalFilter?: string
+}) {
   return (
     <DataTable
       data={linhas}
       columns={COLUMNS}
-      density="compact"
-      showColumnManager={false}
-      showDensityToggle={false}
-      showExport={false}
-      className="rounded border border-gray-200 dark:border-gray-800"
+      density="default"
+      showColumnManager
+      showDensityToggle
+      showExport
+      globalFilter={globalFilter}
+      onExport={(_format, rows) => exportarCsv(rows)}
     />
   )
 }

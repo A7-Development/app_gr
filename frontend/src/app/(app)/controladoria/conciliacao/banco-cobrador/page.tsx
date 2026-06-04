@@ -26,7 +26,7 @@ import { Card } from "@/components/tremor/Card"
 import { TabNavigation, TabNavigationLink } from "@/components/tremor/TabNavigation"
 import { PageHeader } from "@/design-system/components/PageHeader"
 import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
-import { FilterChip } from "@/design-system/components/FilterBar"
+import { FilterChip, FilterSearch } from "@/design-system/components/FilterBar"
 import { KpiStrip, KpiCard } from "@/design-system/components/KpiStrip"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { AIPanel, useAIPanel } from "@/design-system/components/AIPanel"
@@ -73,6 +73,7 @@ export default function ConciliacaoBancoCobradorPage() {
   }, [datas, dataRef])
 
   const [segmento, setSegmento] = React.useState<Segmento>("todos")
+  const [search, setSearch] = React.useState("")
 
   const q = useConciliacaoBancoCobrador(dataRef)
   const conc = q.data
@@ -174,6 +175,13 @@ export default function ConciliacaoBancoCobradorPage() {
           )}
         >
           <div className="flex h-[52px] items-center gap-2 px-6">
+            <FilterSearch
+              placeholder="Buscar número, produto, cedente…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onClear={() => setSearch("")}
+            />
+
             <FilterChip
               label="Data-base"
               value={fmtDateBR(dataRef)}
@@ -266,7 +274,7 @@ export default function ConciliacaoBancoCobradorPage() {
                   className="mt-4"
                 />
               ) : (
-                <ConciliacaoBoletoTable linhas={linhasFiltradas} />
+                <ConciliacaoBoletoTable linhas={linhasFiltradas} globalFilter={search} />
               )}
             </div>
           )}
