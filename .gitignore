@@ -75,3 +75,4 @@ backend/payload_*.json
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 .mcp.json
+.claude/skills/
