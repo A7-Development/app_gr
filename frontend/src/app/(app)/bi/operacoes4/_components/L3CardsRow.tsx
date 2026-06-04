@@ -28,8 +28,6 @@ import { cx } from "@/lib/utils"
 
 import {
   MOCK_HIST_PRAZO,
-  MOCK_HIST_TAXAS_MTD,
-  MOCK_MEDIANA_TAXAS_MTD,
   MOCK_PRAZO_DELTA_DIAS,
   MOCK_PRAZO_MEDIO_MTD,
   MOCK_TAXA_MEDIA_POR_PRODUTO,
@@ -65,11 +63,29 @@ function fmtPct(v: number, casas = 2): string {
 // ─── Card 1: Distribuição de taxas · MTD (histograma + drill stub) ─────────
 
 function HistTaxasCard({
+  filters,
   onBucketClick,
 }: {
+  filters: BIFilters
   onBucketClick?: (bucketIdx: number) => void
 }) {
-  const buckets = MOCK_HIST_TAXAS_MTD
+  // Dados reais do mes (substitui MOCK_HIST_TAXAS_MTD): histograma ponderado
+  // por VOP MTD + wavg (identica ao termometro) + mediana ponderada por VOP.
+  const q = useQuery({
+    queryKey: ["bi", "operacoes4", "lens-taxas", filters],
+    queryFn: () => biOperacoes4.lensTaxas(filters),
+  })
+  const data = q.data?.data
+
+  const buckets = React.useMemo<HistogramBucket[]>(
+    () =>
+      (data?.histograma ?? []).map((b) => ({
+        label: b.label,
+        vop_mtd: typeof b.vop_mtd === "string" ? Number(b.vop_mtd) : b.vop_mtd,
+        is_tail: b.is_tail,
+      })),
+    [data],
+  )
   const option = React.useMemo<EChartsOption>(
     () => buildHistOption(buckets, COLOR_NAVY, COLOR_RED, COLOR_BLUE_HOVER),
     [buckets],
@@ -94,8 +110,14 @@ function HistTaxasCard({
         title="Distribuição de taxas · MTD"
         caption="5 faixas · ponderado por VOP MTD"
         headerKpi={{
-          value: fmtPct(MOCK_WAVG_TAXAS_MTD),
-          deltaSub: `wavg · med. ${fmtPct(MOCK_MEDIANA_TAXAS_MTD)}`,
+          value: data ? fmtPct(data.wavg_pct) : "—",
+          delta:
+            data?.delta_pct != null
+              ? { value: data.delta_pct, suffix: "%", fractionDigits: 1 }
+              : undefined,
+          deltaSub: data
+            ? `wavg · med. ${fmtPct(data.mediana_pct)}`
+            : "wavg · med.",
         }}
         actions={<DrillPill />}
         option={option}
@@ -405,7 +427,7 @@ export function L3CardsRow({
 }) {
   return (
     <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <HistTaxasCard onBucketClick={onBucketTaxasClick} />
+      <HistTaxasCard filters={filters} onBucketClick={onBucketTaxasClick} />
       <TaxasPorProdutoCard />
       <PrazoHistCard />
       <ComposicaoReceitaCard filters={filters} />

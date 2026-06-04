@@ -164,6 +164,51 @@ class Operacoes4LensReceitasData(BaseModel):
     )
 
 
+class Operacoes4TaxaBucket(BaseModel):
+    """1 faixa do histograma de taxas MTD (L3 card 1).
+
+    `vop_mtd` e o volume (total_bruto) das operacoes cuja taxa cai na faixa,
+    no MTD do mes corrente. `is_tail` marca a faixa de cauda (>3,5%) — pintada
+    em vermelho no frontend.
+    """
+
+    label: str = Field(description="Ex.: '<2,0', '2,0-2,5', '>3,5'")
+    vop_mtd: Decimal = Field(description="VOP MTD das operacoes na faixa (BRL)")
+    is_tail: bool = Field(default=False)
+
+
+class Operacoes4LensTaxasData(BaseModel):
+    """Bundle do endpoint `/bi/operacoes4/lens-taxas`.
+
+    Alimenta a L3 card 1 (Distribuicao de taxas · MTD). Histograma de 5 faixas
+    fixas ponderadas por VOP MTD + taxa media ponderada (wavg, identica ao
+    termometro) + mediana ponderada por VOP. `delta_pct` compara o wavg MTD vs
+    o wavg dos mesmos N DUs do mes anterior (paridade DU) — None quando nao ha
+    base. Toda query passa por `_apply_filters` com escopo de tenant (§7.2).
+    """
+
+    histograma: list[Operacoes4TaxaBucket] = Field(
+        description="Sempre 5 faixas, na ordem crescente de taxa"
+    )
+    wavg_pct: float = Field(
+        description="Taxa media ponderada por VOP no MTD (% a.m.)"
+    )
+    mediana_pct: float = Field(
+        description="Taxa mediana ponderada por VOP no MTD (% a.m.)"
+    )
+    delta_pct: float | None = Field(
+        description="wavg MTD vs wavg dos mesmos N DUs do mes anterior (%)"
+    )
+    n_operacoes: int = Field(description="Operacoes efetivadas no MTD")
+
+    mes_label: str = Field(description="Ex.: 'jun/26'")
+    du_decorridos: int
+    du_totais_mes: int
+    du_disponivel: bool = Field(
+        description="False = wh_dim_dia_util vazia (degraded mode)"
+    )
+
+
 class Operacoes4ReceitaPorDia(BaseModel):
     """Receita + yield agregados por dia (1 linha por data calendario).
 

@@ -1876,6 +1876,25 @@ export type Operacoes4LensReceitasData = {
   du_disponivel: boolean
 }
 
+export type Operacoes4TaxaBucket = {
+  label: string
+  /** VOP MTD das operacoes na faixa (Decimal serializado). */
+  vop_mtd: string | number
+  is_tail: boolean
+}
+
+export type Operacoes4LensTaxasData = {
+  histograma: Operacoes4TaxaBucket[]
+  wavg_pct: number
+  mediana_pct: number
+  delta_pct: number | null
+  n_operacoes: number
+  mes_label: string
+  du_decorridos: number
+  du_totais_mes: number
+  du_disponivel: boolean
+}
+
 export type Operacoes4DiariaPonto = {
   du: number
   data: string
@@ -1901,6 +1920,10 @@ export const biOperacoes4 = {
   lensReceitas: (f: BIFilters) =>
     apiClient.get<BIResponse<Operacoes4LensReceitasData>>(
       `/bi/operacoes4/lens-receitas${filtersToQueryString(f)}`,
+    ),
+  lensTaxas: (f: BIFilters) =>
+    apiClient.get<BIResponse<Operacoes4LensTaxasData>>(
+      `/bi/operacoes4/lens-taxas${filtersToQueryString(f)}`,
     ),
   diaria: (f: BIFilters) =>
     apiClient.get<BIResponse<Operacoes4DiariaData>>(

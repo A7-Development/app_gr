@@ -20,6 +20,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.bi.schemas.common import Provenance
@@ -27,24 +28,30 @@ from app.modules.bi.schemas.operacoes4 import (
     Operacoes4DiariaData,
     Operacoes4DiariaPonto,
     Operacoes4LensReceitasData,
+    Operacoes4LensTaxasData,
     Operacoes4Mover,
     Operacoes4Movers,
     Operacoes4ReceitaComposicaoItem,
     Operacoes4ReceitaTipo,
+    Operacoes4TaxaBucket,
     Operacoes4YieldPonto,
 )
 from app.modules.bi.services.operacoes import (
     _MES_PT,
+    _apply_filters,
+    _as_float,
     _build_provenance,
     _calcular_receita_composicao,
     _calcular_receita_por_dia,
     _calcular_yield_du,
 )
 from app.modules.bi.services.operacoes2 import (
+    _agg_kpi,
     _du_position,
     _mes_anterior_paridade_du,
     _vop_diario_mes_corrente,
 )
+from app.warehouse.operacao import Operacao
 
 _ONE_DAY = timedelta(days=1)
 
@@ -69,6 +76,48 @@ _BUCKET_TO_ENUM: dict[str, Operacoes4ReceitaTipo] = {
     "tarifas_operacionais": Operacoes4ReceitaTipo.TARIFAS_OPERACIONAIS,
     "outras": Operacoes4ReceitaTipo.OUTRAS,
 }
+
+# Histograma de taxas (L3 card 1) — 5 faixas fixas, herdadas do proto Hi-Fi.
+# Bordas em pontos percentuais; ultima faixa (>3,5) e cauda. Labels casam com
+# o MOCK original pra nao gerar regressao visual vs handoff.
+_TAXA_BUCKET_EDGES: tuple[float, ...] = (2.0, 2.5, 3.0, 3.5)
+# En dash via escape — casa com o label do proto Hi-Fi sem disparar RUF001.
+_D = chr(0x2013)
+_TAXA_BUCKET_LABELS: tuple[str, ...] = (
+    "<2,0",
+    f"2,0{_D}2,5",
+    f"2,5{_D}3,0",
+    f"3,0{_D}3,5",
+    ">3,5",
+)
+
+
+def _taxa_bucket_index(taxa: float) -> int:
+    """Indice da faixa para uma taxa (% a.m.). Ultima faixa = cauda >3,5."""
+    for i, edge in enumerate(_TAXA_BUCKET_EDGES):
+        if taxa < edge:
+            return i
+    return len(_TAXA_BUCKET_EDGES)
+
+
+def _weighted_median(pairs: list[tuple[float, float]]) -> float:
+    """Mediana de `taxa` ponderada por `peso` (VOP).
+
+    Retorna a taxa no ponto onde a metade do peso acumulado e atingida. 0.0
+    quando nao ha peso positivo. Consistente com a ponderacao por VOP do resto
+    do card (wavg, histograma).
+    """
+    valid = [(t, w) for t, w in pairs if w > 0]
+    if not valid:
+        return 0.0
+    valid.sort(key=lambda p: p[0])
+    half = sum(w for _, w in valid) / 2.0
+    acc = 0.0
+    for taxa, peso in valid:
+        acc += peso
+        if acc >= half:
+            return taxa
+    return valid[-1][0]
 
 
 def _is_atypical(delta_pct: float | None, share_pct: float) -> bool:
@@ -281,6 +330,91 @@ async def get_lens_receitas(
         yield_delta_pp=yield_data["yield_delta_pp"],
         yield_parity_wavg=yield_data["yield_parity_wavg"],
         movers=movers,
+        mes_label=mes_label,
+        du_decorridos=du_decorridos if du_disponivel else 0,
+        du_totais_mes=du_totais if du_disponivel else 0,
+        du_disponivel=du_disponivel,
+    )
+
+    prov = await _build_provenance(db, tenant_id, mtd_filters)
+    return data, prov
+
+
+async def get_lens_taxas(
+    db: AsyncSession,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+) -> tuple[Operacoes4LensTaxasData, Provenance]:
+    """Bundle da L3 card 1 — distribuicao de taxas MTD ponderada por VOP.
+
+    Histograma de 5 faixas fixas (<2,0 .. >3,5) com VOP MTD por faixa, taxa
+    media ponderada por VOP (wavg — identica ao termometro) e mediana
+    ponderada por VOP. `delta_pct` = wavg MTD vs wavg dos mesmos N DUs do mes
+    anterior (paridade DU); degrada para mes anterior cheio quando
+    wh_dim_dia_util esta vazia.
+
+    Toda query passa por `_apply_filters` (CLAUDE.md §7.2).
+    """
+    periodo_fim = filters.get("periodo_fim")
+    today = periodo_fim or date.today()
+    mes_inicio = today.replace(day=1)
+    mes_label = f"{_MES_PT[today.month - 1]}/{today.year % 100:02d}"
+
+    mtd_filters = {**filters, "periodo_inicio": mes_inicio, "periodo_fim": today}
+
+    du_disponivel, du_decorridos, du_totais = await _du_position(
+        db, tenant_id, today
+    )
+    if du_disponivel and du_decorridos > 0:
+        mes_ant_par_inicio, mes_ant_par_fim = await _mes_anterior_paridade_du(
+            db, tenant_id, today, du_decorridos
+        )
+    else:
+        mes_ant_par_inicio = (mes_inicio - _ONE_DAY).replace(day=1)
+        mes_ant_par_fim = mes_inicio - _ONE_DAY
+    par_filters = {
+        **filters,
+        "periodo_inicio": mes_ant_par_inicio,
+        "periodo_fim": mes_ant_par_fim,
+    }
+
+    # wavg via _agg_kpi — garante paridade EXATA com a taxa do termometro
+    # (mesma ponderacao por total_bruto, mesmo escopo).
+    agg_mtd = await _agg_kpi(db, tenant_id, mtd_filters)
+    agg_par = await _agg_kpi(db, tenant_id, par_filters)
+    wavg = agg_mtd["taxa"]
+    par_wavg = agg_par["taxa"]
+    delta_pct = ((wavg / par_wavg) - 1.0) * 100.0 if par_wavg else None
+
+    # Pares (taxa, vop) do MTD — base do histograma e da mediana ponderada.
+    stmt = _apply_filters(
+        select(Operacao.taxa_de_juros, Operacao.total_bruto),
+        tenant_id=tenant_id,
+        **mtd_filters,
+    )
+    rows = (await db.execute(stmt)).all()
+    pairs = [(_as_float(t), _as_float(v)) for t, v in rows]
+
+    bucket_vop = [0.0] * len(_TAXA_BUCKET_LABELS)
+    for taxa, vop in pairs:
+        bucket_vop[_taxa_bucket_index(taxa)] += vop
+
+    last_idx = len(_TAXA_BUCKET_LABELS) - 1
+    histograma = [
+        Operacoes4TaxaBucket(
+            label=_TAXA_BUCKET_LABELS[i],
+            vop_mtd=Decimal(str(bucket_vop[i])),
+            is_tail=(i == last_idx),
+        )
+        for i in range(len(_TAXA_BUCKET_LABELS))
+    ]
+
+    data = Operacoes4LensTaxasData(
+        histograma=histograma,
+        wavg_pct=wavg,
+        mediana_pct=_weighted_median(pairs),
+        delta_pct=delta_pct,
+        n_operacoes=len(pairs),
         mes_label=mes_label,
         du_decorridos=du_decorridos if du_disponivel else 0,
         du_totais_mes=du_totais if du_disponivel else 0,
