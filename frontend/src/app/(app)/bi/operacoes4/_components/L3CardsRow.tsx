@@ -105,8 +105,8 @@ function HistTaxasCard({
         headerKpi={{
           value: data ? fmtPct(data.wavg_pct) : "—",
           delta:
-            data?.delta_pct != null
-              ? { value: data.delta_pct, suffix: "%", fractionDigits: 1 }
+            data?.delta_pp != null
+              ? { value: data.delta_pp, suffix: " p.p.", fractionDigits: 2 }
               : undefined,
           deltaSub: "ponderada",
         }}

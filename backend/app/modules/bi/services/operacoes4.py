@@ -410,7 +410,9 @@ async def get_lens_taxas(
     agg_par = await _agg_kpi(db, tenant_id, par_filters)
     wavg = agg_mtd["taxa"]
     par_wavg = agg_par["taxa"]
-    delta_pct = ((wavg / par_wavg) - 1.0) * 100.0 if par_wavg else None
+    # Diferenca em pontos percentuais (nao variacao relativa) — mais clara pra
+    # comparar duas taxas. None quando nao ha base no mes anterior.
+    delta_pp = (wavg - par_wavg) if par_wavg else None
 
     # Pares (taxa, vop) do MTD — base do histograma e da mediana ponderada.
     stmt = _apply_filters(
@@ -466,7 +468,7 @@ async def get_lens_taxas(
         por_produto=por_produto,
         wavg_pct=wavg,
         mediana_pct=_weighted_median(pairs),
-        delta_pct=delta_pct,
+        delta_pp=delta_pp,
         n_operacoes=len(pairs),
         mes_label=mes_label,
         du_decorridos=du_decorridos if du_disponivel else 0,

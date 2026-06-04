@@ -212,8 +212,11 @@ class Operacoes4LensTaxasData(BaseModel):
     mediana_pct: float = Field(
         description="Taxa mediana ponderada por VOP no MTD (% a.m.)"
     )
-    delta_pct: float | None = Field(
-        description="wavg MTD vs wavg dos mesmos N DUs do mes anterior (%)"
+    delta_pp: float | None = Field(
+        description=(
+            "wavg MTD menos wavg dos mesmos N DUs do mes anterior, em pontos "
+            "percentuais (diferenca direta, nao variacao relativa). None sem base."
+        )
     )
     n_operacoes: int = Field(description="Operacoes efetivadas no MTD")
 
