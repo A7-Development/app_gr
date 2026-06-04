@@ -105,6 +105,7 @@ import {
   JOURNEY_HINT,
   JOURNEY_LABEL,
   JOURNEY_ORDER,
+  PRIMITIVE_TYPES,
 } from "./_lib/etapas"
 import {
   blockingErrors,
@@ -1361,6 +1362,15 @@ function PaletteItem({
       // Quando isAgent, o HoverCard substitui o tooltip nativo.
       title={isAgent ? undefined : entry.description}
     >
+      {/* Barra de TIPO (agente/check/externo/...) — sinal de cor pre-atentivo. */}
+      <span
+        aria-hidden
+        className={cx(
+          "h-4 w-0.5 shrink-0 rounded-full",
+          PRIMITIVE_TYPES[entry.primitiveType].bar,
+          !enabled && "opacity-40",
+        )}
+      />
       <Icon
         className={cx(
           "size-4 shrink-0",
@@ -1381,6 +1391,10 @@ function PaletteItem({
         )}
       >
         {entry.label}
+      </span>
+      {/* Chip de TIPO — texto pequeno e muted (cor fica na barra). */}
+      <span className="shrink-0 text-[9px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+        {PRIMITIVE_TYPES[entry.primitiveType].label}
       </span>
       {!entry.available && (
         <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">

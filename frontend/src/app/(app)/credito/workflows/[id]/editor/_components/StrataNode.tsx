@@ -40,11 +40,12 @@ import {
   type RemixiconComponentType,
 } from "@remixicon/react"
 
-import { NODE_CATEGORY_COLOR, type NodeTypeMeta } from "@/lib/credito-client"
+import { type NodeTypeMeta } from "@/lib/credito-client"
 import { varTypeMeta } from "@/design-system/tokens/var-type"
 import { cx } from "@/lib/utils"
 
 import { AGENT_FRIENDLY_LABEL, ETAPA_LABEL, getEtapaLabel } from "../_lib/glossary"
+import { primitiveTypeFor } from "../_lib/etapas"
 
 const ICON_MAP: Record<string, RemixiconComponentType> = {
   RiPlayCircleLine,
@@ -84,8 +85,10 @@ export function StrataNode({ data, selected }: NodeProps) {
   const d = data as unknown as StrataNodeData
   const meta = d.meta
   const Icon = meta ? ICON_MAP[meta.icon] ?? RiRobot2Line : RiRobot2Line
-  const category = meta?.category ?? "agentes"
-  const colorBg = NODE_CATEGORY_COLOR[category as keyof typeof NODE_CATEGORY_COLOR] ?? "bg-gray-500"
+  // Tile colorido por TIPO de primitivo (agente/check/externo/...), mesma
+  // linguagem de cor da palette — quem aprende "violeta = agente" na palette
+  // le o tile violeta no canvas como agente.
+  const colorBg = primitiveTypeFor(d.nodeType, meta?.category).bar
 
   const friendlyTypeLabel = ETAPA_LABEL[d.nodeType] ?? meta?.label ?? d.nodeType
   const subtitle = pickSubtitle(d)
