@@ -41,6 +41,13 @@ _BOLETO_UPDATE_COLS = (
 )
 
 
+# Postgres/asyncpg limita um statement a 32767 parametros (bind). Um retorno
+# CNAB grande (muitos titulos num dia) estoura o INSERT multi-VALUES, entao
+# inserimos em chunks. Tamanhos folgados: ocorrencia ~10 cols, boleto ~20 cols.
+_CHUNK_OCORRENCIA = 2000
+_CHUNK_BOLETO = 800
+
+
 async def persist_ocorrencias(
     db: AsyncSession,
     *,
@@ -72,7 +79,10 @@ async def persist_ocorrencias(
         }
         for o in ocorrencias
     ]
-    await db.execute(pg_insert(CnabRawOcorrencia), rows)
+    for i in range(0, len(rows), _CHUNK_OCORRENCIA):
+        await db.execute(
+            pg_insert(CnabRawOcorrencia), rows[i : i + _CHUNK_OCORRENCIA]
+        )
     return len(rows)
 
 
@@ -81,13 +91,15 @@ async def upsert_boletos(db: AsyncSession, values: list[dict[str, Any]]) -> int:
     if not values:
         return 0
     rows = [{"id": uuid4(), **v} for v in values]
-    stmt = pg_insert(Boleto).values(rows)
-    update_set: dict[str, Any] = {
-        col: getattr(stmt.excluded, col) for col in _BOLETO_UPDATE_COLS
-    }
-    update_set["ingested_at"] = func.now()
-    stmt = stmt.on_conflict_do_update(
-        constraint="uq_wh_boleto", set_=update_set
-    )
-    await db.execute(stmt)
+    for i in range(0, len(rows), _CHUNK_BOLETO):
+        chunk = rows[i : i + _CHUNK_BOLETO]
+        stmt = pg_insert(Boleto).values(chunk)
+        update_set: dict[str, Any] = {
+            col: getattr(stmt.excluded, col) for col in _BOLETO_UPDATE_COLS
+        }
+        update_set["ingested_at"] = func.now()
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_wh_boleto", set_=update_set
+        )
+        await db.execute(stmt)
     return len(rows)
