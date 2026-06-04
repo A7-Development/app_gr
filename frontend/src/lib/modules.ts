@@ -480,6 +480,13 @@ export const MODULES: ModuleDefinition[] = [
         icon: RiLineChartLine,
         groupLabel: "Inteligencia Artificial",
       },
+      {
+        name: "Provedores",
+        href: "/admin/dados/provedores",
+        enabled: true,
+        icon: RiKey2Line,
+        groupLabel: "Provedores de Dados",
+      },
     ],
   },
 ]
