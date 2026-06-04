@@ -26,14 +26,7 @@ import type {
 } from "@/lib/api-client"
 import { cx } from "@/lib/utils"
 
-import {
-  MOCK_HIST_PRAZO,
-  MOCK_PRAZO_DELTA_DIAS,
-  MOCK_PRAZO_MEDIO_MTD,
-  MOCK_TAXA_MEDIA_POR_PRODUTO,
-  MOCK_WAVG_TAXAS_MTD,
-  type HistogramBucket,
-} from "./_mocks"
+import { type HistogramBucket } from "./_mocks"
 
 // ─── Constantes visuais ─────────────────────────────────────────────────────
 
@@ -140,17 +133,24 @@ function DrillPill() {
 
 // ─── Card 2: Taxa média por produto (bar vertical) ──────────────────────────
 
-function TaxasPorProdutoCard() {
-  // MOCK_PR3: ordena por taxa desc.
-  const sorted = React.useMemo(
-    () =>
-      Object.entries(MOCK_TAXA_MEDIA_POR_PRODUTO).sort(
-        ([, a], [, b]) => b - a,
-      ),
-    [],
+function TaxasPorProdutoCard({ filters }: { filters: BIFilters }) {
+  // Reusa a mesma query do card 1 (lens-taxas ja traz por_produto). React
+  // Query dedup: filters identicos -> 1 unico request compartilhado.
+  const q = useQuery({
+    queryKey: ["bi", "operacoes4", "lens-taxas", filters],
+    queryFn: () => biOperacoes4.lensTaxas(filters),
+  })
+  const data = q.data?.data
+
+  // Backend ja ordena por taxa desc.
+  const labels = React.useMemo(
+    () => (data?.por_produto ?? []).map((p) => p.produto),
+    [data],
   )
-  const labels = sorted.map(([k]) => k)
-  const values = sorted.map(([, v]) => v)
+  const values = React.useMemo(
+    () => (data?.por_produto ?? []).map((p) => p.taxa_wavg_pct),
+    [data],
+  )
 
   const option = React.useMemo<EChartsOption>(
     () => ({
@@ -163,9 +163,10 @@ function TaxasPorProdutoCard() {
         axisLabel: { color: "#6B7280", fontSize: 10 },
       },
       yAxis: {
+        // min:0 — ha produtos com taxa 0% (modalidades sem juros); travar o
+        // eixo em 0 mantem a barra proporcional e honesta (§14.6).
         type: "value",
-        min: 2.4,
-        max: 3.2,
+        min: 0,
         splitNumber: 4,
         axisLine: { show: false },
         axisTick: { show: false },
@@ -213,8 +214,8 @@ function TaxasPorProdutoCard() {
       title="Distribuição de taxas · por produto"
       caption="Taxa média ponderada por produto"
       headerKpi={{
-        value: fmtPct(MOCK_WAVG_TAXAS_MTD),
-        deltaSub: "wavg geral",
+        value: data ? fmtPct(data.wavg_pct) : "—",
+        deltaSub: "média geral",
       }}
       option={option}
       height={CHART_HEIGHT}
@@ -224,16 +225,25 @@ function TaxasPorProdutoCard() {
 
 // ─── Card 3: Prazo · distribuição (histograma 6 buckets) ────────────────────
 
-function PrazoHistCard() {
-  const option = React.useMemo<EChartsOption>(
+function PrazoHistCard({ filters }: { filters: BIFilters }) {
+  const q = useQuery({
+    queryKey: ["bi", "operacoes4", "lens-prazo", filters],
+    queryFn: () => biOperacoes4.lensPrazo(filters),
+  })
+  const data = q.data?.data
+
+  const buckets = React.useMemo<HistogramBucket[]>(
     () =>
-      buildHistOption(
-        MOCK_HIST_PRAZO,
-        COLOR_NAVY,
-        COLOR_ORANGE,
-        COLOR_BLUE_HOVER,
-      ),
-    [],
+      (data?.histograma ?? []).map((b) => ({
+        label: b.label,
+        vop_mtd: typeof b.vop_mtd === "string" ? Number(b.vop_mtd) : b.vop_mtd,
+        is_tail: b.is_tail,
+      })),
+    [data],
+  )
+  const option = React.useMemo<EChartsOption>(
+    () => buildHistOption(buckets, COLOR_NAVY, COLOR_ORANGE, COLOR_BLUE_HOVER),
+    [buckets],
   )
 
   return (
@@ -241,8 +251,13 @@ function PrazoHistCard() {
       title="Prazo · distribuição"
       caption="Buckets de 15d. Cauda >90d destacada."
       headerKpi={{
-        value: `${MOCK_PRAZO_MEDIO_MTD.toFixed(1).replace(".", ",")} d`,
-        delta: { value: MOCK_PRAZO_DELTA_DIAS, suffix: " d", good: false },
+        value: data
+          ? `${data.wavg_dias.toFixed(1).replace(".", ",")} d`
+          : "—",
+        delta:
+          data?.delta_dias != null
+            ? { value: data.delta_dias, suffix: " d", good: false, fractionDigits: 1 }
+            : undefined,
         deltaSub: "média",
       }}
       option={option}
@@ -253,11 +268,13 @@ function PrazoHistCard() {
 
 // ─── Card 4: Composição receita · MTD (tabela) ─────────────────────────────
 
+// Labels canonicos (espelham receitaTipoLabel da page.tsx + schema backend):
+// desagio = total_de_juros (o desagio da cessao, ~98% da receita), nao "Cessão".
 const COMPOSICAO_LABEL: Record<Operacoes4ReceitaTipo, string> = {
-  desagio: "Cessão",
-  tarifa_cessao: "Tarifas",
-  tarifas_operacionais: "Juros",
-  outras: "Outros",
+  desagio: "Deságio",
+  tarifa_cessao: "Tarifa de cessão",
+  tarifas_operacionais: "Tarifas operacionais",
+  outras: "Outras",
 }
 const COMPOSICAO_COR: Record<Operacoes4ReceitaTipo, string> = {
   desagio: "#1B2B4B",
@@ -426,8 +443,8 @@ export function L3CardsRow({
   return (
     <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <HistTaxasCard filters={filters} onBucketClick={onBucketTaxasClick} />
-      <TaxasPorProdutoCard />
-      <PrazoHistCard />
+      <TaxasPorProdutoCard filters={filters} />
+      <PrazoHistCard filters={filters} />
       <ComposicaoReceitaCard filters={filters} />
     </section>
   )

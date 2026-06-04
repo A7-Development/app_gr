@@ -17,22 +17,27 @@ from decimal import Decimal
 import pytest
 
 from app.modules.bi.schemas.operacoes4 import (
+    Operacoes4LensPrazoData,
     Operacoes4LensReceitasData,
     Operacoes4LensTaxasData,
     Operacoes4Mover,
     Operacoes4Movers,
+    Operacoes4PrazoBucket,
     Operacoes4ReceitaComposicaoItem,
     Operacoes4ReceitaTipo,
     Operacoes4TaxaBucket,
+    Operacoes4TaxaPorProdutoItem,
     Operacoes4YieldPonto,
 )
 from app.modules.bi.services.operacoes import _alocar_receita_por_cedente
 from app.modules.bi.services.operacoes4 import (
     _BUCKET_TO_ENUM,
     _BUCKETS_ORDER,
+    _PRAZO_BUCKET_LABELS,
     _TAXA_BUCKET_LABELS,
     _is_atypical,
     _pick_movers,
+    _prazo_bucket_index,
     _taxa_bucket_index,
     _weighted_median,
 )
@@ -207,6 +212,24 @@ def test_taxa_bucket_index_cobre_5_faixas() -> None:
     assert _taxa_bucket_index(9.9) == len(_TAXA_BUCKET_LABELS) - 1
 
 
+# ─── _prazo_bucket_index ───────────────────────────────────────────────────
+
+
+def test_prazo_bucket_index_cobre_6_faixas() -> None:
+    """Bordas (15/30/45/60/90) classificam nas 6 faixas de prazo esperadas."""
+    assert _prazo_bucket_index(0.0) == 0  # 0-15
+    assert _prazo_bucket_index(14.9) == 0
+    assert _prazo_bucket_index(15.0) == 1  # 15-30
+    assert _prazo_bucket_index(29.9) == 1
+    assert _prazo_bucket_index(30.0) == 2
+    assert _prazo_bucket_index(45.0) == 3
+    assert _prazo_bucket_index(60.0) == 4  # 60-90
+    assert _prazo_bucket_index(89.9) == 4
+    assert _prazo_bucket_index(90.0) == 5  # cauda >90
+    assert _prazo_bucket_index(365.0) == 5
+    assert _prazo_bucket_index(365.0) == len(_PRAZO_BUCKET_LABELS) - 1
+
+
 # ─── _weighted_median ──────────────────────────────────────────────────────
 
 
@@ -239,6 +262,7 @@ def test_lens_taxas_schema_aceita_5_faixas() -> None:
             )
             for i, label in enumerate(_TAXA_BUCKET_LABELS)
         ],
+        por_produto=[],
         wavg_pct=2.45,
         mediana_pct=2.70,
         delta_pct=-1.2,
@@ -251,6 +275,58 @@ def test_lens_taxas_schema_aceita_5_faixas() -> None:
     assert len(data.histograma) == 5
     assert data.histograma[-1].is_tail is True
     assert data.wavg_pct == pytest.approx(2.45)
+
+
+def test_lens_taxas_schema_por_produto() -> None:
+    """por_produto aceita quebra por produto com taxa wavg + vop."""
+    data = Operacoes4LensTaxasData(
+        histograma=[
+            Operacoes4TaxaBucket(label=lbl, vop_mtd=Decimal("0"))
+            for lbl in _TAXA_BUCKET_LABELS
+        ],
+        por_produto=[
+            Operacoes4TaxaPorProdutoItem(
+                produto="FAT", taxa_wavg_pct=2.29, vop_mtd=Decimal("2126193")
+            ),
+            Operacoes4TaxaPorProdutoItem(
+                produto="CBV", taxa_wavg_pct=0.0, vop_mtd=Decimal("324379")
+            ),
+        ],
+        wavg_pct=2.45,
+        mediana_pct=2.70,
+        delta_pct=None,
+        n_operacoes=36,
+        mes_label="jun/26",
+        du_decorridos=3,
+        du_totais_mes=21,
+        du_disponivel=True,
+    )
+    assert data.por_produto[0].produto == "FAT"
+    assert data.por_produto[1].taxa_wavg_pct == pytest.approx(0.0)
+
+
+def test_lens_prazo_schema_aceita_6_faixas() -> None:
+    """Schema de prazo valida histograma de 6 faixas + wavg/delta em dias."""
+    data = Operacoes4LensPrazoData(
+        histograma=[
+            Operacoes4PrazoBucket(
+                label=label,
+                vop_mtd=Decimal("1000.00"),
+                is_tail=(i == len(_PRAZO_BUCKET_LABELS) - 1),
+            )
+            for i, label in enumerate(_PRAZO_BUCKET_LABELS)
+        ],
+        wavg_dias=29.9,
+        delta_dias=1.6,
+        n_operacoes=36,
+        mes_label="jun/26",
+        du_decorridos=3,
+        du_totais_mes=21,
+        du_disponivel=True,
+    )
+    assert len(data.histograma) == 6
+    assert data.histograma[-1].is_tail is True
+    assert data.wavg_dias == pytest.approx(29.9)
 
 
 def test_buckets_order_bate_com_enum() -> None:

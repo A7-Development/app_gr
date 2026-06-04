@@ -22,6 +22,7 @@ from app.modules.bi.api.deps import bi_filters
 from app.modules.bi.schemas.common import BIFilters, BIResponse
 from app.modules.bi.schemas.operacoes4 import (
     Operacoes4DiariaData,
+    Operacoes4LensPrazoData,
     Operacoes4LensReceitasData,
     Operacoes4LensTaxasData,
 )
@@ -70,6 +71,25 @@ async def lens_taxas(
     mesmos N DUs do mes anterior. Toda query passa por `_apply_filters` (§7.2).
     """
     data, prov = await svc.get_lens_taxas(
+        db, principal.tenant_id, _filter_dict(filters)
+    )
+    return BIResponse(data=data, provenance=prov)
+
+
+@router.get("/lens-prazo", response_model=BIResponse[Operacoes4LensPrazoData])
+async def lens_prazo(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    filters: Annotated[BIFilters, Depends(bi_filters)],
+    _: None = _Guard,
+) -> BIResponse[Operacoes4LensPrazoData]:
+    """Distribuicao de prazo MTD — histograma 6 faixas de 15d + prazo medio.
+
+    Ponderado por VOP MTD (wh_operacao, regime caixa). Prazo medio identico ao
+    termometro; `delta_dias` compara o prazo medio vs os mesmos N DUs do mes
+    anterior. Toda query passa por `_apply_filters` (§7.2).
+    """
+    data, prov = await svc.get_lens_prazo(
         db, principal.tenant_id, _filter_dict(filters)
     )
     return BIResponse(data=data, provenance=prov)

@@ -20,20 +20,23 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.bi.schemas.common import Provenance
 from app.modules.bi.schemas.operacoes4 import (
     Operacoes4DiariaData,
     Operacoes4DiariaPonto,
+    Operacoes4LensPrazoData,
     Operacoes4LensReceitasData,
     Operacoes4LensTaxasData,
     Operacoes4Mover,
     Operacoes4Movers,
+    Operacoes4PrazoBucket,
     Operacoes4ReceitaComposicaoItem,
     Operacoes4ReceitaTipo,
     Operacoes4TaxaBucket,
+    Operacoes4TaxaPorProdutoItem,
     Operacoes4YieldPonto,
 )
 from app.modules.bi.services.operacoes import (
@@ -44,6 +47,8 @@ from app.modules.bi.services.operacoes import (
     _calcular_receita_composicao,
     _calcular_receita_por_dia,
     _calcular_yield_du,
+    _produto_expr,
+    _weighted_avg,
 )
 from app.modules.bi.services.operacoes2 import (
     _agg_kpi,
@@ -118,6 +123,27 @@ def _weighted_median(pairs: list[tuple[float, float]]) -> float:
         if acc >= half:
             return taxa
     return valid[-1][0]
+
+
+# Histograma de prazo (L3 card 3) — 6 faixas de 15 dias, herdadas do proto.
+# Ultima faixa (>90) e cauda. Bordas em dias.
+_PRAZO_BUCKET_EDGES: tuple[float, ...] = (15.0, 30.0, 45.0, 60.0, 90.0)
+_PRAZO_BUCKET_LABELS: tuple[str, ...] = (
+    f"0{_D}15",
+    f"15{_D}30",
+    f"30{_D}45",
+    f"45{_D}60",
+    f"60{_D}90",
+    ">90",
+)
+
+
+def _prazo_bucket_index(prazo: float) -> int:
+    """Indice da faixa para um prazo (dias). Ultima faixa = cauda >90."""
+    for i, edge in enumerate(_PRAZO_BUCKET_EDGES):
+        if prazo < edge:
+            return i
+    return len(_PRAZO_BUCKET_EDGES)
 
 
 def _is_atypical(delta_pct: float | None, share_pct: float) -> bool:
@@ -409,11 +435,118 @@ async def get_lens_taxas(
         for i in range(len(_TAXA_BUCKET_LABELS))
     ]
 
+    # Quebra por produto (card 2) — taxa wavg por produto, ordenada desc.
+    prod_stmt = _apply_filters(
+        select(
+            _produto_expr().label("produto"),
+            _weighted_avg(Operacao.taxa_de_juros, Operacao.total_bruto).label(
+                "taxa"
+            ),
+            func.coalesce(func.sum(Operacao.total_bruto), 0).label("vop"),
+        ).group_by(_produto_expr()),
+        tenant_id=tenant_id,
+        **mtd_filters,
+    )
+    prod_rows = (await db.execute(prod_stmt)).all()
+    por_produto = sorted(
+        (
+            Operacoes4TaxaPorProdutoItem(
+                produto=r.produto or "—",
+                taxa_wavg_pct=_as_float(r.taxa),
+                vop_mtd=Decimal(str(_as_float(r.vop))),
+            )
+            for r in prod_rows
+        ),
+        key=lambda p: p.taxa_wavg_pct,
+        reverse=True,
+    )
+
     data = Operacoes4LensTaxasData(
         histograma=histograma,
+        por_produto=por_produto,
         wavg_pct=wavg,
         mediana_pct=_weighted_median(pairs),
         delta_pct=delta_pct,
+        n_operacoes=len(pairs),
+        mes_label=mes_label,
+        du_decorridos=du_decorridos if du_disponivel else 0,
+        du_totais_mes=du_totais if du_disponivel else 0,
+        du_disponivel=du_disponivel,
+    )
+
+    prov = await _build_provenance(db, tenant_id, mtd_filters)
+    return data, prov
+
+
+async def get_lens_prazo(
+    db: AsyncSession,
+    tenant_id: UUID,
+    filters: dict[str, Any],
+) -> tuple[Operacoes4LensPrazoData, Provenance]:
+    """Bundle da L3 card 3 — distribuicao de prazo MTD ponderada por VOP.
+
+    Histograma de 6 faixas de 15 dias (0-15 .. >90) com VOP MTD por faixa,
+    prazo medio ponderado por VOP (identico ao termometro) e `delta_dias` =
+    prazo medio MTD menos prazo medio dos mesmos N DUs do mes anterior
+    (paridade DU), em dias. Toda query passa por `_apply_filters` (§7.2).
+    """
+    periodo_fim = filters.get("periodo_fim")
+    today = periodo_fim or date.today()
+    mes_inicio = today.replace(day=1)
+    mes_label = f"{_MES_PT[today.month - 1]}/{today.year % 100:02d}"
+
+    mtd_filters = {**filters, "periodo_inicio": mes_inicio, "periodo_fim": today}
+
+    du_disponivel, du_decorridos, du_totais = await _du_position(
+        db, tenant_id, today
+    )
+    if du_disponivel and du_decorridos > 0:
+        mes_ant_par_inicio, mes_ant_par_fim = await _mes_anterior_paridade_du(
+            db, tenant_id, today, du_decorridos
+        )
+    else:
+        mes_ant_par_inicio = (mes_inicio - _ONE_DAY).replace(day=1)
+        mes_ant_par_fim = mes_inicio - _ONE_DAY
+    par_filters = {
+        **filters,
+        "periodo_inicio": mes_ant_par_inicio,
+        "periodo_fim": mes_ant_par_fim,
+    }
+
+    # prazo medio via _agg_kpi — mesma ponderacao por total_bruto do termometro.
+    agg_mtd = await _agg_kpi(db, tenant_id, mtd_filters)
+    agg_par = await _agg_kpi(db, tenant_id, par_filters)
+    wavg_dias = agg_mtd["prazo"]
+    par_dias = agg_par["prazo"]
+    delta_dias = (wavg_dias - par_dias) if par_dias else None
+
+    # Pares (prazo, vop) do MTD — base do histograma.
+    stmt = _apply_filters(
+        select(Operacao.prazo_medio_real, Operacao.total_bruto),
+        tenant_id=tenant_id,
+        **mtd_filters,
+    )
+    rows = (await db.execute(stmt)).all()
+    pairs = [(_as_float(p), _as_float(v)) for p, v in rows]
+
+    bucket_vop = [0.0] * len(_PRAZO_BUCKET_LABELS)
+    for prazo, vop in pairs:
+        bucket_vop[_prazo_bucket_index(prazo)] += vop
+
+    last_idx = len(_PRAZO_BUCKET_LABELS) - 1
+    histograma = [
+        Operacoes4PrazoBucket(
+            label=_PRAZO_BUCKET_LABELS[i],
+            vop_mtd=Decimal(str(bucket_vop[i])),
+            is_tail=(i == last_idx),
+        )
+        for i in range(len(_PRAZO_BUCKET_LABELS))
+    ]
+
+    data = Operacoes4LensPrazoData(
+        histograma=histograma,
+        wavg_dias=wavg_dias,
+        delta_dias=delta_dias,
         n_operacoes=len(pairs),
         mes_label=mes_label,
         du_decorridos=du_decorridos if du_disponivel else 0,
