@@ -212,17 +212,75 @@ Etapa <ID> — <nome>
 
 ---
 
-## 5. Decisões transversais em aberto
+## 4.A Etapas A1 & A2 — desenho executável (campos BDC reais)
 
-1. **Unificação tool/check/node:** "uma capacidade determinística, dois pontos
-   de invocação" (node no grafo + tool no loop), ou manter checks/bureaus como
-   nodes separados das tools? *(define se são 1 conceito ou 3.)*
-2. **Consultas externas como tool** (agente decide puxar Serasa, com custo) vs
-   **só como node** (gerente controla o gasto no grafo).
-3. **Granularidade dos agentes:** um por aspecto (D1–D5) vs poucos agentes
-   "grossos". *(monolito foi aposentado no cota-sub → tendência é especialistas.)*
-4. **Score/recomendação:** determinístico (regra sobre flags) vs agêntico
-   (opinion_writer decide) — provável híbrido (regra dá o piso, agente narra).
+> Fonte dos campos: `empresas-dados-cadastrais-basicos` (R$ 0,02) — ver
+> [fontes-externas](./esteira-credito-fontes-externas.md). Política travada
+> abaixo com o Ricardo.
+
+### A1 — Abertura & Identidade (✅ persistência existe; 🟡 UX do form)
+- **Objetivo:** estabelecer e persistir quem é analisado (alvo + grupo + sócios).
+- **Inputs:** `dossier_id` (trigger). Demais campos digitados pelo analista.
+- **Dois caminhos de grupo:** (a) **conhecido na largada** → cadastro coleta
+  `coligadas[]`; (b) **descoberto no processo** → etapa de Investigação de
+  Vínculos (DEFERIDA — fontes pesadas) propõe membros e o analista homologa.
+- **Toque humano:** `human_input` (form cadastro) → submit roda
+  `absorb_graph_from_human_input` + `absorb_identity`.
+- **Produz:** `credit_dossier_company` (TARGET + GROUP_MEMBER) +
+  `credit_dossier_person` (PARTNER, ownership_pct). Idempotente.
+- **Node:** `human_input`. **Sem gate aqui** (gate é A2).
+- **Gap:** UX de sócios/coligadas (task #15); grafo de **arestas tipadas**
+  (controle empresa→empresa, parentesco, proveniência do vínculo) — pendente.
+
+### A2 — Gate de Elegibilidade (executável)
+- **Objetivo:** barrar cedo (antes do pago) com dado oficial barato.
+- **Inputs:** `target_cnpj` (A1) → `bureau_query[empresas-dados-cadastrais-basicos]`
+  (R$ 0,02) + `credit_policy` ativa.
+- **Checks (cada lê 1 campo BDC real):**
+  - `company_status_active` ← `BasicData.TaxIdStatus == "ATIVA"` (senão reprova) 🟦
+  - `company_founding_age` ← `BasicData.Age ≥ policy.min_company_age_years` 🟦 ✅
+  - `cnae_permitido` ← `BasicData.Activities[].Code` (principal + secundárias) ∉
+    `policy.cnae_vetados` 🟦
+  - *(sinal, não-gate)* `cadastral_instavel` ← `BasicData.HistoricalData`
+    (mudou nome/regime) → flag informativa de veracidade 🟦
+- **Política (`credit_policy`):** `min_company_age_years = 2` (era 3) ·
+  `cnae_vetados = [2550102, 4789009, 3311200, 8541400]` (7 dígitos,
+  normalizado — BDC devolve sem máscara, ex. `6201501`) · `status_permitidos =
+  ["ATIVA"]` · **capital: sem mínimo** (capital segue só p/ cross-check de
+  proporcionalidade).
+- **Produz:** `result(passed)` + flags (proveniência: campo BDC · esperado ·
+  observado) + persiste cadastral em `credit_dossier_company`
+  (`founding_date ← FoundedDate`; `receita_data ← BasicData` JSONB).
+- **Node(s):** `bureau_query[cadastral]` → `deterministic_check[bundle do gate]`
+  → `conditional_branch` (passou? segue : encerra).
+- **Bifurcação:** reprovou → **encerra** (parecer de inelegibilidade); aprovou → segue.
+- **Pendência de implementação:** estender `credit_policy` (`cnae_vetados`,
+  `status_permitidos`); checks novos `company_status_active` + `cnae_permitido`;
+  adapter BDC cadastral (nível mantenedor).
+
+---
+
+## 5. Decisões transversais — TRAVADAS (2026-06-04)
+
+1. **tool vs check vs node → NÃO colapsar.** `tool` (devolve DADO p/ o agente
+   ler) e `check` (devolve `CheckResult{passed,flags}` que o node materializa em
+   `decision_log`+`red_flag`) são conceitos distintos; compartilham a
+   função-núcleo; unifica-se só o princípio + a descoberta. *(AgentTool e Check
+   já coexistem hoje sob §19 — sem conflito com cota-sub.)*
+2. **Externas → node por padrão + tool sob guarda de orçamento.** Bureau pago é
+   node (gasto previsível); o agente só puxa como tool dentro de um cap por
+   dossiê. **Gate barato antes do pago.** O cap usa a **API de Preços** do BDC
+   (estima custo antes de rodar — ver fontes-externas §0.1).
+3. **Granularidade → especialista por aspecto** (~5-7 + detetive de cruzamento +
+   parecerista). Precedente: cota-sub (monolito aposentado → auditores).
+4. **Score/recomendação → híbrido:** veto duro determinístico + narrativa/
+   recomendação do `opinion_writer` + homologação humana. Score numérico 0-1000
+   **adiado** (precisa modelo §14); começa com **semáforo + elegibilidade**.
+
+> Caveats aceitos: (2) o *guard de orçamento* ainda não existe → começar
+> **node-only** e construir o cap quando o investigador precisar; as 4 cobrem a
+> arquitetura agêntica — adapters externos, conteúdo da `credit_policy` e tabelas
+> canônicas são workstreams independentes.
 
 ---
 
