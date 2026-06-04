@@ -42,8 +42,6 @@ import {
   MoreFiltersButton,
 } from "@/design-system/components/FilterBar"
 import { InsightStrip } from "@/design-system/components/InsightStrip"
-import { KpiBand } from "@/design-system/components"
-import type { KpiBandItem, KpiBandTone } from "@/design-system/components"
 import {
   AIPanel,
   useAIPanel,
@@ -376,23 +374,11 @@ export default function Operacoes4Page() {
             )}
             {bundle && (
               <>
-                {/* L1 — KpiBand (handoff 2026-05-21 + iteracao 2026-05-21):
-                    banda horizontal de 4 KPIs equivalentes (VOP, Receita,
-                    Taxa, Prazo), separados por divider vertical parcial.
-                    Pattern oficial do DS — value preto, apenas delta colorido. */}
-                <KpiBand
-                  items={[
-                    kpiBandItemFromCell("VOP", bundle.termometro.vop, "VOP-DU vs mês ant."),
-                    kpiBandItemFromCell("RECEITA", bundle.termometro.receita, "VOP-DU vs mês ant."),
-                    kpiBandItemFromCell("TAXA", bundle.termometro.taxa, "VOP-DU vs mês ant."),
-                    kpiBandItemFromCell("PRAZO", bundle.termometro.prazo, "VOP-DU vs mês ant."),
-                  ]}
-                />
-                {bundle.termometro.vop.valor === 0 && (
-                  <p className="text-[11px] italic text-gray-500 dark:text-gray-400">
-                    Aguardando primeiros DUs do mês — KPIs ainda zerados.
-                  </p>
-                )}
+                {/* L1 (KpiBand) removida 2026-06-04 — os 4 KPIs do termometro
+                    (VOP, Receita, Taxa, Prazo) agora vivem na 2a linha do header
+                    de cada grafico (padrao VOP DIARIO): VOP em VopDiarioCard,
+                    Taxa/Prazo nos cards da L3, Receita na Composicao. O pill de
+                    mes de referencia no header ainda usa bundle.termometro. */}
 
                 {/* L2 — 50/50: VOP Diário (esq) + Mix de produtos (dir) */}
                 <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -569,73 +555,6 @@ function pageHeaderSubtitle(
   const tot = bundle.du_totais_mes
   const falta = Math.max(0, tot - dec)
   return `${dec} DU${dec === 1 ? "" : "s"} decorridos de ${tot} · faltam ${falta} DU${falta === 1 ? "" : "s"}`
-}
-
-// ─── KPI helpers (L1) ──────────────────────────────────────────────────────
-
-const _fmtBRL = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL",
-  notation: "compact",
-  maximumFractionDigits: 2,
-})
-
-function formatKpiValor(
-  cell: { valor: number; unidade: string },
-): string {
-  switch (cell.unidade) {
-    case "BRL":
-      return _fmtBRL.format(cell.valor)
-    case "%":
-      return `${cell.valor.toFixed(1).replace(".", ",")}%`
-    case "dias":
-      return `${cell.valor.toFixed(1).replace(".", ",")} d`
-    default:
-      return String(cell.valor)
-  }
-}
-
-function formatDeltaPctSigned(pct: number): string {
-  const sign = pct >= 0 ? "+" : "−"
-  return `${sign}${Math.abs(pct).toFixed(2).replace(".", ",")}%`
-}
-
-function deltaToneFromValue(
-  pct: number | null | undefined,
-): KpiBandTone {
-  if (pct == null) return "neutral"
-  return pct >= 0 ? "positive" : "negative"
-}
-
-/**
- * Monta 1 item da KpiBand a partir de uma `Operacoes2MesCorrenteKpiCell`.
- * Eyebrow: "<label> · <mes>"  (ex.: "VOP · MAI/26")
- * Value: formatKpiValor (BRL/% / dias segundo unidade)
- * Delta: signed pct (only when delta_vop_du_pct nao-null) colorido por sinal
- * Sub: deltaSub passado (typicamente "VOP-DU vs mês ant.")
- */
-function kpiBandItemFromCell(
-  label: string,
-  cell: {
-    valor: number
-    unidade: string
-    delta_vop_du_pct: number | null
-    mes_label: string
-  },
-  sub: string,
-): KpiBandItem {
-  return {
-    eyebrow: `${label} · ${cell.mes_label.toUpperCase()}`,
-    value: formatKpiValor(cell),
-    delta:
-      cell.delta_vop_du_pct != null
-        ? {
-            value: formatDeltaPctSigned(cell.delta_vop_du_pct),
-            tone: deltaToneFromValue(cell.delta_vop_du_pct),
-          }
-        : undefined,
-    sub: cell.delta_vop_du_pct != null ? sub : undefined,
-  }
 }
 
 // ─── Skeleton ──────────────────────────────────────────────────────────────
