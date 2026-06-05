@@ -67,6 +67,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/tremor/Popover"
+import { Checkbox } from "@/components/tremor/Checkbox"
 
 export interface SavedView {
   id:     string
@@ -233,6 +234,69 @@ export function FilterChip({ label, value, active = false, icon: Icon, children,
         {children}
       </PopoverContent>
     </Popover>
+  )
+}
+
+// ── Multi-select (checkbox list dentro de FilterChip) ───────────────────────
+// Padrao canonico dos filtros BI (operacoes2/3/4). Use `multiLabel` no `value`
+// do FilterChip e `MultiCheckList` como children.
+
+export type MultiOption = { value: string; label: string }
+
+/** Label do chip: "Todos" / label unico / "Todos" (todos marcados) / "N selecionados". */
+export function multiLabel(
+  selected: string[] | undefined,
+  options: MultiOption[],
+  placeholder = "Todos",
+): string {
+  if (!selected || selected.length === 0) return placeholder
+  if (selected.length === 1) {
+    const opt = options.find((o) => o.value === selected[0])
+    return opt?.label ?? selected[0]
+  }
+  if (options.length > 0 && selected.length === options.length) return "Todos"
+  return `${selected.length} selecionados`
+}
+
+export function MultiCheckList({
+  options,
+  selected,
+  onChange,
+}: {
+  options: MultiOption[]
+  selected: string[]
+  onChange: (next: string[]) => void
+}) {
+  const set = React.useMemo(() => new Set(selected), [selected])
+  const toggle = React.useCallback(
+    (value: string, checked: boolean) => {
+      const next = new Set(set)
+      if (checked) next.add(value)
+      else next.delete(value)
+      onChange(Array.from(next))
+    },
+    [set, onChange],
+  )
+  return (
+    <div className="max-h-72 overflow-y-auto py-1">
+      {options.length === 0 && (
+        <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-600">
+          Nenhuma opção disponível.
+        </p>
+      )}
+      {options.map((opt) => (
+        <label
+          key={opt.value}
+          className="flex cursor-pointer items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+        >
+          <Checkbox
+            checked={set.has(opt.value)}
+            onCheckedChange={(c) => toggle(opt.value, c === true)}
+          />
+          <span className="flex-1 text-gray-700 dark:text-gray-300">{opt.label}</span>
+        </label>
+      ))}
+    </div>
   )
 }
 
