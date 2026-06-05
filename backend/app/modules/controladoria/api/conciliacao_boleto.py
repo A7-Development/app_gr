@@ -1,17 +1,17 @@
 """Controladoria · Conciliacao de boletos (Banco Cobrador) — endpoints.
 
-L2 Conciliacoes > Banco Cobrador. Cruza a carteira Bitfin (titulos abertos
-elegiveis a boleto) com os boletos ativos dos bancos cobradores numa data-base.
+L2 Conciliacoes > Banco Cobrador. Cruza a carteira Bitfin atual (titulos
+abertos elegiveis a boleto) com a cobranca vigente (boletos ativos). Estado-vs-
+estado, sem data-base; a defasagem do banco vai como frescor.
 
 Auth: require_module(CONTROLADORIA, READ). Tenant scope via principal.
 """
 
 from collections import defaultdict
-from datetime import date
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -27,7 +27,6 @@ from app.modules.controladoria.services.conciliacao_boleto import (
     ConciliacaoBoletoResult,
     LinhaConciliacao,
     conciliar_boletos,
-    listar_datas_disponiveis,
 )
 
 router = APIRouter(
@@ -89,34 +88,19 @@ def _resumir(result: ConciliacaoBoletoResult) -> list[ResumoStatus]:
 async def conciliacao_banco_cobrador(
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    data_ref: Annotated[
-        date, Query(description="Data-base da conciliacao (dia do retorno).")
-    ],
     _: None = _Guard,
 ) -> ConciliacaoBancoCobradorResponse:
-    """Conciliacao titulo-a-titulo carteira x boletos na data-base.
+    """Conciliacao titulo-a-titulo: carteira BITFIN atual x cobranca vigente.
 
-    Resumo consolidado por status + linhas. O front segmenta por status e
-    aplica filtros do tenant (ex.: Pedreira so-CBV na A7).
+    Estado-vs-estado (sem data-base). Resumo consolidado por status + linhas. O
+    front escopa por UA e aplica filtros do tenant (ex.: Pedreira so-CBV na A7).
     """
-    result = await conciliar_boletos(
-        db, tenant_id=principal.tenant_id, data_ref=data_ref
-    )
+    result = await conciliar_boletos(db, tenant_id=principal.tenant_id)
     return ConciliacaoBancoCobradorResponse(
-        data_ref=result.data_ref,
+        cobranca_atualizada_ate=result.cobranca_atualizada_ate,
         titulos_abertos=result.titulos_abertos,
         boletos_ativos=result.boletos_ativos,
         conciliados=result.conciliados,
         resumo=_resumir(result),
         linhas=[_mapear_linha(linha) for linha in result.linhas],
     )
-
-
-@router.get("/datas", response_model=list[date])
-async def datas_disponiveis(
-    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    _: None = _Guard,
-) -> list[date]:
-    """Datas-base com boletos ingeridos (para o seletor da pagina)."""
-    return await listar_datas_disponiveis(db, tenant_id=principal.tenant_id)

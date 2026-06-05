@@ -1,22 +1,21 @@
 // src/app/(app)/controladoria/conciliacao/banco-cobrador/page.tsx
 //
 // Controladoria · Conciliacao · Banco Cobrador (Entrega 3, item 2).
-// Cruza a carteira Bitfin (titulos abertos elegiveis a boleto) x boletos
-// ativos dos bancos cobradores (retorno CNAB).
+// Conciliacao ESTADO-VS-ESTADO: carteira Bitfin ATUAL (titulos abertos
+// elegiveis a boleto) x cobranca VIGENTE (boletos ativos, projecao do fold da
+// timeline). Sem data-base -- a defasagem do banco vai como FRESCOR.
 //
 // Pattern: DashboardBiPadrao (composicao direta, anatomy de /bi/panorama):
 //   Z1 PageHeader + DashboardHeaderActions
-//   Z2 Toolbar de filtros globais: Data-base · Status · Banco · Produto ·
-//      Cedente (esquerda->direita: escopo -> mais granular)
-//   Z3 KpiStrip (resumo do dia) + DataTable canonica titulo-a-titulo
-//      (a busca por palavra mora DENTRO do card da tabela)
+//   Z2 Toolbar: UA (escopo) · Status · Banco · Produto · Cedente (lentes) +
+//      indicador de frescor (nao-filtro)
+//   Z3 Tabela-resumo (reage so a UA) + DataTable canonica titulo-a-titulo
 //   Z4 ProvenanceFooter
 // Lateral: AIPanel.
 //
-// data_ref e o escopo (re-fetcha o dia). Status/Banco/Produto/Cedente sao
-// lentes client-side sobre as linhas do dia; o KpiStrip mostra o resumo do
-// DIA INTEIRO (visao geral), nao reage aos chips. Exclusoes de tenant (ex.:
-// Pedreira so-CBV) saem desses filtros (backend expoe cedente_documento).
+// UA = ESCOPO (resumo reflete). Status/Banco/Produto/Cedente = lentes
+// client-side (so o detalhe). Exclusoes de tenant (ex.: Pedreira so-CBV) saem
+// desses filtros (backend expoe cedente_documento).
 
 "use client"
 
@@ -25,11 +24,11 @@ import {
   RiBankLine,
   RiBriefcase2Line,
   RiBuilding2Line,
-  RiCalendarLine,
   RiCheckLine,
   RiFilter3Line,
   RiInboxArchiveLine,
   RiPriceTag3Line,
+  RiTimeLine,
   type RemixiconComponentType,
 } from "@remixicon/react"
 
@@ -43,10 +42,7 @@ import { AIPanel, useAIPanel } from "@/design-system/components/AIPanel"
 import { cardTokens } from "@/design-system/tokens/card"
 import { ProvenanceFooter } from "@/components/bi/ProvenanceFooter"
 import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
-import {
-  useConciliacaoBancoCobrador,
-  useConciliacaoBancoCobradorDatas,
-} from "@/lib/hooks/controladoria"
+import { useConciliacaoBancoCobrador } from "@/lib/hooks/controladoria"
 import type {
   LinhaConciliacaoBoleto,
   ResumoStatusConciliacao,
@@ -116,14 +112,6 @@ export default function ConciliacaoBancoCobradorPage() {
   const ai = useAIPanel()
   const [scrollRef, scrolled] = useScrollShadow<HTMLDivElement>()
 
-  const datasQuery = useConciliacaoBancoCobradorDatas()
-  const datas = React.useMemo(() => datasQuery.data ?? [], [datasQuery.data])
-
-  const [dataRef, setDataRef] = React.useState<string | null>(null)
-  React.useEffect(() => {
-    if (dataRef === null && datas.length > 0) setDataRef(datas[0])
-  }, [datas, dataRef])
-
   // ESCOPO (UA) — define a conciliacao que se ve; o resumo reflete. LENTES
   // (status/banco/produto/cedente) filtram so o detalhe, nao o resumo.
   const [uaFilter, setUaFilter] = React.useState<string | null>(null)
@@ -132,7 +120,7 @@ export default function ConciliacaoBancoCobradorPage() {
   const [produtoFilter, setProdutoFilter] = React.useState<string | null>(null)
   const [cedenteFilter, setCedenteFilter] = React.useState<string | null>(null)
 
-  const q = useConciliacaoBancoCobrador(dataRef)
+  const q = useConciliacaoBancoCobrador()
   const conc = q.data
 
   // Opcoes dos chips derivadas das linhas do dia.
@@ -181,13 +169,13 @@ export default function ConciliacaoBancoCobradorPage() {
 
   const handleExport = React.useCallback(() => {
     // eslint-disable-next-line no-console
-    console.log("export conciliacao", { dataRef })
-  }, [dataRef])
+    console.log("export conciliacao")
+  }, [])
 
   const aiContext = React.useMemo(
     () => ({
       page: "Controladoria · Conciliação · Banco Cobrador",
-      period: dataRef ? fmtDateBR(dataRef) : "—",
+      period: `Cobrança até ${fmtDateBR(conc?.cobranca_atualizada_ate)}`,
       filters: [
         uaFilter && `UA: ${uaFilter}`,
         statusFilter && `Status: ${STATUS_OPTS.find((s) => s.value === statusFilter)?.label}`,
@@ -196,10 +184,15 @@ export default function ConciliacaoBancoCobradorPage() {
         cedenteFilter && `Cedente: ${cedenteFilter}`,
       ].filter(Boolean).join(", ") || "Nenhum",
     }),
-    [dataRef, uaFilter, statusFilter, bancoFilter, produtoFilter, cedenteFilter],
+    [conc, uaFilter, statusFilter, bancoFilter, produtoFilter, cedenteFilter],
   )
 
-  const semDatas = !datasQuery.isLoading && datas.length === 0
+  // "Sem dados" = conciliacao carregada e nao ha titulos nem boletos.
+  const semDados =
+    !q.isLoading &&
+    conc != null &&
+    conc.titulos_abertos === 0 &&
+    conc.boletos_ativos === 0
 
   return (
     <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
@@ -211,7 +204,7 @@ export default function ConciliacaoBancoCobradorPage() {
             info="Conciliação da carteira Bitfin (títulos em aberto elegíveis a boleto: FAT/CBV/DMS/CBS) com os boletos ativos dos bancos cobradores (retorno CNAB). Cruzamento título-a-título por número do documento; valor comparado = valor líquido; vencimento tz-aware (São Paulo)."
             subtitle={
               conc
-                ? `Data-base ${fmtDateBR(conc.data_ref)} · ${fmtInt.format(conc.boletos_ativos)} boletos ativos`
+                ? `${fmtInt.format(conc.titulos_abertos)} títulos abertos · ${fmtInt.format(conc.boletos_ativos)} boletos ativos`
                 : "Controladoria · Conciliações"
             }
             actions={
@@ -232,30 +225,6 @@ export default function ConciliacaoBancoCobradorPage() {
           )}
         >
           <div className="flex min-h-[52px] flex-wrap items-center gap-2 px-6 py-2">
-            <FilterChip
-              label="Data-base"
-              value={fmtDateBR(dataRef)}
-              active={dataRef !== null}
-              icon={RiCalendarLine}
-            >
-              <div className="max-h-72 w-44 overflow-y-auto py-1">
-                {datas.length === 0 && (
-                  <div className="px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400">
-                    Sem datas disponíveis
-                  </div>
-                )}
-                {datas.map((d) => (
-                  <OptionBtn
-                    key={d}
-                    label={fmtDateBR(d)}
-                    selected={d === dataRef}
-                    onClick={() => setDataRef(d)}
-                    mono
-                  />
-                ))}
-              </div>
-            </FilterChip>
-
             <SelectChip
               label="UA"
               icon={RiBriefcase2Line}
@@ -295,19 +264,33 @@ export default function ConciliacaoBancoCobradorPage() {
               onChange={setCedenteFilter}
             />
 
-            <span className="ml-auto shrink-0 text-[11px] text-gray-500 dark:text-gray-400">
-              {q.isFetching ? "Atualizando…" : "Atualizado"}
+            {/* Frescor (nao-filtro): BITFIN e "agora"; o banco reflete ate o
+                ultimo retorno processado. Nomeia a defasagem D-1 estrutural. */}
+            <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+              <RiTimeLine className="size-3.5 shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
+              {q.isFetching ? (
+                "Atualizando…"
+              ) : (
+                <>
+                  Carteira <span className="font-medium text-gray-700 dark:text-gray-300">agora</span>
+                  <span className="text-gray-300 dark:text-gray-700">·</span>
+                  Cobrança até{" "}
+                  <span className="font-medium tabular-nums text-gray-700 dark:text-gray-300">
+                    {fmtDateBR(conc?.cobranca_atualizada_ate)}
+                  </span>
+                </>
+              )}
             </span>
           </div>
         </div>
 
         {/* Z3 — Conteudo */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4">
-          {semDatas ? (
+          {semDados ? (
             <EmptyState
               icon={RiInboxArchiveLine}
-              title="Nenhum retorno de boleto ingerido ainda"
-              description="Configure a fonte de cobrança (pasta de retornos CNAB) e rode o sync. Assim que houver boletos, a conciliação do dia aparece aqui."
+              title="Sem carteira de cobrança ainda"
+              description="Não há títulos abertos elegíveis nem boletos vigentes para este tenant. Assim que a carteira e os retornos CNAB forem processados, a conciliação aparece aqui."
               className="mt-6"
             />
           ) : (
@@ -327,7 +310,7 @@ export default function ConciliacaoBancoCobradorPage() {
                 <EmptyState
                   icon={RiCheckLine}
                   title="Nada com estes filtros"
-                  description="Nenhum título atende aos filtros nesta data-base. Ajuste ou limpe os filtros."
+                  description="Nenhum título atende aos filtros no escopo atual. Ajuste ou limpe os filtros."
                   className="mt-4"
                 />
               ) : (
