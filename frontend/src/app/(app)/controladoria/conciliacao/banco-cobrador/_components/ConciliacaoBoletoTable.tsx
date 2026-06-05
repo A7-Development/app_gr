@@ -95,7 +95,7 @@ const COLUMNS: ColumnDef<LinhaConciliacaoBoleto, unknown>[] = [
     ),
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
   col.accessor("numero", {
-    id: "numero", header: "Número", size: 110,
+    id: "numero", header: "Nº documento", size: 120,
     cell: (info) => (
       <span className={cx("block truncate font-mono", tableTokens.cellTextMono)}>
         {info.getValue<string>()}
@@ -103,7 +103,7 @@ const COLUMNS: ColumnDef<LinhaConciliacaoBoleto, unknown>[] = [
     ),
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
   col.accessor("nosso_numero", {
-    id: "nosso_numero", header: "Nosso número", size: 110,
+    id: "nosso_numero", header: "Nº no banco", size: 110,
     cell: (info) => {
       const v = info.getValue<string | null>()
       return (
@@ -164,7 +164,7 @@ const COLUMNS: ColumnDef<LinhaConciliacaoBoleto, unknown>[] = [
 
 function exportarCsv(rows: LinhaConciliacaoBoleto[]) {
   const head = [
-    "Status", "Data operacao", "Numero", "Nosso numero", "Produto", "Banco", "Cedente",
+    "Status", "Data operacao", "Nro documento", "Nro no banco", "Produto", "Banco", "Cedente",
     "Venc BITFIN", "Venc banco", "Valor BITFIN", "Valor banco", "Dif valor", "Dif dias",
   ]
   const esc = (v: string | number | null | undefined) => {
