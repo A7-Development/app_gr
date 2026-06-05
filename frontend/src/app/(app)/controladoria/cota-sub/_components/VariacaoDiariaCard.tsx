@@ -106,7 +106,11 @@ export function VariacaoDiariaCard({
   return (
     <EvolucaoDiariaCard
       title="VARIAÇÃO DIÁRIA DA COTA"
-      presetLabel={`${competencia} · R$ por dia · clique num dia`}
+      // Origem explicita: Δ patrimonio da classe Sub, fonte MEC oficial (QiTech).
+      // NAO e o calculado (metodo gestor) — esse vive no waterfall ao lado, que
+      // reconcilia calc × MEC. Badge OriginDot canonico fica como follow-up
+      // (precisa do ingested_at/versao reais vindos do endpoint).
+      presetLabel={`${competencia} · Δ patrimônio (R$/dia) · MEC oficial · clique num dia`}
       data={data}
       headerKpi={headerKpi}
       valueFormatter={(v) => fmtBRLFull.format(v)}
