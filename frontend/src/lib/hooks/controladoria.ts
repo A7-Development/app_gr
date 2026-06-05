@@ -705,19 +705,10 @@ export function useAgenteVariacaoStream() {
 
 // ── Conciliacao de boletos (Banco Cobrador) ──────────────────────────────────
 
-export function useConciliacaoBancoCobradorDatas() {
-  // Datas-base (ISO desc) com boletos ingeridos. Alimenta o seletor de data.
+export function useConciliacaoBancoCobrador() {
+  // Estado-vs-estado: carteira BITFIN atual x cobranca vigente (sem data-base).
   return useQuery({
-    queryKey: ["controladoria", "conciliacao", "banco-cobrador", "datas"] as const,
-    queryFn: () => controladoria.conciliacaoBancoCobradorDatas(),
-    staleTime: 5 * 60 * 1000,
-  })
-}
-
-export function useConciliacaoBancoCobrador(dataRef: string | null | undefined) {
-  return useQuery({
-    queryKey: ["controladoria", "conciliacao", "banco-cobrador", dataRef ?? null] as const,
-    queryFn: () => controladoria.conciliacaoBancoCobrador(dataRef!),
-    enabled: !!dataRef,
+    queryKey: ["controladoria", "conciliacao", "banco-cobrador"] as const,
+    queryFn: () => controladoria.conciliacaoBancoCobrador(),
   })
 }

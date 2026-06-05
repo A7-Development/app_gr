@@ -64,11 +64,15 @@ class LinhaConciliacaoSchema(BaseModel):
 
 
 class ConciliacaoBancoCobradorResponse(BaseModel):
-    """Resultado da conciliacao de boletos numa data-base."""
+    """Resultado da conciliacao estado-vs-estado (carteira atual x cobranca)."""
 
-    data_ref: date
+    cobranca_atualizada_ate: date | None = Field(
+        default=None,
+        description="Frescor do lado banco: data do ultimo evento de cobranca "
+        "processado. A carteira BITFIN e 'agora'.",
+    )
     titulos_abertos: int = Field(description="Titulos abertos elegiveis a boleto.")
-    boletos_ativos: int = Field(description="Boletos ativos no dia (todos os bancos).")
+    boletos_ativos: int = Field(description="Boletos ativos (cobranca vigente).")
     conciliados: int = Field(description="Quantidade conciliada (sem divergencia).")
     resumo: list[ResumoStatus] = Field(description="Consolidado por status.")
     linhas: list[LinhaConciliacaoSchema] = Field(description="Detalhe titulo-a-titulo.")

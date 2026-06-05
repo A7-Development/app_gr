@@ -4,7 +4,12 @@ Item 2 da Entrega 3 ("Recebivel de cobranca"). Cruza, titulo a titulo:
 
   - lado carteira: `wh_titulo` em aberto (situacao=0) cujo produto e elegivel
     a boleto (FAT/CBV/DMS/CBS, prefixo de `wh_operacao.modalidade`)
-  - lado banco:    `wh_boleto` ativo na data-base (estado=ativo)
+  - lado banco:    `wh_boleto_vigente` ativo (estado=ativo) -- a carteira de
+    cobranca ATUAL, projetada do fold da timeline (sem data-base)
+
+A conciliacao e estado-vs-estado ("carteira agora x cobranca atual"), nao uma
+analise por dia. A defasagem do lado banco (ate o ultimo retorno processado) e
+exposta como FRESCOR (`cobranca_atualizada_ate`), nao como filtro.
 
 Classifica cada titulo/boleto em: Conciliado / Divergencia de valor /
 Divergencia de vencimento / So em BITFIN / So em banco.
@@ -30,7 +35,7 @@ from uuid import UUID
 from sqlalchemy import Date, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.warehouse.boleto import ESTADO_ATIVO, Boleto
+from app.warehouse.boleto_vigente import ESTADO_ATIVO, BoletoVigente
 from app.warehouse.dim import DimUnidadeAdministrativa
 from app.warehouse.operacao import Operacao
 from app.warehouse.titulo import Titulo
@@ -71,9 +76,11 @@ class _TituloLado:
 class _BoletoLado:
     numero_documento: str
     valor_boleto: Decimal
-    data_vencimento: date
+    data_vencimento: date | None
     banco_origem: str
     sacado_documento: str | None
+    ua_id: int | None
+    ua_nome: str | None
 
 
 @dataclass
@@ -98,10 +105,12 @@ class LinhaConciliacao:
 
 @dataclass
 class ConciliacaoBoletoResult:
-    data_ref: date
     titulos_abertos: int = 0
     boletos_ativos: int = 0
     conciliados: int = 0
+    # Frescor do lado banco: data do ultimo evento de cobranca processado
+    # (a carteira BITFIN e "agora"; o banco reflete ate aqui).
+    cobranca_atualizada_ate: date | None = None
     linhas: list[LinhaConciliacao] = field(default_factory=list)
 
     def por_status(self, status: str) -> list[LinhaConciliacao]:
@@ -165,18 +174,20 @@ async def _carregar_titulos(
 
 
 async def _carregar_boletos(
-    db: AsyncSession, tenant_id: UUID, data_ref: date
+    db: AsyncSession, tenant_id: UUID
 ) -> list[_BoletoLado]:
+    """Carteira de cobranca ATUAL: boletos vigentes ativos (sem data-base)."""
     stmt = select(
-        Boleto.numero_documento,
-        Boleto.valor_boleto,
-        Boleto.data_vencimento,
-        Boleto.banco_origem,
-        Boleto.sacado_documento,
+        BoletoVigente.numero_documento,
+        BoletoVigente.valor_atual,
+        BoletoVigente.data_vencimento,
+        BoletoVigente.banco_origem,
+        BoletoVigente.sacado_documento,
+        BoletoVigente.ua_id,
+        BoletoVigente.ua_nome,
     ).where(
-        Boleto.tenant_id == tenant_id,
-        Boleto.data_ref == data_ref,
-        Boleto.estado == ESTADO_ATIVO,
+        BoletoVigente.tenant_id == tenant_id,
+        BoletoVigente.estado == ESTADO_ATIVO,
     )
     rows = (await db.execute(stmt)).all()
     return [
@@ -186,17 +197,29 @@ async def _carregar_boletos(
             data_vencimento=venc,
             banco_origem=banco,
             sacado_documento=sacado_doc,
+            ua_id=ua_id,
+            ua_nome=ua_nome,
         )
-        for numero, valor, venc, banco, sacado_doc in rows
+        for numero, valor, venc, banco, sacado_doc, ua_id, ua_nome in rows
     ]
 
 
+async def _cobranca_atualizada_ate(
+    db: AsyncSession, tenant_id: UUID
+) -> date | None:
+    """Data do ultimo evento de cobranca processado (frescor do lado banco)."""
+    stmt = select(func.max(BoletoVigente.data_ocorrencia_vigente)).where(
+        BoletoVigente.tenant_id == tenant_id
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
 async def conciliar_boletos(
-    db: AsyncSession, *, tenant_id: UUID, data_ref: date
+    db: AsyncSession, *, tenant_id: UUID
 ) -> ConciliacaoBoletoResult:
-    """Concilia titulos abertos x boletos ativos na data-base. Title a title."""
+    """Concilia a carteira BITFIN atual x cobranca vigente. Titulo a titulo."""
     titulos = await _carregar_titulos(db, tenant_id)
-    boletos = await _carregar_boletos(db, tenant_id, data_ref)
+    boletos = await _carregar_boletos(db, tenant_id)
 
     titulos_por_numero: dict[str, _TituloLado] = {}
     for t in titulos:
@@ -206,9 +229,9 @@ async def conciliar_boletos(
         boletos_por_numero.setdefault(_normalizar_numero(b.numero_documento), b)
 
     result = ConciliacaoBoletoResult(
-        data_ref=data_ref,
         titulos_abertos=len(titulos),
         boletos_ativos=len(boletos),
+        cobranca_atualizada_ate=await _cobranca_atualizada_ate(db, tenant_id),
     )
 
     for numero in titulos_por_numero.keys() | boletos_por_numero.keys():
@@ -236,6 +259,8 @@ async def conciliar_boletos(
                     valor_banco=b.valor_boleto,
                     venc_banco=b.data_vencimento,
                     banco=b.banco_origem,
+                    ua_id=b.ua_id,
+                    ua_nome=b.ua_nome,
                 )
             )
         elif t is not None and b is not None:
@@ -261,16 +286,3 @@ async def conciliar_boletos(
             result.linhas.append(linha)
 
     return result
-
-
-async def listar_datas_disponiveis(
-    db: AsyncSession, *, tenant_id: UUID
-) -> list[date]:
-    """Datas-base (data_ref) com boletos ingeridos para o tenant, desc."""
-    stmt = (
-        select(Boleto.data_ref)
-        .where(Boleto.tenant_id == tenant_id)
-        .distinct()
-        .order_by(Boleto.data_ref.desc())
-    )
-    return list((await db.execute(stmt)).scalars().all())

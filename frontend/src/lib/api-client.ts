@@ -4754,12 +4754,12 @@ export type LinhaConciliacaoBoleto = {
 }
 
 export type ConciliacaoBancoCobradorResponse = {
-  data_ref:        string
-  titulos_abertos: number
-  boletos_ativos:  number
-  conciliados:     number
-  resumo:          ResumoStatusConciliacao[]
-  linhas:          LinhaConciliacaoBoleto[]
+  cobranca_atualizada_ate: string | null  // frescor do lado banco (ISO)
+  titulos_abertos:         number
+  boletos_ativos:          number
+  conciliados:             number
+  resumo:                  ResumoStatusConciliacao[]
+  linhas:                  LinhaConciliacaoBoleto[]
 }
 
 // MOCK dev-only da serie diaria — usado SO quando o endpoint backend ainda nao
@@ -4817,19 +4817,17 @@ export const controladoria = {
     )
   },
 
-  conciliacaoBancoCobrador: async (
-    dataRef: string,  // YYYY-MM-DD
-  ): Promise<ConciliacaoBancoCobradorResponse> => {
-    const params = new URLSearchParams({ data_ref: dataRef })
+  conciliacaoBancoCobrador: async (): Promise<ConciliacaoBancoCobradorResponse> => {
+    // Estado-vs-estado: carteira BITFIN atual x cobranca vigente (sem data-base).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const raw = await apiClient.get<any>(
-      `/controladoria/conciliacao/banco-cobrador?${params.toString()}`,
+      `/controladoria/conciliacao/banco-cobrador`,
     )
     const num = (v: unknown) => Number(v ?? 0)
     const numN = (v: unknown) =>
       v === null || v === undefined ? null : Number(v)
     return {
-      data_ref:        raw.data_ref,
+      cobranca_atualizada_ate: raw.cobranca_atualizada_ate ?? null,
       titulos_abertos: raw.titulos_abertos,
       boletos_ativos:  raw.boletos_ativos,
       conciliados:     raw.conciliados,
@@ -4859,13 +4857,6 @@ export const controladoria = {
         ua_nome:           l.ua_nome ?? null,
       })),
     }
-  },
-
-  conciliacaoBancoCobradorDatas: async (): Promise<string[]> => {
-    // Datas-base (ISO desc) com boletos ingeridos. Alimenta o seletor de data.
-    return apiClient.get<string[]>(
-      `/controladoria/conciliacao/banco-cobrador/datas`,
-    )
   },
 
   cotaSubDatasDisponiveis: async (
