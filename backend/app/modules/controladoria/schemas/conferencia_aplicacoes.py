@@ -68,6 +68,18 @@ class LinhaAplicacaoMenor(BaseModel):
     nota:     str = Field(description="Contexto: imaterial / vazia / movimento relevante.")
 
 
+class AplicacaoInstrumento(BaseModel):
+    """Um instrumento (papel/fundo) de um sub-grupo de Aplicacoes, com posicao
+    D-1/D0 e delta. Usado pelas 3 tabelas canonicas do drill (Fundos DI / Op.
+    Estruturadas / Titulos Publicos), todas no mesmo shape."""
+
+    titulo:   str = Field(description="Nome do papel/fundo (ex.: 'NTN-B', 'NCPX 12', fundo DI).")
+    detalhe:  str = Field(description="Identificacao: vencimento (TPF) / emitente+vencimento (NC) / natureza (Fundo DI).")
+    valor_d1: Decimal = Field(description="Valor presente (valor_bruto) em D-1.")
+    valor_d0: Decimal = Field(description="Valor presente (valor_bruto) em D0.")
+    delta:    Decimal = Field(description="valor_d0 - valor_d1.")
+
+
 class ConferenciaAplicacoesResponse(BaseModel):
     """Movimento do grupo Aplicacoes de um dia (D0), exceto Op. Estruturadas (NC).
 
@@ -93,4 +105,13 @@ class ConferenciaAplicacoesResponse(BaseModel):
     )
     delta_aplicacoes_total: Decimal = Field(
         description="ΔSaldo do grupo Aplicacoes inteiro (Fundos DI + linhas menores), exceto NC."
+    )
+
+    # Detalhe por instrumento p/ as tabelas canonicas do drill (alem do agregado
+    # acima). Classificacao TPF/NC via _driver_for_nome_papel (mesma do balanco).
+    titulos_publicos_itens: list[AplicacaoInstrumento] = Field(
+        default_factory=list, description="TPF por papel (wh_posicao_renda_fixa, driver titulos_publicos)."
+    )
+    op_estruturadas_itens:  list[AplicacaoInstrumento] = Field(
+        default_factory=list, description="Notas comerciais por papel (driver op_estruturadas)."
     )
