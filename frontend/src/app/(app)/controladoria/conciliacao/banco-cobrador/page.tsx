@@ -20,6 +20,7 @@
 "use client"
 
 import * as React from "react"
+import { useQuery } from "@tanstack/react-query"
 import {
   RiBankLine,
   RiBriefcase2Line,
@@ -36,13 +37,19 @@ import { cx } from "@/lib/utils"
 import { Card } from "@/components/tremor/Card"
 import { PageHeader } from "@/design-system/components/PageHeader"
 import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
-import { FilterChip } from "@/design-system/components/FilterBar"
+import {
+  FilterChip,
+  MultiCheckList,
+  multiLabel,
+  type MultiOption,
+} from "@/design-system/components/FilterBar"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { AIPanel, useAIPanel } from "@/design-system/components/AIPanel"
 import { cardTokens } from "@/design-system/tokens/card"
 import { ProvenanceFooter } from "@/components/bi/ProvenanceFooter"
 import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 import { useConciliacaoBancoCobrador } from "@/lib/hooks/controladoria"
+import { biMetadata } from "@/lib/api-client"
 import type {
   LinhaConciliacaoBoleto,
   ResumoStatusConciliacao,
@@ -114,16 +121,29 @@ export default function ConciliacaoBancoCobradorPage() {
 
   // ESCOPO (UA) — define a conciliacao que se ve; o resumo reflete. LENTES
   // (status/banco/produto/cedente) filtram so o detalhe, nao o resumo.
-  const [uaFilter, setUaFilter] = React.useState<string | null>(null)
-  const [statusFilter, setStatusFilter] = React.useState<StatusConciliacaoBoleto | null>(null)
-  const [bancoFilter, setBancoFilter] = React.useState<string | null>(null)
-  const [produtoFilter, setProdutoFilter] = React.useState<string | null>(null)
-  const [cedenteFilter, setCedenteFilter] = React.useState<string | null>(null)
+  // Multi-select (padrao /bi/operacoes4): cada filtro e uma lista de selecionados.
+  const [uaFilter, setUaFilter] = React.useState<string[]>([])
+  const [statusFilter, setStatusFilter] = React.useState<string[]>([])
+  const [bancoFilter, setBancoFilter] = React.useState<string[]>([])
+  const [produtoFilter, setProdutoFilter] = React.useState<string[]>([])
+  const [cedenteFilter, setCedenteFilter] = React.useState<string[]>([])
 
   const q = useConciliacaoBancoCobrador()
   const conc = q.data
 
-  // Opcoes dos chips derivadas das linhas do dia.
+  // Nome amigavel dos produtos ("Faturização (FAT)") — fonte canonica.
+  const produtosMetaQuery = useQuery({
+    queryKey: ["bi", "metadata", "produtos"],
+    queryFn: () => biMetadata.produtos(),
+    staleTime: 60 * 60 * 1000,
+  })
+  const produtoLabel = React.useMemo(() => {
+    const m = new Map<string, string>()
+    for (const p of produtosMetaQuery.data ?? []) m.set(p.sigla, `${p.nome} (${p.sigla})`)
+    return m
+  }, [produtosMetaQuery.data])
+
+  // Opcoes dos chips derivadas das linhas (multi-option {value,label}).
   const uaOpts = React.useMemo(
     () => distinctOpts(conc?.linhas, (l) => l.ua_nome),
     [conc],
@@ -133,8 +153,8 @@ export default function ConciliacaoBancoCobradorPage() {
     [conc],
   )
   const produtoOpts = React.useMemo(
-    () => distinctOpts(conc?.linhas, (l) => l.produto),
-    [conc],
+    () => distinctOpts(conc?.linhas, (l) => l.produto, (v) => produtoLabel.get(v) ?? v),
+    [conc, produtoLabel],
   )
   const cedenteOpts = React.useMemo(
     () => distinctOpts(conc?.linhas, (l) => l.cedente_documento),
@@ -146,20 +166,21 @@ export default function ConciliacaoBancoCobradorPage() {
   // CNAB; com UA especifica selecionada elas saem do escopo (interim).
   const linhasNoEscopo = React.useMemo(() => {
     if (!conc) return []
-    if (uaFilter === null) return conc.linhas
-    return conc.linhas.filter((l) => l.ua_nome === uaFilter)
+    if (uaFilter.length === 0) return conc.linhas
+    return conc.linhas.filter((l) => l.ua_nome != null && uaFilter.includes(l.ua_nome))
   }, [conc, uaFilter])
 
   const resumoEscopo = React.useMemo(() => computeResumo(linhasNoEscopo), [linhasNoEscopo])
 
-  // Detalhe: escopo + lentes.
+  // Detalhe: escopo + lentes (multi-select: lista vazia = sem filtro).
   const linhasFiltradas = React.useMemo(() => {
     return linhasNoEscopo.filter(
       (l) =>
-        (statusFilter === null || l.status === statusFilter) &&
-        (bancoFilter === null || l.banco === bancoFilter) &&
-        (produtoFilter === null || l.produto === produtoFilter) &&
-        (cedenteFilter === null || l.cedente_documento === cedenteFilter),
+        (statusFilter.length === 0 || statusFilter.includes(l.status)) &&
+        (bancoFilter.length === 0 || (l.banco != null && bancoFilter.includes(l.banco))) &&
+        (produtoFilter.length === 0 || (l.produto != null && produtoFilter.includes(l.produto))) &&
+        (cedenteFilter.length === 0 ||
+          (l.cedente_documento != null && cedenteFilter.includes(l.cedente_documento))),
     )
   }, [linhasNoEscopo, statusFilter, bancoFilter, produtoFilter, cedenteFilter])
 
@@ -172,20 +193,21 @@ export default function ConciliacaoBancoCobradorPage() {
     console.log("export conciliacao")
   }, [])
 
-  const aiContext = React.useMemo(
-    () => ({
+  const aiContext = React.useMemo(() => {
+    const join = (xs: string[]) => xs.join(", ")
+    return {
       page: "Controladoria · Conciliação · Banco Cobrador",
       period: `Cobrança até ${fmtDateBR(conc?.cobranca_atualizada_ate)}`,
       filters: [
-        uaFilter && `UA: ${uaFilter}`,
-        statusFilter && `Status: ${STATUS_OPTS.find((s) => s.value === statusFilter)?.label}`,
-        bancoFilter && `Banco: ${capitalize(bancoFilter)}`,
-        produtoFilter && `Produto: ${produtoFilter}`,
-        cedenteFilter && `Cedente: ${cedenteFilter}`,
-      ].filter(Boolean).join(", ") || "Nenhum",
-    }),
-    [conc, uaFilter, statusFilter, bancoFilter, produtoFilter, cedenteFilter],
-  )
+        uaFilter.length > 0 && `UA: ${join(uaFilter)}`,
+        statusFilter.length > 0 &&
+          `Status: ${join(statusFilter.map((s) => STATUS_OPTS.find((o) => o.value === s)?.label ?? s))}`,
+        bancoFilter.length > 0 && `Banco: ${join(bancoFilter.map(capitalize))}`,
+        produtoFilter.length > 0 && `Produto: ${join(produtoFilter)}`,
+        cedenteFilter.length > 0 && `Cedente: ${join(cedenteFilter)}`,
+      ].filter(Boolean).join(" · ") || "Nenhum",
+    }
+  }, [conc, uaFilter, statusFilter, bancoFilter, produtoFilter, cedenteFilter])
 
   // "Sem dados" = conciliacao carregada e nao ha titulos nem boletos.
   const semDados =
@@ -225,42 +247,42 @@ export default function ConciliacaoBancoCobradorPage() {
           )}
         >
           <div className="flex min-h-[52px] flex-wrap items-center gap-2 px-6 py-2">
-            <SelectChip
+            <MultiSelectChip
               label="UA"
               icon={RiBriefcase2Line}
               options={uaOpts}
-              value={uaFilter}
+              selected={uaFilter}
               onChange={setUaFilter}
             />
 
             <span className="h-5 w-px shrink-0 bg-gray-200 dark:bg-gray-800" aria-hidden="true" />
 
-            <SelectChip
+            <MultiSelectChip
               label="Status"
               icon={RiFilter3Line}
               options={STATUS_OPTS}
-              value={statusFilter}
-              onChange={(v) => setStatusFilter(v as StatusConciliacaoBoleto | null)}
+              selected={statusFilter}
+              onChange={setStatusFilter}
             />
-            <SelectChip
+            <MultiSelectChip
               label="Banco"
               icon={RiBankLine}
               options={bancoOpts}
-              value={bancoFilter}
+              selected={bancoFilter}
               onChange={setBancoFilter}
             />
-            <SelectChip
+            <MultiSelectChip
               label="Produto"
               icon={RiPriceTag3Line}
               options={produtoOpts}
-              value={produtoFilter}
+              selected={produtoFilter}
               onChange={setProdutoFilter}
             />
-            <SelectChip
+            <MultiSelectChip
               label="Cedente"
               icon={RiBuilding2Line}
               options={cedenteOpts}
-              value={cedenteFilter}
+              selected={cedenteFilter}
               onChange={setCedenteFilter}
             />
 
@@ -331,65 +353,30 @@ export default function ConciliacaoBancoCobradorPage() {
 
 // ── Controles de filtro (chip single-select) ────────────────────────────────
 
-function OptionBtn({
-  label,
-  selected,
-  onClick,
-  mono,
-}: {
-  label: string
-  selected: boolean
-  onClick: () => void
-  mono?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cx(
-        "flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors",
-        selected
-          ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
-          : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800",
-      )}
-    >
-      <span className={cx("flex-1 text-left", mono && "tabular-nums")}>{label}</span>
-      {selected && <RiCheckLine className="size-3.5 shrink-0 text-blue-500" />}
-    </button>
-  )
-}
-
-function SelectChip({
+// Chip de filtro multi-select (padrao /bi/operacoes4): label + "N selecionados"
+// + lista de checkboxes. Reusa FilterChip + MultiCheckList/multiLabel canonicos.
+function MultiSelectChip({
   label,
   icon,
   options,
-  value,
+  selected,
   onChange,
 }: {
   label: string
   icon?: RemixiconComponentType
-  options: { value: string; label: string }[]
-  value: string | null
-  onChange: (v: string | null) => void
+  options: MultiOption[]
+  selected: string[]
+  onChange: (next: string[]) => void
 }) {
-  const current = options.find((o) => o.value === value)
   return (
-    <FilterChip label={label} value={current?.label ?? "Todos"} active={value !== null} icon={icon}>
-      <div className="max-h-72 w-56 overflow-y-auto py-1">
-        <OptionBtn label="Todos" selected={value === null} onClick={() => onChange(null)} />
-        {options.length === 0 && (
-          <div className="px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400">
-            Sem opções
-          </div>
-        )}
-        {options.map((o) => (
-          <OptionBtn
-            key={o.value}
-            label={o.label}
-            selected={value === o.value}
-            onClick={() => onChange(o.value)}
-          />
-        ))}
+    <FilterChip
+      label={label}
+      value={multiLabel(selected, options)}
+      active={selected.length > 0}
+      icon={icon}
+    >
+      <div className="w-56">
+        <MultiCheckList options={options} selected={selected} onChange={onChange} />
       </div>
     </FilterChip>
   )
