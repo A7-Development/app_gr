@@ -86,6 +86,14 @@ const COLUMNS: ColumnDef<LinhaConciliacaoBoleto, unknown>[] = [
       return <span className={cx(tableTokens.badge, STATUS_META[s].tone)}>{STATUS_BADGE_LABEL[s]}</span>
     },
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
+  col.accessor("data_operacao", {
+    id: "data_operacao", header: "Data operação", size: 104,
+    cell: (info) => (
+      <span className={cx("tabular-nums", tableTokens.cellSecondary)}>
+        {fmtDateBR(info.getValue<string | null>())}
+      </span>
+    ),
+  }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
   col.accessor("numero", {
     id: "numero", header: "Número", size: 110,
     cell: (info) => (
@@ -156,7 +164,7 @@ const COLUMNS: ColumnDef<LinhaConciliacaoBoleto, unknown>[] = [
 
 function exportarCsv(rows: LinhaConciliacaoBoleto[]) {
   const head = [
-    "Status", "Numero", "Nosso numero", "Produto", "Banco", "Cedente",
+    "Status", "Data operacao", "Numero", "Nosso numero", "Produto", "Banco", "Cedente",
     "Venc BITFIN", "Venc banco", "Valor BITFIN", "Valor banco", "Dif valor", "Dif dias",
   ]
   const esc = (v: string | number | null | undefined) => {
@@ -166,6 +174,7 @@ function exportarCsv(rows: LinhaConciliacaoBoleto[]) {
   const corpo = rows.map((r) =>
     [
       STATUS_META[r.status]?.label ?? r.status,  // label longo no CSV
+      r.data_operacao ?? "",
       r.numero, r.nosso_numero ?? "", r.produto ?? "", r.banco ?? "", r.cedente_nome ?? "",
       r.venc_bitfin ?? "", r.venc_banco ?? "",
       r.valor_bitfin ?? "", r.valor_banco ?? "",

@@ -52,6 +52,9 @@ class LinhaConciliacaoSchema(BaseModel):
     )
     venc_bitfin: date | None = Field(default=None, description="Vencimento do titulo (SP).")
     venc_banco: date | None = Field(default=None, description="Vencimento do boleto.")
+    data_operacao: date | None = Field(
+        default=None, description="Data da operacao (efetivacao da cessao, SP)."
+    )
     diferenca_dias: int | None = Field(
         default=None, description="venc_banco - venc_bitfin em dias (quando ambos existem)."
     )

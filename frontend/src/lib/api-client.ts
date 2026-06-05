@@ -4746,6 +4746,7 @@ export type LinhaConciliacaoBoleto = {
   diferenca_valor:   number | null
   venc_bitfin:       string | null  // YYYY-MM-DD
   venc_banco:        string | null
+  data_operacao:     string | null  // YYYY-MM-DD
   diferenca_dias:    number | null
   produto:           string | null
   banco:             string | null
@@ -4852,6 +4853,7 @@ export const controladoria = {
         diferenca_valor:   numN(l.diferenca_valor),
         venc_bitfin:       l.venc_bitfin,
         venc_banco:        l.venc_banco,
+        data_operacao:     l.data_operacao ?? null,
         diferenca_dias:    numN(l.diferenca_dias),
         produto:           l.produto,
         banco:             l.banco,
