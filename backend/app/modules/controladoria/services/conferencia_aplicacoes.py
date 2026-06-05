@@ -100,10 +100,16 @@ def _build_rf_itens(
                 detalhe = emit or (f"vence {venc_s}" if venc_s else "—")
         else:
             detalhe = f"vence {venc_s}" if venc_s else "—"
+        # Rendimento (impacto na cota) = Δ posicao SO quando o papel foi mantido
+        # nos 2 dias (carrego/marcacao). Papel novo/encerrado = evento de capital
+        # (compra/baixa) -> rendimento 0; a variacao de posicao ali e giro, nao
+        # afeta a cota. A soma de `rendimento` reconcilia com o header (impacto).
+        mantido = abs(v1) >= _TOL and abs(v0) >= _TOL
+        rendimento = (v0 - v1) if mantido else ZERO
         itens.append(
             AplicacaoInstrumento(
                 titulo=meta.get("titulo") or codigo, detalhe=detalhe,
-                valor_d1=v1, valor_d0=v0, delta=v0 - v1,
+                valor_d1=v1, valor_d0=v0, delta=v0 - v1, rendimento=rendimento,
             )
         )
     itens.sort(key=lambda x: -abs(x.valor_d0))

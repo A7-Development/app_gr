@@ -72,8 +72,8 @@ function makeColumns(primeiraColuna: string): ColumnDef<AplicacaoInstrumento, un
       id: "valor_d0", header: "VLR D0", size: 120, meta: { align: "right" },
       cell: (i) => <div className={cx("text-right", tableTokens.cellNumber)}>{fmtBRL.format(i.getValue<number>())}</div>,
     }),
-    col.accessor("delta", {
-      id: "delta", header: "Delta", size: 120, meta: { align: "right" },
+    col.accessor("rendimento", {
+      id: "rendimento", header: "Rendimento", size: 130, meta: { align: "right" },
       cell: (i) => {
         const v = i.getValue<number>()
         return <div className={cx("text-right text-xs font-semibold tabular-nums", toneClass(v))}>{fmtBRLSigned(v)}</div>
@@ -89,7 +89,7 @@ const COLS_TITULO = makeColumns("Título")
 function renderFooter(itens: AplicacaoInstrumento[]) {
   const s1 = itens.reduce((a, x) => a + x.valor_d1, 0)
   const s0 = itens.reduce((a, x) => a + x.valor_d0, 0)
-  const sd = itens.reduce((a, x) => a + x.delta, 0)
+  const sd = itens.reduce((a, x) => a + x.rendimento, 0)
   return (
     <tr className={FOOT_ROW}>
       <td colSpan={2} className="px-3"><span className={tableTokens.cellStrong}>Total ({itens.length})</span></td>
@@ -145,13 +145,15 @@ export function DrillAplicacoesContent({ fundoId, data, dataAnterior }: Props) {
   }
   const d = q.data
 
-  // Fundos DI -> shape canonico. Detalhe = natureza do movimento do dia.
+  // Fundos DI -> shape canonico. Detalhe = natureza; rendimento = SO a valorizacao
+  // (exclui o capital aplicado/resgatado, que infla o Δ de posicao).
   const fundosItens: AplicacaoInstrumento[] = d.fundos_di.map((f) => ({
-    titulo:   f.fundo_nome,
-    detalhe:  f.tipo === "so_valorizacao" ? "rendimento" : f.tipo === "aplicacao" ? "aplicação" : "resgate",
-    valor_d1: f.valor_d1,
-    valor_d0: f.valor_d0,
-    delta:    f.delta_valor,
+    titulo:     f.fundo_nome,
+    detalhe:    f.tipo === "so_valorizacao" ? "rendimento" : f.tipo === "aplicacao" ? "aplicação" : "resgate",
+    valor_d1:   f.valor_d1,
+    valor_d0:   f.valor_d0,
+    delta:      f.delta_valor,
+    rendimento: f.valorizacao,
   }))
 
   return (
