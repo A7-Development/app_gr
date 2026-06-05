@@ -77,7 +77,12 @@ class AplicacaoInstrumento(BaseModel):
     detalhe:  str = Field(description="Identificacao: vencimento (TPF) / emitente+vencimento (NC) / natureza (Fundo DI).")
     valor_d1: Decimal = Field(description="Valor presente (valor_bruto) em D-1.")
     valor_d0: Decimal = Field(description="Valor presente (valor_bruto) em D0.")
-    delta:    Decimal = Field(description="valor_d0 - valor_d1.")
+    delta:    Decimal = Field(description="valor_d0 - valor_d1 (variacao de posicao, inclui capital).")
+    rendimento: Decimal = Field(
+        default=Decimal(0),
+        description="Impacto na cota (carrego/marcacao) — exclui capital. = delta quando "
+                    "o papel foi mantido nos 2 dias; 0 em compra/baixa. Soma reconcilia c/ o header.",
+    )
 
 
 class ConferenciaAplicacoesResponse(BaseModel):

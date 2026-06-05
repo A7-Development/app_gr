@@ -3442,11 +3442,12 @@ export type LinhaAplicacaoMenor = {
 // Instrumento (papel/fundo) de um sub-grupo de Aplicacoes — shape unico das 3
 // tabelas canonicas do drill (Fundos DI / Op. Estruturadas / Titulos Publicos).
 export type AplicacaoInstrumento = {
-  titulo:   string
-  detalhe:  string
-  valor_d1: number
-  valor_d0: number
-  delta:    number
+  titulo:     string
+  detalhe:    string
+  valor_d1:   number
+  valor_d0:   number
+  delta:      number   // variacao de posicao (inclui capital)
+  rendimento: number   // impacto na cota (exclui capital) — soma reconcilia c/ header
 }
 
 export type ConferenciaAplicacoesResponse = {
@@ -5131,11 +5132,11 @@ export const controladoria = {
       })),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       titulos_publicos_itens: (raw.titulos_publicos_itens ?? []).map((i: any) => ({
-        ...i, valor_d1: num(i.valor_d1), valor_d0: num(i.valor_d0), delta: num(i.delta),
+        ...i, valor_d1: num(i.valor_d1), valor_d0: num(i.valor_d0), delta: num(i.delta), rendimento: num(i.rendimento),
       })),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       op_estruturadas_itens: (raw.op_estruturadas_itens ?? []).map((i: any) => ({
-        ...i, valor_d1: num(i.valor_d1), valor_d0: num(i.valor_d0), delta: num(i.delta),
+        ...i, valor_d1: num(i.valor_d1), valor_d0: num(i.valor_d0), delta: num(i.delta), rendimento: num(i.rendimento),
       })),
     } as ConferenciaAplicacoesResponse
   },
