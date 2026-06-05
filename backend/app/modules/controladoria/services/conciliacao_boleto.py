@@ -2,8 +2,9 @@
 
 Item 2 da Entrega 3 ("Recebivel de cobranca"). Cruza, titulo a titulo:
 
-  - lado carteira: `wh_titulo` em aberto (situacao=0) cujo produto e elegivel
-    a boleto (FAT/CBV/DMS/CBS, prefixo de `wh_operacao.modalidade`)
+  - lado carteira: `wh_titulo` em aberto (situacao=0) de operacao EFETIVADA
+    (cessao real) cujo produto e elegivel a boleto (FAT/CBV/DMS/CBS, prefixo
+    de `wh_operacao.modalidade`)
   - lado banco:    `wh_boleto_vigente` ativo (estado=ativo) -- a carteira de
     cobranca ATUAL, projetada do fold da timeline (sem data-base)
 
@@ -161,6 +162,11 @@ async def _carregar_titulos(
             Titulo.tenant_id == tenant_id,
             Titulo.situacao == SITUACAO_EM_ABERTO,
             produto.in_(PRODUTOS_COM_BOLETO),
+            # So cessao REAL entra na conciliacao. Operacao nao-efetivada e
+            # rascunho/pendente (sem cedente, removida do Bitfin depois) — seus
+            # titulos virariam "Só BITFIN" fantasma. Alinha com o BI
+            # (_apply_filters sempre exige efetivada=true).
+            Operacao.efetivada.is_(True),
         )
     )
     rows = (await db.execute(stmt)).all()
