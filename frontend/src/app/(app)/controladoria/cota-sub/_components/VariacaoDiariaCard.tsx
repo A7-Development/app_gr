@@ -73,26 +73,34 @@ export function VariacaoDiariaCard({
     [serie],
   )
 
-  // KPI do header = variacao do dia selecionado.
-  const selPonto = serie.find((p) => p.data === diaSelecionado)
-  const selValor = selPonto?.variacao_cota ?? null
   const competencia = serie.length > 0 ? competenciaLabel(serie[0].data) : ""
 
-  // Δ% do dia sobre o PL Sub D-1 (vem do ponto, se disponivel).
+  // KPI do header = ACUMULADO da competencia (mes-ate-agora). O valor do dia
+  // selecionado aparece na barra/tooltip + no waterfall ao lado — aqui o numero
+  // grande resume o mes inteiro.
+  const pontosComDado = serie.filter((p) => p.variacao_cota != null)
+  // Acumulado R$ = Σ das variacoes diarias.
+  const acumuladoBRL = pontosComDado.reduce((s, p) => s + (p.variacao_cota ?? 0), 0)
+  // Acumulado % = composicao EXATA dos % diarios (Π(1+pct/100)−1), nao a soma —
+  // cada variacao_pct[d] e sobre o PL Sub do dia util anterior, entao o produto
+  // telescopa em PL[ultimo]/PL[ancora]−1.
+  const pontosComPct = pontosComDado.filter((p) => p.variacao_pct != null)
+  const acumuladoPct = pontosComPct.length
+    ? (pontosComPct.reduce((acc, p) => acc * (1 + (p.variacao_pct ?? 0) / 100), 1) - 1) * 100
+    : null
+
   const headerKpi = {
-    value: selValor != null ? fmtBRLFull.format(selValor) : "—",
+    value: pontosComDado.length ? fmtBRLFull.format(acumuladoBRL) : "—",
     delta:
-      selPonto?.variacao_pct != null
+      acumuladoPct != null
         ? {
-            value: selPonto.variacao_pct,
+            value: acumuladoPct,
             suffix: "%",
-            good: (selValor ?? 0) >= 0,
+            good: acumuladoBRL >= 0,
             fractionDigits: 2,
           }
         : undefined,
-    deltaSub: selPonto
-      ? `dia ${selPonto.data.slice(8, 10)}/${selPonto.data.slice(5, 7)}`
-      : undefined,
+    deltaSub: "acumulado no mês",
   }
 
   return (
