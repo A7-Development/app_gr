@@ -66,6 +66,7 @@ class _TituloLado:
     numero: str
     valor_liquido: Decimal
     vencimento: date | None
+    data_operacao: date | None
     produto: str
     cedente_documento: str | None
     cedente_nome: str | None
@@ -96,6 +97,7 @@ class LinhaConciliacao:
     valor_banco: Decimal | None = None
     venc_bitfin: date | None = None
     venc_banco: date | None = None
+    data_operacao: date | None = None
     produto: str | None = None
     banco: str | None = None
     # Exposto para o front aplicar filtros especificos do tenant (ex.: excluir
@@ -136,11 +138,16 @@ async def _carregar_titulos(
     venc_sp = func.timezone(
         "America/Sao_Paulo", Titulo.data_de_vencimento
     ).cast(Date)
+    # Data da operacao (cessao) — efetivacao, normalizada para data de Sao Paulo.
+    data_op_sp = func.timezone(
+        "America/Sao_Paulo", Operacao.data_de_efetivacao
+    ).cast(Date)
     stmt = (
         select(
             Titulo.numero,
             Titulo.valor_liquido,
             venc_sp.label("vencimento"),
+            data_op_sp.label("data_operacao"),
             produto.label("produto"),
             Operacao.cedente_documento,
             Operacao.cedente_nome,
@@ -175,6 +182,7 @@ async def _carregar_titulos(
             numero=numero,
             valor_liquido=valor,
             vencimento=venc,
+            data_operacao=data_op,
             produto=prod,
             cedente_documento=cedente_doc,
             cedente_nome=cedente_nome,
@@ -182,7 +190,7 @@ async def _carregar_titulos(
             ua_id=ua_id,
             ua_nome=ua_nome,
         )
-        for numero, valor, venc, prod, cedente_doc, cedente_nome, sacado_id, ua_id, ua_nome in rows
+        for numero, valor, venc, data_op, prod, cedente_doc, cedente_nome, sacado_id, ua_id, ua_nome in rows
     ]
 
 
@@ -260,6 +268,7 @@ async def conciliar_boletos(
                     numero=numero,
                     valor_bitfin=t.valor_liquido,
                     venc_bitfin=t.vencimento,
+                    data_operacao=t.data_operacao,
                     produto=t.produto,
                     cedente_documento=t.cedente_documento,
                     cedente_nome=t.cedente_nome,
@@ -289,6 +298,7 @@ async def conciliar_boletos(
                 valor_banco=b.valor_boleto,
                 venc_bitfin=t.vencimento,
                 venc_banco=b.data_vencimento,
+                data_operacao=t.data_operacao,
                 produto=t.produto,
                 banco=b.banco_origem,
                 cedente_documento=t.cedente_documento,

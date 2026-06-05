@@ -52,6 +52,7 @@ def _mapear_linha(linha: LinhaConciliacao) -> LinhaConciliacaoSchema:
         diferenca_valor=diferenca_valor,
         venc_bitfin=linha.venc_bitfin,
         venc_banco=linha.venc_banco,
+        data_operacao=linha.data_operacao,
         diferenca_dias=diferenca_dias,
         produto=linha.produto,
         banco=linha.banco,

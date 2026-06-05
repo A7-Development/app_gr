@@ -271,6 +271,7 @@ export function MultiCheckList({
   onChange,
   searchable = false,
   searchPlaceholder = "Buscar…",
+  showSelectAll = true,
 }: {
   options: MultiOption[]
   selected: string[]
@@ -278,6 +279,8 @@ export function MultiCheckList({
   /** Mostra um campo de busca que filtra as opcoes por label (sem acento). */
   searchable?: boolean
   searchPlaceholder?: string
+  /** Mostra acoes "Selecionar todos / Limpar" (habilita filtro por exclusao). */
+  showSelectAll?: boolean
 }) {
   const [query, setQuery] = React.useState("")
   const set = React.useMemo(() => new Set(selected), [selected])
@@ -296,29 +299,57 @@ export function MultiCheckList({
     return options.filter((o) => _norm(o.label).includes(q))
   }, [options, searchable, query])
 
+  const temHeader = searchable || (showSelectAll && options.length > 1)
+
   return (
     <div>
-      {searchable && (
-        <div className="sticky top-0 z-[1] border-b border-gray-100 bg-white p-1.5 dark:border-gray-800 dark:bg-gray-950">
-          <div className="relative flex items-center">
-            <RiSearchLine
-              className="pointer-events-none absolute left-2 size-3.5 shrink-0 text-gray-400 dark:text-gray-600"
-              aria-hidden="true"
-            />
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={searchPlaceholder}
-              className={cx(
-                "h-7 w-full rounded border pl-7 pr-2 text-[13px]",
-                "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
-                "text-gray-900 placeholder:text-gray-400 dark:text-gray-50 dark:placeholder:text-gray-600",
-                "[&::-webkit-search-cancel-button]:hidden",
-                focusInput,
-              )}
-            />
-          </div>
+      {temHeader && (
+        <div className="sticky top-0 z-[1] space-y-1.5 border-b border-gray-100 bg-white p-1.5 dark:border-gray-800 dark:bg-gray-950">
+          {searchable && (
+            <div className="relative flex items-center">
+              <RiSearchLine
+                className="pointer-events-none absolute left-2 size-3.5 shrink-0 text-gray-400 dark:text-gray-600"
+                aria-hidden="true"
+              />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={searchPlaceholder}
+                className={cx(
+                  "h-7 w-full rounded border pl-7 pr-2 text-[13px]",
+                  "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
+                  "text-gray-900 placeholder:text-gray-400 dark:text-gray-50 dark:placeholder:text-gray-600",
+                  "[&::-webkit-search-cancel-button]:hidden",
+                  focusInput,
+                )}
+              />
+            </div>
+          )}
+          {showSelectAll && options.length > 1 && (
+            <div className="flex items-center gap-3 px-1 text-[11px]">
+              {/* "Selecionar todos" marca TODA a lista (nao so a filtrada) — para
+                  o padrao "todos exceto alguns" (exclusao): marca tudo e desmarca. */}
+              <button
+                type="button"
+                onClick={() => onChange(options.map((o) => o.value))}
+                className="font-medium text-blue-600 hover:underline dark:text-blue-400"
+              >
+                Selecionar todos
+              </button>
+              <span className="text-gray-300 dark:text-gray-700">·</span>
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="text-gray-500 hover:underline dark:text-gray-400"
+              >
+                Limpar
+              </button>
+              <span className="ml-auto tabular-nums text-gray-400 dark:text-gray-600">
+                {selected.length}/{options.length}
+              </span>
+            </div>
+          )}
         </div>
       )}
       <div className="max-h-72 overflow-y-auto py-1">
