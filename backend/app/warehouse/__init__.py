@@ -24,6 +24,7 @@ from app.warehouse.bitfin_entidade import WhBitfinEntidade
 from app.warehouse.bitfin_raw_debenture import BitfinRawDebenture
 from app.warehouse.bitfin_tarifa_catalogo import WhBitfinTarifaCatalogo
 from app.warehouse.boleto import Boleto
+from app.warehouse.boleto_evento import BoletoEvento
 from app.warehouse.caixa_snapshot import CaixaSnapshot
 from app.warehouse.cnab_raw_arquivo import CnabRawArquivo
 from app.warehouse.cnab_raw_ocorrencia import CnabRawOcorrencia
@@ -80,6 +81,7 @@ __all__ = [
     "BdcRawConsulta",
     "BitfinRawDebenture",
     "Boleto",
+    "BoletoEvento",
     "CaixaSnapshot",
     "CnabRawArquivo",
     "CnabRawOcorrencia",
