@@ -23,7 +23,7 @@ from app.warehouse.cnab_raw_arquivo import BANCO_BRADESCO, BANCO_GRAFENO
 
 # Versao da taxonomia do decoder. Bumpar ao mudar o mapeamento codigo->evento
 # (re-decode atualiza wh_boleto_evento.decoded_by_version). Rastreabilidade §14.
-DECODER_VERSION = "cobranca_evento_decoder_v1.0.0"
+DECODER_VERSION = "cobranca_evento_decoder_v1.1.0"
 
 # ── Tipos de evento canonicos ───────────────────────────────────────────────
 TIPO_ENTRADA = "entrada"  # boleto registrado/confirmado no banco
@@ -37,7 +37,12 @@ TIPO_ABATIMENTO_CANCELADO = "abatimento_cancelado"
 TIPO_PROTESTO_INSTRUIDO = "protesto_instruido"
 TIPO_PROTESTO_SUSTADO = "protesto_sustado"
 TIPO_ENCAMINHADO_CARTORIO = "encaminhado_cartorio"
+TIPO_RETIRADO_CARTORIO = "retirado_cartorio"  # retirado de cartorio, mantido
 TIPO_TARIFA = "tarifa"  # debito de tarifas/custas
+TIPO_BAIXA_REJEITADA = "baixa_rejeitada"  # baixa tentada e rejeitada
+TIPO_INSTRUCAO_REJEITADA = "instrucao_rejeitada"
+TIPO_ALTERACAO_DADOS = "alteracao_dados"  # alteracao de outros dados confirmada
+TIPO_OCORRENCIA_SACADO = "ocorrencia_sacado"
 TIPO_OUTRO = "outro"
 
 # ── Efeito no estado vigente (dirige o fold) ────────────────────────────────
@@ -65,8 +70,14 @@ _BRADESCO: dict[str, tuple[str, str]] = {
     "13": (TIPO_ABATIMENTO_CANCELADO, EFEITO_MODIFICA),  # abatimento cancelado
     "15": (TIPO_LIQUIDACAO_CARTORIO, EFEITO_FECHA),  # 15 liquidacao em cartorio
     "17": (TIPO_LIQUIDACAO, EFEITO_FECHA),  # liquidacao apos baixa
-    # 27/29/32/33/34 -> familia rejeicao/cartorio/alteracao (A_CONFIRMAR no
-    # manual). Todos neutros no fold; caem no default (TIPO_OUTRO, EFEITO_INFO).
+    # Familia rejeicao/cartorio/alteracao — decodificada 2026-06-05 (norma
+    # Bradesco + validacao empirica: NENHUM e terminal; boletos com esses
+    # codigos fecham por outros eventos; os poucos ativos estao corretos).
+    "27": (TIPO_BAIXA_REJEITADA, EFEITO_INFO),  # 439 baixa rejeitada (continua)
+    "33": (TIPO_ALTERACAO_DADOS, EFEITO_MODIFICA),  # 99 conf. alteracao de dados
+    "29": (TIPO_OCORRENCIA_SACADO, EFEITO_INFO),  # 92 ocorrencias do sacado
+    "32": (TIPO_INSTRUCAO_REJEITADA, EFEITO_INFO),  # 43 instrucao rejeitada
+    "34": (TIPO_RETIRADO_CARTORIO, EFEITO_INFO),  # 14 retirado de cartorio, mantido
 }
 
 # Grafeno (codigo 274/310): tabela a montar quando o parser Grafeno entrar.
