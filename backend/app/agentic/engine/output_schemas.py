@@ -95,6 +95,172 @@ class FinancialAnalysis(BaseModel):
     red_flags: list[RedFlagItem] = Field(default_factory=list)
 
 
+# ─── Revenue analyst (declaração de faturamento) — esteira credito 2026-06-05 ──
+#
+# Lente do FATURAMENTO declarado: julga tendência, sazonalidade, picos/vales
+# (esperado vs anômalo) e a CREDIBILIDADE do documento como atestação (data,
+# assinatura, emitente, ressalvas). Princípio §14: o agente NÃO calcula — lê
+# o pacote determinístico de `get_declaracao_faturamento` (tendência/outliers/
+# YoY/qualidade já computados) e raciocina em cima. Os números ficam na tool
+# (auditáveis); aqui mora só o julgamento.
+
+
+class TendenciaFaturamento(BaseModel):
+    """Leitura da tendência (o agente interpreta o slope/CAGR que a tool deu)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    direcao: Literal["crescente", "estavel", "decrescente", "indefinida"]
+    intensidade: Literal["forte", "moderada", "leve", "indefinida"]
+    leitura: str = Field(description="1-2 frases interpretando a tendência para o crédito.")
+
+
+class SazonalidadeFaturamento(BaseModel):
+    """Leitura da sazonalidade. `confiavel` ecoa o flag da tool (>= 24 meses)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    detectada: bool
+    confiavel: bool = Field(
+        description="Eco da tool: série >= 24 meses separa sazonalidade de tendência. "
+                    "Se False, é perfil mensal — trate como leitura fraca.",
+    )
+    padrao: str | None = Field(
+        default=None,
+        description="Ex.: 'pico de fim de ano típico de varejo'. None se não há padrão claro.",
+    )
+    meses_pico: list[str] = Field(default_factory=list, description="Competências YYYY-MM.")
+    meses_vale: list[str] = Field(default_factory=list, description="Competências YYYY-MM.")
+
+
+class PontoAtencaoFaturamento(BaseModel):
+    """Um pico/vale/quebra que CHAMA atenção — o agente marca esperado vs anômalo."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mes: str | None = Field(default=None, description="Competência YYYY-MM, quando aplicável.")
+    tipo: Literal["pico", "vale", "quebra", "inconsistencia"]
+    esperado_ou_anomalo: Literal["esperado", "anomalo"] = Field(
+        description="O valor que o agente agrega: um pico de dezembro é esperado (varejo); "
+                    "um pico isolado sem razão sazonal é anômalo.",
+    )
+    severidade: Literal["alta", "media", "baixa"]
+    observacao: str = Field(description="Por que chama atenção, 1 frase concreta.")
+
+
+class QualidadeFaturamento(BaseModel):
+    """Leitura da qualidade do dado (ecoa os fatos determinísticos da tool)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    soma_confere: bool = Field(description="Soma dos meses bate o total declarado?")
+    n_meses: int
+    meses_faltantes: list[str] = Field(default_factory=list)
+    observacao: str = Field(description="1 frase: o dado é completo e consistente?")
+
+
+class CredibilidadeDocumento(BaseModel):
+    """Julgamento da credibilidade do documento como ATESTAÇÃO (não os números)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    assinado: bool
+    signatarios_resumo: str | None = Field(
+        default=None, description="Ex.: 'João Contador (CRC-1234)'. None se sem assinatura.",
+    )
+    documento_recente: bool | None = Field(
+        default=None, description="Documento dentro da janela de recência? None se sem data.",
+    )
+    emitente_confere: bool | None = Field(
+        default=None, description="Emitente = empresa alvo? None se sem CNPJ do emitente.",
+    )
+    ressalvas: list[str] = Field(
+        default_factory=list, description="Observações/disclaimers do documento que importam.",
+    )
+    nivel: Literal["alto", "medio", "baixo"] = Field(
+        description="Credibilidade geral do documento ponderando assinatura, data, emitente, ressalvas.",
+    )
+    leitura: str = Field(description="1-2 frases: por que esse nível de credibilidade.")
+
+
+class RevenueAnalysis(BaseModel):
+    """Output of `revenue_analyst` — julgamento sobre a declaração de faturamento.
+
+    O agente lê o pacote determinístico de `get_declaracao_faturamento`
+    (série homologada + tendência/sazonalidade/outliers/YoY/qualidade +
+    sinais de atestação) e produz a LEITURA: o que os números significam,
+    quais picos/vales chamam atenção (esperado vs anômalo) e quão crível é
+    o documento. Não recalcula números.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    resumo_executivo: str = Field(description="A história do faturamento em 2-3 frases.")
+    tendencia: TendenciaFaturamento
+    sazonalidade: SazonalidadeFaturamento
+    pontos_de_atencao: list[PontoAtencaoFaturamento] = Field(
+        default_factory=list,
+        description="Picos/vales/quebras/inconsistências que merecem atenção. Série limpa = [].",
+    )
+    qualidade_do_dado: QualidadeFaturamento
+    credibilidade_documento: CredibilidadeDocumento
+    leitura_para_credito: str = Field(
+        description="O que o faturamento significa para capacidade/estabilidade do crédito.",
+    )
+
+
+# ─── Cadastral analyst (dados básicos) — esteira credito 2026-06-05 ─────────
+#
+# Lente CADASTRAL: julga a saúde de registro da empresa-alvo a partir do dado
+# OFICIAL coletado (situação, CNAE, capital, fundação). O agente é source-
+# agnostic — lê o silver normalizado de `get_dados_cadastrais`, nunca o vendor.
+# Dado oficial: o agente NÃO recalcula; julga o que significa para o crédito.
+
+
+class PontoAtencaoCadastral(BaseModel):
+    """Um sinal cadastral que merece atenção."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tipo: Literal["situacao", "idade", "cnae", "capital", "outro"]
+    severidade: Literal["alta", "media", "baixa"]
+    observacao: str = Field(description="Por que chama atenção, 1 frase concreta.")
+
+
+class CadastralAnalysis(BaseModel):
+    """Output of `cadastral_analyst` — julgamento sobre os dados cadastrais.
+
+    Lê `get_dados_cadastrais` (silver oficial: situação, CNAE, capital,
+    fundação, regime) e produz a leitura: a empresa está ativa e regular? Há
+    tempo de atividade? O CNAE/objeto é compatível com a operação de crédito?
+    O capital é coerente com o porte? Não recalcula números.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    resumo_executivo: str = Field(description="A saúde cadastral em 2-3 frases.")
+    situacao_cadastral: Literal["ativa", "irregular", "desconhecida"] = Field(
+        description="ativa = ATIVA; irregular = BAIXADA/INAPTA/SUSPENSA; "
+                    "desconhecida = sem dado.",
+    )
+    tempo_atividade_leitura: str = Field(
+        description="Leitura do tempo de atividade (da data de fundação) para o crédito.",
+    )
+    aderencia_atividade: str = Field(
+        description="O CNAE/objeto declarado é compatível com a operação de crédito pretendida?",
+    )
+    porte_capital_leitura: str = Field(
+        description="Leitura do capital social vs porte/operação (coerente? ínfimo?).",
+    )
+    pontos_de_atencao: list[PontoAtencaoCadastral] = Field(
+        default_factory=list,
+        description="Sinais cadastrais a observar. Cadastro saudável = [].",
+    )
+    leitura_para_credito: str = Field(
+        description="O que a situação cadastral significa para a decisão de crédito.",
+    )
+
+
 class IndebtednessAnalysis(BaseModel):
     """Output of `indebtedness_analyst`."""
 

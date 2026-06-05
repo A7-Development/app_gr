@@ -56,6 +56,9 @@ export type WizardWorkspaceStep = {
   /** Input descriptor quando state === "waiting_input"
    *  (vem do engine — { form_id, title, description, fields, submit_label }). */
   formDescriptor?: Record<string, unknown>
+  /** Config do node (do graph) — caller usa pra diferenciar comportamento
+   *  (ex.: human_review com `review_of` = checkpoint de analise vs parecer). */
+  config?: Record<string, unknown>
 }
 
 export type WizardWorkspaceProps = {

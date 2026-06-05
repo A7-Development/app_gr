@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -45,6 +46,90 @@ class CadastralEnrichmentOutcome:
     # found=False ou erro.
     applied: list[str]
     errors: list[str]
+
+
+def _cnae_view(cnaes: Any) -> tuple[dict | None, list[dict]]:
+    """Separa o CNAE principal das secundárias (silver `cnaes`)."""
+    if not isinstance(cnaes, list):
+        return None, []
+    principal: dict | None = None
+    secundarios: list[dict] = []
+    for c in cnaes:
+        if not isinstance(c, dict):
+            continue
+        item = {"code": c.get("code"), "name": c.get("name")}
+        if c.get("is_main") and principal is None:
+            principal = item
+        else:
+            secundarios.append(item)
+    return principal, secundarios
+
+
+async def load_cadastral_silver_view(
+    db: AsyncSession, *, tenant_id: UUID, dossier_id: UUID
+) -> dict | None:
+    """Monta a visão tenant-facing dos dados cadastrais coletados (WHITE-LABEL).
+
+    Lê o silver da empresa-alvo (`credit_dossier_company`) e serializa SEM
+    qualquer identidade de vendor — nenhum `provider_*`, nenhum `_public_code`/
+    `_adapter_version` de `receita_data`. Os valores cadastrais (situação, CNAE,
+    capital, regime) são dado da própria empresa do tenant; o que nunca vaza é
+    QUEM forneceu. Fonte única do card da tela E da read-tool do agente
+    cadastral (uma silver pro humano e pro agente).
+
+    Returns:
+        Dict tenant-facing, ou None quando não há empresa-alvo no dossie.
+    """
+    target = (
+        await db.execute(
+            select(CreditDossierCompany).where(
+                CreditDossierCompany.tenant_id == tenant_id,
+                CreditDossierCompany.dossier_id == dossier_id,
+                CreditDossierCompany.role == CompanyRole.TARGET,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if target is None:
+        return None
+
+    basic = {}
+    if isinstance(target.receita_data, dict):
+        b = target.receita_data.get("basic_data")
+        if isinstance(b, dict):
+            basic = b
+
+    principal, secundarios = _cnae_view(target.cnaes)
+
+    # `enriquecido` = a fonte externa já populou o silver (não só o cadastro).
+    enriquecido = bool(
+        target.tax_status or target.cnaes or target.capital_social is not None
+    )
+
+    return {
+        "encontrado": True,
+        "enriquecido": enriquecido,
+        "cnpj": target.cnpj,
+        "razao_social": basic.get("OfficialName") or target.name,
+        "nome_fantasia": basic.get("TradeName"),
+        "situacao_cadastral": target.tax_status,
+        "data_fundacao": (
+            target.founding_date.isoformat() if target.founding_date else None
+        ),
+        "capital_social": (
+            float(target.capital_social)
+            if target.capital_social is not None
+            else None
+        ),
+        "cnae_principal": principal,
+        "cnaes_secundarios": secundarios,
+        # Campos adicionais do silver (defensivos — ausentes => None). Nomes
+        # tenant-facing; o blob de origem é vendor-shaped mas o VALOR é da
+        # empresa do tenant.
+        "regime_tributario": basic.get("TaxRegime"),
+        "natureza_juridica": basic.get("LegalNature"),
+        "porte": basic.get("CompanySize") or basic.get("Size"),
+    }
 
 
 async def enrich_target_cadastral(

@@ -33,6 +33,7 @@ from app.agentic.engine.output_schemas import (
     AuditoriaResultadoResponse,
     AuditoriaVariacaoCaixaResponse,
     AuditoriaVariacaoCarteiraResponse,
+    CadastralAnalysis,
     ChatVariacaoResponse,
     CommercialVisitAnalysis,
     CrossReferenceAnalysis,
@@ -43,6 +44,7 @@ from app.agentic.engine.output_schemas import (
     OpinionDraft,
     PartnerAnalysis,
     PleitoExtraction,
+    RevenueAnalysis,
     SocialContractAnalysis,
 )
 from app.agentic.playbooks.nodes._base import VarType
@@ -166,6 +168,51 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
                 optional=True,
             ),
         ),
+    ),
+    # ─── Credito · analista de FATURAMENTO (declaração) — esteira 2026-06-05 ──
+    # Lê a declaração de faturamento homologada via get_declaracao_faturamento
+    # (série + analytics determinístico + sinais de atestação) e julga: tendência,
+    # sazonalidade, picos/vales (esperado vs anômalo) e credibilidade do documento.
+    # NÃO calcula números — raciocina sobre o pacote pronto da tool (§14).
+    "revenue_analyst": SpecialistAgentSpec(
+        name="revenue_analyst",
+        description=(
+            "Analisa a declaracao de faturamento homologada do dossie: julga "
+            "tendencia, sazonalidade e picos/vales (esperado vs anomalo), a "
+            "qualidade do dado e a credibilidade do documento como atestacao "
+            "(assinatura, data, emitente, ressalvas). NAO calcula numeros — le "
+            "o pacote deterministico de get_declaracao_faturamento e raciocina."
+        ),
+        prompt_name="agent.revenue",
+        tools=("get_declaracao_faturamento",),
+        output_schema=RevenueAnalysis,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=8000,
+        timeout_seconds=300,
+        section_id="revenue",
+    ),
+    # ─── Credito · analista CADASTRAL (dados básicos) — esteira 2026-06-05 ────
+    # Lê o silver cadastral via get_dados_cadastrais (situação, CNAE, capital,
+    # fundação — normalizado, provider-blind) e julga a saúde de registro da
+    # empresa-alvo. Dado oficial: não recalcula; julga o que significa.
+    "cadastral_analyst": SpecialistAgentSpec(
+        name="cadastral_analyst",
+        description=(
+            "Analisa os dados cadastrais oficiais da empresa-alvo (situacao, "
+            "CNAE, capital social, fundacao, regime): julga se esta ativa e "
+            "regular, o tempo de atividade, a aderencia do CNAE/objeto a "
+            "operacao de credito e a coerencia do capital. Le o silver "
+            "normalizado de get_dados_cadastrais (source-agnostic)."
+        ),
+        prompt_name="agent.cadastral",
+        tools=("get_dados_cadastrais",),
+        output_schema=CadastralAnalysis,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=6000,
+        timeout_seconds=300,
+        section_id="cadastral",
     ),
     "indebtedness_analyst": SpecialistAgentSpec(
         name="indebtedness_analyst",
