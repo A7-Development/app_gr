@@ -31,6 +31,7 @@ from sqlalchemy import Date, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.warehouse.boleto import ESTADO_ATIVO, Boleto
+from app.warehouse.dim import DimUnidadeAdministrativa
 from app.warehouse.operacao import Operacao
 from app.warehouse.titulo import Titulo
 
@@ -62,6 +63,8 @@ class _TituloLado:
     produto: str
     cedente_documento: str | None
     sacado_id: int | None
+    ua_id: int
+    ua_nome: str | None
 
 
 @dataclass
@@ -86,6 +89,11 @@ class LinhaConciliacao:
     # Exposto para o front aplicar filtros especificos do tenant (ex.: excluir
     # FAT de cedentes Pedreira na A7). O motor nao filtra por isso.
     cedente_documento: str | None = None
+    # UA (Unidade Administrativa) do titulo — escopo da analise. Vem do lado
+    # Bitfin (wh_titulo). Linhas "so em banco" (boleto sem titulo) ficam sem UA
+    # ate o boleto carregar UA do header CNAB (rebuild da carteira de cobranca).
+    ua_id: int | None = None
+    ua_nome: str | None = None
 
 
 @dataclass
@@ -121,11 +129,18 @@ async def _carregar_titulos(
             produto.label("produto"),
             Operacao.cedente_documento,
             Titulo.sacado_id,
+            Titulo.unidade_administrativa_id,
+            DimUnidadeAdministrativa.nome.label("ua_nome"),
         )
         .join(
             Operacao,
             (Operacao.operacao_id == Titulo.operacao_id)
             & (Operacao.tenant_id == Titulo.tenant_id),
+        )
+        .outerjoin(
+            DimUnidadeAdministrativa,
+            (DimUnidadeAdministrativa.ua_id == Titulo.unidade_administrativa_id)
+            & (DimUnidadeAdministrativa.tenant_id == Titulo.tenant_id),
         )
         .where(
             Titulo.tenant_id == tenant_id,
@@ -142,8 +157,10 @@ async def _carregar_titulos(
             produto=prod,
             cedente_documento=cedente_doc,
             sacado_id=sacado_id,
+            ua_id=ua_id,
+            ua_nome=ua_nome,
         )
-        for numero, valor, venc, prod, cedente_doc, sacado_id in rows
+        for numero, valor, venc, prod, cedente_doc, sacado_id, ua_id, ua_nome in rows
     ]
 
 
@@ -207,6 +224,8 @@ async def conciliar_boletos(
                     venc_bitfin=t.vencimento,
                     produto=t.produto,
                     cedente_documento=t.cedente_documento,
+                    ua_id=t.ua_id,
+                    ua_nome=t.ua_nome,
                 )
             )
         elif t is None and b is not None:
@@ -230,6 +249,8 @@ async def conciliar_boletos(
                 produto=t.produto,
                 banco=b.banco_origem,
                 cedente_documento=t.cedente_documento,
+                ua_id=t.ua_id,
+                ua_nome=t.ua_nome,
             )
             if t.valor_liquido != b.valor_boleto:
                 linha.status = STATUS_DIV_VALOR

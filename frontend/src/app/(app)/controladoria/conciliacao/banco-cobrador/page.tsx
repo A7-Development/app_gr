@@ -23,6 +23,7 @@
 import * as React from "react"
 import {
   RiBankLine,
+  RiBriefcase2Line,
   RiBuilding2Line,
   RiCalendarLine,
   RiCheckLine,
@@ -48,6 +49,7 @@ import {
 } from "@/lib/hooks/controladoria"
 import type {
   LinhaConciliacaoBoleto,
+  ResumoStatusConciliacao,
   StatusConciliacaoBoleto,
 } from "@/lib/api-client"
 
@@ -87,6 +89,29 @@ function distinctOpts(
     .map((v) => ({ value: v, label: fmt ? fmt(v) : v }))
 }
 
+// Resumo consolidado por status, computado das linhas NO ESCOPO (UA) — assim o
+// resumo reflete a UA selecionada (escopo), sem reagir aos demais filtros
+// (lentes). Percentual sobre o total de linhas no escopo.
+function computeResumo(linhas: LinhaConciliacaoBoleto[]): ResumoStatusConciliacao[] {
+  const total = linhas.length || 1
+  const agg = new Map<StatusConciliacaoBoleto, { q: number; vb: number; vbanco: number }>()
+  for (const l of linhas) {
+    const a = agg.get(l.status) ?? { q: 0, vb: 0, vbanco: 0 }
+    a.q += 1
+    a.vb += l.valor_bitfin ?? 0
+    a.vbanco += l.valor_banco ?? 0
+    agg.set(l.status, a)
+  }
+  return Array.from(agg.entries()).map(([status, a]) => ({
+    status,
+    quantidade: a.q,
+    percentual: Math.round((a.q * 1000) / total) / 10,
+    valor_bitfin: a.vb,
+    valor_banco: a.vbanco,
+    diferenca: a.vbanco - a.vb,
+  }))
+}
+
 export default function ConciliacaoBancoCobradorPage() {
   const ai = useAIPanel()
   const [scrollRef, scrolled] = useScrollShadow<HTMLDivElement>()
@@ -99,7 +124,9 @@ export default function ConciliacaoBancoCobradorPage() {
     if (dataRef === null && datas.length > 0) setDataRef(datas[0])
   }, [datas, dataRef])
 
-  // Filtros globais (lentes client-side sobre as linhas do dia).
+  // ESCOPO (UA) — define a conciliacao que se ve; o resumo reflete. LENTES
+  // (status/banco/produto/cedente) filtram so o detalhe, nao o resumo.
+  const [uaFilter, setUaFilter] = React.useState<string | null>(null)
   const [statusFilter, setStatusFilter] = React.useState<StatusConciliacaoBoleto | null>(null)
   const [bancoFilter, setBancoFilter] = React.useState<string | null>(null)
   const [produtoFilter, setProdutoFilter] = React.useState<string | null>(null)
@@ -109,6 +136,10 @@ export default function ConciliacaoBancoCobradorPage() {
   const conc = q.data
 
   // Opcoes dos chips derivadas das linhas do dia.
+  const uaOpts = React.useMemo(
+    () => distinctOpts(conc?.linhas, (l) => l.ua_nome),
+    [conc],
+  )
   const bancoOpts = React.useMemo(
     () => distinctOpts(conc?.linhas, (l) => l.banco, capitalize),
     [conc],
@@ -122,16 +153,27 @@ export default function ConciliacaoBancoCobradorPage() {
     [conc],
   )
 
-  const linhasFiltradas = React.useMemo(() => {
+  // Escopo: linhas filtradas SO pela UA. Alimenta o resumo (que reflete a UA).
+  // Nota: linhas "só em banco" ficam sem UA ate o boleto carregar UA do header
+  // CNAB; com UA especifica selecionada elas saem do escopo (interim).
+  const linhasNoEscopo = React.useMemo(() => {
     if (!conc) return []
-    return conc.linhas.filter(
+    if (uaFilter === null) return conc.linhas
+    return conc.linhas.filter((l) => l.ua_nome === uaFilter)
+  }, [conc, uaFilter])
+
+  const resumoEscopo = React.useMemo(() => computeResumo(linhasNoEscopo), [linhasNoEscopo])
+
+  // Detalhe: escopo + lentes.
+  const linhasFiltradas = React.useMemo(() => {
+    return linhasNoEscopo.filter(
       (l) =>
         (statusFilter === null || l.status === statusFilter) &&
         (bancoFilter === null || l.banco === bancoFilter) &&
         (produtoFilter === null || l.produto === produtoFilter) &&
         (cedenteFilter === null || l.cedente_documento === cedenteFilter),
     )
-  }, [conc, statusFilter, bancoFilter, produtoFilter, cedenteFilter])
+  }, [linhasNoEscopo, statusFilter, bancoFilter, produtoFilter, cedenteFilter])
 
   const handleShare = React.useCallback(() => {
     void navigator.clipboard?.writeText(window.location.href)
@@ -147,13 +189,14 @@ export default function ConciliacaoBancoCobradorPage() {
       page: "Controladoria · Conciliação · Banco Cobrador",
       period: dataRef ? fmtDateBR(dataRef) : "—",
       filters: [
+        uaFilter && `UA: ${uaFilter}`,
         statusFilter && `Status: ${STATUS_OPTS.find((s) => s.value === statusFilter)?.label}`,
         bancoFilter && `Banco: ${capitalize(bancoFilter)}`,
         produtoFilter && `Produto: ${produtoFilter}`,
         cedenteFilter && `Cedente: ${cedenteFilter}`,
       ].filter(Boolean).join(", ") || "Nenhum",
     }),
-    [dataRef, statusFilter, bancoFilter, produtoFilter, cedenteFilter],
+    [dataRef, uaFilter, statusFilter, bancoFilter, produtoFilter, cedenteFilter],
   )
 
   const semDatas = !datasQuery.isLoading && datas.length === 0
@@ -214,6 +257,16 @@ export default function ConciliacaoBancoCobradorPage() {
             </FilterChip>
 
             <SelectChip
+              label="UA"
+              icon={RiBriefcase2Line}
+              options={uaOpts}
+              value={uaFilter}
+              onChange={setUaFilter}
+            />
+
+            <span className="h-5 w-px shrink-0 bg-gray-200 dark:bg-gray-800" aria-hidden="true" />
+
+            <SelectChip
               label="Status"
               icon={RiFilter3Line}
               options={STATUS_OPTS}
@@ -259,9 +312,9 @@ export default function ConciliacaoBancoCobradorPage() {
             />
           ) : (
             <div className="flex flex-col gap-4">
-              {/* Tabela-resumo do DIA (nao reage aos chips) — Entrega 3 §2.
-                  Substitui o KpiStrip; reconcilia on-screen (§14.6). */}
-              <ResumoConciliacaoTable resumo={conc?.resumo ?? []} />
+              {/* Tabela-resumo no ESCOPO da UA (reage so a UA, nao as lentes) —
+                  Entrega 3 §2. Substitui o KpiStrip; reconcilia (§14.6). */}
+              <ResumoConciliacaoTable resumo={resumoEscopo} />
 
               {/* DataTable — filtrada pelos chips + busca */}
               {q.isError ? (
