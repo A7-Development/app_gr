@@ -3435,17 +3435,29 @@ export type LinhaAplicacaoMenor = {
   nota:     string
 }
 
+// Instrumento (papel/fundo) de um sub-grupo de Aplicacoes — shape unico das 3
+// tabelas canonicas do drill (Fundos DI / Op. Estruturadas / Titulos Publicos).
+export type AplicacaoInstrumento = {
+  titulo:   string
+  detalhe:  string
+  valor_d1: number
+  valor_d0: number
+  delta:    number
+}
+
 export type ConferenciaAplicacoesResponse = {
-  fundo_id:               string
-  fundo_nome:             string
-  data:                   string
-  data_anterior:          string | null
-  fundos_di:              MovimentoFundoDI[]
-  delta_fundos_di:        number
-  total_capital_liquido:  number
-  total_valorizacao:      number
-  outras_linhas:          LinhaAplicacaoMenor[]
-  delta_aplicacoes_total: number
+  fundo_id:                string
+  fundo_nome:              string
+  data:                    string
+  data_anterior:           string | null
+  fundos_di:               MovimentoFundoDI[]
+  delta_fundos_di:         number
+  total_capital_liquido:   number
+  total_valorizacao:       number
+  outras_linhas:           LinhaAplicacaoMenor[]
+  delta_aplicacoes_total:  number
+  titulos_publicos_itens:  AplicacaoInstrumento[]
+  op_estruturadas_itens:   AplicacaoInstrumento[]
 }
 
 // Endpoint /controladoria/cota-sub/variacao/detalhamento — o painel dos 60%.
@@ -5112,6 +5124,14 @@ export const controladoria = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       outras_linhas: (raw.outras_linhas ?? []).map((l: any) => ({
         ...l, valor_d1: num(l.valor_d1), valor_d0: num(l.valor_d0), delta: num(l.delta),
+      })),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      titulos_publicos_itens: (raw.titulos_publicos_itens ?? []).map((i: any) => ({
+        ...i, valor_d1: num(i.valor_d1), valor_d0: num(i.valor_d0), delta: num(i.delta),
+      })),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      op_estruturadas_itens: (raw.op_estruturadas_itens ?? []).map((i: any) => ({
+        ...i, valor_d1: num(i.valor_d1), valor_d0: num(i.valor_d0), delta: num(i.delta),
       })),
     } as ConferenciaAplicacoesResponse
   },

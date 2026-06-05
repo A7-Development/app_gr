@@ -19,12 +19,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.cadastros.public import UnidadeAdministrativa
 from app.modules.controladoria.schemas.conferencia_aplicacoes import (
+    AplicacaoInstrumento,
     ConferenciaAplicacoesResponse,
     LinhaAplicacaoMenor,
     MovimentoFundoDI,
 )
 from app.modules.controladoria.services.cota_sub import (
     ZERO,
+    _driver_for_nome_papel,
     _is_fundo_externo,
     _sum_compromissada,
     _sum_outros_ativos_nao_tpf,
@@ -33,6 +35,7 @@ from app.modules.controladoria.services.cota_sub import (
 from app.modules.integracoes.public import dia_util_anterior_qitech
 from app.warehouse.movimento_caixa import MovimentoCaixa
 from app.warehouse.posicao_cota_fundo import PosicaoCotaFundo
+from app.warehouse.posicao_renda_fixa import PosicaoRendaFixa
 
 _TOL = Decimal("1.0")
 # Band do cross-ref de caixa (timing/IR/arredondamento).
@@ -43,6 +46,68 @@ _MATERIAL = Decimal("1000.0")
 
 def _fmt(v: Decimal) -> str:
     return f"R$ {float(v):,.2f}"
+
+
+async def _load_rf_itens(
+    db: AsyncSession, tenant_id: UUID, ua_id: UUID, data: date, driver: str,
+) -> dict[str, dict]:
+    """Posicao por instrumento de renda fixa (valor_bruto) numa data, filtrada
+    pelo driver gestor (titulos_publicos | op_estruturadas) via a MESMA regra do
+    balanco (`_driver_for_nome_papel`) — garante reconciliacao com o agregado.
+    Agrupa por `codigo` (id do papel)."""
+    stmt = (
+        select(
+            PosicaoRendaFixa.codigo,
+            PosicaoRendaFixa.nome_do_papel,
+            PosicaoRendaFixa.emitente,
+            PosicaoRendaFixa.codigo_lastro,
+            PosicaoRendaFixa.data_vencimento,
+            PosicaoRendaFixa.valor_bruto,
+        )
+        .where(PosicaoRendaFixa.tenant_id == tenant_id)
+        .where(PosicaoRendaFixa.unidade_administrativa_id == ua_id)
+        .where(PosicaoRendaFixa.data_posicao == data)
+    )
+    out: dict[str, dict] = {}
+    for codigo, nome, emit, lastro, venc, vb in (await db.execute(stmt)).all():
+        if _driver_for_nome_papel(nome, lastro) != driver:
+            continue
+        e = out.setdefault(
+            codigo, {"titulo": nome or codigo, "emitente": emit or "", "venc": venc, "valor": ZERO},
+        )
+        e["valor"] += Decimal(vb or 0)
+    return out
+
+
+def _build_rf_itens(
+    m1: dict[str, dict], m0: dict[str, dict], *, com_emitente: bool,
+) -> list[AplicacaoInstrumento]:
+    """Une os instrumentos de D-1 e D0 (papel pode sair/entrar), monta o
+    `detalhe` (vencimento; emitente+vencimento p/ NC) e ordena por |posicao D0|."""
+    itens: list[AplicacaoInstrumento] = []
+    for codigo in set(m1) | set(m0):
+        a, b = m1.get(codigo), m0.get(codigo)
+        meta = b or a or {}
+        v1 = a["valor"] if a else ZERO
+        v0 = b["valor"] if b else ZERO
+        venc = meta.get("venc")
+        venc_s = venc.strftime("%d/%m/%y") if venc else None
+        if com_emitente:
+            emit = meta.get("emitente") or ""
+            if emit and venc_s:
+                detalhe = f"{emit} · vence {venc_s}"
+            else:
+                detalhe = emit or (f"vence {venc_s}" if venc_s else "—")
+        else:
+            detalhe = f"vence {venc_s}" if venc_s else "—"
+        itens.append(
+            AplicacaoInstrumento(
+                titulo=meta.get("titulo") or codigo, detalhe=detalhe,
+                valor_d1=v1, valor_d0=v0, delta=v0 - v1,
+            )
+        )
+    itens.sort(key=lambda x: -abs(x.valor_d0))
+    return itens
 
 
 async def compute_movimento_aplicacoes(
@@ -173,6 +238,18 @@ async def compute_movimento_aplicacoes(
 
     delta_total = delta_fundos + sum((o.delta for o in outras), ZERO)
 
+    # ── Detalhe por instrumento (TPF / Notas Comerciais) p/ as tabelas do drill ─
+    tpf_itens = _build_rf_itens(
+        await _load_rf_itens(db, tenant_id, ua_id, d1, "titulos_publicos"),
+        await _load_rf_itens(db, tenant_id, ua_id, data_d0, "titulos_publicos"),
+        com_emitente=False,
+    )
+    nc_itens = _build_rf_itens(
+        await _load_rf_itens(db, tenant_id, ua_id, d1, "op_estruturadas"),
+        await _load_rf_itens(db, tenant_id, ua_id, data_d0, "op_estruturadas"),
+        com_emitente=True,
+    )
+
     return ConferenciaAplicacoesResponse(
         fundo_id=str(ua_id),
         fundo_nome=ua.nome,
@@ -184,6 +261,8 @@ async def compute_movimento_aplicacoes(
         total_valorizacao=tot_valoriz,
         outras_linhas=outras,
         delta_aplicacoes_total=delta_total,
+        titulos_publicos_itens=tpf_itens,
+        op_estruturadas_itens=nc_itens,
     )
 
 
