@@ -67,6 +67,7 @@ class _TituloLado:
     vencimento: date | None
     produto: str
     cedente_documento: str | None
+    cedente_nome: str | None
     sacado_id: int | None
     ua_id: int
     ua_nome: str | None
@@ -96,6 +97,7 @@ class LinhaConciliacao:
     # Exposto para o front aplicar filtros especificos do tenant (ex.: excluir
     # FAT de cedentes Pedreira na A7). O motor nao filtra por isso.
     cedente_documento: str | None = None
+    cedente_nome: str | None = None
     # UA (Unidade Administrativa) do titulo — escopo da analise. Vem do lado
     # Bitfin (wh_titulo). Linhas "so em banco" (boleto sem titulo) ficam sem UA
     # ate o boleto carregar UA do header CNAB (rebuild da carteira de cobranca).
@@ -137,6 +139,7 @@ async def _carregar_titulos(
             venc_sp.label("vencimento"),
             produto.label("produto"),
             Operacao.cedente_documento,
+            Operacao.cedente_nome,
             Titulo.sacado_id,
             Titulo.unidade_administrativa_id,
             DimUnidadeAdministrativa.nome.label("ua_nome"),
@@ -165,11 +168,12 @@ async def _carregar_titulos(
             vencimento=venc,
             produto=prod,
             cedente_documento=cedente_doc,
+            cedente_nome=cedente_nome,
             sacado_id=sacado_id,
             ua_id=ua_id,
             ua_nome=ua_nome,
         )
-        for numero, valor, venc, prod, cedente_doc, sacado_id, ua_id, ua_nome in rows
+        for numero, valor, venc, prod, cedente_doc, cedente_nome, sacado_id, ua_id, ua_nome in rows
     ]
 
 
@@ -247,6 +251,7 @@ async def conciliar_boletos(
                     venc_bitfin=t.vencimento,
                     produto=t.produto,
                     cedente_documento=t.cedente_documento,
+                    cedente_nome=t.cedente_nome,
                     ua_id=t.ua_id,
                     ua_nome=t.ua_nome,
                 )
@@ -274,6 +279,7 @@ async def conciliar_boletos(
                 produto=t.produto,
                 banco=b.banco_origem,
                 cedente_documento=t.cedente_documento,
+                cedente_nome=t.cedente_nome,
                 ua_id=t.ua_id,
                 ua_nome=t.ua_nome,
             )
