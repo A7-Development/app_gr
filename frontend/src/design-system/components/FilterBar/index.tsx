@@ -258,15 +258,28 @@ export function multiLabel(
   return `${selected.length} selecionados`
 }
 
+function _norm(s: string): string {
+  return s
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+}
+
 export function MultiCheckList({
   options,
   selected,
   onChange,
+  searchable = false,
+  searchPlaceholder = "Buscar…",
 }: {
   options: MultiOption[]
   selected: string[]
   onChange: (next: string[]) => void
+  /** Mostra um campo de busca que filtra as opcoes por label (sem acento). */
+  searchable?: boolean
+  searchPlaceholder?: string
 }) {
+  const [query, setQuery] = React.useState("")
   const set = React.useMemo(() => new Set(selected), [selected])
   const toggle = React.useCallback(
     (value: string, checked: boolean) => {
@@ -277,25 +290,61 @@ export function MultiCheckList({
     },
     [set, onChange],
   )
+  const visiveis = React.useMemo(() => {
+    if (!searchable || !query.trim()) return options
+    const q = _norm(query)
+    return options.filter((o) => _norm(o.label).includes(q))
+  }, [options, searchable, query])
+
   return (
-    <div className="max-h-72 overflow-y-auto py-1">
-      {options.length === 0 && (
-        <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-600">
-          Nenhuma opção disponível.
-        </p>
+    <div>
+      {searchable && (
+        <div className="sticky top-0 z-[1] border-b border-gray-100 bg-white p-1.5 dark:border-gray-800 dark:bg-gray-950">
+          <div className="relative flex items-center">
+            <RiSearchLine
+              className="pointer-events-none absolute left-2 size-3.5 shrink-0 text-gray-400 dark:text-gray-600"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={searchPlaceholder}
+              className={cx(
+                "h-7 w-full rounded border pl-7 pr-2 text-[13px]",
+                "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
+                "text-gray-900 placeholder:text-gray-400 dark:text-gray-50 dark:placeholder:text-gray-600",
+                "[&::-webkit-search-cancel-button]:hidden",
+                focusInput,
+              )}
+            />
+          </div>
+        </div>
       )}
-      {options.map((opt) => (
-        <label
-          key={opt.value}
-          className="flex cursor-pointer items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-        >
-          <Checkbox
-            checked={set.has(opt.value)}
-            onCheckedChange={(c) => toggle(opt.value, c === true)}
-          />
-          <span className="flex-1 text-gray-700 dark:text-gray-300">{opt.label}</span>
-        </label>
-      ))}
+      <div className="max-h-72 overflow-y-auto py-1">
+        {visiveis.length === 0 && (
+          <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-600">
+            {options.length === 0 ? "Nenhuma opção disponível." : "Nada encontrado."}
+          </p>
+        )}
+        {visiveis.map((opt) => (
+          <label
+            key={opt.value}
+            className="flex cursor-pointer items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            <Checkbox
+              checked={set.has(opt.value)}
+              onCheckedChange={(c) => toggle(opt.value, c === true)}
+            />
+            <span
+              className="flex-1 truncate text-gray-700 dark:text-gray-300"
+              title={opt.label}
+            >
+              {opt.label}
+            </span>
+          </label>
+        ))}
+      </div>
     </div>
   )
 }

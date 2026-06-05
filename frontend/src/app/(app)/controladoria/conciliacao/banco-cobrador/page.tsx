@@ -157,7 +157,7 @@ export default function ConciliacaoBancoCobradorPage() {
     [conc, produtoLabel],
   )
   const cedenteOpts = React.useMemo(
-    () => distinctOpts(conc?.linhas, (l) => l.cedente_documento),
+    () => distinctOpts(conc?.linhas, (l) => l.cedente_nome),
     [conc],
   )
 
@@ -180,7 +180,7 @@ export default function ConciliacaoBancoCobradorPage() {
         (bancoFilter.length === 0 || (l.banco != null && bancoFilter.includes(l.banco))) &&
         (produtoFilter.length === 0 || (l.produto != null && produtoFilter.includes(l.produto))) &&
         (cedenteFilter.length === 0 ||
-          (l.cedente_documento != null && cedenteFilter.includes(l.cedente_documento))),
+          (l.cedente_nome != null && cedenteFilter.includes(l.cedente_nome))),
     )
   }, [linhasNoEscopo, statusFilter, bancoFilter, produtoFilter, cedenteFilter])
 
@@ -284,6 +284,7 @@ export default function ConciliacaoBancoCobradorPage() {
               options={cedenteOpts}
               selected={cedenteFilter}
               onChange={setCedenteFilter}
+              searchable
             />
 
             {/* Frescor (nao-filtro): BITFIN e "agora"; o banco reflete ate o
@@ -361,12 +362,14 @@ function MultiSelectChip({
   options,
   selected,
   onChange,
+  searchable,
 }: {
   label: string
   icon?: RemixiconComponentType
   options: MultiOption[]
   selected: string[]
   onChange: (next: string[]) => void
+  searchable?: boolean
 }) {
   return (
     <FilterChip
@@ -375,8 +378,15 @@ function MultiSelectChip({
       active={selected.length > 0}
       icon={icon}
     >
-      <div className="w-56">
-        <MultiCheckList options={options} selected={selected} onChange={onChange} />
+      {/* Largura folgada pra label nao quebrar; cedente (searchable) mais larga. */}
+      <div className={searchable ? "w-72" : "w-64"}>
+        <MultiCheckList
+          options={options}
+          selected={selected}
+          onChange={onChange}
+          searchable={searchable}
+          searchPlaceholder="Buscar cedente…"
+        />
       </div>
     </FilterChip>
   )

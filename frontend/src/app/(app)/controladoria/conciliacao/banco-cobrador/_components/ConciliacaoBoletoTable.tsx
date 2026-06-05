@@ -105,13 +105,21 @@ const COLUMNS: ColumnDef<LinhaConciliacaoBoleto, unknown>[] = [
       return <span className={cx("capitalize", tableTokens.cellSecondary)}>{b ?? "—"}</span>
     },
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
-  col.accessor("cedente_documento", {
-    id: "cedente", header: "Cedente (CNPJ)", size: 140,
-    cell: (info) => (
-      <span className={cx("block truncate font-mono", tableTokens.cellSecondary)}>
-        {info.getValue<string>() ?? "—"}
-      </span>
-    ),
+  col.accessor("cedente_nome", {
+    id: "cedente", header: "Cedente", size: 200,
+    // MOTIVO: largura fixa + truncate (sem quebra). Nome do cedente pode ser
+    // longo; max-w constante mantem a coluna estavel, tooltip mostra o full.
+    cell: (info) => {
+      const v = info.getValue<string | null>()
+      return (
+        <span
+          className={cx("block max-w-[200px] truncate", tableTokens.cellText)}
+          title={v ?? undefined}
+        >
+          {v ?? "—"}
+        </span>
+      )
+    },
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
   col.accessor("venc_bitfin", {
     id: "venc_bitfin", header: "Venc. BITFIN", size: 110, meta: { align: "right" },
@@ -147,7 +155,7 @@ function exportarCsv(rows: LinhaConciliacaoBoleto[]) {
   const corpo = rows.map((r) =>
     [
       STATUS_META[r.status]?.label ?? r.status,  // label longo no CSV
-      r.numero, r.produto ?? "", r.banco ?? "", r.cedente_documento ?? "",
+      r.numero, r.produto ?? "", r.banco ?? "", r.cedente_nome ?? "",
       r.venc_bitfin ?? "", r.venc_banco ?? "",
       r.valor_bitfin ?? "", r.valor_banco ?? "",
       r.diferenca_valor ?? "", r.diferenca_dias ?? "",
