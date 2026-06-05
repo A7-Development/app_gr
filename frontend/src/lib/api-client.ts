@@ -4725,6 +4725,8 @@ export type LinhaConciliacaoBoleto = {
   produto:           string | null
   banco:             string | null
   cedente_documento: string | null
+  ua_id:             number | null
+  ua_nome:           string | null
 }
 
 export type ConciliacaoBancoCobradorResponse = {
@@ -4793,6 +4795,8 @@ export const controladoria = {
         produto:           l.produto,
         banco:             l.banco,
         cedente_documento: l.cedente_documento,
+        ua_id:             numN(l.ua_id),
+        ua_nome:           l.ua_nome ?? null,
       })),
     }
   },

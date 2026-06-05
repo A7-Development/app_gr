@@ -57,6 +57,10 @@ class LinhaConciliacaoSchema(BaseModel):
     cedente_documento: str | None = Field(
         default=None, description="CNPJ do cedente — para filtros de tenant no front."
     )
+    ua_id: int | None = Field(
+        default=None, description="UA (Unidade Administrativa) — escopo. Null em 'só em banco'."
+    )
+    ua_nome: str | None = Field(default=None, description="Nome amigável da UA.")
 
 
 class ConciliacaoBancoCobradorResponse(BaseModel):
