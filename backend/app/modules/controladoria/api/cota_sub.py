@@ -38,6 +38,9 @@ from app.modules.controladoria.schemas.cota_sub_drill import (
     DrillPddResponse,
 )
 from app.modules.controladoria.schemas.detalhamento_dia import DetalhamentoDiaResponse
+from app.modules.controladoria.schemas.variacao_diaria import (
+    VariacaoDiariaSeriePonto,
+)
 from app.modules.controladoria.schemas.variacao_headline import (
     VariacaoHeadlineResponse,
 )
@@ -59,6 +62,9 @@ from app.modules.controladoria.services.cota_sub_drill_dc import compute_drill_d
 from app.modules.controladoria.services.cota_sub_drill_origem import compute_drill_origem
 from app.modules.controladoria.services.cota_sub_drill_pdd import compute_drill_pdd
 from app.modules.controladoria.services.detalhamento_dia import compute_detalhamento_dia
+from app.modules.controladoria.services.variacao_diaria import (
+    compute_variacao_diaria_serie,
+)
 from app.modules.controladoria.services.variacao_headline import (
     compute_variacao_headline,
 )
@@ -306,6 +312,33 @@ async def datas_disponiveis(
         tenant_id=principal.tenant_id,
         ua_id=fundo_id,
     )
+
+
+@router.get("/variacao-diaria", response_model=list[VariacaoDiariaSeriePonto])
+async def variacao_diaria(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fundo_id: Annotated[UUID, Query(description="UUID da Unidade Administrativa (FIDC)")],
+    competencia: Annotated[str, Query(description="Competência YYYY-MM (mês a materializar)")],
+    _: None = _Guard,
+) -> list[VariacaoDiariaSeriePonto]:
+    """Serie diaria da variacao do PL Sub MEC na competencia — MASTER da aba
+    "Resumo do dia". Um ponto por dia-calendario do mes (CLAUDE.md §14.6: nada
+    cortado); dias sem snapshot vem com `variacao_cota=None`. Barato: uma leitura
+    de `wh_mec_evolucao_cotas` + diff de dias uteis consecutivos (nao roda o
+    waterfall por dia). Clicar num dia no frontend re-chaveia o /variacao/resumo.
+
+    Multi-tenant: scope via `principal.tenant_id` no service.
+    """
+    try:
+        return await compute_variacao_diaria_serie(
+            db,
+            tenant_id=principal.tenant_id,
+            ua_id=fundo_id,
+            competencia=competencia,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @router.get("/variacoes-dia", response_model=VariacoesDiaResponse)
