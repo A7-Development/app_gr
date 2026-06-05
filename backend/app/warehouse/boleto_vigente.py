@@ -45,10 +45,13 @@ class BoletoVigente(Base):
 
     __tablename__ = "wh_boleto_vigente"
     __table_args__ = (
+        # Identidade do boleto = par (nosso_numero, numero_documento): o banco
+        # REUSA o nosso_numero ao longo do tempo, so o par e estavel.
         UniqueConstraint(
             "tenant_id",
             "banco_origem",
             "nosso_numero",
+            "numero_documento",
             name="uq_wh_boleto_vigente",
         ),
         # Conciliacao: boletos ativos por numero (cruzamento com wh_titulo).

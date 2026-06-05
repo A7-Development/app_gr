@@ -42,6 +42,9 @@ class LinhaConciliacaoSchema(BaseModel):
 
     status: StatusConciliacao
     numero: str = Field(description="Numero do documento/titulo (chave de cruzamento).")
+    nosso_numero: str | None = Field(
+        default=None, description="Nosso numero do banco (lado boleto)."
+    )
     valor_bitfin: Decimal | None = Field(default=None, description="Valor liquido do titulo.")
     valor_banco: Decimal | None = Field(default=None, description="Valor do boleto.")
     diferenca_valor: Decimal | None = Field(

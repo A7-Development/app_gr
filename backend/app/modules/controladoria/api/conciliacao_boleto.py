@@ -46,6 +46,7 @@ def _mapear_linha(linha: LinhaConciliacao) -> LinhaConciliacaoSchema:
     return LinhaConciliacaoSchema(
         status=linha.status,
         numero=linha.numero,
+        nosso_numero=linha.nosso_numero,
         valor_bitfin=linha.valor_bitfin,
         valor_banco=linha.valor_banco,
         diferenca_valor=diferenca_valor,

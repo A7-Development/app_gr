@@ -72,11 +72,17 @@ async def project_tenant_vigente(
         list
     )
     for e in eventos:
-        por_boleto[(e.banco_origem, e.ua_id, e.nosso_numero)].append(e)
+        # Identidade do boleto = par (nosso_numero, numero_documento). O banco
+        # REUSA o nosso_numero ao longo do tempo (reciclagem do sequencial apos
+        # o boleto fechar); so o par e estavel/unico. Empiricamente 635 nossos
+        # numeros aparecem para >1 documento.
+        por_boleto[
+            (e.banco_origem, e.ua_id, e.nosso_numero, e.numero_documento)
+        ].append(e)
 
     projected_at = datetime.now(UTC)
     rows: list[dict[str, Any]] = []
-    for (banco_origem, ua_id, nosso), evs in por_boleto.items():
+    for (banco_origem, ua_id, nosso, numero_documento), evs in por_boleto.items():
         evs.sort(
             key=lambda e: (e.data_ocorrencia, _PRIORIDADE.get(e.efeito_estado, 1))
         )
@@ -89,13 +95,10 @@ async def project_tenant_vigente(
         valor_pago: Decimal | None = None
         data_pgto: date | None = None
         ua_nome = None
-        numero_documento = nosso
         sacado_doc = sacado_nome = None
         for e in evs:
             if e.ua_nome:
                 ua_nome = e.ua_nome
-            if e.numero_documento:
-                numero_documento = e.numero_documento
             if e.sacado_documento:
                 sacado_doc = e.sacado_documento
             if e.sacado_nome:

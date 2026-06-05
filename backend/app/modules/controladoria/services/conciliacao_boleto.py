@@ -76,6 +76,7 @@ class _TituloLado:
 @dataclass
 class _BoletoLado:
     numero_documento: str
+    nosso_numero: str
     valor_boleto: Decimal
     data_vencimento: date | None
     banco_origem: str
@@ -88,6 +89,8 @@ class _BoletoLado:
 class LinhaConciliacao:
     status: str
     numero: str
+    # Nosso numero do banco (lado boleto) — ajuda a achar divergencia.
+    nosso_numero: str | None = None
     valor_bitfin: Decimal | None = None
     valor_banco: Decimal | None = None
     venc_bitfin: date | None = None
@@ -183,6 +186,7 @@ async def _carregar_boletos(
     """Carteira de cobranca ATUAL: boletos vigentes ativos (sem data-base)."""
     stmt = select(
         BoletoVigente.numero_documento,
+        BoletoVigente.nosso_numero,
         BoletoVigente.valor_atual,
         BoletoVigente.data_vencimento,
         BoletoVigente.banco_origem,
@@ -197,6 +201,7 @@ async def _carregar_boletos(
     return [
         _BoletoLado(
             numero_documento=numero,
+            nosso_numero=nosso,
             valor_boleto=valor,
             data_vencimento=venc,
             banco_origem=banco,
@@ -204,7 +209,7 @@ async def _carregar_boletos(
             ua_id=ua_id,
             ua_nome=ua_nome,
         )
-        for numero, valor, venc, banco, sacado_doc, ua_id, ua_nome in rows
+        for numero, nosso, valor, venc, banco, sacado_doc, ua_id, ua_nome in rows
     ]
 
 
@@ -261,6 +266,7 @@ async def conciliar_boletos(
                 LinhaConciliacao(
                     status=STATUS_SO_BANCO,
                     numero=numero,
+                    nosso_numero=b.nosso_numero,
                     valor_banco=b.valor_boleto,
                     venc_banco=b.data_vencimento,
                     banco=b.banco_origem,
@@ -272,6 +278,7 @@ async def conciliar_boletos(
             linha = LinhaConciliacao(
                 status=STATUS_CONCILIADO,
                 numero=numero,
+                nosso_numero=b.nosso_numero,
                 valor_bitfin=t.valor_liquido,
                 valor_banco=b.valor_boleto,
                 venc_bitfin=t.vencimento,
