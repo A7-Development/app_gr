@@ -21,6 +21,10 @@ from __future__ import annotations
 
 from app.warehouse.cnab_raw_arquivo import BANCO_BRADESCO, BANCO_GRAFENO
 
+# Versao da taxonomia do decoder. Bumpar ao mudar o mapeamento codigo->evento
+# (re-decode atualiza wh_boleto_evento.decoded_by_version). Rastreabilidade §14.
+DECODER_VERSION = "cobranca_evento_decoder_v1.0.0"
+
 # ── Tipos de evento canonicos ───────────────────────────────────────────────
 TIPO_ENTRADA = "entrada"  # boleto registrado/confirmado no banco
 TIPO_ENTRADA_REJEITADA = "entrada_rejeitada"
