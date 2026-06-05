@@ -26,13 +26,14 @@ from sqlalchemy import select
 
 import app.shared.identity.tenant  # noqa: F401
 from app.core.database import AsyncSessionLocal
-from app.core.enums import SourceType
+from app.core.enums import Environment, SourceType
 from app.modules.integracoes.adapters.erp.bitfin.config import BitfinConfig
 from app.modules.integracoes.adapters.erp.bitfin.connection import fetch_rows
 from app.modules.integracoes.adapters.erp.bitfin.etl import (
     _RECONCILE_TARGETS,
     sync_reconcile_mirror,
 )
+from app.modules.integracoes.models.tenant_source_config import TenantSourceConfig
 from app.modules.integracoes.services.source_config import get_decrypted_config
 from app.shared.identity.tenant import Tenant
 
@@ -48,10 +49,31 @@ async def _resolve_tenant_id(slug: str) -> UUID:
 
 
 async def _load_config(tenant_id: UUID) -> BitfinConfig:
+    """Carrega a BitfinConfig do tenant. A config e escopada por UA em
+    `tenant_source_config`; descobrimos a UA da primeira linha habilitada
+    (a conexao alcanca o UNLTD_<cliente> inteiro — o universo do tenant —
+    independente da UA da config)."""
     async with AsyncSessionLocal() as db:
-        cfg_dict = await get_decrypted_config(db, tenant_id, SourceType.ERP_BITFIN)
+        cfg_row = (
+            await db.execute(
+                select(TenantSourceConfig).where(
+                    TenantSourceConfig.tenant_id == tenant_id,
+                    TenantSourceConfig.source_type == SourceType.ERP_BITFIN,
+                    TenantSourceConfig.environment == Environment.PRODUCTION,
+                    TenantSourceConfig.enabled.is_(True),
+                )
+            )
+        ).scalars().first()
+        if cfg_row is None:
+            raise SystemExit(f"Tenant {tenant_id} sem tenant_source_config erp:bitfin.")
+        cfg_dict = await get_decrypted_config(
+            db,
+            tenant_id,
+            SourceType.ERP_BITFIN,
+            unidade_administrativa_id=cfg_row.unidade_administrativa_id,
+        )
     if cfg_dict is None:
-        raise SystemExit(f"Tenant {tenant_id} sem tenant_source_config erp:bitfin.")
+        raise SystemExit(f"Tenant {tenant_id} sem config decifravel erp:bitfin.")
     return BitfinConfig.from_dict(cfg_dict)
 
 
