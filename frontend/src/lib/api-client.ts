@@ -3347,6 +3347,30 @@ export type VariacaoResumoResponse = {
   atencoes:       AtencaoResumo[]
 }
 
+// Endpoint /controladoria/cota-sub/variacao-diaria — serie diaria da variacao
+// da Cota Sub dentro de uma competencia (mes). Master do master-detail da aba
+// "Resumo do dia": clicar num dia re-chaveia o /variacao/resumo.
+//
+// ┌─ DEPENDENCIA DE BACKEND (sinalizada 2026-06-05) ───────────────────────────┐
+// │ Endpoint AINDA NAO EXISTE no backend. Contrato pedido ao time:             │
+// │   GET /controladoria/cota-sub/variacao-diaria?fundo_id&competencia=YYYY-MM │
+// │   -> VariacaoDiariaSeriePonto[]  (1 request, ~21 dias uteis)               │
+// │                                                                            │
+// │ `variacao_cota` == o `cota_delta` que /variacao/resumo ja calcula          │
+// │ (= PL Sub calc D0 - D1, metodo gestor). `variacao_pct` = cota_delta /      │
+// │ pl_sub_calc_d1. Implementacao barata: diferenca consecutiva do PL Sub por  │
+// │ data disponivel na competencia (UMA query), nao N waterfalls completos.    │
+// │                                                                            │
+// │ Ate o endpoint existir, o client cai num MOCK dev-only (ver metodo).       │
+// └────────────────────────────────────────────────────────────────────────────┘
+export type VariacaoDiariaSeriePonto = {
+  data:          string         // ISO "YYYY-MM-DD"
+  variacao_cota: number | null  // Δ R$ do PL Sub no dia (null = sem apuracao)
+  variacao_pct:  number | null  // Δ% sobre PL Sub calc D-1
+  eh_dia_util:   boolean
+  eh_futuro:     boolean
+}
+
 // Endpoint /controladoria/cota-sub/drill/cotas — detalhe do Auditor de Cotas
 // (passivo de cotistas). Money ja coercido p/ number.
 export type ClasseCotaMovimento = {
@@ -4738,6 +4762,42 @@ export type ConciliacaoBancoCobradorResponse = {
   linhas:          LinhaConciliacaoBoleto[]
 }
 
+// MOCK dev-only da serie diaria — usado SO quando o endpoint backend ainda nao
+// existe (ver cotaSubVariacaoDiaria). Determinístico (sem Math.random) pra ser
+// estavel entre renders. Remover quando o backend publicar /variacao-diaria.
+function _mockVariacaoDiaria(competencia: string): VariacaoDiariaSeriePonto[] {
+  const m = /^(\d{4})-(\d{2})$/.exec(competencia)
+  if (!m) return []
+  const year = Number(m[1])
+  const month = Number(m[2]) // 1-12
+  const daysInMonth = new Date(year, month, 0).getDate()
+  const hoje = new Date()
+  hoje.setHours(0, 0, 0, 0)
+  const PL_SUB_REF = 4_820_000 // base p/ Δ% mock
+  const out: VariacaoDiariaSeriePonto[] = []
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dt = new Date(year, month - 1, d)
+    const iso = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+    const dow = dt.getDay() // 0=dom 6=sab
+    const ehDiaUtil = dow !== 0 && dow !== 6
+    const ehFuturo = dt.getTime() > hoje.getTime()
+    if (!ehDiaUtil || ehFuturo) {
+      out.push({ data: iso, variacao_cota: null, variacao_pct: null, eh_dia_util: ehDiaUtil, eh_futuro: ehFuturo })
+      continue
+    }
+    // Pseudo-valor estavel no intervalo ~[-30k, +42k].
+    const v = ((d * 7919) % 72000) - 30000
+    out.push({
+      data: iso,
+      variacao_cota: v,
+      variacao_pct: (v / PL_SUB_REF) * 100,
+      eh_dia_util: true,
+      eh_futuro: false,
+    })
+  }
+  return out
+}
+
 export const controladoria = {
   evolucaoPatrimonialSerie: async (opts: {
     fundoId:        string
@@ -4903,6 +4963,33 @@ export const controladoria = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       atencoes: (raw.atencoes ?? []).map((a: any) => ({ ...a, valor: num(a.valor) })),
     } as VariacaoResumoResponse
+  },
+
+  cotaSubVariacaoDiaria: async (
+    fundoId: string,
+    competencia: string,    // "YYYY-MM"
+  ): Promise<VariacaoDiariaSeriePonto[]> => {
+    const params = new URLSearchParams({ fundo_id: fundoId, competencia })
+    const url = `/controladoria/cota-sub/variacao-diaria?${params.toString()}`
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = await apiClient.get<any[]>(url)
+      const num = (v: unknown) => (v == null ? null : Number(v))
+      return (raw ?? []).map((p) => ({
+        data:          String(p.data),
+        variacao_cota: num(p.variacao_cota),
+        variacao_pct:  num(p.variacao_pct),
+        eh_dia_util:   Boolean(p.eh_dia_util),
+        eh_futuro:     Boolean(p.eh_futuro),
+      }))
+    } catch (err) {
+      // BACKEND DEPENDENCY: enquanto o endpoint nao existe, o frontend funciona
+      // em modo degradado com uma serie MOCK (apenas fora de producao) pra
+      // permitir validacao visual do master-detail. Em producao, propaga o erro
+      // (o card mostra estado de erro/vazio ate o backend publicar o endpoint).
+      if (process.env.NODE_ENV === "production") throw err
+      return _mockVariacaoDiaria(competencia)
+    }
   },
 
   cotaSubVariacaoChat: async (

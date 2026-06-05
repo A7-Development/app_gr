@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { ThemeProvider } from "next-themes"
+import { NuqsAdapter } from "nuqs/adapters/next/app"
 import { Toaster } from "sonner"
 import { inter } from "@/lib/fonts"
 import { QueryProvider } from "@/lib/QueryProvider"
@@ -28,7 +29,9 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <QueryProvider>{children}</QueryProvider>
+          <NuqsAdapter>
+            <QueryProvider>{children}</QueryProvider>
+          </NuqsAdapter>
           <Toaster position="bottom-right" richColors closeButton />
         </ThemeProvider>
       </body>
