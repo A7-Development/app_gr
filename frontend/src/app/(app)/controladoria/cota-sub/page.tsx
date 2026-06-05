@@ -731,6 +731,9 @@ function CotaSubPageInner() {
         delta:  g.impacto_pl_sub,
         source: drilledCategoria === "aplicacoes" ? "wh_posicao_cota_fundo" : "wh_movimento_caixa",
         contra: false,
+        // Aplicacoes/Disponibilidades nao sao linha de balanco com posicao D0/D-1
+        // — o header mostra so o IMPACTO giro-limpo (= delta), sem "vs D-1".
+        impactOnly: true,
       }
     }
     return toInspectorCategoria(balancoEstruturalQuery.data, drilledCategoria as CategoriaPatrimonialKey | null)

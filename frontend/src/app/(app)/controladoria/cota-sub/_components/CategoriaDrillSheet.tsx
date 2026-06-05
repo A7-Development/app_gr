@@ -67,17 +67,26 @@ export function CategoriaDrillSheet({
             breadcrumb={["Cota Sub", categoria.label]}
             statusSlot={<TipoBadge tipo={categoria.tipo} />}
           />
-          <DrillDownSheet.Hero
-            title={categoria.label}
-            value={categoria.d0}
-            delta={{
-              value:          categoria.delta,
-              label:          `vs ${fmtDate(dataAnterior)} (${fmtBRL.format(categoria.d1)})`,
-              format:         "currency",
-              labelTone:      "muted",
-              positiveIsGood: !categoria.contra,
-            }}
-          />
+          {categoria.impactOnly ? (
+            // Categoria sintetica: header e o IMPACTO giro-limpo na cota (= delta),
+            // nao uma posicao D0/D-1. So o valor, sem a linha "vs D-1" falsa.
+            <DrillDownSheet.Hero
+              title={`${categoria.label} · impacto na cota`}
+              value={categoria.delta}
+            />
+          ) : (
+            <DrillDownSheet.Hero
+              title={categoria.label}
+              value={categoria.d0}
+              delta={{
+                value:          categoria.delta,
+                label:          `vs ${fmtDate(dataAnterior)} (${fmtBRL.format(categoria.d1)})`,
+                format:         "currency",
+                labelTone:      "muted",
+                positiveIsGood: !categoria.contra,
+              }}
+            />
+          )}
           <DrillDownSheet.Body>
             {children}
           </DrillDownSheet.Body>

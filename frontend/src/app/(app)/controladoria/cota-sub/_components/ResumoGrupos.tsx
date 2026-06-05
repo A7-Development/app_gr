@@ -20,15 +20,13 @@ import { cx } from "@/lib/utils"
 import { Card } from "@/components/tremor/Card"
 import type { GrupoResumo, GrupoResumoLinha, VariacaoResumoResponse } from "@/lib/api-client"
 
-function fmtK(v: number): string {
-  if (Math.abs(v) < 1) return "R$ 0"
+// Valor completo, sem abreviacao (k/M) — R$ X.XXX,XX com sinal. Zero -> "R$ 0,00".
+function fmtVal(v: number): string {
+  if (Math.abs(v) < 1) return "R$ 0,00"
   const s = v >= 0 ? "+" : "−"
-  const a = Math.abs(v)
-  if (a >= 1000) return `${s}R$ ${(a / 1000).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}k`
-  return `${s}R$ ${a.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`
+  return `${s}R$ ${Math.abs(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
-const fmtBRL = (v: number) =>
-  (v >= 0 ? "+" : "−") + "R$ " + Math.abs(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmtBRL = fmtVal
 
 function toneClass(v: number): string {
   if (Math.abs(v) < 1) return "text-gray-400 dark:text-gray-500"
@@ -78,7 +76,7 @@ function SectionHead({ label, subtotal, first }: { label: string; subtotal: numb
     <div className={cx("flex items-center gap-2.5 mb-1.5", first ? "mt-1.5" : "mt-4")}>
       <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-500 dark:text-gray-400">{label}</span>
       <span className="h-px flex-1 bg-gray-200 dark:bg-gray-800" aria-hidden="true" />
-      <span className={cx("text-[11px] font-semibold tabular-nums", toneClass(subtotal))}>{fmtK(subtotal)}</span>
+      <span className={cx("text-[11px] font-semibold tabular-nums", toneClass(subtotal))}>{fmtVal(subtotal)}</span>
     </div>
   )
 }
@@ -103,8 +101,8 @@ function SubLinha({ linha, onDrill }: { linha: GrupoResumoLinha; onDrill?: (k: s
       <span className={cx("flex-1 truncate text-[12px]", zero ? "text-gray-400 dark:text-gray-500" : "text-gray-600 dark:text-gray-400")}>
         {linha.label}
       </span>
-      <span className={cx("w-[84px] shrink-0 text-right text-[12px] font-medium tabular-nums", zero ? "text-gray-400 dark:text-gray-500" : toneClass(linha.impacto_pl_sub))}>
-        {zero ? "—" : fmtK(linha.impacto_pl_sub)}
+      <span className={cx("w-[120px] shrink-0 text-right text-[12px] font-medium tabular-nums", zero ? "text-gray-400 dark:text-gray-500" : toneClass(linha.impacto_pl_sub))}>
+        {zero ? "—" : fmtVal(linha.impacto_pl_sub)}
       </span>
       <Seta active={drillable} />
     </button>
@@ -132,8 +130,8 @@ function GrupoBloco({ grupo, maxAbs, onDrill }: { grupo: GrupoResumo; maxAbs: nu
           {displayLabel(grupo)}
         </span>
         <Tick v={grupo.impacto_pl_sub} maxAbs={maxAbs} />
-        <span className={cx("w-[84px] shrink-0 text-right text-[13px] font-bold tabular-nums", toneClass(grupo.impacto_pl_sub))}>
-          {fmtK(grupo.impacto_pl_sub)}
+        <span className={cx("w-[120px] shrink-0 text-right text-[13px] font-bold tabular-nums", toneClass(grupo.impacto_pl_sub))}>
+          {fmtVal(grupo.impacto_pl_sub)}
         </span>
         <Seta active={drillable} />
       </button>
