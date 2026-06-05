@@ -3235,6 +3235,10 @@ export type CategoriaPatrimonial = {
   /** Contra-ativo (redutor, ex.: PDD): polaridade do delta invertida —
    *  subir piora o PL Sub, entao positivo=vermelho / negativo=verde. */
   contra?: boolean
+  /** Categoria sintetica (Aplicacoes/Disponibilidades) cujo header e o IMPACTO
+   *  giro-limpo na cota (= delta), nao uma posicao D0/D-1. Hero mostra so o
+   *  impacto, sem a linha "vs D-1" (d0/d1 nao sao posicoes reais aqui). */
+  impactOnly?: boolean
 }
 
 
