@@ -588,6 +588,138 @@ async function _uploadMultipart<T>(
   return (await res.json()) as T
 }
 
+// ─── Faturamento: analytics determinístico (endpoint) + análise (agente) ─────
+
+export type RevenueMonthPoint = { mes: string; receita_bruta: number }
+
+export type FaturamentoAnalytics =
+  | { encontrado: false; mensagem: string }
+  | {
+      encontrado: true
+      homologado: boolean
+      fonte: {
+        documento_id: string
+        arquivo: string
+        status_extracao: string
+        confianca: number | null
+        modelo: string | null
+        prompt: string | null
+        enviado_em: string | null
+        ajustado_pelo_analista: boolean
+      }
+      periodo: { inicio: string | null; fim: string | null }
+      analytics: {
+        serie: RevenueMonthPoint[]
+        agregados: {
+          total?: number
+          media?: number
+          n_meses?: number
+          mes_maior?: { mes: string; valor: number }
+          mes_menor?: { mes: string; valor: number }
+        }
+        tendencia: {
+          direcao?: string
+          intensidade?: string
+          slope_mensal?: number
+          variacao_periodo_pct?: number
+          crescimento_anualizado_pct?: number
+        }
+        sazonalidade: {
+          confiavel?: boolean
+          nota?: string
+          picos?: string[]
+          vales?: string[]
+        }
+        outliers: Array<{ mes: string; valor: number; x_media: number; tipo: string }>
+        yoy: { media_pct?: number } | null
+        qualidade: {
+          n_meses?: number
+          soma_meses?: number
+          total_declarado?: number | null
+          soma_confere?: boolean
+          meses_faltantes?: string[]
+          meses_zerados?: string[]
+        }
+      }
+      atestacao: {
+        data_documento?: string | null
+        idade_meses?: number | null
+        recente?: boolean | null
+        assinado?: boolean
+        qtd_signatarios?: number
+        emitente_confere?: boolean | null
+        tem_ressalva?: boolean
+        observacoes?: string[]
+      }
+    }
+
+/** Output do agente `revenue_analyst` (julgamento). */
+export type RevenueAnalysis = {
+  resumo_executivo: string
+  tendencia: { direcao: string; intensidade: string; leitura: string }
+  sazonalidade: {
+    detectada: boolean
+    confiavel: boolean
+    padrao: string | null
+    meses_pico: string[]
+    meses_vale: string[]
+  }
+  pontos_de_atencao: Array<{
+    mes: string | null
+    tipo: string
+    esperado_ou_anomalo: string
+    severidade: string
+    observacao: string
+  }>
+  qualidade_do_dado: {
+    soma_confere: boolean
+    n_meses: number
+    meses_faltantes: string[]
+    observacao: string
+  }
+  credibilidade_documento: {
+    assinado: boolean
+    signatarios_resumo: string | null
+    documento_recente: boolean | null
+    emitente_confere: boolean | null
+    ressalvas: string[]
+    nivel: string
+    leitura: string
+  }
+  leitura_para_credito: string
+}
+
+// ─── Cadastral: card (silver, white-label) + análise (agente) ────────────────
+
+export type CadastralCnae = { code: string | null; name: string | null }
+
+export type CadastralCard = {
+  encontrado: boolean
+  enriquecido: boolean
+  cnpj: string
+  razao_social: string | null
+  nome_fantasia: string | null
+  situacao_cadastral: string | null
+  data_fundacao: string | null
+  capital_social: number | null
+  cnae_principal: CadastralCnae | null
+  cnaes_secundarios: CadastralCnae[]
+  regime_tributario: string | null
+  natureza_juridica: string | null
+  porte: string | null
+}
+
+/** Output do agente `cadastral_analyst` (julgamento). */
+export type CadastralAnalysis = {
+  resumo_executivo: string
+  situacao_cadastral: string
+  tempo_atividade_leitura: string
+  aderencia_atividade: string
+  porte_capital_leitura: string
+  pontos_de_atencao: Array<{ tipo: string; severidade: string; observacao: string }>
+  leitura_para_credito: string
+}
+
 export const credito = {
   dossies: {
     list: (params?: { status?: DossierStatus; limit?: number; offset?: number }) => {
@@ -629,6 +761,15 @@ export const credito = {
       apiClient.post<DossierStateResponse>(
         `/credito/dossies/${id}/nodes/${nodeId}/rerun`,
       ),
+    /** Faturamento homologado + analytics determinístico + atestação (mesmo
+     *  payload da read-tool do agente — números da fonte determinística). */
+    faturamentoAnalytics: (id: string) =>
+      apiClient.get<FaturamentoAnalytics>(
+        `/credito/dossies/${id}/faturamento/analytics`,
+      ),
+    /** Card 'Dados cadastrais coletados' (silver, white-label). */
+    cadastral: (id: string) =>
+      apiClient.get<CadastralCard>(`/credito/dossies/${id}/cadastral`),
   },
   attachments: {
     list: (dossierId: string, nodeId?: string | null) => {

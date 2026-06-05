@@ -28,6 +28,8 @@ from app.modules.credito.schemas.dossier import (
     NodeSubmitPayload,
 )
 from app.modules.credito.services import dossier as dossier_svc
+from app.modules.credito.services.cadastral import load_cadastral_silver_view
+from app.modules.credito.services.revenue import build_faturamento_payload
 
 router = APIRouter()
 
@@ -479,3 +481,43 @@ async def rerun_node_endpoint(
     return await get_dossie_state(
         dossier_id=dossier_id, principal=principal, db=db
     )
+
+
+@router.get("/dossies/{dossier_id}/faturamento/analytics")
+async def faturamento_analytics(
+    dossier_id: UUID,
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = Depends(require_module(Module.CREDITO, Permission.READ)),
+) -> dict:
+    """Série de faturamento homologada + analytics determinístico + atestação.
+
+    Mesmo payload que a read-tool entrega ao agente — a tela do checkpoint
+    mostra os MESMOS fatos que o `revenue_analyst` julgou (números da fonte
+    determinística, não do agente).
+    """
+    return await build_faturamento_payload(
+        db, tenant_id=principal.tenant_id, dossier_id=dossier_id
+    )
+
+
+@router.get("/dossies/{dossier_id}/cadastral")
+async def dados_cadastrais(
+    dossier_id: UUID,
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = Depends(require_module(Module.CREDITO, Permission.READ)),
+) -> dict:
+    """Card 'Dados cadastrais coletados' (silver, WHITE-LABEL — sem vendor).
+
+    Mesma fonte que a read-tool do agente cadastral usa (uma silver pro humano
+    e pro agente). 404 quando o dossie não tem empresa-alvo.
+    """
+    view = await load_cadastral_silver_view(
+        db, tenant_id=principal.tenant_id, dossier_id=dossier_id
+    )
+    if view is None:
+        raise HTTPException(
+            status_code=404, detail="Empresa-alvo nao encontrada no dossie."
+        )
+    return view

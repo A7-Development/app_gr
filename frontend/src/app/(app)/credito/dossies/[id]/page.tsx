@@ -30,6 +30,10 @@ import {
   type WizardMultiStepStep,
 } from "@/design-system/patterns/WizardMultiStep"
 import { DocumentWorkspace } from "./_components/DocumentWorkspace"
+import { RevenueAnalysisView } from "./_components/RevenueAnalysisView"
+import { CadastralAnalysisView } from "./_components/CadastralAnalysisView"
+import { CadastralCard } from "./_components/CadastralCard"
+import { AnalysisCheckpoint } from "./_components/AnalysisCheckpoint"
 import {
   AgentLiveStatus,
   AgentOutputRenderer,
@@ -49,6 +53,7 @@ import {
   DOSSIER_STATUS_LABEL,
   DOSSIER_STATUS_TONE,
   type AttachmentRead,
+  type CadastralAnalysis,
   type EdgeSpec,
   type FormField,
   type LinkRead,
@@ -57,6 +62,7 @@ import {
   type NoteRead,
   type OpinionInput,
   type RedFlagItem,
+  type RevenueAnalysis,
 } from "@/lib/credito-client"
 import {
   useDossierAttachments,
@@ -288,9 +294,62 @@ export default function DossierDetailPage() {
         />
       )
     }
-    // Checkpoint de revisao (human_review): rever flags + editar parecer +
-    // finalizar. Substitui o "Continuar" seco.
+    // Checkpoint de revisao (human_review). Dois modos:
+    // - config.review_of presente -> checkpoint de UMA analise (faturamento/
+    //   cadastral): mostra o trabalho do agente + aprova/reprocessa.
+    // - sem review_of -> checkpoint FINAL: rever flags + editar parecer +
+    //   finalizar.
     if (step.nodeType === "human_review") {
+      const reviewOf = (step.config as { review_of?: string } | undefined)
+        ?.review_of
+      if (reviewOf) {
+        const cfg = (step.config ?? {}) as { title?: string; description?: string }
+        const agentStep = steps.find(
+          (s) =>
+            s.state === "completed" &&
+            (s.input as { agent?: string } | undefined)?.agent === reviewOf,
+        )
+        const analysisOutput = agentStep?.output
+        return (
+          <AnalysisCheckpoint
+            title={cfg.title ?? "Conferencia da analise"}
+            description={cfg.description}
+            approving={submitMutation.isPending}
+            onApprove={(notes) =>
+              submitMutation.mutate({
+                nodeId: step.id,
+                values: { approved: true, notes },
+              })
+            }
+            onReprocess={
+              agentStep
+                ? () => {
+                    if (window.confirm("Reprocessar a analise da IA?")) {
+                      rerunMutation.mutate(agentStep.id)
+                    }
+                  }
+                : undefined
+            }
+            reprocessing={rerunMutation.isPending}
+          >
+            {reviewOf === "revenue_analyst" && analysisOutput ? (
+              <RevenueAnalysisView
+                dossierId={dossierId}
+                output={analysisOutput as unknown as RevenueAnalysis}
+              />
+            ) : reviewOf === "cadastral_analyst" && analysisOutput ? (
+              <CadastralAnalysisView
+                dossierId={dossierId}
+                output={analysisOutput as unknown as CadastralAnalysis}
+              />
+            ) : (
+              <p className={tableTokens.cellSecondary}>
+                Analise ainda nao disponivel.
+              </p>
+            )}
+          </AnalysisCheckpoint>
+        )
+      }
       return (
         <CheckpointReview
           flags={state.red_flags ?? []}
@@ -375,6 +434,7 @@ export default function DossierDetailPage() {
     "specialist_agent",
     "document_extractor",
     "bureau_query",
+    "cadastral_enrichment",
     "http_request",
   ])
 
@@ -409,8 +469,29 @@ export default function DossierDetailPage() {
         />
       )
     }
+    // Enriquecimento cadastral concluido -> card dos dados coletados (silver).
+    if (step.nodeType === "cadastral_enrichment") {
+      return <CadastralCard dossierId={dossierId} />
+    }
     const inputData = (step.input ?? {}) as { agent?: string }
     const agentName = inputData.agent ?? null
+    // Analises da esteira de faturamento -> views ricas (numeros + julgamento).
+    if (agentName === "revenue_analyst" && step.output) {
+      return (
+        <RevenueAnalysisView
+          dossierId={dossierId}
+          output={step.output as unknown as RevenueAnalysis}
+        />
+      )
+    }
+    if (agentName === "cadastral_analyst" && step.output) {
+      return (
+        <CadastralAnalysisView
+          dossierId={dossierId}
+          output={step.output as unknown as CadastralAnalysis}
+        />
+      )
+    }
     if (agentName === "opinion_writer" && opinion) {
       return <OpinionView output={opinion} indebtedness={indebtedness} />
     }
@@ -637,6 +718,7 @@ function buildSteps(
         label,
         state: "pending",
         nodeType,
+        config: spec?.config,
       }
     }
     const stepState = stepStateFromRun(run, pendingNode)
@@ -645,6 +727,7 @@ function buildSteps(
       label,
       state: stepState,
       nodeType,
+      config: spec?.config,
       durationMs: run.duration_ms,
       errorDetail: run.error_detail,
       output: run.output_data,
