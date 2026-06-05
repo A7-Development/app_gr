@@ -4740,6 +4740,7 @@ export type ResumoStatusConciliacao = {
 export type LinhaConciliacaoBoleto = {
   status:            StatusConciliacaoBoleto
   numero:            string
+  nosso_numero:      string | null
   valor_bitfin:      number | null
   valor_banco:       number | null
   diferenca_valor:   number | null
@@ -4845,6 +4846,7 @@ export const controladoria = {
       linhas: (raw.linhas ?? []).map((l: any) => ({
         status:            l.status,
         numero:            l.numero,
+        nosso_numero:      l.nosso_numero ?? null,
         valor_bitfin:      numN(l.valor_bitfin),
         valor_banco:       numN(l.valor_banco),
         diferenca_valor:   numN(l.diferenca_valor),
