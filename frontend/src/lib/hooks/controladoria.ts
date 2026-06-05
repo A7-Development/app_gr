@@ -189,6 +189,23 @@ export function useVariacaoResumo(
   })
 }
 
+export function useVariacaoDiariaSerie(
+  fundoId: string | null | undefined,
+  competencia: string | null | undefined, // "YYYY-MM"
+) {
+  // Serie diaria da variacao da Cota Sub na competencia — o MASTER do
+  // master-detail da aba "Resumo do dia". 1 request por competencia; trocar de
+  // dia so re-chaveia o useVariacaoResumo (cacheado por dia). Ver dependencia
+  // de backend documentada em api-client (endpoint /variacao-diaria).
+  const enabled = !!fundoId && !!competencia
+  return useQuery({
+    queryKey: ["controladoria", "cota-sub", "variacao-diaria", fundoId ?? "", competencia ?? ""] as const,
+    queryFn: () => controladoria.cotaSubVariacaoDiaria(fundoId!, competencia!),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
 export function useVariacaoDetalhamento(
   fundoId: string | null | undefined,
   data: string | null | undefined,

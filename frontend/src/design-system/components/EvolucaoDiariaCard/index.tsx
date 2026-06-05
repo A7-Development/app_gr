@@ -99,6 +99,13 @@ export type EvolucaoDiariaCardProps = {
   seriesStacked?: EvolucaoDiariaSerie[]
   /** Destaca o dia de hoje (ultimo ponto com `valor != null`) em cor diferente. Default: true. */
   highlightToday?: boolean
+  /**
+   * Destaca a coluna de um dia ESPECIFICO (ISO "YYYY-MM-DD") com o accent —
+   * usado quando o card e o master de um master-detail (o destaque segue a
+   * selecao, nao o "hoje"). Quando setado, tem prioridade sobre o realce de
+   * `highlightToday` para aquele dia. Retrocompativel: sem a prop, nada muda.
+   */
+  selectedDate?: string
   /** KPI editorial no header — title vira eyebrow, KPI ocupa o lead. */
   headerKpi?: EChartsCardHeaderKpi
   /** Mostra linha de tendencia tracejada (regressao linear sobre dias com valor). Default: true. */
@@ -238,6 +245,7 @@ export function EvolucaoDiariaCard({
   data,
   seriesStacked,
   highlightToday = true,
+  selectedDate,
   headerKpi,
   showTrendLine = true,
   valueFormatter,
@@ -276,6 +284,13 @@ export function EvolucaoDiariaCard({
     return -1
   }, [data, seriesStacked, stackedMode])
 
+  // Indice do dia selecionado (master-detail). -1 quando nao ha selecao ou a
+  // data nao casa nenhum ponto. Tem prioridade visual sobre o "hoje".
+  const selectedIdx = React.useMemo(() => {
+    if (!selectedDate) return -1
+    return data.findIndex((p) => p.data === selectedDate)
+  }, [data, selectedDate])
+
   // Caption enxuta: so o label do periodo (ex.: "Maio/2026"). Legendas
   // visuais ("barra clara = hoje", "linha tracejada = tendência") foram
   // removidas em 2026-05-19 — o usuario interpreta o grafico direto.
@@ -297,6 +312,7 @@ export function EvolucaoDiariaCard({
             data,
             title,
             todayIdx,
+            selectedIdx,
             highlightToday,
             showTrendLine: effectiveShowTrend,
             valueFormatter,
@@ -313,6 +329,7 @@ export function EvolucaoDiariaCard({
       seriesStacked,
       stackedMode,
       todayIdx,
+      selectedIdx,
       highlightToday,
       effectiveShowTrend,
       valueFormatter,
@@ -366,6 +383,7 @@ type BuildOptionArgs = {
   data: EvolucaoDiariaPonto[]
   title: string
   todayIdx: number
+  selectedIdx: number
   highlightToday: boolean
   showTrendLine: boolean
   valueFormatter: (v: number) => string
@@ -381,6 +399,7 @@ function buildOption({
   data,
   title,
   todayIdx,
+  selectedIdx,
   highlightToday,
   showTrendLine,
   valueFormatter,
@@ -552,16 +571,21 @@ function buildOption({
             // Dia futuro — barra ausente, mas slot no eixo X mantido.
             return { value: null }
           }
-          const isToday = highlightToday && i === todayIdx
+          // Dia selecionado (master-detail) OU "hoje" usam o accent; selecao
+          // tem prioridade conceitual (ambos pintam com COLOR_BAR_TODAY).
+          const isAccent = i === selectedIdx || (highlightToday && i === todayIdx)
           const isNonUtil = data[i].ehDiaUtil === false
-          const color = isToday
+          const color = isAccent
             ? COLOR_BAR_TODAY
             : isNonUtil
               ? COLOR_BAR_NONUTIL
               : COLOR_BAR_DEFAULT
+          // Barra negativa (variacao < 0) cresce pra baixo — arredonda a base.
+          const borderRadius: [number, number, number, number] =
+            v >= 0 ? [3, 3, 0, 0] : [0, 0, 3, 3]
           return {
             value: v,
-            itemStyle: { color, borderRadius: [3, 3, 0, 0] },
+            itemStyle: { color, borderRadius },
           }
         }),
       },

@@ -40,6 +40,7 @@ import type { EChartsOption } from "echarts"
 
 import { format, isSameDay } from "date-fns"
 import { ptBR } from "date-fns/locale"
+import { useQueryState } from "nuqs"
 
 import { cx, focusRing } from "@/lib/utils"
 import { Button } from "@/components/tremor/Button"
@@ -116,7 +117,8 @@ import { DrillAplicacoesContent } from "./_components/DrillAplicacoesContent"
 import { DrillDisponibilidadesContent } from "./_components/DrillDisponibilidadesContent"
 import { DrillPddContent } from "./_components/DrillPddContent"
 import { VariacaoWaterfall } from "./_components/VariacaoWaterfall"
-import { useVariacaoResumo } from "@/lib/hooks/controladoria"
+import { VariacaoDiariaCard } from "./_components/VariacaoDiariaCard"
+import { useVariacaoResumo, useVariacaoDiariaSerie } from "@/lib/hooks/controladoria"
 import type {
   BalancoEstruturalResponse,
   CategoriaPatrimonial,
@@ -630,11 +632,25 @@ const MOVIMENTACOES_COLUMNS: ColumnDef<MovimentacaoRow, unknown>[] = [
 // Page
 // ───────────────────────────────────────────────────────────────────────────
 
-export default function CotaSubPage() {
+function CotaSubPageInner() {
   const [search, setSearch] = React.useState("")
-  // Dia: pagina inteira analisa um unico dia por vez. Default = hoje.
+  // Dia: pagina inteira analisa um unico dia por vez. URL = fonte da verdade
+  // (?dia=YYYY-MM-DD, §11.6) — torna o dia deep-linkavel/compartilhavel e e o
+  // que o master-detail da aba "Resumo do dia" altera ao clicar no grafico.
+  // Fallback = hoje. `day`/`setDay` mantem a assinatura Date pros callsites.
   const today = React.useMemo(() => new Date(), [])
-  const [day, setDay] = React.useState<Date>(today)
+  const [diaParam, setDiaParam] = useQueryState("dia")
+  const day = React.useMemo<Date>(() => {
+    if (diaParam && /^\d{4}-\d{2}-\d{2}$/.test(diaParam)) {
+      const d = new Date(`${diaParam}T00:00:00`)
+      if (!isNaN(d.getTime())) return d
+    }
+    return today
+  }, [diaParam, today])
+  const setDay = React.useCallback(
+    (d: Date) => { void setDiaParam(format(d, "yyyy-MM-dd")) },
+    [setDiaParam],
+  )
   // Fundo: opcoes vem de Cadastros · UAs do tipo FIDC. "Todos" implica EmptyState.
   const fundosQuery = useUAs({ tipo: "fidc", ativa: true })
   const fundoOptions = React.useMemo(
@@ -687,6 +703,10 @@ export default function CotaSubPage() {
   const balancoEstruturalQuery = useBalancoEstrutural(fundoId, dayIso)
   // Resumo do dia (redesign 2026-06-01) — waterfall por grupo + atencoes. 0 LLM.
   const resumoQuery = useVariacaoResumo(fundoId, dayIso)
+  // Serie diaria da competencia (mes do dia selecionado) — master do
+  // master-detail da aba "Resumo do dia". 1 request por competencia.
+  const competencia = React.useMemo(() => format(day, "yyyy-MM"), [day])
+  const diariaQuery = useVariacaoDiariaSerie(fundoId, competencia)
   // Chat-investigador (Camada 2) — summonable, o UNICO LLM da pagina.
   const [chatOpen, setChatOpen] = React.useState(false)
   const drilledCategoriaObj = React.useMemo<CategoriaPatrimonial | undefined>(() => {
@@ -769,7 +789,7 @@ export default function CotaSubPage() {
     const maisRecente = datasDisponiveisQuery.data[0]
     const d = new Date(maisRecente)
     if (!isNaN(d.getTime())) setDay(d)
-  }, [datasDisponiveisQuery.data, datasDisponiveisSet, dayIso])
+  }, [datasDisponiveisQuery.data, datasDisponiveisSet, dayIso, setDay])
 
   const aiContext = React.useMemo(
     () => ({
@@ -848,7 +868,7 @@ export default function CotaSubPage() {
       if (p[k]) restored.push({ key: k, value: p[k] as string })
     }
     setDynamicFilters(restored)
-  }, [])
+  }, [setDay])
 
   // Sombra canonica na toolbar quando o conteudo (Z4) esta scrollado.
   const [scrollRef, scrolled] = useScrollShadow<HTMLDivElement>()
@@ -1098,23 +1118,34 @@ export default function CotaSubPage() {
                         onDrillGrupo={(k) => setDrilledCategoria(k as DrillKey)}
                         onInvestigar={() => setChatOpen(true)}
                       />
-                      <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">
-                        {/* 40% — waterfall PL Sub D-1 (MEC) -> grupos -> D0 (MEC). */}
-                        <div className="xl:col-span-2">
-                          <VariacaoWaterfall
-                            data={resumoQuery.data}
-                            loading={resumoQuery.isLoading}
-                            onDrillGrupo={(k) => setDrilledCategoria(k as DrillKey)}
-                          />
-                        </div>
-                        {/* 60% — detalhamento por grupo de balanco (lista). */}
-                        <div className="xl:col-span-3">
-                          <ResumoGrupos
-                            data={resumoQuery.data}
-                            loading={resumoQuery.isLoading}
-                            onDrillGrupo={(k) => setDrilledCategoria(k as DrillKey)}
-                          />
-                        </div>
+                      {/* Master-detail (handoff 2026-06-05): 3 colunas iguais.
+                          Esquerda = grafico de variacao diaria (MASTER); clicar
+                          num dia re-chaveia o resumo (?dia) -> waterfall + lista
+                          re-renderizam pro dia. minmax(0,1fr) impede que os
+                          labels longos do ResumoGrupos estourem a fracao. */}
+                      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[repeat(3,minmax(0,1fr))]">
+                        {/* MASTER — variacao diaria da cota na competencia. */}
+                        <VariacaoDiariaCard
+                          serie={diariaQuery.data ?? []}
+                          diaSelecionado={dayIso}
+                          onSelectDia={(iso) => {
+                            const d = new Date(`${iso}T00:00:00`)
+                            if (!isNaN(d.getTime())) setDay(d)
+                          }}
+                          loading={diariaQuery.isLoading}
+                        />
+                        {/* DETAIL — waterfall PL Sub D-1 (MEC) -> grupos -> D0. */}
+                        <VariacaoWaterfall
+                          data={resumoQuery.data}
+                          loading={resumoQuery.isLoading}
+                          onDrillGrupo={(k) => setDrilledCategoria(k as DrillKey)}
+                        />
+                        {/* DETAIL — detalhamento por grupo de balanco (lista). */}
+                        <ResumoGrupos
+                          data={resumoQuery.data}
+                          loading={resumoQuery.isLoading}
+                          onDrillGrupo={(k) => setDrilledCategoria(k as DrillKey)}
+                        />
                       </div>
                     </div>
                   )}
@@ -1445,4 +1476,16 @@ function buildTimeline(row: MovimentacaoRow): TimelineEventDef[] {
     events.push({ type: "a-vencer", date: "—", actor: "Sistema", description: "Aguardando liquidacao", current: true })
   }
   return events
+}
+
+// O componente le search params (?dia via nuqs/useSearchParams). Next exige um
+// boundary <Suspense> pra essas paginas durante o prerender estatico (CSR
+// bailout). Pagina autenticada nunca e estatica, mas o wrapper satisfaz o build
+// (e a rota /preview/cota-sub que reexporta este default).
+export default function CotaSubPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <CotaSubPageInner />
+    </React.Suspense>
+  )
 }
