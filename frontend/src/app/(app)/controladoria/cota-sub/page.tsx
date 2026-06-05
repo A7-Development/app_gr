@@ -38,13 +38,12 @@ import {
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 import type { EChartsOption } from "echarts"
 
-import { format, isSameDay } from "date-fns"
+import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { useQueryState } from "nuqs"
 
 import { cx, focusRing } from "@/lib/utils"
 import { Button } from "@/components/tremor/Button"
-import { Calendar } from "@/components/tremor/Calendar"
 import {
   Popover,
   PopoverContent,
@@ -632,6 +631,14 @@ const MOVIMENTACOES_COLUMNS: ColumnDef<MovimentacaoRow, unknown>[] = [
 // Page
 // ───────────────────────────────────────────────────────────────────────────
 
+// Label de competencia "YYYY-MM" -> "Junho/2026" (mes capitalizado).
+function fmtCompetenciaLabel(ym: string): string {
+  const [y, m] = ym.split("-").map(Number)
+  if (!y || !m) return ym
+  const s = format(new Date(y, m - 1, 1), "MMMM/yyyy", { locale: ptBR })
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
 function CotaSubPageInner() {
   const [search, setSearch] = React.useState("")
   // Dia: pagina inteira analisa um unico dia por vez. URL = fonte da verdade
@@ -737,6 +744,29 @@ function CotaSubPageInner() {
   const datasDisponiveisSet = React.useMemo(
     () => new Set(datasDisponiveisQuery.data ?? []),
     [datasDisponiveisQuery.data],
+  )
+
+  // Competencias (meses) com snapshot disponivel — alimentam o seletor do topo.
+  // datasDisponiveisQuery.data ja vem desc; mapeia mes -> data mais recente nele
+  // (preserva a ordem de insercao = desc). O dia (?dia) e a fonte da verdade;
+  // escolher uma competencia "salta" pra data mais recente daquele mes.
+  const competenciaOptions = React.useMemo(() => {
+    const latestByMonth = new Map<string, string>()
+    for (const iso of datasDisponiveisQuery.data ?? []) {
+      const ym = iso.slice(0, 7)
+      if (!latestByMonth.has(ym)) latestByMonth.set(ym, iso)
+    }
+    return latestByMonth
+  }, [datasDisponiveisQuery.data])
+
+  const handleSelectCompetencia = React.useCallback(
+    (ym: string) => {
+      const iso = competenciaOptions.get(ym)
+      if (!iso) return
+      const d = new Date(`${iso}T00:00:00`)
+      if (!isNaN(d.getTime())) setDay(d)
+    },
+    [competenciaOptions, setDay],
   )
 
   // Readiness QiTech — gate da pagina. Toda Cota Sub depende de 8 reports
@@ -924,30 +954,43 @@ function CotaSubPageInner() {
               className="mx-1 h-5 w-px bg-gray-200 dark:bg-gray-800"
             />
 
+            {/* Competencia (mes) = filtro primario do topo. O DIA e escolhido
+                clicando no grafico "Variacao diaria da cota" (master-detail).
+                Selecionar um mes salta pra data disponivel mais recente dele. */}
             <FilterChip
-              label="Dia"
-              value={isSameDay(day, today) ? "Hoje" : format(day, "dd/MM/yyyy")}
-              active={!isSameDay(day, today)}
+              label="Competência"
+              value={fmtCompetenciaLabel(competencia)}
+              active={competencia !== format(today, "yyyy-MM")}
               icon={RiCalendarLine}
             >
-              <Calendar
-                mode="single"
-                selected={day}
-                onSelect={(d) => d && setDay(d)}
-                locale={ptBR}
-                // Bloqueia: (1) datas futuras, (2) datas sem snapshot QiTech.
-                // Lista vem da `wh_dia_util_qitech` — cobre fim de semana,
-                // feriado e falha de ETL de forma uniforme. Quando o fundo
-                // ainda nao tem datas carregadas (loading/erro), so bloqueia
-                // futuras pra nao travar o Calendar inteiro.
-                disabled={(date) => {
-                  if (date > today) return true
-                  if (datasDisponiveisQuery.data === undefined) return false
-                  const iso = format(date, "yyyy-MM-dd")
-                  return !datasDisponiveisSet.has(iso)
-                }}
-                initialFocus
-              />
+              <div className="py-1">
+                {datasDisponiveisQuery.isLoading && (
+                  <div className="px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    Carregando competências...
+                  </div>
+                )}
+                {!datasDisponiveisQuery.isLoading && competenciaOptions.size === 0 && (
+                  <div className="px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    Nenhuma competência disponível
+                  </div>
+                )}
+                {Array.from(competenciaOptions.keys()).map((ym) => (
+                  <button
+                    key={ym}
+                    type="button"
+                    onClick={() => handleSelectCompetencia(ym)}
+                    className={cx(
+                      "flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors",
+                      ym === competencia
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
+                        : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800",
+                    )}
+                  >
+                    <span className="flex-1 text-left">{fmtCompetenciaLabel(ym)}</span>
+                    {ym === competencia && <RiCheckLine className="size-3.5 shrink-0 text-blue-500" />}
+                  </button>
+                ))}
+              </div>
             </FilterChip>
 
             <FilterChip
