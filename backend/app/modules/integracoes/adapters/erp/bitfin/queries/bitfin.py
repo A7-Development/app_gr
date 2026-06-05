@@ -268,6 +268,24 @@ WHERE DataDaSituacao > ?
 """
 
 
+# ---- Reconcile (anti-join): conjunto VIVO de ids no Bitfin, id-only ----
+#
+# Sem watermark — precisamos do universo INTEIRO para detectar delecoes
+# (o que existe no espelho mas nao aqui = orfao). Usadas por
+# `etl.reconcile_bitfin_mirror` (hard-delete de orfaos no gr_db). Cada
+# filtro espelha o da sync correspondente para nao marcar como orfa uma
+# linha que a sync nunca ingeriu (ex.: OperacaoItem sem OperacaoId).
+
+SELECT_TITULO_IDS = "SELECT TituloId AS source_id FROM dbo.Titulo"
+
+SELECT_OPERACAO_IDS = "SELECT OperacaoId AS source_id FROM dbo.Operacao"
+
+SELECT_OPERACAO_ITEM_IDS = (
+    "SELECT ItemDaOperacaoId AS source_id FROM dbo.OperacaoItem "
+    "WHERE OperacaoId IS NOT NULL"
+)
+
+
 # Dimensao: Unidade Administrativa (UA).
 # Bitfin usa `Alias` como display name (nao tem campo "Nome" propriamente
 # dito). Full refresh sempre — poucas linhas (3 no ambiente atual), mudam

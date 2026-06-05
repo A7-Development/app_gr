@@ -19,13 +19,13 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from itertools import islice
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,6 +45,7 @@ from app.modules.integracoes.adapters.erp.bitfin.hashing import sha256_of_row
 from app.modules.integracoes.adapters.erp.bitfin.queries import analytics, bitfin
 from app.modules.integracoes.adapters.erp.bitfin.version import ADAPTER_VERSION
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
+from app.shared.audit_log.sync_health import last_sync_at
 from app.warehouse.bitfin_entidade import WhBitfinEntidade
 from app.warehouse.bitfin_raw_debenture import (
     TIPO_ORIGEM_VALOR_ATUALIZADO_DIA,
@@ -1086,6 +1087,177 @@ async def sync_debenture_posicao(
     }
 
 
+# ---- Reconcile (anti-join hard-delete de orfaos) ---------------------------
+#
+# O ETL e upsert-only (ON CONFLICT DO UPDATE) e NUNCA enxerga delecoes. Quando
+# o Bitfin re-edita uma operacao, os titulos antigos sao APAGADOS FISICAMENTE
+# na fonte — sem flag/tombstone (verificado 2026-06-05: TituloId some da
+# `dbo.Titulo`, sem coluna de status sinalizando). No nosso espelho esses
+# titulos ficariam orfaos para sempre, poluindo a "carteira atual" (ex.:
+# conciliacao de boletos marcando "So BITFIN" falso para titulos que nem
+# existem mais).
+#
+# O reconcile faz ANTI-JOIN: busca o conjunto VIVO de ids no Bitfin (1 query
+# id-only, sem watermark), compara com `source_id` do gr_db e DELETA do gr_db
+# (e SO do gr_db) o que nao existe mais na fonte. Filosofia do reconciler
+# QiTech (loop estilo Kubernetes): espelho reflete a fonte; quando a fonte
+# remove, o espelho remove. O historico auditavel vive fora do espelho
+# (decision_log + bronze imutavel), nunca em linha-fantasma (CLAUDE.md §14).
+
+# Tabelas espelho reconciliaveis, em ordem child->parent (defensivo contra
+# eventual FK): (model, query id-only, label).
+_RECONCILE_TARGETS = [
+    (OperacaoItem, bitfin.SELECT_OPERACAO_ITEM_IDS, "wh_operacao_item"),
+    (Titulo, bitfin.SELECT_TITULO_IDS, "wh_titulo"),
+    (Operacao, bitfin.SELECT_OPERACAO_IDS, "wh_operacao"),
+]
+
+# Guarda: se a poda proposta exceder esta fracao do espelho, ABORTA a tabela.
+# Delecao legitima do Bitfin e marginal (ordem de 0.5%); uma poda de >25%
+# sinaliza fetch parcial/corrompido do conjunto vivo (conexao caindo no meio,
+# DB errado), nao delecao real — melhor nao deletar e investigar.
+RECONCILE_MAX_DELETE_FRACTION = 0.25
+
+# Intervalo minimo entre reconciles automaticos (gate diario). Anti-join e
+# varredura full (~100k ids) — caro demais para rodar a cada micro-sync.
+RECONCILE_MIN_INTERVAL_HOURS = 20
+
+
+async def reconcile_bitfin_mirror(
+    tenant_id: UUID, config: BitfinConfig
+) -> dict[str, Any]:
+    """Hard-delete de orfaos: linhas no espelho que nao existem mais no Bitfin.
+
+    Anti-join por tabela: busca o conjunto VIVO de ids no Bitfin (id-only, sem
+    watermark), compara com `source_id` do gr_db e DELETA so a diferenca
+    (orfaos). Escopo SEMPRE por `tenant_id` — cada Bitfin (UNLTD_<cliente>)
+    mapeia 1 tenant; sem o filtro, o anti-join apagaria titulos de outro tenant
+    (que vivem noutro Bitfin, ausentes deste conjunto vivo).
+
+    GUARDAS DURAS (nunca apagar o espelho por engano):
+    - conjunto vivo VAZIO (falha de conexao / DB errado) -> aborta a tabela
+      (um set vazio tornaria TODO o espelho orfao);
+    - poda > RECONCILE_MAX_DELETE_FRACTION do espelho -> aborta a tabela
+      (sinaliza fetch parcial, nao delecao legitima).
+
+    NUNCA toca o Bitfin: la e SELECT id-only; o DELETE acontece so no gr_db.
+    """
+    results: list[dict[str, Any]] = []
+    async with AsyncSessionLocal() as db:
+        for model, query, label in _RECONCILE_TARGETS:
+            live_rows = await asyncio.to_thread(
+                fetch_rows, config, config.database_bitfin, query
+            )
+            # source_id no espelho e TEXT (str(id) no _provenance) — comparamos
+            # como string para casar o conjunto vivo (ints do Bitfin).
+            live_ids = {str(r["source_id"]) for r in live_rows}
+            if not live_ids:
+                results.append(
+                    {"table": label, "deleted": 0, "skipped_reason": "live_set_empty"}
+                )
+                continue
+
+            wh_ids = set(
+                (
+                    await db.execute(
+                        select(model.source_id).where(model.tenant_id == tenant_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            phantoms = wh_ids - live_ids
+            wh_count = len(wh_ids)
+            if wh_count and len(phantoms) / wh_count > RECONCILE_MAX_DELETE_FRACTION:
+                results.append(
+                    {
+                        "table": label,
+                        "deleted": 0,
+                        "skipped_reason": "exceeds_safety_cap",
+                        "live_bitfin": len(live_ids),
+                        "wh_before": wh_count,
+                        "phantoms": len(phantoms),
+                    }
+                )
+                continue
+
+            deleted = 0
+            for chunk in _chunked(list(phantoms), CHUNK_SIZE):
+                res = await db.execute(
+                    delete(model).where(
+                        model.tenant_id == tenant_id,
+                        model.source_id.in_(chunk),
+                    )
+                )
+                deleted += res.rowcount or 0
+            await db.commit()
+            results.append(
+                {
+                    "table": label,
+                    "live_bitfin": len(live_ids),
+                    "wh_before": wh_count,
+                    "phantoms": len(phantoms),
+                    "deleted": deleted,
+                }
+            )
+    return {
+        "reconcile": results,
+        "total_deleted": sum(r.get("deleted", 0) for r in results),
+    }
+
+
+async def sync_reconcile_mirror(
+    tenant_id: UUID,
+    config: BitfinConfig,
+    since: date | None = None,
+    *,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Passo de pipeline: reconcile com gate diario + entrada propria no
+    decision_log (auditoria §14.6 da poda).
+
+    `force=True` ignora o gate — usado pelo oneshot de limpeza inicial. `since`
+    ignorado (reconcile e sempre full-set; nao ha como detectar delecao
+    incrementalmente).
+    """
+    if not force:
+        async with AsyncSessionLocal() as db:
+            last = await last_sync_at(
+                db,
+                tenant_id,
+                rule_or_model="bitfin_reconcile",
+                endpoint_name="bitfin.reconcile",
+            )
+        if last is not None and (datetime.now(UTC) - last) < timedelta(
+            hours=RECONCILE_MIN_INTERVAL_HOURS
+        ):
+            return {
+                "table": "reconcile",
+                "skipped_reason": "not_due",
+                "last_reconcile": last.isoformat(),
+            }
+
+    result = await reconcile_bitfin_mirror(tenant_id, config)
+
+    async with AsyncSessionLocal() as db:
+        db.add(
+            DecisionLog(
+                tenant_id=tenant_id,
+                decision_type=DecisionType.SYNC,
+                inputs_ref={"force": force},
+                rule_or_model="bitfin_reconcile",
+                rule_or_model_version=ADAPTER_VERSION,
+                endpoint_name="bitfin.reconcile",
+                output=result,
+                explanation="OK",
+                triggered_by="script:reconcile_oneshot" if force else "system:scheduler",
+            )
+        )
+        await db.commit()
+
+    return {"table": "reconcile", **result}
+
+
 # ---- Master orchestrator ----
 
 SYNC_PIPELINE = [
@@ -1112,6 +1284,10 @@ SYNC_PIPELINE = [
     # Snapshot diario da posicao de debentures (going-forward; Bitfin faz o
     # CDI, nos capturamos). Alimenta o denominador do ROA bruto da DRE.
     sync_debenture_posicao,
+    # Reconcile (anti-join hard-delete de orfaos). Ultimo passo: roda DEPOIS
+    # dos upserts (espelho ja com os dados frescos) e tem gate diario interno
+    # — a varredura full so dispara 1x/dia, demais ticks viram no-op barato.
+    sync_reconcile_mirror,
 ]
 
 
