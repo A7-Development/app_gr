@@ -29,6 +29,7 @@ import {
   fmtBRLSigned,
   toneClass,
 } from "./drillKit"
+import { DrillImpactoTable, makeImpactoColumns } from "./DrillImpactoTable"
 
 const CLASSIF: Record<string, string> = {
   aporte: "Aporte", resgate: "Resgate", apenas_valorizacao: "Só carrego",
@@ -37,6 +38,11 @@ const TIPO: Record<string, string> = {
   nova: "Nova", aumento: "Aumentou", reducao: "Reduziu", quitada: "Quitada",
 }
 const ORDEM: Record<string, number> = { senior: 0, mezanino: 1, sub_jr: 2 }
+
+// Mesma estrutura da tabela "Aplicações · impacto na cota".
+const COTAS_COLS = makeImpactoColumns({
+  nome: "Classe", d1: "Patrim. D-1", d0: "Patrim. D0", impacto: "Impacto Sub",
+})
 
 type Props = { fundoId: string; data: string; dataAnterior?: string | null }
 
@@ -76,31 +82,23 @@ export function DrillCotasContent({ fundoId, data, dataAnterior }: Props) {
           label="Cotas — capital vs carrego"
           help="ΔPL de cada classe separado em aporte/resgate (capital) vs remuneração da cota (carrego)."
         />
-        <div className={cx("mt-2", drillTableWrap)}>
-          <table className="w-full whitespace-nowrap text-[12px] tabular-nums">
-            <thead className={drillThead}>
-              <tr>
-                <th className="px-3 py-1.5 text-left font-medium">Classe</th>
-                <th className="px-3 py-1.5 text-right font-medium">Capital</th>
-                <th className="px-3 py-1.5 text-right font-medium">Carrego</th>
-                <th className="px-3 py-1.5 text-right font-medium">Impacto Sub</th>
-                <th className="px-3 py-1.5 text-left font-medium">Tipo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {classes.map((c) => (
-                <tr key={c.classe} className={drillRowBorder}>
-                  <td className="px-3 py-1.5 text-left text-gray-900 dark:text-gray-100">{c.label}</td>
-                  <td className="px-3 py-1.5 text-right text-gray-600 dark:text-gray-300">
-                    {Math.abs(c.efeito_capital) < 1 ? "—" : fmtBRLSigned(c.efeito_capital)}
-                  </td>
-                  <td className="px-3 py-1.5 text-right text-gray-600 dark:text-gray-300">{fmtBRLSigned(c.efeito_valorizacao)}</td>
-                  <td className={cx("px-3 py-1.5 text-right font-semibold", toneClass(c.impacto_pl_sub))}>{fmtBRLSigned(c.impacto_pl_sub)}</td>
-                  <td className="px-3 py-1.5 text-left text-gray-500 dark:text-gray-400">{CLASSIF[c.classificacao] ?? c.classificacao}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="mt-2">
+          <DrillImpactoTable
+            columns={COTAS_COLS}
+            itens={classes.map((c) => {
+              const classif = CLASSIF[c.classificacao] ?? c.classificacao
+              return {
+                nome:     c.label,
+                // capital e neutro no PL Sub — fica no detalhe (carrego = Impacto).
+                detalhe:  Math.abs(c.efeito_capital) >= 1
+                  ? `${classif} · capital ${fmtBRLSigned(c.efeito_capital)}`
+                  : classif,
+                valor_d1: c.patrimonio_d1,
+                valor_d0: c.patrimonio_d0,
+                impacto:  c.impacto_pl_sub,
+              }
+            })}
+          />
         </div>
         <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
           Carrego que a Sub paga às prioritárias:{" "}
