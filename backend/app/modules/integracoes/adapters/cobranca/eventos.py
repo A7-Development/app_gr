@@ -80,14 +80,15 @@ _BRADESCO: dict[str, tuple[str, str]] = {
     "34": (TIPO_RETIRADO_CARTORIO, EFEITO_INFO),  # 14 retirado de cartorio, mantido
 }
 
-# BMP (274) e Vortx (310): tabelas a montar quando os parsers entrarem (Fase 2).
-_BMP: dict[str, tuple[str, str]] = {}
-_VORTX: dict[str, tuple[str, str]] = {}
-
+# BMP (274) e Vortx (310) usam o MESMO CNAB400-padrao FEBRABAN do Bradesco
+# (mesmos codigos de ocorrencia: 02 entrada, 06/15/17 liquidacao, 09/10 baixa,
+# 03 rejeita, 14 venc, ...). Reaproveitam a tabela _BRADESCO. Os poucos codigos
+# extras do Vortx (40 estorno, 77/78 titularidades, 94 registro-futuro) caem no
+# _DEFAULT (outro/info) -- nao abrem/fecham errado; refinamento futuro se pesar.
 _POR_BANCO: dict[str, dict[str, tuple[str, str]]] = {
     BANCO_BRADESCO: _BRADESCO,
-    BANCO_BMP: _BMP,
-    BANCO_VORTX: _VORTX,
+    BANCO_BMP: _BRADESCO,
+    BANCO_VORTX: _BRADESCO,
 }
 
 _DEFAULT = (TIPO_OUTRO, EFEITO_INFO)
