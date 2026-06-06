@@ -164,8 +164,10 @@ async def compute_decomposicao_classes_mec(
     Motivacao (2026-05-26): na otica do PL Sub Jr, Senior e Mezanino sao
     PASSIVOS. Quando o PL de uma dessas classes sobe, o agente de variacao
     precisa distinguir (a) APORTE de cotistas (evento de capital — aumenta o
-    passivo e dilui a Sub) de (b) apenas REMUNERACAO da cota (custo financeiro
-    do dia). Sem isso, +R$ 121k na Mezanino e indistinguivel de custo. Caso
+    passivo MAS entra caixa na mesma medida -> NEUTRO no PL Sub em R$; muda so o
+    % de subordinacao) de (b) apenas REMUNERACAO da cota (custo financeiro do
+    dia, esse SIM pesa na Sub). Sem isso, +R$ 121k na Mezanino e indistinguivel
+    de custo. Caso
     canonico: REALINVEST 20/05/2026 (Mezanino +R$ 121.499,89 = aporte R$
     119.545,73 + remuneracao R$ 1.954,16).
 

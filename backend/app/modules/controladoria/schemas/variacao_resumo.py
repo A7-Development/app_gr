@@ -49,7 +49,7 @@ AtencaoTipo = Literal[
     "mutacao",                  # mudanca silenciosa de parametro de papel (VN/taxa/venc)
     "despesa_nao_provisionada", # pagamento de despesa acima da provisao, bateu na cota
     "write_off",                # titulos levados a WOP (saiu do estoque sem liquidacao)
-    "capital",                  # aporte/resgate de cotista que diluiu/concentrou a Sub
+    "capital",                  # aporte/resgate de cotista (neutro no PL Sub; muda o % de subordinacao)
     "reconciliacao",            # saldo da cota nao bate com o MEC
     "nao_reconhecido",          # lancamento que nenhuma fonte soube classificar
 ]

@@ -328,7 +328,7 @@ async def compute_variacao_resumo(
     if abs(cot.capital_liquido_prioritarias) >= _TOL:
         atencoes.append(AtencaoResumo(
             tipo="capital",
-            descricao="Evento de capital numa prioritária (diluiu/concentrou a Sub)",
+            descricao="Aporte/resgate de capital numa cota prioritária",
             valor=cot.capital_liquido_prioritarias,
             grupo_key="cotas_prioritarias", grupo_label=_GRUPO_LABEL["cotas_prioritarias"],
             drill_key="senior",

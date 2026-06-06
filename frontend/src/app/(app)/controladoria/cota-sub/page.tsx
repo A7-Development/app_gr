@@ -764,6 +764,25 @@ function CotaSubPageInner() {
         impactOnly: true,
       }
     }
+    // Cotas prioritarias: Senior e Mezanino drilam para UM header combinado
+    // "Cotas Prioritarias" (a tabela mostra as duas). Um header so de "Cota
+    // Senior" esconde o Mezanino — o drill cobre o conjunto das prioritarias.
+    if (drilledCategoria === "senior" || drilledCategoria === "mezanino") {
+      const linhas = (balancoEstruturalQuery.data?.passivos ?? []).filter(
+        (l) => l.drill_key === "senior" || l.drill_key === "mezanino",
+      )
+      if (linhas.length === 0) return undefined
+      return {
+        key:    drilledCategoria as CategoriaPatrimonial["key"],
+        label:  "Cotas Prioritárias",
+        tipo:   "passivo",
+        d1:     linhas.reduce((s, l) => s + l.d1, 0),
+        d0:     linhas.reduce((s, l) => s + l.d0, 0),
+        delta:  linhas.reduce((s, l) => s + l.delta, 0),
+        source: linhas[0].source,
+        contra: false,
+      }
+    }
     return toInspectorCategoria(balancoEstruturalQuery.data, drilledCategoria as CategoriaPatrimonialKey | null)
   }, [balancoEstruturalQuery.data, drilledCategoria, resumoQuery.data])
   const fundoSelecionado = fundoId !== null

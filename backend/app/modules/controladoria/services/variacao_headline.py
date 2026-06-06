@@ -186,7 +186,7 @@ async def compute_variacao_headline(
     if abs(cot.capital_liquido_prioritarias) >= _TOL_MATERIAL:
         flags.append(HeadlineFlag(
             tipo="capital",
-            descricao="Evento de capital numa prioritaria (diluiu/concentrou a Sub)",
+            descricao="Aporte/resgate de capital numa cota prioritaria",
             valor=cot.capital_liquido_prioritarias, drill_key=None,
         ))
     for o in cot.obrigacoes:
