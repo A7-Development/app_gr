@@ -712,3 +712,11 @@ export function useConciliacaoBancoCobrador() {
     queryFn: () => controladoria.conciliacaoBancoCobrador(),
   })
 }
+
+// Dispara a coleta/reprocessamento (por tenant). Servidor roda em background
+// (~1 min) e retorna 202 "iniciado"; a pagina re-busca a conciliacao depois.
+export function useConciliacaoBancoCobradorSync() {
+  return useMutation({
+    mutationFn: () => controladoria.conciliacaoBancoCobradorSync(),
+  })
+}
