@@ -39,7 +39,11 @@ from uuid import UUID
 from sqlalchemy import Date, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.warehouse.boleto_vigente import ESTADO_ATIVO, BoletoVigente
+from app.warehouse.boleto_vigente import (
+    ESTADO_ATIVO,
+    ESTADO_ENVIADO,
+    BoletoVigente,
+)
 from app.warehouse.cnab_raw_arquivo import TIPO_ARQUIVO_RETORNO, CnabRawArquivo
 from app.warehouse.dim import DimUnidadeAdministrativa
 from app.warehouse.operacao import Operacao
@@ -59,6 +63,11 @@ STATUS_DIV_VALOR = "divergencia_valor"
 STATUS_DIV_VENCIMENTO = "divergencia_vencimento"
 STATUS_SO_BITFIN = "so_em_bitfin"
 STATUS_SO_BANCO = "so_em_banco"
+# Decomposicao do "So BITFIN": o titulo tem remessa de registro ENVIADA ao
+# banco, mas o banco ainda NAO confirmou a entrada (sem retorno cod 02). E o
+# furo operacional acionavel -- instruimos o banco e ele nao acusou. O resto do
+# "So BITFIN" (sem remessa) e titulo que nunca foi enviado para cobranca bancaria.
+STATUS_ENVIADO_NAO_CONFIRMADO = "enviado_nao_confirmado"
 
 
 @dataclass
@@ -197,9 +206,13 @@ async def _carregar_titulos(
 
 
 async def _carregar_boletos(
-    db: AsyncSession, tenant_id: UUID
+    db: AsyncSession, tenant_id: UUID, *, estado: str = ESTADO_ATIVO
 ) -> list[_BoletoLado]:
-    """Carteira de cobranca ATUAL: boletos vigentes ativos (sem data-base)."""
+    """Boletos vigentes do tenant num `estado` (sem data-base).
+
+    `estado=ativo` -> carteira de cobranca confirmada pelo banco; `estado=enviado`
+    -> remessas de registro enviadas que o banco ainda nao confirmou.
+    """
     stmt = select(
         BoletoVigente.numero_documento,
         BoletoVigente.nosso_numero,
@@ -211,7 +224,7 @@ async def _carregar_boletos(
         BoletoVigente.ua_nome,
     ).where(
         BoletoVigente.tenant_id == tenant_id,
-        BoletoVigente.estado == ESTADO_ATIVO,
+        BoletoVigente.estado == estado,
     )
     rows = (await db.execute(stmt)).all()
     return [
@@ -249,6 +262,11 @@ async def conciliar_boletos(
     """Concilia a carteira BITFIN atual x cobranca vigente. Titulo a titulo."""
     titulos = await _carregar_titulos(db, tenant_id)
     boletos = await _carregar_boletos(db, tenant_id)
+    # Remessas enviadas que o banco ainda nao confirmou (estado=enviado).
+    # Consultadas so para DECOMPOR o "So BITFIN" -- nao entram na contagem de
+    # boletos ativos nem viram "so em banco". A soma (So BITFIN + Enviado nao
+    # confirmado) = o "So BITFIN" antigo (reconcilia, §14.6).
+    enviados = await _carregar_boletos(db, tenant_id, estado=ESTADO_ENVIADO)
 
     titulos_por_numero: dict[str, _TituloLado] = {}
     for t in titulos:
@@ -256,6 +274,9 @@ async def conciliar_boletos(
     boletos_por_numero: dict[str, _BoletoLado] = {}
     for b in boletos:
         boletos_por_numero.setdefault(_normalizar_numero(b.numero_documento), b)
+    enviados_por_numero: dict[str, _BoletoLado] = {}
+    for e in enviados:
+        enviados_por_numero.setdefault(_normalizar_numero(e.numero_documento), e)
 
     result = ConciliacaoBoletoResult(
         titulos_abertos=len(titulos),
@@ -268,20 +289,44 @@ async def conciliar_boletos(
         b = boletos_por_numero.get(numero)
 
         if t is not None and b is None:
-            result.linhas.append(
-                LinhaConciliacao(
-                    status=STATUS_SO_BITFIN,
-                    numero=numero,
-                    valor_bitfin=t.valor_liquido,
-                    venc_bitfin=t.vencimento,
-                    data_operacao=t.data_operacao,
-                    produto=t.produto,
-                    cedente_documento=t.cedente_documento,
-                    cedente_nome=t.cedente_nome,
-                    ua_id=t.ua_id,
-                    ua_nome=t.ua_nome,
+            # Titulo BITFIN sem boleto ATIVO no banco. Decompoe: se ha remessa
+            # de registro enviada (sem confirmacao) -> "enviado, aguardando
+            # confirmacao"; senao -> nunca enviado para cobranca bancaria.
+            e = enviados_por_numero.get(numero)
+            if e is not None:
+                result.linhas.append(
+                    LinhaConciliacao(
+                        status=STATUS_ENVIADO_NAO_CONFIRMADO,
+                        numero=numero,
+                        nosso_numero=e.nosso_numero,
+                        valor_bitfin=t.valor_liquido,
+                        valor_banco=e.valor_boleto,
+                        venc_bitfin=t.vencimento,
+                        venc_banco=e.data_vencimento,
+                        data_operacao=t.data_operacao,
+                        produto=t.produto,
+                        banco=e.banco_origem,
+                        cedente_documento=t.cedente_documento,
+                        cedente_nome=t.cedente_nome,
+                        ua_id=t.ua_id,
+                        ua_nome=t.ua_nome,
+                    )
                 )
-            )
+            else:
+                result.linhas.append(
+                    LinhaConciliacao(
+                        status=STATUS_SO_BITFIN,
+                        numero=numero,
+                        valor_bitfin=t.valor_liquido,
+                        venc_bitfin=t.vencimento,
+                        data_operacao=t.data_operacao,
+                        produto=t.produto,
+                        cedente_documento=t.cedente_documento,
+                        cedente_nome=t.cedente_nome,
+                        ua_id=t.ua_id,
+                        ua_nome=t.ua_nome,
+                    )
+                )
         elif t is None and b is not None:
             result.linhas.append(
                 LinhaConciliacao(

@@ -22,6 +22,7 @@ StatusConciliacao = Literal[
     "divergencia_valor",
     "divergencia_vencimento",
     "so_em_bitfin",
+    "enviado_nao_confirmado",
     "so_em_banco",
 ]
 
