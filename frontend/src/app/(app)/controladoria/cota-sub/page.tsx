@@ -3,7 +3,7 @@
 // Controladoria · Cota Subordinada — analise diaria comparativa (D-1 vs D0).
 // Pagina derivada do pattern `DashboardBiPadrao`, alinhada com o shell canonico
 // consolidado em `bi/operacoes2` (toolbar unificada 52px com TabNavigation +
-// FilterBar lado a lado, scroll-shadow, ProvenanceFooter, AIPanel).
+// FilterBar lado a lado, scroll-shadow, ProvenanceFooter).
 //
 // Equacao do dia: ΔCota Sub = ΔAtivo − ΔPassivo Contabil − ΔEquity (Mez+Sr)
 //
@@ -18,8 +18,9 @@
 //   1. MOCK_MOVIMENTACOES → useQuery `/controladoria/cota-sub/movimentacoes`
 //   2. Series ECharts da aba "Movimentacoes" → wh_posicao_cota_fundo +
 //      wh_movimentacao_cotista (silver)
-//   3. AIPanel.sendMessage → LLM real (api.aiChat) — ja preparado em
-//      operacoes2; portar quando ligar IA na Controladoria.
+//   3. IA da pagina: chat-investigador (ChatVariacaoDrawer) ligado ao botao
+//      "IA" do DashboardHeaderActions + atalho Cmd/Ctrl+I. Endpoint real:
+//      controladoria.cotaSubVariacaoChat. Sem FAB, sem AIPanel stub.
 
 "use client"
 
@@ -33,7 +34,6 @@ import {
   RiEqualizerLine,
   RiFundsLine,
   RiPlayLine,
-  RiSparkling2Line,
 } from "@remixicon/react"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 import type { EChartsOption } from "echarts"
@@ -90,11 +90,7 @@ import {
   DrillDownSheet,
   type TimelineEventDef,
 } from "@/design-system/components/DrillDownSheet"
-import {
-  AIPanel,
-  useAIPanel,
-  type AIInsight,
-} from "@/design-system/components/AIPanel"
+import { type AIInsight } from "@/design-system/components/AIPanel"
 import { tokens, type StatusKey } from "@/design-system/tokens"
 import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 
@@ -349,12 +345,31 @@ function labelForStatus(s: StatusKey): string {
 function AddFilterMenu({
   available,
   onAdd,
+  disabled = false,
 }: {
   available: DynamicFilterKey[]
   onAdd:     (k: DynamicFilterKey) => void
+  disabled?: boolean
 }) {
   const [open, setOpen] = React.useState(false)
   if (available.length === 0) return null
+
+  if (disabled) {
+    return (
+      <button
+        type="button"
+        disabled
+        className={cx(
+          "inline-flex h-[26px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2.5 text-[13px]",
+          "cursor-not-allowed border-gray-200 bg-white opacity-50",
+          "dark:border-gray-800 dark:bg-gray-950",
+        )}
+      >
+        <RiEqualizerLine className="size-3.5 shrink-0 text-gray-500 dark:text-gray-400" aria-hidden="true" />
+        <span className="font-medium text-gray-900 dark:text-gray-50">Mais filtros</span>
+      </button>
+    )
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -692,8 +707,6 @@ function CotaSubPageInner() {
     return () => window.removeEventListener("keydown", handleKey)
   }, [])
 
-  const ai = useAIPanel()
-
   const [selected, setSelected] = React.useState<MovimentacaoRow | null>(null)
 
   // Drill da F2 — abre Sheet lateral direito com DrillDcContent/PddContent/CprContent.
@@ -716,7 +729,21 @@ function CotaSubPageInner() {
   const competencia = React.useMemo(() => format(day, "yyyy-MM"), [day])
   const diariaQuery = useVariacaoDiariaSerie(fundoId, competencia)
   // Chat-investigador (Camada 2) — summonable, o UNICO LLM da pagina.
+  // Entrada canonica: botao "IA" do DashboardHeaderActions + atalho Cmd/Ctrl+I.
+  // (Sem FAB flutuante — CLAUDE.md §7: header e o lar das acoes do dashboard.)
   const [chatOpen, setChatOpen] = React.useState(false)
+
+  // Atalho Cmd/Ctrl+I abre/fecha o chat-investigador (paridade com o botao IA).
+  React.useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "i") {
+        e.preventDefault()
+        setChatOpen((o) => !o)
+      }
+    }
+    window.addEventListener("keydown", handleKey)
+    return () => window.removeEventListener("keydown", handleKey)
+  }, [])
   const drilledCategoriaObj = React.useMemo<CategoriaPatrimonial | undefined>(() => {
     // Aplicacoes/Disponibilidades NAO sao linha do balanco — header sintetico a
     // partir do grupo do resumo (delta = impacto giro-limpo da barra).
@@ -825,19 +852,6 @@ function CotaSubPageInner() {
     if (!isNaN(d.getTime())) setDay(d)
   }, [datasDisponiveisQuery.data, datasDisponiveisSet, dayIso, setDay])
 
-  const aiContext = React.useMemo(
-    () => ({
-      page: "Controladoria · Cota Sub",
-      period: format(day, "dd/MM/yyyy"),
-      filters: [
-        fundo  !== "Todos" && `Fundo: ${fundo}`,
-        classe !== "Todas" && `Classe: ${classe}`,
-        ...dynamicFilters.map((f) => `${f.key}: ${f.value}`),
-        search             && `Busca: ${search}`,
-      ].filter(Boolean).join(", ") || "Nenhum",
-    }),
-    [day, fundo, classe, dynamicFilters, search],
-  )
 
   const handleShare = React.useCallback(() => {
     void navigator.clipboard?.writeText(window.location.href)
@@ -920,7 +934,7 @@ function CotaSubPageInner() {
             subtitle="Controladoria · Patrimonio e Cotas"
             actions={
               <DashboardHeaderActions
-                ai={{ open: ai.open, onToggle: ai.toggle }}
+                ai={{ open: chatOpen, onToggle: () => setChatOpen((o) => !o) }}
                 onShare={handleShare}
                 onExport={handleExport}
               />
@@ -958,47 +972,11 @@ function CotaSubPageInner() {
               className="mx-1 h-5 w-px bg-gray-200 dark:bg-gray-800"
             />
 
-            {/* Competencia (mes) = filtro primario do topo. O DIA e escolhido
-                clicando no grafico "Variacao diaria da cota" (master-detail).
-                Selecionar um mes salta pra data disponivel mais recente dele. */}
+            {/* UA (fundo) = filtro PRIMARIO. A pagina analisa um FIDC por vez;
+                sem selecionar a UA nada carrega (ver EmptyState). Por isso vem
+                antes da competencia na ordem da toolbar. */}
             <FilterChip
-              label="Competência"
-              value={fmtCompetenciaLabel(competencia)}
-              active={competencia !== format(today, "yyyy-MM")}
-              icon={RiCalendarLine}
-            >
-              <div className="py-1">
-                {datasDisponiveisQuery.isLoading && (
-                  <div className="px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400">
-                    Carregando competências...
-                  </div>
-                )}
-                {!datasDisponiveisQuery.isLoading && competenciaOptions.size === 0 && (
-                  <div className="px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400">
-                    Nenhuma competência disponível
-                  </div>
-                )}
-                {Array.from(competenciaOptions.keys()).map((ym) => (
-                  <button
-                    key={ym}
-                    type="button"
-                    onClick={() => handleSelectCompetencia(ym)}
-                    className={cx(
-                      "flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors",
-                      ym === competencia
-                        ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
-                        : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800",
-                    )}
-                  >
-                    <span className="flex-1 text-left">{fmtCompetenciaLabel(ym)}</span>
-                    {ym === competencia && <RiCheckLine className="size-3.5 shrink-0 text-blue-500" />}
-                  </button>
-                ))}
-              </div>
-            </FilterChip>
-
-            <FilterChip
-              label="Fundo"
+              label="UA"
               value={fundo}
               active={fundo !== "Todos"}
             >
@@ -1037,10 +1015,52 @@ function CotaSubPageInner() {
               </div>
             </FilterChip>
 
+            {/* Competencia (mes) = filtro secundario. O DIA e escolhido clicando
+                no grafico "Variacao diaria da cota" (master-detail). Selecionar
+                um mes salta pra data disponivel mais recente dele. */}
+            <FilterChip
+              label="Competência"
+              value={fmtCompetenciaLabel(competencia)}
+              active={competencia !== format(today, "yyyy-MM")}
+              icon={RiCalendarLine}
+            >
+              <div className="py-1">
+                {datasDisponiveisQuery.isLoading && (
+                  <div className="px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    Carregando competências...
+                  </div>
+                )}
+                {!datasDisponiveisQuery.isLoading && competenciaOptions.size === 0 && (
+                  <div className="px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    Nenhuma competência disponível
+                  </div>
+                )}
+                {Array.from(competenciaOptions.keys()).map((ym) => (
+                  <button
+                    key={ym}
+                    type="button"
+                    onClick={() => handleSelectCompetencia(ym)}
+                    className={cx(
+                      "flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors",
+                      ym === competencia
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
+                        : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800",
+                    )}
+                  >
+                    <span className="flex-1 text-left">{fmtCompetenciaLabel(ym)}</span>
+                    {ym === competencia && <RiCheckLine className="size-3.5 shrink-0 text-blue-500" />}
+                  </button>
+                ))}
+              </div>
+            </FilterChip>
+
+            {/* Classe nao se aplica ao "Resumo do dia" (resumo/balanco sao por UA,
+                nao por classe) — desativado nessa tab. */}
             <FilterChip
               label="Classe"
               value={classe}
-              active={classe !== "Todas"}
+              active={classe !== "Todas" && activeTab !== "resumo"}
+              disabled={activeTab === "resumo"}
             >
               <div className="py-1">
                 {CLASSE_OPTIONS.map((opt) => (
@@ -1109,16 +1129,21 @@ function CotaSubPageInner() {
               />
             )}
 
+            {/* "Mais filtros" desativado no Resumo do dia (so UA + competencia). */}
             <AddFilterMenu
               available={availableDynamicKeys}
               onAdd={addDynamicFilter}
+              disabled={activeTab === "resumo"}
             />
 
             <div className="ml-auto flex items-center gap-2">
-              <SavedViewsDropdown
-                currentParams={currentViewParams}
-                onApplyView={handleApplyView}
-              />
+              {/* Visualizacoes (saved views) nao se aplicam ao Resumo do dia. */}
+              {activeTab !== "resumo" && (
+                <SavedViewsDropdown
+                  currentParams={currentViewParams}
+                  onApplyView={handleApplyView}
+                />
+              )}
               <span className="shrink-0 text-[11px] text-gray-500 dark:text-gray-400">
                 {balancoEstruturalQuery.isFetching ? "Atualizando…" : "Atualizado"}
               </span>
@@ -1131,8 +1156,8 @@ function CotaSubPageInner() {
           {!fundoSelecionado ? (
             <EmptyState
               icon={RiFundsLine}
-              title="Selecione um fundo para comecar"
-              description='A pagina Cota Sub analisa um FIDC por vez. Escolha o fundo no filtro "Fundo" acima para carregar a decomposicao do dia, balanco e movimentacoes.'
+              title="Selecione uma UA para comecar"
+              description='A pagina Cota Sub analisa um FIDC por vez. Escolha a UA no filtro "UA" acima para carregar a decomposicao do dia, balanco e movimentacoes.'
               className="mt-4"
             />
           ) : (
@@ -1242,14 +1267,6 @@ function CotaSubPageInner() {
         </div>
 
       </div>
-
-      {/* AI Panel — drawer in-layout */}
-      <AIPanel
-        open={ai.open}
-        onClose={() => ai.setOpen(false)}
-        context={aiContext}
-        insights={MOCK_INSIGHTS}
-      />
 
       {/* DrillDown — F2: categoria do Balance hero (DC / PDD / CPR).
           F3 redesign 2026-05-24: Sheet vira FALLBACK pra < xl. Em xl+ o slot
@@ -1391,20 +1408,8 @@ function CotaSubPageInner() {
         )}
       </DrillDownSheet>
 
-      {/* Chat-investigador — FAB flutuante (Camada 2, o ÚNICO LLM da página).
-          Descobrível sempre, grande só quando aberto. */}
-      {fundoSelecionado && !chatOpen && (
-        <button
-          type="button"
-          onClick={() => setChatOpen(true)}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-violet-600 px-4 py-3 text-[13px] font-medium text-white shadow-lg shadow-violet-600/30 transition-colors hover:bg-violet-700"
-        >
-          <RiSparkling2Line className="size-4" aria-hidden />
-          Perguntar sobre o dia
-        </button>
-      )}
-
-      {/* Chat-investigador (Camada 2) — pré-carregado (backend) com o resumo do dia. */}
+      {/* Chat-investigador (Camada 2) — pré-carregado (backend) com o resumo do dia.
+          Entrada: botão "IA" do header + atalho Cmd/Ctrl+I (sem FAB). */}
       <ChatVariacaoDrawer
         fundoId={fundoId}
         data={dayIso}
