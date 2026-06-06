@@ -229,20 +229,20 @@ export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContent
  * Bloco de reconciliacao do Δ PDD ativo (A-H) entre D-1 e D0. Decompoe o
  * delta do headline em 3 forcas, provando que fecha:
  *
- *   Δ = Constituicao (PDD subiu) − Reversao (cura/amortizacao) − Saida WOP
+ *   Δ = Constituicao (PDD subiu) − Reversao (amortizacao) − Saida WOP
  *
  * Tudo de campos que o backend ja entrega: `resumo` (constituicao/reversao
  * ex-WOP) + `papeis_wop_total_pdd_d1` (o que saiu p/ WOP). A reversao genuina
- * (cura) = resumo.reversao_total + saida_wop, porque o backend inclui a saida
+ * = resumo.reversao_total + saida_wop, porque o backend inclui a saida
  * WOP dentro de reversao_total (o papel sai do PDD ativo).
  */
 function ReconcileBlock({ d }: { d: DrillPddResponse }) {
   const resumo = d.resumo!
   const constituicao = resumo.constituicao_total            // >= 0 (PDD subiu)
   const saidaWop = d.papeis_wop_total_pdd_d1                 // >= 0 (saiu do ativo p/ WOP)
-  const reversaoCura = resumo.reversao_total + saidaWop      // <= 0 (cura/amortizacao genuina)
+  const reversaoAmort = resumo.reversao_total + saidaWop     // <= 0 (amortizacao/baixa genuina)
   const deltaAtivo = d.pdd_granular_ex_wop_d0 - d.pdd_granular_ex_wop_d1
-  const soma = constituicao + reversaoCura - saidaWop
+  const soma = constituicao + reversaoAmort - saidaWop
   const fecha = Math.abs(soma - deltaAtivo) < 0.02
 
   const linhas: { label: string; valor: number; tone: string; nota?: string }[] = [
@@ -252,9 +252,9 @@ function ReconcileBlock({ d }: { d: DrillPddResponse }) {
       tone:  toneClass(constituicao, false),
     },
     {
-      label: "Reversão (cura / amortização)",
-      valor: reversaoCura,
-      tone:  toneClass(reversaoCura, false),
+      label: "Reversão (amortização)",
+      valor: reversaoAmort,
+      tone:  toneClass(reversaoAmort, false),
     },
     {
       label: "Saída para WOP",
