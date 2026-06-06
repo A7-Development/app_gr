@@ -80,8 +80,12 @@ async def compute_movimento_cotas(
         ev = Decimal(c["efeito_valorizacao"])
         delta_pl = Decimal(c["delta_pl"])
         is_prior = classe in ("senior", "mezanino")
-        # Prioritaria e passivo: seu ΔPL reduz o residual da Sub.
-        impacto = -delta_pl if is_prior else delta_pl
+        # Prioritaria e passivo, MAS o capital (aporte/resgate) entra/sai do caixa
+        # na mesma medida -> NEUTRO no PL Sub em R$ (so dilui/concentra o % de
+        # subordinacao, nao o valor). So o CARREGO (valorizacao) que a Sub paga
+        # impacta. O capital fica na coluna propria (efeito_capital). A propria
+        # Sub Jr: impacto = delta_pl (e o PL que estamos explicando).
+        impacto = -ev if is_prior else delta_pl
         if is_prior:
             custo_prior += ev
             cap_prior += ec

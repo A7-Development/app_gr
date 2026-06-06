@@ -514,8 +514,9 @@ def _sugestao_drill_cpr(receber: Any, pagar: Any) -> dict[str, Any]:
         "Cross-check por quantidade incluido.\n\n"
         "JA VEM PRONTO o bloco `sugestao` com `por_classe` (classificacao_sugerida "
         "ja mapeada pro enum: aporte_classe / resgate_classe / carrego_normal, e o "
-        "impacto_pl_sub com SINAL ja corrigido — aporte numa PRIORITARIA (Sr/Mez) "
-        "REDUZ o PL Sub por diluicao; aporte na SUBORDINADA aumenta) e "
+        "`impacto_pl_sub_do_capital` ja corrigido — capital numa PRIORITARIA (Sr/Mez) "
+        "e NEUTRO no PL Sub em R$ (so muda o % de subordinacao/diluicao); capital na "
+        "SUBORDINADA soma direto no PL Sub) e "
         "`alertas_sugeridos` (captacao/resgate material >= R$ 50k OU 0,5% do PL Sub, "
         "como EVIDENCIA computada — valide, nao copie cego). SEMPRE chame quando a "
         "categoria senior ou mezanino aparecer no Nivel 3."
@@ -585,9 +586,12 @@ def _sugestao_decomposicao_classes(r: dict[str, Any]) -> dict[str, Any]:
         ec = Decimal(str(c["efeito_capital"]))
         ev = Decimal(str(c["efeito_valorizacao"]))
         is_prioritaria = classe in ("senior", "mezanino")
-        # Impacto no PL Sub: prioritaria e passivo (aporte reduz a Sub por
-        # diluicao); subordinada e o proprio PL (aporte soma direto).
-        impacto_pl_sub = -ec if is_prioritaria else ec
+        # Impacto do CAPITAL no PL Sub em R$: prioritaria e NEUTRO (o aporte/resgate
+        # entra/sai do caixa na mesma medida que o passivo varia -> dilui/concentra
+        # o % de subordinacao, mas nao muda o valor da Sub). Subordinada e o proprio
+        # PL (aporte soma direto). O custo da prioritaria que pesa na Sub e o carrego
+        # (efeito_valorizacao), tratado a parte.
+        impacto_pl_sub = Decimal("0") if is_prioritaria else ec
 
         por_classe[classe] = {
             "classificacao_sugerida": _CLASSIF_CLASSE_MAP.get(c["classificacao"]),
@@ -599,7 +603,13 @@ def _sugestao_decomposicao_classes(r: dict[str, Any]) -> dict[str, Any]:
         if abs(ec) >= limiar:
             verbo = "Aporte" if ec > 0 else "Resgate"
             if is_prioritaria:
-                efeito_sub = "REDUZ o PL Sub (diluicao)" if ec > 0 else "AUMENTA o PL Sub"
+                # Capital em prioritaria e NEUTRO no PL Sub (R$): caixa entra/sai
+                # junto com o passivo. O que muda e a SUBORDINACAO (%).
+                efeito_sub = (
+                    "NEUTRO no PL Sub em R$ — diminui o % de subordinacao (diluicao)"
+                    if ec > 0 else
+                    "NEUTRO no PL Sub em R$ — aumenta o % de subordinacao (concentracao)"
+                )
             else:
                 efeito_sub = "AUMENTA o PL Sub" if ec > 0 else "REDUZ o PL Sub"
             alertas.append({
@@ -1298,10 +1308,13 @@ async def get_movimento_contas_a_pagar(scope: ScopedContext, args: dict[str, Any
         "decomposto em `efeito_capital` (aporte/resgate de cotistas no MEC, >0 "
         "aporte <0 resgate) vs `efeito_valorizacao` (remuneracao da cota = carrego). "
         "`classificacao` = aporte|resgate|apenas_valorizacao. `impacto_pl_sub` ja "
-        "vem com o SINAL na otica Sub: prioritaria (Sr/Mez) e passivo, seu ΔPL "
-        "REDUZ a Sub (impacto = -delta_pl); a propria Sub Jr e o residual. "
+        "vem com o SINAL na otica Sub: prioritaria (Sr/Mez) -> SO o carrego pesa "
+        "(impacto = -efeito_valorizacao); o CAPITAL (aporte/resgate) e NEUTRO no PL "
+        "Sub em R$ (caixa entra/sai junto com o passivo; muda so o % de subordinacao). "
+        "A propria Sub Jr e o residual (impacto = delta_pl). "
         "`custo_prioritarias_valorizacao` = carrego que a Sub PAGA as prioritarias "
-        "no dia; `capital_liquido_prioritarias` = aporte que diluiu a Sub.\n"
+        "no dia; `capital_liquido_prioritarias` = aporte/resgate que diluiu/concentrou "
+        "a subordinacao (% — neutro no PL Sub em R$).\n"
         "  - OBRIGACOES com cotistas (`obrigacoes[]`, CPR natureza capital_cotista): "
         "Cotas a Resgatar (resgate solicitado nao pago), Aporte (capital nao "
         "integralizado / a devolver), Resgate. `tipo` = nova|aumento|reducao|"
