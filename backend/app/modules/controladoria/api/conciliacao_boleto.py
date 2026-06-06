@@ -11,11 +11,14 @@ import asyncio
 import os
 import sys
 from collections import defaultdict
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Annotated
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -31,6 +34,10 @@ from app.modules.controladoria.services.conciliacao_boleto import (
     ConciliacaoBoletoResult,
     LinhaConciliacao,
     conciliar_boletos,
+)
+from app.warehouse.cobranca_sync_run import (
+    SYNC_STATUS_RUNNING,
+    CobrancaSyncRun,
 )
 
 router = APIRouter(
@@ -117,36 +124,113 @@ async def conciliacao_banco_cobrador(
 
 
 _RUNNING_SYNC: set[asyncio.Task] = set()  # ref forte p/ evitar GC (reap do filho)
+# Heartbeat sem atualizar por mais que isto com status=running => subprocess
+# provavelmente morreu (travado).
+_STUCK_APOS = timedelta(minutes=3)
+
+
+def _run_to_dict(run: CobrancaSyncRun, now: datetime) -> dict:
+    """Serializa a execucao para a UI. status='stuck' quando running + heartbeat
+    velho (subprocess morto)."""
+    travado = (
+        run.status == SYNC_STATUS_RUNNING
+        and run.heartbeat_at < now - _STUCK_APOS
+    )
+    return {
+        "run_id": str(run.id),
+        "status": "stuck" if travado else run.status,
+        "fase": run.fase,
+        "started_at": run.started_at.isoformat(),
+        "heartbeat_at": run.heartbeat_at.isoformat(),
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        "arquivos_vistos": run.arquivos_vistos,
+        "arquivos_novos": run.arquivos_novos,
+        "boletos_ativos": run.boletos_ativos,
+        "erro": run.erro,
+    }
 
 
 @router.post("/sync", status_code=202)
 async def disparar_sync(
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     _: None = _GuardWrite,
 ) -> dict:
     """Dispara a coleta/reprocessamento da cobranca para o TENANT (botao da
     pagina). Le os arquivos CNAB da inbox -> bronze -> timeline -> vigente. Banco
     e UA saem dos arquivos/titulos: o usuario NAO define UA.
 
-    O ciclo e CPU-bound (~45s) -- roda como SUBPROCESS detached (nao no event
-    loop do gr-api, que congelaria todos os requests). Retorna 202 imediatamente;
-    o front re-busca a conciliacao apos alguns segundos. `start_new_session`
-    desacopla do ciclo de vida do gr-api.
+    O ciclo e CPU-bound (~50s) -- roda como SUBPROCESS detached (nao no event
+    loop do gr-api, que congelaria todos os requests). Cria uma linha em
+    `wh_cobranca_sync_run` (fase/heartbeat) que o subprocess atualiza; o front
+    faz polling em GET /sync/status. Se ja ha um run em curso, devolve ele (nao
+    dispara em dobro). Retorna 202 com o estado do run.
     """
+    now = datetime.now(UTC)
+    em_curso = (
+        await db.execute(
+            select(CobrancaSyncRun)
+            .where(
+                CobrancaSyncRun.tenant_id == principal.tenant_id,
+                CobrancaSyncRun.status == SYNC_STATUS_RUNNING,
+                CobrancaSyncRun.heartbeat_at > now - _STUCK_APOS,
+            )
+            .order_by(CobrancaSyncRun.started_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if em_curso is not None:
+        return {**_run_to_dict(em_curso, now), "ja_em_curso": True}
+
+    run = CobrancaSyncRun(
+        id=uuid4(),
+        tenant_id=principal.tenant_id,
+        status=SYNC_STATUS_RUNNING,
+        fase="coleta",
+        started_at=now,
+        heartbeat_at=now,
+        triggered_by=f"user:{principal.user_id}",
+    )
+    db.add(run)
+    await db.commit()
+
     backend_root = Path(__file__).resolve().parents[4]  # .../backend
     proc = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",
         "scripts.run_cobranca_sync",
         str(principal.tenant_id),
+        str(run.id),
         cwd=str(backend_root),
         env=os.environ.copy(),
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
         start_new_session=True,
     )
-    # Reap em background (nao bloqueia a resposta) -- evita zumbi quando termina.
     task = asyncio.create_task(proc.wait())
     _RUNNING_SYNC.add(task)
     task.add_done_callback(_RUNNING_SYNC.discard)
-    return {"status": "iniciado"}
+    return {**_run_to_dict(run, now), "ja_em_curso": False}
+
+
+@router.get("/sync/status")
+async def status_sync(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = _Guard,
+) -> dict:
+    """Estado da ultima execucao do sync (polling do botao). `status='nunca'` se
+    nunca rodou; 'running'/'ok'/'error'/'stuck' caso contrario, com fase +
+    contadores + frescor."""
+    now = datetime.now(UTC)
+    run = (
+        await db.execute(
+            select(CobrancaSyncRun)
+            .where(CobrancaSyncRun.tenant_id == principal.tenant_id)
+            .order_by(CobrancaSyncRun.started_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if run is None:
+        return {"status": "nunca"}
+    return _run_to_dict(run, now)

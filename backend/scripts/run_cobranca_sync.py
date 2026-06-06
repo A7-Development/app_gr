@@ -9,7 +9,7 @@ async global preso ao loop do processo. O subprocess isola tudo (proprio loop,
 proprio engine, proprio pool).
 
 Uso:
-    .venv/bin/python -m scripts.run_cobranca_sync <tenant_id>
+    .venv/bin/python -m scripts.run_cobranca_sync <tenant_id> [run_id]
 """
 
 from __future__ import annotations
@@ -22,12 +22,13 @@ import app.shared.identity.tenant  # noqa: F401  -- registra `tenants` (FK)
 from app.modules.integracoes.adapters.cobranca.etl import run_cobranca_manual_sync
 
 
-async def _main(tenant_id: UUID) -> None:
-    res = await run_cobranca_manual_sync(tenant_id)
+async def _main(tenant_id: UUID, run_id: UUID | None) -> None:
+    res = await run_cobranca_manual_sync(tenant_id, run_id=run_id)
     print(f"[cobranca-sync] {tenant_id}: {res}")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        raise SystemExit("uso: python -m scripts.run_cobranca_sync <tenant_id>")
-    asyncio.run(_main(UUID(sys.argv[1])))
+    if len(sys.argv) not in (2, 3):
+        raise SystemExit("uso: python -m scripts.run_cobranca_sync <tenant_id> [run_id]")
+    _rid = UUID(sys.argv[2]) if len(sys.argv) == 3 else None
+    asyncio.run(_main(UUID(sys.argv[1]), _rid))
