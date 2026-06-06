@@ -421,6 +421,9 @@ async def run_specialist_agent(
         persona=resolved.persona,
         expertises=resolved.expertises,
         prompt_system_text=prompt_system_text,
+        # Auto-injeta o <output_format> derivado do output_schema Pydantic
+        # (opcao A, 2026-06-06): prompts nao precisam mais descrever o shape.
+        output_schema=spec.output_schema,
     )
 
     # Inject checklist items defined by the tenant for this agent's section.
@@ -734,6 +737,7 @@ async def run_standalone_agent(
         persona=resolved.persona,
         expertises=resolved.expertises,
         prompt_system_text=system_text_raw,
+        output_schema=spec.output_schema,
     )
 
     user_text = "\n\n".join(
