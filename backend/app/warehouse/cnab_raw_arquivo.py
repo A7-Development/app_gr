@@ -43,7 +43,12 @@ from app.core.database import Base
 # Espelha os SourceType COBRANCA_* sem o prefixo "cobranca:".
 BANCO_BRADESCO = "bradesco"
 BANCO_ITAU = "itau"
-BANCO_GRAFENO = "grafeno"
+# BaaS/cobradores antes rotulados (errado) como "grafeno". O header CNAB declara
+# a identidade REAL: codigo 274 + nome "BMP" (Money Plus) e codigo 310 + nome
+# "VORTX DTVM" (Vortx). Grafeno usou BMP como cobrador e depois migrou p/ Vortx
+# -- por isso 2 codigos. Usamos os nomes do emissor real (bmp/vortx).
+BANCO_BMP = "bmp"
+BANCO_VORTX = "vortx"
 # Arquivo cujo banco nao foi reconhecido pelo header (pousa no bronze mesmo
 # assim -- bronze-now -- para investigacao).
 BANCO_DESCONHECIDO = "desconhecido"
