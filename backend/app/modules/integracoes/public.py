@@ -20,6 +20,9 @@ from app.core.enums import SourceType
 from app.modules.integracoes.adapters.admin.qitech.endpoint_catalog import (
     QITECH_ENDPOINTS,
 )
+from app.modules.integracoes.adapters.cobranca.etl import (
+    run_cobranca_manual_sync,
+)
 from app.modules.integracoes.adapters.data.bigdatacorp.mappers.cadastral import (
     CadastralFields,
 )
@@ -140,6 +143,7 @@ __all__ = [
     "list_reports",
     "listar_datas_disponiveis_qitech",
     "rule_name_for",
+    "run_cobranca_manual_sync",
     "run_ping",
     "run_sync_cycle",
     "run_sync_endpoint",

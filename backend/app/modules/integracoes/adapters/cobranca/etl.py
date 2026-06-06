@@ -16,17 +16,23 @@ Adicionar banco = +1 entrada em `detect._POR_CODIGO` + parser + `_LAYOUTS`.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import AsyncSessionLocal
+from app.core.enums import Environment, SourceType
 from app.modules.integracoes.adapters.cobranca.bradesco import (
     estado_from_codigo as bradesco_estado_from_codigo,
 )
 from app.modules.integracoes.adapters.cobranca.bradesco import (
     parse_retorno as bradesco_parse_retorno,
+)
+from app.modules.integracoes.adapters.cobranca.decode_evento import (
+    decode_tenant_eventos,
 )
 from app.modules.integracoes.adapters.cobranca.detect import detectar_banco
 from app.modules.integracoes.adapters.cobranca.landing import land_cnab_arquivo
@@ -37,6 +43,9 @@ from app.modules.integracoes.adapters.cobranca.mappers.boleto import (
 from app.modules.integracoes.adapters.cobranca.persist import (
     persist_ocorrencias,
     upsert_boletos,
+)
+from app.modules.integracoes.adapters.cobranca.project_vigente import (
+    project_tenant_vigente,
 )
 from app.modules.integracoes.adapters.cobranca.version import ADAPTER_VERSION
 from app.modules.integracoes.filesource import get_file_source
@@ -174,3 +183,38 @@ async def sync_cobranca(
     if commit:
         await db.commit()
     return result
+
+
+async def run_cobranca_manual_sync(tenant_id: UUID) -> dict[str, Any]:
+    """Ciclo manual completo de cobranca (botao da pagina banco-cobrador).
+
+    Por TENANT (banco e UA saem dos arquivos/titulos -- nao se define UA):
+      1. coleta os arquivos da inbox -> bronze + ocorrencias (`sync_cobranca`);
+      2. decodifica o bronze -> timeline (`decode_tenant_eventos`);
+      3. projeta a timeline -> estado vigente (`project_tenant_vigente`).
+
+    Le a config 'cobranca' (file_source) do `tenant_source_config`. Idempotente
+    (dedup por sha na coleta; upsert no decode; reprojecao na vigente).
+    """
+    # Import lazy: source_config service nao depende do adapter, mas mantemos
+    # localizado para nao alargar o import-time deste modulo.
+    from app.modules.integracoes.services.source_config import get_decrypted_config
+
+    async with AsyncSessionLocal() as db:
+        config = await get_decrypted_config(
+            db, tenant_id, SourceType.COBRANCA, Environment.PRODUCTION
+        )
+        if config is None:
+            raise ValueError(
+                "Fonte 'cobranca' nao configurada para o tenant "
+                "(rode seed_cobranca_source.py)."
+            )
+        coleta = await sync_cobranca(db, tenant_id=tenant_id, config=config, commit=True)
+        eventos = await decode_tenant_eventos(db, tenant_id=tenant_id)
+        vigente = await project_tenant_vigente(db, tenant_id=tenant_id)
+
+    return {
+        "coleta": asdict(coleta),
+        "eventos": eventos,
+        "vigente": vigente,
+    }
