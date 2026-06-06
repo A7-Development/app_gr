@@ -251,6 +251,23 @@ Espelha `ai_prompt` / `playbook_definition`:
 
 ---
 
+### 7.4 Convenção de `field_path` (decisão 14.5)
+
+Notação intuitiva, sem ambiguidade:
+
+- **Objeto aninhado:** ponto. Ex.: `LegalNature.Activity`,
+  `AdditionalOutputData.CapitalRS`.
+- **Array de objetos:** `[]` marca o nível do array; o caminho **continua** para
+  o campo do elemento. Ex.: o array em si = `Activities[]`
+  (`semantic_type=array`); os campos por elemento = `Activities[].Code`,
+  `Activities[].Activity`, `Activities[].IsMain`. O roteamento definido no campo
+  do elemento (ex.: `to_screen` em `Activities[].Activity`) vale para **todos**
+  os elementos.
+- **Array de escalares:** `Tags[]` (`semantic_type=array`).
+
+O detector de campo novo (seção 9) gera o `field_path` por esta convenção ao
+varrer o payload.
+
 ## 8. Como cada superfície consome o contrato
 
 - **Mapper (bronze→silver):** itera os campos `to_silver`, lê `field_path` do
@@ -369,14 +386,15 @@ qualquer fonte — em vez de N tratamentos artesanais.
    (`to_agent`) + descrição, e o raciocínio escolhe; só o **check** tem whitelist
    tipada rígida (campos `to_check` ⇒ colunas silver). Ver seções 4 e 5.
 
-### Ainda em aberto (refinar)
+5. ✅ **Granularidade do `field_path`:** notação ponto + `[]` (ver 7.4).
+6. ✅ **Metadado por campo:** `eh_fato` + `semantic_type` **bastam** por ora.
+   Metadado extra de qualidade (nullable, domínio, regra de validação) fica
+   adiado até um caso de uso concreto pedir — mantém o modelo enxuto.
+7. ✅ **Ordem de migração dos mappers:** **BDC → QiTech → Bitfin → Serasa.**
+   (BDC `CAD-PJ` já é o seed da Fase 1; as demais seguem nessa ordem na Fase 6.)
 
-5. **Granularidade do `field_path`** em estruturas aninhadas/arrays (ex.:
-   `Activities[].Code`): como representar arrays no contrato.
-6. **`eh_fato` vs `semantic_type`:** suficientes para dirigir check/score, ou
-   precisa de mais metadado de qualidade (nullable, domínio, regra de validação)?
-7. **Relação com o mapper existente:** migrar mappers ad-hoc pra dirigidos por
-   contrato é incremental (fonte a fonte) — definir ordem de migração.
+> Todas as decisões de arquitetura estão resolvidas. Doc estável — pronto para
+> a Fase 1 (implementação).
 
 ---
 
