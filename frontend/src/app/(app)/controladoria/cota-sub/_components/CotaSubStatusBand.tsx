@@ -79,20 +79,21 @@ export function CotaSubStatusBand({ resumo, reportEntries, dataD0, loading }: Co
 
   return (
     <section className="flex flex-wrap items-center gap-x-8 gap-y-3 rounded border border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-950">
-      {/* PL SUB — headline em BRL compacto (R$ X,XXM) */}
-      <Col label={`PL Sub · ${fmtDateBr(dataD0)}`}>
+      {/* PL SUB — headline em BRL compacto (R$ X,XXM). Origem: MEC (pl_sub_mec_d0). */}
+      <Col label={`PL Sub (mec) · ${fmtDateBr(dataD0)}`}>
         <span className="text-[23px] font-bold leading-none tracking-[-0.025em] tabular-nums text-gray-900 dark:text-gray-50">
           {fmtCompact.format(resumo.pl_sub_mec_d0)}
         </span>
       </Col>
 
-      <Col label="Variação do dia" divider>
+      {/* Variação do dia — cota_delta, reconcilia com o MEC ("fecha com o MEC"). */}
+      <Col label="Variação do dia (mec)" divider>
         <span className={cx("text-[17px] font-semibold leading-none tabular-nums", toneText(resumo.cota_delta))}>
           {fmtSignedCompact(resumo.cota_delta)}
         </span>
       </Col>
 
-      <Col label="Variação %" divider>
+      <Col label="Variação % (mec)" divider>
         <span className={cx("text-[17px] font-semibold leading-none tabular-nums", variacaoPct != null ? toneText(variacaoPct) : "")}>
           {variacaoPct != null ? fmtPct(variacaoPct) : "—"}
         </span>
