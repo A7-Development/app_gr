@@ -199,11 +199,15 @@ genérico. Ver decisão aberta 14.1.)
 | source_type | text | `bdc` / `qitech` / `bitfin` / `serasa_pj` … |
 | dataset_code | text | código técnico/neutro do dataset |
 | public_code | text null | white-label tenant-facing (quando aplicável) |
-| version | int | versão do contrato |
+| version | int | versão do contrato (imutável — ver 7.3) |
 | status | enum | `draft` / `active` / `archived` |
 | owner | text | dono da governança |
 | description | text | |
-| tenant_id | uuid null | NULL = global; preenchido = override por tenant |
+| tenant_id | uuid null | **Começa sempre global (NULL).** Override por tenant é futuro (ver 14.3) |
+
+`(source_type, dataset_code, version)` UNIQUE. **Tabela NOVA e genérica**
+(decisão 14.1) — não estende `provedor_dados_dataset`; este último (white-label
+BDC) apenas **linka** para o contrato via `public_code`.
 
 ### 7.2 `dataset_field` — campo do contrato (N por dataset)
 
@@ -229,8 +233,21 @@ genérico. Ver decisão aberta 14.1.)
 | classified_by | text null | quem curou |
 | classified_at | timestamptz null | |
 
-**Versionamento:** espelhar `ai_prompt` (versões imutáveis + ponteiro ativo,
-rollback de 1 clique) OU edição direta com histórico simples. → decisão 14.2.
+### 7.3 Versionamento (decisão 14.2: IMUTÁVEL + ponteiro ativo)
+
+Espelha `ai_prompt` / `playbook_definition`:
+
+- `dataset_contract` é **imutável por versão** — toda edição (campos, rótulos,
+  roteamento) **cria uma nova versão**, copiando a base + patch. A versão base
+  nunca muda (preserva audit trail).
+- **`dataset_contract_active`** — uma linha por `(source_type, dataset_code
+  [, tenant_id])` apontando para a `dataset_contract_id` em produção. Trocar de
+  versão = 1 UPDATE (**rollback de 1 clique, sem deploy**).
+- `dataset_field` pertence a uma versão do contrato (FK para `contract_id`), logo
+  acompanha a imutabilidade.
+- As superfícies resolvem **sempre a versão ativa** (`resolve_contract` lê o
+  ponteiro), salvo quando uma execução fixa uma versão para reprodutibilidade
+  (auditoria §14).
 
 ---
 
@@ -321,9 +338,10 @@ qualquer fonte — em vez de N tratamentos artesanais.
 ## 13. Roadmap de implementação (proposta)
 
 1. **Fase 0 — Conceito (este doc).** Alinhar e refinar.
-2. **Fase 1 — Modelo + resolver.** Tabelas `dataset_contract` + `dataset_field`;
-   `resolve_contract()`; seed do contrato do `CAD-PJ` (BDC) a partir dos campos
-   reais já conhecidos.
+2. **Fase 1 — Modelo + resolver.** Tabelas `dataset_contract` +
+   `dataset_contract_active` + `dataset_field` (global, imutável + ponteiro);
+   `resolve_contract()` lê a versão ativa; seed do contrato do `CAD-PJ` (BDC) a
+   partir dos campos reais já conhecidos.
 3. **Fase 2 — Projeção de tela dirigida por contrato.** O card cadastral passa a
    ler `on_screen`/`public_label`/`screen_order`. Detector de campo novo.
 4. **Fase 3 — Tool/agente dirigidos por contrato.** `get_dados_cadastrais`
@@ -335,22 +353,30 @@ qualquer fonte — em vez de N tratamentos artesanais.
 
 ---
 
-## 14. Decisões em aberto (refinar)
+## 14. Decisões
 
-1. **Onde mora o cabeçalho?** Tabela genérica `dataset_contract` nova, OU
-   estender o `provedor_dados_dataset` existente (hoje BDC/white-label)? Proposta:
-   genérico, com o `provedor_dados_dataset` linkando pra ele.
-2. **Versionamento do contrato:** imutável + ponteiro ativo (estilo `ai_prompt`,
-   rollback 1-clique) ou edição com histórico simples?
-3. **Override por tenant:** contrato global + override por tenant (campos
-   diferentes por cliente)? Provável sim (espelha `tenant_*`), mas começar
-   global.
-4. **Granularidade do `field_path`** em estruturas aninhadas/arrays (ex.:
+### Resolvidas (2026-06-06, Ricardo)
+
+1. ✅ **Onde mora o cabeçalho:** **tabela NOVA e genérica** (`dataset_contract`),
+   não estender `provedor_dados_dataset`. O catálogo BDC/white-label apenas linka
+   pro contrato via `public_code`.
+2. ✅ **Versionamento:** **imutável + ponteiro ativo** (`dataset_contract_active`),
+   estilo `ai_prompt` — rollback de 1 clique. Ver 7.3.
+3. ✅ **Override por tenant:** **começar global** (tenant_id NULL). Override por
+   tenant fica como evolução futura (sem quebrar o modelo — basta preencher
+   tenant_id depois).
+4. ✅ **Agente ≠ check:** confirmado. Pro agente cura-se o que ele *pode ver*
+   (`to_agent`) + descrição, e o raciocínio escolhe; só o **check** tem whitelist
+   tipada rígida (campos `to_check` ⇒ colunas silver). Ver seções 4 e 5.
+
+### Ainda em aberto (refinar)
+
+5. **Granularidade do `field_path`** em estruturas aninhadas/arrays (ex.:
    `Activities[].Code`): como representar arrays no contrato.
-5. **`eh_fato` vs `semantic_type`:** suficientes para dirigir check/score, ou
-   precisa de mais metadado de qualidade (nullable, domínio, regra)?
-6. **Relação com o mapper existente:** migrar mappers ad-hoc pra dirigidos por
-   contrato é incremental (fonte a fonte) — ordem de migração.
+6. **`eh_fato` vs `semantic_type`:** suficientes para dirigir check/score, ou
+   precisa de mais metadado de qualidade (nullable, domínio, regra de validação)?
+7. **Relação com o mapper existente:** migrar mappers ad-hoc pra dirigidos por
+   contrato é incremental (fonte a fonte) — definir ordem de migração.
 
 ---
 
