@@ -31,7 +31,7 @@ acima de threshold em datas-controle).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
@@ -72,6 +72,12 @@ _FAIXA_WOP = "WOP"
 # Threshold de relevancia: itens com |valor| abaixo disso nao viram alerta
 # (ruido de centavos). Configuravel pelo caller.
 _THRESHOLD_DEFAULT = Decimal("1")
+
+# Janela (dias corridos) p/ a vigia de fundo externo decidir se um fundo e "novo".
+# So vira vigia se NAO foi visto (>= threshold) em nenhum dia desta janela antes
+# de D0. Evita que um fundo DI de varredura (caixa ocioso que zera e recarrega,
+# ex.: ITAU SOBERANO REF SI) reacenda o alerta a cada recarga. ~30 dias uteis.
+_FUNDO_NOVO_LOOKBACK_DIAS = 45
 
 
 @dataclass(frozen=True)
@@ -333,43 +339,60 @@ async def _scan_cota_fundo(
     db: AsyncSession, tenant_id: UUID, ua_id: UUID, ua_nome: str,
     d_prev: date, d0: date, threshold: Decimal,
 ) -> list[ItemNaoReconhecido]:
-    """Cota fundo: lista fundos EXTERNOS contados em Fundos DI (vigia).
+    """Cota fundo: lista fundos EXTERNOS GENUINAMENTE NOVOS em Fundos DI (vigia).
 
-    `_is_fundo_externo` e prefixo-based: um fundo externo novo entra direto em
-    Fundos DI. Nao some — mas vale expor o que esta sendo contado, pra um fundo
-    novo (ex.: ITAU SOBERANO em 25/05) ser visivel no dia 1.
+    `_is_fundo_externo` e prefixo-based: um fundo externo entra direto em Fundos
+    DI. Vale expor um fundo NOVO no dia 1 — mas so quando e de fato novo.
+
+    "Novo" = tem saldo em D0 e NAO foi visto (>= threshold) em nenhum dia da
+    janela `_FUNDO_NOVO_LOOKBACK_DIAS` antes de D0. Olhar so D-1 reacendia o
+    alerta a cada recarga de um fundo de varredura (ITAU SOBERANO REF SI, que
+    zera e recarrega) — ruido, nao novidade.
     """
-    acc: dict[str, dict[str, Decimal]] = {}
-    for d, slot in ((d_prev, "d_prev"), (d0, "d0")):
-        rows = (
-            await db.execute(
-                select(PosicaoCotaFundo.ativo_nome, PosicaoCotaFundo.valor_liquido)
-                .where(PosicaoCotaFundo.tenant_id == tenant_id)
-                .where(PosicaoCotaFundo.unidade_administrativa_id == ua_id)
-                .where(PosicaoCotaFundo.data_posicao == d)
+    janela_inicio = d0 - timedelta(days=_FUNDO_NOVO_LOOKBACK_DIAS)
+    rows = (
+        await db.execute(
+            select(
+                PosicaoCotaFundo.ativo_nome,
+                PosicaoCotaFundo.data_posicao,
+                PosicaoCotaFundo.valor_liquido,
             )
-        ).all()
-        for nome, valor in rows:
-            if not _is_fundo_externo(nome or "", ua_nome):
-                continue  # fundo interno (DC) — nao conta aqui
-            acc.setdefault(nome or "", {"d_prev": ZERO, "d0": ZERO})[slot] += Decimal(valor or 0)
+            .where(PosicaoCotaFundo.tenant_id == tenant_id)
+            .where(PosicaoCotaFundo.unidade_administrativa_id == ua_id)
+            .where(PosicaoCotaFundo.data_posicao >= janela_inicio)
+            .where(PosicaoCotaFundo.data_posicao <= d0)
+        )
+    ).all()
+
+    saldo_d0: dict[str, Decimal] = {}
+    visto_antes: dict[str, Decimal] = {}  # maior |saldo| em datas < D0 na janela
+    for nome, d, valor in rows:
+        if not _is_fundo_externo(nome or "", ua_nome):
+            continue  # fundo interno (DC) — nao conta aqui
+        key = nome or ""
+        v = Decimal(valor or 0)
+        d_norm = d.date() if hasattr(d, "date") else d
+        if d_norm == d0:
+            saldo_d0[key] = saldo_d0.get(key, ZERO) + v
+        else:
+            visto_antes[key] = max(visto_antes.get(key, ZERO), abs(v))
 
     out: list[ItemNaoReconhecido] = []
-    for nome, vals in acc.items():
-        # So vira vigia se o fundo APARECEU no periodo (estava 0/ausente em D-1
-        # e passou a ter saldo em D0) — e o sinal de "algo novo".
-        novo = abs(vals["d_prev"]) < threshold and abs(vals["d0"]) >= threshold
+    for nome, v0 in saldo_d0.items():
+        # Novo de verdade: tem saldo agora E nao apareceu em nenhum dia da janela.
+        novo = abs(v0) >= threshold and visto_antes.get(nome, ZERO) < threshold
         if not novo:
             continue
         out.append(ItemNaoReconhecido(
             fonte="wh_posicao_cota_fundo", endpoint="qitech.market.outros_fundos",
             campo="ativo_nome", identificador=nome,
             label=f"Fundo externo novo em Fundos DI: {nome}",
-            valor_d0=vals["d0"], valor_d_prev=vals["d_prev"],
+            valor_d0=v0, valor_d_prev=ZERO,
             modo="vigia", driver_afetado="Fundos DI",
             motivo=(
-                "Fundo externo sem saldo em D-1 passou a ter saldo em D0 — entra "
-                "em Fundos DI. Conferir se a contraparte de caixa foi capturada."
+                f"Fundo externo sem saldo nos ultimos {_FUNDO_NOVO_LOOKBACK_DIAS} "
+                "dias passou a ter saldo em D0 — entra em Fundos DI. Conferir se a "
+                "contraparte de caixa foi capturada."
             ),
         ))
     return out
