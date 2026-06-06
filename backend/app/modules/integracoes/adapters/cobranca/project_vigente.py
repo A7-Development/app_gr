@@ -15,7 +15,7 @@ re-derivavel. Idempotente.
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
@@ -40,11 +40,68 @@ from app.warehouse.boleto_vigente import (
     ESTADO_REJEITADO,
     BoletoVigente,
 )
+from app.warehouse.dim import DimUnidadeAdministrativa
+from app.warehouse.titulo import Titulo
 
 _CHUNK = 1000
 
 # Prioridade de processamento no mesmo dia: abre primeiro, terminal por ultimo.
 _PRIORIDADE = {EFEITO_ABRE: 0, EFEITO_FECHA: 2, EFEITO_REJEITA: 2}
+
+
+async def _ua_por_titulo(
+    db: AsyncSession, tenant_id: UUID
+) -> dict[str, tuple[int, str | None]]:
+    """numero (trim) -> (ua_id, nome canonico da UA) a partir de `wh_titulo`.
+
+    A UA do TITULO no Bitfin e a fonte de verdade da titularidade do boleto. O
+    header CNAB carrega o nome da CONTA cobradora (que difere do nome da UA --
+    ex.: BMP/Vortx, contas Grafeno), por isso o match por header falha. Como o
+    documento do boleto cruza com `wh_titulo.numero`, a UA correta vem do titulo.
+    """
+    rows = (
+        await db.execute(
+            select(
+                Titulo.numero,
+                Titulo.unidade_administrativa_id,
+                DimUnidadeAdministrativa.nome,
+            )
+            .outerjoin(
+                DimUnidadeAdministrativa,
+                (DimUnidadeAdministrativa.ua_id == Titulo.unidade_administrativa_id)
+                & (DimUnidadeAdministrativa.tenant_id == Titulo.tenant_id),
+            )
+            .where(Titulo.tenant_id == tenant_id)
+        )
+    ).all()
+    out: dict[str, tuple[int, str | None]] = {}
+    for numero, ua_id, ua_nome in rows:
+        if numero and ua_id is not None:
+            out[numero.strip()] = (ua_id, ua_nome)
+    return out
+
+
+def _enriquecer_ua(
+    rows: list[dict[str, Any]], ua_por_num: dict[str, tuple[int, str | None]]
+) -> None:
+    """Define a UA de cada boleto pelo TITULO que ele cruza (in-place).
+
+    1. Boleto que cruza um titulo -> UA do titulo (vence o header).
+    2. Boleto "so em banco" (sem titulo) -> UA majoritaria do mesmo banco entre
+       os que cruzaram (1 carteira/convenio = 1 UA; ex.: BMP/Vortx = RealInvest).
+    """
+    maioria: dict[str, Counter[tuple[int, str | None]]] = defaultdict(Counter)
+    for r in rows:
+        t = ua_por_num.get((r["numero_documento"] or "").strip())
+        if t is not None:
+            r["ua_id"], r["ua_nome"] = t
+            maioria[r["banco_origem"]][t] += 1
+    banco_ua = {b: c.most_common(1)[0][0] for b, c in maioria.items() if c}
+    for r in rows:
+        if r["ua_id"] is None:
+            fallback = banco_ua.get(r["banco_origem"])
+            if fallback is not None:
+                r["ua_id"], r["ua_nome"] = fallback
 
 
 def _estado_final(efeito: str, tipo: str) -> str:
@@ -144,6 +201,10 @@ async def project_tenant_vigente(
                 "projected_by_version": DECODER_VERSION,
             }
         )
+
+    # UA pelo TITULO (fonte de verdade), nao pelo header CNAB. Titulo vence;
+    # "so em banco" herda a UA majoritaria do banco (convenio = 1 UA).
+    _enriquecer_ua(rows, await _ua_por_titulo(db, tenant_id))
 
     # Reescreve a vigente (projecao -> delete + insert).
     del_stmt = delete(BoletoVigente).where(BoletoVigente.tenant_id == tenant_id)
