@@ -24,13 +24,16 @@ import {
   drillTableWrap,
   drillThead,
   fmtBRL,
-  fmtBRLSigned,
 } from "./drillKit"
+import { DrillImpactoTable, makeImpactoColumns } from "./DrillImpactoTable"
 
 const TIPO: Record<string, string> = {
   apropriacao: "Apropriou", nova_provisao: "Nova", baixa: "Baixou", quitada: "Quitada",
   estavel: "Estável",
 }
+
+// Mesma estrutura da tabela "Aplicações · impacto na cota".
+const PROVISOES_COLS = makeImpactoColumns({ nome: "Rubrica", d1: "D-1", d0: "D0", impacto: "Δ" })
 const CANAL: Record<string, string> = {
   codigo_proprio: "Débito direto", tarifa_ted: "Tarifa de TED", ted_fornecedor: "TED a fornecedor",
 }
@@ -88,29 +91,17 @@ export function DrillContasAPagarContent({ fundoId, data, dataAnterior }: Props)
           counter={`apropriou ${fmtBRL.format(d.total_apropriacao)} · baixou ${fmtBRL.format(d.total_baixa)}`}
           help="Accrual de taxa (apropriacao) vs provisao que saiu (baixa/quitada). CPR<0."
         />
-        <div className={cx("mt-2", drillTableWrap)}>
-          <table className="w-full whitespace-nowrap text-[12px] tabular-nums">
-            <thead className={drillThead}>
-              <tr>
-                <th className="px-3 py-1.5 text-left font-medium">Rubrica</th>
-                <th className="px-3 py-1.5 text-right font-medium">D-1</th>
-                <th className="px-3 py-1.5 text-right font-medium">D0</th>
-                <th className="px-3 py-1.5 text-right font-medium">Δ</th>
-                <th className="px-3 py-1.5 text-left font-medium">Tipo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {d.provisoes.map((p, i) => (
-                <tr key={`${p.descricao}-${i}`} className={drillRowBorder}>
-                  <td className="max-w-[220px] truncate px-3 py-1.5 text-left text-gray-900 dark:text-gray-100" title={p.descricao}>{p.descricao}</td>
-                  <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(Math.abs(p.saldo_d1))}</td>
-                  <td className="px-3 py-1.5 text-right text-gray-600 dark:text-gray-300">{fmtBRL.format(Math.abs(p.saldo_d0))}</td>
-                  <td className={cx("px-3 py-1.5 text-right", p.delta > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-gray-600 dark:text-gray-300")}>{fmtBRLSigned(p.delta)}</td>
-                  <td className="px-3 py-1.5 text-left text-gray-500 dark:text-gray-400">{TIPO[p.tipo] ?? p.tipo}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="mt-2">
+          <DrillImpactoTable
+            columns={PROVISOES_COLS}
+            itens={d.provisoes.map((p) => ({
+              nome:     p.descricao,
+              detalhe:  TIPO[p.tipo] ?? p.tipo,
+              valor_d1: Math.abs(p.saldo_d1),
+              valor_d0: Math.abs(p.saldo_d0),
+              impacto:  p.delta,
+            }))}
+          />
         </div>
       </section>
 
