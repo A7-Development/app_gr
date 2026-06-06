@@ -691,22 +691,17 @@ export type RevenueAnalysis = {
 
 // ─── Cadastral: card (silver, white-label) + análise (agente) ────────────────
 
-export type CadastralCnae = { code: string | null; name: string | null }
-
 export type CadastralCard = {
   encontrado: boolean
   enriquecido: boolean
   cnpj: string
   razao_social: string | null
-  nome_fantasia: string | null
   situacao_cadastral: string | null
   data_fundacao: string | null
   capital_social: number | null
-  cnae_principal: CadastralCnae | null
-  cnaes_secundarios: CadastralCnae[]
-  regime_tributario: string | null
-  natureza_juridica: string | null
-  porte: string | null
+  // TODO o basic_data do dataset (nada descartado). Render generico na UI;
+  // curadoria de rotulo/ordem/visibilidade fica no catalogo (fase seguinte).
+  dados_completos: Record<string, unknown>
 }
 
 /** Output do agente `cadastral_analyst` (julgamento). */

@@ -1,8 +1,8 @@
 // CadastralCard — card "Dados cadastrais coletados" (silver, white-label).
 //
-// Lê GET /dossies/{id}/cadastral (mesma fonte que a read-tool do agente usa).
-// Mostra ao analista o que a consulta oficial trouxe — sem qualquer
-// identidade de vendor (white-label).
+// Lê GET /dossies/{id}/cadastral. Mostra um RESUMO (campos validados) +
+// TODOS os campos do dataset via render genérico (RawDataFields) — o dev NÃO
+// escolhe o que exibir (governança 2026-06-06). Sem identidade de vendor.
 
 "use client"
 
@@ -12,6 +12,7 @@ import { RiBuilding4Line } from "@remixicon/react"
 import { tableTokens } from "@/design-system/tokens/table"
 import { credito } from "@/lib/credito-client"
 import { cx } from "@/lib/utils"
+import { RawDataFields } from "./RawDataFields"
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" })
 
@@ -52,8 +53,12 @@ export function CadastralCard({ dossierId }: { dossierId: string }) {
       SIT_TONE[data.situacao_cadastral.toLowerCase()]) ||
     "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
 
+  const completos = (data.dados_completos ?? {}) as Record<string, unknown>
+  const temCompletos = Object.keys(completos).length > 0
+
   return (
     <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
+      {/* Header */}
       <div className="flex items-start gap-2.5 border-b border-gray-100 p-3 dark:border-gray-900">
         <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-gray-100 dark:bg-gray-900">
           <RiBuilding4Line className="size-4 text-gray-500" aria-hidden />
@@ -72,45 +77,24 @@ export function CadastralCard({ dossierId }: { dossierId: string }) {
               </span>
             )}
           </div>
-          <p className={cx(tableTokens.cellSecondary, "mt-0.5")}>
-            CNPJ {data.cnpj}
-            {data.nome_fantasia && <> · {data.nome_fantasia}</>}
-          </p>
+          <p className={cx(tableTokens.cellSecondary, "mt-0.5")}>CNPJ {data.cnpj}</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-x-6 gap-y-2 p-3 sm:grid-cols-2">
+      {/* Resumo (campos validados) */}
+      <div className="grid grid-cols-2 gap-x-6 gap-y-2 p-3 sm:grid-cols-3">
         <Field label="Data de fundação" value={fmtDate(data.data_fundacao)} />
         <Field label="Capital social" value={fmtBRL(data.capital_social)} />
-        <Field label="Regime tributário" value={data.regime_tributario ?? "—"} />
-        <Field label="Natureza jurídica" value={data.natureza_juridica ?? "—"} />
-        <Field label="Porte" value={data.porte ?? "—"} />
-        <Field
-          label="CNAE principal"
-          value={
-            data.cnae_principal
-              ? `${data.cnae_principal.code ?? ""} ${data.cnae_principal.name ?? ""}`.trim() || "—"
-              : "—"
-          }
-        />
+        <Field label="Situação" value={data.situacao_cadastral ?? "—"} />
       </div>
 
-      {data.cnaes_secundarios.length > 0 && (
+      {/* TODOS os campos do dataset (fonte oficial), render genérico */}
+      {temCompletos && (
         <div className="border-t border-gray-100 p-3 dark:border-gray-900">
-          <p className={cx(tableTokens.header, "mb-1")}>
-            CNAEs secundários ({data.cnaes_secundarios.length})
+          <p className={cx(tableTokens.header, "mb-2")}>
+            Todos os dados cadastrais (fonte oficial)
           </p>
-          <ul className="flex flex-wrap gap-1.5">
-            {data.cnaes_secundarios.map((c, i) => (
-              <li
-                key={i}
-                className={cx(tableTokens.badge, "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300")}
-                title={c.name ?? undefined}
-              >
-                {c.code ?? c.name ?? "—"}
-              </li>
-            ))}
-          </ul>
+          <RawDataFields data={completos} />
         </div>
       )}
     </div>
