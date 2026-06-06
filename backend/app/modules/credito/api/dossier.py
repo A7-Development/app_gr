@@ -28,7 +28,9 @@ from app.modules.credito.schemas.dossier import (
     NodeSubmitPayload,
 )
 from app.modules.credito.services import dossier as dossier_svc
-from app.modules.credito.services.cadastral import load_cadastral_silver_view
+from app.modules.credito.services.cadastral import (
+    build_cadastral_card_projection,
+)
 from app.modules.credito.services.revenue import build_faturamento_payload
 
 router = APIRouter()
@@ -508,12 +510,13 @@ async def dados_cadastrais(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: None = Depends(require_module(Module.CREDITO, Permission.READ)),
 ) -> dict:
-    """Card 'Dados cadastrais coletados' (silver, WHITE-LABEL — sem vendor).
+    """Card 'Dados cadastrais coletados' — DIRIGIDO PELO CONTRATO (Fase 2).
 
-    Mesma fonte que a read-tool do agente cadastral usa (uma silver pro humano
-    e pro agente). 404 quando o dossie não tem empresa-alvo.
+    Projeta o basic_data via o Contrato de Dados ativo: `campos` com rótulo
+    pt-BR / categoria / ordem (só `on_screen`) + campos novos (🆕) fora do
+    contrato. White-label (sem vendor). 404 quando o dossie não tem empresa-alvo.
     """
-    view = await load_cadastral_silver_view(
+    view = await build_cadastral_card_projection(
         db, tenant_id=principal.tenant_id, dossier_id=dossier_id
     )
     if view is None:

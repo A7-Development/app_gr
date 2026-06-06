@@ -1,29 +1,36 @@
-// CadastralCard — card "Dados cadastrais coletados" (silver, white-label).
+// CadastralCard — card "Dados cadastrais coletados" (Fase 2: dirigido pelo Contrato).
 //
-// Lê GET /dossies/{id}/cadastral. Mostra um RESUMO (campos validados) +
-// TODOS os campos do dataset via render genérico (RawDataFields) — o dev NÃO
-// escolhe o que exibir (governança 2026-06-06). Sem identidade de vendor.
+// Lê GET /dossies/{id}/cadastral, que projeta o basic_data via o Contrato de
+// Dados: campos com rótulo pt-BR / categoria / ordem (só on_screen) + campos
+// NOVOS (🆕) fora do contrato. Sem identidade de vendor (white-label).
 
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
-import { RiBuilding4Line } from "@remixicon/react"
+import { RiBuilding4Line, RiSparkling2Line } from "@remixicon/react"
 
 import { tableTokens } from "@/design-system/tokens/table"
-import { credito } from "@/lib/credito-client"
+import { credito, type CadastralCampo } from "@/lib/credito-client"
 import { cx } from "@/lib/utils"
-import { RawDataFields } from "./RawDataFields"
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" })
 
 function fmtBRL(n: number | null): string {
   return typeof n === "number" && Number.isFinite(n) ? brl.format(n) : "—"
 }
-
 function fmtDate(s: string | null): string {
   if (!s) return "—"
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
   return m ? `${m[3]}/${m[2]}/${m[1]}` : s
+}
+function fmtScalar(v: string | number | boolean): string {
+  if (typeof v === "boolean") return v ? "Sim" : "Não"
+  return String(v)
+}
+function fmtValor(v: CadastralCampo["valor"]): string {
+  if (v === null || v === "") return "—"
+  if (Array.isArray(v)) return v.map(fmtScalar).join(", ") || "—"
+  return fmtScalar(v)
 }
 
 const SIT_TONE: Record<string, string> = {
@@ -49,12 +56,24 @@ export function CadastralCard({ dossierId }: { dossierId: string }) {
   }
 
   const sitTone =
-    (data.situacao_cadastral &&
-      SIT_TONE[data.situacao_cadastral.toLowerCase()]) ||
+    (data.situacao_cadastral && SIT_TONE[data.situacao_cadastral.toLowerCase()]) ||
     "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
 
-  const completos = (data.dados_completos ?? {}) as Record<string, unknown>
-  const temCompletos = Object.keys(completos).length > 0
+  // Agrupa campos por categoria, ordena grupos pela menor `ordem` e campos
+  // dentro do grupo por `ordem`.
+  const grupos = new Map<string, CadastralCampo[]>()
+  for (const c of data.campos ?? []) {
+    const arr = grupos.get(c.categoria) ?? []
+    arr.push(c)
+    grupos.set(c.categoria, arr)
+  }
+  const gruposOrdenados = [...grupos.entries()]
+    .map(([cat, campos]) => ({
+      cat,
+      campos: [...campos].sort((a, b) => a.ordem - b.ordem),
+      minOrdem: Math.min(...campos.map((c) => c.ordem)),
+    }))
+    .sort((a, b) => a.minOrdem - b.minOrdem)
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
@@ -88,15 +107,39 @@ export function CadastralCard({ dossierId }: { dossierId: string }) {
         <Field label="Situação" value={data.situacao_cadastral ?? "—"} />
       </div>
 
-      {/* TODOS os campos do dataset (fonte oficial), render genérico */}
-      {temCompletos && (
-        <div className="border-t border-gray-100 p-3 dark:border-gray-900">
-          <p className={cx(tableTokens.header, "mb-2")}>
-            Todos os dados cadastrais (fonte oficial)
-          </p>
-          <RawDataFields data={completos} />
+      {/* Banner de campos novos (não classificados) */}
+      {data.campos_novos_count > 0 && (
+        <div className="mx-3 flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1.5 dark:bg-amber-500/10">
+          <RiSparkling2Line className="size-3.5 text-amber-600 dark:text-amber-400" aria-hidden />
+          <span className="text-xs text-amber-700 dark:text-amber-300">
+            {data.campos_novos_count} campo(s) novo(s) ainda não classificado(s) no contrato.
+          </span>
         </div>
       )}
+
+      {/* Campos projetados pelo contrato, por categoria */}
+      <div className="space-y-3 p-3">
+        {gruposOrdenados.map(({ cat, campos }) => (
+          <div key={cat}>
+            <p className={cx(tableTokens.header, "mb-1")}>{cat}</p>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+              {campos.map((c) => (
+                <div key={c.field_path} className="flex flex-col gap-0.5">
+                  <dt className={cx(tableTokens.header, "flex items-center gap-1")}>
+                    {c.label}
+                    {c.novo && (
+                      <span className={cx(tableTokens.badge, "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300")}>
+                        novo
+                      </span>
+                    )}
+                  </dt>
+                  <dd className="text-sm text-gray-900 dark:text-gray-100">{fmtValor(c.valor)}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
