@@ -31,12 +31,50 @@ so user message diverge.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from app.shared.ai.models.agent_expertise import AgentExpertise
     from app.shared.ai.models.agent_persona import AgentPersona
+
+
+def render_output_schema_block(output_schema: Any | None) -> str | None:
+    """Bloco <output_format> derivado do output_schema Pydantic do agente.
+
+    Auto-injetado no system prompt (decisao 2026-06-06, opcao A): o runtime
+    NAO descrevia o schema, entao a adesao dependia do prompt repetir o
+    formato — fragil (o curador podia quebrar o shape ao editar) e duplicado.
+    Gerando o JSON Schema a partir da classe Pydantic, o prompt passa a tratar
+    SO de julgamento/tom; a estrutura vem daqui, sempre em sincronia com o
+    codigo. Idempotente/aditivo: agentes que ainda descrevem o shape no prompt
+    so recebem o reforco.
+
+    Returns None quando nao ha schema (ou nao e um BaseModel) — back-compat.
+    """
+    if output_schema is None or not hasattr(output_schema, "model_json_schema"):
+        return None
+    schema_json = json.dumps(
+        output_schema.model_json_schema(), ensure_ascii=False, indent=2
+    )
+    return (
+        "<output_format>\n"
+        "Sua resposta FINAL deve ser SOMENTE um objeto JSON, dentro de um bloco "
+        "```json ... ```, que valida EXATAMENTE contra este JSON Schema:\n\n"
+        f"{schema_json}\n\n"
+        "Regras duras:\n"
+        "- Use EXATAMENTE os nomes de campo do schema (nao invente, nao "
+        "renomeie, nao abrevie).\n"
+        "- Campos `required` sao obrigatorios; so use null onde o tipo permite.\n"
+        "- NAO inclua nenhum campo fora do schema.\n"
+        "- Se nao houver dados para analisar, AINDA ASSIM preencha TODOS os "
+        "campos obrigatorios com valores degenerados coerentes (enums tipo "
+        "'indefinida'/'desconhecida'/'baixo', listas vazias, textos curtos "
+        "explicando a ausencia).\n"
+        "- Retorne SOMENTE o JSON, sem texto fora do bloco ```json ... ```.\n"
+        "</output_format>"
+    )
 
 
 def compose_system_text(
@@ -44,6 +82,7 @@ def compose_system_text(
     persona: AgentPersona | None,
     expertises: Sequence[AgentExpertise],
     prompt_system_text: str,
+    output_schema: Any | None = None,
 ) -> str:
     """Monta system_text com XML tags + markdown dentro.
 
@@ -76,6 +115,10 @@ def compose_system_text(
         )
 
     parts.append(f"<task>\n{prompt_system_text.strip()}\n</task>")
+
+    schema_block = render_output_schema_block(output_schema)
+    if schema_block is not None:
+        parts.append(schema_block)
 
     return "\n\n".join(parts)
 
