@@ -94,6 +94,7 @@ const STATUS_OPTS: { value: StatusConciliacaoBoleto; label: string }[] = [
   { value: "divergencia_valor",      label: "Divergência de valor" },
   { value: "divergencia_vencimento", label: "Divergência de vencimento" },
   { value: "so_em_bitfin",           label: "Só em BITFIN" },
+  { value: "enviado_nao_confirmado", label: "Enviado, aguardando confirmação" },
   { value: "so_em_banco",            label: "Só em banco" },
 ]
 

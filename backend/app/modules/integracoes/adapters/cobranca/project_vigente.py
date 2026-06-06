@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.integracoes.adapters.cobranca.eventos import (
     DECODER_VERSION,
     EFEITO_ABRE,
+    EFEITO_ENVIA,
     EFEITO_FECHA,
     EFEITO_REJEITA,
     TIPO_BAIXA,
@@ -36,6 +37,7 @@ from app.warehouse.boleto_evento import BoletoEvento
 from app.warehouse.boleto_vigente import (
     ESTADO_ATIVO,
     ESTADO_BAIXADO,
+    ESTADO_ENVIADO,
     ESTADO_LIQUIDADO,
     ESTADO_REJEITADO,
     BoletoVigente,
@@ -45,8 +47,10 @@ from app.warehouse.titulo import Titulo
 
 _CHUNK = 1000
 
-# Prioridade de processamento no mesmo dia: abre primeiro, terminal por ultimo.
-_PRIORIDADE = {EFEITO_ABRE: 0, EFEITO_FECHA: 2, EFEITO_REJEITA: 2}
+# Prioridade de processamento no mesmo dia: envia (instrucao) antes do abre
+# (confirmacao); abre antes do terminal. Assim, se a remessa e o retorno de
+# entrada caem no mesmo dia, o ABRE (confirmacao do banco) vence o ENVIA.
+_PRIORIDADE = {EFEITO_ENVIA: -1, EFEITO_ABRE: 0, EFEITO_FECHA: 2, EFEITO_REJEITA: 2}
 
 
 async def _ua_por_titulo(
@@ -105,6 +109,8 @@ def _enriquecer_ua(
 
 
 def _estado_final(efeito: str, tipo: str) -> str:
+    if efeito == EFEITO_ENVIA:
+        return ESTADO_ENVIADO  # enviado, aguardando confirmacao do banco
     if efeito == EFEITO_ABRE:
         return ESTADO_ATIVO
     if efeito == EFEITO_REJEITA:
@@ -124,26 +130,26 @@ async def project_tenant_vigente(
         stmt = stmt.where(BoletoEvento.banco_origem == banco)
     eventos = (await db.execute(stmt)).scalars().all()
 
-    # Agrupa por boleto (banco, ua, nosso_numero).
-    por_boleto: dict[tuple[str, int | None, str], list[BoletoEvento]] = defaultdict(
-        list
-    )
+    # Agrupa por boleto (banco, nosso_numero, numero_documento) -- a identidade
+    # real (= a UQ de wh_boleto_vigente). NAO inclui ua_id na chave: a UA do
+    # boleto e UMA so (vem do titulo via _enriquecer_ua); a remessa entra com
+    # ua_id=None e o retorno com a UA do header -- inclui-la na chave separaria
+    # eventos do MESMO boleto em grupos que colidiriam na UQ depois do enrich.
+    por_boleto: dict[tuple[str, str, str], list[BoletoEvento]] = defaultdict(list)
     for e in eventos:
         # Identidade do boleto = par (nosso_numero, numero_documento). O banco
         # REUSA o nosso_numero ao longo do tempo (reciclagem do sequencial apos
         # o boleto fechar); so o par e estavel/unico. Empiricamente 635 nossos
         # numeros aparecem para >1 documento.
-        por_boleto[
-            (e.banco_origem, e.ua_id, e.nosso_numero, e.numero_documento)
-        ].append(e)
+        por_boleto[(e.banco_origem, e.nosso_numero, e.numero_documento)].append(e)
 
     projected_at = datetime.now(UTC)
     rows: list[dict[str, Any]] = []
-    for (banco_origem, ua_id, nosso, numero_documento), evs in por_boleto.items():
+    for (banco_origem, nosso, numero_documento), evs in por_boleto.items():
         evs.sort(
             key=lambda e: (e.data_ocorrencia, _PRIORIDADE.get(e.efeito_estado, 1))
         )
-        estado = ESTADO_REJEITADO  # default conservador ate ver um abre
+        estado = ESTADO_REJEITADO  # default conservador ate ver um abre/envia
         tipo_vig = evs[-1].tipo_evento
         cod_vig: str | None = None
         data_vig: date = evs[-1].data_ocorrencia
@@ -151,9 +157,12 @@ async def project_tenant_vigente(
         venc: date | None = None
         valor_pago: Decimal | None = None
         data_pgto: date | None = None
+        ua_id: int | None = None
         ua_nome = None
         sacado_doc = sacado_nome = None
         for e in evs:
+            if e.ua_id is not None:
+                ua_id = e.ua_id
             if e.ua_nome:
                 ua_nome = e.ua_nome
             if e.sacado_documento:
@@ -169,8 +178,14 @@ async def project_tenant_vigente(
             if e.data_pagamento is not None:
                 data_pgto = e.data_pagamento
             # Evento de estado define o vigente (ultimo vence; terminal vence
-            # empate de dia via prioridade na ordenacao).
-            if e.efeito_estado in (EFEITO_ABRE, EFEITO_FECHA, EFEITO_REJEITA):
+            # empate de dia via prioridade na ordenacao). ENVIA (remessa) e o
+            # estado mais fraco -- um ABRE (retorno) posterior o sobrescreve.
+            if e.efeito_estado in (
+                EFEITO_ENVIA,
+                EFEITO_ABRE,
+                EFEITO_FECHA,
+                EFEITO_REJEITA,
+            ):
                 estado = _estado_final(e.efeito_estado, e.tipo_evento)
                 tipo_vig = e.tipo_evento
                 cod_vig = e.codigo_ocorrencia
@@ -216,9 +231,11 @@ async def project_tenant_vigente(
     await db.commit()
 
     ativos = [r for r in rows if r["estado"] == ESTADO_ATIVO]
+    enviados = [r for r in rows if r["estado"] == ESTADO_ENVIADO]
     valor_ativo = sum((r["valor_atual"] or Decimal(0)) for r in ativos)
     return {
         "boletos": len(rows),
         "ativos": len(ativos),
+        "enviados": len(enviados),
         "valor_ativo": str(valor_ativo),
     }

@@ -7,6 +7,7 @@ import {
   RiCheckboxCircleFill,
   RiCloseCircleFill,
   RiErrorWarningFill,
+  RiSendPlaneFill,
   type RemixiconComponentType,
 } from "@remixicon/react"
 
@@ -52,6 +53,13 @@ export const STATUS_META: Record<StatusConciliacaoBoleto, StatusMeta> = {
     icon: RiCloseCircleFill,
     iconTone: "text-gray-400 dark:text-gray-500",
   },
+  enviado_nao_confirmado: {
+    label: "Enviado, aguardando confirmação",
+    tone: "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400",
+    textTone: "text-blue-700 dark:text-blue-400",
+    icon: RiSendPlaneFill,
+    iconTone: "text-blue-500",
+  },
   so_em_banco: {
     label: "Só em banco",
     tone: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
@@ -67,6 +75,7 @@ export const STATUS_ORDER: StatusConciliacaoBoleto[] = [
   "divergencia_valor",
   "divergencia_vencimento",
   "so_em_bitfin",
+  "enviado_nao_confirmado",
   "so_em_banco",
 ]
 
@@ -76,5 +85,6 @@ export const STATUS_BADGE_LABEL: Record<StatusConciliacaoBoleto, string> = {
   divergencia_valor: "Dif. valor",
   divergencia_vencimento: "Dif. venc.",
   so_em_bitfin: "Só BITFIN",
+  enviado_nao_confirmado: "Enviado",
   so_em_banco: "Só banco",
 }

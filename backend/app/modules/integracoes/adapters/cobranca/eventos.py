@@ -23,7 +23,8 @@ from app.warehouse.cnab_raw_arquivo import BANCO_BMP, BANCO_BRADESCO, BANCO_VORT
 
 # Versao da taxonomia do decoder. Bumpar ao mudar o mapeamento codigo->evento
 # (re-decode atualiza wh_boleto_evento.decoded_by_version). Rastreabilidade §14.
-DECODER_VERSION = "cobranca_evento_decoder_v1.1.0"
+# v1.2.0: decode da REMESSA (comando 01=registro -> EFEITO_ENVIA).
+DECODER_VERSION = "cobranca_evento_decoder_v1.2.0"
 
 # ── Tipos de evento canonicos ───────────────────────────────────────────────
 TIPO_ENTRADA = "entrada"  # boleto registrado/confirmado no banco
@@ -44,13 +45,18 @@ TIPO_INSTRUCAO_REJEITADA = "instrucao_rejeitada"
 TIPO_ALTERACAO_DADOS = "alteracao_dados"  # alteracao de outros dados confirmada
 TIPO_OCORRENCIA_SACADO = "ocorrencia_sacado"
 TIPO_OUTRO = "outro"
+# Remessa (o que ENVIAMOS, ainda sem confirmacao do banco).
+TIPO_REMESSA_REGISTRO = "remessa_registro"  # pedimos registro do boleto
 
 # ── Efeito no estado vigente (dirige o fold) ────────────────────────────────
-EFEITO_ABRE = "abre"  # -> ativo
+EFEITO_ABRE = "abre"  # -> ativo (banco CONFIRMOU a entrada)
 EFEITO_FECHA = "fecha"  # -> fora de ativo (liquidado/baixado)
 EFEITO_MODIFICA = "modifica"  # mantem estado, muda atributo (venc/valor)
 EFEITO_REJEITA = "rejeita"  # nunca ficou ativo
 EFEITO_INFO = "info"  # neutro
+# Enviamos a instrucao de registro mas o banco ainda nao confirmou (sem retorno
+# de entrada cod 02). Estado "fraco": um EFEITO_ABRE posterior (retorno) vence.
+EFEITO_ENVIA = "envia"  # -> enviado, aguardando confirmacao
 
 # ── Bradesco CNAB400: codigo de ocorrencia (pos 109-110) -> evento ──────────
 # Empirico (qtd no historico) + norma. `A_CONFIRMAR` nos comentarios marca os
@@ -103,3 +109,27 @@ def decode_ocorrencia(banco: str, codigo: str | None) -> tuple[str, str]:
     if not codigo:
         return _DEFAULT
     return _POR_BANCO.get(banco, {}).get(codigo.strip(), _DEFAULT)
+
+
+# ── Remessa: COMANDO (pos 109-110) -> evento ────────────────────────────────
+# A remessa e o que ENVIAMOS. So o comando 01 (registro) abre o estado "fraco"
+# ENVIADO -- e a instrucao "registre este boleto". Os demais comandos (02 baixa,
+# 04 abatimento, 06 alt. vencimento, 09 protesto) sao instrucoes posteriores que
+# NAO mudam a confirmacao de entrada -- entram como info (neutros no fold),
+# preservados crus para auditoria. O que CONFIRMA a entrada e sempre o RETORNO
+# (cod 02 -> EFEITO_ABRE), nunca a remessa.
+_REMESSA_COMANDO: dict[str, tuple[str, str]] = {
+    "01": (TIPO_REMESSA_REGISTRO, EFEITO_ENVIA),  # registro de boleto
+}
+
+
+def decode_comando_remessa(banco: str, comando: str | None) -> tuple[str, str]:
+    """(tipo_evento, efeito_estado) para o COMANDO de um registro de remessa.
+
+    Comando nao mapeado -> (TIPO_OUTRO, EFEITO_INFO): neutro no fold, preservado
+    cru. O `banco` e aceito por simetria com `decode_ocorrencia` (BMP/Vortx/
+    Bradesco compartilham os comandos CNAB400-padrao hoje).
+    """
+    if not comando:
+        return _DEFAULT
+    return _REMESSA_COMANDO.get(comando.strip(), _DEFAULT)

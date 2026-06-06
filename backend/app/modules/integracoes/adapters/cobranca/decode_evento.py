@@ -1,17 +1,26 @@
 """Decode bronze CNAB -> wh_boleto_evento (timeline silver). Fatia 2 do rebuild.
 
 Le as ocorrencias do bronze (`wh_cnab_raw_ocorrencia`) + o header do arquivo
-(`wh_cnab_raw_arquivo.conteudo`, de onde sai a UA), decodifica cada codigo de
-ocorrencia em evento canonico (`eventos.decode_ocorrencia`) e faz upsert
-idempotente em `wh_boleto_evento` (por `ocorrencia_id` -- 1:1 com o bronze).
+(`wh_cnab_raw_arquivo.conteudo`, de onde sai a UA), decodifica cada codigo em
+evento canonico e faz upsert idempotente em `wh_boleto_evento` (por
+`ocorrencia_id` -- 1:1 com o bronze).
+
+Decodifica RETORNO e REMESSA:
+  - RETORNO: `decode_ocorrencia` (cod de ocorrencia -> evento confirmado pelo
+    banco). Data do evento = data da ocorrencia (payload). origem=retorno.
+  - REMESSA: `decode_comando_remessa` (comando -> instrucao que ENVIAMOS;
+    01=registro -> EFEITO_ENVIA). Data do evento = data de geracao do arquivo
+    (`arquivo.data_ref`, do header) -- a remessa nao tem data por registro.
+    origem=remessa. A UA da remessa NAO vem do header (la e o cedente, nao o
+    fundo) -- fica None e o fold a resolve pelo titulo (_enriquecer_ua).
 
 Re-rodar e seguro: o upsert atualiza so os campos decodificados (tipo/efeito/
 UA/versao); os campos vindos do bronze imutavel ficam. Bumpar `DECODER_VERSION`
 e re-rodar reprocessa a timeline inteira sem re-ingerir nada.
 
-UA: resolvida do nome da empresa no header CNAB (pos 47-76) casado contra
-`wh_dim_unidade_administrativa` (token match) -- grava o nome CANONICO da dim,
-pra casar com o lado titulo da conciliacao.
+UA (retorno): resolvida do nome da empresa no header CNAB (pos 47-76) casado
+contra `wh_dim_unidade_administrativa` (token match) -- grava o nome CANONICO
+da dim, pra casar com o lado titulo da conciliacao.
 """
 
 from __future__ import annotations
@@ -27,14 +36,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.integracoes.adapters.cobranca.eventos import (
     DECODER_VERSION,
+    decode_comando_remessa,
     decode_ocorrencia,
 )
 from app.modules.integracoes.adapters.cobranca.mappers.boleto import (
     _parse_centavos,
     parse_ddmmaa,
 )
-from app.warehouse.boleto_evento import ORIGEM_RETORNO, BoletoEvento
-from app.warehouse.cnab_raw_arquivo import TIPO_ARQUIVO_RETORNO, CnabRawArquivo
+from app.warehouse.boleto_evento import (
+    ORIGEM_REMESSA,
+    ORIGEM_RETORNO,
+    BoletoEvento,
+)
+from app.warehouse.cnab_raw_arquivo import (
+    TIPO_ARQUIVO_REMESSA,
+    TIPO_ARQUIVO_RETORNO,
+    CnabRawArquivo,
+)
 from app.warehouse.cnab_raw_ocorrencia import CnabRawOcorrencia
 from app.warehouse.dim import DimUnidadeAdministrativa
 
@@ -100,7 +118,7 @@ def _resolve_ua(
 async def decode_tenant_eventos(
     db: AsyncSession, *, tenant_id: UUID, banco: str | None = None
 ) -> dict[str, int]:
-    """Decodifica o bronze de retorno do tenant para `wh_boleto_evento`.
+    """Decodifica o bronze de retorno + remessa do tenant para `wh_boleto_evento`.
 
     Returns {arquivos, ocorrencias, eventos, sem_ua}.
     """
@@ -117,7 +135,9 @@ async def decode_tenant_eventos(
 
     arq_stmt = select(CnabRawArquivo).where(
         CnabRawArquivo.tenant_id == tenant_id,
-        CnabRawArquivo.tipo_arquivo == TIPO_ARQUIVO_RETORNO,
+        CnabRawArquivo.tipo_arquivo.in_(
+            [TIPO_ARQUIVO_RETORNO, TIPO_ARQUIVO_REMESSA]
+        ),
     )
     if banco is not None:
         arq_stmt = arq_stmt.where(CnabRawArquivo.banco == banco)
@@ -140,9 +160,16 @@ async def decode_tenant_eventos(
 
     for arq in arquivos:
         n_arq += 1
-        ua_id, ua_nome = _resolve_ua(_header_empresa(arq.conteudo), uas)
-        if ua_id is None:
-            n_sem_ua += 1
+        is_remessa = arq.tipo_arquivo == TIPO_ARQUIVO_REMESSA
+        # Remessa: a UA do header CNAB e o cedente/beneficiario, nao o fundo --
+        # nao confiavel. Fica None; o fold a resolve pelo titulo. Retorno: header
+        # carrega o nome do fundo -> casa com a dim de UA.
+        if is_remessa:
+            ua_id, ua_nome = None, None
+        else:
+            ua_id, ua_nome = _resolve_ua(_header_empresa(arq.conteudo), uas)
+            if ua_id is None:
+                n_sem_ua += 1
         ocorrencias = (
             await db.execute(
                 select(CnabRawOcorrencia).where(
@@ -157,11 +184,19 @@ async def decode_tenant_eventos(
             nosso = (p.get("nosso_numero") or "").strip() or numero
             if not numero and not nosso:
                 continue  # sem identidade -> nao entra na timeline
-            data_ocorrencia = parse_ddmmaa(p.get("data_ocorrencia"))
+            codigo = (p.get("codigo_ocorrencia") or "").strip()
+            if is_remessa:
+                # Remessa nao tem data por registro: o evento "instrucao enviada"
+                # data da geracao do arquivo (header -> arquivo.data_ref).
+                tipo, efeito = decode_comando_remessa(arq.banco, codigo)
+                data_ocorrencia = arq.data_ref
+                origem = ORIGEM_REMESSA
+            else:
+                tipo, efeito = decode_ocorrencia(arq.banco, codigo)
+                data_ocorrencia = parse_ddmmaa(p.get("data_ocorrencia"))
+                origem = ORIGEM_RETORNO
             if data_ocorrencia is None:
                 continue  # sem data nao posiciona na timeline (NOT NULL)
-            codigo = (p.get("codigo_ocorrencia") or "").strip()
-            tipo, efeito = decode_ocorrencia(arq.banco, codigo)
             pending.append(
                 {
                     "id": uuid4(),
@@ -181,7 +216,7 @@ async def decode_tenant_eventos(
                     "valor_titulo": _parse_centavos(p.get("valor_titulo")),
                     "valor_pago": _parse_centavos(p.get("valor_pago")),
                     "data_pagamento": parse_ddmmaa(p.get("data_pagamento")),
-                    "origem": ORIGEM_RETORNO,
+                    "origem": origem,
                     "arquivo_id": arq.id,
                     "ocorrencia_id": o.id,
                     "decoded_at": decoded_at,

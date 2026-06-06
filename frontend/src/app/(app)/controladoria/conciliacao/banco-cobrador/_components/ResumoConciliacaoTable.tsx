@@ -9,7 +9,7 @@
  * padrao (`tableTokens.cardWrapper`). Sem filtros nem toolbar (column manager /
  * density / export off). Total via `renderFooter` (prop canonica da DataTable)
  * — reconcilia on-screen (§14.6): soma das 5 linhas = Total. Cells via
- * `tableTokens`. Sempre os 5 status na ordem canonica (0 onde nao ha linha).
+ * `tableTokens`. Sempre todos os status na ordem canonica (0 onde nao ha linha).
  * O `resumo` ja vem no escopo da UA selecionada (computado das linhas na pagina).
  */
 
@@ -102,7 +102,7 @@ export function ResumoConciliacaoTable({
 }: {
   resumo: ResumoStatusConciliacao[]
 }) {
-  // Sempre as 5 linhas, ordem canonica (0 onde nao ha).
+  // Sempre todas as linhas, ordem canonica (0 onde nao ha).
   const rows = React.useMemo<ResumoStatusConciliacao[]>(() => {
     const by = new Map(resumo.map((r) => [r.status, r]))
     return STATUS_ORDER.map(
