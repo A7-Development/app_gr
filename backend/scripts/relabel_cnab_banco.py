@@ -20,8 +20,9 @@ import argparse
 import asyncio
 from collections import Counter
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
+import app.shared.identity.tenant  # noqa: F401  -- registra a tabela `tenants` (FK)
 from app.core.database import AsyncSessionLocal
 from app.modules.integracoes.adapters.cobranca.detect import detectar_banco
 from app.warehouse.cnab_raw_arquivo import BANCO_DESCONHECIDO, CnabRawArquivo
@@ -52,10 +53,13 @@ async def _main(apply: bool) -> None:
                 continue
             mudancas[f"{banco_atual}/{layout_atual} -> {banco_novo}/{layout_novo}"] += 1
             if apply:
-                obj = await db.get(CnabRawArquivo, rid)
-                if obj is not None:
-                    obj.banco = banco_novo
-                    obj.layout = layout_novo
+                # UPDATE direto (sem carregar o ORM) -- evita resolver a FK e e
+                # mais barato. Escopado pelo id.
+                await db.execute(
+                    update(CnabRawArquivo)
+                    .where(CnabRawArquivo.id == rid)
+                    .values(banco=banco_novo, layout=layout_novo)
+                )
         if apply:
             await db.commit()
 
