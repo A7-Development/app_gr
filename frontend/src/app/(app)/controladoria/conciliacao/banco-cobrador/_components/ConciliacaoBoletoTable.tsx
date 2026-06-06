@@ -78,7 +78,12 @@ function DiffCell({ row }: { row: LinhaConciliacaoBoleto }) {
 
 const col = createColumnHelper<LinhaConciliacaoBoleto>()
 
-const COLUMNS: ColumnDef<LinhaConciliacaoBoleto, unknown>[] = [
+// Factory: a coluna Produto precisa do mapa sigla->nome (vem do biMetadata da
+// pagina), por isso as colunas sao construidas com o resolver injetado.
+function makeColumns(
+  produtoNome: (sigla: string | null) => string,
+): ColumnDef<LinhaConciliacaoBoleto, unknown>[] {
+  return [
   col.accessor("status", {
     id: "status", header: "Status", size: 92,
     cell: (info) => {
@@ -114,8 +119,17 @@ const COLUMNS: ColumnDef<LinhaConciliacaoBoleto, unknown>[] = [
     },
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
   col.accessor("produto", {
-    id: "produto", header: "Produto", size: 80,
-    cell: (info) => <span className={tableTokens.cellSecondary}>{info.getValue<string>() ?? "—"}</span>,
+    id: "produto", header: "Produto", size: 160,
+    // Nome completo do produto (ex.: "Comissária"), nao a sigla. Resolver vem
+    // do biMetadata da pagina; fallback pra sigla se o catalogo nao tiver.
+    cell: (info) => {
+      const nome = produtoNome(info.getValue<string | null>())
+      return (
+        <span className={cx("block truncate", tableTokens.cellSecondary)} title={nome}>
+          {nome}
+        </span>
+      )
+    },
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
   col.accessor("banco", {
     id: "banco", header: "Banco", size: 100,
@@ -160,9 +174,13 @@ const COLUMNS: ColumnDef<LinhaConciliacaoBoleto, unknown>[] = [
     id: "diferenca", header: "Diferença", size: 120, meta: { align: "right" },
     cell: (info) => <DiffCell row={info.row.original} />,
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
-]
+  ]
+}
 
-function exportarCsv(rows: LinhaConciliacaoBoleto[]) {
+function exportarCsv(
+  rows: LinhaConciliacaoBoleto[],
+  produtoNome: (sigla: string | null) => string,
+) {
   const head = [
     "Status", "Data operacao", "Nro documento", "Nro no banco", "Produto", "Banco", "Cedente",
     "Venc BITFIN", "Venc banco", "Valor BITFIN", "Valor banco", "Dif valor", "Dif dias",
@@ -175,7 +193,7 @@ function exportarCsv(rows: LinhaConciliacaoBoleto[]) {
     [
       STATUS_META[r.status]?.label ?? r.status,  // label longo no CSV
       r.data_operacao ?? "",
-      r.numero, r.nosso_numero ?? "", r.produto ?? "", r.banco ?? "", r.cedente_nome ?? "",
+      r.numero, r.nosso_numero ?? "", produtoNome(r.produto), r.banco ?? "", r.cedente_nome ?? "",
       r.venc_bitfin ?? "", r.venc_banco ?? "",
       r.valor_bitfin ?? "", r.valor_banco ?? "",
       r.diferenca_valor ?? "", r.diferenca_dias ?? "",
@@ -193,24 +211,29 @@ function exportarCsv(rows: LinhaConciliacaoBoleto[]) {
 
 export function ConciliacaoBoletoTable({
   linhas,
+  produtoNome,
 }: {
   linhas: LinhaConciliacaoBoleto[]
+  /** Resolver sigla->nome completo do produto (do biMetadata da pagina). */
+  produtoNome: (sigla: string | null) => string
 }) {
-  // Busca por palavra mora DENTRO do card (acima da coluna Status), alimentando
-  // o globalFilter do TanStack — separada dos chips globais da pagina.
+  // Busca por palavra mora na toolbar (via toolbarStart), alimentando o
+  // globalFilter do TanStack — separada dos chips globais da pagina.
   const [busca, setBusca] = React.useState("")
+
+  const columns = React.useMemo(() => makeColumns(produtoNome), [produtoNome])
 
   return (
     <div className="flex flex-col overflow-hidden rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
       <DataTable
         data={linhas}
-        columns={COLUMNS}
+        columns={columns}
         density="ultra"
         showColumnManager
         showDensityToggle
         showExport
         globalFilter={busca}
-        onExport={(_format, rows) => exportarCsv(rows)}
+        onExport={(_format, rows) => exportarCsv(rows, produtoNome)}
         toolbarStart={
           <FilterSearch
             placeholder="Buscar número, produto, cedente…"

@@ -143,6 +143,19 @@ export default function ConciliacaoBancoCobradorPage() {
     return m
   }, [produtosMetaQuery.data])
 
+  // Resolver sigla -> nome completo (so o nome, ex.: "Comissária") para a
+  // coluna Produto da tabela de detalhe. Fallback pra sigla se o catalogo
+  // ainda nao carregou ou nao tiver o produto.
+  const produtoNomeMap = React.useMemo(() => {
+    const m = new Map<string, string>()
+    for (const p of produtosMetaQuery.data ?? []) m.set(p.sigla, p.nome)
+    return m
+  }, [produtosMetaQuery.data])
+  const produtoNome = React.useCallback(
+    (sigla: string | null) => (sigla ? produtoNomeMap.get(sigla) ?? sigla : "—"),
+    [produtoNomeMap],
+  )
+
   // Opcoes dos chips derivadas das linhas (multi-option {value,label}).
   const uaOpts = React.useMemo(
     () => distinctOpts(conc?.linhas, (l) => l.ua_nome),
@@ -337,7 +350,7 @@ export default function ConciliacaoBancoCobradorPage() {
                   className="mt-4"
                 />
               ) : (
-                <ConciliacaoBoletoTable linhas={linhasFiltradas} />
+                <ConciliacaoBoletoTable linhas={linhasFiltradas} produtoNome={produtoNome} />
               )}
             </div>
           )}
