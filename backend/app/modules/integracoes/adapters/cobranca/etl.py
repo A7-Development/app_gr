@@ -53,6 +53,19 @@ _LAYOUTS = {
         "parse_retorno": bradesco_parse_retorno,
         "estado_resolver": bradesco_estado_from_codigo,
     },
+    # BMP (274) e Vortx (310) usam o MESMO CNAB400-padrao FEBRABAN do Bradesco:
+    # posicoes do registro de detalhe identicas (nosso 71-82, ocorrencia 109-110,
+    # documento 117-126, venc 147-152, valor 153-165) e mesmos codigos de
+    # ocorrencia. Validado 2026-06-06 contra os arquivos reais (100% dos detalhes
+    # cruzam wh_titulo pelo documento). Reaproveitam o parser e o decoder.
+    "cnab400_bmp": {
+        "parse_retorno": bradesco_parse_retorno,
+        "estado_resolver": bradesco_estado_from_codigo,
+    },
+    "cnab400_vortx": {
+        "parse_retorno": bradesco_parse_retorno,
+        "estado_resolver": bradesco_estado_from_codigo,
+    },
 }
 
 
