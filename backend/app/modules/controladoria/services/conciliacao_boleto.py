@@ -3,8 +3,11 @@
 Item 2 da Entrega 3 ("Recebivel de cobranca"). Cruza, titulo a titulo:
 
   - lado carteira: `wh_titulo` em aberto (situacao=0) de operacao EFETIVADA
-    (cessao real) cujo produto e elegivel a boleto (FAT/CBV/DMS/CBS, prefixo
-    de `wh_operacao.modalidade`)
+    (cessao real) -- TODOS os produtos. O escopo por produto NAO e gateado
+    aqui: cada linha expoe `produto` (prefixo de `wh_operacao.modalidade`) e o
+    filtro de Produto da pagina decide o que mostrar. Nao ha lista hardcoded de
+    "produtos com boleto" (premissa removida 2026-06-06 -- escondia CMS/
+    Comissaria, que tem boleto real registrado no banco).
   - lado banco:    `wh_boleto_vigente` ativo (estado=ativo) -- a carteira de
     cobranca ATUAL, projetada do fold da timeline (sem data-base)
 
@@ -40,10 +43,6 @@ from app.warehouse.boleto_vigente import ESTADO_ATIVO, BoletoVigente
 from app.warehouse.dim import DimUnidadeAdministrativa
 from app.warehouse.operacao import Operacao
 from app.warehouse.titulo import Titulo
-
-# Produtos (prefixo de Operacao.modalidade) que possuem boleto como recebivel.
-# Fato estrutural do Bitfin (quais produtos geram boleto), nao quirk de tenant.
-PRODUTOS_COM_BOLETO = ("FAT", "CBV", "DMS", "CBS")
 
 # Situacao do titulo "Em aberto" (Bitfin). Confirmado via wh_titulo_snapshot.
 SITUACAO_EM_ABERTO = 0
@@ -168,7 +167,9 @@ async def _carregar_titulos(
         .where(
             Titulo.tenant_id == tenant_id,
             Titulo.situacao == SITUACAO_EM_ABERTO,
-            produto.in_(PRODUTOS_COM_BOLETO),
+            # Sem gate de produto: TODOS os produtos entram; o filtro de Produto
+            # da pagina (front) decide o escopo. `produto` segue selecionado como
+            # coluna para alimentar o filtro + display.
             # So cessao REAL entra na conciliacao. Operacao nao-efetivada e
             # rascunho/pendente (sem cedente, removida do Bitfin depois) — seus
             # titulos virariam "Só BITFIN" fantasma. Alinha com o BI
