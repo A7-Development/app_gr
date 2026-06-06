@@ -30,7 +30,6 @@ Create Date: 2026-06-05
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
@@ -40,8 +39,10 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-_DEF_ID = "44444444-4444-4444-4444-000000000002"
-_ACTIVE_ID = "44444444-4444-4444-4444-0000000000a2"
+# IDs derivados da revision (unicos) — o namespace 44444444-...-0002 ja era do
+# credit.onboarding_minimo v2 (colisao de UUID descoberta no seed 2026-06-06).
+_DEF_ID = "c9a2f1b7-e3d4-4a00-8000-000000000001"
+_ACTIVE_ID = "c9a2f1b7-e3d4-4a00-8000-0000000000a1"
 _WF_NAME = "credit.onboarding_faturamento"
 
 IDENTIFICACAO_FIELDS = [
@@ -176,59 +177,51 @@ GRAPH = {
 }
 
 
+_DESC = (
+    "Onboarding com faturamento + dados cadastrais: identificacao -> "
+    "enriquecimento cadastral -> coleta da declaracao de faturamento -> "
+    "analise de faturamento (IA) + conferencia -> analise cadastral (IA) + "
+    "conferencia -> parecer consolidado -> conferencia final. Editavel no builder."
+)
+
+
 def upgrade() -> None:
-    wf_def = sa.table(
-        "workflow_definition",
-        sa.column("id", sa.UUID()),
-        sa.column("tenant_id", sa.UUID()),
-        sa.column("name", sa.String()),
-        sa.column("version", sa.Integer()),
-        sa.column("description", sa.Text()),
-        sa.column("category", sa.String()),
-        sa.column("graph", postgresql.JSONB()),
-        sa.column("status", sa.String()),
-        sa.column("created_by", sa.UUID()),
-    )
-    op.bulk_insert(
-        wf_def,
-        [
-            {
-                "id": _DEF_ID,
-                "tenant_id": None,
-                "name": _WF_NAME,
-                "version": 1,
-                "description": (
-                    "Onboarding com faturamento + dados cadastrais: identificacao "
-                    "-> enriquecimento cadastral -> coleta da declaracao de "
-                    "faturamento -> analise de faturamento (IA) + conferencia -> "
-                    "analise cadastral (IA) + conferencia -> parecer consolidado "
-                    "-> conferencia final. Editavel no builder."
-                ),
-                "category": "credit",
-                "graph": GRAPH,
-                "status": "ACTIVE",
-                "created_by": None,
-            }
-        ],
-    )
-    wf_active = sa.table(
-        "workflow_definition_active",
-        sa.column("id", sa.UUID()),
-        sa.column("name", sa.String()),
-        sa.column("tenant_id", sa.UUID()),
-        sa.column("active_definition_id", sa.UUID()),
-    )
-    op.bulk_insert(
-        wf_active,
-        [
-            {
-                "id": _ACTIVE_ID,
-                "name": _WF_NAME,
-                "tenant_id": None,
-                "active_definition_id": _DEF_ID,
-            }
-        ],
-    )
+    # Idempotente (check-then-insert): o seed pode ja ter sido aplicado
+    # manualmente via SQL antes do alembic alcancar esta revision (head
+    # divergente em 2026-06). Guardas evitam conflito de PK no replay.
+    bind = op.get_bind()
+    import json as _json
+
+    if not bind.execute(
+        sa.text("SELECT 1 FROM workflow_definition WHERE id = CAST(:i AS uuid)").bindparams(
+            i=_DEF_ID
+        )
+    ).first():
+        bind.execute(
+            sa.text(
+                "INSERT INTO workflow_definition "
+                "(id, tenant_id, name, version, description, category, graph, status, created_by) "
+                "VALUES (CAST(:id AS uuid), NULL, :name, 1, :desc, 'credit', "
+                " CAST(:graph AS jsonb), 'ACTIVE', NULL)"
+            ).bindparams(
+                id=_DEF_ID,
+                name=_WF_NAME,
+                desc=_DESC,
+                graph=_json.dumps(GRAPH, ensure_ascii=False),
+            )
+        )
+    if not bind.execute(
+        sa.text(
+            "SELECT 1 FROM workflow_definition_active WHERE id = CAST(:i AS uuid)"
+        ).bindparams(i=_ACTIVE_ID)
+    ).first():
+        bind.execute(
+            sa.text(
+                "INSERT INTO workflow_definition_active "
+                "(id, name, tenant_id, active_definition_id) "
+                "VALUES (CAST(:aid AS uuid), :name, NULL, CAST(:did AS uuid))"
+            ).bindparams(aid=_ACTIVE_ID, name=_WF_NAME, did=_DEF_ID)
+        )
 
 
 def downgrade() -> None:
