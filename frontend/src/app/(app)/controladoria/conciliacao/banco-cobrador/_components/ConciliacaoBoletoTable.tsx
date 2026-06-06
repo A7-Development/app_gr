@@ -189,14 +189,19 @@ function exportarCsv(
     const s = v === null || v === undefined ? "" : String(v)
     return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }
+  // Valor monetario no padrao pt-BR (virgula decimal, sem separador de milhar)
+  // para o Excel BR somar. O separador de campo do CSV e ';', entao a virgula
+  // decimal nao conflita.
+  const csvNum = (v: number | null | undefined) =>
+    v === null || v === undefined ? "" : Number(v).toFixed(2).replace(".", ",")
   const corpo = rows.map((r) =>
     [
       STATUS_META[r.status]?.label ?? r.status,  // label longo no CSV
       r.data_operacao ?? "",
       r.numero, r.nosso_numero ?? "", produtoNome(r.produto), r.banco ?? "", r.cedente_nome ?? "",
       r.venc_bitfin ?? "", r.venc_banco ?? "",
-      r.valor_bitfin ?? "", r.valor_banco ?? "",
-      r.diferenca_valor ?? "", r.diferenca_dias ?? "",
+      csvNum(r.valor_bitfin), csvNum(r.valor_banco),
+      csvNum(r.diferenca_valor), r.diferenca_dias ?? "",
     ].map(esc).join(";"),
   )
   const csv = [head.join(";"), ...corpo].join("\n")
