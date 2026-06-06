@@ -21,7 +21,7 @@ import { Card } from "@/components/tremor/Card"
 import { DataTable } from "@/design-system/components/DataTable"
 import { tableTokens } from "@/design-system/tokens/table"
 import type { ResumoStatusConciliacao, StatusConciliacaoBoleto } from "@/lib/api-client"
-import { STATUS_META, STATUS_ORDER } from "./status"
+import { STATUS_BADGE_LABEL, STATUS_META, STATUS_ORDER } from "./status"
 
 const fmtInt = new Intl.NumberFormat("pt-BR")
 const fmtBRL = new Intl.NumberFormat("pt-BR", {
@@ -49,14 +49,14 @@ const col = createColumnHelper<ResumoStatusConciliacao>()
 const COLUMNS: ColumnDef<ResumoStatusConciliacao, unknown>[] = [
   col.accessor("status", {
     id: "status", header: "Status", size: 220,
-    // Badge canonico (tableTokens.badge + tone), sem icone — mesmo padrao da
-    // coluna Status do detalhe (ConciliacaoBoletoTable). Label completo (cabe
-    // na coluna de 220px do resumo).
+    // Badge canonico (tableTokens.badge + tone), sem icone, com o MESMO label
+    // curto do detalhe (STATUS_BADGE_LABEL) — resumo e detalhe nao divergem
+    // ("So BITFIN", nao "So em BITFIN").
     cell: (info) => {
       const s = info.getValue<StatusConciliacaoBoleto>()
       return (
         <span className={cx(tableTokens.badge, STATUS_META[s].tone)}>
-          {STATUS_META[s].label}
+          {STATUS_BADGE_LABEL[s]}
         </span>
       )
     },

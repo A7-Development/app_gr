@@ -58,6 +58,14 @@ export interface DataTableProps<TData> {
   initialColumnVisibility?: VisibilityState
   showExport?:         boolean
   onExport?:           (format: "csv" | "xlsx" | "pdf", rows: TData[]) => void
+  /**
+   * Conteudo renderizado no INICIO (esquerda) da linha de toolbar — na mesma
+   * faixa de density/colunas/export (que ficam a direita). Use para colocar um
+   * `<FilterSearch>` ou chips na MESMA linha dos controles, em vez de uma faixa
+   * separada acima da tabela. Quando presente, a toolbar aparece mesmo sem
+   * density/columns/export ligados.
+   */
+  toolbarStart?:       React.ReactNode
   error?:              string | null
   onRetry?:            () => void
   loading?:            boolean
@@ -314,6 +322,7 @@ export function DataTable<TData>({
   showColumnManager = true,
   showExport        = false,
   onExport,
+  toolbarStart,
   error             = null,
   onRetry,
   loading           = false,
@@ -381,12 +390,16 @@ export function DataTable<TData>({
   const filteredData     = rows.map((r) => r.original)
 
   const rowH = rowHeightClass(density)
-  const showToolbar = showDensityToggle || showColumnManager || showExport
+  const showToolbar = showDensityToggle || showColumnManager || showExport || !!toolbarStart
 
   return (
     <div className={cx("relative flex flex-col overflow-hidden", className)}>
       {showToolbar && (
         <div className="flex shrink-0 items-center justify-end gap-2 border-b border-gray-100 dark:border-gray-900 px-3 py-1.5">
+          {/* toolbarStart: conteudo a esquerda (ex.: FilterSearch). `mr-auto`
+              empurra density/colunas/export para a direita, preservando o
+              justify-end quando toolbarStart e ausente. */}
+          {toolbarStart && <div className="mr-auto flex min-w-0 items-center gap-2">{toolbarStart}</div>}
           {showDensityToggle && (
             <div className="flex items-center rounded border border-gray-200 dark:border-gray-800 overflow-hidden">
               {(["ultra", "compact", "default", "comfortable"] as DensityMode[]).map((d) => (
