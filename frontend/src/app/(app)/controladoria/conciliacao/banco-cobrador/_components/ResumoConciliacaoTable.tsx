@@ -49,14 +49,14 @@ const col = createColumnHelper<ResumoStatusConciliacao>()
 const COLUMNS: ColumnDef<ResumoStatusConciliacao, unknown>[] = [
   col.accessor("status", {
     id: "status", header: "Status", size: 220,
+    // Badge canonico (tableTokens.badge + tone), sem icone — mesmo padrao da
+    // coluna Status do detalhe (ConciliacaoBoletoTable). Label completo (cabe
+    // na coluna de 220px do resumo).
     cell: (info) => {
       const s = info.getValue<StatusConciliacaoBoleto>()
-      const m = STATUS_META[s]
-      const Icon = m.icon
       return (
-        <span className="inline-flex items-center gap-1.5">
-          <Icon className={cx("size-4 shrink-0", m.iconTone)} aria-hidden="true" />
-          <span className={cx("font-medium", m.textTone)}>{m.label}</span>
+        <span className={cx(tableTokens.badge, STATUS_META[s].tone)}>
+          {STATUS_META[s].label}
         </span>
       )
     },
