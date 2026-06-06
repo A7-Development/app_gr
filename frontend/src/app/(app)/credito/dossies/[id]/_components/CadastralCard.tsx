@@ -67,7 +67,7 @@ export function CadastralCard({ dossierId }: { dossierId: string }) {
     arr.push(c)
     grupos.set(c.categoria, arr)
   }
-  const gruposOrdenados = [...grupos.entries()]
+  const gruposOrdenados = Array.from(grupos.entries())
     .map(([cat, campos]) => ({
       cat,
       campos: [...campos].sort((a, b) => a.ordem - b.ordem),
