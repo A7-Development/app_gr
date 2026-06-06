@@ -12,8 +12,10 @@ A lente do lado COTISTA/PATRIMONIO do balanco Cota Sub. Cobre:
 
 Por que importa pro PL Sub: a Sub e o residual (PL_Sub = Ativo - Senior -
 Mezanino - Obrigacoes - Contas a Pagar). Toda remuneracao das prioritarias e
-custo da Sub; todo aporte numa prioritaria dilui a Sub; toda obrigacao com
-cotista que cresce reduz o residual. Esta e a unica lente que fecha o passivo.
+custo da Sub (reduz o residual). Ja o APORTE/RESGATE de capital numa prioritaria
+e NEUTRO no PL Sub em R$ (o caixa entra/sai na mesma medida que o passivo varia)
+— dilui/concentra o % de subordinacao, nao o valor. Toda obrigacao com cotista
+que cresce reduz o residual. Esta e a unica lente que fecha o passivo.
 
 Silver-only (§13.2.1): wh_mec_evolucao_cotas + wh_cpr_movimento.
 """
@@ -51,8 +53,10 @@ class ClasseCotaMovimento(BaseModel):
     )
     classificacao:  ClassificacaoClasse
     impacto_pl_sub: Decimal = Field(
-        description="Impacto no PL Sub Jr. Prioritaria (Sr/Mez) e passivo: o ΔPL dela "
-                    "REDUZ o residual da Sub -> impacto = -delta_pl. A propria Sub Jr: "
+        description="Impacto no PL Sub Jr em R$. Prioritaria (Sr/Mez): SO o carrego "
+                    "(valorizacao) impacta -> impacto = -efeito_valorizacao. O capital "
+                    "(aporte/resgate) e NEUTRO (entra/sai do caixa na mesma medida; "
+                    "dilui o % de subordinacao, nao o valor). A propria Sub Jr: "
                     "impacto = delta_pl (e o PL que estamos explicando)."
     )
 

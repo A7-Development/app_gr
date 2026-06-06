@@ -123,12 +123,16 @@ async def compute_variacao_headline(
             detalhe=f"variacao de PDD {_fmt(pdd_imp)}", drill_key="pdd",
         ))
 
-    # 6. Capital de cotista (aporte/resgate que diluiu/concentrou) ──────────
+    # 6. Capital de cotista (aporte/resgate) — NEUTRO no PL Sub em R$: o caixa
+    # entra/sai junto com o passivo; muda so o % de subordinacao (diluicao/
+    # concentracao), nao o valor. Fica como evento de CONTEXTO (impacto 0), nao
+    # como motor de resultado — senao distorce o ranking e o residuo de giro.
     if abs(cot.capital_liquido_prioritarias) >= _TOL_MATERIAL:
         drivers.append(HeadlineDriver(
             key="capital_cotista", label="Capital em prioritaria",
-            impacto_pl_sub=-cot.capital_liquido_prioritarias,
-            detalhe=f"aporte/resgate {_fmt(cot.capital_liquido_prioritarias)} (diluiu a Sub)",
+            impacto_pl_sub=ZERO,
+            detalhe=f"aporte/resgate {_fmt(cot.capital_liquido_prioritarias)} "
+                    "(neutro no PL Sub; dilui/concentra a subordinacao)",
             drill_key=None, severidade="atencao",
         ))
 
