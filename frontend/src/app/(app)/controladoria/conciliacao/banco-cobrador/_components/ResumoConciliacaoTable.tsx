@@ -1,13 +1,15 @@
 "use client"
 
 /**
- * ResumoConciliacaoTable — tabela-resumo do confronto do dia (Entrega 3, §2:
- * "Resumo consolidado por status: quantidade, percentual, valor BITFIN, valor
- * banco e diferenca"). Substitui o KpiStrip no topo da pagina.
+ * ResumoConciliacaoTable — tabela-resumo do confronto (Entrega 3, §2: "Resumo
+ * consolidado por status: quantidade, percentual, valor BITFIN, valor banco e
+ * diferenca"). Substitui o KpiStrip no topo da pagina.
  *
- * Padrao CANONICO: `<DataTable>` (tableTokens nas cells, header band do Card,
- * Total via `renderFooter`). Sempre mostra os 5 status na ordem canonica (0
- * onde nao ha linha). Reconcilia on-screen (§14.6): soma das 5 linhas = Total.
+ * CANONICO, sem invencoes: `<DataTable>` padrao do projeto envolta no `<Card>`
+ * padrao (`tableTokens.cardWrapper`). Sem filtros nem toolbar (column manager /
+ * density / export off). Total via `renderFooter` (prop canonica da DataTable)
+ * — reconcilia on-screen (§14.6): soma das 5 linhas = Total. Cells via
+ * `tableTokens`. Sempre os 5 status na ordem canonica (0 onde nao ha linha).
  * O `resumo` ja vem no escopo da UA selecionada (computado das linhas na pagina).
  */
 
@@ -15,6 +17,7 @@ import * as React from "react"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 
 import { cx } from "@/lib/utils"
+import { Card } from "@/components/tremor/Card"
 import { DataTable } from "@/design-system/components/DataTable"
 import { tableTokens } from "@/design-system/tokens/table"
 import type { ResumoStatusConciliacao, StatusConciliacaoBoleto } from "@/lib/api-client"
@@ -34,7 +37,7 @@ function brlOrDash(v: number) {
 function diffNode(v: number) {
   if (Math.abs(v) < 0.005) return <span className={tableTokens.cellNumberSecondary}>—</span>
   return (
-    <span className="tabular-nums text-xs font-medium text-red-600 dark:text-red-400">
+    <span className={tableTokens.cellNumberNegative}>
       {v > 0 ? "+" : ""}
       {fmtBRL.format(v)}
     </span>
@@ -132,28 +135,25 @@ export function ResumoConciliacaoTable({
   const renderFooter = React.useCallback(
     () => (
       <tr className="border-t-2 border-gray-200 dark:border-gray-700">
-        <td className="px-3 py-1.5 text-[13px] font-semibold text-gray-900 dark:text-gray-50">Total</td>
+        <td className={cx("px-3 py-1.5", tableTokens.cellStrong)}>Total</td>
         <td className={cx("px-3 py-1.5 text-right font-semibold", tableTokens.cellNumber)}>
           {fmtInt.format(total.quantidade)}
         </td>
         <td className={cx("px-3 py-1.5 text-right", tableTokens.cellNumberSecondary)}>
           {total.quantidade > 0 ? "100,0%" : "—"}
         </td>
-        <td className="px-3 py-1.5 text-right font-semibold">{brlOrDash(total.valor_bitfin)}</td>
-        <td className="px-3 py-1.5 text-right font-semibold">{brlOrDash(total.valor_banco)}</td>
-        <td className="px-3 py-1.5 text-right font-semibold">{diffNode(total.diferenca)}</td>
+        <td className="px-3 py-1.5 text-right">{brlOrDash(total.valor_bitfin)}</td>
+        <td className="px-3 py-1.5 text-right">{brlOrDash(total.valor_banco)}</td>
+        <td className="px-3 py-1.5 text-right">{diffNode(total.diferenca)}</td>
       </tr>
     ),
     [total],
   )
 
+  // Card padrao (tableTokens.cardWrapper) envolvendo a DataTable canonica —
+  // mesma anatomy do DataTableShell, sem filtros/toolbar/title band.
   return (
-    <div className="overflow-hidden rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
-      <div className="border-b border-gray-200 px-4 py-2.5 dark:border-gray-800">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
-          Conciliação — Boleto BITFIN × Aberto banco · Resumo
-        </h3>
-      </div>
+    <Card className={tableTokens.cardWrapper}>
       <DataTable
         data={rows}
         columns={COLUMNS}
@@ -164,6 +164,6 @@ export function ResumoConciliacaoTable({
         virtualize={false}
         renderFooter={renderFooter}
       />
-    </div>
+    </Card>
   )
 }
