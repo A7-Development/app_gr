@@ -53,6 +53,7 @@ import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 import {
   useConciliacaoBancoCobrador,
   useConciliacaoBancoCobradorSync,
+  useConciliacaoBancoCobradorSyncStatus,
 } from "@/lib/hooks/controladoria"
 import { biMetadata } from "@/lib/api-client"
 import type {
@@ -70,6 +71,22 @@ function fmtDateBR(iso: string | null | undefined): string {
   if (!iso) return "—"
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
   return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : iso
+}
+
+function fmtDateTimeBR(iso: string | null | undefined): string {
+  if (!iso) return "—"
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const p = (n: number) => String(n).padStart(2, "0")
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+// Fase do sync -> rotulo amigavel pro botao enquanto roda.
+const FASE_LABEL: Record<string, string> = {
+  coleta: "Coletando arquivos",
+  decode: "Decodificando",
+  project: "Atualizando carteira",
+  done: "Concluindo",
 }
 
 const STATUS_OPTS: { value: StatusConciliacaoBoleto; label: string }[] = [
@@ -136,22 +153,24 @@ export default function ConciliacaoBancoCobradorPage() {
   const q = useConciliacaoBancoCobrador()
   const conc = q.data
 
-  // Sincronizacao manual (por tenant). O servidor roda em background (~1 min);
-  // re-busca a conciliacao quando provavelmente terminou. Botao desabilitado +
-  // "Sincronizando…" durante a janela pra nao disparar duas vezes.
+  // Sincronizacao manual (por tenant). O servidor roda em background; a pagina
+  // faz POLLING do estado real (fase/heartbeat) em vez de esperar no escuro, e
+  // re-busca a conciliacao quando o run termina (status='ok').
   const syncMut = useConciliacaoBancoCobradorSync()
-  const [sincronizando, setSincronizando] = React.useState(false)
+  const syncStatus = useConciliacaoBancoCobradorSyncStatus()
+  const st = syncStatus.data
+  const sincronizando = st?.status === "running"
   const handleSync = React.useCallback(() => {
-    syncMut.mutate(undefined, {
-      onSuccess: () => {
-        setSincronizando(true)
-        window.setTimeout(() => {
-          void q.refetch()
-          setSincronizando(false)
-        }, 70_000)
-      },
-    })
-  }, [syncMut, q])
+    syncMut.mutate(undefined, { onSuccess: () => void syncStatus.refetch() })
+  }, [syncMut, syncStatus])
+  // Quando um run termina (ok), re-busca a conciliacao uma vez.
+  const lastDoneRef = React.useRef<string | null>(null)
+  React.useEffect(() => {
+    if (st?.status === "ok" && st.run_id && st.run_id !== lastDoneRef.current) {
+      lastDoneRef.current = st.run_id
+      void q.refetch()
+    }
+  }, [st?.status, st?.run_id, q])
 
   // Nome amigavel dos produtos ("Faturização (FAT)") — fonte canonica.
   const produtosMetaQuery = useQuery({
@@ -323,6 +342,28 @@ export default function ConciliacaoBancoCobradorPage() {
             />
 
             <div className="ml-auto flex shrink-0 items-center gap-3">
+              {/* Status da ultima sync (last run / travado / erro). Enquanto
+                  roda, o proprio botao mostra a fase. */}
+              {st?.status === "ok" && st.finished_at ? (
+                <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                  Última sync: {fmtDateTimeBR(st.finished_at)}
+                  {st.arquivos_novos != null && st.arquivos_novos > 0
+                    ? ` · ${st.arquivos_novos} novo(s)`
+                    : " · sem novidades"}
+                </span>
+              ) : st?.status === "stuck" ? (
+                <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                  Sincronização parece travada
+                </span>
+              ) : st?.status === "error" ? (
+                <span
+                  className="text-[11px] font-medium text-red-600 dark:text-red-400"
+                  title={st.erro ?? undefined}
+                >
+                  Erro na sincronização
+                </span>
+              ) : null}
+
               {/* Sincronizar: dispara a coleta/reprocessamento dos arquivos CNAB
                   da inbox (por tenant; banco/UA saem dos arquivos/titulos). */}
               <Button
@@ -335,11 +376,13 @@ export default function ConciliacaoBancoCobradorPage() {
                   className={cx("size-3.5 shrink-0", sincronizando && "animate-spin")}
                   aria-hidden="true"
                 />
-                {sincronizando ? "Sincronizando…" : "Sincronizar"}
+                {sincronizando
+                  ? `${FASE_LABEL[st?.fase ?? ""] ?? "Sincronizando"}…`
+                  : "Sincronizar"}
               </Button>
 
               {/* Frescor (nao-filtro): BITFIN e "agora"; o banco reflete ate o
-                  ultimo retorno processado. Nomeia a defasagem D-1 estrutural. */}
+                  ultimo arquivo de retorno processado. Nomeia a defasagem. */}
               <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
                 <RiTimeLine className="size-3.5 shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
                 {q.isFetching ? (

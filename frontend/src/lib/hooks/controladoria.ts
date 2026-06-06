@@ -714,9 +714,21 @@ export function useConciliacaoBancoCobrador() {
 }
 
 // Dispara a coleta/reprocessamento (por tenant). Servidor roda em background
-// (~1 min) e retorna 202 "iniciado"; a pagina re-busca a conciliacao depois.
+// (~1 min); retorna 202 com o estado do run. A pagina dispara o polling do
+// status e re-busca a conciliacao quando o run termina (status='ok').
 export function useConciliacaoBancoCobradorSync() {
   return useMutation({
     mutationFn: () => controladoria.conciliacaoBancoCobradorSync(),
+  })
+}
+
+// Polling do estado da ultima execucao. Re-busca a cada 4s ENQUANTO running;
+// para quando ok/error/stuck/nunca (nao adianta polar um run morto/terminado).
+export function useConciliacaoBancoCobradorSyncStatus() {
+  return useQuery({
+    queryKey: ["controladoria", "conciliacao", "banco-cobrador", "sync-status"] as const,
+    queryFn: () => controladoria.conciliacaoBancoCobradorSyncStatus(),
+    refetchInterval: (query) =>
+      query.state.data?.status === "running" ? 4000 : false,
   })
 }

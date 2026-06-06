@@ -29,6 +29,7 @@ from app.warehouse.boleto_vigente import BoletoVigente
 from app.warehouse.caixa_snapshot import CaixaSnapshot
 from app.warehouse.cnab_raw_arquivo import CnabRawArquivo
 from app.warehouse.cnab_raw_ocorrencia import CnabRawOcorrencia
+from app.warehouse.cobranca_sync_run import CobrancaSyncRun
 from app.warehouse.cpr_movimento import CprMovimento
 from app.warehouse.dia_util_qitech import DiaUtilQitech
 from app.warehouse.dim import DimDreClassificacao, DimMes
@@ -87,6 +88,7 @@ __all__ = [
     "CaixaSnapshot",
     "CnabRawArquivo",
     "CnabRawOcorrencia",
+    "CobrancaSyncRun",
     "CprMovimento",
     "DiaUtilQitech",
     "DimDiaUtil",

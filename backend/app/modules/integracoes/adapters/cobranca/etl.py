@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
@@ -53,6 +54,15 @@ from app.warehouse.cnab_raw_arquivo import (
     BANCO_DESCONHECIDO,
     TIPO_ARQUIVO_REMESSA,
     TIPO_ARQUIVO_RETORNO,
+)
+from app.warehouse.cobranca_sync_run import (
+    SYNC_FASE_COLETA,
+    SYNC_FASE_DECODE,
+    SYNC_FASE_DONE,
+    SYNC_FASE_PROJECT,
+    SYNC_STATUS_ERROR,
+    SYNC_STATUS_OK,
+    CobrancaSyncRun,
 )
 
 # Layout -> (parser de retorno, decoder de estado). Adicionar banco = +1 aqui
@@ -185,7 +195,24 @@ async def sync_cobranca(
     return result
 
 
-async def run_cobranca_manual_sync(tenant_id: UUID) -> dict[str, Any]:
+async def _run_update(run_id: UUID | None, **fields: Any) -> None:
+    """Atualiza a linha de `wh_cobranca_sync_run` numa sessao CURTA (commit
+    imediato) -- assim o polling do front enxerga o progresso em tempo real,
+    sem esperar a transacao longa do ciclo. `heartbeat_at` sempre atualiza."""
+    if run_id is None:
+        return
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            update(CobrancaSyncRun)
+            .where(CobrancaSyncRun.id == run_id)
+            .values(heartbeat_at=datetime.now(UTC), **fields)
+        )
+        await db.commit()
+
+
+async def run_cobranca_manual_sync(
+    tenant_id: UUID, run_id: UUID | None = None
+) -> dict[str, Any]:
     """Ciclo manual completo de cobranca (botao da pagina banco-cobrador).
 
     Por TENANT (banco e UA saem dos arquivos/titulos -- nao se define UA):
@@ -193,28 +220,52 @@ async def run_cobranca_manual_sync(tenant_id: UUID) -> dict[str, Any]:
       2. decodifica o bronze -> timeline (`decode_tenant_eventos`);
       3. projeta a timeline -> estado vigente (`project_tenant_vigente`).
 
-    Le a config 'cobranca' (file_source) do `tenant_source_config`. Idempotente
-    (dedup por sha na coleta; upsert no decode; reprojecao na vigente).
+    `run_id`: quando dado, atualiza a fase/heartbeat e o status final em
+    `wh_cobranca_sync_run` (observabilidade do botao). Le a config 'cobranca' do
+    `tenant_source_config`. Idempotente (dedup por sha; upsert; reprojecao).
     """
     # Import lazy: source_config service nao depende do adapter, mas mantemos
     # localizado para nao alargar o import-time deste modulo.
     from app.modules.integracoes.services.source_config import get_decrypted_config
 
-    async with AsyncSessionLocal() as db:
-        config = await get_decrypted_config(
-            db, tenant_id, SourceType.COBRANCA, Environment.PRODUCTION
-        )
-        if config is None:
-            raise ValueError(
-                "Fonte 'cobranca' nao configurada para o tenant "
-                "(rode seed_cobranca_source.py)."
+    try:
+        async with AsyncSessionLocal() as db:
+            config = await get_decrypted_config(
+                db, tenant_id, SourceType.COBRANCA, Environment.PRODUCTION
             )
-        coleta = await sync_cobranca(db, tenant_id=tenant_id, config=config, commit=True)
-        eventos = await decode_tenant_eventos(db, tenant_id=tenant_id)
-        vigente = await project_tenant_vigente(db, tenant_id=tenant_id)
+            if config is None:
+                raise ValueError(
+                    "Fonte 'cobranca' nao configurada para o tenant "
+                    "(rode seed_cobranca_source.py)."
+                )
+            await _run_update(run_id, fase=SYNC_FASE_COLETA)
+            coleta = await sync_cobranca(
+                db, tenant_id=tenant_id, config=config, commit=True
+            )
+            await _run_update(
+                run_id,
+                fase=SYNC_FASE_DECODE,
+                arquivos_vistos=coleta.arquivos_vistos,
+                arquivos_novos=coleta.arquivos_novos,
+            )
+            eventos = await decode_tenant_eventos(db, tenant_id=tenant_id)
+            await _run_update(run_id, fase=SYNC_FASE_PROJECT)
+            vigente = await project_tenant_vigente(db, tenant_id=tenant_id)
+    except Exception as e:
+        await _run_update(
+            run_id,
+            status=SYNC_STATUS_ERROR,
+            fase=None,
+            finished_at=datetime.now(UTC),
+            erro=str(e)[:2000],
+        )
+        raise
 
-    return {
-        "coleta": asdict(coleta),
-        "eventos": eventos,
-        "vigente": vigente,
-    }
+    await _run_update(
+        run_id,
+        status=SYNC_STATUS_OK,
+        fase=SYNC_FASE_DONE,
+        finished_at=datetime.now(UTC),
+        boletos_ativos=vigente["ativos"],
+    )
+    return {"coleta": asdict(coleta), "eventos": eventos, "vigente": vigente}

@@ -4783,6 +4783,21 @@ export type ConciliacaoBancoCobradorResponse = {
   linhas:                  LinhaConciliacaoBoleto[]
 }
 
+// Estado de uma execucao do sync manual (botao Sincronizar).
+export type CobrancaSyncStatus = {
+  status:          "nunca" | "running" | "ok" | "error" | "stuck"
+  run_id?:         string
+  fase?:           "coleta" | "decode" | "project" | "done" | null
+  started_at?:     string
+  heartbeat_at?:   string
+  finished_at?:    string | null
+  arquivos_vistos?: number | null
+  arquivos_novos?:  number | null
+  boletos_ativos?:  number | null
+  erro?:            string | null
+  ja_em_curso?:    boolean
+}
+
 // MOCK dev-only da serie diaria — usado SO quando o endpoint backend ainda nao
 // existe (ver cotaSubVariacaoDiaria). Determinístico (sem Math.random) pra ser
 // estavel entre renders. Remover quando o backend publicar /variacao-diaria.
@@ -4884,11 +4899,19 @@ export const controladoria = {
   },
 
   // Dispara a coleta/reprocessamento da cobranca (por tenant). Roda em
-  // background no servidor (~1 min); retorna 202 "iniciado" na hora.
-  conciliacaoBancoCobradorSync: async (): Promise<{ status: string }> => {
-    return apiClient.post<{ status: string }>(
+  // background no servidor (~1 min); retorna 202 com o estado do run (run_id +
+  // status). Se ja ha um run em curso, devolve ele (ja_em_curso=true).
+  conciliacaoBancoCobradorSync: async (): Promise<CobrancaSyncStatus> => {
+    return apiClient.post<CobrancaSyncStatus>(
       `/controladoria/conciliacao/banco-cobrador/sync`,
       {},
+    )
+  },
+
+  // Estado da ultima execucao do sync (polling). status/fase/contadores.
+  conciliacaoBancoCobradorSyncStatus: async (): Promise<CobrancaSyncStatus> => {
+    return apiClient.get<CobrancaSyncStatus>(
+      `/controladoria/conciliacao/banco-cobrador/sync/status`,
     )
   },
 

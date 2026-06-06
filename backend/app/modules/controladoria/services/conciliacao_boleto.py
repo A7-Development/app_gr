@@ -40,6 +40,7 @@ from sqlalchemy import Date, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.warehouse.boleto_vigente import ESTADO_ATIVO, BoletoVigente
+from app.warehouse.cnab_raw_arquivo import TIPO_ARQUIVO_RETORNO, CnabRawArquivo
 from app.warehouse.dim import DimUnidadeAdministrativa
 from app.warehouse.operacao import Operacao
 from app.warehouse.titulo import Titulo
@@ -231,9 +232,13 @@ async def _carregar_boletos(
 async def _cobranca_atualizada_ate(
     db: AsyncSession, tenant_id: UUID
 ) -> date | None:
-    """Data do ultimo evento de cobranca processado (frescor do lado banco)."""
-    stmt = select(func.max(BoletoVigente.data_ocorrencia_vigente)).where(
-        BoletoVigente.tenant_id == tenant_id
+    """Frescor do lado banco = data do ULTIMO ARQUIVO de retorno processado
+    (data de gravacao no header CNAB), nao a ultima ocorrencia. "Cobranca ate
+    DD/MM" = ate quando temos retornos do banco -- mais intuitivo que a data do
+    ultimo evento (que pode ser mais antiga que o arquivo mais recente)."""
+    stmt = select(func.max(CnabRawArquivo.data_ref)).where(
+        CnabRawArquivo.tenant_id == tenant_id,
+        CnabRawArquivo.tipo_arquivo == TIPO_ARQUIVO_RETORNO,
     )
     return (await db.execute(stmt)).scalar_one_or_none()
 
