@@ -9,10 +9,12 @@ atualiza a linha (idempotente por tenant+ambiente+UA).
 Uso:
     uv run python scripts/seed_cobranca_source.py \
         --tenant a7-credit \
-        --path "/mnt/bitfin/Banco/Cobranca/Retorno/Processado" \
+        --path "/mnt/bitfin-arquivos/Banco/Cobranca/Retorno/Processado" \
+        --remessa-path "/mnt/bitfin-arquivos/Banco/Cobranca/Remessa/Enviado" \
         --glob "*"
 
-Para upload manual em vez de path: `--mode upload --staging-path <dir>`.
+`--remessa-path` (opcional) liga a coleta de remessa junto da de retorno (a
+inbox vira multi-root). Para upload manual: `--mode upload --staging-path <dir>`.
 """
 
 from __future__ import annotations
@@ -49,7 +51,12 @@ async def main() -> None:
         default=FILE_SOURCE_LOCAL_PATH,
         choices=[FILE_SOURCE_LOCAL_PATH, FILE_SOURCE_UPLOAD],
     )
-    ap.add_argument("--path", help="diretorio dos arquivos (mode local_path)")
+    ap.add_argument("--path", help="diretorio de RETORNO (mode local_path)")
+    ap.add_argument(
+        "--remessa-path",
+        help="diretorio de REMESSA (mode local_path). Quando dado, a inbox vira "
+        "multi-root [retorno, remessa] e o sync coleta os dois.",
+    )
     ap.add_argument("--staging-path", help="diretorio de upload (mode upload)")
     ap.add_argument("--glob", default="*", help="padrao de arquivo (default *)")
     ap.add_argument("--disabled", action="store_true", help="cria a fonte desabilitada")
@@ -58,7 +65,18 @@ async def main() -> None:
     if args.mode == FILE_SOURCE_LOCAL_PATH:
         if not args.path:
             raise SystemExit("--path e obrigatorio no mode local_path")
-        file_source = {"mode": args.mode, "path": args.path, "glob": args.glob}
+        if args.remessa_path:
+            # Multi-root: retorno + remessa na mesma inbox. O sync classifica
+            # cada arquivo pelo header (nao pela pasta).
+            file_source = {
+                "mode": args.mode,
+                "roots": [
+                    {"path": args.path, "glob": args.glob},
+                    {"path": args.remessa_path, "glob": args.glob},
+                ],
+            }
+        else:
+            file_source = {"mode": args.mode, "path": args.path, "glob": args.glob}
     else:  # upload
         if not args.staging_path:
             raise SystemExit("--staging-path e obrigatorio no mode upload")

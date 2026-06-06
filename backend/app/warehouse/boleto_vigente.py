@@ -38,6 +38,10 @@ ESTADO_ATIVO = "ativo"  # em aberto no banco (cruza com a carteira)
 ESTADO_LIQUIDADO = "liquidado"
 ESTADO_BAIXADO = "baixado"
 ESTADO_REJEITADO = "rejeitado"  # entrada rejeitada (nunca virou boleto)
+# Enviamos a remessa de registro mas o banco ainda nao confirmou a entrada
+# (sem retorno cod 02). Estado "fraco": vira ATIVO assim que chega o retorno de
+# entrada. Cruza com a carteira como "enviado, aguardando confirmacao".
+ESTADO_ENVIADO = "enviado"
 
 
 class BoletoVigente(Base):

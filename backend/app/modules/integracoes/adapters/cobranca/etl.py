@@ -30,6 +30,9 @@ from app.modules.integracoes.adapters.cobranca.bradesco import (
     estado_from_codigo as bradesco_estado_from_codigo,
 )
 from app.modules.integracoes.adapters.cobranca.bradesco import (
+    parse_remessa as bradesco_parse_remessa,
+)
+from app.modules.integracoes.adapters.cobranca.bradesco import (
     parse_retorno as bradesco_parse_retorno,
 )
 from app.modules.integracoes.adapters.cobranca.decode_evento import (
@@ -70,6 +73,7 @@ from app.warehouse.cobranca_sync_run import (
 _LAYOUTS = {
     "cnab400_bradesco": {
         "parse_retorno": bradesco_parse_retorno,
+        "parse_remessa": bradesco_parse_remessa,
         "estado_resolver": bradesco_estado_from_codigo,
     },
     # BMP (274) e Vortx (310) usam o MESMO CNAB400-padrao FEBRABAN do Bradesco:
@@ -79,10 +83,12 @@ _LAYOUTS = {
     # cruzam wh_titulo pelo documento). Reaproveitam o parser e o decoder.
     "cnab400_bmp": {
         "parse_retorno": bradesco_parse_retorno,
+        "parse_remessa": bradesco_parse_remessa,
         "estado_resolver": bradesco_estado_from_codigo,
     },
     "cnab400_vortx": {
         "parse_retorno": bradesco_parse_retorno,
+        "parse_remessa": bradesco_parse_remessa,
         "estado_resolver": bradesco_estado_from_codigo,
     },
 }
@@ -98,6 +104,7 @@ class CobrancaSyncResult:
     ocorrencias_gravadas: int = 0
     boletos_upsertados: int = 0
     ocorrencias_ignoradas: int = 0
+    remessas_processadas: int = 0  # remessas (registro) parseadas -> bronze
 
 
 def _classificar_tipo(conteudo: str) -> str:
@@ -137,13 +144,20 @@ async def sync_cobranca(
         banco = det.banco if det else BANCO_DESCONHECIDO
         layout = det.layout if det else "desconhecido"
 
-        # Para retorno reconhecido, ja parseia (precisamos do data_ref do header
-        # para gravar no bronze + mapear).
+        # Parseia retorno E remessa de banco reconhecido (precisamos do data_ref
+        # do header para gravar no bronze; remessa usa o data_ref como data do
+        # evento "instrucao enviada" no decode). Layouts diferentes -> parser por
+        # tipo (parse_retorno vs parse_remessa), ambos no mesmo `spec`.
         parsed = None
         data_ref = None
         spec = _LAYOUTS.get(layout) if det else None
         if det is not None and spec is not None:
-            parsed = spec["parse_retorno"](raw.conteudo)
+            parser = (
+                spec["parse_retorno"]
+                if tipo == TIPO_ARQUIVO_RETORNO
+                else spec["parse_remessa"]
+            )
+            parsed = parser(raw.conteudo)
             data_ref = parse_ddmmaa(parsed.data_ref_raw)
 
         arquivo, created = await land_cnab_arquivo(
@@ -163,20 +177,30 @@ async def sync_cobranca(
             continue
         result.arquivos_novos += 1
 
-        if tipo != TIPO_ARQUIVO_RETORNO:
-            continue  # remessa: so bronze (parse-later)
         if det is None:
-            result.arquivos_sem_banco += 1
-            continue  # banco nao reconhecido: so bronze
+            # Banco nao reconhecido: so bronze (vale p/ remessa e retorno).
+            if tipo == TIPO_ARQUIVO_RETORNO:
+                result.arquivos_sem_banco += 1
+            continue
         if spec is None:
-            result.arquivos_sem_parser += 1
+            if tipo == TIPO_ARQUIVO_RETORNO:
+                result.arquivos_sem_parser += 1
             continue  # banco reconhecido, parser ainda nao implementado
         if parsed is None or data_ref is None:
-            continue  # retorno sem data de referencia legivel
+            continue  # sem data de referencia legivel no header
 
+        # Ocorrencias -> bronze (vale p/ remessa e retorno; o decode separa por
+        # tipo_arquivo e gera a timeline com a origem certa).
         result.ocorrencias_gravadas += await persist_ocorrencias(
             db, arquivo=arquivo, ocorrencias=parsed.ocorrencias, fetched_at=fetched_at
         )
+
+        if tipo == TIPO_ARQUIVO_REMESSA:
+            # Remessa NAO popula o wh_boleto by-date (caminho legado). Segue so
+            # ate o bronze; vira timeline (evento "enviado") no decode->project.
+            result.remessas_processadas += 1
+            continue
+
         values, ignorados = map_ocorrencias_to_boletos(
             [(o.linha_num, o.payload) for o in parsed.ocorrencias],
             tenant_id=tenant_id,
