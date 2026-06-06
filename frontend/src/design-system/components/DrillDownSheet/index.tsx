@@ -207,6 +207,9 @@ interface HeroProps {
      *  `false` inverte — para redutores/contra-ativo (ex.: PDD), onde subir e ruim. */
     positiveIsGood?: boolean
   }
+  /** Casas decimais do `value`. Default (undefined) = inteiro (currencyWhole).
+   *  Use 2 quando o valor exige centavos (ex.: impacto na cota). */
+  valueFractionDigits?: number
   className?: string
 }
 
@@ -226,7 +229,18 @@ function _formatHeroDelta(v: number, format: HeroDeltaFormat): string {
   return `${abs.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`
 }
 
-function Hero({ id, title, value, delta, className }: HeroProps) {
+function Hero({ id, title, value, delta, valueFractionDigits, className }: HeroProps) {
+  const valueStr =
+    value == null
+      ? ""
+      : valueFractionDigits != null
+        ? new Intl.NumberFormat("pt-BR", {
+            style:                 "currency",
+            currency:              "BRL",
+            minimumFractionDigits: valueFractionDigits,
+            maximumFractionDigits: valueFractionDigits,
+          }).format(value)
+        : fmt.currencyWhole.format(value)
   const dir = delta ? (delta.value >= 0 ? "up" : "down") : null
   const good = (delta?.positiveIsGood ?? true) ? dir === "up" : dir === "down"
   const ArrowIcon = dir === "up" ? RiArrowUpLine : RiArrowDownLine
@@ -252,7 +266,7 @@ function Hero({ id, title, value, delta, className }: HeroProps) {
       {value != null && (
         <div>
           <p className="text-[28px] font-semibold tabular-nums tracking-tight text-gray-900 dark:text-gray-50 leading-none">
-            {fmt.currencyWhole.format(value)}
+            {valueStr}
           </p>
           {delta && (
             <p className="mt-1.5 flex items-center gap-1 text-xs tabular-nums">

@@ -73,11 +73,13 @@ export function CategoriaDrillSheet({
             <DrillDownSheet.Hero
               title={`${categoria.label} · impacto na cota`}
               value={categoria.delta}
+              valueFractionDigits={2}
             />
           ) : (
             <DrillDownSheet.Hero
               title={categoria.label}
               value={categoria.d0}
+              valueFractionDigits={2}
               delta={{
                 value:          categoria.delta,
                 label:          `vs ${fmtDate(dataAnterior)} (${fmtBRL.format(categoria.d1)})`,
