@@ -691,6 +691,17 @@ export type RevenueAnalysis = {
 
 // ─── Cadastral: card (silver, white-label) + análise (agente) ────────────────
 
+/** Um campo projetado pelo Contrato de Dados (Fase 2). */
+export type CadastralCampo = {
+  field_path: string
+  label: string
+  categoria: string
+  ordem: number
+  tipo: string
+  valor: string | number | boolean | Array<string | number | boolean> | null
+  novo: boolean
+}
+
 export type CadastralCard = {
   encontrado: boolean
   enriquecido: boolean
@@ -699,9 +710,11 @@ export type CadastralCard = {
   situacao_cadastral: string | null
   data_fundacao: string | null
   capital_social: number | null
-  // TODO o basic_data do dataset (nada descartado). Render generico na UI;
-  // curadoria de rotulo/ordem/visibilidade fica no catalogo (fase seguinte).
-  dados_completos: Record<string, unknown>
+  // Projeção dirigida pelo Contrato de Dados: campos on_screen (rótulo pt-BR,
+  // categoria, ordem) + campos novos (🆕) fora do contrato.
+  campos: CadastralCampo[]
+  campos_novos_count: number
+  tem_contrato: boolean
 }
 
 /** Output do agente `cadastral_analyst` (julgamento). */

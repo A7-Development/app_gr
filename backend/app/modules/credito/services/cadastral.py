@@ -137,6 +137,134 @@ async def load_cadastral_silver_view(
     }
 
 
+def _pretty_label(path: str) -> str:
+    """Rótulo neutro a partir do field_path (último segmento humanizado)."""
+    import re
+
+    seg = path.replace("[]", "").split(".")[-1]
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", seg).replace("_", " ").strip()
+    return spaced[:1].upper() + spaced[1:] if spaced else path
+
+
+def _display_value(v: Any) -> Any:
+    """Coage valor para display-safe (objeto->texto; lista->lista coerida)."""
+    if v is None:
+        return None
+    if isinstance(v, list):
+        out = [_display_value(x) for x in v]
+        out = [x for x in out if x is not None and x != ""]
+        return out or None
+    if isinstance(v, dict):
+        return _bdc_text(v)
+    return v
+
+
+async def build_cadastral_card_projection(
+    db: AsyncSession, *, tenant_id: UUID, dossier_id: UUID
+) -> dict | None:
+    """Projeção do card cadastral DIRIGIDA PELO CONTRATO (Fase 2).
+
+    Lê o contrato ativo (bdc/empresas/basic_data) e projeta o `basic_data` da
+    empresa-alvo em `campos` (só os `on_screen`, com rótulo pt-BR, categoria e
+    ordem do contrato) + detecta CAMPOS NOVOS (presentes no payload mas fora do
+    contrato) marcados `novo=True` (🆕) — alimentam a curadoria. Sem contrato
+    ativo: cai no genérico (todos os campos como novos, rótulo prettificado).
+
+    Returns None quando não há empresa-alvo no dossie.
+    """
+    from app.shared.data_providers.contract_resolver import resolve_contract
+    from app.shared.data_providers.field_paths import (
+        extract_by_path,
+        flatten_paths,
+    )
+
+    target = (
+        await db.execute(
+            select(CreditDossierCompany).where(
+                CreditDossierCompany.tenant_id == tenant_id,
+                CreditDossierCompany.dossier_id == dossier_id,
+                CreditDossierCompany.role == CompanyRole.TARGET,
+            )
+        )
+    ).scalar_one_or_none()
+    if target is None:
+        return None
+
+    basic: dict = {}
+    if isinstance(target.receita_data, dict):
+        b = target.receita_data.get("basic_data")
+        if isinstance(b, dict):
+            basic = b
+
+    enriquecido = bool(
+        target.tax_status or target.cnaes or target.capital_social is not None
+    )
+    summary = {
+        "encontrado": True,
+        "enriquecido": enriquecido,
+        "cnpj": target.cnpj,
+        "razao_social": _bdc_text(basic.get("OfficialName")) or target.name,
+        "situacao_cadastral": target.tax_status,
+        "data_fundacao": (
+            target.founding_date.isoformat() if target.founding_date else None
+        ),
+        "capital_social": (
+            float(target.capital_social)
+            if target.capital_social is not None
+            else None
+        ),
+    }
+
+    rc = await resolve_contract(
+        db, provider="bdc", api_endpoint="empresas", dataset_code="basic_data"
+    )
+
+    campos: list[dict] = []
+    presentes = flatten_paths(basic)
+
+    if rc is not None:
+        catalogados: set[str] = set()
+        for f in rc.for_screen():
+            catalogados.add(f.field_path)
+            campos.append(
+                {
+                    "field_path": f.field_path,
+                    "label": f.public_label or _pretty_label(f.field_path),
+                    "categoria": f.categoria_ui or "outros",
+                    "ordem": f.screen_order if f.screen_order is not None else 1000,
+                    "tipo": f.semantic_type,
+                    "valor": _display_value(extract_by_path(basic, f.field_path)),
+                    "novo": False,
+                }
+            )
+        # os campos do contrato (mesmo os não-on_screen) já são "conhecidos"
+        catalogados |= rc.field_paths()
+        novos = sorted(presentes - catalogados)
+    else:
+        # Sem contrato: tudo é novo (comportamento genérico, prettificado).
+        novos = sorted(presentes)
+
+    for path in novos:
+        campos.append(
+            {
+                "field_path": path,
+                "label": _pretty_label(path),
+                "categoria": "novos",
+                "ordem": 9000,
+                "tipo": "text",
+                "valor": _display_value(extract_by_path(basic, path)),
+                "novo": True,
+            }
+        )
+
+    return {
+        **summary,
+        "campos": campos,
+        "campos_novos_count": len(novos),
+        "tem_contrato": rc is not None,
+    }
+
+
 async def enrich_target_cadastral(
     db: AsyncSession,
     *,
