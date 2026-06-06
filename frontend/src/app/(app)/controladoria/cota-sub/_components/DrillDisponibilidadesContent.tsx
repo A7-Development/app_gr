@@ -10,19 +10,20 @@
  *
  * Sem endpoint proprio: os fluxos neutros ja vem em response.giro_capital
  * (do /variacao/resumo), passados por prop — sao o espelho do caixa.
+ *
+ * Tabela no mesmo estilo canonico das de Aplicacoes (DataTable ultra, bordada,
+ * total no rodape). Colunas proprias (Movimento | Tipo | Valor) — esses
+ * movimentos sao neutros, nao tem D-1/D0 nem impacto por linha (§14).
  */
 
 import { RiArrowLeftRightLine, RiPulseLine } from "@remixicon/react"
+import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 
 import { cx } from "@/lib/utils"
 import type { GiroCapitalItem } from "@/lib/api-client"
-import {
-  DrillSectionTitle,
-  drillRowBorder,
-  drillTableWrap,
-  drillThead,
-  fmtBRLSigned,
-} from "./drillKit"
+import { DataTable } from "@/design-system/components/DataTable"
+import { tableTokens } from "@/design-system/tokens/table"
+import { DrillSectionTitle, fmtBRLSigned } from "./drillKit"
 
 const TIPO_LABEL: Record<GiroCapitalItem["tipo"], string> = {
   giro_carteira:     "Giro de carteira",
@@ -31,6 +32,41 @@ const TIPO_LABEL: Record<GiroCapitalItem["tipo"], string> = {
   floating:          "Floating",
   outros:            "Outros",
 }
+
+// Mesmo estilo canonico das tabelas de Aplicacoes — ultra, sem toolbar, bordada.
+const DT_PROPS = {
+  density:           "ultra",
+  virtualize:        false,
+  showColumnManager: false,
+  showDensityToggle: false,
+  showExport:        false,
+  className:         "rounded border border-gray-200 dark:border-gray-800",
+} as const
+
+const FOOT_ROW = "border-t-2 border-t-gray-300 dark:border-t-gray-700"
+
+const col = createColumnHelper<GiroCapitalItem>()
+const COLS: ColumnDef<GiroCapitalItem, unknown>[] = [
+  col.accessor("label", {
+    id: "label", header: "Movimento", size: 220,
+    cell: (i) => {
+      const v = i.getValue<string>()
+      return <span className={cx("block truncate", tableTokens.cellText)} title={i.row.original.nota || v}>{v}</span>
+    },
+  }),
+  col.accessor("tipo", {
+    id: "tipo", header: "Tipo", size: 160,
+    cell: (i) => (
+      <span className={cx("block truncate", tableTokens.cellSecondary)}>
+        {TIPO_LABEL[i.getValue<GiroCapitalItem["tipo"]>()] ?? i.getValue<string>()}
+      </span>
+    ),
+  }),
+  col.accessor("valor", {
+    id: "valor", header: "Valor", size: 140, meta: { align: "right" },
+    cell: (i) => <div className={cx("text-right tabular-nums", tableTokens.cellNumberSecondary)}>{fmtBRLSigned(i.getValue<number>())}</div>,
+  }),
+] as ColumnDef<GiroCapitalItem, unknown>[]
 
 type Props = { rendimento: number; giroCapital: GiroCapitalItem[] }
 
@@ -66,25 +102,18 @@ export function DrillDisponibilidadesContent({ rendimento, giroCapital }: Props)
             Sem movimentação neutra relevante no dia — o caixa praticamente só rendeu.
           </p>
         ) : (
-          <div className={cx("mt-2", drillTableWrap)}>
-            <table className="w-full whitespace-nowrap text-[12px] tabular-nums">
-              <thead className={drillThead}>
-                <tr>
-                  <th className="px-3 py-1.5 text-left font-medium">Movimento</th>
-                  <th className="px-3 py-1.5 text-left font-medium">Tipo</th>
-                  <th className="px-3 py-1.5 text-right font-medium">Valor</th>
+          <div className="mt-2">
+            <DataTable<GiroCapitalItem>
+              {...DT_PROPS}
+              columns={COLS}
+              data={giroCapital}
+              renderFooter={() => (
+                <tr className={FOOT_ROW}>
+                  <td colSpan={2} className="px-3"><span className={tableTokens.cellStrong}>Total ({giroCapital.length})</span></td>
+                  <td className="px-3"><div className={cx("text-right tabular-nums", tableTokens.cellNumberSecondary)}>{fmtBRLSigned(totalNeutro)}</div></td>
                 </tr>
-              </thead>
-              <tbody>
-                {giroCapital.map((g, i) => (
-                  <tr key={`${g.tipo}-${i}`} className={drillRowBorder}>
-                    <td className="px-3 py-1.5 text-left text-gray-900 dark:text-gray-100">{g.label}</td>
-                    <td className="px-3 py-1.5 text-left text-gray-500 dark:text-gray-400">{TIPO_LABEL[g.tipo] ?? g.tipo}</td>
-                    <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRLSigned(g.valor)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              )}
+            />
           </div>
         )}
         <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
