@@ -339,6 +339,12 @@ async def compute_variacao_resumo(
             valor=r.residuo_d0, investigavel=True,
         ))
     for item in (getattr(bal, "nao_reconhecidos", None) or []):
+        # modo="vigia" e RECONHECIDO (entra no driver), so exposto pra conferencia
+        # no painel de completude — nao e "lancamento nao reconhecido". So os modos
+        # de fato problematicos (vaza_residuo / entra_indevido) viram atencao do dia.
+        # Ex.: fundo DI de varredura (ITAU SOBERANO REF SI) reaparecendo do zero.
+        if getattr(item, "modo", None) == "vigia":
+            continue
         valor = Decimal(str(getattr(item, "valor_d0", 0) or 0))
         if abs(valor) >= _TOL:
             atencoes.append(AtencaoResumo(
