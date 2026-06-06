@@ -3339,6 +3339,7 @@ export type VariacaoResumoResponse = {
   fundo_nome:     string
   data:           string
   data_anterior:  string
+  cota_valor_d0:  number | null
   pl_sub_mec_d1:  number
   pl_sub_mec_d0:  number
   pl_sub_calc_d1: number
@@ -4959,6 +4960,7 @@ export const controladoria = {
     return {
       ...raw,
       pl_sub_mec_d1:  num(raw.pl_sub_mec_d1),
+      cota_valor_d0:  raw.cota_valor_d0 == null ? null : num(raw.cota_valor_d0),
       pl_sub_mec_d0:  num(raw.pl_sub_mec_d0),
       pl_sub_calc_d1: num(raw.pl_sub_calc_d1),
       pl_sub_calc_d0: num(raw.pl_sub_calc_d0),

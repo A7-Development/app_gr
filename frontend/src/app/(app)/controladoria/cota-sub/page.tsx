@@ -102,6 +102,7 @@ import { toast } from "sonner"
 
 import { ActiveBackfillJobsPanel } from "./_components/ActiveBackfillJobsPanel"
 import { AtencoesDoDia } from "./_components/AtencoesDoDia"
+import { CotaSubStatusBand } from "./_components/CotaSubStatusBand"
 import { BalancoPatrimonialHero } from "./_components/BalancoPatrimonialHero"
 import { NaoReconhecidosPanel } from "./_components/NaoReconhecidosPanel"
 import { CategoriaDrillSheet } from "./_components/CategoriaDrillSheet"
@@ -1156,6 +1157,14 @@ function CotaSubPageInner() {
                 <>
                   {activeTab === "resumo" && (
                     <div className="flex flex-col gap-3">
+                      {/* Z1 — band de KPI (handoff): Cota Sub · Variação · PL Sub ·
+                          Reports (status dentro do tile) + reconciliação/atenções. */}
+                      <CotaSubStatusBand
+                        resumo={resumoQuery.data}
+                        reportEntries={readiness.entries}
+                        dataD0={dayIso}
+                        loading={resumoQuery.isLoading}
+                      />
                       {/* Faixa "consciencia": mutacao / sem-provisao / WOP, ancoradas
                           ao grupo-casa. Clicar abre o drill; investigavel abre o chat. */}
                       <AtencoesDoDia

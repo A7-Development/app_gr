@@ -19,6 +19,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.controladoria.schemas.variacao_resumo import (
@@ -29,6 +30,25 @@ from app.modules.controladoria.schemas.variacao_resumo import (
     ReconciliacaoResumo,
     VariacaoResumoResponse,
 )
+from app.modules.controladoria.services.cota_sub import _is_sub_jr
+from app.warehouse.mec_evolucao_cotas import MecEvolucaoCotas
+
+
+async def _cota_valor_sub(
+    db: AsyncSession, tenant_id: UUID, ua_id: UUID, ua_nome: str, data: date,
+) -> Decimal | None:
+    """Valor unitario da cota Sub (MEC `valor_da_cota`) em `data` — alimenta o
+    headline da band de KPI. Classe Sub via a mesma regra do balanco."""
+    stmt = (
+        select(MecEvolucaoCotas.carteira_cliente_nome, MecEvolucaoCotas.valor_da_cota)
+        .where(MecEvolucaoCotas.tenant_id == tenant_id)
+        .where(MecEvolucaoCotas.unidade_administrativa_id == ua_id)
+        .where(MecEvolucaoCotas.data_posicao == data)
+    )
+    for nome, valor in (await db.execute(stmt)).all():
+        if _is_sub_jr(nome, ua_nome) and valor is not None:
+            return Decimal(valor)
+    return None
 
 ZERO = Decimal("0")
 _TOL = Decimal("1000")        # abaixo disso, um sinal e ruido (nao vira atencao)
@@ -328,11 +348,14 @@ async def compute_variacao_resumo(
             ))
     atencoes.sort(key=lambda a: abs(a.valor), reverse=True)
 
+    cota_valor_d0 = await _cota_valor_sub(db, tenant_id, ua_id, bal.fundo_nome, data_d0)
+
     return VariacaoResumoResponse(
         fundo_id=str(ua_id),
         fundo_nome=bal.fundo_nome,
         data=data_d0,
         data_anterior=d1,
+        cota_valor_d0=cota_valor_d0,
         pl_sub_mec_d1=r.pl_fonte_d1,
         pl_sub_mec_d0=r.pl_fonte_d0,
         pl_sub_calc_d1=bal.pl_sub_d1,
