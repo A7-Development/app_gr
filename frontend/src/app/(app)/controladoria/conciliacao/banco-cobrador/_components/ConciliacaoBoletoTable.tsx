@@ -6,10 +6,10 @@
  * Recebe as `linhas` ja filtradas pelos chips globais (status/banco/produto/
  * cedente) e renderiza na `DataTable` CANONICA de listagem (density ULTRA +
  * toolbar completa: column manager, density toggle, export CSV; virtualiza >100
- * linhas). A busca por palavra mora DENTRO do card da tabela (header proprio,
- * acima da coluna Status) — alimenta o globalFilter do TanStack. Colunas
- * unificadas com "—" onde nao se aplica (ex.: "So em banco" nao tem valor
- * BITFIN). Cells via `tableTokens` (regra dura §6).
+ * linhas). A busca por palavra mora na MESMA linha da toolbar (Exportar/colunas/
+ * densidade), via slot `toolbarStart` da DataTable — alimenta o globalFilter do
+ * TanStack. Colunas unificadas com "—" onde nao se aplica (ex.: "So em banco"
+ * nao tem valor BITFIN). Cells via `tableTokens` (regra dura §6).
  */
 
 import * as React from "react"
@@ -202,14 +202,6 @@ export function ConciliacaoBoletoTable({
 
   return (
     <div className="flex flex-col overflow-hidden rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
-      <div className="flex shrink-0 items-center border-b border-gray-100 px-3 py-2 dark:border-gray-900">
-        <FilterSearch
-          placeholder="Buscar número, produto, cedente…"
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          onClear={() => setBusca("")}
-        />
-      </div>
       <DataTable
         data={linhas}
         columns={COLUMNS}
@@ -219,6 +211,14 @@ export function ConciliacaoBoletoTable({
         showExport
         globalFilter={busca}
         onExport={(_format, rows) => exportarCsv(rows)}
+        toolbarStart={
+          <FilterSearch
+            placeholder="Buscar número, produto, cedente…"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            onClear={() => setBusca("")}
+          />
+        }
       />
     </div>
   )
