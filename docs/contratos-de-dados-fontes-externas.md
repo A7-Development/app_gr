@@ -100,14 +100,38 @@ Para nós, o contrato tem duas partes:
 - **Campos do contrato** (N por dataset): um registro por campo, com metadado +
   flags de roteamento para as 5 superfícies.
 
-Cada dataset externo tem uma **identidade estável**, ex.:
+### 3.1 Hierarquia: Provedor → API/Endpoint → Dataset → Campo
 
-| Fonte | dataset_code | Exemplo |
-|---|---|---|
-| BigDataCorp | `CAD-PJ` (public_code) | dados cadastrais PJ |
-| QiTech | `fidc-estoque` | estoque de recebíveis |
-| Bitfin | `carteira` | posição da carteira |
-| Serasa PJ | `relatorio_pj` | business information report |
+Um provedor não é um endpoint só. O BDC, por exemplo, tem **várias APIs**
+(Empresas, Pessoas, Notas Fiscais…), e cada API serve **vários datasets** (o
+parâmetro `Datasets` da chamada). O contrato precisa dessa hierarquia de 4
+níveis:
+
+```
+Provedor            ex.: BigDataCorp            (credenciais, base_url, billing)
+  └─ API/Endpoint   ex.: Empresas (POST /empresas), Pessoas (POST /pessoas)
+       └─ Dataset   ex.: basic_data, ondemand_rf_qsa, relationships, political_involvement (PEP)
+            └─ Campo ex.: TaxIdStatus, Activities[].Code, LegalNature.Activity
+```
+
+O **Contrato de Dados é por DATASET** (o nível onde os campos vivem); Provedor e
+API são os **agrupadores** acima dele — para navegação, credenciais e billing.
+
+Exemplos de identidade:
+
+| Provedor | API/Endpoint | Dataset (code) | public_code | Conteúdo |
+|---|---|---|---|---|
+| BigDataCorp | Empresas | `basic_data` | `CAD-PJ` | dados cadastrais PJ |
+| BigDataCorp | Empresas | `ondemand_rf_qsa` | `QSA-PJ` | QSA oficial Receita |
+| BigDataCorp | Pessoas | `basic_data` | `CAD-PF` | dados cadastrais PF |
+| BigDataCorp | Pessoas | `political_involvement` | `PEP-PF` | PEP |
+| QiTech | FIDC | `fidc-estoque` | — | estoque de recebíveis |
+| Bitfin | Carteira | `carteira` | — | posição da carteira |
+| Serasa PJ | Relatório | `relatorio_pj` | — | business information report |
+
+> White-label: Provedor/API/dataset_code são **internos** (vendor); o
+> tenant/agente só vê o `public_code` + rótulos. A gestão (admin/maintainer) vê a
+> hierarquia completa.
 
 ---
 
@@ -196,8 +220,9 @@ genérico. Ver decisão aberta 14.1.)
 | Coluna | Tipo | Nota |
 |---|---|---|
 | id | uuid | |
-| source_type | text | `bdc` / `qitech` / `bitfin` / `serasa_pj` … |
-| dataset_code | text | código técnico/neutro do dataset |
+| provider | text | `bdc` / `qitech` / `bitfin` / `serasa_pj` … (agrupador 1) |
+| api_endpoint | text | `empresas` / `pessoas` / `fidc` … (agrupador 2 — ver 3.1) |
+| dataset_code | text | código técnico do dataset (onde os campos vivem) |
 | public_code | text null | white-label tenant-facing (quando aplicável) |
 | version | int | versão do contrato (imutável — ver 7.3) |
 | status | enum | `draft` / `active` / `archived` |
@@ -205,9 +230,15 @@ genérico. Ver decisão aberta 14.1.)
 | description | text | |
 | tenant_id | uuid null | **Começa sempre global (NULL).** Override por tenant é futuro (ver 14.3) |
 
-`(source_type, dataset_code, version)` UNIQUE. **Tabela NOVA e genérica**
-(decisão 14.1) — não estende `provedor_dados_dataset`; este último (white-label
-BDC) apenas **linka** para o contrato via `public_code`.
+`(provider, api_endpoint, dataset_code, version)` UNIQUE. **Tabela NOVA e
+genérica** (decisão 14.1) — não estende `provedor_dados_dataset`; este último
+(white-label BDC) apenas **linka** para o contrato via `public_code`.
+
+> Provedor + API são **agrupadores** (seção 3.1), usados para navegação na UI,
+> credenciais e billing. Metadados de provedor (base_url, credencial) já vivem no
+> catálogo de provedores existente; aqui carregamos `provider` + `api_endpoint`
+> como atributos do contrato para não fragmentar a resolução. Se a navegação
+> pedir, promovem-se a tabelas próprias (`data_provider` / `provider_api`).
 
 ### 7.2 `dataset_field` — campo do contrato (N por dataset)
 
@@ -395,6 +426,68 @@ qualquer fonte — em vez de N tratamentos artesanais.
 
 > Todas as decisões de arquitetura estão resolvidas. Doc estável — pronto para
 > a Fase 1 (implementação).
+
+---
+
+## 15. Gestão (UI)
+
+Toda a governança vive no **módulo Admin**, agrupada por domínio na sidebar
+(L2), cada tela nascendo de um pattern canônico (`DataTableShell` /
+`ListagemCrudInline` / `ListagemCrudCards`). Mapa de telas:
+
+| Grupo | Telas |
+|---|---|
+| **IA / Agentes** | Agentes & Personas · Prompts · Playbooks · Tools/Checks · Provedores LLM · Assinaturas · Uso · Conversas |
+| **Dados / Integrações** | Provedores de dados · **Contratos de dados (campos)** · Sincronizações/Cobertura · Catálogo de datasets |
+| **Crédito** | Política (CNAEs/limites) · Templates de documento · Checks |
+| **Plataforma** | Tenants · Usuários · Permissões/Módulos |
+
+### 15.1 Navegação dos Contratos (Provedor → API → Dataset → Campo)
+
+A hierarquia da seção 3.1 vira a navegação:
+
+```
+Admin › Dados › Contratos
+  Provedor:  [ BigDataCorp ▾ ]
+  API:       [ Empresas ▾ ]        (Empresas · Pessoas · Notas Fiscais…)
+  Dataset:   [ basic_data → CAD-PJ ▾ ]   v3 (ativa) ●
+  → tabela de CAMPOS (abaixo)
+```
+
+### 15.2 Tela de curadoria de campos (o centro)
+
+```
+Admin › Dados › Contratos   BDC › Empresas › basic_data (CAD-PJ)   v3 (ativa) ●
+──────────────────────────────────────────────────────────────────────────────
+⚠ 2 campos novos não classificados        [ Revisar ]     [ + Nova versão ]
+
+Buscar…   Categoria ▾   Sensibilidade ▾   ☐ só não classificados
+                                                        │ projeção p/ superfície
+Campo                  Rótulo (pt-BR)     Cat.    Fato   │ Silv Tela Tool Agt Chk
+TaxIdStatus            Situação cadastral situação fato  │  ☑   ☑    ☑   ☑   ☑
+FoundedDate            Data de fundação   situação fato  │  ☑   ☑    ☑   ☑   ☑
+LegalNature.Activity   Natureza jurídica  identid. ctx   │  ☐   ☑    ☑   ☑   ☐
+Activities[].Code      CNAE (código)      atividade fato │  ☑   ☑    ☑   ☑   ☑
+HistoricalData…        Histórico          histórico ctx  │  ☐   ☑    ☐   ☑   ☐  🆕
+```
+
+Drill por campo (DrillDownSheet): `field_path`, tipo, sensibilidade,
+proveniência · **Rótulo pt-BR** + **Descrição/glossário** (vira o dicionário do
+agente) · Categoria · Fato/Contexto · os **5 toggles** com as regras embutidas
+(Check ⇒ liga Silver; Agente default = Tool) · **valor de exemplo de uma
+consulta real** ao lado (curar vendo o dado, não no abstrato).
+
+Salvar = nova versão imutável → **Ativar** (1 clique, rollback). **Inbox de
+campos novos** (🆕) dirige a ação.
+
+### 15.3 Princípios de UX
+
+- **Mesma gramática** de toda gestão: tabela + filtro + drill + versão ativa.
+- **Default transparente:** campo novo aparece 🆕 (mostra+sinaliza), nada some
+  sem o usuário ver.
+- **Efeito visível:** as 5 colunas de toggle mostram, numa olhada, pra onde cada
+  campo vai; opcional "preview" da projeção (tela/tool/agente).
+- **Sem deploy:** tudo em DB, versionado.
 
 ---
 
