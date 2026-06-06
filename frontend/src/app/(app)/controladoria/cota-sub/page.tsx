@@ -1162,14 +1162,17 @@ function CotaSubPageInner() {
             />
           ) : (
             <div className="flex flex-col gap-3">
-              {/* Strip de saude QiTech — visivel em todas as sub-tabs.
-                  8/8 ready/may_change colapsa para pill compacta. */}
-              <QiTechCoverageStrip
-                date={dayIso}
-                entries={readiness.entries}
-                loading={readiness.isLoading}
-                onBackfill={handleForceBackfill}
-              />
+              {/* Strip de saude QiTech — nas tabs SEM band de KPI. No "Resumo do
+                  dia" o status dos reports (9/9) ja aparece como pill no band, entao
+                  o strip e redundante e fica oculto. */}
+              {activeTab !== "resumo" && (
+                <QiTechCoverageStrip
+                  date={dayIso}
+                  entries={readiness.entries}
+                  loading={readiness.isLoading}
+                  onBackfill={handleForceBackfill}
+                />
+              )}
 
               <ActiveBackfillJobsPanel fundoId={fundoId} dayIso={dayIso} />
 
@@ -1182,8 +1185,9 @@ function CotaSubPageInner() {
                 <>
                   {activeTab === "resumo" && (
                     <div className="flex flex-col gap-3">
-                      {/* Z1 — band de KPI (handoff): Cota Sub · Variação · PL Sub ·
-                          Reports (status dentro do tile) + reconciliação/atenções. */}
+                      {/* Z1 — band de KPI (handoff): PL Sub · Variação do dia ·
+                          Variação % (todos MEC) + status pills (reports + MEC) e
+                          resumo de atenções à direita. */}
                       <CotaSubStatusBand
                         resumo={resumoQuery.data}
                         reportEntries={readiness.entries}
