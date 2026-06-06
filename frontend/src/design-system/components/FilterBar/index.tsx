@@ -174,19 +174,23 @@ interface FilterChipProps {
   active?:    boolean
   /** Optional leading icon (Remix Icon component). */
   icon?:      RemixiconComponentType
+  /** Disabled: greyed-out, non-interactive, popover never opens. */
+  disabled?:  boolean
   children?:  React.ReactNode
   className?: string
 }
 
-export function FilterChip({ label, value, active = false, icon: Icon, children, className }: FilterChipProps) {
+export function FilterChip({ label, value, active = false, icon: Icon, disabled = false, children, className }: FilterChipProps) {
   const trigger = (
     <button
       type="button"
+      disabled={disabled}
       className={cx(
         "inline-flex h-[26px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2.5 text-[13px]",
         "transition-colors duration-100",
         // A1b: estado ativo NAO muda fundo. Sinal e o dot laranja a esquerda + value font-semibold.
         "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 dark:hover:bg-gray-900",
+        "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white dark:disabled:hover:bg-gray-950",
         focusRing,
         className,
       )}
@@ -225,7 +229,7 @@ export function FilterChip({ label, value, active = false, icon: Icon, children,
     </button>
   )
 
-  if (!children) return trigger
+  if (!children || disabled) return trigger
 
   return (
     <Popover>
