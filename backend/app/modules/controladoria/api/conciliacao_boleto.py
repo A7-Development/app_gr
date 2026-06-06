@@ -34,6 +34,9 @@ router = APIRouter(
 )
 
 _Guard = Depends(require_module(Module.CONTROLADORIA, Permission.READ))
+# Disparar a coleta/reprocessamento e acao de escrita (ingere arquivos + reescreve
+# a vigente). Exige WRITE; READ basta para visualizar a conciliacao.
+_GuardWrite = Depends(require_module(Module.CONTROLADORIA, Permission.WRITE))
 
 
 def _mapear_linha(linha: LinhaConciliacao) -> LinhaConciliacaoSchema:
@@ -107,3 +110,18 @@ async def conciliacao_banco_cobrador(
         resumo=_resumir(result),
         linhas=[_mapear_linha(linha) for linha in result.linhas],
     )
+
+
+@router.post("/sync")
+async def disparar_sync(
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    _: None = _GuardWrite,
+) -> dict:
+    """Dispara a coleta/reprocessamento da cobranca para o TENANT (botao da
+    pagina). Le os arquivos CNAB da inbox -> bronze -> timeline -> vigente. Banco
+    e UA saem dos arquivos/titulos: o usuario NAO define UA. Retorna o resumo
+    (arquivos novos, eventos, boletos ativos). Cross-modulo via public.py (§11.3).
+    """
+    from app.modules.integracoes.public import run_cobranca_manual_sync
+
+    return await run_cobranca_manual_sync(principal.tenant_id)
