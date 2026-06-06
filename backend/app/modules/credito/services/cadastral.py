@@ -48,6 +48,27 @@ class CadastralEnrichmentOutcome:
     errors: list[str]
 
 
+def _bdc_text(value: Any) -> str | None:
+    """Normaliza campo BDC para string.
+
+    O BDC as vezes devolve um campo como OBJETO em vez de string — ex.:
+    `LegalNature` = {"Code": "2062", "Activity": "SOCIEDADE EMPRESARIA LIMITADA"}.
+    Renderizar esse objeto cru na UI quebra o React (#31 — objeto como filho).
+    Extrai a descricao textual; None quando vazio/ausente.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, dict):
+        for key in ("Activity", "Description", "Name", "Text", "Value", "Label"):
+            v = value.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return None
+    return str(value)
+
+
 def _cnae_view(cnaes: Any) -> tuple[dict | None, list[dict]]:
     """Separa o CNAE principal das secundárias (silver `cnaes`)."""
     if not isinstance(cnaes, list):
@@ -110,8 +131,8 @@ async def load_cadastral_silver_view(
         "encontrado": True,
         "enriquecido": enriquecido,
         "cnpj": target.cnpj,
-        "razao_social": basic.get("OfficialName") or target.name,
-        "nome_fantasia": basic.get("TradeName"),
+        "razao_social": _bdc_text(basic.get("OfficialName")) or target.name,
+        "nome_fantasia": _bdc_text(basic.get("TradeName")),
         "situacao_cadastral": target.tax_status,
         "data_fundacao": (
             target.founding_date.isoformat() if target.founding_date else None
@@ -126,9 +147,9 @@ async def load_cadastral_silver_view(
         # Campos adicionais do silver (defensivos — ausentes => None). Nomes
         # tenant-facing; o blob de origem é vendor-shaped mas o VALOR é da
         # empresa do tenant.
-        "regime_tributario": basic.get("TaxRegime"),
-        "natureza_juridica": basic.get("LegalNature"),
-        "porte": basic.get("CompanySize") or basic.get("Size"),
+        "regime_tributario": _bdc_text(basic.get("TaxRegime")),
+        "natureza_juridica": _bdc_text(basic.get("LegalNature")),
+        "porte": _bdc_text(basic.get("CompanySize") or basic.get("Size")),
     }
 
 
