@@ -158,6 +158,9 @@ class VariacaoResumoResponse(BaseModel):
     data:          date
     data_anterior: date
 
+    # Valor UNITARIO da cota Sub no D0 (MEC valor_da_cota) — headline da band KPI.
+    cota_valor_d0: Decimal | None = Field(default=None, description="Valor unitario da cota Sub em D0 (MEC).")
+
     # ── Ancoras do waterfall (MEC = oficial) ────────────────────────────────
     pl_sub_mec_d1: Decimal = Field(description="PL Sub D-1 lido do MEC (ancora inicial do waterfall).")
     pl_sub_mec_d0: Decimal = Field(description="PL Sub D0 lido do MEC (ancora final).")
