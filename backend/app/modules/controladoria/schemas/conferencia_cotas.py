@@ -91,7 +91,8 @@ class ConferenciaCotasResponse(BaseModel):
                     ">0 reduz o PL Sub."
     )
     capital_liquido_prioritarias: Decimal = Field(
-        description="Σ efeito_capital das prioritarias (Sr+Mez). >0 = aporte que diluiu a Sub."
+        description="Σ efeito_capital das prioritarias (Sr+Mez). >0 = aporte (NEUTRO no "
+                    "PL Sub em R$; muda so o % de subordinacao)."
     )
 
     # ── Obrigacoes com Cotistas (CPR capital_cotista) ───────────────────────

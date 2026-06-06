@@ -30,7 +30,7 @@ DriverKey = Literal[
     "despesa",                 # apropriacao de despesa (Contas a Pagar)
     "despesa_nao_provisionada",# excesso de pagamento s/ provisao (bate na cota)
     "pdd",                     # constituicao/reversao de PDD
-    "capital_cotista",         # aporte/resgate que diluiu/concentrou a Sub
+    "capital_cotista",         # aporte/resgate (neutro no PL Sub; muda o % de subordinacao)
     "aplicacoes",              # rendimento DI / TPF
     "notas_comerciais",        # carrego/eventos de NC
     "giro_reclassificacao",    # movimentacao DC<->caixa<->DI (NEUTRO, contexto)

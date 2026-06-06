@@ -60,7 +60,12 @@ export function DrillCotasContent({ fundoId, data, dataAnterior }: Props) {
     )
   }
   const d = q.data
-  const classes = [...d.classes].sort((a, b) => (ORDEM[a.classe] ?? 9) - (ORDEM[b.classe] ?? 9))
+  // Esta tabela explica as PRIORITARIAS (passivo que compoe a Sub). A propria
+  // Sub Jr e o residual que a pagina calcula — mostra-la aqui como "carrego
+  // positivo" nao faz sentido (seria circular). Filtra fora.
+  const classes = [...d.classes]
+    .filter((c) => c.classe !== "sub_jr")
+    .sort((a, b) => (ORDEM[a.classe] ?? 9) - (ORDEM[b.classe] ?? 9))
 
   return (
     <div className="flex flex-col gap-5">
@@ -101,7 +106,7 @@ export function DrillCotasContent({ fundoId, data, dataAnterior }: Props) {
           Carrego que a Sub paga às prioritárias:{" "}
           <strong className="text-gray-900 dark:text-gray-100">{fmtBRL.format(d.custo_prioritarias_valorizacao)}</strong>
           {Math.abs(d.capital_liquido_prioritarias) >= 1 && (
-            <> · Capital líquido (diluiu/concentrou a Sub):{" "}
+            <> · Capital líquido das prioritárias (aporte/resgate — neutro no PL Sub):{" "}
               <strong className="text-gray-900 dark:text-gray-100">{fmtBRLSigned(d.capital_liquido_prioritarias)}</strong>
             </>
           )}
