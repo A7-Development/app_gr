@@ -4883,6 +4883,15 @@ export const controladoria = {
     }
   },
 
+  // Dispara a coleta/reprocessamento da cobranca (por tenant). Roda em
+  // background no servidor (~1 min); retorna 202 "iniciado" na hora.
+  conciliacaoBancoCobradorSync: async (): Promise<{ status: string }> => {
+    return apiClient.post<{ status: string }>(
+      `/controladoria/conciliacao/banco-cobrador/sync`,
+      {},
+    )
+  },
+
   cotaSubDatasDisponiveis: async (
     fundoId: string,
   ): Promise<string[]> => {

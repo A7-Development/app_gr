@@ -29,11 +29,13 @@ import {
   RiFilter3Line,
   RiInboxArchiveLine,
   RiPriceTag3Line,
+  RiRefreshLine,
   RiTimeLine,
   type RemixiconComponentType,
 } from "@remixicon/react"
 
 import { cx } from "@/lib/utils"
+import { Button } from "@/components/tremor/Button"
 import { Card } from "@/components/tremor/Card"
 import { PageHeader } from "@/design-system/components/PageHeader"
 import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
@@ -48,7 +50,10 @@ import { AIPanel, useAIPanel } from "@/design-system/components/AIPanel"
 import { cardTokens } from "@/design-system/tokens/card"
 import { ProvenanceFooter } from "@/components/bi/ProvenanceFooter"
 import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
-import { useConciliacaoBancoCobrador } from "@/lib/hooks/controladoria"
+import {
+  useConciliacaoBancoCobrador,
+  useConciliacaoBancoCobradorSync,
+} from "@/lib/hooks/controladoria"
 import { biMetadata } from "@/lib/api-client"
 import type {
   LinhaConciliacaoBoleto,
@@ -130,6 +135,23 @@ export default function ConciliacaoBancoCobradorPage() {
 
   const q = useConciliacaoBancoCobrador()
   const conc = q.data
+
+  // Sincronizacao manual (por tenant). O servidor roda em background (~1 min);
+  // re-busca a conciliacao quando provavelmente terminou. Botao desabilitado +
+  // "Sincronizando…" durante a janela pra nao disparar duas vezes.
+  const syncMut = useConciliacaoBancoCobradorSync()
+  const [sincronizando, setSincronizando] = React.useState(false)
+  const handleSync = React.useCallback(() => {
+    syncMut.mutate(undefined, {
+      onSuccess: () => {
+        setSincronizando(true)
+        window.setTimeout(() => {
+          void q.refetch()
+          setSincronizando(false)
+        }, 70_000)
+      },
+    })
+  }, [syncMut, q])
 
   // Nome amigavel dos produtos ("Faturização (FAT)") — fonte canonica.
   const produtosMetaQuery = useQuery({
@@ -300,23 +322,40 @@ export default function ConciliacaoBancoCobradorPage() {
               searchable
             />
 
-            {/* Frescor (nao-filtro): BITFIN e "agora"; o banco reflete ate o
-                ultimo retorno processado. Nomeia a defasagem D-1 estrutural. */}
-            <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
-              <RiTimeLine className="size-3.5 shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
-              {q.isFetching ? (
-                "Atualizando…"
-              ) : (
-                <>
-                  Carteira <span className="font-medium text-gray-700 dark:text-gray-300">agora</span>
-                  <span className="text-gray-300 dark:text-gray-700">·</span>
-                  Cobrança até{" "}
-                  <span className="font-medium tabular-nums text-gray-700 dark:text-gray-300">
-                    {fmtDateBR(conc?.cobranca_atualizada_ate)}
-                  </span>
-                </>
-              )}
-            </span>
+            <div className="ml-auto flex shrink-0 items-center gap-3">
+              {/* Sincronizar: dispara a coleta/reprocessamento dos arquivos CNAB
+                  da inbox (por tenant; banco/UA saem dos arquivos/titulos). */}
+              <Button
+                variant="secondary"
+                onClick={handleSync}
+                disabled={sincronizando || syncMut.isPending}
+                className="h-[30px] gap-1.5 px-2.5 py-1 text-[13px]"
+              >
+                <RiRefreshLine
+                  className={cx("size-3.5 shrink-0", sincronizando && "animate-spin")}
+                  aria-hidden="true"
+                />
+                {sincronizando ? "Sincronizando…" : "Sincronizar"}
+              </Button>
+
+              {/* Frescor (nao-filtro): BITFIN e "agora"; o banco reflete ate o
+                  ultimo retorno processado. Nomeia a defasagem D-1 estrutural. */}
+              <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+                <RiTimeLine className="size-3.5 shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
+                {q.isFetching ? (
+                  "Atualizando…"
+                ) : (
+                  <>
+                    Carteira <span className="font-medium text-gray-700 dark:text-gray-300">agora</span>
+                    <span className="text-gray-300 dark:text-gray-700">·</span>
+                    Cobrança até{" "}
+                    <span className="font-medium tabular-nums text-gray-700 dark:text-gray-300">
+                      {fmtDateBR(conc?.cobranca_atualizada_ate)}
+                    </span>
+                  </>
+                )}
+              </span>
+            </div>
           </div>
         </div>
 

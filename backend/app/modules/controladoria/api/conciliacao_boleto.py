@@ -7,8 +7,12 @@ estado, sem data-base; a defasagem do banco vai como frescor.
 Auth: require_module(CONTROLADORIA, READ). Tenant scope via principal.
 """
 
+import asyncio
+import os
+import sys
 from collections import defaultdict
 from decimal import Decimal
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -112,16 +116,37 @@ async def conciliacao_banco_cobrador(
     )
 
 
-@router.post("/sync")
+_RUNNING_SYNC: set[asyncio.Task] = set()  # ref forte p/ evitar GC (reap do filho)
+
+
+@router.post("/sync", status_code=202)
 async def disparar_sync(
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     _: None = _GuardWrite,
 ) -> dict:
     """Dispara a coleta/reprocessamento da cobranca para o TENANT (botao da
     pagina). Le os arquivos CNAB da inbox -> bronze -> timeline -> vigente. Banco
-    e UA saem dos arquivos/titulos: o usuario NAO define UA. Retorna o resumo
-    (arquivos novos, eventos, boletos ativos). Cross-modulo via public.py (§11.3).
-    """
-    from app.modules.integracoes.public import run_cobranca_manual_sync
+    e UA saem dos arquivos/titulos: o usuario NAO define UA.
 
-    return await run_cobranca_manual_sync(principal.tenant_id)
+    O ciclo e CPU-bound (~45s) -- roda como SUBPROCESS detached (nao no event
+    loop do gr-api, que congelaria todos os requests). Retorna 202 imediatamente;
+    o front re-busca a conciliacao apos alguns segundos. `start_new_session`
+    desacopla do ciclo de vida do gr-api.
+    """
+    backend_root = Path(__file__).resolve().parents[4]  # .../backend
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "scripts.run_cobranca_sync",
+        str(principal.tenant_id),
+        cwd=str(backend_root),
+        env=os.environ.copy(),
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    # Reap em background (nao bloqueia a resposta) -- evita zumbi quando termina.
+    task = asyncio.create_task(proc.wait())
+    _RUNNING_SYNC.add(task)
+    task.add_done_callback(_RUNNING_SYNC.discard)
+    return {"status": "iniciado"}
