@@ -153,7 +153,7 @@ const COMP_COLUMNS: ColumnDef<CompRow, unknown>[] = [
     header: "Detalhe",
     size:   240,
     cell:   (info) => (
-      <span className={cx("block truncate", tableTokens.cellSecondary)}>{info.getValue<string>() || ""}</span>
+      <span className={cx("block truncate", tableTokens.cellSecondary)} title={info.getValue<string>() || ""}>{info.getValue<string>() || ""}</span>
     ),
   }) as ColumnDef<CompRow, unknown>,
   compCol.accessor("value", {
@@ -434,8 +434,8 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
       value: -dec.migracao_wop_total, muted: dec.migracao_wop_n === 0,
     },
     {
-      id: "apropriacao", kind: "bucket", label: "+ Apropriação de juros", sign: "+",
-      detalhe: `${dec.apropriacao_n} papéis na carteira`,
+      id: "apropriacao", kind: "bucket", label: "+ Acrúo de juros (carrego retido)", sign: "+",
+      detalhe: `${dec.apropriacao_n} papéis · mora/antecipada realizam em caixa (ver Resultado)`,
       value: dec.apropriacao_total,
     },
     {
@@ -479,18 +479,40 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="rounded border border-gray-200 p-3 dark:border-gray-800">
               <div className="text-[10px] uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
-                Resultado da carteira · move a cota
+                Resultado da DC · move a cota
               </div>
               <div className={cx("mt-1 text-lg font-semibold tabular-nums", toneClass(resultado))}>
                 {fmtBRLSigned(resultado)}
               </div>
-              <div className="mt-2 space-y-1 text-[11px]">
+
+              {/* Retido no estoque (VP) — casa com a "Composição do estoque" abaixo:
+                  e a unica parte do resultado que fica na carteira (cresce o VP). */}
+              <div className="mt-2 text-[10px] font-medium uppercase tracking-[0.04em] text-gray-400 dark:text-gray-600">
+                Retido no estoque (VP)
+              </div>
+              <div className="mt-1 space-y-1 text-[11px]">
                 {line("carrego", r.carrego_apropriacao)}
-                {r.apropriacao_antecipada > 0 && line("carrego antecipado", r.apropriacao_antecipada)}
-                {r.juros_mora > 0 && line("mora", r.juros_mora)}
-                {r.desconto_concedido > 0 && line("desconto", -r.desconto_concedido)}
                 {Math.abs(r.mutacao_total) >= 1 && line("mutação", r.mutacao_total, { alert: r.mutacao_total < 0 })}
               </div>
+
+              {/* Realizado em caixa — vem de titulos liquidados: o VP saiu em
+                  "Liquidacoes"; o ganho entra no caixa (Tesouraria), nao no estoque. */}
+              {(r.apropriacao_antecipada > 0 || r.juros_mora > 0 || r.desconto_concedido > 0) && (
+                <>
+                  <div className="mt-2 text-[10px] font-medium uppercase tracking-[0.04em] text-gray-400 dark:text-gray-600">
+                    Realizado em caixa → Tesouraria
+                  </div>
+                  <div className="mt-1 space-y-1 text-[11px]">
+                    {r.apropriacao_antecipada > 0 && line("carrego antecipado", r.apropriacao_antecipada)}
+                    {r.juros_mora > 0 && line("mora", r.juros_mora)}
+                    {r.desconto_concedido > 0 && line("desconto", -r.desconto_concedido)}
+                  </div>
+                  <p className="mt-2 text-[10px] leading-snug text-gray-400 dark:text-gray-500">
+                    Títulos liquidados: o VP saiu em “Liquidações”; o ganho
+                    (mora/antecipada) entra no caixa, não no estoque.
+                  </p>
+                </>
+              )}
             </div>
             <div className="rounded border border-dashed border-gray-200 p-3 dark:border-gray-800">
               <div className="text-[10px] uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
