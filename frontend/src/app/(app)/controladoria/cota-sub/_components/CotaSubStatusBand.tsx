@@ -4,7 +4,7 @@
  * CotaSubStatusBand — banda de KPI do topo da aba "Resumo do dia" (Z1).
  *
  * Spec do handoff (card de KPI): banda horizontal de KPIs
- *   COTA SUB · DD/MM  |  VARIAÇÃO DO DIA  |  VARIAÇÃO %  |  PL SUB
+ *   PL SUB · DD/MM  |  VARIAÇÃO DO DIA  |  VARIAÇÃO %
  * + indicadores de status à direita (status pills): reports + reconciliacao
  *   MEC ("fecha com o MEC") + resumo de atenções do dia.
  *
@@ -23,8 +23,6 @@ import { cx } from "@/lib/utils"
 import type { VariacaoResumoResponse } from "@/lib/api-client"
 import type { CoverageStripEntry } from "@/design-system/components"
 
-const fmtCota = (v: number) =>
-  v.toLocaleString("pt-BR", { minimumFractionDigits: 8, maximumFractionDigits: 8 })
 const fmtCompact = new Intl.NumberFormat("pt-BR", {
   style: "currency", currency: "BRL", notation: "compact", maximumFractionDigits: 2,
 })
@@ -68,7 +66,7 @@ export function CotaSubStatusBand({ resumo, reportEntries, dataD0, loading }: Co
   if (loading) {
     return (
       <section className="flex flex-wrap items-center gap-x-8 gap-y-2 rounded border border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-950">
-        {[0, 1, 2, 3].map((i) => (
+        {[0, 1, 2].map((i) => (
           <div key={i}>
             <div className="h-3 w-20 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
             <div className="mt-1.5 h-6 w-24 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
@@ -81,10 +79,10 @@ export function CotaSubStatusBand({ resumo, reportEntries, dataD0, loading }: Co
 
   return (
     <section className="flex flex-wrap items-center gap-x-8 gap-y-3 rounded border border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-950">
-      {/* COTA SUB — valor unitario (8 casas) */}
-      <Col label={`Cota Sub · ${fmtDateBr(dataD0)}`}>
+      {/* PL SUB — headline em BRL compacto (R$ X,XXM) */}
+      <Col label={`PL Sub · ${fmtDateBr(dataD0)}`}>
         <span className="text-[23px] font-bold leading-none tracking-[-0.025em] tabular-nums text-gray-900 dark:text-gray-50">
-          {resumo.cota_valor_d0 != null ? fmtCota(resumo.cota_valor_d0) : "—"}
+          {fmtCompact.format(resumo.pl_sub_mec_d0)}
         </span>
       </Col>
 
@@ -97,12 +95,6 @@ export function CotaSubStatusBand({ resumo, reportEntries, dataD0, loading }: Co
       <Col label="Variação %" divider>
         <span className={cx("text-[17px] font-semibold leading-none tabular-nums", variacaoPct != null ? toneText(variacaoPct) : "")}>
           {variacaoPct != null ? fmtPct(variacaoPct) : "—"}
-        </span>
-      </Col>
-
-      <Col label="PL Sub" divider>
-        <span className="text-[17px] font-semibold leading-none tabular-nums text-gray-900 dark:text-gray-50">
-          {fmtCompact.format(resumo.pl_sub_mec_d0)}
         </span>
       </Col>
 
