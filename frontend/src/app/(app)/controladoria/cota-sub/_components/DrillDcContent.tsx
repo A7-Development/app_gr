@@ -24,10 +24,7 @@
 import * as React from "react"
 import {
   RiCalculatorLine,
-  RiArrowRightDownLine,
-  RiArrowRightUpLine,
   RiPlayLine,
-  RiInboxLine,
   RiAlertLine,
   RiArchive2Line,
 } from "@remixicon/react"
@@ -35,14 +32,11 @@ import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 
 import { cx } from "@/lib/utils"
 import { useDrillDc } from "@/lib/hooks/controladoria"
-import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 import { Button } from "@/components/tremor/Button"
 import { DataTable } from "@/design-system/components/DataTable"
 import { tableTokens } from "@/design-system/tokens/table"
 import type {
-  DrillDcAquisicao,
-  DrillDcLiquidacaoPorTipo,
   DrillDcMutacaoPapel,
   DrillDcLiquidacaoParcialPapel,
   DrillDcMigracaoWopPapel,
@@ -54,11 +48,6 @@ import {
   fmtBRLSigned,
   toneClass,
 } from "./drillKit"
-
-const fmtPct = (v: number, base: number): string => {
-  if (Math.abs(base) < 0.005) return "—"
-  return `${((v / base) * 100).toFixed(2).replace(".", ",")}%`
-}
 
 const fmtTaxa = (v: number): string => {
   // taxa_recebivel vem decimal (0,4692739943 = 0,47% ao mes)
@@ -293,72 +282,6 @@ const WOP_COLUMNS: ColumnDef<DrillDcMigracaoWopPapel, unknown>[] = [
   }) as ColumnDef<DrillDcMigracaoWopPapel, unknown>,
 ]
 
-// ── Colunas: Liquidacoes por tipo ─────────────────────────────────────────────
-
-const liqCol = createColumnHelper<DrillDcLiquidacaoPorTipo>()
-
-function buildLiquidacoesColumns(liquidacoesTotal: number): ColumnDef<DrillDcLiquidacaoPorTipo, unknown>[] {
-  return [
-    liqCol.accessor("tipo_movimento", {
-      id: "tipo", header: "Tipo", size: 200,
-      cell: (info) => <TextTrunc value={info.getValue<string>()} />,
-    }) as ColumnDef<DrillDcLiquidacaoPorTipo, unknown>,
-    liqCol.accessor("qtd_papeis", {
-      id: "qtd", header: "Qtd", size: 80, meta: { align: "right" },
-      cell: (info) => <div className={cx("text-right", tableTokens.cellNumberSecondary)}>{info.getValue<number>()}</div>,
-    }) as ColumnDef<DrillDcLiquidacaoPorTipo, unknown>,
-    liqCol.accessor("sum_valor_pago", {
-      id: "pago", header: "Σ valor pago", size: 130, meta: { align: "right" },
-      cell: (info) => <NumCell value={info.getValue<number>()} />,
-    }) as ColumnDef<DrillDcLiquidacaoPorTipo, unknown>,
-    liqCol.accessor("sum_valor_aquisicao", {
-      id: "aquisicao", header: "Σ aquisição", size: 130, meta: { align: "right" },
-      cell: (info) => <NumCell value={info.getValue<number>()} secondary />,
-    }) as ColumnDef<DrillDcLiquidacaoPorTipo, unknown>,
-    liqCol.accessor("ganho_liquido", {
-      id: "ganho", header: "Ganho líquido", size: 130, meta: { align: "right" },
-      cell: (info) => <ToneCell value={info.getValue<number>()} />,
-    }) as ColumnDef<DrillDcLiquidacaoPorTipo, unknown>,
-    liqCol.accessor("sum_valor_pago", {
-      id: "pct", header: "%", size: 70, meta: { align: "right" },
-      cell: (info) => (
-        <div className={cx("text-right", tableTokens.cellMuted)}>{fmtPct(info.getValue<number>(), liquidacoesTotal)}</div>
-      ),
-    }) as ColumnDef<DrillDcLiquidacaoPorTipo, unknown>,
-  ]
-}
-
-// ── Colunas: Aquisicoes do dia ────────────────────────────────────────────────
-
-const aqCol = createColumnHelper<DrillDcAquisicao>()
-
-const AQUISICOES_COLUMNS: ColumnDef<DrillDcAquisicao, unknown>[] = [
-  aqCol.accessor("cedente_nome", {
-    id: "cedente", header: "Cedente", size: 160,
-    cell: (info) => <TextTrunc value={info.getValue<string>()} title={info.row.original.cedente_doc} />,
-  }) as ColumnDef<DrillDcAquisicao, unknown>,
-  aqCol.accessor("sacado_nome", {
-    id: "sacado", header: "Sacado", size: 160,
-    cell: (info) => <TextTrunc value={info.getValue<string>()} title={info.row.original.sacado_doc} />,
-  }) as ColumnDef<DrillDcAquisicao, unknown>,
-  aqCol.accessor("seu_numero", {
-    id: "titulo", header: "Título", size: 100,
-    cell: (info) => <MonoTrunc value={info.getValue<string>()} title={info.row.original.numero_documento} />,
-  }) as ColumnDef<DrillDcAquisicao, unknown>,
-  aqCol.accessor("valor_compra", {
-    id: "valor_compra", header: "Valor compra", size: 130, meta: { align: "right" },
-    cell: (info) => <NumCell value={info.getValue<number>()} />,
-  }) as ColumnDef<DrillDcAquisicao, unknown>,
-  aqCol.accessor("valor_vencimento", {
-    id: "valor_venc", header: "Valor venc.", size: 130, meta: { align: "right" },
-    cell: (info) => <NumCell value={info.getValue<number>()} secondary />,
-  }) as ColumnDef<DrillDcAquisicao, unknown>,
-  aqCol.accessor("prazo_recebivel", {
-    id: "prazo", header: "Prazo", size: 80, meta: { align: "right" },
-    cell: (info) => <div className={cx("text-right", tableTokens.cellMuted)}>{info.getValue<number>()}d</div>,
-  }) as ColumnDef<DrillDcAquisicao, unknown>,
-]
-
 // ── Componente ───────────────────────────────────────────────────────────────
 
 export type DrillDcContentProps = {
@@ -369,9 +292,7 @@ export type DrillDcContentProps = {
 
 export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentProps) {
   const q = useDrillDc(fundoId, data, dataAnterior)
-  const [aquisicoesExpanded, setAquisicoesExpanded] = React.useState(false)
   const [mutacaoExpanded, setMutacaoExpanded] = React.useState(false)
-  const AQUISICOES_PREVIEW = 8
   const MUTACAO_PREVIEW = 5
 
   if (q.isError) {
@@ -394,14 +315,9 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
 
   const d = q.data
   const dec = d.decomposicao
-  const aquisicoesVisiveis = aquisicoesExpanded ? d.aquisicoes : d.aquisicoes.slice(0, AQUISICOES_PREVIEW)
-  const totalAquisicoes = d.aquisicoes.length
   const mutacaoVisivel = mutacaoExpanded ? d.mutacao_papeis : d.mutacao_papeis.slice(0, MUTACAO_PREVIEW)
 
   const dcFecha = Math.abs(dec.residuo) < RESIDUO_OK_BRL
-  const liqGanhoTotal = d.liquidacoes_por_tipo.reduce((s, t) => s + t.ganho_liquido, 0)
-  const liqAquisicaoTotal = d.liquidacoes_por_tipo.reduce((s, t) => s + t.sum_valor_aquisicao, 0)
-  const aquisVencTotal = d.aquisicoes.reduce((s, a) => s + a.valor_vencimento, 0)
   const mutVpD1Total = d.mutacao_papeis.reduce((s, p) => s + p.vp_d1, 0)
   const mutVpD0Total = d.mutacao_papeis.reduce((s, p) => s + p.vp_d0, 0)
   const mutDeltaTotal = d.mutacao_papeis.reduce((s, p) => s + p.delta_vp, 0)
@@ -445,8 +361,6 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
     },
   ]
 
-  const liquidacoesColumns = buildLiquidacoesColumns(d.liquidacoes_total)
-
   return (
     <div className="flex flex-col gap-5">
       {/* ── Selo de fechamento ── */}
@@ -459,73 +373,45 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
           : `Diverge · resíduo ${fmtBRLSigned(dec.residuo)}`}
       </DrillClosureBadge>
 
-      {/* ── 0. Resultado do dia (smart) — separa GIRO (neutro) de VALUE-MOVER ──
-          O backend ja entrega resultado_do_dia; ate 2026-05-31 a UI ignorava e
-          mostrava o waterfall plano (DC +R$521k parecia a noticia, mas era 98%
-          giro). Aqui o que MOVE a cota fica em cima; o giro, neutro, ao lado. */}
+      {/* ── 0. Resultado do dia — o que MOVE a cota, com onde cada parte realiza.
+          Carrego/mutação ficam no estoque (cresce o VP); carrego antecipado, mora
+          e desconto vem de titulos liquidados → realizam em caixa (Tesouraria). */}
       {(() => {
         const r = d.resultado_do_dia
         const resultado =
           r.carrego_apropriacao + r.apropriacao_antecipada + r.juros_mora
           - r.desconto_concedido + r.mutacao_total
-        const giroLiq = r.giro_aquisicoes - r.giro_liquidacoes
-        const line = (label: string, v: number, opts?: { muted?: boolean; alert?: boolean }) => (
+        const temCaixa =
+          r.apropriacao_antecipada > 0 || r.juros_mora > 0 || r.desconto_concedido > 0
+        const line = (label: string, tag: string, v: number, opts?: { alert?: boolean }) => (
           <div className="flex items-center justify-between">
-            <span className={cx(tableTokens.cellSecondary, opts?.alert && "text-amber-700 dark:text-amber-400")}>{label}</span>
-            <span className={cx("tabular-nums", opts?.muted ? "text-gray-500 dark:text-gray-400" : toneClass(v))}>{fmtBRLSigned(v)}</span>
+            <span className={cx(tableTokens.cellSecondary, opts?.alert && "text-amber-700 dark:text-amber-400")}>
+              {label} <span className="text-gray-400 dark:text-gray-600">({tag})</span>
+            </span>
+            <span className={cx("tabular-nums", toneClass(v))}>{fmtBRLSigned(v)}</span>
           </div>
         )
         return (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="rounded border border-gray-200 p-3 dark:border-gray-800">
-              <div className="text-[10px] uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
-                Resultado da DC · move a cota
-              </div>
-              <div className={cx("mt-1 text-lg font-semibold tabular-nums", toneClass(resultado))}>
-                {fmtBRLSigned(resultado)}
-              </div>
-
-              {/* Retido no estoque (VP) — casa com a "Composição do estoque" abaixo:
-                  e a unica parte do resultado que fica na carteira (cresce o VP). */}
-              <div className="mt-2 text-[10px] font-medium uppercase tracking-[0.04em] text-gray-400 dark:text-gray-600">
-                Retido no estoque (VP)
-              </div>
-              <div className="mt-1 space-y-1 text-[11px]">
-                {line("carrego", r.carrego_apropriacao)}
-                {Math.abs(r.mutacao_total) >= 1 && line("mutação", r.mutacao_total, { alert: r.mutacao_total < 0 })}
-              </div>
-
-              {/* Realizado em caixa — vem de titulos liquidados: o VP saiu em
-                  "Liquidacoes"; o ganho entra no caixa (Tesouraria), nao no estoque. */}
-              {(r.apropriacao_antecipada > 0 || r.juros_mora > 0 || r.desconto_concedido > 0) && (
-                <>
-                  <div className="mt-2 text-[10px] font-medium uppercase tracking-[0.04em] text-gray-400 dark:text-gray-600">
-                    Realizado em caixa → Tesouraria
-                  </div>
-                  <div className="mt-1 space-y-1 text-[11px]">
-                    {r.apropriacao_antecipada > 0 && line("carrego antecipado", r.apropriacao_antecipada)}
-                    {r.juros_mora > 0 && line("mora", r.juros_mora)}
-                    {r.desconto_concedido > 0 && line("desconto", -r.desconto_concedido)}
-                  </div>
-                  <p className="mt-2 text-[10px] leading-snug text-gray-400 dark:text-gray-500">
-                    Títulos liquidados: o VP saiu em “Liquidações”; o ganho
-                    (mora/antecipada) entra no caixa, não no estoque.
-                  </p>
-                </>
-              )}
+          <div className="rounded border border-gray-200 p-3 dark:border-gray-800">
+            <div className="text-[10px] uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
+              Resultado da DC · move a cota
             </div>
-            <div className="rounded border border-dashed border-gray-200 p-3 dark:border-gray-800">
-              <div className="text-[10px] uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
-                Giro · troca DC⇄caixa · neutro
-              </div>
-              <div className="mt-1 text-lg font-semibold tabular-nums text-gray-500 dark:text-gray-400">
-                {fmtBRL.format(giroLiq)}
-              </div>
-              <div className="mt-2 space-y-1 text-[11px]">
-                {line("compra", r.giro_aquisicoes, { muted: true })}
-                {line("liquidação", -r.giro_liquidacoes, { muted: true })}
-              </div>
+            <div className={cx("mt-1 text-lg font-semibold tabular-nums", toneClass(resultado))}>
+              {fmtBRLSigned(resultado)}
             </div>
+            <div className="mt-2 space-y-1 text-[11px]">
+              {line("Carrego", "estoque", r.carrego_apropriacao)}
+              {r.apropriacao_antecipada > 0 && line("Carrego antecipado", "caixa", r.apropriacao_antecipada)}
+              {r.juros_mora > 0 && line("Mora", "caixa", r.juros_mora)}
+              {r.desconto_concedido > 0 && line("Desconto", "caixa", -r.desconto_concedido)}
+              {Math.abs(r.mutacao_total) >= 1 && line("Mutação", "estoque", r.mutacao_total, { alert: r.mutacao_total < 0 })}
+            </div>
+            {temCaixa && (
+              <p className="mt-2 text-[10px] leading-snug text-gray-400 dark:text-gray-500">
+                Títulos liquidados: o VP saiu em “Liquidações”; o ganho
+                (mora/antecipada) entra no caixa, não no estoque.
+              </p>
+            )}
           </div>
         )
       })()}
@@ -685,87 +571,6 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
         </section>
       )}
 
-      {/* ── 4. Liquidações por tipo ── */}
-      <section>
-        <DrillSectionTitle
-          icon={RiArrowRightUpLine}
-          label="Liquidações por tipo"
-          counter={`${d.liquidacoes_qtd} título(s) · ${fmtBRL.format(d.liquidacoes_total)}`}
-        />
-        {d.liquidacoes_por_tipo.length === 0 ? (
-          <EmptyState
-            icon={RiInboxLine}
-            title="Sem liquidações no dia"
-            description="Nenhum recebível foi liquidado entre D-1 e D0."
-            className="mt-2"
-          />
-        ) : (
-          <div className="mt-2">
-            <DataTable<DrillDcLiquidacaoPorTipo>
-              {...DT_PROPS}
-              data={d.liquidacoes_por_tipo}
-              columns={liquidacoesColumns}
-              renderFooter={() => (
-                <tr className={FOOT_ROW}>
-                  <td className="px-3"><span className={tableTokens.cellStrong}>Total</span></td>
-                  <td className="px-3"><div className={cx("text-right", tableTokens.cellNumberSecondary)}>{d.liquidacoes_qtd}</div></td>
-                  <td className="px-3"><div className={cx("text-right font-semibold", tableTokens.cellNumber)}>{fmtBRL.format(d.liquidacoes_total)}</div></td>
-                  <td className="px-3"><div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(liqAquisicaoTotal)}</div></td>
-                  <td className="px-3"><div className={cx("text-right text-xs font-semibold tabular-nums", toneClass(liqGanhoTotal))}>{fmtBRLSigned(liqGanhoTotal)}</div></td>
-                  <td className="px-3" />
-                </tr>
-              )}
-            />
-          </div>
-        )}
-      </section>
-
-      {/* ── 5. Aquisições do dia ── */}
-      <section>
-        <DrillSectionTitle
-          icon={RiArrowRightDownLine}
-          label="Aquisições do dia"
-          counter={`${totalAquisicoes} título(s) · ${fmtBRL.format(d.aquisicoes_total)}`}
-        />
-        {totalAquisicoes === 0 ? (
-          <EmptyState
-            icon={RiInboxLine}
-            title="Sem aquisições no dia"
-            description="Nenhum recebível novo entrou na carteira em D0."
-            className="mt-2"
-          />
-        ) : (
-          <>
-            <div className="mt-2">
-              <DataTable<DrillDcAquisicao>
-                {...DT_PROPS}
-                data={aquisicoesVisiveis}
-                columns={AQUISICOES_COLUMNS}
-                renderFooter={() => (
-                  <tr className={FOOT_ROW}>
-                    <td colSpan={3} className="px-3"><span className={tableTokens.cellStrong}>Total · {totalAquisicoes} título(s)</span></td>
-                    <td className="px-3"><div className={cx("text-right font-semibold", tableTokens.cellNumber)}>{fmtBRL.format(d.aquisicoes_total)}</div></td>
-                    <td className="px-3"><div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(aquisVencTotal)}</div></td>
-                    <td className="px-3" />
-                  </tr>
-                )}
-              />
-            </div>
-            {totalAquisicoes > AQUISICOES_PREVIEW && (
-              <button
-                type="button"
-                onClick={() => setAquisicoesExpanded((v) => !v)}
-                className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-              >
-                <RiPlayLine className={cx("size-3 transition-transform", aquisicoesExpanded && "rotate-90")} aria-hidden="true" />
-                {aquisicoesExpanded
-                  ? `Mostrar apenas as ${AQUISICOES_PREVIEW} primeiras`
-                  : `Mostrar todas as ${totalAquisicoes} aquisições`}
-              </button>
-            )}
-          </>
-        )}
-      </section>
     </div>
   )
 }
