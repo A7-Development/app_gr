@@ -19,7 +19,7 @@ isso os ambiguos (27/29/32/33/34) entram como info sem risco.
 
 from __future__ import annotations
 
-from app.warehouse.cnab_raw_arquivo import BANCO_BRADESCO, BANCO_GRAFENO
+from app.warehouse.cnab_raw_arquivo import BANCO_BMP, BANCO_BRADESCO, BANCO_VORTX
 
 # Versao da taxonomia do decoder. Bumpar ao mudar o mapeamento codigo->evento
 # (re-decode atualiza wh_boleto_evento.decoded_by_version). Rastreabilidade §14.
@@ -80,12 +80,14 @@ _BRADESCO: dict[str, tuple[str, str]] = {
     "34": (TIPO_RETIRADO_CARTORIO, EFEITO_INFO),  # 14 retirado de cartorio, mantido
 }
 
-# Grafeno (codigo 274/310): tabela a montar quando o parser Grafeno entrar.
-_GRAFENO: dict[str, tuple[str, str]] = {}
+# BMP (274) e Vortx (310): tabelas a montar quando os parsers entrarem (Fase 2).
+_BMP: dict[str, tuple[str, str]] = {}
+_VORTX: dict[str, tuple[str, str]] = {}
 
 _POR_BANCO: dict[str, dict[str, tuple[str, str]]] = {
     BANCO_BRADESCO: _BRADESCO,
-    BANCO_GRAFENO: _GRAFENO,
+    BANCO_BMP: _BMP,
+    BANCO_VORTX: _VORTX,
 }
 
 _DEFAULT = (TIPO_OUTRO, EFEITO_INFO)

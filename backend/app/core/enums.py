@@ -133,7 +133,11 @@ class SourceType(enum.StrEnum):
     COBRANCA = "cobranca"
     COBRANCA_BRADESCO = "cobranca:bradesco"
     COBRANCA_ITAU = "cobranca:itau"
-    COBRANCA_GRAFENO = "cobranca:grafeno"
+    # BMP (codigo 274) e Vortx (codigo 310) -- identidades reais detectadas pelo
+    # header CNAB (antes rotuladas erroneamente como "grafeno"). native_enum=
+    # False (VARCHAR) -> adicionar valor nao exige migration.
+    COBRANCA_BMP = "cobranca:bmp"
+    COBRANCA_VORTX = "cobranca:vortx"
     SELF_DECLARED = "self_declared"
     PEER_DECLARED = "peer_declared"
     INTERNAL_NOTE = "internal_note"

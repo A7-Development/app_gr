@@ -98,7 +98,10 @@ async def sync_cobranca(
 
     for raw in raws:
         tipo = _classificar_tipo(raw.conteudo)
-        det = detectar_banco(raw.conteudo) if tipo == TIPO_ARQUIVO_RETORNO else None
+        # Deteccao header-based vale para remessa E retorno (mesmas posicoes no
+        # header CNAB). Remessa segue so-bronze (parse-later), mas ja gravada
+        # com o banco correto -- nao mais "desconhecido".
+        det = detectar_banco(raw.conteudo)
         banco = det.banco if det else BANCO_DESCONHECIDO
         layout = det.layout if det else "desconhecido"
 
