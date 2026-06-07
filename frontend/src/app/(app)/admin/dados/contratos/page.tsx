@@ -11,9 +11,11 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { RiSaveLine, RiSparkling2Line, RiStackLine } from "@remixicon/react"
+import { RiArrowLeftLine, RiSaveLine, RiSparkling2Line, RiStackLine } from "@remixicon/react"
 
 import { Button } from "@/components/tremor/Button"
 import { Checkbox } from "@/components/tremor/Checkbox"
@@ -38,7 +40,28 @@ const TOGGLES: Array<{ key: ToggleKey; label: string }> = [
 ]
 
 export default function ContratosPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <ContratosInner />
+    </React.Suspense>
+  )
+}
+
+function ContratosInner() {
   const qc = useQueryClient()
+  const params = useSearchParams()
+  // Deep-link vindo do Catálogo (tronco): ?provider&api&dataset.
+  const dlProvider = params.get("provider")
+  const dlApi = params.get("api")
+  const dlDataset = params.get("dataset")
+  const deepLink = React.useMemo(
+    () =>
+      dlProvider && dlApi && dlDataset
+        ? { provider: dlProvider, api_endpoint: dlApi, dataset_code: dlDataset }
+        : null,
+    [dlProvider, dlApi, dlDataset],
+  )
+
   const listQ = useQuery({
     queryKey: ["admin", "data-contracts"],
     queryFn: () => dataContracts.list(),
@@ -46,14 +69,28 @@ export default function ContratosPage() {
 
   const [sel, setSel] = React.useState<DataContractListItem | null>(null)
   React.useEffect(() => {
+    if (deepLink) return // deep-link manda; ignora seleção por chip
     if (!sel && listQ.data && listQ.data.length > 0) setSel(listQ.data[0])
-  }, [sel, listQ.data])
+  }, [sel, listQ.data, deepLink])
+
+  // Identidade ativa: deep-link tem prioridade sobre a seleção por chip.
+  const active = deepLink ?? sel
 
   const detailQ = useQuery({
-    queryKey: ["admin", "data-contract", sel?.contract_id],
+    queryKey: [
+      "admin",
+      "data-contract",
+      active?.provider,
+      active?.api_endpoint,
+      active?.dataset_code,
+    ],
     queryFn: () =>
-      dataContracts.detail(sel!.provider, sel!.api_endpoint, sel!.dataset_code),
-    enabled: Boolean(sel),
+      dataContracts.detail(
+        active!.provider,
+        active!.api_endpoint,
+        active!.dataset_code,
+      ),
+    enabled: Boolean(active),
   })
 
   const [draft, setDraft] = React.useState<DataContractField[]>([])
@@ -63,7 +100,7 @@ export default function ContratosPage() {
 
   const saveMut = useMutation({
     mutationFn: () => {
-      if (!sel) throw new Error("Nenhum contrato selecionado.")
+      if (!active) throw new Error("Nenhum contrato selecionado.")
       const fields: FieldSaveSpec[] = draft.map((c) => ({
         field_path: c.field_path,
         public_label: c.public_label,
@@ -81,16 +118,24 @@ export default function ContratosPage() {
         to_check: c.to_check,
       }))
       return dataContracts.saveNewVersion(
-        sel.provider,
-        sel.api_endpoint,
-        sel.dataset_code,
+        active.provider,
+        active.api_endpoint,
+        active.dataset_code,
         fields,
       )
     },
     onSuccess: () => {
       toast.success("Nova versão ativada.")
       qc.invalidateQueries({ queryKey: ["admin", "data-contracts"] })
-      qc.invalidateQueries({ queryKey: ["admin", "data-contract", sel?.contract_id] })
+      qc.invalidateQueries({
+        queryKey: [
+          "admin",
+          "data-contract",
+          active?.provider,
+          active?.api_endpoint,
+          active?.dataset_code,
+        ],
+      })
     },
     onError: (e) => toast.error(`Erro ao salvar: ${(e as Error).message}`),
   })
@@ -108,6 +153,15 @@ export default function ContratosPage() {
 
   return (
     <div className="px-6 py-6">
+      {deepLink && (
+        <Link
+          href="/admin/dados/catalogo"
+          className="mb-3 inline-flex items-center gap-1 text-xs text-blue-600 hover:underline dark:text-blue-400"
+        >
+          <RiArrowLeftLine className="size-3.5" aria-hidden />
+          Voltar ao Catálogo
+        </Link>
+      )}
       {/* Header */}
       <div className="mb-4 flex items-start gap-2.5">
         <div className="mt-0.5 flex size-9 items-center justify-center rounded-md bg-gray-100 dark:bg-gray-900">
@@ -134,10 +188,10 @@ export default function ContratosPage() {
         )}
       </div>
 
-      {/* Seletor de contratos (provedor › api › dataset) */}
-      <div className="mb-4 flex flex-wrap gap-1.5">
+      {/* Seletor de contratos (provedor › api › dataset) — oculto no deep-link */}
+      <div className={cx("mb-4 flex flex-wrap gap-1.5", deepLink && "hidden")}>
         {(listQ.data ?? []).map((c) => {
-          const active = sel?.contract_id === c.contract_id
+          const isActive = sel?.contract_id === c.contract_id
           return (
             <button
               key={c.contract_id}
@@ -145,7 +199,7 @@ export default function ContratosPage() {
               onClick={() => setSel(c)}
               className={cx(
                 "rounded-md border px-2.5 py-1 text-xs font-medium",
-                active
+                isActive
                   ? "border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-300"
                   : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-400",
               )}

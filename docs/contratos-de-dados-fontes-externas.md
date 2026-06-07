@@ -392,12 +392,19 @@ qualquer fonte — em vez de N tratamentos artesanais.
    partir dos campos reais já conhecidos.
 3. **Fase 2 — Projeção de tela dirigida por contrato.** O card cadastral passa a
    ler `on_screen`/`public_label`/`screen_order`. Detector de campo novo.
-4. **Fase 3 — Tool/agente dirigidos por contrato.** `get_dados_cadastrais`
+4. **Fase 5 — UI de curadoria de campos** (admin, a *folha*) + 🆕. ✅ *feita.*
+5. **Fase F — Fundação / Catálogo (o tronco) ← PRÓXIMA.** Navegador
+   `Provedor → API/Endpoint → Dataset` sobre `provedor_dados_dataset` (§15.3):
+   curadoria de dataset (habilitar + `public_code` + nome pt-BR + categoria +
+   markup), coluna de estado do Contrato, drill pro dataset, "criar contrato"
+   pré-populado por `flatten_paths()`. A tela de campos (Fase 5) vira o drill.
+   Resolve as decisões 14.8/14.9 antes de codar.
+6. **Fase 3 — Tool/agente dirigidos por contrato.** `get_dados_cadastrais`
    monta output por `to_agent` + descrições.
-5. **Fase 4 — Silver/check dirigidos por contrato.** Promoção a coluna por
+7. **Fase 4 — Silver/check dirigidos por contrato.** Promoção a coluna por
    `to_silver`; checks leem `to_check`.
-6. **Fase 5 — UI de curadoria** (admin) + fila de campo novo.
-7. **Fase 6 — Generalizar** para QiTech/Bitfin/Serasa.
+8. **Fase 6 — Generalizar** para QiTech/Bitfin/Serasa (origem *adapter*: linha
+   de catálogo cadastrada à mão + contrato semeado, §15.1).
 
 ---
 
@@ -424,40 +431,149 @@ qualquer fonte — em vez de N tratamentos artesanais.
 7. ✅ **Ordem de migração dos mappers:** **BDC → QiTech → Bitfin → Serasa.**
    (BDC `CAD-PJ` já é o seed da Fase 1; as demais seguem nessa ordem na Fase 6.)
 
-> Todas as decisões de arquitetura estão resolvidas. Doc estável — pronto para
-> a Fase 1 (implementação).
+### Resolvidas (fundação — 2026-06-06, Ricardo)
+
+8. ✅ **Nomeação do dataset (`public_code` + `display_name_pt_br`):
+   auto-sugerida + aprovação.** O Catálogo deriva uma sugestão do código do
+   vendor (ex.: `ondemand_rf_qsa` → `QSA-PJ` / "QSA Receita") como **rascunho
+   cinza**; nada fica habilitado/exposto até o mantenedor confirmar. Respeita
+   "usuário é a política" (§2 — nada vai ao ar sem aprovação) sem o custo de 792
+   campos em branco. Aprovar = grava como valor curado.
+9. ✅ **"Criar contrato" pré-populado sobre payload real.** Ao criar a 1ª versão
+   do contrato de um dataset, partir de `flatten_paths()` sobre um payload real
+   de `wh_bdc_raw_consulta` (quando houver) — pré-popula a folha com todos os
+   `field_path` detectados, status `novo_nao_classificado`. Descobre e mostra,
+   mantenedor classifica. Sem payload real, contrato nasce vazio (campos entram
+   via 🆕 na 1ª consulta).
+10. ✅ **Modo (Marketplace/Adapter) mora na relação `(provedor × tenant)`**, não
+    numa coluna fixa do dataset (ver §15.1). No catálogo global do mantenedor o
+    modo exibido é o de revenda (Marketplace); BYOC por tenant (ex.: Serasa
+    próprio) entra junto com o override por tenant (decisão 14.3, futuro).
+
+> Arquitetura central + fundação de navegação resolvidas. Doc estável — pronto
+> para a **Fase F** (Catálogo).
 
 ---
 
-## 15. Gestão (UI)
+## 15. Gestão (UI) — a fundação primeiro
 
-Toda a governança vive no **módulo Admin**, agrupada por domínio na sidebar
-(L2), cada tela nascendo de um pattern canônico (`DataTableShell` /
-`ListagemCrudInline` / `ListagemCrudCards`). Mapa de telas:
+> **Por que esta seção foi reescrita (2026-06-06, Ricardo).** A primeira tela de
+> Contratos listava **só o CAD-PJ**. Faltava o *tronco*: não havia como navegar os
+> provedores, suas APIs/endpoints e os datasets disponíveis, nem cadastrar o
+> "nome da consulta". Construímos a **folha** (curadoria de campos de 1 dataset)
+> sem o **tronco** (o catálogo de tudo que existe). Esta seção desenha o tronco.
 
-| Grupo | Telas |
-|---|---|
-| **IA / Agentes** | Agentes & Personas · Prompts · Playbooks · Tools/Checks · Provedores LLM · Assinaturas · Uso · Conversas |
-| **Dados / Integrações** | Provedores de dados · **Contratos de dados (campos)** · Sincronizações/Cobertura · Catálogo de datasets |
-| **Crédito** | Política (CNAEs/limites) · Templates de documento · Checks |
-| **Plataforma** | Tenants · Usuários · Permissões/Módulos |
+### 15.0 O tamanho real do problema (por que o tronco importa)
 
-### 15.1 Navegação dos Contratos (Provedor → API → Dataset → Campo)
+O catálogo do BDC, hoje em `provedor_dados_dataset`, já está sincronizado e é
+grande. Curado, quase nada:
 
-A hierarquia da seção 3.1 vira a navegação:
+| Provedor | APIs/Endpoints | Datasets | Habilitados | Com nome/public_code |
+|---|---:|---:|---:|---:|
+| BigDataCorp | **15** | **792** | **1** | **1** (CAD-PJ) |
+| QiTech / Bitfin / Serasa | (adapters) | — | — | contrato semeado direto |
+
+15 endpoints do BDC: `People` (297), `Companies` (173), `Ondemand` (107),
+`Marketplace` (95), `Addresses` (27), `Validations` (25), `Biogenerativa` (16),
+`Custom` (16), `Products` (8), `Aiservices` (8), `Misc` (6), `Lawsuits` (5),
+`Invoices` (4), `Vehicles` (3), `Receipts` (2). Uma tela que começa pelos
+*campos* de *um* dataset não escala pra isso. Precisamos primeiro de uma tela que
+**navegue os 792 e deixe o mantenedor decidir o que vira produto**.
+
+### 15.1 As duas origens de um dataset — definidas pela *relação*, não pelo provedor
+
+O modo de um dataset **não é um atributo fixo do provedor**; depende de **de quem
+é o contrato/credencial** com o vendor. Mesmo provedor pode operar nos dois modos
+ao mesmo tempo, por tenant:
+
+| Origem | Quem detém a credencial | Catálogo é populado por | Preço/markup? |
+|---|---|---|---|
+| **Marketplace (revenda)** | **mantenedor** — o tenant consome o dado do mantenedor (não tem contrato próprio, ou prefere não usar) | sync de `/precos/` do vendor (descoberta automática) | **sim** (revenda c/ markup) |
+| **Adapter (BYOC)** | **o próprio tenant** (*bring your own credential*) ou consumo interno A7 | cadastro à mão / seed (não há catálogo de preços a varrer) | **não** (passthrough/interno) |
+
+**Casos canônicos:**
+
+- **BDC** → sempre Marketplace (credencial do mantenedor; revenda).
+- **QiTech, Bitfin** → sempre Adapter (integração própria/interna; sem revenda).
+- **Serasa** → **dual**. Marketplace quando o tenant *não tem* contrato Serasa e
+  prefere usar o dado do mantenedor (revenda c/ markup); vira Adapter (passthrough,
+  sem markup) quando o tenant pluga o **próprio** contrato Serasa.
+
+A chave é **onde mora a credencial daquela relação**: credencial do mantenedor ⇒
+Marketplace (mostra custo+markup, switch *Vender*); credencial do tenant ⇒ Adapter
+(esconde markup; mostra só *Habilitar*). O **default** de um provedor dual é
+Marketplace (revenda do mantenedor); o tenant migra pra Adapter quando traz a
+credencial própria — sem mudar o Contrato de campos (o schema do dataset é o mesmo).
+
+Ambas as origens terminam no **mesmo lugar**: uma linha de dataset que pode ganhar
+um **Contrato de campos**. O navegador trata as duas; o que muda é só a coluna de
+preço/markup e o rótulo do switch.
+
+### 15.2 A hierarquia de navegação (3 níveis no Admin › Dados)
+
+A sidebar do Admin ganha o grupo **Dados** com três níveis, do tronco à folha:
+
+| Nível | Tela | Pergunta que responde | Pattern |
+|---|---|---|---|
+| **1 · Provedores** | `/admin/dados/provedores` *(existe)* | "Quais fontes eu conecto? Credenciais, base_url, billing." | `ListagemCrudInline` |
+| **2 · Catálogo** | `/admin/dados/catalogo` *(NOVO — o tronco)* | "O que cada fonte oferece? Quais APIs/endpoints/datasets existem, e qual eu vendo/uso? Como ele se chama?" | navegador `Provedor → API → Dataset` |
+| **3 · Contrato de campos** | drill do Catálogo *(folha, ex-`/contratos`)* | "Dentro deste dataset, o que cada campo faz nas 5 superfícies?" | tabela de campos (Fase 5 atual) |
+
+> A tela de **Contratos** que existe hoje (`/admin/dados/contratos`) deixa de ser
+> uma entrada de topo e vira o **drill do Catálogo**: você chega nela clicando num
+> dataset. Topo de navegação = Catálogo (o tronco); campo = folha.
+
+### 15.3 Catálogo — o navegador (tela nova, o coração da fundação)
+
+Navega `provedor_dados_dataset` agrupado por **provider → provider_api
+(endpoint)**, com curadoria *no nível do dataset*. É aqui que se cadastra o
+**nome da consulta** (o `public_code` + `display_name_pt_br`).
 
 ```
-Admin › Dados › Contratos
-  Provedor:  [ BigDataCorp ▾ ]
-  API:       [ Empresas ▾ ]        (Empresas · Pessoas · Notas Fiscais…)
-  Dataset:   [ basic_data → CAD-PJ ▾ ]   v3 (ativa) ●
-  → tabela de CAMPOS (abaixo)
+Admin › Dados › Catálogo
+────────────────────────────────────────────────────────────────────────────────
+Provedor [ BigDataCorp ▾ ]   Buscar dataset…   ☐ só habilitados  ☐ só sem contrato
+                                                            792 datasets · 1 habilitado
+
+▾ Companies · /empresas                                                   173 datasets
+  ┌───────────────────────────────────────────────────────────────────────────────┐
+  │ Dataset (vendor)     Nome (pt-BR) · public_code   Vender Contrato  Custo  Ações│
+  │ basic_data           Cadastro PJ · CAD-PJ           ☑    ● v3 ✓    R$0,12  ⋯   │
+  │ ondemand_rf_qsa      QSA Receita · QSA-PJ           ☑    ○ criar   R$0,40  ⋯   │
+  │ relationships        — (sugerir: REL-PJ)            ☐    ○ —       R$0,08  ⋯   │
+  │ owners_and_…         — (sugerir: …)                 ☐    ○ —       R$0,15  ⋯   │
+  └───────────────────────────────────────────────────────────────────────────────┘
+▸ People · /pessoas                                                       297 datasets
+▸ Ondemand · /ondemand                                                    107 datasets
+▸ Marketplace …                                                            95 datasets
 ```
 
-### 15.2 Tela de curadoria de campos (o centro)
+Colunas e o que cada uma cadastra:
+
+- **Nome (pt-BR) · public_code** — o *nome da consulta*. Editável inline ou no
+  drill. Enquanto vazio, mostra `—` + uma **sugestão** (ver decisão 14.8). O
+  `public_code` é o único identificador que vaza pro tenant/agente (white-label).
+- **Vender** (`enabled_for_sale`) — switch mestre. Dataset novo nasce `☐` (não
+  some, mas não é vendável/usável até o mantenedor revisar).
+- **Contrato** — estado do Contrato de campos do dataset:
+  - `● v3 ✓` tem contrato ativo (badge clicável → drill pra folha §15.4)
+  - `○ criar` sem contrato ainda → botão cria a 1ª versão e abre a folha
+  - `○ —` sem contrato e sem urgência (dataset não habilitado)
+- **Custo** (`current_cost_brl`) + **markup** (no drill) — só origem Marketplace.
+- **⋯ Ações** — Editar nome/categoria/markup · Ver schema/exemplo · Criar/abrir
+  contrato · Habilitar/desabilitar.
+
+**Drill do dataset** (DrillDownSheet, antes de descer pros campos): nome pt-BR +
+`public_code` + categoria + descrição + markup + custo + **exemplo de payload
+real** (de `wh_bdc_raw_consulta`) + atalho **"Abrir contrato de campos →"**.
+
+### 15.4 Folha — curadoria de campos (a tela que já existe)
+
+Inalterada no conteúdo; só muda o *como se chega*. Chega-se do Catálogo (clicando
+em `● v3` ou `○ criar`), não mais por seletor de chips de topo.
 
 ```
-Admin › Dados › Contratos   BDC › Empresas › basic_data (CAD-PJ)   v3 (ativa) ●
+Catálogo › Companies › basic_data (CAD-PJ)              v3 (ativa) ●   [ ← Catálogo ]
 ──────────────────────────────────────────────────────────────────────────────
 ⚠ 2 campos novos não classificados        [ Revisar ]     [ + Nova versão ]
 
@@ -471,23 +587,33 @@ Activities[].Code      CNAE (código)      atividade fato │  ☑   ☑    ☑ 
 HistoricalData…        Histórico          histórico ctx  │  ☐   ☑    ☐   ☑   ☐  🆕
 ```
 
-Drill por campo (DrillDownSheet): `field_path`, tipo, sensibilidade,
-proveniência · **Rótulo pt-BR** + **Descrição/glossário** (vira o dicionário do
-agente) · Categoria · Fato/Contexto · os **5 toggles** com as regras embutidas
-(Check ⇒ liga Silver; Agente default = Tool) · **valor de exemplo de uma
-consulta real** ao lado (curar vendo o dado, não no abstrato).
+Drill por campo: `field_path`, tipo, sensibilidade, proveniência · **Rótulo
+pt-BR** + **Descrição/glossário** (dicionário do agente) · Categoria ·
+Fato/Contexto · os **5 toggles** com regras embutidas (Check ⇒ liga Silver) ·
+**valor de exemplo real** ao lado. Salvar = nova versão imutável → **Ativar**.
 
-Salvar = nova versão imutável → **Ativar** (1 clique, rollback). **Inbox de
-campos novos** (🆕) dirige a ação.
+### 15.5 Mapa completo das telas de gestão
 
-### 15.3 Princípios de UX
+| Grupo | Telas |
+|---|---|
+| **IA / Agentes** | Agentes & Personas · Prompts · Playbooks · Tools/Checks · Provedores LLM · Assinaturas · Uso · Conversas |
+| **Dados** | **Provedores** (conexão) · **Catálogo** (datasets — tronco) · **Contrato de campos** (folha, drill) · Sincronizações/Cobertura |
+| **Crédito** | Política (CNAEs/limites) · Templates de documento · Checks |
+| **Plataforma** | Tenants · Usuários · Permissões/Módulos |
 
-- **Mesma gramática** de toda gestão: tabela + filtro + drill + versão ativa.
-- **Default transparente:** campo novo aparece 🆕 (mostra+sinaliza), nada some
-  sem o usuário ver.
-- **Efeito visível:** as 5 colunas de toggle mostram, numa olhada, pra onde cada
-  campo vai; opcional "preview" da projeção (tela/tool/agente).
-- **Sem deploy:** tudo em DB, versionado.
+### 15.6 Princípios de UX
+
+- **Tronco → folha.** Sempre se navega do amplo (provedor/endpoint/dataset) pro
+  específico (campo). Nunca se cai numa folha sem ver a árvore.
+- **Default transparente.** Dataset novo e campo novo aparecem (`☐` / 🆕) — nada
+  some sem o mantenedor ver. Curadoria *revela e organiza*, nunca esconde por
+  conta própria (princípio §2).
+- **Curar vendo o dado.** Exemplo de payload real ao lado, tanto no dataset
+  quanto no campo. Decisão informada, não no abstrato.
+- **Efeito visível.** Coluna "Contrato" no Catálogo e as 5 colunas de toggle na
+  folha mostram, numa olhada, o estado de cada coisa.
+- **Sem deploy.** Tudo em DB; nome/markup do dataset preservados entre syncs;
+  contrato versionado com ponteiro ativo.
 
 ---
 
