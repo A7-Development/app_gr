@@ -283,8 +283,9 @@ export const MODULES: ModuleDefinition[] = [
         children: [
           { name: "Saldo e Composicao", href: "/controladoria/carteira", enabled: false },
           { name: "PDD", href: "/controladoria/pdd", enabled: false },
-          // Renomeado de "Padronizados". URL mantida pra nao quebrar links.
-          { name: "Fechamentos", href: "/controladoria/relatorios/padronizados", enabled: true },
+          // Placeholder — pagina removida 2026-06-07 (catalogo de relatorios
+          // descontinuado). Item mantido como destino futuro, nao-clicavel.
+          { name: "Fechamentos", href: "/controladoria/relatorios/padronizados", enabled: false },
         ],
       },
       {
@@ -305,7 +306,9 @@ export const MODULES: ModuleDefinition[] = [
         enabled: true,
         icon: RiHandCoinLine,
         children: [
-          { name: "Pagamento Diario", href: "/controladoria/pagamento-diario", enabled: true },
+          // Placeholder — pagina removida 2026-06-07. Item mantido como
+          // destino futuro, nao-clicavel.
+          { name: "Pagamento Diario", href: "/controladoria/pagamento-diario", enabled: false },
           { name: "Liquidez", href: "/controladoria/liquidez", enabled: false },
           { name: "Collection", href: "/controladoria/collection", enabled: false },
         ],
@@ -338,8 +341,9 @@ export const MODULES: ModuleDefinition[] = [
         children: [
           { name: "Custodiante", href: "/controladoria/conciliacao/custodiante", enabled: false },
           { name: "Banco Cobrador", href: "/controladoria/conciliacao/banco-cobrador", enabled: true },
-          // URL mantida (era filha do parent "Relatorios" original).
-          { name: "Espelho Adm", href: "/controladoria/relatorios/espelho", enabled: true },
+          // Placeholder — pagina removida 2026-06-07 (catalogo de relatorios
+          // descontinuado). Item mantido como destino futuro, nao-clicavel.
+          { name: "Espelho Adm", href: "/controladoria/relatorios/espelho", enabled: false },
         ],
       },
     ],
