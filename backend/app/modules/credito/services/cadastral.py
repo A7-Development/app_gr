@@ -265,6 +265,89 @@ async def build_cadastral_card_projection(
     }
 
 
+async def build_cadastral_agent_view(
+    db: AsyncSession, *, tenant_id: UUID, dossier_id: UUID
+) -> dict | None:
+    """Visão cadastral PARA O AGENTE, dirigida pelo contrato (Fase 3).
+
+    Em vez de despejar o `basic_data` cru (`dados_completos`), entrega só os
+    campos marcados `to_agent` no contrato, cada um com **termo canônico** +
+    rótulo pt-BR + **descrição** (glossário) + valor. É o que desacopla o agente
+    do vendor: ele raciocina em conceitos canônicos (CNPJ, Situação cadastral),
+    não em `TaxIdNumber`. Ver central-de-dados-arquitetura.md §4/§5.
+
+    Sem contrato ativo: cai no resumo silver mínimo (conservador).
+    Returns None quando não há empresa-alvo no dossie.
+    """
+    from app.shared.data_providers.contract_resolver import resolve_contract
+    from app.shared.data_providers.field_paths import extract_by_path
+    from app.shared.data_providers.models.termo_canonico import TermoCanonico
+
+    target = (
+        await db.execute(
+            select(CreditDossierCompany).where(
+                CreditDossierCompany.tenant_id == tenant_id,
+                CreditDossierCompany.dossier_id == dossier_id,
+                CreditDossierCompany.role == CompanyRole.TARGET,
+            )
+        )
+    ).scalar_one_or_none()
+    if target is None:
+        return None
+
+    basic: dict = {}
+    if isinstance(target.receita_data, dict):
+        b = target.receita_data.get("basic_data")
+        if isinstance(b, dict):
+            basic = b
+
+    base = {
+        "encontrado": True,
+        "cnpj": target.cnpj,
+        "razao_social": _bdc_text(basic.get("OfficialName")) or target.name,
+    }
+
+    rc = await resolve_contract(
+        db, provider="bdc", api_endpoint="empresas", dataset_code="basic_data"
+    )
+    if rc is None:
+        # Sem contrato: resumo silver mínimo.
+        base["campos"] = []
+        base["tem_contrato"] = False
+        return base
+
+    # Mapa termo_id -> (codigo, descricao) para enriquecer cada campo.
+    termo_ids = [f.termo_canonico_id for f in rc.fields if f.termo_canonico_id]
+    termo_map: dict[UUID, tuple[str, str | None]] = {}
+    if termo_ids:
+        rows = (
+            await db.execute(
+                select(
+                    TermoCanonico.id,
+                    TermoCanonico.codigo,
+                    TermoCanonico.descricao,
+                ).where(TermoCanonico.id.in_(termo_ids))
+            )
+        ).all()
+        termo_map = {tid: (cod, desc) for tid, cod, desc in rows}
+
+    campos: list[dict] = []
+    for f in rc.for_agent():
+        termo_cod, termo_desc = termo_map.get(f.termo_canonico_id, (None, None))
+        campos.append(
+            {
+                "termo": termo_cod,
+                "campo": f.public_label or _pretty_label(f.field_path),
+                "descricao": f.description or termo_desc,
+                "valor": _display_value(extract_by_path(basic, f.field_path)),
+            }
+        )
+
+    base["campos"] = campos
+    base["tem_contrato"] = True
+    return base
+
+
 async def enrich_target_cadastral(
     db: AsyncSession,
     *,

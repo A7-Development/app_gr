@@ -38,10 +38,14 @@ from app.core.enums import Module, Permission
     cacheable=True,
 )
 async def get_dados_cadastrais(scope: ScopedContext, args: dict[str, Any]) -> str:
-    """Lê a silver cadastral da empresa-alvo do dossie ativo (white-label)."""
-    from app.modules.credito.services.cadastral import load_cadastral_silver_view
+    """Lê a cadastral da empresa-alvo dirigida pelo contrato (Fase 3).
 
-    view = await load_cadastral_silver_view(
+    Entrega só os campos `to_agent` do contrato, cada um com termo canônico +
+    rótulo + descrição (glossário) — não o blob cru do vendor.
+    """
+    from app.modules.credito.services.cadastral import build_cadastral_agent_view
+
+    view = await build_cadastral_agent_view(
         scope.db,
         tenant_id=scope.tenant_id,
         dossier_id=scope.extras["dossier_id"],
