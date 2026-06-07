@@ -25,6 +25,10 @@ class DataProviderSlug(enum.StrEnum):
 
     BIGDATACORP = "bigdatacorp"
     INFOSIMPLES = "infosimples"
+    # Serasa Experian. Modo dual (central-de-dados §15.1): registrado aqui no
+    # modo MARKETPLACE (A7 é distribuidora Serasa e revende o contrato próprio);
+    # BYOC por tenant continua via tenant_source_config (adapter bureau/serasa_pj).
+    SERASA_PJ = "serasa_pj"
 
 
 class CatalogSyncStatus(enum.StrEnum):
