@@ -1,5 +1,10 @@
 # Contratos de Dados — Governança de campos de fontes externas
 
+> **Pai conceitual:** [`central-de-dados-arquitetura.md`](./central-de-dados-arquitetura.md)
+> — a arquitetura completa da Central de Dados (hierarquia Provedor→Serviço→Dataset→Campo,
+> glossário canônico, produto de dado lógico, multi-tenant). Este doc é a peça de
+> **roteamento campo→superfície** dentro dela.
+>
 > **Status:** documento vivo (rascunho de arquitetura). Iniciado 2026-06-06.
 > Direção aprovada por Ricardo: criar uma forma única de organizar o
 > tratamento dos dados de TODA fonte externa (BigDataCorp, QiTech, Bitfin,
