@@ -60,6 +60,15 @@ class DatasetField(Base):
 
     field_path: Mapped[str] = mapped_column(String(255), nullable=False)
 
+    # ─── Camada semântica: liga o campo ao termo canônico (glossário) ────────
+    # Ver central-de-dados-arquitetura.md §4. NULL = ainda não mapeado.
+    termo_canonico_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("termo_canonico.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # ─── Metadado (curado pelo usuário) ──────────────────────────────────────
     public_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -186,6 +186,41 @@ mapper toca o raw.
 > consultar/calcular/checar de forma determinística — decidido no contrato, pelo
 > mantenedor. Na dúvida, deixa no raw.**
 
+### 5.2 Convenção de nomes do warehouse
+
+**Princípio (o mais importante):** a silver é nomeada pelo **que o dado É**
+(entidade/assunto), **nunca** por quem consome nem por como chegou.
+
+| Eixo | Exemplo | Onde mora |
+|---|---|---|
+| por **vendor** | `wh_bdc_*` | ❌ só no **raw** (`wh_<vendor>_raw_*`) |
+| por **utilidade/uso** | `wh_credito_*`, `wh_consulta_externa_*` | ❌ não na silver → é o **Produto de Dado** (consumo) |
+| por **entidade/assunto** | `wh_pj_cadastro` | ✅ **silver** |
+
+Razão: silver existe pra ser **reutilizada** por muitos consumidores. O cadastro
+de uma PJ serve crédito, risco e BI — então é nomeado pela entidade, não por um
+caso de uso. "Como chegou" é da origem (raw); "quem consome" é do produto.
+(Inmon: *subject-oriented*; Kimball: conformado por assunto; medallion: silver
+agnóstico a propósito, gold/produto por uso.)
+
+**Taxonomia de prefixos `wh_` (silver):**
+
+| Prefixo | Significado | Exemplos |
+|---|---|---|
+| `wh_dim_` | dimensão | `wh_dim_mes`, `wh_dim_produto` |
+| `wh_posicao_` | posição/snapshot | `wh_posicao_renda_fixa` |
+| `wh_saldo_` / `wh_movimento_` | saldo / movimento (FIDC interno) | `wh_saldo_bancario_diario` |
+| (entidade nua) | fato/transação interna | `wh_operacao`, `wh_titulo` |
+| **`wh_pj_*` / `wh_pf_*`** | **dado de referência de TERCEIRO** (PJ/PF analisada; bureau/registro; vendor-neutro) | `wh_pj_cadastro`, `wh_pj_restricao`, `wh_pj_socio`, `wh_pj_score` |
+
+`wh_` já separa do operacional (`tenant`, `user`, `cadastros_unidade_administrativa`
+**não** levam `wh_`). `wh_pj_*` clusteriza tudo sobre uma empresa analisada e é
+impossível de confundir com FIDC interno (`wh_operacao`) ou cadastro operacional.
+
+> **Dívida conhecida:** `wh_serasa_pj_*` carrega vendor no nome da silver (padrão
+> antigo). O alvo canônico é `wh_pj_*`, alimentado por BDC **e** Serasa; a
+> migração do silver Serasa pro canônico é follow-up.
+
 ---
 
 ## 6. Facetas (metadados em grupos, por nó)
