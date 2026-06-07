@@ -2057,7 +2057,21 @@ export type Operacoes5OperacaoItem = {
   total_liquido: number
   taxa_juros: number
   prazo_medio: number
+  /** Receita total = soma dos 8 componentes rec_* abaixo. */
   receita: number
+  // Composicao da receita (regime caixa).
+  rec_desagio: number
+  rec_tarifa_cessao: number
+  rec_consultas_financeiras: number
+  rec_consultas_fiscais: number
+  rec_registros_bancarios: number
+  rec_documentos_digitais: number
+  rec_ad_valorem: number
+  rec_rebate: number
+  // Tributos / ajustes — nao compoem receita.
+  trib_iof: number
+  trib_imposto: number
+  trib_descontos: number
 }
 
 export type Operacoes5OperacoesData = {
