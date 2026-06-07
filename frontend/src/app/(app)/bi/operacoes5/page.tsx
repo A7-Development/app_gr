@@ -304,13 +304,14 @@ export default function Operacoes5Page() {
                         <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-50">
                           {fmt.currencyWhole.format(vop)}
                         </td>
+                        {/* share · deságio · taxa_final · prazo */}
+                        <td className="px-3 py-2" />
                         <td className="px-3 py-2" />
                         <td className="px-3 py-2" />
                         <td className="px-3 py-2" />
                         <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-50">
                           {fmt.currencyWhole.format(receita)}
                         </td>
-                        <td className="px-3 py-2" />
                       </tr>
                     )
                   }}
@@ -386,12 +387,24 @@ function buildCedenteColumns(): ColumnDef<Operacoes5CedenteItem, unknown>[] {
       ),
     }) as ColumnDef<Operacoes5CedenteItem, unknown>,
     col.accessor("taxa_media", {
-      header: "Taxa méd.",
+      header: "Deságio méd.",
       size: 90,
       cell: (info) => {
         const v = info.getValue<number | null>()
         return (
-          <div className="text-right tabular-nums text-sm text-gray-700 dark:text-gray-300">
+          <div className="text-right tabular-nums text-sm text-gray-500 dark:text-gray-400">
+            {v != null ? fmtPct2(v) : "—"}
+          </div>
+        )
+      },
+    }) as ColumnDef<Operacoes5CedenteItem, unknown>,
+    col.accessor("taxa_final", {
+      header: "Taxa final",
+      size: 90,
+      cell: (info) => {
+        const v = info.getValue<number | null>()
+        return (
+          <div className="text-right text-sm font-medium tabular-nums text-gray-900 dark:text-gray-50">
             {v != null ? fmtPct2(v) : "—"}
           </div>
         )
