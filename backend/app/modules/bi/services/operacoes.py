@@ -83,8 +83,13 @@ def _apply_filters(
         conditions.append(_produto_expr().in_([s.upper() for s in produto_sigla]))
     if ua_id:
         conditions.append(Operacao.unidade_administrativa_id.in_(ua_id))
-    # cedente_id / sacado_id / gerente_documento nao ficam em wh_operacao — usar
-    # wh_operacao_item (junto com wh_titulo_snapshot) em iteracao futura.
+    if cedente_id is not None:
+        # cedente_id e desnormalizado em wh_operacao (1:1 op->cedente, validado
+        # 9269/9269 em 2026-05-22) — filtro direto, sem join. Habilita a espinha
+        # de drill UA->Produto->Cedente->Operacao->Documento (operacoes5).
+        conditions.append(Operacao.cedente_id == cedente_id)
+    # sacado_id / gerente_documento nao ficam em wh_operacao (grao de titulo) —
+    # usar wh_operacao_item (junto com wh_titulo) em iteracao futura (Fase 2).
     return stmt.where(and_(*conditions))
 
 
