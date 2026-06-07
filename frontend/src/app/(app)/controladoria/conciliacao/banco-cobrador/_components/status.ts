@@ -11,6 +11,7 @@ import {
   type RemixiconComponentType,
 } from "@remixicon/react"
 
+import type { AvailableChartColorsKeys } from "@/lib/chartUtils"
 import type { StatusConciliacaoBoleto } from "@/lib/api-client"
 
 export type StatusMeta = {
@@ -79,7 +80,7 @@ export const STATUS_ORDER: StatusConciliacaoBoleto[] = [
   "so_em_banco",
 ]
 
-// Badge curto (cabe na coluna Status do detalhe).
+// Badge curto (cabe na coluna Status do detalhe + legenda dos charts).
 export const STATUS_BADGE_LABEL: Record<StatusConciliacaoBoleto, string> = {
   conciliado: "Conciliado",
   divergencia_valor: "Dif. valor",
@@ -87,4 +88,21 @@ export const STATUS_BADGE_LABEL: Record<StatusConciliacaoBoleto, string> = {
   so_em_bitfin: "Só BITFIN",
   enviado_nao_confirmado: "Enviado",
   so_em_banco: "Só banco",
+}
+
+// Cor por status nos charts do resumo (donut por quantidade + barra de
+// reconciliacao por valor). `color` e a chave do palette Tremor (DonutChart);
+// `swatch` e a classe bg-* equivalente (-500) para a legenda e os segmentos da
+// barra casarem com as fatias do donut. Alinhadas com a semantica do badge
+// (verde=ok, vermelho/ambar=divergencia, cinza=so bitfin, azul=enviado).
+export const STATUS_CHART: Record<
+  StatusConciliacaoBoleto,
+  { color: AvailableChartColorsKeys; swatch: string }
+> = {
+  conciliado:             { color: "emerald", swatch: "bg-emerald-500" },
+  divergencia_valor:      { color: "rose",    swatch: "bg-rose-500" },
+  divergencia_vencimento: { color: "amber",   swatch: "bg-amber-500" },
+  so_em_bitfin:           { color: "gray",    swatch: "bg-gray-400" },
+  enviado_nao_confirmado: { color: "blue",    swatch: "bg-blue-500" },
+  so_em_banco:            { color: "violet",  swatch: "bg-violet-500" },
 }
