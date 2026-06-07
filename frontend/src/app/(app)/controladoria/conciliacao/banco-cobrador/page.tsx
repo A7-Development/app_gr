@@ -43,6 +43,7 @@ import {
   FilterChip,
   MultiCheckList,
   multiLabel,
+  ResetFiltersButton,
   type MultiOption,
 } from "@/design-system/components/FilterBar"
 import { EmptyState } from "@/design-system/components/EmptyState"
@@ -358,18 +359,8 @@ export default function ConciliacaoBancoCobradorPage() {
               searchable
             />
 
-            {/* Resetar filtros (padrao /bi/operacoes2): sempre visivel,
-                habilitado quando ha qualquer filtro ativo. Zera escopo (UA) +
-                lentes (Status/Banco/Produto/Cedente). */}
-            <Button
-              variant="ghost"
-              onClick={resetFilters}
-              disabled={!hasFilters}
-              className="ml-1"
-            >
-              <RiRefreshLine className="size-3.5 shrink-0" aria-hidden="true" />
-              Resetar
-            </Button>
+            {/* Resetar filtros (controle canonico): zera escopo (UA) + lentes. */}
+            <ResetFiltersButton hasActiveFilters={hasFilters} onReset={resetFilters} />
 
             <div className="ml-auto flex shrink-0 items-center gap-3">
               {/* Status da ultima sync (last run / travado / erro). Enquanto

@@ -30,12 +30,10 @@ import { useQuery } from "@tanstack/react-query"
 import {
   RiCalendarLine,
   RiCheckLine,
-  RiRefreshLine,
 } from "@remixicon/react"
 import { toast } from "sonner"
 
 import { cx } from "@/lib/utils"
-import { Button } from "@/components/tremor/Button"
 import {
   TabNavigation,
   TabNavigationLink,
@@ -46,6 +44,7 @@ import { DashboardHeaderActions } from "@/design-system/components/DashboardHead
 import {
   FilterChip,
   MoreFiltersButton,
+  ResetFiltersButton,
 } from "@/design-system/components/FilterBar"
 import { Checkbox } from "@/components/tremor/Checkbox"
 import { InsightStrip } from "@/design-system/components/InsightStrip"
@@ -381,19 +380,11 @@ export default function Operacoes2Page() {
 
             <MoreFiltersButton />
 
-            {/* Resetar filtros — habilitado quando ha qualquer filtro ativo. */}
-            <Button
-              variant="ghost"
-              onClick={resetFilters}
-              disabled={!hasFiltrosAtivos(preset, filtersWithFocus)}
-              className="ml-1"
-            >
-              <RiRefreshLine
-                className="size-3.5 shrink-0"
-                aria-hidden="true"
-              />
-              Resetar
-            </Button>
+            {/* Resetar filtros (controle canonico) — habilita com filtro ativo. */}
+            <ResetFiltersButton
+              hasActiveFilters={hasFiltrosAtivos(preset, filtersWithFocus)}
+              onReset={resetFilters}
+            />
 
             <span className="ml-auto shrink-0 text-[11px] text-gray-500 dark:text-gray-400">
               {kpiStripQuery.isFetching ? "Atualizando…" : "Atualizado"}
