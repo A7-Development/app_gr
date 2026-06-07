@@ -123,6 +123,9 @@ class SourceType(enum.StrEnum):
     BUREAU_SERASA_PJ = "bureau:serasa_pj"
     BUREAU_SERASA_PF = "bureau:serasa_pf"
     BUREAU_SCR_BACEN = "bureau:scr_bacen"
+    # BigDataCorp (cadastral PJ/PF, QSA, etc.). native_enum=False (VARCHAR) ->
+    # adicionar valor nao exige migration de tipo.
+    BUREAU_BDC = "bureau:bdc"
     DOCUMENT_NFE = "document:nfe"
     # Cobranca (boletos / CNAB). COBRANCA (generico) e a fonte de TRANSPORTE:
     # a "inbox" de arquivos de retorno -- uma pasta com retornos de varios

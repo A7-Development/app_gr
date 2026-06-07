@@ -17,7 +17,12 @@ from app.shared.data_providers.models.field import DatasetField
 from app.shared.data_providers.models.price_history import (
     DataProviderDatasetPriceHistory,
 )
+from app.shared.data_providers.models.produto_dado import (
+    ProdutoDado,
+    ProdutoDadoOrigem,
+)
 from app.shared.data_providers.models.provider import DataProvider
+from app.shared.data_providers.models.termo_canonico import TermoCanonico
 
 __all__ = [
     "DataProvider",
@@ -28,4 +33,7 @@ __all__ = [
     "DatasetContract",
     "DatasetContractActive",
     "DatasetField",
+    "ProdutoDado",
+    "ProdutoDadoOrigem",
+    "TermoCanonico",
 ]

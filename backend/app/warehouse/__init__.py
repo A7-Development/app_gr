@@ -42,6 +42,7 @@ from app.warehouse.mec_evolucao_cotas import MecEvolucaoCotas
 from app.warehouse.movimento_aberto import MovimentoAberto
 from app.warehouse.movimento_caixa import MovimentoCaixa
 from app.warehouse.operacao import Operacao, OperacaoItem
+from app.warehouse.pj_cadastro import PjCadastro
 from app.warehouse.operacao_remessa import OperacaoRemessa
 from app.warehouse.posicao_compromissada import PosicaoCompromissada
 from app.warehouse.posicao_cota_fundo import PosicaoCotaFundo
@@ -103,6 +104,7 @@ __all__ = [
     "Operacao",
     "OperacaoItem",
     "OperacaoRemessa",
+    "PjCadastro",
     "PosicaoCompromissada",
     "PosicaoCotaFundo",
     "PosicaoDebentureDia",
