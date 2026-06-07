@@ -39,6 +39,7 @@ import { PageHeader } from "@/design-system/components/PageHeader"
 import { FilterChip, MoreFiltersButton } from "@/design-system/components/FilterBar"
 import { DataTable } from "@/design-system/components/DataTable"
 import { cardTokens } from "@/design-system/tokens/card"
+import { tableTokens } from "@/design-system/tokens/table"
 import { fmt, fmtCNPJ } from "@/design-system/tokens/typography"
 
 import { ProvenanceFooter } from "@/components/bi/ProvenanceFooter"
@@ -346,11 +347,11 @@ function buildCedenteColumns(): ColumnDef<Operacoes5CedenteItem, unknown>[] {
               aria-hidden
             />
             <div className="min-w-0">
-              <p className="truncate text-sm text-gray-900 dark:text-gray-50">
+              <p className={cx("truncate", tableTokens.cellText)}>
                 {r.cedente_nome}
               </p>
               {r.cedente_documento && (
-                <p className="truncate text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
+                <p className={cx("truncate tabular-nums", tableTokens.cellSecondary)}>
                   {fmtCNPJ(r.cedente_documento)}
                 </p>
               )}
@@ -363,7 +364,7 @@ function buildCedenteColumns(): ColumnDef<Operacoes5CedenteItem, unknown>[] {
       header: "Operações",
       size: 90,
       cell: (info) => (
-        <span className="tabular-nums text-sm text-gray-700 dark:text-gray-300">
+        <span className={tableTokens.cellNumber}>
           {fmt.number.format(info.getValue<number>())}
         </span>
       ),
@@ -372,7 +373,7 @@ function buildCedenteColumns(): ColumnDef<Operacoes5CedenteItem, unknown>[] {
       header: "VOP",
       size: 130,
       cell: (info) => (
-        <div className="text-right tabular-nums text-sm text-gray-900 dark:text-gray-50">
+        <div className={cx("text-right", tableTokens.cellNumber)}>
           {fmt.currencyWhole.format(info.getValue<number>())}
         </div>
       ),
@@ -381,7 +382,7 @@ function buildCedenteColumns(): ColumnDef<Operacoes5CedenteItem, unknown>[] {
       header: "Share",
       size: 80,
       cell: (info) => (
-        <div className="text-right tabular-nums text-sm text-gray-500 dark:text-gray-400">
+        <div className={cx("text-right", tableTokens.cellNumberSecondary)}>
           {fmtPct2(info.getValue<number>())}
         </div>
       ),
@@ -392,7 +393,7 @@ function buildCedenteColumns(): ColumnDef<Operacoes5CedenteItem, unknown>[] {
       cell: (info) => {
         const v = info.getValue<number | null>()
         return (
-          <div className="text-right tabular-nums text-sm text-gray-500 dark:text-gray-400">
+          <div className={cx("text-right", tableTokens.cellNumberSecondary)}>
             {v != null ? fmtPct2(v) : "—"}
           </div>
         )
@@ -404,7 +405,7 @@ function buildCedenteColumns(): ColumnDef<Operacoes5CedenteItem, unknown>[] {
       cell: (info) => {
         const v = info.getValue<number | null>()
         return (
-          <div className="text-right text-sm font-medium tabular-nums text-gray-900 dark:text-gray-50">
+          <div className={cx("text-right font-medium", tableTokens.cellNumber)}>
             {v != null ? fmtPct2(v) : "—"}
           </div>
         )
@@ -416,7 +417,7 @@ function buildCedenteColumns(): ColumnDef<Operacoes5CedenteItem, unknown>[] {
       cell: (info) => {
         const v = info.getValue<number | null>()
         return (
-          <div className="text-right tabular-nums text-sm text-gray-700 dark:text-gray-300">
+          <div className={cx("text-right", tableTokens.cellNumber)}>
             {v != null ? fmtDias(v) : "—"}
           </div>
         )
@@ -426,7 +427,7 @@ function buildCedenteColumns(): ColumnDef<Operacoes5CedenteItem, unknown>[] {
       header: "Receita",
       size: 120,
       cell: (info) => (
-        <div className="text-right tabular-nums text-sm text-gray-900 dark:text-gray-50">
+        <div className={cx("text-right", tableTokens.cellNumber)}>
           {fmt.currencyWhole.format(info.getValue<number>())}
         </div>
       ),
