@@ -232,6 +232,32 @@ async def fetch_cadastral_pj(
         )
         errors.append(f"bronze insert: {type(e).__name__}: {e}")
 
+    # ─── 4b. Silver canonico wh_pj_cadastro (tx isolada) ──────────────────
+    # integracoes popula o warehouse (§11.3). Tx separada da bronze: se o
+    # upsert do silver falhar, a raw (ja commitada) sobrevive.
+    if mapped.found and mapped.fields is not None:
+        from app.modules.integracoes.services.pj_cadastro_silver import (
+            upsert_pj_cadastro,
+        )
+
+        try:
+            async with AsyncSessionLocal() as db:
+                await upsert_pj_cadastro(
+                    db,
+                    tenant_id=tenant_id,
+                    cnpj=cnpj,
+                    fields=mapped.fields,
+                    raw_id=raw_id,
+                    hash_origem=_sha256_of_payload(result.payload),
+                    ingested_by_version=ADAPTER_VERSION,
+                )
+                await db.commit()
+        except Exception as e:
+            logger.exception(
+                "BDC cadastral: upsert wh_pj_cadastro falhou (cnpj=%s)", cnpj
+            )
+            errors.append(f"silver pj_cadastro: {type(e).__name__}: {e}")
+
     # ─── 5. Resultado (mapper ja rodou) ───────────────────────────────────
     return CadastralQueryResult(
         ok=True,
