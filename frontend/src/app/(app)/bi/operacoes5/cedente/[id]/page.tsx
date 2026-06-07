@@ -28,6 +28,7 @@ import { Card } from "@/components/tremor/Card"
 import { DataTable } from "@/design-system/components/DataTable"
 import { DrillDownSheet } from "@/design-system/components/DrillDownSheet"
 import { cardTokens } from "@/design-system/tokens/card"
+import { tableTokens } from "@/design-system/tokens/table"
 import { fmt, fmtCNPJ, fmtDate } from "@/design-system/tokens/typography"
 
 import { ProvenanceFooter } from "@/components/bi/ProvenanceFooter"
@@ -324,7 +325,7 @@ function buildOperacaoColumns(): ColumnDef<Operacoes5OperacaoItem, unknown>[] {
       header: "Operação",
       size: 110,
       cell: (info) => (
-        <span className="tabular-nums text-sm text-gray-900 dark:text-gray-50">
+        <span className={tableTokens.cellNumber}>
           #{info.getValue<number>()}
         </span>
       ),
@@ -335,7 +336,7 @@ function buildOperacaoColumns(): ColumnDef<Operacoes5OperacaoItem, unknown>[] {
       cell: (info) => {
         const v = info.getValue<string | null>()
         return (
-          <span className="tabular-nums text-sm text-gray-700 dark:text-gray-300">
+          <span className={cx("tabular-nums", tableTokens.cellSecondary)}>
             {v ? fmtDate(v) : "—"}
           </span>
         )
@@ -345,16 +346,14 @@ function buildOperacaoColumns(): ColumnDef<Operacoes5OperacaoItem, unknown>[] {
       header: "Produto",
       size: 90,
       cell: (info) => (
-        <span className="text-sm text-gray-700 dark:text-gray-300">
-          {info.getValue<string>()}
-        </span>
+        <span className={tableTokens.cellText}>{info.getValue<string>()}</span>
       ),
     }) as ColumnDef<Operacoes5OperacaoItem, unknown>,
     opcol.accessor("vop", {
       header: "VOP",
       size: 130,
       cell: (info) => (
-        <div className="text-right tabular-nums text-sm text-gray-900 dark:text-gray-50">
+        <div className={cx("text-right", tableTokens.cellNumber)}>
           {fmt.currencyWhole.format(info.getValue<number>())}
         </div>
       ),
@@ -363,7 +362,7 @@ function buildOperacaoColumns(): ColumnDef<Operacoes5OperacaoItem, unknown>[] {
       header: "Deságio",
       size: 80,
       cell: (info) => (
-        <div className="text-right tabular-nums text-sm text-gray-500 dark:text-gray-400">
+        <div className={cx("text-right", tableTokens.cellNumberSecondary)}>
           {fmtPct2(info.getValue<number>())}
         </div>
       ),
@@ -374,7 +373,7 @@ function buildOperacaoColumns(): ColumnDef<Operacoes5OperacaoItem, unknown>[] {
       cell: (info) => {
         const v = info.getValue<number | null>()
         return (
-          <div className="text-right text-sm font-medium tabular-nums text-gray-900 dark:text-gray-50">
+          <div className={cx("text-right font-medium", tableTokens.cellNumber)}>
             {v != null ? fmtPct2(v) : "—"}
           </div>
         )
@@ -384,7 +383,7 @@ function buildOperacaoColumns(): ColumnDef<Operacoes5OperacaoItem, unknown>[] {
       header: "Prazo",
       size: 80,
       cell: (info) => (
-        <div className="text-right tabular-nums text-sm text-gray-700 dark:text-gray-300">
+        <div className={cx("text-right", tableTokens.cellNumber)}>
           {fmtDias(info.getValue<number>())}
         </div>
       ),
@@ -393,7 +392,7 @@ function buildOperacaoColumns(): ColumnDef<Operacoes5OperacaoItem, unknown>[] {
       header: "Receita",
       size: 120,
       cell: (info) => (
-        <div className="text-right tabular-nums text-sm text-gray-900 dark:text-gray-50">
+        <div className={cx("text-right", tableTokens.cellNumber)}>
           {fmt.currencyWhole.format(info.getValue<number>())}
         </div>
       ),
@@ -413,8 +412,8 @@ function buildDocumentoColumns(): ColumnDef<Operacoes5DocumentoItem, unknown>[] 
       cell: (info) => {
         const r = info.row.original
         return (
-          <span className="text-sm text-gray-900 dark:text-gray-50">
-            <span className="mr-1 text-[11px] font-medium uppercase text-gray-400 dark:text-gray-500">
+          <span className={tableTokens.cellText}>
+            <span className={cx("mr-1 uppercase", tableTokens.cellSecondary)}>
               {r.sigla}
             </span>
             {r.numero}
@@ -428,7 +427,7 @@ function buildDocumentoColumns(): ColumnDef<Operacoes5DocumentoItem, unknown>[] 
       cell: (info) => {
         const v = info.getValue<string | null>()
         return (
-          <span className="tabular-nums text-sm text-gray-700 dark:text-gray-300">
+          <span className={cx("tabular-nums", tableTokens.cellSecondary)}>
             {v ? fmtDate(v) : "—"}
           </span>
         )
@@ -438,7 +437,7 @@ function buildDocumentoColumns(): ColumnDef<Operacoes5DocumentoItem, unknown>[] 
       header: "Valor",
       size: 120,
       cell: (info) => (
-        <div className="text-right tabular-nums text-sm text-gray-900 dark:text-gray-50">
+        <div className={cx("text-right", tableTokens.cellNumber)}>
           {fmt.currencyWhole.format(info.getValue<number>())}
         </div>
       ),
@@ -447,7 +446,7 @@ function buildDocumentoColumns(): ColumnDef<Operacoes5DocumentoItem, unknown>[] 
       header: "Saldo",
       size: 120,
       cell: (info) => (
-        <div className="text-right tabular-nums text-sm text-gray-700 dark:text-gray-300">
+        <div className={cx("text-right", tableTokens.cellNumberSecondary)}>
           {fmt.currencyWhole.format(info.getValue<number>())}
         </div>
       ),
@@ -456,7 +455,7 @@ function buildDocumentoColumns(): ColumnDef<Operacoes5DocumentoItem, unknown>[] 
       header: "Situação",
       size: 100,
       cell: (info) => (
-        <span className="text-[12px] text-gray-500 dark:text-gray-400">
+        <span className={tableTokens.cellSecondary}>
           {situacaoLabel(info.getValue<number>())}
         </span>
       ),
@@ -480,9 +479,7 @@ const COMPOSICAO_COLUMNS: ColumnDef<ReceitaLinha, unknown>[] = [
     header: "Componente",
     size: 240,
     cell: (info) => (
-      <span className="text-sm text-gray-700 dark:text-gray-300">
-        {info.getValue<string>()}
-      </span>
+      <span className={tableTokens.cellText}>{info.getValue<string>()}</span>
     ),
   }) as ColumnDef<ReceitaLinha, unknown>,
   reccol.accessor("share", {
@@ -491,7 +488,7 @@ const COMPOSICAO_COLUMNS: ColumnDef<ReceitaLinha, unknown>[] = [
     cell: (info) => {
       const v = info.getValue<number | null>()
       return (
-        <div className="text-right text-[12px] tabular-nums text-gray-400 dark:text-gray-500">
+        <div className={cx("text-right", tableTokens.cellNumberSecondary)}>
           {v != null ? fmtPct2(v) : "—"}
         </div>
       )
@@ -501,7 +498,7 @@ const COMPOSICAO_COLUMNS: ColumnDef<ReceitaLinha, unknown>[] = [
     header: "Valor",
     size: 120,
     cell: (info) => (
-      <div className="text-right tabular-nums text-sm text-gray-900 dark:text-gray-50">
+      <div className={cx("text-right", tableTokens.cellNumber)}>
         {fmt.currencyWhole.format(info.getValue<number>())}
       </div>
     ),
