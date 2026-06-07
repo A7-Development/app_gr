@@ -365,27 +365,42 @@ export default function ConciliacaoBancoCobradorPage() {
             <ResetFiltersButton hasActiveFilters={hasFilters} onReset={resetFilters} />
 
             <div className="ml-auto flex shrink-0 items-center gap-3">
-              {/* Status da ultima sync (last run / travado / erro). Enquanto
-                  roda, o proprio botao mostra a fase. */}
-              {st?.status === "ok" && st.finished_at ? (
-                <span className="text-[11px] text-gray-400 dark:text-gray-500">
-                  Última sync: {fmtDateTimeBR(st.finished_at)}
-                  {st.arquivos_novos != null && st.arquivos_novos > 0
-                    ? ` · ${st.arquivos_novos} novo(s)`
-                    : " · sem novidades"}
-                </span>
-              ) : st?.status === "stuck" ? (
-                <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
-                  Sincronização parece travada
-                </span>
-              ) : st?.status === "error" ? (
-                <span
-                  className="text-[11px] font-medium text-red-600 dark:text-red-400"
-                  title={st.erro ?? undefined}
-                >
-                  Erro na sincronização
-                </span>
-              ) : null}
+              {/* Status compacto: UMA linha so — ultima sync + frescor da
+                  cobranca (o essencial). Travado/erro substituem o texto. */}
+              <span
+                className={cx(
+                  "flex shrink-0 items-center gap-1.5 text-[11px]",
+                  st?.status === "stuck"
+                    ? "font-medium text-amber-600 dark:text-amber-400"
+                    : st?.status === "error"
+                      ? "font-medium text-red-600 dark:text-red-400"
+                      : "text-gray-500 dark:text-gray-400",
+                )}
+                title={st?.status === "error" ? (st.erro ?? undefined) : undefined}
+              >
+                <RiTimeLine className="size-3.5 shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
+                {st?.status === "stuck" ? (
+                  "Sincronização travada"
+                ) : st?.status === "error" ? (
+                  "Erro na sincronização"
+                ) : (
+                  <>
+                    {st?.status === "ok" && st.finished_at && (
+                      <>
+                        Última sync{" "}
+                        <span className="font-medium tabular-nums text-gray-700 dark:text-gray-300">
+                          {fmtDateTimeBR(st.finished_at)}
+                        </span>
+                        <span className="text-gray-300 dark:text-gray-700">·</span>
+                      </>
+                    )}
+                    Cobrança até{" "}
+                    <span className="font-medium tabular-nums text-gray-700 dark:text-gray-300">
+                      {fmtDateBR(conc?.cobranca_atualizada_ate)}
+                    </span>
+                  </>
+                )}
+              </span>
 
               {/* Sincronizar: dispara a coleta/reprocessamento dos arquivos CNAB
                   da inbox (por tenant; banco/UA saem dos arquivos/titulos). */}
@@ -403,24 +418,6 @@ export default function ConciliacaoBancoCobradorPage() {
                   ? `${FASE_LABEL[st?.fase ?? ""] ?? "Sincronizando"}…`
                   : "Sincronizar"}
               </Button>
-
-              {/* Frescor (nao-filtro): BITFIN e "agora"; o banco reflete ate o
-                  ultimo arquivo de retorno processado. Nomeia a defasagem. */}
-              <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
-                <RiTimeLine className="size-3.5 shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
-                {q.isFetching ? (
-                  "Atualizando…"
-                ) : (
-                  <>
-                    Carteira <span className="font-medium text-gray-700 dark:text-gray-300">agora</span>
-                    <span className="text-gray-300 dark:text-gray-700">·</span>
-                    Cobrança até{" "}
-                    <span className="font-medium tabular-nums text-gray-700 dark:text-gray-300">
-                      {fmtDateBR(conc?.cobranca_atualizada_ate)}
-                    </span>
-                  </>
-                )}
-              </span>
             </div>
           </div>
         </div>
