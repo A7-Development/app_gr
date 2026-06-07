@@ -46,9 +46,12 @@ function diffNode(v: number) {
 
 const col = createColumnHelper<ResumoStatusConciliacao>()
 
+// Colunas compactas (layout 50/50 com os charts): a coluna "%" saiu — a
+// proporcao agora e visual no donut ao lado. Mantem qtd + os 3 valores (R$),
+// que reconciliam com o Total (footer) e com o detalhe (§14.6).
 const COLUMNS: ColumnDef<ResumoStatusConciliacao, unknown>[] = [
   col.accessor("status", {
-    id: "status", header: "Status", size: 220,
+    id: "status", header: "Status", size: 150,
     // Badge canonico (tableTokens.badge + tone), sem icone, com o MESMO label
     // curto do detalhe (STATUS_BADGE_LABEL) — resumo e detalhe nao divergem
     // ("So BITFIN", nao "So em BITFIN").
@@ -62,7 +65,7 @@ const COLUMNS: ColumnDef<ResumoStatusConciliacao, unknown>[] = [
     },
   }) as ColumnDef<ResumoStatusConciliacao, unknown>,
   col.accessor("quantidade", {
-    id: "quantidade", header: "Qtd", size: 80, meta: { align: "right" },
+    id: "quantidade", header: "Qtd", size: 60, meta: { align: "right" },
     cell: (info) => {
       const q = info.getValue<number>()
       return (
@@ -72,27 +75,16 @@ const COLUMNS: ColumnDef<ResumoStatusConciliacao, unknown>[] = [
       )
     },
   }) as ColumnDef<ResumoStatusConciliacao, unknown>,
-  col.accessor("percentual", {
-    id: "percentual", header: "%", size: 70, meta: { align: "right" },
-    cell: (info) => {
-      const p = info.getValue<number>()
-      return (
-        <div className={cx("text-right", tableTokens.cellNumberSecondary)}>
-          {p > 0 ? `${p.toFixed(1)}%` : "—"}
-        </div>
-      )
-    },
-  }) as ColumnDef<ResumoStatusConciliacao, unknown>,
   col.accessor("valor_bitfin", {
-    id: "valor_bitfin", header: "Valor BITFIN (R$)", size: 150, meta: { align: "right" },
+    id: "valor_bitfin", header: "BITFIN (R$)", size: 120, meta: { align: "right" },
     cell: (info) => <div className="text-right">{brlOrDash(info.getValue<number>())}</div>,
   }) as ColumnDef<ResumoStatusConciliacao, unknown>,
   col.accessor("valor_banco", {
-    id: "valor_banco", header: "Valor banco (R$)", size: 150, meta: { align: "right" },
+    id: "valor_banco", header: "Banco (R$)", size: 120, meta: { align: "right" },
     cell: (info) => <div className="text-right">{brlOrDash(info.getValue<number>())}</div>,
   }) as ColumnDef<ResumoStatusConciliacao, unknown>,
   col.accessor("diferenca", {
-    id: "diferenca", header: "Diferença (R$)", size: 140, meta: { align: "right" },
+    id: "diferenca", header: "Dif. (R$)", size: 110, meta: { align: "right" },
     cell: (info) => <div className="text-right">{diffNode(info.getValue<number>())}</div>,
   }) as ColumnDef<ResumoStatusConciliacao, unknown>,
 ]
@@ -138,9 +130,6 @@ export function ResumoConciliacaoTable({
         <td className={cx("px-3 py-1.5", tableTokens.cellStrong)}>Total</td>
         <td className={cx("px-3 py-1.5 text-right font-semibold", tableTokens.cellNumber)}>
           {fmtInt.format(total.quantidade)}
-        </td>
-        <td className={cx("px-3 py-1.5 text-right", tableTokens.cellNumberSecondary)}>
-          {total.quantidade > 0 ? "100,0%" : "—"}
         </td>
         <td className="px-3 py-1.5 text-right">{brlOrDash(total.valor_bitfin)}</td>
         <td className="px-3 py-1.5 text-right">{brlOrDash(total.valor_banco)}</td>

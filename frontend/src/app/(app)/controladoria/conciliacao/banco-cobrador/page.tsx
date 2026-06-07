@@ -7,15 +7,18 @@
 //
 // Pattern: DashboardBiPadrao (composicao direta, anatomy de /bi/panorama):
 //   Z1 PageHeader + DashboardHeaderActions
-//   Z2 Toolbar: UA (escopo) · Status · Banco · Produto · Cedente (lentes) +
+//   Z2 Toolbar: UA · Status · Banco · Produto · Cedente (todos globais) +
 //      indicador de frescor (nao-filtro)
-//   Z3 Tabela-resumo (reage so a UA) + DataTable canonica titulo-a-titulo
+//   Z3 Resumo 50/50 (tabela canonica + charts da carteira) + DataTable
+//      canonica titulo-a-titulo
 //   Z4 ProvenanceFooter
 // Lateral: AIPanel.
 //
-// UA = ESCOPO (resumo reflete). Status/Banco/Produto/Cedente = lentes
-// client-side (so o detalhe). Exclusoes de tenant (ex.: Pedreira so-CBV) saem
-// desses filtros (backend expoe cedente_documento).
+// RE-ESCOPO TOTAL (2026-06-07): TODOS os filtros (UA/Status/Banco/Produto/
+// Cedente) recortam o MESMO conjunto que alimenta resumo + charts + detalhe —
+// os numeros na tela sempre batem (§7.2/§14.6). Acabou a distincao escopo/lente
+// (antes so a UA reescopava o resumo). Exclusoes de tenant (ex.: Pedreira
+// so-CBV) saem desses filtros (backend expoe cedente_documento).
 
 "use client"
 
@@ -64,6 +67,7 @@ import type {
 } from "@/lib/api-client"
 
 import { ConciliacaoBoletoTable } from "./_components/ConciliacaoBoletoTable"
+import { ResumoConciliacaoCharts } from "./_components/ResumoConciliacaoCharts"
 import { ResumoConciliacaoTable } from "./_components/ResumoConciliacaoTable"
 
 const fmtInt = new Intl.NumberFormat("pt-BR")
@@ -233,28 +237,26 @@ export default function ConciliacaoBancoCobradorPage() {
     [conc],
   )
 
-  // Escopo: linhas filtradas SO pela UA. Alimenta o resumo (que reflete a UA).
-  // Nota: linhas "só em banco" ficam sem UA ate o boleto carregar UA do header
-  // CNAB; com UA especifica selecionada elas saem do escopo (interim).
-  const linhasNoEscopo = React.useMemo(() => {
-    if (!conc) return []
-    if (uaFilter.length === 0) return conc.linhas
-    return conc.linhas.filter((l) => l.ua_nome != null && uaFilter.includes(l.ua_nome))
-  }, [conc, uaFilter])
-
-  const resumoEscopo = React.useMemo(() => computeResumo(linhasNoEscopo), [linhasNoEscopo])
-
-  // Detalhe: escopo + lentes (multi-select: lista vazia = sem filtro).
+  // Re-escopo TOTAL (decisao 2026-06-07): UA/Status/Banco/Produto/Cedente
+  // recortam o MESMO conjunto que alimenta a tabela-resumo, os charts e o
+  // detalhe — os numeros na tela sempre batem (§7.2/§14.6). Acabou a distincao
+  // escopo (UA) vs lente; todo filtro e global. (Filtrar Status colapsa o
+  // resumo/donut para o subset escolhido — comportamento aceito.)
   const linhasFiltradas = React.useMemo(() => {
-    return linhasNoEscopo.filter(
+    if (!conc) return []
+    return conc.linhas.filter(
       (l) =>
+        (uaFilter.length === 0 || (l.ua_nome != null && uaFilter.includes(l.ua_nome))) &&
         (statusFilter.length === 0 || statusFilter.includes(l.status)) &&
         (bancoFilter.length === 0 || (l.banco != null && bancoFilter.includes(l.banco))) &&
         (produtoFilter.length === 0 || (l.produto != null && produtoFilter.includes(l.produto))) &&
         (cedenteFilter.length === 0 ||
           (l.cedente_nome != null && cedenteFilter.includes(l.cedente_nome))),
     )
-  }, [linhasNoEscopo, statusFilter, bancoFilter, produtoFilter, cedenteFilter])
+  }, [conc, uaFilter, statusFilter, bancoFilter, produtoFilter, cedenteFilter])
+
+  // Resumo (tabela + charts) computado do MESMO conjunto filtrado do detalhe.
+  const resumo = React.useMemo(() => computeResumo(linhasFiltradas), [linhasFiltradas])
 
   const handleShare = React.useCallback(() => {
     void navigator.clipboard?.writeText(window.location.href)
@@ -434,9 +436,13 @@ export default function ConciliacaoBancoCobradorPage() {
             />
           ) : (
             <div className="flex flex-col gap-4">
-              {/* Tabela-resumo no ESCOPO da UA (reage so a UA, nao as lentes) —
-                  Entrega 3 §2. Substitui o KpiStrip; reconcilia (§14.6). */}
-              <ResumoConciliacaoTable resumo={resumoEscopo} />
+              {/* Resumo 50/50: tabela canonica (esq.) + charts da carteira
+                  (dir.). Ambos no MESMO conjunto filtrado do detalhe; reconcilia
+                  (§14.6). Empilha em telas estreitas (< xl). */}
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <ResumoConciliacaoTable resumo={resumo} />
+                <ResumoConciliacaoCharts resumo={resumo} />
+              </div>
 
               {/* DataTable — filtrada pelos chips + busca */}
               {q.isError ? (
