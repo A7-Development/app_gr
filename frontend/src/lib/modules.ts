@@ -487,6 +487,13 @@ export const MODULES: ModuleDefinition[] = [
         icon: RiKey2Line,
         groupLabel: "Provedores de Dados",
       },
+      {
+        name: "Contratos",
+        href: "/admin/dados/contratos",
+        enabled: true,
+        icon: RiStackLine,
+        groupLabel: "Provedores de Dados",
+      },
     ],
   },
 ]
