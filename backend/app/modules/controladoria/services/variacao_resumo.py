@@ -130,9 +130,16 @@ async def compute_variacao_resumo(
             res.carrego_apropriacao + res.apropriacao_antecipada
             + res.juros_mora - res.desconto_concedido + res.mutacao_total
         )
-        dc_resumo = f"carrego {_fmt(res.apropriacao_total_dia)}"
+        # Separa carrego NORMAL do ANTECIPADO (liquidacao adiantada) e expoe mora/
+        # desconto — sao as alavancas extraordinarias do DC (carrego normal e rotina;
+        # o resto, quando != 0, e evento). Alimenta tanto a card quanto o chat IA.
+        dc_resumo = f"carrego {_fmt(res.carrego_apropriacao)}"
+        if abs(res.apropriacao_antecipada) >= _TOL:
+            dc_resumo += f" · antecipado {_fmt(res.apropriacao_antecipada)}"
         if abs(res.juros_mora) >= _TOL:
             dc_resumo += f" · mora {_fmt(res.juros_mora)}"
+        if abs(res.desconto_concedido) >= _TOL:
+            dc_resumo += f" · desconto -{_fmt(res.desconto_concedido)}"
         if abs(res.mutacao_total) >= _TOL:
             dc_resumo += f" · mutação {_fmt(res.mutacao_total)}"
     else:  # fallback retrocompat: usa o delta bruto do balanco (com giro)
