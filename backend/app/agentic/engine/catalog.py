@@ -24,7 +24,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from app.agentic.engine.output_schemas import (
-    AnalysisVariacaoCotaResponse,
     AuditoriaAplicacoesResponse,
     AuditoriaContasAPagarResponse,
     AuditoriaCotasResponse,
@@ -391,43 +390,6 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         timeout_seconds=60,
         section_id="plea",
     ),
-    # ─── Controladoria · analista de variacao da Cota Sub Jr ─────────────
-    # Retomada de [[project_pagina_variacao_cota]] em 2026-05-24 apos
-    # F1+F2+F5 do redesign cota-sub serem entregues (PR #26 mergeado em
-    # main). 3 niveis de analise (sanity + decomposicao + explicacao
-    # narrativa). Consome as 8 tools de app/agentic/tools/controladoria/.
-    "analista_variacao_cota": SpecialistAgentSpec(
-        name="analista_variacao_cota",
-        description=(
-            "Explica narrativamente a variacao do PL Sub Jr de um FIDC entre "
-            "D-1 e D0. Faz sanity check, decompoe nas 12 categorias do "
-            "balanco, e investiga categorias com Δ material cruzando "
-            "wh_estoque_recebivel x wh_liquidacao_recebivel x historico do "
-            "papel pra distinguir liquidacao normal, mutacao silenciosa pura, "
-            "padrao de abatimento off-record, etc."
-        ),
-        prompt_name="agent.controladoria.analista_variacao_cota",
-        tools=(
-            "check_identidade_contabil",
-            "get_balanco_patrimonial",
-            "get_variacao_carteira",
-            "get_drill_pdd",
-            "get_drill_cpr",
-            "get_decomposicao_classes",
-            "get_eventos_liquidacao_adjacentes",
-            "get_historico_estoque_papel",
-            "get_papeis_mesmo_cedente_sacado",
-        ),
-        output_schema=AnalysisVariacaoCotaResponse,
-        # Modelo Opus 4.7 escolhido pra narrativa rica + raciocinio em
-        # padroes temporais. Cache de prompt resolve custo (system_text
-        # estavel cross-runs).
-        preferred_model="claude-opus-4-7",
-        fallback_model="claude-sonnet-4-6",
-        thinking_budget_tokens=15000,
-        timeout_seconds=600,
-        section_id="cota_sub_analise_variacao",
-    ),
     # ─── Controladoria · auditor de variacao de CARTEIRA (DC) ────────────
     # Especialista (2026-05-30): segmentacao do monolito. Audita SO a
     # consistencia da variacao do estoque DC (decomposicao D-1 vs D0) — 1 tool.
@@ -623,14 +585,18 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
             "achar a causa de uma mutacao, etc.). Tem o toolset completo da cota-sub."
         ),
         prompt_name="agent.controladoria.investigador_cota",
+        # Toolset enxuto (2026-06-06): cobre os grupos do waterfall + 1 tool de
+        # aprofundamento de papel. O resumo estruturado ja vem no contexto — as
+        # tools sao so pra investigar quando o estruturado nao basta.
         tools=(
-            "get_balanco_patrimonial", "get_variacao_carteira", "get_drill_pdd",
-            "get_drill_cpr", "get_decomposicao_classes", "get_movimento_cotas",
-            "get_movimento_contas_a_pagar", "get_movimento_nota_comercial",
-            "get_movimento_aplicacoes", "get_conferencia_liquidacao",
-            "get_conferencia_cessao", "get_eventos_liquidacao_adjacentes",
-            "get_historico_estoque_papel", "get_papeis_mesmo_cedente_sacado",
-            "check_identidade_contabil",
+            "get_variacao_carteira",        # DC
+            "get_drill_pdd",                # PDD & WOP
+            "get_movimento_cotas",          # Cotas prioritarias + obrigacoes
+            "get_movimento_contas_a_pagar", # despesa
+            "get_movimento_aplicacoes",     # aplicacoes (Fundos DI etc.)
+            "get_conferencia_liquidacao",   # caixa — entrada
+            "get_conferencia_cessao",       # caixa — saida
+            "get_historico_estoque_papel",  # aprofundar 1 papel
         ),
         output_schema=ChatVariacaoResponse,
         preferred_model="claude-opus-4-7",
