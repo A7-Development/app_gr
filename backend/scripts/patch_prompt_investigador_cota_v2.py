@@ -121,14 +121,14 @@ async def main(activate: bool) -> None:
                        assistant_prime, model, fallback_model, temperature,
                        max_tokens, cache_strategy, description, created_by,
                        created_at, updated_at, archived_at)
-                    SELECT gen_random_uuid(), :name, 'v2', :sys, :uct, assistant_prime,
-                       model, fallback_model, temperature, max_tokens, cache_strategy,
-                       :descr, created_by, now(), now(), NULL
-                    FROM ai_prompt WHERE name = :name AND version = 'v1'
+                    SELECT gen_random_uuid(), CAST(:name AS varchar), 'v2', :sys, :uct,
+                       assistant_prime, model, fallback_model, temperature, max_tokens,
+                       cache_strategy, :descr, created_by, now(), now(), NULL
+                    FROM ai_prompt WHERE name = CAST(:match AS varchar) AND version = 'v1'
                     """
                 ),
-                {"name": NAME, "sys": SYSTEM_TEXT, "uct": USER_CONTEXT_TEMPLATE,
-                 "descr": DESCRIPTION},
+                {"name": NAME, "match": NAME, "sys": SYSTEM_TEXT,
+                 "uct": USER_CONTEXT_TEMPLATE, "descr": DESCRIPTION},
             )
             print("v2 inserida (copiou model/temp/max_tokens da v1).")
 
