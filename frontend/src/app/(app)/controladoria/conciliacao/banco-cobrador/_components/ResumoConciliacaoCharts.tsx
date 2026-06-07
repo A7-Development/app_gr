@@ -1,33 +1,27 @@
 "use client"
 
 /**
- * ResumoConciliacaoCharts — visual da carteira ao lado da tabela-resumo (50/50).
+ * ResumoConciliacaoCharts — "Carteira por banco cobrador" (ao lado da tabela).
  *
- * Dois mini-charts empilhados, ambos no MESMO conjunto filtrado da pagina (re-
- * escopo total: UA/Status/Banco/Produto/Cedente) — bate com a tabela-resumo e o
- * detalhe (§7.2/§14.6):
+ * A tabela-resumo e por STATUS. Este chart abre uma dimensao que ela NAO tem: o
+ * BANCO. Por banco cobrador (+ "Sem boleto" = Só BITFIN, titulos que nunca foram
+ * a banco nenhum), a carteira aberta (R$ BITFIN) em barras conciliado vs a
+ * conciliar. Escancara ONDE falta conciliar — ex.: o gap de "enviado" da Vortx.
  *
- *   1. Donut por QUANTIDADE de titulos (composicao por status) + legenda.
- *   2. Barra de RECONCILIACAO por VALOR: a carteira aberta (R$ BITFIN) decomposta
- *      por status; centro da historia = quanto ja esta conciliado.
- *
- * Cores via STATUS_CHART (casam com as fatias do donut e com a semantica do
- * badge). Recebe o `resumo` ja computado das linhas filtradas — nao refaz conta.
+ * Le as MESMAS linhas filtradas da pagina (re-escopo total, §7.2/§14.6). Barras
+ * escaladas ao maior total; ordenadas pelo valor A CONCILIAR (pior primeiro).
  */
 
 import * as React from "react"
 
 import { cx } from "@/lib/utils"
 import { Card } from "@/components/tremor/Card"
-import { DonutChart } from "@/components/charts/DonutChart"
 import { cardTokens } from "@/design-system/tokens/card"
-import type { ResumoStatusConciliacao } from "@/lib/api-client"
-
-import { STATUS_BADGE_LABEL, STATUS_CHART, STATUS_META, STATUS_ORDER } from "./status"
+import type { LinhaConciliacaoBoleto } from "@/lib/api-client"
 
 const fmtInt = new Intl.NumberFormat("pt-BR")
 
-/** R$ compacto (39,6M / 812,4k / 950) — cabe no rotulo do total. */
+/** R$ compacto (39,6M / 812,4k / 950). */
 function fmtBRLcompact(v: number): string {
   const abs = Math.abs(v)
   if (abs >= 1_000_000) return `R$ ${(v / 1_000_000).toFixed(1).replace(".", ",")}M`
@@ -35,38 +29,45 @@ function fmtBRLcompact(v: number): string {
   return `R$ ${fmtInt.format(Math.round(v))}`
 }
 
+// Rotulo amigavel do banco (linhas trazem "bradesco"/"vortx"/"bmp"/"itau").
+const BANCO_LABEL: Record<string, string> = {
+  bradesco: "Bradesco",
+  vortx: "Vórtx",
+  bmp: "BMP",
+  itau: "Itaú",
+}
+const SEM_BOLETO = "Sem boleto"
+
+type BancoAgg = { banco: string; conciliado: number; aConciliar: number; total: number }
+
 export function ResumoConciliacaoCharts({
-  resumo,
+  linhas,
 }: {
-  resumo: ResumoStatusConciliacao[]
+  linhas: LinhaConciliacaoBoleto[]
 }) {
-  // Ordena pela ordem canonica; ignora status ausentes no escopo filtrado.
-  const ordered = React.useMemo(
-    () =>
-      STATUS_ORDER.map((s) => resumo.find((r) => r.status === s)).filter(
-        (r): r is ResumoStatusConciliacao => r != null,
-      ),
-    [resumo],
-  )
+  const grupos = React.useMemo<BancoAgg[]>(() => {
+    const by = new Map<string, BancoAgg>()
+    for (const l of linhas) {
+      const v = l.valor_bitfin ?? 0
+      if (v === 0) continue // so_em_banco (sem titulo) nao tem valor BITFIN
+      // "Só BITFIN" nao tem boleto/banco -> bucket "Sem boleto".
+      const key = l.banco ? (BANCO_LABEL[l.banco] ?? l.banco) : SEM_BOLETO
+      const g = by.get(key) ?? { banco: key, conciliado: 0, aConciliar: 0, total: 0 }
+      if (l.status === "conciliado") g.conciliado += v
+      else g.aConciliar += v // div. valor/venc, enviado, so_em_bitfin
+      g.total += v
+      by.set(key, g)
+    }
+    // Pior primeiro: mais valor A CONCILIAR no topo.
+    return Array.from(by.values()).sort((a, b) => b.aConciliar - a.aConciliar)
+  }, [linhas])
 
-  // Donut: composicao por quantidade (so status com qtd > 0).
-  const donutRows = ordered.filter((r) => r.quantidade > 0)
-  const donutData = donutRows.map((r) => ({
-    key: r.status,
-    label: STATUS_BADGE_LABEL[r.status],
-    qtd: r.quantidade,
-  }))
-  const donutColors = donutRows.map((r) => STATUS_CHART[r.status].color)
-  const totalQtd = donutRows.reduce((a, r) => a + r.quantidade, 0)
+  const maxTotal = grupos.reduce((m, g) => Math.max(m, g.total), 0)
+  const totalGeral = grupos.reduce((a, g) => a + g.total, 0)
+  const conciliadoGeral = grupos.reduce((a, g) => a + g.conciliado, 0)
+  const pctConciliado = totalGeral > 0 ? (conciliadoGeral / totalGeral) * 100 : 0
 
-  // Barra de reconciliacao: carteira aberta (valor BITFIN) por status (> 0).
-  const barRows = ordered.filter((r) => r.valor_bitfin > 0)
-  const totalValor = barRows.reduce((a, r) => a + r.valor_bitfin, 0)
-  const conciliadoValor =
-    barRows.find((r) => r.status === "conciliado")?.valor_bitfin ?? 0
-  const pctConciliado = totalValor > 0 ? (conciliadoValor / totalValor) * 100 : 0
-
-  if (ordered.length === 0) {
+  if (grupos.length === 0) {
     return (
       <Card className={cx(cardTokens.body, "flex items-center justify-center")}>
         <p className="text-sm text-gray-400 dark:text-gray-600">Sem dados no escopo.</p>
@@ -76,68 +77,82 @@ export function ResumoConciliacaoCharts({
 
   return (
     <Card className={cardTokens.body}>
-      {/* 1 — Donut por quantidade + legenda */}
-      <div className="flex items-center gap-5">
-        <DonutChart
-          data={donutData}
-          category="label"
-          value="qtd"
-          colors={donutColors}
-          variant="donut"
-          showLabel
-          label={fmtInt.format(totalQtd)}
-          valueFormatter={(v) => `${fmtInt.format(v)} títulos`}
-          className="size-36 shrink-0"
-        />
-        <ul className="flex-1 space-y-1.5">
-          {ordered.map((r) => (
-            <li key={r.status} className="flex items-center gap-2 text-[13px]">
-              <span
-                aria-hidden="true"
-                className={cx("size-2.5 shrink-0 rounded-sm", STATUS_CHART[r.status].swatch)}
-              />
-              <span className="flex-1 truncate text-gray-700 dark:text-gray-300">
-                {STATUS_META[r.status].label}
-              </span>
-              <span className="shrink-0 tabular-nums font-medium text-gray-900 dark:text-gray-50">
-                {fmtInt.format(r.quantidade)}
-              </span>
-              <span className="w-10 shrink-0 text-right tabular-nums text-gray-400 dark:text-gray-500">
-                {r.percentual.toFixed(0)}%
-              </span>
-            </li>
-          ))}
-        </ul>
+      {/* Cabecalho: titulo + legenda */}
+      <div className="mb-4 flex items-baseline justify-between">
+        <div>
+          <h3 className="text-[13px] font-semibold text-gray-900 dark:text-gray-50">
+            Carteira por banco cobrador
+          </h3>
+          <p className="text-[11px] text-gray-400 dark:text-gray-500">Valor aberto (R$ BITFIN)</p>
+        </div>
+        <div className="flex items-center gap-3 text-[11px] text-gray-500 dark:text-gray-400">
+          <span className="flex items-center gap-1.5">
+            <span className="size-2.5 rounded-sm bg-emerald-500" aria-hidden="true" />
+            conciliado
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="size-2.5 rounded-sm bg-amber-400" aria-hidden="true" />
+            a conciliar
+          </span>
+        </div>
       </div>
 
-      <div className="my-4 border-t border-gray-100 dark:border-gray-800" />
+      {/* Barras por banco (escaladas ao maior total; conciliado | a conciliar) */}
+      <ul className="space-y-3">
+        {grupos.map((g) => {
+          const pctAConciliar = g.total > 0 ? (g.aConciliar / g.total) * 100 : 0
+          return (
+            <li key={g.banco}>
+              <div className="mb-1 flex items-baseline justify-between gap-2 text-[12px]">
+                <span className="truncate font-medium text-gray-700 dark:text-gray-300">
+                  {g.banco}
+                </span>
+                <span className="shrink-0 tabular-nums text-gray-500 dark:text-gray-400">
+                  {fmtBRLcompact(g.total)}
+                  {g.aConciliar > 0 && (
+                    <span className="ml-1.5 text-amber-600 dark:text-amber-400">
+                      · {pctAConciliar.toFixed(0)}% a conciliar
+                    </span>
+                  )}
+                </span>
+              </div>
+              {/* Track full width; porcao preenchida = total/maxTotal, dividida
+                  em conciliado (emerald) + a conciliar (amber). */}
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                <div
+                  className="flex h-full overflow-hidden rounded-full"
+                  style={{ width: `${maxTotal > 0 ? (g.total / maxTotal) * 100 : 0}%` }}
+                  title={`${g.banco}: ${fmtBRLcompact(g.conciliado)} conciliado · ${fmtBRLcompact(g.aConciliar)} a conciliar`}
+                >
+                  <div
+                    className="h-full bg-emerald-500"
+                    style={{ width: `${g.total > 0 ? (g.conciliado / g.total) * 100 : 0}%` }}
+                  />
+                  <div
+                    className="h-full bg-amber-400"
+                    style={{ width: `${g.total > 0 ? (g.aConciliar / g.total) * 100 : 0}%` }}
+                  />
+                </div>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
 
-      {/* 2 — Barra de reconciliacao por valor (carteira aberta BITFIN) */}
-      <div>
-        <div className="mb-2 flex items-baseline justify-between">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400 dark:text-gray-500">
-            Carteira aberta
-          </span>
-          <span className="text-sm font-semibold tabular-nums text-gray-900 dark:text-gray-50">
-            {fmtBRLcompact(totalValor)}
-          </span>
-        </div>
-        <div className="flex h-3 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-          {barRows.map((r) => (
-            <div
-              key={r.status}
-              className={cx("h-full", STATUS_CHART[r.status].swatch)}
-              style={{ width: `${(r.valor_bitfin / totalValor) * 100}%` }}
-              title={`${STATUS_META[r.status].label}: ${fmtBRLcompact(r.valor_bitfin)}`}
-            />
-          ))}
-        </div>
-        <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
+      {/* Rodape: total da carteira aberta + % conciliado (reconcilia §14.6) */}
+      <div className="mt-4 flex items-baseline justify-between border-t border-gray-100 pt-3 dark:border-gray-800">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400 dark:text-gray-500">
+          Carteira aberta
+        </span>
+        <span className="text-[12px] text-gray-500 dark:text-gray-400">
+          <span className="font-semibold tabular-nums text-gray-900 dark:text-gray-50">
+            {fmtBRLcompact(totalGeral)}
+          </span>{" "}
+          ·{" "}
           <span className="font-semibold text-emerald-700 dark:text-emerald-400">
             {pctConciliado.toFixed(0)}% conciliado
-          </span>{" "}
-          · {(100 - pctConciliado).toFixed(0)}% a conciliar (em valor)
-        </p>
+          </span>
+        </span>
       </div>
     </Card>
   )
