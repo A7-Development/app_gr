@@ -39,7 +39,13 @@ class Operacoes5CedentesData(BaseModel):
 
 
 class Operacoes5OperacaoItem(BaseModel):
-    """Linha da lista de operacoes de um cedente (nivel Operacao = drawer)."""
+    """Linha da lista de operacoes de um cedente (nivel Operacao = drawer).
+
+    Inclui a COMPOSICAO COMPLETA da receita (regime caixa) — a taxa/desagio e
+    so uma parte; cada tarifa entra como campo proprio. Os 8 componentes de
+    receita somam `receita` (reconciliacao §14.6). IOF/imposto/descontos sao
+    tributos/ajustes — NAO entram em `receita`, vao separados.
+    """
 
     operacao_id: int
     data_de_efetivacao: date | None
@@ -48,9 +54,24 @@ class Operacoes5OperacaoItem(BaseModel):
     quantidade_de_titulos: int
     vop: float = Field(description="total_bruto da operacao.")
     total_liquido: float
-    taxa_juros: float
-    prazo_medio: float
-    receita: float = Field(description="Receita da operacao (regime caixa).")
+    taxa_juros: float = Field(description="Taxa de juros da operacao (% a.m.).")
+    prazo_medio: float = Field(description="Prazo medio real (dias).")
+    receita: float = Field(description="Receita total da operacao = soma dos 8 componentes abaixo.")
+
+    # Composicao da receita (regime caixa) — somam `receita`.
+    rec_desagio: float = Field(description="Desagio (total_de_juros).")
+    rec_tarifa_cessao: float = Field(description="Tarifa de cessao (comunicados de cessao).")
+    rec_consultas_financeiras: float
+    rec_consultas_fiscais: float
+    rec_registros_bancarios: float
+    rec_documentos_digitais: float
+    rec_ad_valorem: float
+    rec_rebate: float
+
+    # Tributos e ajustes — NAO compoem receita (exibidos a parte).
+    trib_iof: float = Field(description="IOF (tributo, nao-receita).")
+    trib_imposto: float = Field(description="Imposto (tributo, nao-receita).")
+    trib_descontos: float = Field(description="Descontos/abatimentos (ajuste, nao-receita).")
 
 
 class Operacoes5OperacoesData(BaseModel):

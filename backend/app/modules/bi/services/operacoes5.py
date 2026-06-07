@@ -137,6 +137,19 @@ async def get_operacoes_por_cedente(
         Operacao.cedente_nome,
         Operacao.cedente_documento,
         receita_row.label("receita"),
+        # Composicao da receita (regime caixa) — abrir cada tarifa.
+        Operacao.total_de_juros,
+        Operacao.total_dos_comunicados_de_cessao,
+        Operacao.total_das_consultas_financeiras,
+        Operacao.total_das_consultas_fiscais,
+        Operacao.total_dos_registros_bancarios,
+        Operacao.total_dos_documentos_digitais,
+        Operacao.total_de_ad_valorem,
+        Operacao.total_de_rebate,
+        # Tributos / ajustes — nao-receita.
+        Operacao.total_de_iof,
+        Operacao.total_de_imposto,
+        Operacao.total_dos_descontos_ou_abatimentos,
     )
     stmt = _apply_filters(stmt, tenant_id=tenant_id, **filters)
     stmt = stmt.order_by(data_expr.desc(), Operacao.operacao_id.desc())
@@ -154,6 +167,17 @@ async def get_operacoes_por_cedente(
             taxa_juros=_as_float(r.taxa_de_juros),
             prazo_medio=_as_float(r.prazo_medio_real),
             receita=_as_float(r.receita),
+            rec_desagio=_as_float(r.total_de_juros),
+            rec_tarifa_cessao=_as_float(r.total_dos_comunicados_de_cessao),
+            rec_consultas_financeiras=_as_float(r.total_das_consultas_financeiras),
+            rec_consultas_fiscais=_as_float(r.total_das_consultas_fiscais),
+            rec_registros_bancarios=_as_float(r.total_dos_registros_bancarios),
+            rec_documentos_digitais=_as_float(r.total_dos_documentos_digitais),
+            rec_ad_valorem=_as_float(r.total_de_ad_valorem),
+            rec_rebate=_as_float(r.total_de_rebate),
+            trib_iof=_as_float(r.total_de_iof),
+            trib_imposto=_as_float(r.total_de_imposto),
+            trib_descontos=_as_float(r.total_dos_descontos_ou_abatimentos),
         )
         for r in rows
     ]

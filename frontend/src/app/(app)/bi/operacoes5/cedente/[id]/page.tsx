@@ -39,7 +39,8 @@ import type {
 } from "@/lib/api-client"
 
 const fmtPct2 = (v: number) => `${v.toFixed(2).replace(".", ",")}%`
-const fmtDias = (v: number) => `${fmt.decimal1.format(v)}d`
+// Prazo e sempre em dias — exibe so o numero (sem sufixo "d").
+const fmtDias = (v: number) => fmt.decimal1.format(v)
 
 // wh_titulo.situacao -> rotulo curto (codigos Bitfin). Fallback: "Cód N".
 const SITUACAO_LABEL: Record<number, string> = {
@@ -236,9 +237,8 @@ export default function CedenteOperacoesPage({
                   { label: "Modalidade", value: selectedOp.modalidade },
                   { label: "VOP", value: selectedOp.vop, type: "currency" },
                   { label: "Líquido", value: selectedOp.total_liquido, type: "currency" },
-                  { label: "Taxa", value: fmtPct2(selectedOp.taxa_juros) },
-                  { label: "Prazo médio", value: fmtDias(selectedOp.prazo_medio) },
-                  { label: "Receita", value: selectedOp.receita, type: "currency" },
+                  { label: "Taxa de juros", value: `${fmtPct2(selectedOp.taxa_juros)} a.m.` },
+                  { label: "Prazo médio", value: `${fmtDias(selectedOp.prazo_medio)} dias` },
                   {
                     label: "Títulos",
                     value: selectedOp.quantidade_de_titulos,
@@ -246,6 +246,13 @@ export default function CedenteOperacoesPage({
                   },
                 ]}
               />
+
+              <div className="mt-6">
+                <DrillDownSheet.SectionLabel>
+                  Composição da receita
+                </DrillDownSheet.SectionLabel>
+                <ComposicaoReceita op={selectedOp} />
+              </div>
 
               <div className="mt-6">
                 <DrillDownSheet.SectionLabel>
@@ -428,6 +435,89 @@ function buildDocumentoColumns(): ColumnDef<Operacoes5DocumentoItem, unknown>[] 
       ),
     }) as ColumnDef<Operacoes5DocumentoItem, unknown>,
   ]
+}
+
+// ─── Composição da receita (inline no drawer) ──────────────────────────────
+//
+// Abre TODAS as receitas geradas pela operacao (regime caixa): desagio + 7
+// tarifas. Os 8 componentes somam `receita` (subtotal bold). IOF/imposto/
+// descontos sao tributos/ajustes — NAO compoem receita, vao num grupo a parte.
+
+function ComposicaoReceita({ op }: { op: Operacoes5OperacaoItem }) {
+  const componentes: { label: string; value: number }[] = [
+    { label: "Deságio (juros)", value: op.rec_desagio },
+    { label: "Tarifa de cessão", value: op.rec_tarifa_cessao },
+    { label: "Consultas financeiras", value: op.rec_consultas_financeiras },
+    { label: "Consultas fiscais", value: op.rec_consultas_fiscais },
+    { label: "Registros bancários", value: op.rec_registros_bancarios },
+    { label: "Documentos digitais", value: op.rec_documentos_digitais },
+    { label: "Ad valorem", value: op.rec_ad_valorem },
+    { label: "Rebate", value: op.rec_rebate },
+  ]
+  const tributos: { label: string; value: number }[] = [
+    { label: "IOF", value: op.trib_iof },
+    { label: "Imposto", value: op.trib_imposto },
+    { label: "Descontos / abatimentos", value: op.trib_descontos },
+  ]
+  const total = op.receita
+  const hasTributos = tributos.some((t) => t.value !== 0)
+
+  return (
+    <div className="overflow-hidden rounded border border-gray-200 dark:border-gray-800">
+      <table className="w-full text-sm">
+        <tbody>
+          {componentes.map((c) => (
+            <tr
+              key={c.label}
+              className="border-b border-gray-100 dark:border-gray-900"
+            >
+              <td className="px-3 py-1.5 text-gray-700 dark:text-gray-300">
+                {c.label}
+              </td>
+              <td className="w-16 px-3 py-1.5 text-right text-[12px] tabular-nums text-gray-400 dark:text-gray-500">
+                {total > 0 ? fmtPct2((c.value / total) * 100) : "—"}
+              </td>
+              <td className="px-3 py-1.5 text-right tabular-nums text-gray-900 dark:text-gray-50">
+                {fmt.currencyWhole.format(c.value)}
+              </td>
+            </tr>
+          ))}
+          <tr className="border-t-2 border-gray-300 font-semibold dark:border-gray-700">
+            <td className="px-3 py-2 text-gray-900 dark:text-gray-50">
+              Receita total
+            </td>
+            <td className="px-3 py-2" />
+            <td className="px-3 py-2 text-right tabular-nums text-gray-900 dark:text-gray-50">
+              {fmt.currencyWhole.format(total)}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {hasTributos && (
+        <div className="border-t border-gray-200 dark:border-gray-800">
+          <p className="px-3 pt-2 text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500">
+            Tributos e ajustes (não compõem receita)
+          </p>
+          <table className="w-full text-sm">
+            <tbody>
+              {tributos.map((t) => (
+                <tr key={t.label}>
+                  <td className="px-3 py-1.5 text-gray-500 dark:text-gray-400">
+                    {t.label}
+                  </td>
+                  <td className="w-16 px-3 py-1.5" />
+                  <td className="px-3 py-1.5 text-right tabular-nums text-gray-500 dark:text-gray-400">
+                    {fmt.currencyWhole.format(t.value)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ─── Header KPI ────────────────────────────────────────────────────────────

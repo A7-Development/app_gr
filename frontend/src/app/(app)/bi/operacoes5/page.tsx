@@ -61,7 +61,8 @@ const PRESET_LABEL_MAP: Record<PresetKey, string> = Object.fromEntries(
 ) as Record<PresetKey, string>
 
 const fmtPct2 = (v: number) => `${v.toFixed(2).replace(".", ",")}%`
-const fmtDias = (v: number) => `${fmt.decimal1.format(v)}d`
+// Prazo e sempre em dias — exibe so o numero (sem sufixo "d").
+const fmtDias = (v: number) => fmt.decimal1.format(v)
 
 export default function Operacoes5Page() {
   const router = useRouter()
