@@ -5,8 +5,9 @@
 //                  Active state: blue pill on the left + bg-blue-500/10 + text-blue-600.
 //
 //   NavParent    — collapsible group header (icon + label + chevron).
-//                  Has-active-child: font-semibold (open or closed). Blue dot
-//                  only when CLOSED (the active child is hidden).
+//                  font-semibold whenever OPEN, or when closed-with-active-child
+//                  (dimmed) — keeps parent vs child hierarchy legible at a glance.
+//                  Blue dot only when CLOSED (the active child is hidden).
 //                  Resolves the Tremor weakness where a closed group with an
 //                  active child showed zero feedback.
 //
@@ -129,10 +130,10 @@ export function NavParent({
   const hasActiveChild = children.some(
     (c) => c.enabled && (pathname === c.href || pathname.startsWith(`${c.href}/`)),
   )
-  // Negrito (label + icone) SEMPRE que ha filho ativo — aberto ou fechado —
-  // pra orientar qual menu pai contem o item selecionado. O dot azul fica so
-  // quando FECHADO (sinaliza o filho ativo escondido); aberto, o filho ja
-  // aparece destacado abaixo, entao o dot seria redundante.
+  // Negrito (label + icone) SEMPRE que o grupo esta ABERTO ou quando ha filho
+  // ativo num grupo fechado (dimmed) — pra separar a hierarquia pai vs filho ao
+  // passar o olho. O dot azul fica so quando FECHADO (sinaliza o filho ativo
+  // escondido); aberto, o filho ja aparece destacado abaixo, dot seria redundante.
   const dimmed = !expanded && hasActiveChild
 
   return (
@@ -147,7 +148,7 @@ export function NavParent({
           "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5",
           "text-[13px] transition-colors duration-100",
           "hover:bg-gray-200/50 dark:hover:bg-gray-900",
-          hasActiveChild
+          expanded || dimmed
             ? "font-semibold text-gray-900 dark:text-gray-50"
             : "text-gray-700 dark:text-gray-400",
           focusRing,
@@ -156,7 +157,7 @@ export function NavParent({
         <Icon
           className={cx(
             "size-[18px] shrink-0",
-            hasActiveChild ? "text-gray-700 dark:text-gray-300" : "text-gray-500 dark:text-gray-400",
+            expanded || dimmed ? "text-gray-700 dark:text-gray-300" : "text-gray-500 dark:text-gray-400",
           )}
           aria-hidden="true"
         />
