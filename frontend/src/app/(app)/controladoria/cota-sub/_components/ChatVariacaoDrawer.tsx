@@ -21,6 +21,11 @@ import { Button } from "@/components/tremor/Button"
 import { controladoria } from "@/lib/api-client"
 import type { ChatMensagem } from "@/lib/api-client"
 
+// Chip primario (sob demanda): chama o agente pra sintetizar o dia. O texto
+// enviado e o que o controller "perguntou" — o agente ja recebe o resumo
+// estruturado no contexto e responde curto, do maior impacto pro menor.
+const RESUMO_DIA = "Resumir o dia: o que impactou a cota?"
+
 const SUGESTOES = [
   "Por que a cota mexeu hoje?",
   "O que eu deveria vigiar?",
@@ -71,7 +76,22 @@ export function ChatVariacaoDrawer({ fundoId, data, open, onClose }: Props) {
                 <RiSparkling2Line className="size-4 text-violet-500" aria-hidden />
                 Pergunte sobre a variação da cota deste dia. Eu uso os dados já calculados e investigo quando precisa.
               </div>
+
+              {/* Chip primario — sintese do dia sob demanda. */}
+              <button
+                type="button"
+                onClick={() => void send(RESUMO_DIA)}
+                disabled={!fundoId || loading}
+                className="flex w-full items-center gap-2 rounded-lg border border-violet-300 bg-violet-50 px-3 py-2 text-left text-[13px] font-medium text-violet-800 transition-colors hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-700/50 dark:bg-violet-950/30 dark:text-violet-200 dark:hover:bg-violet-900/30"
+              >
+                <RiSparkling2Line className="size-4 shrink-0 text-violet-500" aria-hidden />
+                {RESUMO_DIA}
+              </button>
+
               <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
+                  Ou investigue
+                </span>
                 {SUGESTOES.map((s) => (
                   <button
                     key={s}
