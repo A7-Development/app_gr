@@ -27,7 +27,6 @@ import {
   RiBuilding2Line,
   RiCheckLine,
   RiFilter3Line,
-  RiFilterOffLine,
   RiInboxArchiveLine,
   RiPriceTag3Line,
   RiRefreshLine,
@@ -152,8 +151,8 @@ export default function ConciliacaoBancoCobradorPage() {
   const [produtoFilter, setProdutoFilter] = React.useState<string[]>([])
   const [cedenteFilter, setCedenteFilter] = React.useState<string[]>([])
 
-  // Reset de TODOS os filtros (escopo UA + lentes). Aparece so quando ha algum
-  // filtro aplicado.
+  // Reset de TODOS os filtros (escopo UA + lentes). O botao "Resetar" fica
+  // sempre visivel (padrao /bi/operacoes2) e habilita quando ha filtro ativo.
   const hasFilters =
     uaFilter.length > 0 ||
     statusFilter.length > 0 ||
@@ -359,18 +358,18 @@ export default function ConciliacaoBancoCobradorPage() {
               searchable
             />
 
-            {/* Limpar filtros: zera escopo (UA) + lentes. So aparece com filtro
-                ativo, ao lado dos menus globais. */}
-            {hasFilters && (
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="flex h-[30px] shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-              >
-                <RiFilterOffLine className="size-3.5 shrink-0" aria-hidden="true" />
-                Limpar filtros
-              </button>
-            )}
+            {/* Resetar filtros (padrao /bi/operacoes2): sempre visivel,
+                habilitado quando ha qualquer filtro ativo. Zera escopo (UA) +
+                lentes (Status/Banco/Produto/Cedente). */}
+            <Button
+              variant="ghost"
+              onClick={resetFilters}
+              disabled={!hasFilters}
+              className="ml-1"
+            >
+              <RiRefreshLine className="size-3.5 shrink-0" aria-hidden="true" />
+              Resetar
+            </Button>
 
             <div className="ml-auto flex shrink-0 items-center gap-3">
               {/* Status da ultima sync (last run / travado / erro). Enquanto
