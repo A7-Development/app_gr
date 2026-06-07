@@ -27,6 +27,7 @@ import {
   RiBuilding2Line,
   RiCheckLine,
   RiFilter3Line,
+  RiFilterOffLine,
   RiInboxArchiveLine,
   RiPriceTag3Line,
   RiRefreshLine,
@@ -150,6 +151,22 @@ export default function ConciliacaoBancoCobradorPage() {
   const [bancoFilter, setBancoFilter] = React.useState<string[]>([])
   const [produtoFilter, setProdutoFilter] = React.useState<string[]>([])
   const [cedenteFilter, setCedenteFilter] = React.useState<string[]>([])
+
+  // Reset de TODOS os filtros (escopo UA + lentes). Aparece so quando ha algum
+  // filtro aplicado.
+  const hasFilters =
+    uaFilter.length > 0 ||
+    statusFilter.length > 0 ||
+    bancoFilter.length > 0 ||
+    produtoFilter.length > 0 ||
+    cedenteFilter.length > 0
+  const resetFilters = React.useCallback(() => {
+    setUaFilter([])
+    setStatusFilter([])
+    setBancoFilter([])
+    setProdutoFilter([])
+    setCedenteFilter([])
+  }, [])
 
   const q = useConciliacaoBancoCobrador()
   const conc = q.data
@@ -341,6 +358,19 @@ export default function ConciliacaoBancoCobradorPage() {
               onChange={setCedenteFilter}
               searchable
             />
+
+            {/* Limpar filtros: zera escopo (UA) + lentes. So aparece com filtro
+                ativo, ao lado dos menus globais. */}
+            {hasFilters && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="flex h-[30px] shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              >
+                <RiFilterOffLine className="size-3.5 shrink-0" aria-hidden="true" />
+                Limpar filtros
+              </button>
+            )}
 
             <div className="ml-auto flex shrink-0 items-center gap-3">
               {/* Status da ultima sync (last run / travado / erro). Enquanto
