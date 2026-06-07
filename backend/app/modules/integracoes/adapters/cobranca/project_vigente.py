@@ -130,22 +130,23 @@ async def project_tenant_vigente(
         stmt = stmt.where(BoletoEvento.banco_origem == banco)
     eventos = (await db.execute(stmt)).scalars().all()
 
-    # Agrupa por boleto (banco, nosso_numero, numero_documento) -- a identidade
-    # real (= a UQ de wh_boleto_vigente). NAO inclui ua_id na chave: a UA do
-    # boleto e UMA so (vem do titulo via _enriquecer_ua); a remessa entra com
-    # ua_id=None e o retorno com a UA do header -- inclui-la na chave separaria
-    # eventos do MESMO boleto em grupos que colidiriam na UQ depois do enrich.
-    por_boleto: dict[tuple[str, str, str], list[BoletoEvento]] = defaultdict(list)
+    # Agrupa por boleto (banco, numero_documento) -- o numero do documento (=
+    # numero do titulo) e a UNICA identidade estavel entre remessa e retorno.
+    # O nosso_numero NAO serve de chave: e ZEROS na remessa BMP (o banco e quem
+    # atribui o nosso numero, devolvendo-o so no retorno) e RECICLADO na Vortx
+    # (o mesmo nosso aparece em varios documentos ao longo do tempo). Incluir o
+    # nosso na chave deixava o boleto enviado (nosso=000... ou nosso nosso) sem
+    # colapsar com o seu retorno (nosso do banco) -> "enviado" fantasma mesmo o
+    # banco tendo confirmado/liquidado. Validado empiricamente: 0 documento tem
+    # >1 sacado (nao ha reuso entre pagadores), 662 documentos tem >1 nosso (=
+    # exatamente os casos a colapsar). data: 2026-06-06.
+    por_boleto: dict[tuple[str, str], list[BoletoEvento]] = defaultdict(list)
     for e in eventos:
-        # Identidade do boleto = par (nosso_numero, numero_documento). O banco
-        # REUSA o nosso_numero ao longo do tempo (reciclagem do sequencial apos
-        # o boleto fechar); so o par e estavel/unico. Empiricamente 635 nossos
-        # numeros aparecem para >1 documento.
-        por_boleto[(e.banco_origem, e.nosso_numero, e.numero_documento)].append(e)
+        por_boleto[(e.banco_origem, e.numero_documento)].append(e)
 
     projected_at = datetime.now(UTC)
     rows: list[dict[str, Any]] = []
-    for (banco_origem, nosso, numero_documento), evs in por_boleto.items():
+    for (banco_origem, numero_documento), evs in por_boleto.items():
         evs.sort(
             key=lambda e: (e.data_ocorrencia, _PRIORIDADE.get(e.efeito_estado, 1))
         )
@@ -159,8 +160,14 @@ async def project_tenant_vigente(
         data_pgto: date | None = None
         ua_id: int | None = None
         ua_nome = None
+        nosso = ""
         sacado_doc = sacado_nome = None
         for e in evs:
+            # Nosso numero representativo: prefere um nao-zerado (o do banco, vindo
+            # do retorno) ao da remessa BMP (000...). Como os eventos estao
+            # ordenados por data, o ultimo nao-zerado (retorno) vence.
+            if e.nosso_numero and e.nosso_numero.strip("0"):
+                nosso = e.nosso_numero
             if e.ua_id is not None:
                 ua_id = e.ua_id
             if e.ua_nome:
@@ -190,6 +197,9 @@ async def project_tenant_vigente(
                 tipo_vig = e.tipo_evento
                 cod_vig = e.codigo_ocorrencia
                 data_vig = e.data_ocorrencia
+
+        if not nosso:  # so vimos nosso zerado/vazio (remessa BMP sem retorno)
+            nosso = evs[-1].nosso_numero or ""
 
         rows.append(
             {

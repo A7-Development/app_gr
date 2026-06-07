@@ -49,8 +49,11 @@ class BoletoVigente(Base):
 
     __tablename__ = "wh_boleto_vigente"
     __table_args__ = (
-        # Identidade do boleto = par (nosso_numero, numero_documento): o banco
-        # REUSA o nosso_numero ao longo do tempo, so o par e estavel.
+        # Identidade do boleto = (banco, numero_documento). O nosso_numero NAO e
+        # identidade: e ZEROS na remessa BMP (banco atribui) e RECICLADO na Vortx
+        # (mesmo nosso p/ varios documentos). O fold agrupa por documento; aqui
+        # o nosso entra so como atributo (preferindo o do banco/retorno). A UQ
+        # mantem nosso por historico — e satisfeita trivialmente (1 linha/doc).
         UniqueConstraint(
             "tenant_id",
             "banco_origem",
