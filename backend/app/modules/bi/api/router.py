@@ -8,6 +8,7 @@ from app.modules.bi.api import (
     metadata,
     operacoes2,
     operacoes4,
+    operacoes5,
     panorama,
 )
 
@@ -23,6 +24,12 @@ router.include_router(operacoes2.router)
 # regime caixa). Lente alternativa de operacoes3 com foco em composicao
 # da receita + yield por DU. Ver CLAUDE.md banner operacoes4.
 router.include_router(operacoes4.router)
+
+# L2 Operacoes5 — pagina /bi/operacoes5 (espinha de drill por dimensao:
+# UA -> Produto -> Cedente -> Operacao -> Documento). Aplica o padrao de
+# navegacao (docs/navegacao-aprofundamento.md): cedente = rota, operacao =
+# drawer, documento = inline. Regime caixa (wh_operacao + wh_titulo).
+router.include_router(operacoes5.router)
 
 # L2 Benchmark (CVM FIDC via postgres_fdw — CLAUDE.md 13.1).
 # Pre-requisito runtime: schema `cvm_remote.*` configurado no gr_db.

@@ -140,6 +140,7 @@ export const MODULES: ModuleDefinition[] = [
           { name: "Mês corrente · antigo", href: "/bi/operacoes2", enabled: true },
           { name: "Mês corrente · novo", href: "/bi/operacoes3", enabled: true },
           { name: "Mês corrente · operações", href: "/bi/operacoes4", enabled: true },
+          { name: "Drill por dimensão", href: "/bi/operacoes5", enabled: true },
         ],
       },
       { name: "Carteira", href: "/bi/carteira", enabled: false, icon: RiWallet3Line },

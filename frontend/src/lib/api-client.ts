@@ -2021,6 +2021,94 @@ export const biOperacoes4 = {
 }
 
 //
+// Operacoes5 (L2 dentro de BI) — espinha de drill por dimensao.
+// UA -> Produto -> Cedente -> Operacao -> Documento. Padrao de navegacao:
+// cedente = rota, operacao = drawer, documento = inline.
+// Espelha backend/app/modules/bi/{schemas,services,api}/operacoes5.py.
+//
+
+export type Operacoes5CedenteItem = {
+  cedente_id: number | null
+  cedente_nome: string
+  cedente_documento: string | null
+  vop: number
+  n_op: number
+  taxa_media: number | null
+  prazo_medio: number | null
+  receita: number
+  yield_pct: number | null
+  share_pct: number
+}
+
+export type Operacoes5CedentesData = {
+  cedentes: Operacoes5CedenteItem[]
+  total: number
+  vop_total: number
+  receita_total: number
+}
+
+export type Operacoes5OperacaoItem = {
+  operacao_id: number
+  data_de_efetivacao: string | null
+  produto: string
+  modalidade: string
+  quantidade_de_titulos: number
+  vop: number
+  total_liquido: number
+  taxa_juros: number
+  prazo_medio: number
+  receita: number
+}
+
+export type Operacoes5OperacoesData = {
+  cedente_id: number | null
+  cedente_nome: string
+  cedente_documento: string | null
+  operacoes: Operacoes5OperacaoItem[]
+  total: number
+  vop_total: number
+  receita_total: number
+}
+
+export type Operacoes5DocumentoItem = {
+  titulo_id: number
+  sigla: string
+  numero: string
+  sacado_id: number
+  valor: number
+  valor_liquido: number
+  saldo_devedor: number
+  data_de_vencimento_efetiva: string | null
+  situacao: number
+  status: number | null
+}
+
+export type Operacoes5DocumentosData = {
+  operacao_id: number
+  documentos: Operacoes5DocumentoItem[]
+  total: number
+  valor_total: number
+}
+
+export const biOperacoes5 = {
+  /** Ranking de cedentes no periodo (nivel Cedente da espinha). */
+  cedentes: (f: BIFilters) =>
+    apiClient.get<BIResponse<Operacoes5CedentesData>>(
+      `/bi/operacoes5/cedentes${filtersToQueryString(f)}`,
+    ),
+  /** Operacoes de um cedente (passe cedenteId em `f`). Alimenta a rota do cedente. */
+  operacoes: (f: BIFilters) =>
+    apiClient.get<BIResponse<Operacoes5OperacoesData>>(
+      `/bi/operacoes5/operacoes${filtersToQueryString(f)}`,
+    ),
+  /** Documentos (titulos) de uma operacao — conteudo inline do drawer. */
+  documentos: (operacaoId: number) =>
+    apiClient.get<BIResponse<Operacoes5DocumentosData>>(
+      `/bi/operacoes5/operacoes/${operacaoId}/documentos`,
+    ),
+}
+
+//
 // Benchmark (L2 dentro de BI) — CVM FIDC via postgres_fdw.
 // Detalhes em docs/integracao-cvm-fidc.md. CLAUDE.md §13.1.
 //
