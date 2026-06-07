@@ -44,6 +44,8 @@
 //   RemovableChip       Filtro aplicado com botao X
 //   MoreFiltersButton   Botao "Mais filtros" — suporta `asChild` (Radix Slot)
 //                       para envolver Popover trigger sem duplicar anatomy.
+//   ResetFiltersButton  Botao "Resetar" (ghost) — sempre visivel, habilita com
+//                       filtro ativo. Padrao /bi/operacoes2.
 //   SavedViewsDropdown  Dropdown de visualizacoes salvas (localStorage)
 
 "use client"
@@ -53,6 +55,7 @@ import { Slot } from "@radix-ui/react-slot"
 import {
   RiCloseLine,
   RiEqualizerLine,
+  RiRefreshLine,
   RiSearchLine,
   RiBookmarkLine,
   RiBookmarkFill,
@@ -62,6 +65,7 @@ import {
   type RemixiconComponentType,
 } from "@remixicon/react"
 import { cx, focusInput, focusRing } from "@/lib/utils"
+import { Button } from "@/components/tremor/Button"
 import {
   Popover,
   PopoverContent,
@@ -472,6 +476,40 @@ export function MoreFiltersButton({
         </>
       )}
     </Comp>
+  )
+}
+
+interface ResetFiltersButtonProps {
+  /** Ha algum filtro aplicado? Quando false o botao fica disabled (apagado). */
+  hasActiveFilters: boolean
+  /** Zera todos os filtros (escopo + lentes). */
+  onReset:    () => void
+  /** Rotulo. Default "Resetar". */
+  label?:     string
+  className?: string
+}
+
+/**
+ * ResetFiltersButton — controle canonico de "Resetar filtros" da toolbar Z3.
+ * Sempre visivel; habilita quando ha filtro ativo (padrao /bi/operacoes2). Use
+ * ao final dos chips de filtro. `<Button variant="ghost">` + RiRefreshLine.
+ */
+export function ResetFiltersButton({
+  hasActiveFilters,
+  onReset,
+  label = "Resetar",
+  className,
+}: ResetFiltersButtonProps) {
+  return (
+    <Button
+      variant="ghost"
+      onClick={onReset}
+      disabled={!hasActiveFilters}
+      className={cx("ml-1", className)}
+    >
+      <RiRefreshLine className="size-3.5 shrink-0" aria-hidden="true" />
+      {label}
+    </Button>
   )
 }
 
