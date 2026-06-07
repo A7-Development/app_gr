@@ -230,28 +230,43 @@ async def variacao_chat(
     from app.core.enums import Permission as _Permission
 
     try:
-        headline = await compute_variacao_headline(
-            db, tenant_id=principal.tenant_id, ua_id=fundo_id, data_d0=data,
-        )
-        det = await compute_detalhamento_dia(
+        resumo = await compute_variacao_resumo(
             db, tenant_id=principal.tenant_id, ua_id=fundo_id, data_d0=data,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
-    # Contexto estruturado pre-carregado (= o que deixa o chat rapido e ancorado).
+    # Contexto estruturado pre-carregado — ORDENADO pelos 6 grupos do balanco +
+    # TODAS as atencoes do deterministico + giro neutro. E o material das alavancas
+    # extraordinarias do dia: o agente nao recalcula, ele le, ordena e julga o que
+    # e extraordinario vs rotina (§14).
+    r = resumo.reconciliacao
     linhas = [
-        f"Variacao da Cota Sub: {_fmt_brl(headline.cota_sub_delta)} "
-        f"(Ativo {_fmt_brl(headline.delta_ativo)} - Passivo {_fmt_brl(headline.delta_passivo)}). "
-        f"Reconcilia: {'sim' if headline.reconciliacao_ok else f'NAO ({_fmt_brl(headline.reconciliacao_residuo)})'}.",
+        f"Dia analisado (D0): {resumo.data.isoformat()} (vs D-1 {resumo.data_anterior.isoformat()}).",
+        f"Variacao da Cota Sub no dia: {_fmt_brl(resumo.cota_delta)}.",
+        f"Reconciliacao com o MEC (oficial): "
+        f"{'fecha' if r.fecha else f'NAO fecha — residuo {_fmt_brl(r.residuo)}'}.",
         "",
-        "Detalhamento por area (impacto no PL Sub | resumo da tool):",
+        "GRUPOS DO BALANCO (impacto no PL Sub, na ordem canonica DC -> PDD&WOP -> "
+        "Aplicacoes -> Disponibilidades -> Obrigacoes -> Cotas Prioritarias):",
     ]
-    linhas += [f"  - [{a.grupo}] {a.label}: {_fmt_brl(a.delta)} | {a.resumo}" for a in det.areas]
-    if headline.flags:
-        linhas.append("")
-        linhas.append("Flags (atencao):")
-        linhas += [f"  - {f.descricao} ({_fmt_brl(f.valor)})" for f in headline.flags]
+    linhas += [
+        f"  - [{g.label}] impacto {_fmt_brl(g.impacto_pl_sub)} | {g.resumo}"
+        for g in resumo.grupos
+    ]
+    if resumo.atencoes:
+        linhas += ["", "ATENCOES DETECTADAS PELO DETERMINISTICO (todas — nao filtrar nenhuma):"]
+        linhas += [
+            f"  - [{a.tipo}] {a.descricao}: {_fmt_brl(a.valor)}"
+            + (f" (grupo: {a.grupo_label})" if a.grupo_label else "")
+            for a in resumo.atencoes
+        ]
+    if resumo.giro_capital:
+        linhas += ["", "GIRO/CAPITAL DO DIA (movimentos NEUTROS — nao movem a cota em R$, contexto):"]
+        linhas += [
+            f"  - {gc.label}: {_fmt_brl(gc.valor)}" + (f" ({gc.nota})" if gc.nota else "")
+            for gc in resumo.giro_capital
+        ]
     contexto = "\n".join(linhas)
 
     historico = "\n".join(
@@ -271,7 +286,7 @@ async def variacao_chat(
         agent_name="controladoria.investigador_cota",
         scope=scope,
         user_context={
-            "fundo_nome": headline.fundo_nome,
+            "fundo_nome": resumo.fundo_nome,
             "data_d0": data.isoformat(),
             "contexto": contexto,
             "historico": historico,
