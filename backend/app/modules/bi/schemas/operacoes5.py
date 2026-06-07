@@ -22,7 +22,13 @@ class Operacoes5CedenteItem(BaseModel):
     cedente_documento: str | None = Field(description="CNPJ/CPF sem mascara.")
     vop: float = Field(description="VOP do cedente (soma total_bruto) no periodo filtrado.")
     n_op: int = Field(description="Numero de operacoes do cedente no periodo.")
-    taxa_media: float | None = Field(description="Taxa de juros media ponderada por VOP.")
+    taxa_media: float | None = Field(description="Taxa de juros (desagio) media ponderada por VOP.")
+    taxa_final: float | None = Field(
+        description=(
+            "Taxa final efetiva (% a.m.): receita_total / VOP x (30 / prazo_medio). "
+            "Inclui desagio + todas as tarifas. None quando VOP=0 ou prazo=0."
+        )
+    )
     prazo_medio: float | None = Field(description="Prazo medio real ponderado por VOP.")
     receita: float = Field(description="Receita total (regime caixa, 4 buckets).")
     yield_pct: float | None = Field(description="receita / vop em %.")
@@ -54,7 +60,13 @@ class Operacoes5OperacaoItem(BaseModel):
     quantidade_de_titulos: int
     vop: float = Field(description="total_bruto da operacao.")
     total_liquido: float
-    taxa_juros: float = Field(description="Taxa de juros da operacao (% a.m.).")
+    taxa_juros: float = Field(description="Taxa de juros (desagio nominal) da operacao (% a.m.).")
+    taxa_final: float | None = Field(
+        description=(
+            "Taxa final efetiva (% a.m.): receita / total_bruto x (30 / prazo_medio_real). "
+            "Inclui desagio + todas as tarifas. None quando total_bruto=0 ou prazo=0."
+        )
+    )
     prazo_medio: float = Field(description="Prazo medio real (dias).")
     receita: float = Field(description="Receita total da operacao = soma dos 8 componentes abaixo.")
 

@@ -40,6 +40,18 @@ from app.warehouse.operacao import Operacao
 from app.warehouse.titulo import Titulo
 
 
+def _taxa_final(receita: float, vop: float, prazo_medio: float | None) -> float | None:
+    """Taxa final efetiva (% a.m.) = receita / VOP x (30 / prazo_medio).
+
+    Custo efetivo da operacao incluindo TODAS as receitas (desagio + tarifas),
+    normalizado para taxa mensal pelo prazo medio real. Ex.: op #9756 (Fricock):
+    receita 2216.41 / bruto 183735.75 x 30/9.37 = 3.86% a.m. (vs 2% de desagio
+    nominal). None quando nao da pra normalizar (VOP=0 ou prazo=0)."""
+    if vop <= 0 or prazo_medio is None or prazo_medio <= 0:
+        return None
+    return receita / vop * 100.0 * 30.0 / prazo_medio
+
+
 def _receita_row_expr() -> Any:
     """Receita de UMA operacao (row-level, sem agregacao). Soma dos 4 buckets
     regime caixa — espelha `_receita_total_expr` (que e a versao agregada)."""
@@ -90,6 +102,11 @@ async def get_cedentes_ranking(
             vop=_as_float(r.vop),
             n_op=int(r.n_op or 0),
             taxa_media=(_as_float(r.taxa) if r.taxa is not None else None),
+            taxa_final=_taxa_final(
+                _as_float(r.receita),
+                _as_float(r.vop),
+                _as_float(r.prazo) if r.prazo is not None else None,
+            ),
             prazo_medio=(_as_float(r.prazo) if r.prazo is not None else None),
             receita=_as_float(r.receita),
             yield_pct=(
@@ -165,6 +182,11 @@ async def get_operacoes_por_cedente(
             vop=_as_float(r.total_bruto),
             total_liquido=_as_float(r.total_liquido),
             taxa_juros=_as_float(r.taxa_de_juros),
+            taxa_final=_taxa_final(
+                _as_float(r.receita),
+                _as_float(r.total_bruto),
+                _as_float(r.prazo_medio_real),
+            ),
             prazo_medio=_as_float(r.prazo_medio_real),
             receita=_as_float(r.receita),
             rec_desagio=_as_float(r.total_de_juros),

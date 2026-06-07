@@ -2034,6 +2034,8 @@ export type Operacoes5CedenteItem = {
   vop: number
   n_op: number
   taxa_media: number | null
+  /** Taxa final efetiva (% a.m.): receita/VOP x 30/prazo. Inclui desagio + tarifas. */
+  taxa_final: number | null
   prazo_medio: number | null
   receita: number
   yield_pct: number | null
@@ -2056,6 +2058,8 @@ export type Operacoes5OperacaoItem = {
   vop: number
   total_liquido: number
   taxa_juros: number
+  /** Taxa final efetiva (% a.m.): receita/total_bruto x 30/prazo. Inclui desagio + tarifas. */
+  taxa_final: number | null
   prazo_medio: number
   /** Receita total = soma dos 8 componentes rec_* abaixo. */
   receita: number

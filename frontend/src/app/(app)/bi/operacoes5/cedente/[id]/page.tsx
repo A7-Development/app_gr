@@ -187,6 +187,8 @@ export default function CedenteOperacoesPage({
                     <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-50">
                       {fmt.currencyWhole.format(vop)}
                     </td>
+                    {/* deságio · taxa_final · prazo */}
+                    <td className="px-3 py-2" />
                     <td className="px-3 py-2" />
                     <td className="px-3 py-2" />
                     <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-50">
@@ -237,7 +239,20 @@ export default function CedenteOperacoesPage({
                   { label: "Modalidade", value: selectedOp.modalidade },
                   { label: "VOP", value: selectedOp.vop, type: "currency" },
                   { label: "Líquido", value: selectedOp.total_liquido, type: "currency" },
-                  { label: "Taxa de juros", value: `${fmtPct2(selectedOp.taxa_juros)} a.m.` },
+                  {
+                    label: "Deságio (nominal)",
+                    value: `${fmtPct2(selectedOp.taxa_juros)} a.m.`,
+                  },
+                  {
+                    label: "Taxa final (c/ tarifas)",
+                    value: (
+                      <span className="font-semibold text-gray-900 dark:text-gray-50">
+                        {selectedOp.taxa_final != null
+                          ? `${fmtPct2(selectedOp.taxa_final)} a.m.`
+                          : "—"}
+                      </span>
+                    ),
+                  },
                   { label: "Prazo médio", value: `${fmtDias(selectedOp.prazo_medio)} dias` },
                   {
                     label: "Títulos",
@@ -345,13 +360,25 @@ function buildOperacaoColumns(): ColumnDef<Operacoes5OperacaoItem, unknown>[] {
       ),
     }) as ColumnDef<Operacoes5OperacaoItem, unknown>,
     opcol.accessor("taxa_juros", {
-      header: "Taxa",
+      header: "Deságio",
       size: 80,
       cell: (info) => (
-        <div className="text-right tabular-nums text-sm text-gray-700 dark:text-gray-300">
+        <div className="text-right tabular-nums text-sm text-gray-500 dark:text-gray-400">
           {fmtPct2(info.getValue<number>())}
         </div>
       ),
+    }) as ColumnDef<Operacoes5OperacaoItem, unknown>,
+    opcol.accessor("taxa_final", {
+      header: "Taxa final",
+      size: 90,
+      cell: (info) => {
+        const v = info.getValue<number | null>()
+        return (
+          <div className="text-right text-sm font-medium tabular-nums text-gray-900 dark:text-gray-50">
+            {v != null ? fmtPct2(v) : "—"}
+          </div>
+        )
+      },
     }) as ColumnDef<Operacoes5OperacaoItem, unknown>,
     opcol.accessor("prazo_medio", {
       header: "Prazo",
@@ -437,83 +464,100 @@ function buildDocumentoColumns(): ColumnDef<Operacoes5DocumentoItem, unknown>[] 
   ]
 }
 
-// ─── Composição da receita (inline no drawer) ──────────────────────────────
+// ─── Composição da receita (inline no drawer, DataTable canônica) ──────────
 //
 // Abre TODAS as receitas geradas pela operacao (regime caixa): desagio + 7
-// tarifas. Os 8 componentes somam `receita` (subtotal bold). IOF/imposto/
-// descontos sao tributos/ajustes — NAO compoem receita, vao num grupo a parte.
+// tarifas. Os 8 componentes somam `receita` (footer "Receita total" reconcilia
+// §14.6). IOF/imposto/descontos sao tributos/ajustes — NAO compoem receita,
+// vao numa segunda tabela. Usa a <DataTable> canonica (density ultra).
+
+type ReceitaLinha = { label: string; valor: number; share: number | null }
+
+const reccol = createColumnHelper<ReceitaLinha>()
+
+const COMPOSICAO_COLUMNS: ColumnDef<ReceitaLinha, unknown>[] = [
+  reccol.accessor("label", {
+    header: "Componente",
+    size: 240,
+    cell: (info) => (
+      <span className="text-sm text-gray-700 dark:text-gray-300">
+        {info.getValue<string>()}
+      </span>
+    ),
+  }) as ColumnDef<ReceitaLinha, unknown>,
+  reccol.accessor("share", {
+    header: "% receita",
+    size: 80,
+    cell: (info) => {
+      const v = info.getValue<number | null>()
+      return (
+        <div className="text-right text-[12px] tabular-nums text-gray-400 dark:text-gray-500">
+          {v != null ? fmtPct2(v) : "—"}
+        </div>
+      )
+    },
+  }) as ColumnDef<ReceitaLinha, unknown>,
+  reccol.accessor("valor", {
+    header: "Valor",
+    size: 120,
+    cell: (info) => (
+      <div className="text-right tabular-nums text-sm text-gray-900 dark:text-gray-50">
+        {fmt.currencyWhole.format(info.getValue<number>())}
+      </div>
+    ),
+  }) as ColumnDef<ReceitaLinha, unknown>,
+]
 
 function ComposicaoReceita({ op }: { op: Operacoes5OperacaoItem }) {
-  const componentes: { label: string; value: number }[] = [
-    { label: "Deságio (juros)", value: op.rec_desagio },
-    { label: "Tarifa de cessão", value: op.rec_tarifa_cessao },
-    { label: "Consultas financeiras", value: op.rec_consultas_financeiras },
-    { label: "Consultas fiscais", value: op.rec_consultas_fiscais },
-    { label: "Registros bancários", value: op.rec_registros_bancarios },
-    { label: "Documentos digitais", value: op.rec_documentos_digitais },
-    { label: "Ad valorem", value: op.rec_ad_valorem },
-    { label: "Rebate", value: op.rec_rebate },
-  ]
-  const tributos: { label: string; value: number }[] = [
-    { label: "IOF", value: op.trib_iof },
-    { label: "Imposto", value: op.trib_imposto },
-    { label: "Descontos / abatimentos", value: op.trib_descontos },
-  ]
   const total = op.receita
-  const hasTributos = tributos.some((t) => t.value !== 0)
+  const share = (v: number) => (total > 0 ? (v / total) * 100 : null)
+
+  const componentes: ReceitaLinha[] = [
+    { label: "Deságio (juros)", valor: op.rec_desagio, share: share(op.rec_desagio) },
+    { label: "Tarifa de cessão", valor: op.rec_tarifa_cessao, share: share(op.rec_tarifa_cessao) },
+    { label: "Consultas financeiras", valor: op.rec_consultas_financeiras, share: share(op.rec_consultas_financeiras) },
+    { label: "Consultas fiscais", valor: op.rec_consultas_fiscais, share: share(op.rec_consultas_fiscais) },
+    { label: "Registros bancários", valor: op.rec_registros_bancarios, share: share(op.rec_registros_bancarios) },
+    { label: "Documentos digitais", valor: op.rec_documentos_digitais, share: share(op.rec_documentos_digitais) },
+    { label: "Ad valorem", valor: op.rec_ad_valorem, share: share(op.rec_ad_valorem) },
+    { label: "Rebate", valor: op.rec_rebate, share: share(op.rec_rebate) },
+  ]
+  const tributos: ReceitaLinha[] = [
+    { label: "IOF", valor: op.trib_iof, share: null },
+    { label: "Imposto", valor: op.trib_imposto, share: null },
+    { label: "Descontos / abatimentos", valor: op.trib_descontos, share: null },
+  ]
+  const hasTributos = tributos.some((t) => t.valor !== 0)
 
   return (
-    <div className="overflow-hidden rounded border border-gray-200 dark:border-gray-800">
-      <table className="w-full text-sm">
-        <tbody>
-          {componentes.map((c) => (
-            <tr
-              key={c.label}
-              className="border-b border-gray-100 dark:border-gray-900"
-            >
-              <td className="px-3 py-1.5 text-gray-700 dark:text-gray-300">
-                {c.label}
-              </td>
-              <td className="w-16 px-3 py-1.5 text-right text-[12px] tabular-nums text-gray-400 dark:text-gray-500">
-                {total > 0 ? fmtPct2((c.value / total) * 100) : "—"}
-              </td>
-              <td className="px-3 py-1.5 text-right tabular-nums text-gray-900 dark:text-gray-50">
-                {fmt.currencyWhole.format(c.value)}
-              </td>
-            </tr>
-          ))}
-          <tr className="border-t-2 border-gray-300 font-semibold dark:border-gray-700">
-            <td className="px-3 py-2 text-gray-900 dark:text-gray-50">
+    <div className="space-y-4">
+      <DataTable<ReceitaLinha>
+        data={componentes}
+        columns={COMPOSICAO_COLUMNS}
+        density="ultra"
+        renderFooter={() => (
+          <tr>
+            <td className="px-3 py-2 text-xs font-semibold text-gray-900 dark:text-gray-50">
               Receita total
             </td>
             <td className="px-3 py-2" />
-            <td className="px-3 py-2 text-right tabular-nums text-gray-900 dark:text-gray-50">
+            <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-50">
               {fmt.currencyWhole.format(total)}
             </td>
           </tr>
-        </tbody>
-      </table>
+        )}
+      />
 
       {hasTributos && (
-        <div className="border-t border-gray-200 dark:border-gray-800">
-          <p className="px-3 pt-2 text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500">
+        <div>
+          <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500">
             Tributos e ajustes (não compõem receita)
           </p>
-          <table className="w-full text-sm">
-            <tbody>
-              {tributos.map((t) => (
-                <tr key={t.label}>
-                  <td className="px-3 py-1.5 text-gray-500 dark:text-gray-400">
-                    {t.label}
-                  </td>
-                  <td className="w-16 px-3 py-1.5" />
-                  <td className="px-3 py-1.5 text-right tabular-nums text-gray-500 dark:text-gray-400">
-                    {fmt.currencyWhole.format(t.value)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable<ReceitaLinha>
+            data={tributos}
+            columns={COMPOSICAO_COLUMNS}
+            density="ultra"
+          />
         </div>
       )}
     </div>
