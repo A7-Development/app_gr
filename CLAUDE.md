@@ -377,6 +377,8 @@ Patterns e surfaces sao **copy-paste-edit** — nao componentes black-box. Copie
 
 **Header de dashboard — set canonico de acoes (handoff bi-padrao 2026-04-26):** toda pagina derivada de `DashboardBiPadrao` usa `<DashboardHeaderActions>` no slot `actions` do `<PageHeader>`. O composite renderiza, em ordem fixa: `[DarkToggle, Compartilhar, Exportar, Mais, IA]`. DarkToggle e IA sao sempre presentes; Share/Export/More sao omitidos quando o callback nao e passado. Substituir por `<Button>` solto ou conjunto custom de botoes e regressao — fecha a porta para que cada pagina invente seu proprio header. Para acoes secundarias (Copiar link, Duplicar, Imprimir, etc.), use o slot `more={[...]}`.
 
+**Navegacao e aprofundamento de dados (como o usuario desce no detalhe):** ver [`docs/navegacao-aprofundamento.md`](./docs/navegacao-aprofundamento.md) — fonte de verdade para escolher entre inline / drawer / rota / modal. Resumo: exploracao → inline/drawer (preserva contexto); novo foco de trabalho → rota; decisao irreversivel → modal; form de config nunca em modal. Fronteira: **cedente/sacado/dossie viram rota** (`/.../[id]`); **cessao/titulo/operacao sao drawer** (`?selected` via nuqs, abrir=push / prev-next=replace); **parcela/evento/linha do agente sao inline**. Drawer/modal nao contam como nivel de navegacao (ortogonais a §11.6).
+
 ### 7.1 FilterBar (Z3) — anatomy canonica + controles
 
 **Estrutura visual** (canonica 2026-06-02 — anatomy FLAT): a Z3 do `DashboardBiPadrao` (e tambem `DashboardOperacional` e `ListagemComDrilldown`) renderiza como **linha branca sticky com `border-b`** — chips direto sobre a linha, SEM Card-em-faixa-cinza. Mais leve; os filtros lem como parte da pagina e sobra respiro vertical pro conteudo:
