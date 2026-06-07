@@ -438,7 +438,7 @@ export default function ConciliacaoBancoCobradorPage() {
                   (§14.6). Empilha em telas estreitas (< xl). */}
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                 <ResumoConciliacaoTable resumo={resumo} />
-                <ResumoConciliacaoCharts resumo={resumo} />
+                <ResumoConciliacaoCharts linhas={linhasFiltradas} />
               </div>
 
               {/* DataTable — filtrada pelos chips + busca */}
