@@ -384,7 +384,7 @@ function DatasetDrawer({
   const hasContract = row?.contract.status === "active"
 
   return (
-    <DrillDownSheet open={Boolean(row)} onClose={onClose} title="Gerenciar dataset">
+    <DrillDownSheet open={Boolean(row)} onClose={onClose} size="md" title="Gerenciar dataset">
       {row && (
         <div className="space-y-5 px-1 py-2">
           {/* Identidade do vendor (read-only) */}

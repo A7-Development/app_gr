@@ -206,11 +206,10 @@ export default function CedenteOperacoesPage({
 
       <ProvenanceFooter provenance={q.data?.provenance} />
 
-      {/* Drawer da operacao — documentos inline */}
+      {/* Drawer da operacao — documentos inline. Largura = default canonico (2xl). */}
       <DrillDownSheet
         open={opId != null}
         onClose={() => setSelected(null)}
-        size="xl"
         title={selectedOp ? `Operação ${selectedOp.operacao_id}` : "Operação"}
       >
         {selectedOp && (
@@ -223,12 +222,27 @@ export default function CedenteOperacoesPage({
             />
             <DrillDownSheet.Hero
               id={`Operação #${selectedOp.operacao_id}`}
-              title={`${selectedOp.produto} · ${
+              title={bundle?.cedente_nome ?? "Operação"}
+              subtitle={`${selectedOp.produto} · ${selectedOp.modalidade} · ${
                 selectedOp.data_de_efetivacao
                   ? fmtDate(selectedOp.data_de_efetivacao)
                   : "—"
               }`}
-              value={selectedOp.vop}
+              kpis={[
+                { label: "VOP", value: fmt.currencyWhole.format(selectedOp.vop) },
+                {
+                  label: "Taxa final",
+                  value:
+                    selectedOp.taxa_final != null
+                      ? `${fmtPct2(selectedOp.taxa_final)} a.m.`
+                      : "—",
+                  emphasis: true,
+                },
+                {
+                  label: "Receita",
+                  value: fmt.currencyWhole.format(selectedOp.receita),
+                },
+              ]}
             />
             <DrillDownSheet.Body>
               <DrillDownSheet.SectionLabel>
@@ -236,23 +250,10 @@ export default function CedenteOperacoesPage({
               </DrillDownSheet.SectionLabel>
               <DrillDownSheet.PropertyList
                 items={[
-                  { label: "Produto", value: selectedOp.produto },
-                  { label: "Modalidade", value: selectedOp.modalidade },
-                  { label: "VOP", value: selectedOp.vop, type: "currency" },
                   { label: "Líquido", value: selectedOp.total_liquido, type: "currency" },
                   {
                     label: "Deságio (nominal)",
                     value: `${fmtPct2(selectedOp.taxa_juros)} a.m.`,
-                  },
-                  {
-                    label: "Taxa final (c/ tarifas)",
-                    value: (
-                      <span className="font-semibold text-gray-900 dark:text-gray-50">
-                        {selectedOp.taxa_final != null
-                          ? `${fmtPct2(selectedOp.taxa_final)} a.m.`
-                          : "—"}
-                      </span>
-                    ),
                   },
                   { label: "Prazo médio", value: `${fmtDias(selectedOp.prazo_medio)} dias` },
                   {

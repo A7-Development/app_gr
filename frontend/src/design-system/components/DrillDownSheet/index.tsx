@@ -53,7 +53,9 @@ export interface DrillDownSheetProps {
 function DrillDownSheetRoot({
   open,
   onClose,
-  size                  = "md",
+  // Largura canonica = 2xl (1080px), alinhada aos drills da cota-sub. Drawers
+  // de FORM curto (ex.: "Gerenciar dataset") fixam size="md" explicitamente.
+  size                  = "2xl",
   dismissOnClickOutside = true,
   children,
   title                 = "Detalhe",
@@ -64,7 +66,7 @@ function DrillDownSheetRoot({
         <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay
             onClick={dismissOnClickOutside ? onClose : undefined}
-            className="fixed inset-0 z-40 bg-black/35 backdrop-blur-[2px] animate-dialog-overlay-show"
+            className="fixed inset-0 z-40 bg-black/35 backdrop-blur-[1px] animate-dialog-overlay-show"
           />
           <DialogPrimitive.Content
             onPointerDownOutside={dismissOnClickOutside ? (e) => e.preventDefault() : undefined}
@@ -190,9 +192,20 @@ function Header({ breadcrumb, statusSlot, onPrevious, onNext, extraActions, clas
  *  - `number`: mostra so o numero formatado, sem sufixo */
 export type HeroDeltaFormat = "percentage" | "currency" | "number"
 
+/** KPI compacto na zona do Hero. Use `kpis` quando o drill tem multiplas
+ *  metricas de cabecalho (ex.: VOP + Taxa final + Receita) em vez de um unico
+ *  `value`. `emphasis` destaca a metrica principal (azul de atencao §4). */
+export type HeroKpi = {
+  label:     string
+  value:     string
+  emphasis?: boolean
+}
+
 interface HeroProps {
   id?:        string
   title:      string
+  /** Linha secundaria sob o titulo (contexto: "FAT-DM · 02/04/2026"). */
+  subtitle?:  string
   value?:     number
   delta?:     {
     value:      number
@@ -210,6 +223,10 @@ interface HeroProps {
   /** Casas decimais do `value`. Default (undefined) = inteiro (currencyWhole).
    *  Use 2 quando o valor exige centavos (ex.: impacto na cota). */
   valueFractionDigits?: number
+  /** Linha de KPIs do cabecalho. Quando presente (e sem `value`), substitui o
+   *  numero unico por uma faixa de metricas. Coexiste com `value` se ambos forem
+   *  passados (value grande em cima, KPIs embaixo). */
+  kpis?:      HeroKpi[]
   className?: string
 }
 
@@ -229,7 +246,7 @@ function _formatHeroDelta(v: number, format: HeroDeltaFormat): string {
   return `${abs.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`
 }
 
-function Hero({ id, title, value, delta, valueFractionDigits, className }: HeroProps) {
+function Hero({ id, title, subtitle, value, delta, valueFractionDigits, kpis, className }: HeroProps) {
   const valueStr =
     value == null
       ? ""
@@ -260,9 +277,17 @@ function Hero({ id, title, value, delta, valueFractionDigits, className }: HeroP
           {id}
         </p>
       )}
-      <h2 className="text-base font-semibold text-gray-900 dark:text-gray-50 mb-3 truncate">
+      <h2 className={cx(
+        "truncate text-base font-semibold text-gray-900 dark:text-gray-50",
+        subtitle ? "mb-0.5" : "mb-3",
+      )}>
         {title}
       </h2>
+      {subtitle && (
+        <p className="mb-3 truncate text-xs text-gray-500 dark:text-gray-400">
+          {subtitle}
+        </p>
+      )}
       {value != null && (
         <div>
           <p className="text-[28px] font-semibold tabular-nums tracking-tight text-gray-900 dark:text-gray-50 leading-none">
@@ -287,6 +312,27 @@ function Hero({ id, title, value, delta, valueFractionDigits, className }: HeroP
               )}
             </p>
           )}
+        </div>
+      )}
+      {kpis && kpis.length > 0 && (
+        <div className={cx("flex flex-wrap gap-x-8 gap-y-3", value != null && "mt-4")}>
+          {kpis.map((k) => (
+            <div key={k.label}>
+              <p className="text-[10px] font-medium uppercase tracking-[0.05em] text-gray-500 dark:text-gray-400">
+                {k.label}
+              </p>
+              <p
+                className={cx(
+                  "mt-0.5 text-lg font-semibold tabular-nums",
+                  k.emphasis
+                    ? "text-blue-600 dark:text-blue-400"
+                    : "text-gray-900 dark:text-gray-50",
+                )}
+              >
+                {k.value}
+              </p>
+            </div>
+          ))}
         </div>
       )}
     </div>
