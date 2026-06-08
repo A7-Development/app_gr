@@ -867,7 +867,14 @@ function CotaSubPageInner() {
     if (datasDisponiveisQuery.data.length === 0) return
     if (datasDisponiveisSet.has(dayIso)) return
     const maisRecente = datasDisponiveisQuery.data[0]
-    const d = new Date(maisRecente)
+    // `maisRecente` e "YYYY-MM-DD": parse como meia-noite LOCAL (T00:00:00),
+    // igual ao resto da pagina (URL, competencia, calendario). `new Date("YYYY-
+    // MM-DD")` cru parseia como UTC e, em BRT (UTC-3), o `format()` local do
+    // setDay volta UM DIA (off-by-one) — jogando o dia selecionado para uma
+    // data sem snapshot/coverage. Era a causa do "Dados ainda nao disponiveis"
+    // no primeiro load que sumia ao trocar de competencia e voltar (esse outro
+    // caminho ja usava T00:00:00, por isso "consertava").
+    const d = new Date(`${maisRecente}T00:00:00`)
     if (!isNaN(d.getTime())) setDay(d)
   }, [datasDisponiveisQuery.data, datasDisponiveisSet, dayIso, setDay])
 
@@ -927,7 +934,9 @@ function CotaSubPageInner() {
     if (p.classe) setClasse(p.classe as ClasseOption)
     if (p.search) setSearch(p.search)
     if (p.day) {
-      const d = new Date(p.day)
+      // p.day e "YYYY-MM-DD" (gravado via format local) — parse local p/ evitar
+      // off-by-one UTC->BRT (mesma razao do efeito de recuo de dia).
+      const d = new Date(`${p.day}T00:00:00`)
       if (!isNaN(d.getTime())) setDay(d)
     }
     const restored: DynamicFilter[] = []
@@ -1546,7 +1555,9 @@ function CoverageGateEmpty({
 }
 
 function buildTimeline(row: MovimentacaoRow): TimelineEventDef[] {
-  const baseDate = format(new Date(row.data), "dd/MM/yyyy")
+  // row.data e "YYYY-MM-DD" — parse local (T00:00:00) p/ nao exibir o dia
+  // anterior por causa do parse UTC em BRT.
+  const baseDate = format(new Date(`${row.data}T00:00:00`), "dd/MM/yyyy")
   const events: TimelineEventDef[] = [
     { type: "cedida",    date: baseDate, actor: "Front-office",  description: `${row.tipo === "subscricao" ? "Subscricao" : "Resgate"} solicitada pelo cotista` },
     { type: "lastreada", date: baseDate, actor: "Back-office",   description: "Pedido validado e enviado a administradora" },
