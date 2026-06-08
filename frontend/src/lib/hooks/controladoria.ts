@@ -10,6 +10,7 @@ import { differenceInCalendarDays, parseISO } from "date-fns"
 import { useMutation, useQuery } from "@tanstack/react-query"
 
 import {
+  ApiError,
   buildCotaSubAgenteVariacaoStreamRequest,
   coerceAgenteVariacaoRun,
   controladoria,
@@ -466,7 +467,23 @@ export function useCotaSubReadiness(
     fundoId,
   )
 
+  // O coverage vive no modulo Integracoes (endpoint /integracoes/sources/.../
+  // coverage exige INTEGRACOES.ADMIN). Um usuario com CONTROLADORIA READ mas
+  // sem acesso a Integracoes recebe 402/403 nessa chamada. Nesse caso NAO
+  // bloqueamos a pagina: o gate de readiness e uma conveniencia operacional
+  // (saber quais reports QiTech ja chegaram + botao de forcar sync, que esse
+  // usuario nao pode acionar mesmo). Os dados da analise sao guardados por
+  // CONTROLADORIA READ — que o usuario tem — entao degradamos para "sem gate"
+  // e deixamos a analise renderizar (cada query aplica seu escopo e mostra
+  // vazio se faltar dado). So tratamos 402/403 — erro transitorio (rede/500)
+  // continua bloqueando, pra nao esconder problema real de quem TEM acesso.
+  const accessDenied =
+    cov.isError &&
+    cov.error instanceof ApiError &&
+    (cov.error.status === 403 || cov.error.status === 402)
+
   const entries = React.useMemo<CoverageStripEntry[]>(() => {
+    if (accessDenied) return []
     const byName = new Map<string, CoverageDay | undefined>()
     if (cov.data && data) {
       for (const ep of cov.data.endpoints) {
@@ -483,7 +500,7 @@ export function useCotaSubReadiness(
         day:        byName.get(r.name),
       }),
     )
-  }, [cov.data, data])
+  }, [cov.data, data, accessDenied])
 
   // Advisory reports (ex.: market.fidc_estoque) aparecem no strip mas nao
   // bloqueiam o render — quando ausentes, drivers consolidados continuam
@@ -492,19 +509,23 @@ export function useCotaSubReadiness(
     () => new Set(COTA_SUB_REPORTS.filter((r) => r.advisory).map((r) => r.name)),
     [],
   )
-  const allReady = entries.every(
+  const allReady = accessDenied || entries.every(
     (e) => advisoryNames.has(e.name) || isCoverageStripEntryHealthy(e),
   )
-  const blocking = entries.filter(
-    (e) => !advisoryNames.has(e.name) && !isCoverageStripEntryHealthy(e),
-  )
+  const blocking = accessDenied
+    ? []
+    : entries.filter(
+        (e) => !advisoryNames.has(e.name) && !isCoverageStripEntryHealthy(e),
+      )
 
   return {
     entries,
     allReady,
     blocking,
     isLoading: cov.isLoading,
-    isError:   cov.isError,
+    // Acesso negado ao coverage nao e um erro de pagina — degradamos para
+    // "sem gate" silenciosamente (ver nota em accessDenied acima).
+    isError:   accessDenied ? false : cov.isError,
     refetch:   cov.refetch,
   }
 }
