@@ -92,6 +92,17 @@ class LinhaConciliacaoSchema(BaseModel):
     )
 
 
+class FrescorBanco(BaseModel):
+    """Frescor do retorno de UM banco cobrador."""
+
+    banco: str = Field(description="Banco cobrador (bradesco/vortx/bmp/itau).")
+    retorno_ate: date = Field(
+        description="Data do ultimo evento de RETORNO processado deste banco "
+        "(max data_ocorrencia na timeline). Banco parado fica visivel aqui "
+        "mesmo com o frescor global em dia."
+    )
+
+
 class ConciliacaoBancoCobradorResponse(BaseModel):
     """Resultado da conciliacao estado-vs-estado (carteira atual x cobranca)."""
 
@@ -99,6 +110,9 @@ class ConciliacaoBancoCobradorResponse(BaseModel):
         default=None,
         description="Frescor do lado banco: data do ultimo evento de cobranca "
         "processado. A carteira BITFIN e 'agora'.",
+    )
+    frescor_bancos: list[FrescorBanco] = Field(
+        default_factory=list, description="Frescor do retorno por banco."
     )
     titulos_abertos: int = Field(description="Titulos abertos elegiveis a boleto.")
     boletos_ativos: int = Field(description="Boletos ativos (cobranca vigente).")

@@ -4891,8 +4891,16 @@ export type LinhaConciliacaoBoleto = {
   protesto_em:       string | null  // YYYY-MM-DD
 }
 
+// Frescor do retorno de UM banco (banco parado fica visivel aqui mesmo com o
+// frescor global em dia).
+export type FrescorBancoConciliacao = {
+  banco:       string
+  retorno_ate: string  // YYYY-MM-DD
+}
+
 export type ConciliacaoBancoCobradorResponse = {
   cobranca_atualizada_ate: string | null  // frescor do lado banco (ISO)
+  frescor_bancos:          FrescorBancoConciliacao[]
   titulos_abertos:         number
   boletos_ativos:          number
   conciliados:             number
@@ -4981,6 +4989,11 @@ export const controladoria = {
       v === null || v === undefined ? null : Number(v)
     return {
       cobranca_atualizada_ate: raw.cobranca_atualizada_ate ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      frescor_bancos: (raw.frescor_bancos ?? []).map((f: any) => ({
+        banco:       f.banco,
+        retorno_ate: f.retorno_ate,
+      })),
       titulos_abertos: raw.titulos_abertos,
       boletos_ativos:  raw.boletos_ativos,
       conciliados:     raw.conciliados,
