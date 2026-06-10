@@ -60,6 +60,14 @@ class BureauResumoOut(BaseModel):
     acoes_judiciais_qtd: int | None
     falencias_qtd: int | None
     valor_total_restricoes: float | None
+    # Suspeita de liminar — conclusao DERIVADA pelo Strata (regra
+    # serasa_liminar_v1), nao consta no bureau nem no ERP. Frontend
+    # renderiza badge "Possivel Liminar · Strata" com proveniencia.
+    suspeita_liminar: bool = False
+    negative_summary_message: str | None = None
+    liminar_estado: str | None = None
+    liminar_desde: datetime | None = None
+    liminar_regra: str | None = None
 
 
 class CarteiraAtivaLinhaOut(BaseModel):

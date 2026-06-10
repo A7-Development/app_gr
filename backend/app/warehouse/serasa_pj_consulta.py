@@ -74,6 +74,14 @@ class SerasaPjConsulta(Auditable, Base):
             "cnpj",
             postgresql_where=text("has_acoes_judiciais = true"),
         ),
+        # Carteira: "quais CNPJs estao sob suspeita de liminar" — base do
+        # badge na ficha do cedente + sentinela (regra serasa_liminar_v1).
+        Index(
+            "ix_wh_serasa_pj_consulta_tenant_suspeita_liminar",
+            "tenant_id",
+            "cnpj",
+            postgresql_where=text("suspeita_liminar = true"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -215,6 +223,20 @@ class SerasaPjConsulta(Auditable, Base):
     )
     valor_total_restricoes: Mapped[Decimal | None] = mapped_column(
         Numeric(20, 2), nullable=True
+    )
+
+    # ─── Supressao judicial (regra serasa_liminar_v1) ──────────────────────
+    # `negative_summary_message` = valor cru de `negativeSummary.message`
+    # do payload (proveniencia — o fator que disparou a conclusao).
+    # `suspeita_liminar` = conclusao DERIVADA pelo Strata (nao consta no
+    # bureau nem no ERP): mensagem explicita "NADA CONSTA" e o padrao de
+    # supressao judicial de apontamentos. Ver adapters/bureau/serasa_pj/
+    # liminar.py para a regra versionada e a evidencia da descoberta.
+    negative_summary_message: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    suspeita_liminar: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
     )
 
     # ─── Sumarios facts.bankrupts + facts.judgementFilings (F.1) ───────────

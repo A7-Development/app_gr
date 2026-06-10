@@ -20,6 +20,12 @@ from app.core.enums import SourceType
 from app.modules.integracoes.adapters.admin.qitech.endpoint_catalog import (
     QITECH_ENDPOINTS,
 )
+from app.modules.integracoes.adapters.bureau.serasa_pj.liminar import (
+    LIMINAR_RULE_VERSION as SERASA_LIMINAR_RULE_VERSION,
+)
+from app.modules.integracoes.adapters.bureau.serasa_pj.liminar import (
+    classify_negative_summary_message as classify_serasa_negative_summary_message,
+)
 from app.modules.integracoes.adapters.cobranca.etl import (
     run_cobranca_manual_sync,
 )
@@ -127,10 +133,12 @@ def get_report_spec(slug: str) -> ReportSpec | None:
 
 
 __all__ = [
+    "SERASA_LIMINAR_RULE_VERSION",
     "CadastralFields",
     "CadastralQueryResult",
     "ReportCategory",
     "ReportSpec",
+    "classify_serasa_negative_summary_message",
     "dia_util_anterior_qitech",
     "endpoint_catalog",
     "execute_serasa_pj_query",

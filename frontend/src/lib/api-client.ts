@@ -3350,6 +3350,13 @@ export type EntidadeBureauResumo = {
   acoes_judiciais_qtd: number | null
   falencias_qtd: number | null
   valor_total_restricoes: number | null
+  // Conclusão derivada pelo Strata (regra serasa_liminar_v1) — não vem do
+  // bureau/ERP. Renderiza <StrataConclusaoBadge label="Possível Liminar" />.
+  suspeita_liminar: boolean
+  negative_summary_message: string | null
+  liminar_estado: "suspeita_ativa" | "liminar_caida" | "transicao_ambigua" | null
+  liminar_desde: string | null
+  liminar_regra: string | null
 }
 
 export type EntidadeResumo = {

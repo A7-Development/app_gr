@@ -34,6 +34,7 @@ import {
 import { cx } from "@/lib/utils"
 import { DrillDownSheet } from "@/design-system/components/DrillDownSheet"
 import { EntidadeLink } from "@/design-system/components/EntidadeLink"
+import { StrataConclusaoBadge } from "@/design-system/components/StrataConclusaoBadge"
 import { fmt, fmtCNPJ, fmtDate, caption } from "@/design-system/tokens/typography"
 import { tableTokens } from "@/design-system/tokens/table"
 
@@ -340,6 +341,13 @@ function BureauResumoBloco({ bureau }: { bureau: EntidadeBureauResumo }) {
   ]
   const comRestricao = restricoes.filter((r) => (r.qtd ?? 0) > 0)
   const limpos = restricoes.filter((r) => (r.qtd ?? 0) === 0)
+  // Suspeita corrente (flag da última consulta OU estado da sentinela) —
+  // o "✓ sem restrições" seria mentira quando os zeros vêm de supressão
+  // judicial, então o badge SUBSTITUI a linha de "limpo".
+  const suspeitaLiminar =
+    bureau.suspeita_liminar || bureau.liminar_estado === "suspeita_ativa"
+  const liminarCaida = bureau.liminar_estado === "liminar_caida"
+  const liminarEmRevisao = bureau.liminar_estado === "transicao_ambigua"
 
   return (
     <div className="space-y-1">
@@ -361,14 +369,74 @@ function BureauResumoBloco({ bureau }: { bureau: EntidadeBureauResumo }) {
             bureau.valor_total_restricoes > 0 &&
             ` · total ${fmt.currencyCompact.format(bureau.valor_total_restricoes)}`}
         </p>
+      ) : suspeitaLiminar ? (
+        <LiminarBadge bureau={bureau} variant="warning" label="Possível Liminar" />
+      ) : liminarEmRevisao ? (
+        <LiminarBadge
+          bureau={bureau}
+          variant="neutral"
+          label="Possível Liminar (em revisão)"
+        />
       ) : (
         <p className={tableTokens.cellSecondary}>✓ sem restrições apontadas</p>
+      )}
+      {liminarCaida && (
+        <LiminarBadge bureau={bureau} variant="error" label="Liminar caída" />
       )}
       {comRestricao.length > 0 && limpos.length > 0 && (
         <p className={tableTokens.cellSecondary}>
           ✓ sem {limpos.map((r) => r.label.toLowerCase()).join(", ")}
         </p>
       )}
+    </div>
+  )
+}
+
+/** Badge de conclusão Strata pro caso liminar — proveniência no tooltip. */
+function LiminarBadge({
+  bureau,
+  variant,
+  label,
+}: {
+  bureau: EntidadeBureauResumo
+  variant: "warning" | "error" | "neutral"
+  label: string
+}) {
+  const tooltipPorLabel: Record<string, string> = {
+    "Possível Liminar":
+      "A Serasa retornou “NADA CONSTA” explícito no resumo de negativos — " +
+      "padrão de supressão judicial de apontamentos. Os zeros não " +
+      "significam ficha limpa: a empresa provavelmente obteve liminar " +
+      "para escondê-los.",
+    "Possível Liminar (em revisão)":
+      "Este CNPJ esteve sob “NADA CONSTA” e a consulta mais recente veio " +
+      "sem o carimbo, ainda sem negativos visíveis — liminar pode ter " +
+      "expirado ou a Serasa mudou o marcador. Em revisão pela sentinela.",
+    "Liminar caída":
+      "Os apontamentos negativos VOLTARAM a aparecer após período sob " +
+      "“NADA CONSTA” — a liminar provavelmente caiu. Revisar crédito.",
+  }
+  return (
+    <div>
+      <StrataConclusaoBadge
+        label={label}
+        variant={variant}
+        tooltip={
+          <div className="space-y-1 text-xs">
+            <p>
+              Conclusão derivada pelo Strata — não consta no ERP nem no
+              bureau.
+            </p>
+            <p>{tooltipPorLabel[label]}</p>
+            <p className="opacity-70">
+              {bureau.liminar_desde &&
+                `Sob suspeita desde ${fmtDate(isoDateOnly(bureau.liminar_desde))} · `}
+              Regra {bureau.liminar_regra ?? "serasa_liminar_v1"} · confiança
+              média
+            </p>
+          </div>
+        }
+      />
     </div>
   )
 }

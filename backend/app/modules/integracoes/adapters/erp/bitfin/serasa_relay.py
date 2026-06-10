@@ -41,6 +41,11 @@ from app.modules.integracoes.adapters.bureau.serasa_pj.mappers.pj_analitico impo
 from app.modules.integracoes.adapters.erp.bitfin.config import BitfinConfig
 from app.modules.integracoes.adapters.erp.bitfin.connection import fetch_rows
 from app.modules.integracoes.adapters.erp.bitfin.queries import bitfin as q
+from app.modules.integracoes.services.serasa_liminar_sentinela import (
+    ConsultaAvaliada,
+    has_negativos_visiveis,
+    process_consulta,
+)
 from app.modules.integracoes.services.serasa_pj_query import (
     persist_serasa_pj_silver,
 )
@@ -137,6 +142,22 @@ async def _process_one(tenant_id: UUID, row: dict[str, Any]) -> str:
             actual_report_returned=_REPORT,
         )
         await persist_serasa_pj_silver(db, mapped)
+        # Sentinela de liminar (mesma tx do silver): mantem a maquina de
+        # estados + grava transicoes/alertas no decision_log.
+        await process_consulta(
+            db,
+            ConsultaAvaliada(
+                tenant_id=tenant_id,
+                cnpj=cnpj,
+                raw_id=raw_id,
+                consulted_at=consulted_at,
+                negative_summary_message=mapped.consulta[
+                    "negative_summary_message"
+                ],
+                negativos_visiveis=has_negativos_visiveis(mapped.consulta),
+                triggered_by=f"bitfin:consulta:{cid}",
+            ),
+        )
         await db.commit()
     return "ok"
 
