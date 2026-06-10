@@ -461,3 +461,99 @@ SELECT
     DataDeCadastro AS data_cadastro_fonte
 FROM dbo.GrupoEconomicoMembro
 """
+
+
+# ---- Posicoes por papel (F1 do party model) ----
+# Snapshots consolidados que o Bitfin calcula por papel. JOIN com Cliente/
+# Sacado traz a ponte (ClienteId/SacadoId + EntidadeId) para ancorar na
+# entidade canonica.
+SELECT_POSICAO_CEDENTE = """
+SELECT
+    cp.PosicaoId AS posicao_id,
+    c.ClienteId AS papel_source_id,
+    c.EntidadeId AS entidade_source_id,
+    cp.RiscoTotalQuantidade AS risco_total_qtd,
+    cp.RiscoTotalTotal AS risco_total_valor,
+    cp.RiscoVencidoQuantidade AS risco_vencido_qtd,
+    cp.RiscoVencidoTotal AS risco_vencido_valor,
+    cp.RiscoAVencerQuantidade AS risco_avencer_qtd,
+    cp.RiscoAVencerTotal AS risco_avencer_valor,
+    cp.PrazoMedioDeFaturamento AS prazo_medio_carteira,
+    cp.IndiceDeLiquidez AS indice_liquidez,
+    cp.VencimentarioDaLiquidez AS vencimentario_liquidez,
+    cp.QtdeDeDiasDaLiquidez AS liquidez_qtde_dias,
+    cp.DataInicialDaLiquidez AS liquidez_data_inicial,
+    cp.DataFinalDaLiquidez AS liquidez_data_final,
+    cp.TotalDosLiquidadosDaLiquidez AS liquidez_total_liquidados,
+    cp.TotalDosRecompradosDaLiquidez AS liquidez_total_recomprados,
+    cp.TotalDoVencidosPenalizadosDaLiquidez AS liquidez_total_vencidos_penalizados,
+    cp.TotalDoVencidosNaoPenalizadosDaLiquidez AS liquidez_total_vencidos_nao_penalizados,
+    cp.DataDeApuracaoDaLiquidez AS liquidez_data_apuracao
+FROM dbo.ClientePosicao cp
+INNER JOIN dbo.Cliente c
+    ON c.PosicaoId = cp.PosicaoId
+"""
+
+SELECT_POSICAO_CEDENTE_PRODUTO = """
+SELECT
+    cpp.PosicaoId AS posicao_id,
+    cpp.ProdutoId AS produto_source_id,
+    pr.Sigla AS produto_sigla,
+    c.ClienteId AS papel_source_id,
+    c.EntidadeId AS entidade_source_id,
+    cpp.LimiteOperacional AS limite_operacional,
+    cpp.Tranche AS tranche,
+    cpp.IndiceDeLiquidez AS indice_liquidez,
+    cpp.RiscoTotalQuantidade AS risco_total_qtd,
+    cpp.RiscoTotalTotal AS risco_total_valor,
+    cpp.RiscoVencidoQuantidade AS risco_vencido_qtd,
+    cpp.RiscoVencidoTotal AS risco_vencido_valor,
+    cpp.RiscoAVencerQuantidade AS risco_avencer_qtd,
+    cpp.RiscoAVencerTotal AS risco_avencer_valor,
+    cpp.HistoricoDeLiquidacoesQuantidade AS hist_liquidacoes_qtd,
+    cpp.HistoricoDeLiquidacoesTotal AS hist_liquidacoes_valor,
+    cpp.HistoricoDeBaixadosQuantidade AS hist_baixados_qtd,
+    cpp.HistoricoDeBaixadosTotal AS hist_baixados_valor
+FROM dbo.ClientePosicaoProduto cpp
+INNER JOIN dbo.Cliente c
+    ON c.PosicaoId = cpp.PosicaoId
+LEFT JOIN dbo.Produto pr
+    ON pr.ProdutoId = cpp.ProdutoId
+"""
+
+SELECT_POSICAO_SACADO = """
+SELECT
+    sp.PosicaoId AS posicao_id,
+    s.SacadoId AS papel_source_id,
+    s.EntidadeId AS entidade_source_id,
+    sp.RiscoTotalQuantidade AS risco_total_qtd,
+    sp.RiscoTotalTotal AS risco_total_valor,
+    sp.RiscoVencidoQuantidade AS risco_vencido_qtd,
+    sp.RiscoVencidoTotal AS risco_vencido_valor,
+    sp.RiscoAVencerQuantidade AS risco_avencer_qtd,
+    sp.RiscoAVencerTotal AS risco_avencer_valor,
+    sp.TicketMedio AS ticket_medio,
+    sp.IndiceDePontualidade AS indice_pontualidade,
+    sp.ProrrogadosQuantidade AS prorrogados_qtd,
+    sp.ProrrogadosTotal AS prorrogados_valor,
+    sp.PrazoMedioDeProrrogacao AS prazo_medio_prorrogacao,
+    sp.HistoricoDeTitulosQuantidade AS hist_titulos_qtd,
+    sp.HistoricoDeTitulosTotal AS hist_titulos_valor,
+    sp.HistoricoDeLiquidacoesQuantidade AS hist_liquidacoes_qtd,
+    sp.HistoricoDeLiquidacoesTotal AS hist_liquidacoes_valor,
+    sp.HistoricoDeRecomprasQuantidade AS hist_recompras_qtd,
+    sp.HistoricoDeRecomprasTotal AS hist_recompras_valor,
+    sp.IndiceDeLiquidez AS indice_liquidez,
+    sp.VencimentarioDaLiquidez AS vencimentario_liquidez,
+    sp.QtdeDeDiasDaLiquidez AS liquidez_qtde_dias,
+    sp.DataInicialDaLiquidez AS liquidez_data_inicial,
+    sp.DataFinalDaLiquidez AS liquidez_data_final,
+    sp.TotalDosLiquidadosDaLiquidez AS liquidez_total_liquidados,
+    sp.TotalDosRecompradosDaLiquidez AS liquidez_total_recomprados,
+    sp.TotalDoVencidosPenalizadosDaLiquidez AS liquidez_total_vencidos_penalizados,
+    sp.TotalDoVencidosNaoPenalizadosDaLiquidez AS liquidez_total_vencidos_nao_penalizados,
+    sp.DataDeApuracaoDaLiquidez AS liquidez_data_apuracao
+FROM dbo.SacadoPosicao sp
+INNER JOIN dbo.Sacado s
+    ON s.PosicaoId = sp.PosicaoId
+"""

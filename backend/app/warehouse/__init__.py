@@ -54,11 +54,18 @@ from app.warehouse.posicao_compromissada import PosicaoCompromissada
 from app.warehouse.posicao_cota_fundo import PosicaoCotaFundo
 from app.warehouse.posicao_debenture import PosicaoDebentureDia
 from app.warehouse.posicao_outros_ativos import PosicaoOutrosAtivos
+from app.warehouse.posicao_papel import (
+    WhPosicaoCedente,
+    WhPosicaoCedenteProduto,
+    WhPosicaoSacado,
+)
 from app.warehouse.posicao_renda_fixa import PosicaoRendaFixa
 from app.warehouse.qitech_raw_relatorio import QiTechRawRelatorio
 from app.warehouse.rentabilidade_fundo import RentabilidadeFundo
 from app.warehouse.saldo_conta_corrente import SaldoContaCorrente
 from app.warehouse.saldo_tesouraria import SaldoTesouraria
+from app.warehouse.serasa_liminar_estado import SerasaLiminarEstado
+from app.warehouse.serasa_pj_liminar_feature import SerasaPjLiminarFeature
 from app.warehouse.serasa_pj_atraso_medio_mensal import (
     SerasaPjAtrasoMedioMensal,
 )
@@ -120,7 +127,9 @@ __all__ = [
     "RentabilidadeFundo",
     "SaldoContaCorrente",
     "SaldoTesouraria",
+    "SerasaLiminarEstado",
     "SerasaPjAtrasoMedioMensal",
+    "SerasaPjLiminarFeature",
     "SerasaPjBusinessReference",
     "SerasaPjConsulta",
     "SerasaPjEndereco",
@@ -145,4 +154,7 @@ __all__ = [
     "WhEntidadePapel",
     "WhGrupoEconomico",
     "WhGrupoEconomicoMembro",
+    "WhPosicaoCedente",
+    "WhPosicaoCedenteProduto",
+    "WhPosicaoSacado",
 ]

@@ -60,6 +60,57 @@ class BureauResumoOut(BaseModel):
     acoes_judiciais_qtd: int | None
     falencias_qtd: int | None
     valor_total_restricoes: float | None
+    # Suspeita de liminar — conclusao DERIVADA pelo Strata (regra
+    # serasa_liminar_v1), nao consta no bureau nem no ERP. Frontend
+    # renderiza badge "Possivel Liminar · Strata" com proveniencia.
+    suspeita_liminar: bool = False
+    negative_summary_message: str | None = None
+    liminar_estado: str | None = None
+    liminar_desde: datetime | None = None
+    liminar_regra: str | None = None
+
+
+class CarteiraAtivaLinhaOut(BaseModel):
+    """Linha da mini-matriz Carteira Ativa (escopo CNPJ ou Grupo)."""
+
+    escopo: str = Field(description="cnpj | grupo")
+    cedente_valor: float
+    sacado_valor: float
+    total: float
+    cedente_vencido: float
+    sacado_vencido: float
+
+
+class LimiteProdutoOut(BaseModel):
+    """Limite aprovado por produto (papel cedente — nao ha limite por sacado)."""
+
+    produto_sigla: str | None
+    limite: float
+    em_uso: float = Field(description="Risco total em aberto no produto.")
+    vencido: float
+
+
+class PerformanceResumoOut(BaseModel):
+    """Snapshot do vencimentario (janela de apuracao do Bitfin).
+
+    Componentes (liquidados + recomprados + vencidos_*) somam
+    `vencimentario` (§14.6 — reconciliacao on-screen no peek)."""
+
+    papel: str = Field(description="Lente: cedente | sacado")
+    indice_liquidez: float | None
+    vencimentario: float | None
+    liquidados: float | None
+    recomprados: float | None
+    vencidos_penalizados: float | None
+    vencidos_nao_penalizados: float | None
+    janela_dias: int | None
+    data_apuracao: datetime | None
+    prazo_medio_carteira: float | None = Field(
+        description="Prazo medio do ESTOQUE (lente cedente)."
+    )
+    indice_pontualidade: float | None = Field(
+        description="Lente sacado apenas."
+    )
 
 
 class EntidadeResumoOut(BaseModel):
@@ -96,6 +147,11 @@ class EntidadeResumoOut(BaseModel):
         description="Todos os estabelecimentos da mesma raiz (inclui o proprio)."
     )
     grupo: GrupoEconomicoOut | None
+
+    # Posicoes por papel (F1)
+    carteira_ativa: list[CarteiraAtivaLinhaOut]
+    limites: list[LimiteProdutoOut]
+    performance: PerformanceResumoOut | None
 
     # Bureau
     bureau: BureauResumoOut | None

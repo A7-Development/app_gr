@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import EntidadePapel
@@ -19,9 +19,24 @@ from app.warehouse.entidade import (
     WhGrupoEconomico,
     WhGrupoEconomicoMembro,
 )
+from app.warehouse.posicao_papel import (
+    WhPosicaoCedente,
+    WhPosicaoCedenteProduto,
+    WhPosicaoSacado,
+)
+from app.warehouse.serasa_liminar_estado import SerasaLiminarEstado
 from app.warehouse.serasa_pj_consulta import SerasaPjConsulta
 
 _BUREAU_FONTE_LABEL = "Serasa Relato PJ"
+
+
+def _f(value: object) -> float:
+    """Decimal/None -> float (0.0 para None — agregados monetarios)."""
+    return float(value) if value is not None else 0.0
+
+
+def _fn(value: object) -> float | None:
+    return float(value) if value is not None else None
 
 
 async def get_resumo(
@@ -93,6 +108,7 @@ async def get_resumo(
 
     # --- Grupo economico + membros (com papeis de cada membro) ---
     grupo: dict | None = None
+    grupo_entidade_ids: list[UUID] = []
     if entidade.grupo_economico_source_id is not None:
         grupo_row = (
             await db.execute(
@@ -120,6 +136,7 @@ async def get_resumo(
             membro_ids = [
                 ent.id for _m, ent in membro_rows if ent is not None
             ]
+            grupo_entidade_ids = membro_ids
             papeis_por_entidade: dict[UUID, list[str]] = {}
             if membro_ids:
                 for ent_id, papel in (
@@ -149,6 +166,121 @@ async def get_resumo(
                 ],
             }
 
+    # --- Posicoes por papel (F1): carteira ativa + limites + performance ---
+    pos_ced = (
+        await db.execute(
+            select(WhPosicaoCedente).where(
+                WhPosicaoCedente.tenant_id == tenant_id,
+                WhPosicaoCedente.entidade_id == entidade.id,
+            )
+        )
+    ).scalars().first()
+    pos_sac = (
+        await db.execute(
+            select(WhPosicaoSacado).where(
+                WhPosicaoSacado.tenant_id == tenant_id,
+                WhPosicaoSacado.entidade_id == entidade.id,
+            )
+        )
+    ).scalars().first()
+
+    carteira_ativa: list[dict] = []
+    if pos_ced is not None or pos_sac is not None:
+        ced_v = _f(pos_ced.risco_total_valor) if pos_ced else 0.0
+        sac_v = _f(pos_sac.risco_total_valor) if pos_sac else 0.0
+        carteira_ativa.append(
+            {
+                "escopo": "cnpj",
+                "cedente_valor": ced_v,
+                "sacado_valor": sac_v,
+                "total": ced_v + sac_v,
+                "cedente_vencido": _f(pos_ced.risco_vencido_valor) if pos_ced else 0.0,
+                "sacado_vencido": _f(pos_sac.risco_vencido_valor) if pos_sac else 0.0,
+            }
+        )
+
+    # Escopo GRUPO: soma sobre todas as entidades do grupo (inclui a propria).
+    ids_grupo = {*grupo_entidade_ids, entidade.id} if grupo_entidade_ids else set()
+    if ids_grupo and len(ids_grupo) > 1:
+        ced_g = (
+            await db.execute(
+                select(
+                    func.coalesce(func.sum(WhPosicaoCedente.risco_total_valor), 0),
+                    func.coalesce(func.sum(WhPosicaoCedente.risco_vencido_valor), 0),
+                ).where(
+                    WhPosicaoCedente.tenant_id == tenant_id,
+                    WhPosicaoCedente.entidade_id.in_(ids_grupo),
+                )
+            )
+        ).one()
+        sac_g = (
+            await db.execute(
+                select(
+                    func.coalesce(func.sum(WhPosicaoSacado.risco_total_valor), 0),
+                    func.coalesce(func.sum(WhPosicaoSacado.risco_vencido_valor), 0),
+                ).where(
+                    WhPosicaoSacado.tenant_id == tenant_id,
+                    WhPosicaoSacado.entidade_id.in_(ids_grupo),
+                )
+            )
+        ).one()
+        if _f(ced_g[0]) + _f(sac_g[0]) > 0 or carteira_ativa:
+            carteira_ativa.append(
+                {
+                    "escopo": "grupo",
+                    "cedente_valor": _f(ced_g[0]),
+                    "sacado_valor": _f(sac_g[0]),
+                    "total": _f(ced_g[0]) + _f(sac_g[0]),
+                    "cedente_vencido": _f(ced_g[1]),
+                    "sacado_vencido": _f(sac_g[1]),
+                }
+            )
+
+    limites_rows = (
+        await db.execute(
+            select(WhPosicaoCedenteProduto)
+            .where(
+                WhPosicaoCedenteProduto.tenant_id == tenant_id,
+                WhPosicaoCedenteProduto.entidade_id == entidade.id,
+            )
+            .order_by(WhPosicaoCedenteProduto.limite_operacional.desc())
+        )
+    ).scalars().all()
+    limites = [
+        {
+            "produto_sigla": lr.produto_sigla,
+            "limite": _f(lr.limite_operacional),
+            "em_uso": _f(lr.risco_total_valor),
+            "vencido": _f(lr.risco_vencido_valor),
+        }
+        for lr in limites_rows
+        if _f(lr.limite_operacional) > 0 or _f(lr.risco_total_valor) > 0
+    ]
+
+    # Performance: lente cedente quando ha; senao a lente sacado.
+    performance: dict | None = None
+    pos_perf = pos_ced if pos_ced is not None else pos_sac
+    if pos_perf is not None and pos_perf.vencimentario_liquidez is not None:
+        performance = {
+            "papel": "cedente" if pos_perf is pos_ced else "sacado",
+            "indice_liquidez": _fn(pos_perf.indice_liquidez),
+            "vencimentario": _fn(pos_perf.vencimentario_liquidez),
+            "liquidados": _fn(pos_perf.liquidez_total_liquidados),
+            "recomprados": _fn(pos_perf.liquidez_total_recomprados),
+            "vencidos_penalizados": _fn(pos_perf.liquidez_total_vencidos_penalizados),
+            "vencidos_nao_penalizados": _fn(
+                pos_perf.liquidez_total_vencidos_nao_penalizados
+            ),
+            "janela_dias": pos_perf.liquidez_qtde_dias,
+            "data_apuracao": pos_perf.liquidez_data_apuracao,
+            "prazo_medio_carteira": _fn(pos_ced.prazo_medio_carteira)
+            if pos_ced is not None
+            else None,
+            "indice_pontualidade": _fn(pos_sac.indice_pontualidade)
+            if pos_perf is pos_sac and pos_sac is not None
+            else None,
+        }
+
     # --- Bureau: ultima consulta Serasa do documento ---
     bureau: dict | None = None
     consulta = (
@@ -163,6 +295,18 @@ async def get_resumo(
         )
     ).scalar_one_or_none()
     if consulta is not None:
+        # Suspeita de liminar (conclusao DERIVADA pelo Strata, nao do
+        # bureau/ERP — regra serasa_liminar_v1). Estado vem da maquina de
+        # estados da sentinela; a flag da consulta cobre o caso de estado
+        # ainda nao materializado (backfill pendente).
+        liminar_estado = (
+            await db.execute(
+                select(SerasaLiminarEstado).where(
+                    SerasaLiminarEstado.tenant_id == tenant_id,
+                    SerasaLiminarEstado.cnpj == entidade.documento,
+                )
+            )
+        ).scalar_one_or_none()
         bureau = {
             "fonte": _BUREAU_FONTE_LABEL,
             "consultado_em": consulta.consulted_at,
@@ -176,6 +320,17 @@ async def get_resumo(
             "falencias_qtd": consulta.count_falencias,
             "valor_total_restricoes": float(consulta.valor_total_restricoes)
             if consulta.valor_total_restricoes is not None
+            else None,
+            "suspeita_liminar": bool(consulta.suspeita_liminar),
+            "negative_summary_message": consulta.negative_summary_message,
+            "liminar_estado": liminar_estado.estado
+            if liminar_estado is not None
+            else None,
+            "liminar_desde": liminar_estado.primeira_evidencia_at
+            if liminar_estado is not None
+            else None,
+            "liminar_regra": liminar_estado.regra_version
+            if liminar_estado is not None
             else None,
         }
 
@@ -198,6 +353,9 @@ async def get_resumo(
         "cedente_id": cedente_id,
         "estabelecimentos": estabelecimentos,
         "grupo": grupo,
+        "carteira_ativa": carteira_ativa,
+        "limites": limites,
+        "performance": performance,
         "bureau": bureau,
         "source_type": entidade.source_type.value,
         "ingested_at": entidade.ingested_at,

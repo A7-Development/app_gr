@@ -51,6 +51,10 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
+from app.modules.integracoes.adapters.bureau.serasa_pj.liminar import (
+    extract_negative_summary_message,
+    is_suspeita_liminar,
+)
 from app.modules.integracoes.adapters.bureau.serasa_pj.mappers._common import (
     as_list,
     build_provenance,
@@ -143,6 +147,12 @@ def map_pj_analitico(
 
     identification = report.get("identificationReport") or {}
     negative = report.get("negativeData") or {}
+
+    # ─── Supressao judicial (regra serasa_liminar_v1) ──────────────────────
+    # "NADA CONSTA" explicito em negativeSummary = padrao de liminar
+    # escondendo apontamentos (limpo genuino vem SEM message).
+    negative_summary_message = extract_negative_summary_message(report)
+    suspeita_liminar = is_suspeita_liminar(negative_summary_message)
 
     # ─── Restricoes (silver + contadores agregados) ────────────────────────
     restricoes_rows: list[dict[str, Any]] = []
@@ -322,6 +332,9 @@ def map_pj_analitico(
         ),
         # Contadores agregados (negativeData)
         **counters,
+        # Supressao judicial (regra serasa_liminar_v1)
+        "negative_summary_message": negative_summary_message,
+        "suspeita_liminar": suspeita_liminar,
         # Sumario de facts.bankrupts (F.1)
         "has_falencias": bankrupts_count > 0,
         "count_falencias": bankrupts_count,
