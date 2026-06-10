@@ -62,7 +62,6 @@ class BureauResumoOut(BaseModel):
     valor_total_restricoes: float | None
 
 
-<<<<<<< HEAD
 class CarteiraAtivaLinhaOut(BaseModel):
     """Linha da mini-matriz Carteira Ativa (escopo CNPJ ou Grupo)."""
 
@@ -106,8 +105,6 @@ class PerformanceResumoOut(BaseModel):
     )
 
 
-=======
->>>>>>> origin/main
 class EntidadeResumoOut(BaseModel):
     """Resumo da entidade para o peek — identidade + papeis + grupo + bureau."""
 
@@ -143,14 +140,11 @@ class EntidadeResumoOut(BaseModel):
     )
     grupo: GrupoEconomicoOut | None
 
-<<<<<<< HEAD
     # Posicoes por papel (F1)
     carteira_ativa: list[CarteiraAtivaLinhaOut]
     limites: list[LimiteProdutoOut]
     performance: PerformanceResumoOut | None
 
-=======
->>>>>>> origin/main
     # Bureau
     bureau: BureauResumoOut | None
 
