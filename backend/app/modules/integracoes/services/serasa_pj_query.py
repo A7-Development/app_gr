@@ -64,6 +64,13 @@ from app.modules.integracoes.adapters.bureau.serasa_pj.mappers.pj_analitico impo
 from app.modules.integracoes.adapters.bureau.serasa_pj.version import (
     ADAPTER_VERSION,
 )
+from app.modules.integracoes.services.serasa_liminar_sentinela import (
+    ConsultaAvaliada,
+    has_negativos_visiveis,
+)
+from app.modules.integracoes.services.serasa_liminar_sentinela import (
+    process_consulta as process_liminar_consulta,
+)
 from app.modules.integracoes.services.source_config import (
     get_decrypted_config,
 )
@@ -395,6 +402,22 @@ async def execute_pj_query(
     try:
         async with AsyncSessionLocal() as db:
             await _upsert_silver(db, rows)
+            # Sentinela de liminar (mesma tx do silver): maquina de
+            # estados + transicoes/alertas no decision_log.
+            await process_liminar_consulta(
+                db,
+                ConsultaAvaliada(
+                    tenant_id=tenant_id,
+                    cnpj=rows.consulta["cnpj"],
+                    raw_id=raw_id,
+                    consulted_at=rows.consulta["consulted_at"],
+                    negative_summary_message=rows.consulta[
+                        "negative_summary_message"
+                    ],
+                    negativos_visiveis=has_negativos_visiveis(rows.consulta),
+                    triggered_by=triggered_by,
+                ),
+            )
             await db.commit()
         summary["consulta_id"] = rows.consulta["id"]
         summary["counts"] = {
