@@ -62,6 +62,52 @@ class BureauResumoOut(BaseModel):
     valor_total_restricoes: float | None
 
 
+<<<<<<< HEAD
+class CarteiraAtivaLinhaOut(BaseModel):
+    """Linha da mini-matriz Carteira Ativa (escopo CNPJ ou Grupo)."""
+
+    escopo: str = Field(description="cnpj | grupo")
+    cedente_valor: float
+    sacado_valor: float
+    total: float
+    cedente_vencido: float
+    sacado_vencido: float
+
+
+class LimiteProdutoOut(BaseModel):
+    """Limite aprovado por produto (papel cedente — nao ha limite por sacado)."""
+
+    produto_sigla: str | None
+    limite: float
+    em_uso: float = Field(description="Risco total em aberto no produto.")
+    vencido: float
+
+
+class PerformanceResumoOut(BaseModel):
+    """Snapshot do vencimentario (janela de apuracao do Bitfin).
+
+    Componentes (liquidados + recomprados + vencidos_*) somam
+    `vencimentario` (§14.6 — reconciliacao on-screen no peek)."""
+
+    papel: str = Field(description="Lente: cedente | sacado")
+    indice_liquidez: float | None
+    vencimentario: float | None
+    liquidados: float | None
+    recomprados: float | None
+    vencidos_penalizados: float | None
+    vencidos_nao_penalizados: float | None
+    janela_dias: int | None
+    data_apuracao: datetime | None
+    prazo_medio_carteira: float | None = Field(
+        description="Prazo medio do ESTOQUE (lente cedente)."
+    )
+    indice_pontualidade: float | None = Field(
+        description="Lente sacado apenas."
+    )
+
+
+=======
+>>>>>>> origin/main
 class EntidadeResumoOut(BaseModel):
     """Resumo da entidade para o peek — identidade + papeis + grupo + bureau."""
 
@@ -97,6 +143,14 @@ class EntidadeResumoOut(BaseModel):
     )
     grupo: GrupoEconomicoOut | None
 
+<<<<<<< HEAD
+    # Posicoes por papel (F1)
+    carteira_ativa: list[CarteiraAtivaLinhaOut]
+    limites: list[LimiteProdutoOut]
+    performance: PerformanceResumoOut | None
+
+=======
+>>>>>>> origin/main
     # Bureau
     bureau: BureauResumoOut | None
 
