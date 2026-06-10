@@ -322,3 +322,25 @@ class OpinionRecommendation(enum.StrEnum):
     APPROVE = "approve"
     DENY = "deny"
     CONDITIONAL = "conditional"
+
+
+class TipoPessoa(enum.StrEnum):
+    """Legal person type of a canonical entity (`wh_entidade`)."""
+
+    PJ = "pj"
+    PF = "pf"
+
+
+class EntidadePapel(enum.StrEnum):
+    """Role an entity plays in the operation (party model, `wh_entidade_papel`).
+
+    The same CNPJ/CPF can hold N roles simultaneously (cedente that is also
+    sacado of other cedentes, avalista, socio...). Roles are facts, not
+    entity subtypes — risk views consolidate across roles.
+    """
+
+    CEDENTE = "cedente"
+    SACADO = "sacado"
+    AVALISTA = "avalista"
+    SOCIO = "socio"
+    FORNECEDOR = "fornecedor"

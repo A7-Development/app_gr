@@ -388,3 +388,76 @@ WHERE s.Status = 'Integralizada'
 ORDER BY esc.UnidadeAdministrativaId, s.SubscricaoId
 """
 
+
+
+# ---- Party model (wh_entidade + papeis + grupo economico) ----
+# Entidade completa (nao confundir com SELECT_ENTIDADE_DRE, que e o
+# subconjunto ~90 referenciado no DRE). `Documento` vem zero-padded a
+# 15 chars para PJ e 11 para PF — normalizacao em app/shared/documento.py.
+SELECT_ENTIDADE_FULL = """
+SELECT
+    e.EntidadeId AS entidade_id,
+    e.Tipo AS tipo,
+    e.Documento AS documento,
+    e.Nome AS nome,
+    e.ChaveDoCnae AS cnae_chave,
+    c.Denominacao AS cnae_denominacao,
+    e.Porte AS porte,
+    e.DataDeConstituicao AS data_constituicao,
+    e.EmRecuperacaoJudicial AS em_recuperacao_judicial,
+    e.DataDaRecuperacaoJudicial AS data_recuperacao_judicial,
+    e.Logradouro AS logradouro,
+    e.Numero AS endereco_numero,
+    e.Complemento AS complemento,
+    e.Bairro AS bairro,
+    e.Localidade AS localidade,
+    e.Estado AS estado,
+    e.Cep AS cep,
+    e.Pais AS pais,
+    e.EnderecoVerificado AS endereco_verificado,
+    e.GrupoEconomicoId AS grupo_economico_source_id,
+    e.DataDeCadastro AS data_cadastro_fonte
+FROM dbo.Entidade e
+LEFT JOIN dbo.Cnae c
+    ON c.Chave = e.ChaveDoCnae
+"""
+
+# Papel CEDENTE (Cliente, no vocabulario Bitfin). ClienteId e a ponte
+# para wh_operacao.cedente_id.
+SELECT_CLIENTE_PAPEL = """
+SELECT
+    ClienteId AS papel_source_id,
+    EntidadeId AS entidade_source_id,
+    Status AS status_int,
+    Situacao AS situacao,
+    DataDeCadastro AS data_cadastro_fonte
+FROM dbo.Cliente
+"""
+
+# Papel SACADO. SacadoId e a ponte para wh_titulo.sacado_id.
+SELECT_SACADO_PAPEL = """
+SELECT
+    SacadoId AS papel_source_id,
+    EntidadeId AS entidade_source_id,
+    DataDeCadastro AS data_cadastro_fonte
+FROM dbo.Sacado
+"""
+
+SELECT_GRUPO_ECONOMICO = """
+SELECT
+    GrupoEconomicoId AS grupo_source_id,
+    Nome AS nome,
+    Segmento AS segmento,
+    QuantidadeDeMembros AS quantidade_membros,
+    DataDeCadastro AS data_cadastro_fonte
+FROM dbo.GrupoEconomico
+"""
+
+SELECT_GRUPO_ECONOMICO_MEMBRO = """
+SELECT
+    GrupoEconomicoId AS grupo_source_id,
+    EntidadeId AS entidade_source_id,
+    Vinculo AS vinculo,
+    DataDeCadastro AS data_cadastro_fonte
+FROM dbo.GrupoEconomicoMembro
+"""

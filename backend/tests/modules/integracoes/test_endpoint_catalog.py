@@ -60,14 +60,27 @@ def test_qitech_catalog_index_matches_tuple():
         assert QITECH_ENDPOINTS_BY_NAME[ep.name] is ep
 
 
-def test_bitfin_catalog_has_1_endpoint():
-    """Bitfin e monolitico hoje — 1 endpoint so (`bitfin.full_sync`)."""
-    assert len(BITFIN_ENDPOINTS) == 1
-    assert BITFIN_ENDPOINTS[0].name == "bitfin.full_sync"
+def test_bitfin_catalog_has_3_endpoints():
+    """Documenta o tamanho atual do catalogo Bitfin. Trocar este numero
+    exige batalha consciente (adicionar endpoint = atualizar este teste +
+    snapshot da migration).
+
+    Composicao atual (2026-06-10):
+        - bitfin.full_sync (ERP monolitico — )
+        - bitfin.entidades (party model: wh_entidade + papeis + grupos)
+        - bitfin.serasa_relay (replica ConsultaFinanceira -> wh_serasa_pj_*)
+    """
+    assert [ep.name for ep in BITFIN_ENDPOINTS] == [
+        "bitfin.full_sync",
+        "bitfin.entidades",
+        "bitfin.serasa_relay",
+    ]
 
 
 def test_bitfin_catalog_index_matches_tuple():
-    assert len(BITFIN_ENDPOINTS_BY_NAME) == 1
+    assert len(BITFIN_ENDPOINTS_BY_NAME) == len(BITFIN_ENDPOINTS)
+    for ep in BITFIN_ENDPOINTS:
+        assert BITFIN_ENDPOINTS_BY_NAME[ep.name] is ep
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -114,6 +127,8 @@ EXPECTED_QITECH_SNAPSHOT = [
 
 EXPECTED_BITFIN_SNAPSHOT = [
     ("bitfin.full_sync", "interval", "30"),
+    ("bitfin.entidades", "interval", "360"),
+    ("bitfin.serasa_relay", "interval", "15"),
 ]
 
 
@@ -489,7 +504,7 @@ def test_endpoint_catalog_qitech():
 
 def test_endpoint_catalog_bitfin():
     cat = endpoint_catalog(SourceType.ERP_BITFIN)
-    assert len(cat) == 1
+    assert len(cat) == 3
     assert cat[0].name == "bitfin.full_sync"
 
 
