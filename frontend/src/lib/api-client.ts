@@ -4879,6 +4879,10 @@ export type LinhaConciliacaoBoleto = {
   cedente_nome:      string | null
   ua_id:             number | null
   ua_nome:           string | null
+  // Situacao do titulo no wh (codigo Bitfin) — so preenchida em "so_em_banco".
+  // 1=liquidado / 5=recomprado com boleto ativo => cabe pedido de baixa.
+  // null em "so_em_banco" = titulo inexistente no warehouse.
+  situacao_titulo:   number | null
 }
 
 export type ConciliacaoBancoCobradorResponse = {

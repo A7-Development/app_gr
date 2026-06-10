@@ -79,6 +79,27 @@ export const STATUS_ORDER: StatusConciliacaoBoleto[] = [
   "so_em_banco",
 ]
 
+// ── Situacao do titulo no sistema (wh_titulo, codigo Bitfin) ─────────────────
+// So preenchida em linhas "so_em_banco". Rotulos confirmados na descricao
+// oficial do Bitfin (wh_titulo_snapshot.situacao_descricao): 0="Em aberto",
+// 1="Liq. Normal", 5="Recomprado"; 3/7/9 chegam como "Outros".
+const SITUACAO_TITULO_LABEL: Record<number, string> = {
+  0: "Em aberto",
+  1: "Liquidado",
+  5: "Recomprado",
+}
+
+/** Rotulo da situacao do titulo no sistema (linhas "so_em_banco"). */
+export function situacaoTituloLabel(s: number | null): string {
+  if (s === null) return "Sem título"
+  return SITUACAO_TITULO_LABEL[s] ?? `Outros (cód ${s})`
+}
+
+/** Titulo encerrado no sistema com boleto ativo no banco -> cabe baixa. */
+export function situacaoTituloCabeBaixa(s: number | null): boolean {
+  return s === 1 || s === 5
+}
+
 // Badge curto (cabe na coluna Status do detalhe + legenda dos charts).
 export const STATUS_BADGE_LABEL: Record<StatusConciliacaoBoleto, string> = {
   conciliado: "Conciliado",

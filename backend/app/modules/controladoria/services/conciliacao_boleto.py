@@ -118,6 +118,12 @@ class LinhaConciliacao:
     # ate o boleto carregar UA do header CNAB (rebuild da carteira de cobranca).
     ua_id: int | None = None
     ua_nome: str | None = None
+    # Situacao do titulo no wh_titulo (codigo Bitfin), preenchida APENAS em
+    # linhas "so em banco": o titulo pode estar liquidado (1) ou recomprado (5)
+    # no sistema com o boleto ainda ativo no banco — pendencia de pedido de
+    # baixa. None em "so em banco" = numero sem titulo no warehouse. Nas demais
+    # linhas e None por construcao (lado Bitfin so entra com situacao=0).
+    situacao_titulo: int | None = None
 
 
 @dataclass
@@ -242,6 +248,32 @@ async def _carregar_boletos(
     ]
 
 
+async def _situacao_titulos(
+    db: AsyncSession, tenant_id: UUID, numeros: set[str]
+) -> dict[str, int]:
+    """Situacao mais recente (por `data_da_situacao`) de cada numero em
+    `wh_titulo`, em QUALQUER situacao — usada para explicar o "so em banco".
+
+    O boleto ativo sem titulo ABERTO quase sempre tem titulo ENCERRADO no
+    sistema (liquidado/recomprado) cujo pedido de baixa nunca foi efetivado no
+    banco. Expor a situacao transforma a linha em acao ("instruir baixa").
+    """
+    if not numeros:
+        return {}
+    stmt = (
+        select(Titulo.numero, Titulo.situacao)
+        .where(
+            Titulo.tenant_id == tenant_id,
+            func.btrim(Titulo.numero).in_(numeros),
+        )
+        .order_by(Titulo.numero, Titulo.data_da_situacao.desc())
+    )
+    situacoes: dict[str, int] = {}
+    for numero, situacao in (await db.execute(stmt)).all():
+        situacoes.setdefault(_normalizar_numero(numero), situacao)
+    return situacoes
+
+
 async def _cobranca_atualizada_ate(
     db: AsyncSession, tenant_id: UUID
 ) -> date | None:
@@ -364,5 +396,15 @@ async def conciliar_boletos(
             else:
                 result.conciliados += 1
             result.linhas.append(linha)
+
+    # Enriquece o "so em banco" com a situacao do titulo no warehouse (qualquer
+    # situacao): liquidado/recomprado no sistema com boleto ativo = pendencia de
+    # pedido de baixa no banco.
+    so_banco = [linha for linha in result.linhas if linha.status == STATUS_SO_BANCO]
+    situacoes = await _situacao_titulos(
+        db, tenant_id, {linha.numero for linha in so_banco}
+    )
+    for linha in so_banco:
+        linha.situacao_titulo = situacoes.get(linha.numero)
 
     return result

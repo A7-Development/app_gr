@@ -74,6 +74,7 @@ def _mapear_linha(linha: LinhaConciliacao) -> LinhaConciliacaoSchema:
         cedente_nome=linha.cedente_nome,
         ua_id=linha.ua_id,
         ua_nome=linha.ua_nome,
+        situacao_titulo=linha.situacao_titulo,
     )
 
 
