@@ -101,10 +101,24 @@ async def adapter_sync_endpoint(
         summary["endpoint_name"] = endpoint_name
         return summary
 
+    # Party model: Entidade + papeis + grupo economico → wh_entidade*.
+    # Endpoint proprio, cadencia independente do full_sync.
+    if endpoint_name == "bitfin.entidades":
+        from app.modules.integracoes.adapters.erp.bitfin.entidades_sync import (
+            sync_entidades,
+        )
+
+        summary = await sync_entidades(
+            tenant_id, config, triggered_by=triggered_by, endpoint_name=endpoint_name
+        )
+        summary["endpoint_name"] = endpoint_name
+        return summary
+
     if endpoint_name != "bitfin.full_sync":
         raise ValueError(
             f"Endpoint desconhecido para Bitfin: {endpoint_name!r}. "
-            f"Conhecido: ['bitfin.full_sync', 'bitfin.serasa_relay']"
+            f"Conhecido: ['bitfin.full_sync', 'bitfin.entidades', "
+            f"'bitfin.serasa_relay']"
         )
 
     summary = await sync_all(

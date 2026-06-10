@@ -24,6 +24,13 @@ v2.2.0 (2026-05-31): ingestao do catalogo de tarifas
 RECEITA do DRE por NATUREZA (Desagio/Tarifa/Multa/Juros/Ad Valorem/Imposto)
 ancorada no `Tipo` nativo do catalogo via `wh_bitfin_dre_natureza_rule`.
 Silver `wh_dre_mensal` ganha colunas `natureza` + `fonte_integracao`.
+
+v2.3.0 (2026-06-10): party model — endpoint `bitfin.entidades` ingere
+Entidade completa (~20k, com CNAE/endereco/RJ/porte), papeis Cliente->
+cedente e Sacado->sacado, e GrupoEconomico(Membro) para o warehouse
+canonico wh_entidade / wh_entidade_fonte (crosswalk de identidade) /
+wh_entidade_papel / wh_grupo_economico(_membro). Identidade: 1 entidade
+por (tenant, documento normalizado); documento invalido = quarentena.
 """
 
-ADAPTER_VERSION = "bitfin_adapter_v2.2.0"
+ADAPTER_VERSION = "bitfin_adapter_v2.3.0"

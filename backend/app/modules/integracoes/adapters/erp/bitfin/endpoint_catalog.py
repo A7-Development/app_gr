@@ -44,6 +44,23 @@ BITFIN_ENDPOINTS: tuple[EndpointSpec, ...] = (
     # warehouse wh_serasa_pj_*, reusando o mapper Serasa do GR. Incremental
     # por watermark de ConsultaFinanceiraId (idempotente). Endpoint proprio
     # (schedule/enable independentes do full_sync do ERP).
+    # Party model (2026-06-10): Entidade completa + papeis (Cliente/Sacado) +
+    # grupo economico -> wh_entidade / wh_entidade_fonte / wh_entidade_papel /
+    # wh_grupo_economico(_membro). Fundacao da identidade canonica (F0) —
+    # cadencia propria (cadastro muda devagar; 6h e folgado).
+    EndpointSpec(
+        admin_code="bitfin",
+        name="bitfin.entidades",
+        label="Bitfin · Entidades (party model)",
+        description=(
+            "Carrega o cadastro completo de entidades (CNPJ/CPF), papeis "
+            "(cedente/sacado) e grupos economicos para o warehouse canonico "
+            "wh_entidade. Full refresh idempotente."
+        ),
+        default_schedule_kind=ScheduleKind.INTERVAL,
+        default_schedule_value="360",
+        canonical_table="wh_entidade, wh_entidade_papel, wh_grupo_economico",
+    ),
     EndpointSpec(
         admin_code="bitfin",
         name="bitfin.serasa_relay",

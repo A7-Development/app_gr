@@ -7,6 +7,13 @@ DDL idempotente (CREATE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS): heads alembic
 divergentes em prod -> aplicado tambem via runner/MCP. down_revision aponta para
 um dos heads; merge formal dos heads e follow-up.
 
+Fix 2026-06-10: cada op.execute() agrupava varios comandos num so statement —
+asyncpg nao aceita ("cannot insert multiple commands into a prepared
+statement"), o que impedia `alembic upgrade head` de atravessar esta revisao
+(em prod as tabelas foram criadas via SQL manual, entao ela nunca tinha
+rodado pelo alembic). Comandos separados em um op.execute() cada; DDL
+identico e continua idempotente — em prod vira no-op e so carimba a versao.
+
 Revision ID: d4e7f2a9c1b3
 Revises: b3f8e1a9c7d2
 Create Date: 2026-06-07
@@ -54,8 +61,11 @@ def upgrade() -> None:
             created_at timestamptz NOT NULL DEFAULT now(),
             CONSTRAINT uq_produto_dado_public_code UNIQUE (public_code)
         );
-        CREATE INDEX IF NOT EXISTS ix_produto_dado_tenant_id ON produto_dado(tenant_id);
         """
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_produto_dado_tenant_id "
+        "ON produto_dado(tenant_id);"
     )
 
     op.execute(
@@ -72,9 +82,11 @@ def upgrade() -> None:
             CONSTRAINT uq_produto_dado_origem
                 UNIQUE (produto_id, provider, api_endpoint, dataset_code)
         );
-        CREATE INDEX IF NOT EXISTS ix_produto_dado_origem_produto_id
-            ON produto_dado_origem(produto_id);
         """
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_produto_dado_origem_produto_id "
+        "ON produto_dado_origem(produto_id);"
     )
 
     # ── Liga campo → termo canônico (§4) ──
@@ -83,9 +95,11 @@ def upgrade() -> None:
         ALTER TABLE dataset_field
             ADD COLUMN IF NOT EXISTS termo_canonico_id uuid
             REFERENCES termo_canonico(id) ON DELETE SET NULL;
-        CREATE INDEX IF NOT EXISTS ix_dataset_field_termo_canonico_id
-            ON dataset_field(termo_canonico_id);
         """
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_dataset_field_termo_canonico_id "
+        "ON dataset_field(termo_canonico_id);"
     )
 
     # ── Silver canônico do produto CAD-PJ (§5/§5.2) ──
@@ -116,16 +130,22 @@ def upgrade() -> None:
             collected_by uuid,
             CONSTRAINT uq_wh_pj_cadastro UNIQUE (tenant_id, cnpj)
         );
-        CREATE INDEX IF NOT EXISTS ix_wh_pj_cadastro_tenant_id ON wh_pj_cadastro(tenant_id);
-        CREATE INDEX IF NOT EXISTS ix_wh_pj_cadastro_cnpj ON wh_pj_cadastro(cnpj);
-        CREATE INDEX IF NOT EXISTS ix_wh_pj_cadastro_ua
-            ON wh_pj_cadastro(unidade_administrativa_id);
-        CREATE INDEX IF NOT EXISTS ix_wh_pj_cadastro_raw_id ON wh_pj_cadastro(raw_id);
-        CREATE INDEX IF NOT EXISTS ix_wh_pj_cadastro_source_type
-            ON wh_pj_cadastro(source_type);
-        CREATE INDEX IF NOT EXISTS ix_wh_pj_cadastro_source_id ON wh_pj_cadastro(source_id);
         """
     )
+    for stmt in (
+        "CREATE INDEX IF NOT EXISTS ix_wh_pj_cadastro_tenant_id "
+        "ON wh_pj_cadastro(tenant_id);",
+        "CREATE INDEX IF NOT EXISTS ix_wh_pj_cadastro_cnpj ON wh_pj_cadastro(cnpj);",
+        "CREATE INDEX IF NOT EXISTS ix_wh_pj_cadastro_ua "
+        "ON wh_pj_cadastro(unidade_administrativa_id);",
+        "CREATE INDEX IF NOT EXISTS ix_wh_pj_cadastro_raw_id "
+        "ON wh_pj_cadastro(raw_id);",
+        "CREATE INDEX IF NOT EXISTS ix_wh_pj_cadastro_source_type "
+        "ON wh_pj_cadastro(source_type);",
+        "CREATE INDEX IF NOT EXISTS ix_wh_pj_cadastro_source_id "
+        "ON wh_pj_cadastro(source_id);",
+    ):
+        op.execute(stmt)
 
 
 def downgrade() -> None:

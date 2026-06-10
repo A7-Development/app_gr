@@ -36,14 +36,21 @@ from app.warehouse.dim import DimDreClassificacao, DimMes
 from app.warehouse.dim_dia_util import DimDiaUtil
 from app.warehouse.dre import DreMensal
 from app.warehouse.dre_classification_rule import WhDreClassificationRule
+from app.warehouse.entidade import (
+    WhEntidade,
+    WhEntidadeFonte,
+    WhEntidadePapel,
+    WhGrupoEconomico,
+    WhGrupoEconomicoMembro,
+)
 from app.warehouse.estoque_recebivel import EstoqueRecebivel
 from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel
 from app.warehouse.mec_evolucao_cotas import MecEvolucaoCotas
 from app.warehouse.movimento_aberto import MovimentoAberto
 from app.warehouse.movimento_caixa import MovimentoCaixa
 from app.warehouse.operacao import Operacao, OperacaoItem
-from app.warehouse.pj_cadastro import PjCadastro
 from app.warehouse.operacao_remessa import OperacaoRemessa
+from app.warehouse.pj_cadastro import PjCadastro
 from app.warehouse.posicao_compromissada import PosicaoCompromissada
 from app.warehouse.posicao_cota_fundo import PosicaoCotaFundo
 from app.warehouse.posicao_debenture import PosicaoDebentureDia
@@ -135,4 +142,9 @@ __all__ = [
     "WhBitfinEntidade",
     "WhBitfinTarifaCatalogo",
     "WhDreClassificationRule",
+    "WhEntidade",
+    "WhEntidadeFonte",
+    "WhEntidadePapel",
+    "WhGrupoEconomico",
+    "WhGrupoEconomicoMembro",
 ]
