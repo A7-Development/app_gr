@@ -90,13 +90,13 @@ const SITUACAO_TITULO_LABEL: Record<number, string> = {
 }
 
 /** Rotulo da situacao do titulo no sistema (linhas "so_em_banco"). */
-export function situacaoTituloLabel(s: number | null): string {
-  if (s === null) return "Sem título"
+export function situacaoTituloLabel(s: number | null | undefined): string {
+  if (s == null) return "Sem título"
   return SITUACAO_TITULO_LABEL[s] ?? `Outros (cód ${s})`
 }
 
 /** Titulo encerrado no sistema com boleto ativo no banco -> cabe baixa. */
-export function situacaoTituloCabeBaixa(s: number | null): boolean {
+export function situacaoTituloCabeBaixa(s: number | null | undefined): boolean {
   return s === 1 || s === 5
 }
 
