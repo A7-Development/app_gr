@@ -4883,6 +4883,12 @@ export type LinhaConciliacaoBoleto = {
   // 1=liquidado / 5=recomprado com boleto ativo => cabe pedido de baixa.
   // null em "so_em_banco" = titulo inexistente no warehouse.
   situacao_titulo:   number | null
+  // Data da remessa de registro (so em "enviado_nao_confirmado") — aging.
+  enviado_em:        string | null  // YYYY-MM-DD
+  // Ultimo evento do pipeline de protesto do boleto (timeline): protesto_
+  // instruido | encaminhado_cartorio | protesto_sustado | retirado_cartorio.
+  protesto_tipo:     string | null
+  protesto_em:       string | null  // YYYY-MM-DD
 }
 
 export type ConciliacaoBancoCobradorResponse = {
@@ -5006,6 +5012,9 @@ export const controladoria = {
         ua_id:             numN(l.ua_id),
         ua_nome:           l.ua_nome ?? null,
         situacao_titulo:   numN(l.situacao_titulo),
+        enviado_em:        l.enviado_em ?? null,
+        protesto_tipo:     l.protesto_tipo ?? null,
+        protesto_em:       l.protesto_em ?? null,
       })),
     }
   },

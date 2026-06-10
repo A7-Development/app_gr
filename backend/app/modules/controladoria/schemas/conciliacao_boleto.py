@@ -76,6 +76,20 @@ class LinhaConciliacaoSchema(BaseModel):
         "liquidado/recomprado com boleto ativo = cabe pedido de baixa. None em "
         "'so_em_banco' = titulo inexistente no warehouse.",
     )
+    enviado_em: date | None = Field(
+        default=None,
+        description="Data de geracao da remessa de registro (apenas em "
+        "'enviado_nao_confirmado') — base do aging 'aguardando ha N dias'.",
+    )
+    protesto_tipo: str | None = Field(
+        default=None,
+        description="Ultimo evento do pipeline de protesto do boleto: "
+        "protesto_instruido | encaminhado_cartorio | protesto_sustado | "
+        "retirado_cartorio. None = sem protesto.",
+    )
+    protesto_em: date | None = Field(
+        default=None, description="Data do ultimo evento de protesto."
+    )
 
 
 class ConciliacaoBancoCobradorResponse(BaseModel):
