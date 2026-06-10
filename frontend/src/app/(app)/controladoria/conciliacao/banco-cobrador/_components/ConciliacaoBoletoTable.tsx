@@ -24,8 +24,12 @@ import type {
   StatusConciliacaoBoleto,
 } from "@/lib/api-client"
 import {
+  PROTESTO_META,
   STATUS_BADGE_LABEL,
   STATUS_META,
+  agingTone,
+  diasAguardando,
+  protestoLabel,
   situacaoTituloCabeBaixa,
   situacaoTituloLabel,
 } from "./status"
@@ -127,6 +131,42 @@ function makeColumns(
       )
     },
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
+  col.accessor("enviado_em", {
+    id: "aguardando", header: "Aguardando", size: 92,
+    // Aging do "Enviado, aguardando confirmacao": dias corridos desde a remessa
+    // de registro. Tom escala com a idade (>=3 amber, >=10 red = stuck).
+    cell: (info) => {
+      const row = info.row.original
+      const dias = row.status === "enviado_nao_confirmado"
+        ? diasAguardando(info.getValue<string | null>())
+        : null
+      if (dias === null) return <span className={tableTokens.cellMuted}>—</span>
+      return (
+        <span
+          className={cx("text-xs font-medium tabular-nums", agingTone(dias))}
+          title={`Remessa de registro enviada em ${fmtDateBR(row.enviado_em)} — sem confirmação de entrada do banco`}
+        >
+          {dias}d
+        </span>
+      )
+    },
+  }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
+  col.accessor("protesto_tipo", {
+    id: "protesto", header: "Protesto", size: 96,
+    cell: (info) => {
+      const tipo = info.getValue<string | null>()
+      if (!tipo) return <span className={tableTokens.cellMuted}>—</span>
+      const meta = PROTESTO_META[tipo]
+      return (
+        <span
+          className={cx(tableTokens.badge, meta?.tone ?? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300")}
+          title={`${protestoLabel(tipo)} em ${fmtDateBR(info.row.original.protesto_em)}`}
+        >
+          {protestoLabel(tipo)}
+        </span>
+      )
+    },
+  }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
   col.accessor("data_operacao", {
     id: "data_operacao", header: "Data operação", size: 104,
     cell: (info) => (
@@ -218,7 +258,8 @@ function exportarCsv(
   produtoNome: (sigla: string | null) => string,
 ) {
   const head = [
-    "Status", "Titulo no sistema", "Data operacao", "Nro documento", "Nro no banco", "Produto", "Banco", "Cedente",
+    "Status", "Titulo no sistema", "Enviado em", "Aguardando (dias)", "Protesto", "Protesto em",
+    "Data operacao", "Nro documento", "Nro no banco", "Produto", "Banco", "Cedente",
     "Venc BITFIN", "Venc banco", "Valor BITFIN", "Valor banco", "Dif valor", "Dif dias",
   ]
   const esc = (v: string | number | null | undefined) => {
@@ -234,6 +275,10 @@ function exportarCsv(
     [
       STATUS_META[r.status]?.label ?? r.status,  // label longo no CSV
       r.status === "so_em_banco" ? situacaoTituloLabel(r.situacao_titulo) : "",
+      r.enviado_em ?? "",
+      r.status === "enviado_nao_confirmado" ? diasAguardando(r.enviado_em) ?? "" : "",
+      r.protesto_tipo ? protestoLabel(r.protesto_tipo) : "",
+      r.protesto_em ?? "",
       r.data_operacao ?? "",
       r.numero, r.nosso_numero ?? "", produtoNome(r.produto), r.banco ?? "", r.cedente_nome ?? "",
       r.venc_bitfin ?? "", r.venc_banco ?? "",

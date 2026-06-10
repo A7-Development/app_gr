@@ -39,6 +39,7 @@ from uuid import UUID
 from sqlalchemy import Date, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.warehouse.boleto_evento import ORIGEM_RETORNO, BoletoEvento
 from app.warehouse.boleto_vigente import (
     ESTADO_ATIVO,
     ESTADO_ENVIADO,
@@ -69,6 +70,17 @@ STATUS_SO_BANCO = "so_em_banco"
 # "So BITFIN" (sem remessa) e titulo que nunca foi enviado para cobranca bancaria.
 STATUS_ENVIADO_NAO_CONFIRMADO = "enviado_nao_confirmado"
 
+# Pipeline de protesto/cartorio na timeline (wh_boleto_evento.tipo_evento).
+# Strings da taxonomia canonica do decoder de cobranca -- duplicadas aqui de
+# proposito: importar de modules/integracoes/adapters seria cross-import de
+# internals (CLAUDE.md 11.3); o contrato estavel e o valor gravado no silver.
+_PROTESTO_TIPOS = (
+    "protesto_instruido",
+    "encaminhado_cartorio",
+    "protesto_sustado",
+    "retirado_cartorio",
+)
+
 
 @dataclass
 class _TituloLado:
@@ -94,6 +106,9 @@ class _BoletoLado:
     sacado_documento: str | None
     ua_id: int | None
     ua_nome: str | None
+    # Data do evento que definiu o estado vigente. Para estado=enviado e a data
+    # de geracao da remessa de registro -> base do aging "aguardando ha N dias".
+    estado_em: date | None = None
 
 
 @dataclass
@@ -124,6 +139,14 @@ class LinhaConciliacao:
     # baixa. None em "so em banco" = numero sem titulo no warehouse. Nas demais
     # linhas e None por construcao (lado Bitfin so entra com situacao=0).
     situacao_titulo: int | None = None
+    # Aging do "enviado, aguardando confirmacao": data de geracao da remessa de
+    # registro (estado vigente=enviado). None nas demais linhas.
+    enviado_em: date | None = None
+    # Ultimo evento do pipeline de protesto/cartorio do boleto (timeline,
+    # origem=retorno): protesto_instruido / encaminhado_cartorio /
+    # protesto_sustado / retirado_cartorio. None = sem protesto.
+    protesto_tipo: str | None = None
+    protesto_em: date | None = None
 
 
 @dataclass
@@ -228,6 +251,7 @@ async def _carregar_boletos(
         BoletoVigente.sacado_documento,
         BoletoVigente.ua_id,
         BoletoVigente.ua_nome,
+        BoletoVigente.data_ocorrencia_vigente,
     ).where(
         BoletoVigente.tenant_id == tenant_id,
         BoletoVigente.estado == estado,
@@ -243,8 +267,9 @@ async def _carregar_boletos(
             sacado_documento=sacado_doc,
             ua_id=ua_id,
             ua_nome=ua_nome,
+            estado_em=estado_em,
         )
-        for numero, nosso, valor, venc, banco, sacado_doc, ua_id, ua_nome in rows
+        for numero, nosso, valor, venc, banco, sacado_doc, ua_id, ua_nome, estado_em in rows
     ]
 
 
@@ -272,6 +297,36 @@ async def _situacao_titulos(
     for numero, situacao in (await db.execute(stmt)).all():
         situacoes.setdefault(_normalizar_numero(numero), situacao)
     return situacoes
+
+
+async def _protestos_por_boleto(
+    db: AsyncSession, tenant_id: UUID
+) -> dict[tuple[str, str], tuple[str, date]]:
+    """Ultimo evento do pipeline de protesto/cartorio por boleto, chaveado por
+    `(banco_origem, numero_documento normalizado)`.
+
+    Le a timeline (`wh_boleto_evento`, origem=retorno). Eventos de protesto sao
+    `efeito_estado=info` — nao mudam o estado vigente — entao a conciliacao e o
+    unico lugar que os expoe ao usuario. Conjunto pequeno (centenas).
+    """
+    stmt = (
+        select(
+            BoletoEvento.banco_origem,
+            BoletoEvento.numero_documento,
+            BoletoEvento.tipo_evento,
+            BoletoEvento.data_ocorrencia,
+        )
+        .where(
+            BoletoEvento.tenant_id == tenant_id,
+            BoletoEvento.origem == ORIGEM_RETORNO,
+            BoletoEvento.tipo_evento.in_(_PROTESTO_TIPOS),
+        )
+        .order_by(BoletoEvento.data_ocorrencia.desc())
+    )
+    protestos: dict[tuple[str, str], tuple[str, date]] = {}
+    for banco, numero, tipo, data in (await db.execute(stmt)).all():
+        protestos.setdefault((banco, _normalizar_numero(numero)), (tipo, data))
+    return protestos
 
 
 async def _cobranca_atualizada_ate(
@@ -342,6 +397,7 @@ async def conciliar_boletos(
                         cedente_nome=t.cedente_nome,
                         ua_id=t.ua_id,
                         ua_nome=t.ua_nome,
+                        enviado_em=e.estado_em,
                     )
                 )
             else:
@@ -406,5 +462,15 @@ async def conciliar_boletos(
     )
     for linha in so_banco:
         linha.situacao_titulo = situacoes.get(linha.numero)
+
+    # Anota o pipeline de protesto/cartorio nas linhas com lado banco (boleto
+    # ativo ou enviado). Eventos de protesto sao info no fold — so aparecem aqui.
+    protestos = await _protestos_por_boleto(db, tenant_id)
+    for linha in result.linhas:
+        if linha.banco is None:
+            continue
+        protesto = protestos.get((linha.banco, linha.numero))
+        if protesto is not None:
+            linha.protesto_tipo, linha.protesto_em = protesto
 
     return result

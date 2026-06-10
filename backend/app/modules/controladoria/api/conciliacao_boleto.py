@@ -75,6 +75,9 @@ def _mapear_linha(linha: LinhaConciliacao) -> LinhaConciliacaoSchema:
         ua_id=linha.ua_id,
         ua_nome=linha.ua_nome,
         situacao_titulo=linha.situacao_titulo,
+        enviado_em=linha.enviado_em,
+        protesto_tipo=linha.protesto_tipo,
+        protesto_em=linha.protesto_em,
     )
 
 
