@@ -21,6 +21,7 @@ from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel
 from app.warehouse.bdc_raw_consulta import BdcRawConsulta
 from app.warehouse.bitfin_entidade import WhBitfinEntidade
 from app.warehouse.bitfin_raw_debenture import BitfinRawDebenture
+from app.warehouse.bitfin_receita_stream import WhBitfinReceitaStream
 from app.warehouse.bitfin_tarifa_catalogo import WhBitfinTarifaCatalogo
 from app.warehouse.boleto import Boleto
 from app.warehouse.boleto_evento import BoletoEvento
@@ -61,11 +62,11 @@ from app.warehouse.posicao_papel import (
 )
 from app.warehouse.posicao_renda_fixa import PosicaoRendaFixa
 from app.warehouse.qitech_raw_relatorio import QiTechRawRelatorio
+from app.warehouse.receita_operacional import ReceitaOperacional
 from app.warehouse.rentabilidade_fundo import RentabilidadeFundo
 from app.warehouse.saldo_conta_corrente import SaldoContaCorrente
 from app.warehouse.saldo_tesouraria import SaldoTesouraria
 from app.warehouse.serasa_liminar_estado import SerasaLiminarEstado
-from app.warehouse.serasa_pj_liminar_feature import SerasaPjLiminarFeature
 from app.warehouse.serasa_pj_atraso_medio_mensal import (
     SerasaPjAtrasoMedioMensal,
 )
@@ -76,6 +77,7 @@ from app.warehouse.serasa_pj_consulta import SerasaPjConsulta
 from app.warehouse.serasa_pj_endereco import SerasaPjEndereco
 from app.warehouse.serasa_pj_inquiry_anterior import SerasaPjInquiryAnterior
 from app.warehouse.serasa_pj_inquiry_mensal import SerasaPjInquiryMensal
+from app.warehouse.serasa_pj_liminar_feature import SerasaPjLiminarFeature
 from app.warehouse.serasa_pj_pagamento_bucket import SerasaPjPagamentoBucket
 from app.warehouse.serasa_pj_pagamento_evolucao_mensal import (
     SerasaPjPagamentoEvolucaoMensal,
@@ -124,17 +126,18 @@ __all__ = [
     "PosicaoOutrosAtivos",
     "PosicaoRendaFixa",
     "QiTechRawRelatorio",
+    "ReceitaOperacional",
     "RentabilidadeFundo",
     "SaldoContaCorrente",
     "SaldoTesouraria",
     "SerasaLiminarEstado",
     "SerasaPjAtrasoMedioMensal",
-    "SerasaPjLiminarFeature",
     "SerasaPjBusinessReference",
     "SerasaPjConsulta",
     "SerasaPjEndereco",
     "SerasaPjInquiryAnterior",
     "SerasaPjInquiryMensal",
+    "SerasaPjLiminarFeature",
     "SerasaPjPagamentoBucket",
     "SerasaPjPagamentoEvolucaoMensal",
     "SerasaPjParticipacao",
@@ -147,6 +150,7 @@ __all__ = [
     "Titulo",
     "TituloSnapshot",
     "WhBitfinEntidade",
+    "WhBitfinReceitaStream",
     "WhBitfinTarifaCatalogo",
     "WhDreClassificationRule",
     "WhEntidade",
