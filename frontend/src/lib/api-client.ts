@@ -4991,10 +4991,28 @@ export type LinhaConciliacaoBoleto = {
   cedente_nome:      string | null
   ua_id:             number | null
   ua_nome:           string | null
+  // Situacao do titulo no wh (codigo Bitfin) — so preenchida em "so_em_banco".
+  // 1=liquidado / 5=recomprado com boleto ativo => cabe pedido de baixa.
+  // null em "so_em_banco" = titulo inexistente no warehouse.
+  situacao_titulo:   number | null
+  // Data da remessa de registro (so em "enviado_nao_confirmado") — aging.
+  enviado_em:        string | null  // YYYY-MM-DD
+  // Ultimo evento do pipeline de protesto do boleto (timeline): protesto_
+  // instruido | encaminhado_cartorio | protesto_sustado | retirado_cartorio.
+  protesto_tipo:     string | null
+  protesto_em:       string | null  // YYYY-MM-DD
+}
+
+// Frescor do retorno de UM banco (banco parado fica visivel aqui mesmo com o
+// frescor global em dia).
+export type FrescorBancoConciliacao = {
+  banco:       string
+  retorno_ate: string  // YYYY-MM-DD
 }
 
 export type ConciliacaoBancoCobradorResponse = {
   cobranca_atualizada_ate: string | null  // frescor do lado banco (ISO)
+  frescor_bancos:          FrescorBancoConciliacao[]
   titulos_abertos:         number
   boletos_ativos:          number
   conciliados:             number
@@ -5083,6 +5101,11 @@ export const controladoria = {
       v === null || v === undefined ? null : Number(v)
     return {
       cobranca_atualizada_ate: raw.cobranca_atualizada_ate ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      frescor_bancos: (raw.frescor_bancos ?? []).map((f: any) => ({
+        banco:       f.banco,
+        retorno_ate: f.retorno_ate,
+      })),
       titulos_abertos: raw.titulos_abertos,
       boletos_ativos:  raw.boletos_ativos,
       conciliados:     raw.conciliados,
@@ -5113,6 +5136,10 @@ export const controladoria = {
         cedente_nome:      l.cedente_nome ?? null,
         ua_id:             numN(l.ua_id),
         ua_nome:           l.ua_nome ?? null,
+        situacao_titulo:   numN(l.situacao_titulo),
+        enviado_em:        l.enviado_em ?? null,
+        protesto_tipo:     l.protesto_tipo ?? null,
+        protesto_em:       l.protesto_em ?? null,
       })),
     }
   },
