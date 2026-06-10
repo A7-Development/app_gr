@@ -5005,6 +5005,7 @@ export const controladoria = {
         cedente_nome:      l.cedente_nome ?? null,
         ua_id:             numN(l.ua_id),
         ua_nome:           l.ua_nome ?? null,
+        situacao_titulo:   numN(l.situacao_titulo),
       })),
     }
   },
