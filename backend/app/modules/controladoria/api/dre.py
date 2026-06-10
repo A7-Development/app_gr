@@ -27,14 +27,12 @@ from app.modules.controladoria.schemas.dre import (
     DreFonte,
     DreFornecedoresResponse,
     DrePivotResponse,
-    DreReceitaNaturezaResponse,
     DreRoaResponse,
 )
 from app.modules.controladoria.services.dre import (
     compute_breakdown,
     compute_drill_fornecedores,
     compute_pivot,
-    compute_receita_por_natureza,
     compute_roa,
     listar_competencias,
 )
@@ -119,62 +117,23 @@ async def pivot(
     )
 
 
-@router.get("/receita-por-natureza", response_model=DreReceitaNaturezaResponse)
-async def receita_por_natureza(
-    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    competencia_de: Annotated[
-        date, Query(description="Primeira competencia (1o dia do mes) inclusive.")
-    ],
-    competencia_ate: Annotated[
-        date, Query(description="Ultima competencia (1o dia do mes) inclusive.")
-    ],
-    fundo_id: Annotated[
-        int | None,
-        Query(description="UnidadeAdministrativa.Id do Bitfin (opcional)"),
-    ] = None,
-    produto_id: Annotated[int | None, Query(description="Produto Bitfin (opcional)")] = None,
-    _: None = _Guard,
-) -> DreReceitaNaturezaResponse:
-    """Receita operacional por NATUREZA (Desagio/Tarifa/Multa/Juros/Ad
-    Valorem/Imposto) x competencia, com drill ate o tipo (descricao).
-
-    Receita = SO `receita` (total_apurado) de RECEITA_OPERACIONAL. Naturezas
-    ancoradas no catalogo Bitfin (wh_bitfin_dre_natureza_rule).
-    """
-    if competencia_ate < competencia_de:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="competencia_ate deve ser maior ou igual a competencia_de",
-        )
-    return await compute_receita_por_natureza(
-        db,
-        tenant_id=principal.tenant_id,
-        competencia_de=competencia_de,
-        competencia_ate=competencia_ate,
-        fundo_id=fundo_id,
-        produto_id=produto_id,
-    )
-
-
 @router.get("/breakdown", response_model=DreBreakdownResponse)
 async def breakdown(
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
     competencia: Annotated[date, Query(description="Competencia (1o dia do mes).")],
     dim: Annotated[
-        DreDimensao, Query(description="natureza | cedente | produto | subgrupo")
+        DreDimensao, Query(description="cedente | produto | subgrupo")
     ],
     fundo_id: Annotated[int | None, Query(description="UnidadeAdministrativa.Id Bitfin")] = None,
     produto_id: Annotated[int | None, Query()] = None,
     entidade_id: Annotated[int | None, Query(description="Drill: filtra um cedente")] = None,
-    natureza: Annotated[str | None, Query(description="Drill: filtra uma natureza")] = None,
     subgrupo: Annotated[str | None, Query(description="Drill: filtra um subgrupo")] = None,
     _: None = _Guard,
 ) -> DreBreakdownResponse:
-    """Receita operacional de UM mes agregada por `dim` (natureza/cedente/
-    produto/subgrupo), com receita/custo/resultado. Filtros `entidade_id`/
-    `natureza`/`subgrupo` permitem DRILL (cruzar dimensoes)."""
+    """Receita operacional de UM mes agregada por `dim` (cedente/produto/
+    subgrupo), com receita/custo/resultado. Filtros `entidade_id`/`subgrupo`
+    permitem DRILL (cruzar dimensoes)."""
     return await compute_breakdown(
         db,
         tenant_id=principal.tenant_id,
@@ -183,7 +142,6 @@ async def breakdown(
         fundo_id=fundo_id,
         produto_id=produto_id,
         entidade_id=entidade_id,
-        natureza=natureza,
         subgrupo=subgrupo,
     )
 

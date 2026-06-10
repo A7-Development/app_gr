@@ -45,8 +45,8 @@ ORDER BY competencia, EntidadeId, Categoria, Descricao
 
 # Catalogo de tarifas/encargos (OrganizacaoTarifa) -- template da organizacao.
 # Vocabulario CONTROLADO de (Categoria, Descricao) + Tipo (1=tarifa fixa,
-# 2=encargo variavel) que ancora a classificacao por NATUREZA do DRE
-# (wh_bitfin_dre_natureza_rule). ~60 linhas; full refresh por sync.
+# 2=encargo variavel) -- base do catalogo de receitas operacionais e
+# detector de item novo. ~60 linhas; full refresh por sync.
 SELECT_ORGANIZACAO_TARIFA = """
 SELECT
     Categoria AS categoria,

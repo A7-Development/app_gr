@@ -31,6 +31,15 @@ cedente e Sacado->sacado, e GrupoEconomico(Membro) para o warehouse
 canonico wh_entidade / wh_entidade_fonte (crosswalk de identidade) /
 wh_entidade_papel / wh_grupo_economico(_membro). Identidade: 1 entidade
 por (tenant, documento normalizado); documento invalido = quarentena.
+
+v2.4.0 (2026-06-10): REMOVIDA a classificacao por natureza do DRE
+(`wh_bitfin_dre_natureza_rule` dropada + coluna `wh_dre_mensal.natureza`).
+Motivo: a DemonstrativoDeResultado do Bitfin RECALCULA multa/juros
+teoricamente (percentual contratual x dias) — nao reflete caixa. Receita
+por natureza renasce fiel ao caixa no catalogo de receitas operacionais
+(nova wh canonica, fontes: Titulo / ContaCorrenteLancamento / Recompra /
+OperacaoRentabilidade). `wh_bitfin_tarifa_catalogo` permanece como
+vocabulario controlado.
 """
 
-ADAPTER_VERSION = "bitfin_adapter_v2.3.0"
+ADAPTER_VERSION = "bitfin_adapter_v2.4.0"

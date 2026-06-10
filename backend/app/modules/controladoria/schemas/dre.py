@@ -126,58 +126,11 @@ class DrePivotResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Receita por NATUREZA (Desagio/Tarifa/Multa/Juros/Ad Valorem/Imposto)
-# Estrutura: natureza -> tipo (descricao) x competencia. Receita = SO receita
-# (total_apurado); custos descem para outras secoes do DRE.
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class DreReceitaCelula(BaseModel):
-    """Receita de um no em uma competencia (mes)."""
-
-    competencia: date = Field(description="Primeiro dia do mes (YYYY-MM-01)")
-    receita: Decimal
-    quantidade: int
-
-
-class DreReceitaTipo(BaseModel):
-    """Folha: um tipo (descricao do catalogo) dentro de uma natureza.
-
-    `produtos` = subgrupos Bitfin onde o tipo aparece (ex.: Desagio aparece
-    em Operação e Crédito Estruturado) — contexto preservado sem ramificar
-    a hierarquia.
-    """
-
-    descricao: str
-    produtos: list[str]
-    valores: list[DreReceitaCelula]
-    total: Decimal
-
-
-class DreReceitaNatureza(BaseModel):
-    """No de natureza (Desagio/Tarifa/Multa/Juros/Ad Valorem/Imposto)."""
-
-    natureza: str
-    tipos: list[DreReceitaTipo]
-    valores: list[DreReceitaCelula]
-    total: Decimal
-
-
-class DreReceitaNaturezaResponse(BaseModel):
-    """Resposta do GET /receita-por-natureza."""
-
-    competencias: list[date]
-    naturezas: list[DreReceitaNatureza]
-    valores_total: list[DreReceitaCelula]
-    total: Decimal
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Breakdown generico da receita por dimensao (natureza/cedente/produto/subgrupo)
+# Breakdown generico da receita por dimensao (cedente/produto/subgrupo)
 # Serve as abas da DRE profunda do mes. Receita = RECEITA_OPERACIONAL.
 # ─────────────────────────────────────────────────────────────────────────────
 
-DreDimensao = Literal["natureza", "cedente", "produto", "subgrupo"]
+DreDimensao = Literal["cedente", "produto", "subgrupo"]
 
 
 class DreBreakdownRow(BaseModel):

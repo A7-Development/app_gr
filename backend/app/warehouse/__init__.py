@@ -19,7 +19,6 @@ Camadas (CLAUDE.md secao 13.2):
 
 from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel
 from app.warehouse.bdc_raw_consulta import BdcRawConsulta
-from app.warehouse.bitfin_dre_natureza_rule import WhBitfinDreNaturezaRule
 from app.warehouse.bitfin_entidade import WhBitfinEntidade
 from app.warehouse.bitfin_raw_debenture import BitfinRawDebenture
 from app.warehouse.bitfin_tarifa_catalogo import WhBitfinTarifaCatalogo
@@ -138,7 +137,6 @@ __all__ = [
     "SerasaPjSocio",
     "Titulo",
     "TituloSnapshot",
-    "WhBitfinDreNaturezaRule",
     "WhBitfinEntidade",
     "WhBitfinTarifaCatalogo",
     "WhDreClassificationRule",

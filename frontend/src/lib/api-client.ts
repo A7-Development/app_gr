@@ -5528,8 +5528,8 @@ export const controladoria = {
     return _coerceDreFornecedores(raw)
   },
 
-  // Breakdown da receita de UM mes por dimensao (natureza/cedente/produto/
-  // subgrupo). Filtros entidadeId/natureza/subgrupo = drill (cruzar dimensoes).
+  // Breakdown da receita de UM mes por dimensao (cedente/produto/subgrupo).
+  // Filtros entidadeId/subgrupo = drill (cruzar dimensoes).
   dreBreakdown: async (
     filters: DreBreakdownFilters,
   ): Promise<DreBreakdownResponse> => {
@@ -5538,7 +5538,6 @@ export const controladoria = {
     params.set("dim", filters.dim)
     if (filters.entidadeId !== undefined)
       params.set("entidade_id", String(filters.entidadeId))
-    if (filters.natureza) params.set("natureza", filters.natureza)
     if (filters.subgrupo) params.set("subgrupo", filters.subgrupo)
     const raw = await apiClient.get<DreBreakdownResponseRaw>(
       `/controladoria/dre/breakdown?${params.toString()}`,
@@ -5579,13 +5578,12 @@ export type DreDrillFornecedoresFilters = DrePivotFilters & {
   top?:       number
 }
 
-export type DreDimensao = "natureza" | "cedente" | "produto" | "subgrupo"
+export type DreDimensao = "cedente" | "produto" | "subgrupo"
 
 export type DreBreakdownFilters = DreBaseFilters & {
   competencia: string  // YYYY-MM-DD (1o dia do mes)
   dim:         DreDimensao
   entidadeId?: number  // drill: filtra um cedente
-  natureza?:   string  // drill
   subgrupo?:   string  // drill
 }
 
