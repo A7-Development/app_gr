@@ -50,14 +50,11 @@ from app.warehouse.entidade import (
     WhGrupoEconomico,
     WhGrupoEconomicoMembro,
 )
-<<<<<<< HEAD
 from app.warehouse.posicao_papel import (
     WhPosicaoCedente,
     WhPosicaoCedenteProduto,
     WhPosicaoSacado,
 )
-=======
->>>>>>> origin/main
 
 _TIPO_HINT = {"PJ": TipoPessoa.PJ, "PF": TipoPessoa.PF}
 
@@ -119,7 +116,6 @@ async def sync_entidades(
     membro_rows = await asyncio.to_thread(
         fetch_rows, config, db_name, bitfin.SELECT_GRUPO_ECONOMICO_MEMBRO
     )
-<<<<<<< HEAD
     pos_cedente_rows = await asyncio.to_thread(
         fetch_rows, config, db_name, bitfin.SELECT_POSICAO_CEDENTE
     )
@@ -129,8 +125,6 @@ async def sync_entidades(
     pos_sacado_rows = await asyncio.to_thread(
         fetch_rows, config, db_name, bitfin.SELECT_POSICAO_SACADO
     )
-=======
->>>>>>> origin/main
 
     now = datetime.now(UTC)
     quarentena: list[dict] = []
@@ -293,7 +287,6 @@ async def sync_entidades(
             ["tenant_id", "source_type", "source_id"],
         )
 
-<<<<<<< HEAD
         # --- Posicoes por papel (F1) — snapshot vendor-computed, full refresh.
         # entidade_id NULL quando a entidade do papel esta em quarentena
         # (posicao preservada; nada some).
@@ -335,8 +328,6 @@ async def sync_entidades(
             ["tenant_id", "source_type", "source_id"],
         )
 
-=======
->>>>>>> origin/main
     summary = {
         "adapter_version": ADAPTER_VERSION,
         "started_at": started_at.isoformat(),
@@ -347,12 +338,9 @@ async def sync_entidades(
             {"table": "wh_entidade_papel", "rows": n_papeis},
             {"table": "wh_grupo_economico", "rows": n_grupos},
             {"table": "wh_grupo_economico_membro", "rows": n_membros},
-<<<<<<< HEAD
             {"table": "wh_posicao_cedente", "rows": n_pos_cedente},
             {"table": "wh_posicao_cedente_produto", "rows": n_pos_cedente_prod},
             {"table": "wh_posicao_sacado", "rows": n_pos_sacado},
-=======
->>>>>>> origin/main
         ],
         "quarentena_documentos": len(quarentena),
         "papeis_em_quarentena": {
