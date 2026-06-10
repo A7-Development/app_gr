@@ -20,6 +20,9 @@ from app.core.enums import SourceType
 from app.modules.integracoes.adapters.admin.qitech.endpoint_catalog import (
     QITECH_ENDPOINTS,
 )
+from app.modules.integracoes.adapters.bureau.serasa_pj.liminar import (
+    LIMINAR_RULE_VERSION as SERASA_LIMINAR_RULE_VERSION,
+)
 from app.modules.integracoes.adapters.cobranca.etl import (
     run_cobranca_manual_sync,
 )
@@ -127,6 +130,7 @@ def get_report_spec(slug: str) -> ReportSpec | None:
 
 
 __all__ = [
+    "SERASA_LIMINAR_RULE_VERSION",
     "CadastralFields",
     "CadastralQueryResult",
     "ReportCategory",

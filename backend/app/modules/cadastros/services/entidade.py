@@ -24,6 +24,7 @@ from app.warehouse.posicao_papel import (
     WhPosicaoCedenteProduto,
     WhPosicaoSacado,
 )
+from app.warehouse.serasa_liminar_estado import SerasaLiminarEstado
 from app.warehouse.serasa_pj_consulta import SerasaPjConsulta
 
 _BUREAU_FONTE_LABEL = "Serasa Relato PJ"
@@ -294,6 +295,18 @@ async def get_resumo(
         )
     ).scalar_one_or_none()
     if consulta is not None:
+        # Suspeita de liminar (conclusao DERIVADA pelo Strata, nao do
+        # bureau/ERP — regra serasa_liminar_v1). Estado vem da maquina de
+        # estados da sentinela; a flag da consulta cobre o caso de estado
+        # ainda nao materializado (backfill pendente).
+        liminar_estado = (
+            await db.execute(
+                select(SerasaLiminarEstado).where(
+                    SerasaLiminarEstado.tenant_id == tenant_id,
+                    SerasaLiminarEstado.cnpj == entidade.documento,
+                )
+            )
+        ).scalar_one_or_none()
         bureau = {
             "fonte": _BUREAU_FONTE_LABEL,
             "consultado_em": consulta.consulted_at,
@@ -307,6 +320,17 @@ async def get_resumo(
             "falencias_qtd": consulta.count_falencias,
             "valor_total_restricoes": float(consulta.valor_total_restricoes)
             if consulta.valor_total_restricoes is not None
+            else None,
+            "suspeita_liminar": bool(consulta.suspeita_liminar),
+            "negative_summary_message": consulta.negative_summary_message,
+            "liminar_estado": liminar_estado.estado
+            if liminar_estado is not None
+            else None,
+            "liminar_desde": liminar_estado.primeira_evidencia_at
+            if liminar_estado is not None
+            else None,
+            "liminar_regra": liminar_estado.regra_version
+            if liminar_estado is not None
             else None,
         }
 
