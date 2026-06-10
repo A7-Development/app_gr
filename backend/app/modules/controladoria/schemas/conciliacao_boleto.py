@@ -69,6 +69,13 @@ class LinhaConciliacaoSchema(BaseModel):
         default=None, description="UA (Unidade Administrativa) — escopo. Null em 'só em banco'."
     )
     ua_nome: str | None = Field(default=None, description="Nome amigável da UA.")
+    situacao_titulo: int | None = Field(
+        default=None,
+        description="Situacao do titulo no wh_titulo (codigo Bitfin: 0=aberto, "
+        "1=liquidado, 5=recomprado). Preenchida apenas em 'so_em_banco' — "
+        "liquidado/recomprado com boleto ativo = cabe pedido de baixa. None em "
+        "'so_em_banco' = titulo inexistente no warehouse.",
+    )
 
 
 class ConciliacaoBancoCobradorResponse(BaseModel):

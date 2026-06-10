@@ -23,7 +23,12 @@ import type {
   LinhaConciliacaoBoleto,
   StatusConciliacaoBoleto,
 } from "@/lib/api-client"
-import { STATUS_BADGE_LABEL, STATUS_META } from "./status"
+import {
+  STATUS_BADGE_LABEL,
+  STATUS_META,
+  situacaoTituloCabeBaixa,
+  situacaoTituloLabel,
+} from "./status"
 
 const fmtBRL = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -89,6 +94,37 @@ function makeColumns(
     cell: (info) => {
       const s = info.getValue<StatusConciliacaoBoleto>()
       return <span className={cx(tableTokens.badge, STATUS_META[s].tone)}>{STATUS_BADGE_LABEL[s]}</span>
+    },
+  }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
+  col.accessor("situacao_titulo", {
+    id: "situacao_titulo", header: "Título no sistema", size: 118,
+    // So significa algo em "so_em_banco": titulo liquidado/recomprado no
+    // sistema com boleto ainda ativo no banco = pendencia de pedido de baixa.
+    cell: (info) => {
+      const row = info.row.original
+      if (row.status !== "so_em_banco") {
+        return <span className={tableTokens.cellMuted}>—</span>
+      }
+      const s = info.getValue<number | null>()
+      const cabeBaixa = situacaoTituloCabeBaixa(s)
+      return (
+        <span
+          className={cx(
+            cabeBaixa || s === null
+              ? cx(tableTokens.cellText, "font-medium text-amber-700 dark:text-amber-400")
+              : tableTokens.cellSecondary,
+          )}
+          title={
+            cabeBaixa
+              ? "Título encerrado no sistema com boleto ativo no banco — cabe pedido de baixa"
+              : s === null
+                ? "Número de documento sem título correspondente no warehouse"
+                : undefined
+          }
+        >
+          {situacaoTituloLabel(s)}
+        </span>
+      )
     },
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
   col.accessor("data_operacao", {
@@ -182,7 +218,7 @@ function exportarCsv(
   produtoNome: (sigla: string | null) => string,
 ) {
   const head = [
-    "Status", "Data operacao", "Nro documento", "Nro no banco", "Produto", "Banco", "Cedente",
+    "Status", "Titulo no sistema", "Data operacao", "Nro documento", "Nro no banco", "Produto", "Banco", "Cedente",
     "Venc BITFIN", "Venc banco", "Valor BITFIN", "Valor banco", "Dif valor", "Dif dias",
   ]
   const esc = (v: string | number | null | undefined) => {
@@ -197,6 +233,7 @@ function exportarCsv(
   const corpo = rows.map((r) =>
     [
       STATUS_META[r.status]?.label ?? r.status,  // label longo no CSV
+      r.status === "so_em_banco" ? situacaoTituloLabel(r.situacao_titulo) : "",
       r.data_operacao ?? "",
       r.numero, r.nosso_numero ?? "", produtoNome(r.produto), r.banco ?? "", r.cedente_nome ?? "",
       r.venc_bitfin ?? "", r.venc_banco ?? "",
