@@ -211,6 +211,11 @@ async def process_consulta(
             regra_version=LIMINAR_RULE_VERSION,
         )
         db.add(estado_row)
+        # Flush imediato: sem isso, caller que processa VARIAS consultas
+        # do mesmo CNPJ numa unica sessao (backfill cronologico) nao
+        # enxerga o estado pendente no proximo SELECT e tenta INSERT
+        # duplicado (viola uq_lab_serasa_liminar_estado).
+        await db.flush()
     else:
         estado_row.ultima_consulta_raw_id = consulta.raw_id
         estado_row.ultima_consulta_at = consulta.consulted_at
