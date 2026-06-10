@@ -3308,6 +3308,36 @@ export type EntidadeGrupo = {
   membros: EntidadeGrupoMembro[]
 }
 
+export type CarteiraAtivaLinha = {
+  escopo: "cnpj" | "grupo"
+  cedente_valor: number
+  sacado_valor: number
+  total: number
+  cedente_vencido: number
+  sacado_vencido: number
+}
+
+export type LimiteProduto = {
+  produto_sigla: string | null
+  limite: number
+  em_uso: number
+  vencido: number
+}
+
+export type PerformanceResumo = {
+  papel: "cedente" | "sacado"
+  indice_liquidez: number | null
+  vencimentario: number | null
+  liquidados: number | null
+  recomprados: number | null
+  vencidos_penalizados: number | null
+  vencidos_nao_penalizados: number | null
+  janela_dias: number | null
+  data_apuracao: string | null
+  prazo_medio_carteira: number | null
+  indice_pontualidade: number | null
+}
+
 export type EntidadeBureauResumo = {
   fonte: string
   consultado_em: string
@@ -3342,6 +3372,9 @@ export type EntidadeResumo = {
   cedente_id: number | null
   estabelecimentos: EntidadeEstabelecimento[]
   grupo: EntidadeGrupo | null
+  carteira_ativa: CarteiraAtivaLinha[]
+  limites: LimiteProduto[]
+  performance: PerformanceResumo | null
   bureau: EntidadeBureauResumo | null
   source_type: string
   ingested_at: string

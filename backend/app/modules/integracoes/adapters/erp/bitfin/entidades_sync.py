@@ -50,6 +50,11 @@ from app.warehouse.entidade import (
     WhGrupoEconomico,
     WhGrupoEconomicoMembro,
 )
+from app.warehouse.posicao_papel import (
+    WhPosicaoCedente,
+    WhPosicaoCedenteProduto,
+    WhPosicaoSacado,
+)
 
 _TIPO_HINT = {"PJ": TipoPessoa.PJ, "PF": TipoPessoa.PF}
 
@@ -110,6 +115,15 @@ async def sync_entidades(
     )
     membro_rows = await asyncio.to_thread(
         fetch_rows, config, db_name, bitfin.SELECT_GRUPO_ECONOMICO_MEMBRO
+    )
+    pos_cedente_rows = await asyncio.to_thread(
+        fetch_rows, config, db_name, bitfin.SELECT_POSICAO_CEDENTE
+    )
+    pos_cedente_prod_rows = await asyncio.to_thread(
+        fetch_rows, config, db_name, bitfin.SELECT_POSICAO_CEDENTE_PRODUTO
+    )
+    pos_sacado_rows = await asyncio.to_thread(
+        fetch_rows, config, db_name, bitfin.SELECT_POSICAO_SACADO
     )
 
     now = datetime.now(UTC)
@@ -273,6 +287,47 @@ async def sync_entidades(
             ["tenant_id", "source_type", "source_id"],
         )
 
+        # --- Posicoes por papel (F1) — snapshot vendor-computed, full refresh.
+        # entidade_id NULL quando a entidade do papel esta em quarentena
+        # (posicao preservada; nada some).
+        def _map_posicao(row: dict, source_id: str) -> dict:
+            data = {
+                k: v
+                for k, v in row.items()
+                if k not in ("posicao_id", "entidade_source_id")
+            }
+            data["papel_source_id"] = str(row["papel_source_id"])
+            return {
+                "tenant_id": tenant_id,
+                "entidade_id": uuid_by_source_id.get(
+                    int(row["entidade_source_id"])
+                ),
+                **data,
+                **_provenance(source_id, row, row.get("liquidez_data_apuracao")),
+            }
+
+        n_pos_cedente = await _bulk_upsert(
+            db,
+            WhPosicaoCedente,
+            [_map_posicao(r, str(r["posicao_id"])) for r in pos_cedente_rows],
+            ["tenant_id", "source_type", "source_id"],
+        )
+        n_pos_cedente_prod = await _bulk_upsert(
+            db,
+            WhPosicaoCedenteProduto,
+            [
+                _map_posicao(r, f"{r['posicao_id']}:{r['produto_source_id']}")
+                for r in pos_cedente_prod_rows
+            ],
+            ["tenant_id", "source_type", "source_id"],
+        )
+        n_pos_sacado = await _bulk_upsert(
+            db,
+            WhPosicaoSacado,
+            [_map_posicao(r, str(r["posicao_id"])) for r in pos_sacado_rows],
+            ["tenant_id", "source_type", "source_id"],
+        )
+
     summary = {
         "adapter_version": ADAPTER_VERSION,
         "started_at": started_at.isoformat(),
@@ -283,6 +338,9 @@ async def sync_entidades(
             {"table": "wh_entidade_papel", "rows": n_papeis},
             {"table": "wh_grupo_economico", "rows": n_grupos},
             {"table": "wh_grupo_economico_membro", "rows": n_membros},
+            {"table": "wh_posicao_cedente", "rows": n_pos_cedente},
+            {"table": "wh_posicao_cedente_produto", "rows": n_pos_cedente_prod},
+            {"table": "wh_posicao_sacado", "rows": n_pos_sacado},
         ],
         "quarentena_documentos": len(quarentena),
         "papeis_em_quarentena": {

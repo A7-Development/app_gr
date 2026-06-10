@@ -31,6 +31,13 @@ cedente e Sacado->sacado, e GrupoEconomico(Membro) para o warehouse
 canonico wh_entidade / wh_entidade_fonte (crosswalk de identidade) /
 wh_entidade_papel / wh_grupo_economico(_membro). Identidade: 1 entidade
 por (tenant, documento normalizado); documento invalido = quarentena.
+
+v2.4.0 (2026-06-10): F1 do party model -- o endpoint `bitfin.entidades`
+passa a ingerir tambem as posicoes por papel: ClientePosicao ->
+wh_posicao_cedente (risco/prazo carteira/liquidez), ClientePosicaoProduto ->
+wh_posicao_cedente_produto (LIMITE operacional/tranche/risco por produto),
+SacadoPosicao -> wh_posicao_sacado (subset essencial). Snapshot
+vendor-computed, full refresh, ancorado em wh_entidade via crosswalk.
 """
 
-ADAPTER_VERSION = "bitfin_adapter_v2.3.0"
+ADAPTER_VERSION = "bitfin_adapter_v2.4.0"
