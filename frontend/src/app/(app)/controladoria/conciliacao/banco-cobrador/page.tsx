@@ -461,7 +461,17 @@ export default function ConciliacaoBancoCobradorPage() {
                   (dir.). Ambos no MESMO conjunto filtrado do detalhe; reconcilia
                   (§14.6). Empilha em telas estreitas (< xl). */}
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                <ResumoConciliacaoTable resumo={resumo} />
+                <ResumoConciliacaoTable
+                  resumo={resumo}
+                  statusFilter={statusFilter}
+                  onStatusToggle={(status) =>
+                    setStatusFilter((prev) =>
+                      prev.includes(status)
+                        ? prev.filter((s) => s !== status)
+                        : [...prev, status],
+                    )
+                  }
+                />
                 <ResumoConciliacaoCharts
                   linhas={linhasFiltradas}
                   frescores={conc?.frescor_bancos ?? []}
