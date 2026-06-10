@@ -97,7 +97,7 @@ function makeColumns(
     },
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
   col.accessor("situacao_titulo", {
-    id: "situacao_titulo", header: "Título no sistema", size: 118,
+    id: "situacao_titulo", header: "Tít. sistema", size: 88,
     // So significa algo em "so_em_banco": titulo liquidado/recomprado no
     // sistema com boleto ainda ativo no banco = pendencia de pedido de baixa.
     cell: (info) => {
