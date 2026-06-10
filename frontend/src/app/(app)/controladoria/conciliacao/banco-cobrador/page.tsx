@@ -462,7 +462,18 @@ export default function ConciliacaoBancoCobradorPage() {
                   (§14.6). Empilha em telas estreitas (< xl). */}
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                 <ResumoConciliacaoTable resumo={resumo} />
-                <ResumoConciliacaoCharts linhas={linhasFiltradas} />
+                <ResumoConciliacaoCharts
+                  linhas={linhasFiltradas}
+                  frescores={conc?.frescor_bancos ?? []}
+                  bancoFilter={bancoFilter}
+                  onBancoToggle={(banco) =>
+                    setBancoFilter((prev) =>
+                      prev.includes(banco)
+                        ? prev.filter((b) => b !== banco)
+                        : [...prev, banco],
+                    )
+                  }
+                />
               </div>
 
               {/* DataTable — filtrada pelos chips + busca */}

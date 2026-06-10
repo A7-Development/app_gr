@@ -157,6 +157,12 @@ class ConciliacaoBoletoResult:
     # Frescor do lado banco: data do ultimo evento de cobranca processado
     # (a carteira BITFIN e "agora"; o banco reflete ate aqui).
     cobranca_atualizada_ate: date | None = None
+    # Frescor POR BANCO: ultimo evento de RETORNO processado por banco (max
+    # data_ocorrencia na timeline). O frescor global (data_ref do arquivo)
+    # mascara banco parado — ex.: BMP sem retorno ha dias atras do max global.
+    # data_ocorrencia e a medida real de cobertura: data_ref do header nao
+    # parseia em todos os bancos (NULL no BMP).
+    retorno_ate_por_banco: dict[str, date] = field(default_factory=dict)
     linhas: list[LinhaConciliacao] = field(default_factory=list)
 
     def por_status(self, status: str) -> list[LinhaConciliacao]:
@@ -329,6 +335,26 @@ async def _protestos_por_boleto(
     return protestos
 
 
+async def _retorno_ate_por_banco(
+    db: AsyncSession, tenant_id: UUID
+) -> dict[str, date]:
+    """Frescor por banco: max(data_ocorrencia) dos eventos de RETORNO na
+    timeline. Medida real de ate onde cada banco "falou" — banco parado fica
+    visivel mesmo quando o frescor global (max entre todos) esta em dia."""
+    stmt = (
+        select(
+            BoletoEvento.banco_origem,
+            func.max(BoletoEvento.data_ocorrencia),
+        )
+        .where(
+            BoletoEvento.tenant_id == tenant_id,
+            BoletoEvento.origem == ORIGEM_RETORNO,
+        )
+        .group_by(BoletoEvento.banco_origem)
+    )
+    return dict((await db.execute(stmt)).all())
+
+
 async def _cobranca_atualizada_ate(
     db: AsyncSession, tenant_id: UUID
 ) -> date | None:
@@ -369,6 +395,7 @@ async def conciliar_boletos(
         titulos_abertos=len(titulos),
         boletos_ativos=len(boletos),
         cobranca_atualizada_ate=await _cobranca_atualizada_ate(db, tenant_id),
+        retorno_ate_por_banco=await _retorno_ate_por_banco(db, tenant_id),
     )
 
     for numero in titulos_por_numero.keys() | boletos_por_numero.keys():
