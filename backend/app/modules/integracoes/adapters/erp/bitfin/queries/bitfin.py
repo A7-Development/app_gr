@@ -191,6 +191,9 @@ SELECT
     r.TotalDosComunicadosDeCessao AS total_dos_comunicados_de_cessao,
     r.TotalDosDocumentosDigitais AS total_dos_documentos_digitais,
     r.TotalDosDescontosOuAbatimentos AS total_dos_descontos_ou_abatimentos,
+    r.TarifaPorOperacao AS tarifa_por_operacao,
+    r.TarifaDeTed AS tarifa_de_ted,
+    r.TotalDosRegistrosDeRecebiveis AS total_dos_registros_de_recebiveis,
     r.DataDoUltimoVencimento AS data_do_ultimo_vencimento,
     -- Cedente (= Cliente, no vocabulario Bitfin). Resolvido via
     -- ContaOperacional (modelo 1:1, validado em 2026-05-22: 9269/9269
