@@ -13,6 +13,7 @@
  */
 
 import * as React from "react"
+import { RiAuctionLine } from "@remixicon/react"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 
 import { cx } from "@/lib/utils"
@@ -24,7 +25,6 @@ import type {
   StatusConciliacaoBoleto,
 } from "@/lib/api-client"
 import {
-  PROTESTO_META,
   STATUS_BADGE_LABEL,
   STATUS_META,
   agingTone,
@@ -93,76 +93,67 @@ function makeColumns(
   produtoNome: (sigla: string | null) => string,
 ): ColumnDef<LinhaConciliacaoBoleto, unknown>[] {
   return [
+  // Status CONSOLIDADO: badge + anotacoes compactas na mesma celula (decisao
+  // 2026-06-10, Ricardo: todas as colunas visiveis sem scroll horizontal).
+  // - enviado_nao_confirmado: aging "Nd" colorido (>=3 amber, >=10 red=stuck)
+  // - so_em_banco: situacao do titulo no sistema (Liquidado/Recomprado = baixa)
+  // - protesto: icone martelo (red=instruido/cartorio) com tooltip tipo+data
+  // O CSV exporta cada informacao como coluna propria (detalhe completo la).
   col.accessor("status", {
-    id: "status", header: "Status", size: 92,
+    id: "status", header: "Status", size: 168,
     cell: (info) => {
+      const row = info.row.original
       const s = info.getValue<StatusConciliacaoBoleto>()
-      return <span className={cx(tableTokens.badge, STATUS_META[s].tone)}>{STATUS_BADGE_LABEL[s]}</span>
-    },
-  }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
-  col.accessor("situacao_titulo", {
-    id: "situacao_titulo", header: "Tít. sistema", size: 88,
-    // So significa algo em "so_em_banco": titulo liquidado/recomprado no
-    // sistema com boleto ainda ativo no banco = pendencia de pedido de baixa.
-    cell: (info) => {
-      const row = info.row.original
-      if (row.status !== "so_em_banco") {
-        return <span className={tableTokens.cellMuted}>—</span>
-      }
-      const s = info.getValue<number | null>()
-      const cabeBaixa = situacaoTituloCabeBaixa(s)
+      const dias = s === "enviado_nao_confirmado" ? diasAguardando(row.enviado_em) : null
+      const cabeBaixa = situacaoTituloCabeBaixa(row.situacao_titulo)
       return (
-        <span
-          className={cx(
-            cabeBaixa || s === null
-              ? cx(tableTokens.cellText, "font-medium text-amber-700 dark:text-amber-400")
-              : tableTokens.cellSecondary,
+        <span className="flex items-center gap-1.5">
+          <span className={cx("shrink-0", tableTokens.badge, STATUS_META[s].tone)}>
+            {STATUS_BADGE_LABEL[s]}
+          </span>
+          {dias !== null && (
+            <span
+              className={cx("shrink-0 text-[11px] font-medium tabular-nums", agingTone(dias))}
+              title={`Remessa de registro enviada em ${fmtDateBR(row.enviado_em)} — sem confirmação de entrada do banco há ${dias} dias`}
+            >
+              {dias}d
+            </span>
           )}
-          title={
-            cabeBaixa
-              ? "Título encerrado no sistema com boleto ativo no banco — cabe pedido de baixa"
-              : s === null
-                ? "Número de documento sem título correspondente no warehouse"
-                : undefined
-          }
-        >
-          {situacaoTituloLabel(s)}
-        </span>
-      )
-    },
-  }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
-  col.accessor("enviado_em", {
-    id: "aguardando", header: "Aguardando", size: 92,
-    // Aging do "Enviado, aguardando confirmacao": dias corridos desde a remessa
-    // de registro. Tom escala com a idade (>=3 amber, >=10 red = stuck).
-    cell: (info) => {
-      const row = info.row.original
-      const dias = row.status === "enviado_nao_confirmado"
-        ? diasAguardando(info.getValue<string | null>())
-        : null
-      if (dias === null) return <span className={tableTokens.cellMuted}>—</span>
-      return (
-        <span
-          className={cx("text-xs font-medium tabular-nums", agingTone(dias))}
-          title={`Remessa de registro enviada em ${fmtDateBR(row.enviado_em)} — sem confirmação de entrada do banco`}
-        >
-          {dias}d
-        </span>
-      )
-    },
-  }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
-  col.accessor("protesto_tipo", {
-    id: "protesto", header: "Protesto", size: 96,
-    cell: (info) => {
-      const tipo = info.getValue<string | null>()
-      if (!tipo) return <span className={tableTokens.cellMuted}>—</span>
-      const meta = PROTESTO_META[tipo]
-      return (
-        <span
-          className={cx(tableTokens.badge, meta?.tone ?? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300")}
-          title={`${protestoLabel(tipo)} em ${fmtDateBR(info.row.original.protesto_em)}`}
-        >
-          {protestoLabel(tipo)}
+          {s === "so_em_banco" && (
+            <span
+              className={cx(
+                "truncate text-[11px]",
+                cabeBaixa || row.situacao_titulo === null
+                  ? "font-medium text-amber-700 dark:text-amber-400"
+                  : "text-gray-500 dark:text-gray-400",
+              )}
+              title={
+                cabeBaixa
+                  ? "Título encerrado no sistema com boleto ativo no banco — cabe pedido de baixa"
+                  : row.situacao_titulo === null
+                    ? "Número de documento sem título correspondente no warehouse"
+                    : undefined
+              }
+            >
+              {situacaoTituloLabel(row.situacao_titulo)}
+            </span>
+          )}
+          {row.protesto_tipo && (
+            <span
+              className="shrink-0"
+              title={`Protesto: ${protestoLabel(row.protesto_tipo)} em ${fmtDateBR(row.protesto_em)}`}
+            >
+              <RiAuctionLine
+                className={cx(
+                  "size-3",
+                  row.protesto_tipo === "protesto_instruido" || row.protesto_tipo === "encaminhado_cartorio"
+                    ? "text-red-500"
+                    : "text-gray-400 dark:text-gray-500",
+                )}
+                aria-hidden="true"
+              />
+            </span>
+          )}
         </span>
       )
     },
@@ -195,7 +186,7 @@ function makeColumns(
     },
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
   col.accessor("produto", {
-    id: "produto", header: "Produto", size: 160,
+    id: "produto", header: "Produto", size: 140,
     // Nome completo do produto (ex.: "Comissária"), nao a sigla. Resolver vem
     // do biMetadata da pagina; fallback pra sigla se o catalogo nao tiver.
     cell: (info) => {
@@ -215,14 +206,14 @@ function makeColumns(
     },
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
   col.accessor("cedente_nome", {
-    id: "cedente", header: "Cedente", size: 200,
+    id: "cedente", header: "Cedente", size: 180,
     // MOTIVO: largura fixa + truncate (sem quebra). Nome do cedente pode ser
     // longo; max-w constante mantem a coluna estavel, tooltip mostra o full.
     cell: (info) => {
       const v = info.getValue<string | null>()
       return (
         <span
-          className={cx("block max-w-[200px] truncate", tableTokens.cellText)}
+          className={cx("block max-w-[180px] truncate", tableTokens.cellText)}
           title={v ?? undefined}
         >
           {v ?? "—"}
@@ -230,21 +221,43 @@ function makeColumns(
       )
     },
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
+  // Vencimento/Valor CONSOLIDADOS: BITFIN e banco coincidem em ~99% das linhas
+  // (a conciliacao garante). Mostra um so; quando divergem, amber + tooltip com
+  // os dois lados (e a coluna Diferença quantifica). CSV exporta os 2 lados.
   col.accessor("venc_bitfin", {
-    id: "venc_bitfin", header: "Venc. BITFIN", size: 110, meta: { align: "right" },
-    cell: (info) => <DateCell value={info.getValue<string | null>()} />,
-  }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
-  col.accessor("venc_banco", {
-    id: "venc_banco", header: "Venc. banco", size: 110, meta: { align: "right" },
-    cell: (info) => <DateCell value={info.getValue<string | null>()} />,
+    id: "vencimento", header: "Vencimento", size: 100, meta: { align: "right" },
+    cell: (info) => {
+      const row = info.row.original
+      const diverge =
+        row.venc_bitfin !== null && row.venc_banco !== null && row.venc_bitfin !== row.venc_banco
+      if (!diverge) return <DateCell value={row.venc_bitfin ?? row.venc_banco} />
+      return (
+        <div
+          className="text-right text-xs font-medium tabular-nums text-amber-600 dark:text-amber-400"
+          title={`BITFIN ${fmtDateBR(row.venc_bitfin)} · banco ${fmtDateBR(row.venc_banco)}`}
+        >
+          {fmtDateBR(row.venc_bitfin)}
+        </div>
+      )
+    },
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
   col.accessor("valor_bitfin", {
-    id: "valor_bitfin", header: "Valor BITFIN", size: 130, meta: { align: "right" },
-    cell: (info) => <NumCell value={info.getValue<number | null>()} />,
-  }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
-  col.accessor("valor_banco", {
-    id: "valor_banco", header: "Valor banco", size: 130, meta: { align: "right" },
-    cell: (info) => <NumCell value={info.getValue<number | null>()} />,
+    id: "valor", header: "Valor", size: 120, meta: { align: "right" },
+    cell: (info) => {
+      const row = info.row.original
+      const diverge =
+        row.valor_bitfin !== null && row.valor_banco !== null &&
+        Math.abs(row.valor_bitfin - row.valor_banco) >= 0.005
+      if (!diverge) return <NumCell value={row.valor_bitfin ?? row.valor_banco} />
+      return (
+        <div
+          className="text-right text-xs font-medium tabular-nums text-amber-600 dark:text-amber-400"
+          title={`BITFIN ${fmtBRL.format(row.valor_bitfin ?? 0)} · banco ${fmtBRL.format(row.valor_banco ?? 0)}`}
+        >
+          {fmtBRL.format(row.valor_bitfin ?? 0)}
+        </div>
+      )
+    },
   }) as ColumnDef<LinhaConciliacaoBoleto, unknown>,
   col.display({
     id: "diferenca", header: "Diferença", size: 120, meta: { align: "right" },
