@@ -175,6 +175,8 @@ export {
 } from "./DashboardHeaderActions"
 export { DropdownUserProfile } from "./DropdownUserProfile"
 export { EmptyState } from "./EmptyState"
+export { EntidadeLink } from "./EntidadeLink"
+export { EntidadePeek } from "./EntidadePeek"
 export { ErrorState } from "./ErrorState"
 export {
   CoverageHeatmap,

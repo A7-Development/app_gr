@@ -47,6 +47,7 @@ import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 import { useBiFilters, type PresetKey } from "@/lib/hooks/useBiFilters"
 import { biMetadata, biOperacoes5 } from "@/lib/api-client"
 import type { Operacoes5CedenteItem } from "@/lib/api-client"
+import { EntidadeLink } from "@/design-system/components/EntidadeLink"
 
 const PRESET_OPTIONS: ReadonlyArray<{ key: PresetKey; label: string }> = [
   { key: "ytd", label: "Ano até hoje" },
@@ -347,9 +348,14 @@ function buildCedenteColumns(): ColumnDef<Operacoes5CedenteItem, unknown>[] {
               aria-hidden
             />
             <div className="min-w-0">
-              <p className={cx("truncate", tableTokens.cellText)}>
+              {/* Nome abre o peek da entidade (?entidade=); o resto da linha
+                  continua navegando pra rota do cedente (espinha do drill). */}
+              <EntidadeLink
+                documento={r.cedente_documento}
+                className={cx("block truncate", tableTokens.cellText)}
+              >
                 {r.cedente_nome}
-              </p>
+              </EntidadeLink>
               {r.cedente_documento && (
                 <p className={cx("truncate tabular-nums", tableTokens.cellSecondary)}>
                   {fmtCNPJ(r.cedente_documento)}
