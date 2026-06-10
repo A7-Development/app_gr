@@ -66,6 +66,7 @@ from app.warehouse.rentabilidade_fundo import RentabilidadeFundo
 from app.warehouse.saldo_conta_corrente import SaldoContaCorrente
 from app.warehouse.saldo_tesouraria import SaldoTesouraria
 from app.warehouse.serasa_liminar_estado import SerasaLiminarEstado
+from app.warehouse.serasa_pj_liminar_feature import SerasaPjLiminarFeature
 from app.warehouse.serasa_pj_atraso_medio_mensal import (
     SerasaPjAtrasoMedioMensal,
 )
@@ -129,6 +130,7 @@ __all__ = [
     "SaldoTesouraria",
     "SerasaLiminarEstado",
     "SerasaPjAtrasoMedioMensal",
+    "SerasaPjLiminarFeature",
     "SerasaPjBusinessReference",
     "SerasaPjConsulta",
     "SerasaPjEndereco",
