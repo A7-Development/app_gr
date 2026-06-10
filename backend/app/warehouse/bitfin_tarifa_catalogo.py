@@ -6,11 +6,10 @@ Cada item = (Categoria, Descricao) com um `Tipo` nativo do Bitfin:
     Tipo 2 = encargo variavel/calculado (Desagio, Juros, Multa, Ad Valorem,
              Imposto, Custas, ...)
 
-Serve a classificacao por NATUREZA do DRE (ver wh_bitfin_dre_natureza_rule):
-a `Descricao` aqui e vocabulario CONTROLADO de catalogo, nao texto livre --
-e o ancoradouro que substitui a heuristica de keyword. Tambem permite
-detectar item de catalogo NOVO (presente aqui, ausente nas regras de
-natureza -> flag de "nao classificado").
+A `Descricao` aqui e vocabulario CONTROLADO de catalogo, nao texto livre --
+ancoradouro do futuro catalogo de receitas operacionais (caixa-fiel) e
+detector de item de catalogo NOVO (presente aqui, ausente nas regras ->
+flag de "nao classificado").
 
 Per-tenant: cada tenant Bitfin tem seu proprio OrganizacaoTarifa. Ingerido
 pelo adapter (sync_bitfin_tarifa_catalogo); proveniencia em colunas proprias

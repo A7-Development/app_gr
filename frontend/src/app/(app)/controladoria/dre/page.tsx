@@ -111,7 +111,6 @@ const MOCK_PROVENANCE: ProvenanceSource[] = [
 // Abas L3: Demonstracao (pivot, periodo) + breakdowns da receita (1 mes).
 const TABS = [
   { key: "demonstracao", label: "Demonstração", dim: null },
-  { key: "natureza",     label: "Por Natureza", dim: "natureza" },
   { key: "cedente",      label: "Por Cedente",  dim: "cedente" },
   { key: "produto",      label: "Por Produto",  dim: "produto" },
 ] as const

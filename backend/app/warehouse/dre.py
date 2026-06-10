@@ -80,11 +80,6 @@ class DreMensal(Auditable, Base):
     # alimentavel por N integracoes). 'bitfin' hoje; outro ERP no futuro.
     fonte_integracao: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
 
-    # Natureza da RECEITA (so faz sentido em linhas de RECEITA_OPERACIONAL):
-    # DESAGIO/TARIFA/MULTA/JUROS/AD_VALOREM/IMPOSTO. Derivada do catalogo Bitfin
-    # via wh_bitfin_dre_natureza_rule. NULL = nao classificada (flag).
-    natureza: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
-
     # Medidas
     receita: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
     custo: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)

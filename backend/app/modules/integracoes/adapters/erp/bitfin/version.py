@@ -38,6 +38,15 @@ wh_posicao_cedente (risco/prazo carteira/liquidez), ClientePosicaoProduto ->
 wh_posicao_cedente_produto (LIMITE operacional/tranche/risco por produto),
 SacadoPosicao -> wh_posicao_sacado (subset essencial). Snapshot
 vendor-computed, full refresh, ancorado em wh_entidade via crosswalk.
+
+v2.5.0 (2026-06-10): REMOVIDA a classificacao por natureza do DRE
+(`wh_bitfin_dre_natureza_rule` dropada + coluna `wh_dre_mensal.natureza`).
+Motivo: a DemonstrativoDeResultado do Bitfin RECALCULA multa/juros
+teoricamente (percentual contratual x dias) — nao reflete caixa. Receita
+por natureza renasce fiel ao caixa no catalogo de receitas operacionais
+(nova wh canonica, fontes: Titulo / ContaCorrenteLancamento / Recompra /
+OperacaoRentabilidade). `wh_bitfin_tarifa_catalogo` permanece como
+vocabulario controlado.
 """
 
-ADAPTER_VERSION = "bitfin_adapter_v2.4.0"
+ADAPTER_VERSION = "bitfin_adapter_v2.5.0"

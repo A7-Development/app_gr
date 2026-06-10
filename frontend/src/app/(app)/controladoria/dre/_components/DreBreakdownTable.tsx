@@ -2,7 +2,7 @@
 
 /**
  * DreBreakdownTable — receita de UM mes aberta por uma dimensao
- * (natureza / cedente / produto / subgrupo).
+ * (cedente / produto / subgrupo).
  *
  * Tabela plana canonica (DataTable). Colunas: Linha · Receita · % · Resultado.
  * Ordenada por receita desc (vem ordenada do backend). Click numa linha
