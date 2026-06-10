@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
+<<<<<<< HEAD
 from sqlalchemy import func, select
+=======
+from sqlalchemy import select
+>>>>>>> origin/main
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import EntidadePapel
@@ -19,16 +23,20 @@ from app.warehouse.entidade import (
     WhGrupoEconomico,
     WhGrupoEconomicoMembro,
 )
+<<<<<<< HEAD
 from app.warehouse.posicao_papel import (
     WhPosicaoCedente,
     WhPosicaoCedenteProduto,
     WhPosicaoSacado,
 )
+=======
+>>>>>>> origin/main
 from app.warehouse.serasa_pj_consulta import SerasaPjConsulta
 
 _BUREAU_FONTE_LABEL = "Serasa Relato PJ"
 
 
+<<<<<<< HEAD
 def _f(value: object) -> float:
     """Decimal/None -> float (0.0 para None — agregados monetarios)."""
     return float(value) if value is not None else 0.0
@@ -38,6 +46,8 @@ def _fn(value: object) -> float | None:
     return float(value) if value is not None else None
 
 
+=======
+>>>>>>> origin/main
 async def get_resumo(
     db: AsyncSession, tenant_id: UUID, documento_raw: str
 ) -> dict | None:
@@ -107,7 +117,10 @@ async def get_resumo(
 
     # --- Grupo economico + membros (com papeis de cada membro) ---
     grupo: dict | None = None
+<<<<<<< HEAD
     grupo_entidade_ids: list[UUID] = []
+=======
+>>>>>>> origin/main
     if entidade.grupo_economico_source_id is not None:
         grupo_row = (
             await db.execute(
@@ -135,7 +148,10 @@ async def get_resumo(
             membro_ids = [
                 ent.id for _m, ent in membro_rows if ent is not None
             ]
+<<<<<<< HEAD
             grupo_entidade_ids = membro_ids
+=======
+>>>>>>> origin/main
             papeis_por_entidade: dict[UUID, list[str]] = {}
             if membro_ids:
                 for ent_id, papel in (
@@ -165,6 +181,7 @@ async def get_resumo(
                 ],
             }
 
+<<<<<<< HEAD
     # --- Posicoes por papel (F1): carteira ativa + limites + performance ---
     pos_ced = (
         await db.execute(
@@ -280,6 +297,8 @@ async def get_resumo(
             else None,
         }
 
+=======
+>>>>>>> origin/main
     # --- Bureau: ultima consulta Serasa do documento ---
     bureau: dict | None = None
     consulta = (
@@ -329,9 +348,12 @@ async def get_resumo(
         "cedente_id": cedente_id,
         "estabelecimentos": estabelecimentos,
         "grupo": grupo,
+<<<<<<< HEAD
         "carteira_ativa": carteira_ativa,
         "limites": limites,
         "performance": performance,
+=======
+>>>>>>> origin/main
         "bureau": bureau,
         "source_type": entidade.source_type.value,
         "ingested_at": entidade.ingested_at,

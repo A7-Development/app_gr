@@ -69,6 +69,38 @@ class LinhaConciliacaoSchema(BaseModel):
         default=None, description="UA (Unidade Administrativa) — escopo. Null em 'só em banco'."
     )
     ua_nome: str | None = Field(default=None, description="Nome amigável da UA.")
+    situacao_titulo: int | None = Field(
+        default=None,
+        description="Situacao do titulo no wh_titulo (codigo Bitfin: 0=aberto, "
+        "1=liquidado, 5=recomprado). Preenchida apenas em 'so_em_banco' — "
+        "liquidado/recomprado com boleto ativo = cabe pedido de baixa. None em "
+        "'so_em_banco' = titulo inexistente no warehouse.",
+    )
+    enviado_em: date | None = Field(
+        default=None,
+        description="Data de geracao da remessa de registro (apenas em "
+        "'enviado_nao_confirmado') — base do aging 'aguardando ha N dias'.",
+    )
+    protesto_tipo: str | None = Field(
+        default=None,
+        description="Ultimo evento do pipeline de protesto do boleto: "
+        "protesto_instruido | encaminhado_cartorio | protesto_sustado | "
+        "retirado_cartorio. None = sem protesto.",
+    )
+    protesto_em: date | None = Field(
+        default=None, description="Data do ultimo evento de protesto."
+    )
+
+
+class FrescorBanco(BaseModel):
+    """Frescor do retorno de UM banco cobrador."""
+
+    banco: str = Field(description="Banco cobrador (bradesco/vortx/bmp/itau).")
+    retorno_ate: date = Field(
+        description="Data do ultimo evento de RETORNO processado deste banco "
+        "(max data_ocorrencia na timeline). Banco parado fica visivel aqui "
+        "mesmo com o frescor global em dia."
+    )
 
 
 class ConciliacaoBancoCobradorResponse(BaseModel):
@@ -78,6 +110,9 @@ class ConciliacaoBancoCobradorResponse(BaseModel):
         default=None,
         description="Frescor do lado banco: data do ultimo evento de cobranca "
         "processado. A carteira BITFIN e 'agora'.",
+    )
+    frescor_bancos: list[FrescorBanco] = Field(
+        default_factory=list, description="Frescor do retorno por banco."
     )
     titulos_abertos: int = Field(description="Titulos abertos elegiveis a boleto.")
     boletos_ativos: int = Field(description="Boletos ativos (cobranca vigente).")

@@ -25,6 +25,7 @@
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
+  RiAuctionLine,
   RiBankLine,
   RiBriefcase2Line,
   RiBuilding2Line,
@@ -69,6 +70,7 @@ import type {
 import { ConciliacaoBoletoTable } from "./_components/ConciliacaoBoletoTable"
 import { ResumoConciliacaoCharts } from "./_components/ResumoConciliacaoCharts"
 import { ResumoConciliacaoTable } from "./_components/ResumoConciliacaoTable"
+import { protestoLabel } from "./_components/status"
 
 const fmtInt = new Intl.NumberFormat("pt-BR")
 
@@ -155,6 +157,7 @@ export default function ConciliacaoBancoCobradorPage() {
   const [bancoFilter, setBancoFilter] = React.useState<string[]>([])
   const [produtoFilter, setProdutoFilter] = React.useState<string[]>([])
   const [cedenteFilter, setCedenteFilter] = React.useState<string[]>([])
+  const [protestoFilter, setProtestoFilter] = React.useState<string[]>([])
 
   // Reset de TODOS os filtros (escopo UA + lentes). O botao "Resetar" fica
   // sempre visivel (padrao /bi/operacoes2) e habilita quando ha filtro ativo.
@@ -163,13 +166,15 @@ export default function ConciliacaoBancoCobradorPage() {
     statusFilter.length > 0 ||
     bancoFilter.length > 0 ||
     produtoFilter.length > 0 ||
-    cedenteFilter.length > 0
+    cedenteFilter.length > 0 ||
+    protestoFilter.length > 0
   const resetFilters = React.useCallback(() => {
     setUaFilter([])
     setStatusFilter([])
     setBancoFilter([])
     setProdutoFilter([])
     setCedenteFilter([])
+    setProtestoFilter([])
   }, [])
 
   const q = useConciliacaoBancoCobrador()
@@ -236,6 +241,11 @@ export default function ConciliacaoBancoCobradorPage() {
     () => distinctOpts(conc?.linhas, (l) => l.cedente_nome),
     [conc],
   )
+  // Opcoes do chip Protesto: tipos presentes nas linhas (value=tipo canonico).
+  const protestoOpts = React.useMemo(
+    () => distinctOpts(conc?.linhas, (l) => l.protesto_tipo, (v) => protestoLabel(v)),
+    [conc],
+  )
 
   // Re-escopo TOTAL (decisao 2026-06-07): UA/Status/Banco/Produto/Cedente
   // recortam o MESMO conjunto que alimenta a tabela-resumo, os charts e o
@@ -251,9 +261,11 @@ export default function ConciliacaoBancoCobradorPage() {
         (bancoFilter.length === 0 || (l.banco != null && bancoFilter.includes(l.banco))) &&
         (produtoFilter.length === 0 || (l.produto != null && produtoFilter.includes(l.produto))) &&
         (cedenteFilter.length === 0 ||
-          (l.cedente_nome != null && cedenteFilter.includes(l.cedente_nome))),
+          (l.cedente_nome != null && cedenteFilter.includes(l.cedente_nome))) &&
+        (protestoFilter.length === 0 ||
+          (l.protesto_tipo != null && protestoFilter.includes(l.protesto_tipo))),
     )
-  }, [conc, uaFilter, statusFilter, bancoFilter, produtoFilter, cedenteFilter])
+  }, [conc, uaFilter, statusFilter, bancoFilter, produtoFilter, cedenteFilter, protestoFilter])
 
   // Resumo (tabela + charts) computado do MESMO conjunto filtrado do detalhe.
   const resumo = React.useMemo(() => computeResumo(linhasFiltradas), [linhasFiltradas])
@@ -279,9 +291,10 @@ export default function ConciliacaoBancoCobradorPage() {
         bancoFilter.length > 0 && `Banco: ${join(bancoFilter.map(capitalize))}`,
         produtoFilter.length > 0 && `Produto: ${join(produtoFilter)}`,
         cedenteFilter.length > 0 && `Cedente: ${join(cedenteFilter)}`,
+        protestoFilter.length > 0 && `Protesto: ${join(protestoFilter.map((p) => protestoLabel(p)))}`,
       ].filter(Boolean).join(" · ") || "Nenhum",
     }
-  }, [conc, uaFilter, statusFilter, bancoFilter, produtoFilter, cedenteFilter])
+  }, [conc, uaFilter, statusFilter, bancoFilter, produtoFilter, cedenteFilter, protestoFilter])
 
   // "Sem dados" = conciliacao carregada e nao ha titulos nem boletos.
   const semDados =
@@ -360,6 +373,17 @@ export default function ConciliacaoBancoCobradorPage() {
               onChange={setCedenteFilter}
               searchable
             />
+            {/* Protesto: so aparece quando ha boleto no pipeline de protesto
+                no conjunto atual (opcoes derivadas das linhas). */}
+            {protestoOpts.length > 0 && (
+              <MultiSelectChip
+                label="Protesto"
+                icon={RiAuctionLine}
+                options={protestoOpts}
+                selected={protestoFilter}
+                onChange={setProtestoFilter}
+              />
+            )}
 
             {/* Resetar filtros (controle canonico): zera escopo (UA) + lentes. */}
             <ResetFiltersButton hasActiveFilters={hasFilters} onReset={resetFilters} />
@@ -437,8 +461,29 @@ export default function ConciliacaoBancoCobradorPage() {
                   (dir.). Ambos no MESMO conjunto filtrado do detalhe; reconcilia
                   (§14.6). Empilha em telas estreitas (< xl). */}
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                <ResumoConciliacaoTable resumo={resumo} />
-                <ResumoConciliacaoCharts linhas={linhasFiltradas} />
+                <ResumoConciliacaoTable
+                  resumo={resumo}
+                  statusFilter={statusFilter}
+                  onStatusToggle={(status) =>
+                    setStatusFilter((prev) =>
+                      prev.includes(status)
+                        ? prev.filter((s) => s !== status)
+                        : [...prev, status],
+                    )
+                  }
+                />
+                <ResumoConciliacaoCharts
+                  linhas={linhasFiltradas}
+                  frescores={conc?.frescor_bancos ?? []}
+                  bancoFilter={bancoFilter}
+                  onBancoToggle={(banco) =>
+                    setBancoFilter((prev) =>
+                      prev.includes(banco)
+                        ? prev.filter((b) => b !== banco)
+                        : [...prev, banco],
+                    )
+                  }
+                />
               </div>
 
               {/* DataTable — filtrada pelos chips + busca */}

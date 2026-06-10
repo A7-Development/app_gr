@@ -27,6 +27,7 @@ from app.core.module_guard import require_module
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.modules.controladoria.schemas.conciliacao_boleto import (
     ConciliacaoBancoCobradorResponse,
+    FrescorBanco,
     LinhaConciliacaoSchema,
     ResumoStatus,
 )
@@ -74,6 +75,10 @@ def _mapear_linha(linha: LinhaConciliacao) -> LinhaConciliacaoSchema:
         cedente_nome=linha.cedente_nome,
         ua_id=linha.ua_id,
         ua_nome=linha.ua_nome,
+        situacao_titulo=linha.situacao_titulo,
+        enviado_em=linha.enviado_em,
+        protesto_tipo=linha.protesto_tipo,
+        protesto_em=linha.protesto_em,
     )
 
 
@@ -115,6 +120,10 @@ async def conciliacao_banco_cobrador(
     result = await conciliar_boletos(db, tenant_id=principal.tenant_id)
     return ConciliacaoBancoCobradorResponse(
         cobranca_atualizada_ate=result.cobranca_atualizada_ate,
+        frescor_bancos=[
+            FrescorBanco(banco=banco, retorno_ate=ate)
+            for banco, ate in sorted(result.retorno_ate_por_banco.items())
+        ],
         titulos_abertos=result.titulos_abertos,
         boletos_ativos=result.boletos_ativos,
         conciliados=result.conciliados,

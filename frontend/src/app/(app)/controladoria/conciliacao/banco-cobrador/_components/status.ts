@@ -79,6 +79,72 @@ export const STATUS_ORDER: StatusConciliacaoBoleto[] = [
   "so_em_banco",
 ]
 
+// ── Situacao do titulo no sistema (wh_titulo, codigo Bitfin) ─────────────────
+// So preenchida em linhas "so_em_banco". Rotulos confirmados na descricao
+// oficial do Bitfin (wh_titulo_snapshot.situacao_descricao): 0="Em aberto",
+// 1="Liq. Normal", 5="Recomprado"; 3/7/9 chegam como "Outros".
+const SITUACAO_TITULO_LABEL: Record<number, string> = {
+  0: "Em aberto",
+  1: "Liquidado",
+  5: "Recomprado",
+}
+
+/** Rotulo da situacao do titulo no sistema (linhas "so_em_banco"). */
+export function situacaoTituloLabel(s: number | null | undefined): string {
+  if (s == null) return "Sem título"
+  return SITUACAO_TITULO_LABEL[s] ?? `Outros (cód ${s})`
+}
+
+/** Titulo encerrado no sistema com boleto ativo no banco -> cabe baixa. */
+export function situacaoTituloCabeBaixa(s: number | null | undefined): boolean {
+  return s === 1 || s === 5
+}
+
+// ── Pipeline de protesto/cartorio (wh_boleto_evento.tipo_evento) ─────────────
+// Ultimo evento de protesto do boleto. Eventos "info" no fold — a conciliacao
+// e o unico lugar que os mostra. Em cartorio/instruido = acao em curso (red);
+// sustado/retirado = pipeline interrompido (gray).
+export const PROTESTO_META: Record<string, { label: string; tone: string }> = {
+  protesto_instruido: {
+    label: "Instruído",
+    tone: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400",
+  },
+  encaminhado_cartorio: {
+    label: "Em cartório",
+    tone: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400",
+  },
+  protesto_sustado: {
+    label: "Sustado",
+    tone: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
+  },
+  retirado_cartorio: {
+    label: "Retirado",
+    tone: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
+  },
+}
+
+export function protestoLabel(tipo: string | null | undefined): string {
+  if (tipo == null) return "—"
+  return PROTESTO_META[tipo]?.label ?? tipo
+}
+
+// ── Aging do "Enviado, aguardando confirmacao" ───────────────────────────────
+// Dias corridos desde a remessa de registro. <=2 normal (D-1/D-2 de retorno),
+// 3-9 atencao, >=10 stuck (banco nunca confirmou — gap real).
+export function diasAguardando(enviadoEm: string | null | undefined): number | null {
+  if (!enviadoEm) return null
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(enviadoEm)
+  if (!m) return null
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86_400_000))
+}
+
+export function agingTone(dias: number): string {
+  if (dias >= 10) return "text-red-600 dark:text-red-400"
+  if (dias >= 3) return "text-amber-600 dark:text-amber-400"
+  return "text-gray-500 dark:text-gray-400"
+}
+
 // Badge curto (cabe na coluna Status do detalhe + legenda dos charts).
 export const STATUS_BADGE_LABEL: Record<StatusConciliacaoBoleto, string> = {
   conciliado: "Conciliado",
