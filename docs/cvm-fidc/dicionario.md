@@ -116,6 +116,28 @@ Receber (floating de liquidacao + diferidos) — bate ao centavo com a QiTech.**
 
 Base de check mensal automatico CVM x posicao interna (candidato a Conferencia).
 
+### Cotas e fluxo — semantica validada (2026-04 + REALINVEST x MEC)
+- **`tab_x_4` (movimentacao)**: 4 `tab_x_tp_oper` — Captacoes no Mes /
+  Resgates no Mes / Amortizacoes / Resgates Solicitados (fila, nao fluxo).
+  Universo abril: 27,3 / 5,9 / 1,2 / 0,1 bi -> captacao liquida = capt - resg
+  - amort = +20,2 bi. **Validado REALINVEST: CVM = MEC ao centavo**, com
+  mapeamento `Captacoes = wh_mec_evolucao_cotas.entradas` e `Resgates =
+  .saidas` (as colunas `aporte`/`retirada` do MEC ficam zeradas).
+- **`tab_x_3` (rentabilidade) e AUTORITATIVA — Δcota NAO e proxy**: REALINVEST
+  = MEC `variacao_mensal` arredondado a 2 casas (4,2743 -> 4,27). No universo,
+  rentab so bate com `Δ tab_x_2.vl_cota` em 68% das series (5.489/8.044 a
+  2bps); das 2.096 que divergem >50bps, 63% tem amortizacao/resgate no mes
+  (cota cai sem ser rentabilidade negativa) e 782 divergem sem movimento
+  (ruido de reporte). Indicador de rentabilidade usa tab_x_3, nunca Δcota.
+- **`tab_x_6` (desempenho)**: `pr_desemp_esperado` = META da serie;
+  serie com taxa-alvo atingida reporta esperado = real (REALINVEST Senior
+  1,44/1,44, Mez 1,56/1,56); **Subordinada reporta esperado = 0** (recebe o
+  residual — nao tem meta). Spread real-esperado so faz sentido p/ series
+  com meta > 0.
+- **`tab_x_1` / `tab_x_1_1` (cotistas)**: por serie (REALINVEST: 7 Senior /
+  4 Mez / 6 Sub) e por tipo de investidor (15 tipos x Senior|Subord — sem
+  abertura por serie).
+
 ### Composicao da carteira em R$ (cabecalho Austin pag.2)
 `cvm_remote.tab_i` -- mapeamento pratico:
 - DC a vencer: `tab_i2a_vl_dircred_risco` (soma) + decomposicao em `tab_v.tab_v_a_vl_dircred_prazo`
