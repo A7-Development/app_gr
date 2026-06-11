@@ -79,6 +79,40 @@ def _redact_socio(item: Any) -> dict[str, Any] | None:
     }
 
 
+def _redact_pessoas(raw: Any) -> list[dict[str, Any]]:
+    """Lista de pessoas (administradores etc.) com CPF reduzido (LGPD §19.9).
+
+    Preserva os demais campos do item (socio, forma_atuacao, ...) — só o
+    `cpf` vira `cpf_ultimos4`.
+    """
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        nome = item.get("nome")
+        if not isinstance(nome, str) or not nome.strip():
+            continue
+        cpf_digits = _digits(item.get("cpf"))
+        rest = {k: v for k, v in item.items() if k not in ("cpf", "nome")}
+        out.append(
+            {
+                "nome": nome.strip(),
+                "cpf_ultimos4": cpf_digits[-4:] if len(cpf_digits) >= 4 else None,
+                **rest,
+            }
+        )
+    return out
+
+
+def _lista_de_dicts(raw: Any) -> list[dict[str, Any]]:
+    """Passthrough seguro de listas extraídas (poderes, restrições)."""
+    if not isinstance(raw, list):
+        return []
+    return [i for i in raw if isinstance(i, dict)]
+
+
 def _estrutura(socios: list[dict[str, Any]], data_constituicao: date | None) -> dict[str, Any]:
     """Estrutura societária determinística — números prontos pro agente julgar."""
     pcts = [s["participacao_pct"] for s in socios if s["participacao_pct"] is not None]
@@ -311,6 +345,14 @@ async def build_societario_payload(
             "objeto_social": fields.get("objeto_social"),
             "endereco": fields.get("endereco"),
             "socios": socios,
+            # extract.social_contract v2 — cláusulas (insumo nobre do agente):
+            "administradores": _redact_pessoas(fields.get("administradores")),
+            "poderes_assinatura": _lista_de_dicts(fields.get("poderes_assinatura")),
+            "restricoes_estatutarias": _lista_de_dicts(
+                fields.get("restricoes_estatutarias")
+            ),
+            "numero_alteracao": fields.get("numero_alteracao"),
+            "data_ultima_alteracao": fields.get("data_ultima_alteracao"),
         },
         "estrutura": _estrutura(socios, _parse_date(fields.get("data_constituicao"))),
         "cruzamentos": _cruzamentos(fields, company, target_cnpj),
