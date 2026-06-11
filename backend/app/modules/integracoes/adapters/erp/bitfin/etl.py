@@ -35,6 +35,7 @@ from app.modules.controladoria.services.dre import (
     DreClassifier,
     load_dre_classifier,
 )
+from app.modules.integracoes.adapters.erp.bitfin.acruo import sync_receita_acruo
 from app.modules.integracoes.adapters.erp.bitfin.config import BitfinConfig
 from app.modules.integracoes.adapters.erp.bitfin.connection import fetch_rows
 from app.modules.integracoes.adapters.erp.bitfin.hashing import sha256_of_row
@@ -1290,6 +1291,9 @@ SYNC_PIPELINE = [
     sync_receita_grafica,
     sync_receita_recompra,
     sync_receita_operacao,
+    # Metodo ACRUO (derivada de silver — roda DEPOIS de operacao/item/titulo
+    # estarem frescos). Caixa e acruo coexistem; competencia = futuro.
+    sync_receita_acruo,
     # Reconcile (anti-join hard-delete de orfaos). Ultimo passo: roda DEPOIS
     # dos upserts (espelho ja com os dados frescos) e tem gate diario interno
     # — a varredura full so dispara 1x/dia, demais ticks viram no-op barato.
