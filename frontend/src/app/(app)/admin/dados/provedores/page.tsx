@@ -379,7 +379,15 @@ function EditForm({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-const col = createColumnHelper<DataProviderCredentialRead>()
+// Linha da tabela: o PROVEDOR e a entidade. Credencial inline quando existe;
+// provedor sem credencial aparece com status "Sem credencial" + CTA.
+// Provedor com N credenciais vira N linhas (alias distingue).
+type ProviderRow = {
+  provider: DataProviderRead
+  credential: DataProviderCredentialRead | null
+}
+
+const col = createColumnHelper<ProviderRow>()
 
 export default function DataProvidersPage() {
   const providersQuery = useDataProviders()
@@ -390,10 +398,13 @@ export default function DataProvidersPage() {
 
   const providers = providersQuery.data ?? []
   const data = credentialsQuery.data ?? []
-  const providerName = React.useCallback(
-    (id: string) => providers.find((p) => p.id === id)?.name ?? "—",
-    [providers],
-  )
+  const rows = React.useMemo<ProviderRow[]>(() => {
+    return providers.flatMap((p): ProviderRow[] => {
+      const creds = data.filter((c) => c.provider_id === p.id)
+      if (creds.length === 0) return [{ provider: p, credential: null }]
+      return creds.map((c) => ({ provider: p, credential: c }))
+    })
+  }, [providers, data])
 
   const [creating, setCreating] = React.useState(false)
   // Pré-seleção do provedor ao criar pela faixa de provedores do topo.
@@ -404,85 +415,167 @@ export default function DataProvidersPage() {
   const [pendingDelete, setPendingDelete] =
     React.useState<DataProviderCredentialRead | null>(null)
   const [search, setSearch] = React.useState("")
-  const [segment, setSegment] = React.useState<"todas" | "ativas" | "suspensas">(
+  const [segment, setSegment] = React.useState<
+    "todas" | "ativas" | "suspensas" | "sem-credencial"
+  >(
     "todas",
   )
 
-  const columns = React.useMemo<ColumnDef<DataProviderCredentialRead, unknown>[]>(
+  const columns = React.useMemo<ColumnDef<ProviderRow, unknown>[]>(
     () => [
-      col.accessor("provider_id", {
+      col.accessor((r) => r.provider.name, {
+        id: "provedor",
         header: "Provedor",
-        size: 160,
+        size: 170,
         cell: (info) => (
-          <span className={cx(tableTokens.badgeWithDot, "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300")}>
-            <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
-            {providerName(info.getValue())}
+          <span
+            className={cx(
+              tableTokens.badgeWithDot,
+              info.row.original.provider.enabled
+                ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+                : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
+            )}
+          >
+            <span
+              aria-hidden
+              className={cx(
+                "size-1.5 rounded-full",
+                info.row.original.provider.enabled ? "bg-amber-500" : "bg-gray-400",
+              )}
+            />
+            {String(info.getValue())}
           </span>
         ),
-      }) as ColumnDef<DataProviderCredentialRead, unknown>,
-      col.accessor("alias", {
+      }) as ColumnDef<ProviderRow, unknown>,
+      col.accessor(
+        (r) =>
+          r.credential
+            ? r.credential.active
+              ? "ativa"
+              : "suspensa"
+            : "sem credencial",
+        {
+          id: "status",
+          header: "Status",
+          size: 150,
+          cell: (info) => {
+            const c = info.row.original.credential
+            if (!c) {
+              return (
+                <span
+                  className={cx(
+                    tableTokens.badge,
+                    "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
+                  )}
+                  title="Sem credencial cadastrada — as consultas deste provedor estão indisponíveis."
+                >
+                  Sem credencial
+                </span>
+              )
+            }
+            return <ActiveBadge active={c.active} />
+          },
+        },
+      ) as ColumnDef<ProviderRow, unknown>,
+      col.accessor((r) => r.credential?.alias ?? "", {
+        id: "alias",
         header: "Alias",
         size: 200,
-        cell: (info) => (
-          <span className={tableTokens.cellTextMono}>{info.getValue()}</span>
-        ),
-      }) as ColumnDef<DataProviderCredentialRead, unknown>,
-      col.accessor("zdr_enabled", {
+        cell: (info) =>
+          info.getValue() ? (
+            <span className={tableTokens.cellTextMono}>{String(info.getValue())}</span>
+          ) : (
+            <span className={tableTokens.cellMuted}>—</span>
+          ),
+      }) as ColumnDef<ProviderRow, unknown>,
+      col.display({
+        id: "zdr",
         header: "ZDR",
         size: 90,
-        cell: (info) => <ZdrBadge enabled={info.getValue()} />,
-      }) as ColumnDef<DataProviderCredentialRead, unknown>,
-      col.accessor("active", {
-        header: "Status",
-        size: 100,
-        cell: (info) => <ActiveBadge active={info.getValue()} />,
-      }) as ColumnDef<DataProviderCredentialRead, unknown>,
-      col.accessor("rotated_at", {
+        cell: ({ row }) =>
+          row.original.credential ? (
+            <ZdrBadge enabled={row.original.credential.zdr_enabled} />
+          ) : (
+            <span className={tableTokens.cellMuted}>—</span>
+          ),
+      }) as ColumnDef<ProviderRow, unknown>,
+      col.display({
+        id: "rotacao",
         header: "Ultima rotacao",
         size: 150,
-        cell: (info) => <RotatedAtCell value={info.getValue()} />,
-      }) as ColumnDef<DataProviderCredentialRead, unknown>,
-      col.accessor("created_at", {
+        cell: ({ row }) => (
+          <RotatedAtCell value={row.original.credential?.rotated_at ?? null} />
+        ),
+      }) as ColumnDef<ProviderRow, unknown>,
+      col.display({
+        id: "criada",
         header: "Criada em",
         size: 110,
-        cell: (info) => <DateCell value={info.getValue()} />,
-      }) as ColumnDef<DataProviderCredentialRead, unknown>,
+        cell: ({ row }) =>
+          row.original.credential ? (
+            <DateCell value={row.original.credential.created_at} />
+          ) : (
+            <span className={tableTokens.cellMuted}>—</span>
+          ),
+      }) as ColumnDef<ProviderRow, unknown>,
       col.display({
         id: "actions",
         header: "",
-        size: 56,
-        cell: ({ row }) => (
-          <div className="flex justify-end">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+        size: 170,
+        cell: ({ row }) => {
+          const c = row.original.credential
+          if (!c) {
+            return (
+              <div className="flex justify-end">
                 <Button
-                  variant="ghost"
-                  className="size-7 p-0"
-                  aria-label={`Acoes de ${row.original.alias}`}
-                  onClick={(e) => e.stopPropagation()}
+                  variant="secondary"
+                  className="h-7"
+                  disabled={!row.original.provider.enabled}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setPresetProviderId(row.original.provider.id)
+                    setCreating(true)
+                  }}
                 >
-                  <RiMoreLine className="size-4" aria-hidden />
+                  <RiAddLine className="mr-1 size-3.5" aria-hidden />
+                  Cadastrar credencial
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" sideOffset={4}>
-                <DropdownMenuItem onSelect={() => setEditing(row.original)}>
-                  Editar
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onSelect={() => setPendingDelete(row.original)}
-                  className="text-red-600 focus:text-red-700 dark:text-red-400 dark:focus:text-red-300"
-                >
-                  <RiDeleteBinLine className="mr-2 size-4" aria-hidden />
-                  Excluir
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        ),
-      }) as ColumnDef<DataProviderCredentialRead, unknown>,
+              </div>
+            )
+          }
+          return (
+            <div className="flex justify-end">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className="size-7 p-0"
+                    aria-label={`Acoes de ${c.alias}`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <RiMoreLine className="size-4" aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" sideOffset={4}>
+                  <DropdownMenuItem onSelect={() => setEditing(c)}>
+                    Editar
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={() => setPendingDelete(c)}
+                    className="text-red-600 focus:text-red-700 dark:text-red-400 dark:focus:text-red-300"
+                  >
+                    <RiDeleteBinLine className="mr-2 size-4" aria-hidden />
+                    Excluir
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )
+        },
+      }) as ColumnDef<ProviderRow, unknown>,
     ],
-    [providerName],
+    [],
   )
 
   const handleCreate = async (v: {
@@ -547,63 +640,8 @@ export default function DataProvidersPage() {
         }
       />
 
-      {/* Provedores cadastrados — visíveis MESMO sem credencial (a tabela
-          abaixo lista credenciais; provedor sem credencial sumia da tela). */}
-      {providers.length > 0 && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {providers.map((p) => {
-            const count = data.filter((c) => c.provider_id === p.id).length
-            const active = data.filter(
-              (c) => c.provider_id === p.id && c.active,
-            ).length
-            return (
-              <div
-                key={p.id}
-                className="flex items-center gap-3 rounded border border-gray-200 bg-white p-3.5 shadow-xs dark:border-gray-800 dark:bg-gray-950"
-              >
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-gray-100 dark:bg-gray-900">
-                  <RiDatabase2Line className="size-4.5 text-gray-500" aria-hidden />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-50">
-                    {p.name}
-                  </p>
-                  <p className="mt-0.5 text-[11px]">
-                    {!p.enabled ? (
-                      <span className="text-gray-400">desabilitado</span>
-                    ) : count === 0 ? (
-                      <span className="font-medium text-amber-600 dark:text-amber-500">
-                        sem credencial — consultas indisponíveis
-                      </span>
-                    ) : (
-                      <span className="text-gray-500 dark:text-gray-400">
-                        {count} credencial{count === 1 ? "" : "s"}
-                        {active < count && ` · ${active} ativa${active === 1 ? "" : "s"}`}
-                      </span>
-                    )}
-                  </p>
-                </div>
-                {p.enabled && count === 0 && (
-                  <Button
-                    variant="secondary"
-                    className="h-8 shrink-0"
-                    onClick={() => {
-                      setPresetProviderId(p.id)
-                      setCreating(true)
-                    }}
-                  >
-                    <RiAddLine className="mr-1 size-3.5" aria-hidden />
-                    Credencial
-                  </Button>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      <DataTableShell<DataProviderCredentialRead>
-        data={data}
+      <DataTableShell<ProviderRow>
+        data={rows}
         columns={columns}
         loading={credentialsQuery.isLoading}
         error={credentialsQuery.error}
@@ -618,12 +656,32 @@ export default function DataProvidersPage() {
           onChange: (v) => setSegment(v as typeof segment),
           options: [
             { value: "todas", label: "Todas", filter: () => true },
-            { value: "ativas", label: "Ativas", filter: (c) => c.active },
-            { value: "suspensas", label: "Suspensas", filter: (c) => !c.active },
+            {
+              value: "ativas",
+              label: "Ativas",
+              filter: (r) => Boolean(r.credential?.active),
+            },
+            {
+              value: "suspensas",
+              label: "Suspensas",
+              filter: (r) => Boolean(r.credential && !r.credential.active),
+            },
+            {
+              value: "sem-credencial",
+              label: "Sem credencial",
+              filter: (r) => r.credential === null,
+            },
           ],
         }}
-        itemNoun={{ singular: "credencial", plural: "credenciais" }}
-        onRowClick={(c) => setEditing(c)}
+        itemNoun={{ singular: "provedor", plural: "provedores" }}
+        onRowClick={(r) => {
+          if (r.credential) {
+            setEditing(r.credential)
+          } else if (r.provider.enabled) {
+            setPresetProviderId(r.provider.id)
+            setCreating(true)
+          }
+        }}
         emptyState={{
           icon: RiDatabase2Line,
           title: "Nenhuma credencial cadastrada",
