@@ -215,6 +215,22 @@ async def update_extraction(
         document.extraction_confidence = Decimal(str(confidence))
     document.extraction_status = "validated"
     await db.flush()
+
+    # Contrato social homologado materializa o QSA no grafo do dossiê
+    # (credit_dossier_person PARTNER) — alimenta checks (ownership_sum) e
+    # cruzamentos. IA propôs, humano homologou: agora é a verdade.
+    if document.doc_type == DocumentType.SOCIAL_CONTRACT:
+        from app.modules.credito.services.dossier import (
+            absorb_partners_from_social_contract,
+        )
+
+        await absorb_partners_from_social_contract(
+            db,
+            tenant_id=tenant_id,
+            dossier_id=dossier_id,
+            fields=extracted_fields,
+        )
+
     return document
 
 

@@ -839,11 +839,84 @@ async def compute_progress_map(
     return out
 
 
+async def absorb_partners_from_social_contract(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    dossier_id: UUID,
+    fields: dict[str, Any],
+) -> None:
+    """Materializa o QSA extraído do CONTRATO SOCIAL em `credit_dossier_person`.
+
+    Chamada quando a extração do `social_contract` é HOMOLOGADA pelo analista
+    (update_extraction → validated): os sócios homologados viram a verdade do
+    grafo societário do dossiê (role=PARTNER, replace-set idempotente — mesma
+    semântica de `absorb_graph_from_human_input`). CPF é reduzido aos 4
+    últimos dígitos (LGPD); o documento original continua sendo a fonte.
+    Alimenta os checks determinísticos (`ownership_sum`) e o parecer.
+    """
+    socios = fields.get("socios") if isinstance(fields, dict) else None
+    if not isinstance(socios, list) or not socios:
+        return
+
+    target = (
+        await db.execute(
+            select(CreditDossierCompany).where(
+                CreditDossierCompany.tenant_id == tenant_id,
+                CreditDossierCompany.dossier_id == dossier_id,
+                CreditDossierCompany.role == CompanyRole.TARGET,
+            )
+        )
+    ).scalar_one_or_none()
+    company_cnpj = target.cnpj if target is not None else None
+    if company_cnpj is None:
+        dossier = await get_dossier(db, tenant_id=tenant_id, dossier_id=dossier_id)
+        raw = dossier.target_cnpj if dossier else None
+        digits = _digits(raw) if raw else ""
+        company_cnpj = digits if len(digits) == 14 else None
+    if company_cnpj is None:
+        return
+
+    await db.execute(
+        delete(CreditDossierPerson).where(
+            CreditDossierPerson.tenant_id == tenant_id,
+            CreditDossierPerson.dossier_id == dossier_id,
+            CreditDossierPerson.role == PersonRole.PARTNER,
+            CreditDossierPerson.company_cnpj == company_cnpj,
+        )
+    )
+    for item in socios:
+        if not isinstance(item, dict):
+            continue
+        nome = item.get("nome")
+        if not isinstance(nome, str) or not nome.strip():
+            continue
+        cpf_red: str | None = None
+        raw_cpf = item.get("cpf")
+        if isinstance(raw_cpf, str):
+            cpf_digits = _digits(raw_cpf)
+            if cpf_digits:
+                cpf_red = cpf_digits[-4:]
+        db.add(
+            CreditDossierPerson(
+                tenant_id=tenant_id,
+                dossier_id=dossier_id,
+                name=nome.strip()[:255],
+                role=PersonRole.PARTNER,
+                company_cnpj=company_cnpj,
+                cpf_redacted=cpf_red,
+                ownership_pct=_parse_pct(item.get("participacao_pct")),
+            )
+        )
+    await db.flush()
+
+
 __all__ = [
     "DossierServiceError",
     "NodeRunStatus",
     "absorb_graph_from_human_input",
     "absorb_identity_from_human_input",
+    "absorb_partners_from_social_contract",
     "compute_progress_map",
     "create_dossier",
     "create_opinion",

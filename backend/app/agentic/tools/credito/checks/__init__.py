@@ -9,6 +9,7 @@ from app.agentic.tools.credito.checks import (  # noqa: F401
     cnae_permitido,
     company_founding_age,
     company_status_active,
+    contrato_social_consistente,
     ownership_sum,
 )
 from app.agentic.tools.credito.checks._base import (

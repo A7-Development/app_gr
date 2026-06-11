@@ -32,6 +32,7 @@ from app.modules.credito.services.cadastral import (
     build_cadastral_card_projection,
 )
 from app.modules.credito.services.revenue import build_faturamento_payload
+from app.modules.credito.services.social_contract import build_societario_payload
 
 router = APIRouter()
 
@@ -499,6 +500,24 @@ async def faturamento_analytics(
     determinística, não do agente).
     """
     return await build_faturamento_payload(
+        db, tenant_id=principal.tenant_id, dossier_id=dossier_id
+    )
+
+
+@router.get("/dossies/{dossier_id}/societario")
+async def societario(
+    dossier_id: UUID,
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = Depends(require_module(Module.CREDITO, Permission.READ)),
+) -> dict:
+    """Ficha do contrato social homologado + estrutura QSA + cruzamentos BDC.
+
+    Mesmo payload que a read-tool entrega ao `social_contract_analyst` — a
+    tela do checkpoint mostra os MESMOS fatos que o agente julgou (números e
+    cruzamentos da fonte determinística, não do agente).
+    """
+    return await build_societario_payload(
         db, tenant_id=principal.tenant_id, dossier_id=dossier_id
     )
 

@@ -9,4 +9,5 @@ from app.agentic.tools.credito import (  # noqa: F401
     document,
     dossier,
     revenue,
+    social_contract,
 )
