@@ -81,7 +81,7 @@ function CelulaFundo({
   )
   const flag = redFlag(def, fundo)
   return (
-    <div className="flex items-baseline justify-end gap-1.5">
+    <div className="flex items-baseline justify-end gap-1.5 whitespace-nowrap">
       {flag && (
         <span title={flag}>
           <RiAlertFill
@@ -159,7 +159,7 @@ export function MatrizIndicadores({
             )
           }
           return (
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 whitespace-nowrap">
               <span className={tableTokens.cellText}>{row.def.label}</span>
               <span title={row.def.info}>
                 <RiInformationLine
@@ -175,8 +175,18 @@ export function MatrizIndicadores({
         (fundo, idx) =>
           col.display({
             id: `fundo_${idx}`,
-            header: fundo.denom_social ?? fundo.cnpj,
-            size: 170,
+            // Nome do fundo TRUNCADO com largura fixa — sem isso o header
+            // comprido estica a coluna e forca scroll horizontal. Tooltip
+            // mostra o nome completo.
+            header: () => {
+              const nome = fundo.denom_social ?? fundo.cnpj
+              return (
+                <span className="block w-[150px] truncate" title={nome}>
+                  {nome}
+                </span>
+              )
+            },
+            size: 166,
             meta: { align: "right" },
             cell: (info) => {
               const row = info.row.original
@@ -194,8 +204,15 @@ export function MatrizIndicadores({
       ),
       col.display({
         id: "mediana",
-        header: "Mediana do universo",
-        size: 140,
+        header: () => (
+          <span
+            className="block w-[110px] truncate"
+            title="Mediana do universo CVM na competência"
+          >
+            Mediana
+          </span>
+        ),
+        size: 126,
         meta: { align: "right" },
         cell: (info) => {
           const row = info.row.original
