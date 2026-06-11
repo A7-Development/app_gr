@@ -138,6 +138,29 @@ Base de check mensal automatico CVM x posicao interna (candidato a Conferencia).
   4 Mez / 6 Sub) e por tipo de investidor (15 tipos x Senior|Subord — sem
   abertura por serie).
 
+### Giro e qualidade (tab_vii / tab_x SCR / tab_x_7) — semantica validada
+- **`tab_vii` = negocios do MES**, 4 blocos: `a*` AQUISICOES por tipo (com/sem
+  risco, a vencer ad/inad, **ja inadimplentes** — a5 identifica compra
+  distressed: 147 fundos / R$ 640 mi em abril); `b*` ALIENACOES (vendas) por
+  contraparte (cedente+relacionadas / prestadores / terceiros) com valor de
+  venda E valor contabil (desagio da venda = vl - vl_contab); `c` substituicao;
+  `d` RECOMPRA. Universo abril: aquisicoes R$ 150,4 bi (1.603 fundos),
+  recompras R$ 1,97 bi (453 fundos — proxy de "WOP/recompra" do mercado).
+- **`tab_vii_d` recompra = valor PAGO, validado AO CENTAVO no REALINVEST**:
+  269.089,44 = `wh_liquidacao_recebivel` abril (BAIXA POR RECOMPRA 248.737,98
+  + RECOMPRA PARCIAL SEM ADIANTAMENTO 20.351,46, Σ valor_pago).
+- **Aquisicoes NAO conciliam direto com a QiTech**: CVM 20,33 mi vs
+  `wh_aquisicao_recebivel` abril 16,15 mi (valor_compra) / 16,67 mi (face).
+  O gap ≈ bloco "com risco" (2,74 mi — provavelmente notas comerciais NCPX,
+  que nao passam pelo relatorio de aquisicao da QiTech) + residuo ~0,9 mi a
+  investigar. Nao usar como check ao-centavo sem resolver a base.
+- **`tab_x` SCR: 100% dos fundos reportam** (devedor E operacao, AA..H) —
+  colunas TEXT com string numerica ("24941894.33"), parse direto. REALINVEST:
+  AA 24,94 mi + H 243.050,36. Unica visao de rating da carteira por dado
+  publico.
+- **`tab_x_7` garantias: campo RARO** — 29/4.102 fundos (R$ 7,7 bi). Nao
+  serve de indicador transversal; so flag pontual.
+
 ### Composicao da carteira em R$ (cabecalho Austin pag.2)
 `cvm_remote.tab_i` -- mapeamento pratico:
 - DC a vencer: `tab_i2a_vl_dircred_risco` (soma) + decomposicao em `tab_v.tab_v_a_vl_dircred_prazo`
@@ -200,7 +223,7 @@ Usado raramente -- so para FIDCs com cotas negociadas.
 |---|---|---|
 | `tab_i` | fundo/classe x mes | Cabecalho + posicao carteira R$ (~109 campos) |
 | `tab_ii` | fundo/classe x mes | Composicao setorial DC |
-| `tab_iii` | fundo/classe x mes | DC adquiridos no mes (volume + prazo + taxa) |
+| `tab_iii` | fundo/classe x mes | PASSIVO: valores a pagar (curto/longo) + derivativos vendidos (NAO e "DC adquiridos") |
 | `tab_iv` | fundo/classe x mes | PL total + PL medio trimestral |
 | `tab_v` | fundo/classe x mes | DC **COM risco** a vencer / inadimplente / antecipado por bucket de prazo |
 | `tab_vi` | fundo/classe x mes | DC **SEM risco** por bucket — espelho da tab_v (NAO e "passivo por prazo") |
