@@ -19,7 +19,6 @@ Camadas (CLAUDE.md secao 13.2):
 
 from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel
 from app.warehouse.bdc_raw_consulta import BdcRawConsulta
-from app.warehouse.infosimples_raw_consulta import InfosimplesRawConsulta
 from app.warehouse.bitfin_entidade import WhBitfinEntidade
 from app.warehouse.bitfin_raw_debenture import BitfinRawDebenture
 from app.warehouse.bitfin_receita_stream import WhBitfinReceitaStream
@@ -43,6 +42,7 @@ from app.warehouse.entidade import (
     WhGrupoEconomicoMembro,
 )
 from app.warehouse.estoque_recebivel import EstoqueRecebivel
+from app.warehouse.infosimples_raw_consulta import InfosimplesRawConsulta
 from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel
 from app.warehouse.mec_evolucao_cotas import MecEvolucaoCotas
 from app.warehouse.movimento_aberto import MovimentoAberto
@@ -100,7 +100,6 @@ from app.warehouse.titulo_snapshot import TituloSnapshot
 __all__ = [
     "AquisicaoRecebivel",
     "BdcRawConsulta",
-    "InfosimplesRawConsulta",
     "BitfinRawDebenture",
     "Boleto",
     "BoletoEvento",
@@ -114,6 +113,7 @@ __all__ = [
     "DimDiaUtil",
     "DimMes",
     "EstoqueRecebivel",
+    "InfosimplesRawConsulta",
     "LiquidacaoRecebivel",
     "MecEvolucaoCotas",
     "MovimentoAberto",

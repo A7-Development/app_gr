@@ -542,7 +542,7 @@ async def process_fidc_estoque_callback(
                 await db.execute(stmt)
                 rows_inserted += len(chunk)
             await db.commit()
-    except Exception as e:  # noqa: BLE001 — qualquer falha vira ERROR auditavel
+    except Exception as e:
         await db.rollback()
         # Pos-rollback a instancia expira; re-busca evita lazy-load fora
         # de greenlet (asyncpg).
