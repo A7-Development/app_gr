@@ -157,6 +157,9 @@ export const MODULES: ModuleDefinition[] = [
         icon: RiBookOpenLine,
         children: [
           { name: "Panorama do mercado", href: "/bi/panorama", enabled: true },
+          // Comparador de FIDCs por indicadores (cesta de 17, Opcao A da
+          // reorganizacao do Benchmark — docs/cvm-fidc/indicadores-benchmarking.md).
+          { name: "Comparador", href: "/bi/comparador", enabled: true },
           { name: "Benchmark", href: "/bi/benchmark", enabled: true },
           { name: "Benchmark2", href: "/bi/benchmark2", enabled: true },
         ],
