@@ -65,12 +65,34 @@ itens 2a..2j + outro (4.073/4.102). `tab_i2i_vl_cota_fidc_np` esta **100% NULL**
    — validado ao centavo no REALINVEST. KPI sobre bruto usa tab_ii ou
    liquido+provisao; sobre liquido usa tab_i direto.
 
-### tab_v so decompoe o DC COM aquisicao de risco (afeta KPI de inadimplencia)
-Validado no universo 2026-04: dos 1.034 fundos com DC sem risco (2b>0), 898 tem
-`tab_v_a + tab_v_b + tab_v_c = 2a BRUTO` e **ZERO** casos = 2a+2b. Ou seja: os
-buckets de prazo/inadimplencia/antecipado da `tab_v` **ignoram o bloco "sem
-aquisicao substancial de riscos"** (R$ 242,8 bi no universo; no REALINVEST e
-89% da carteira). Indicador de inadimplencia por bucket so enxerga o 2a.
+### tab_v = DC COM risco em buckets; tab_vi = DC SEM risco (espelhos)
+Validado no universo 2026-04: `tab_v_a+b+c = 2a BRUTO` (898/1.034 fundos com
+2b>0; ZERO casos = 2a+2b) e **`tab_vi_a+b+c = 2b BRUTO`** (839/1.034). Apesar
+do nome das colunas sugerir o contrario, `tab_vi` NAO e "passivo por prazo" —
+e o espelho da `tab_v` para o bloco SEM aquisicao substancial de riscos.
+**Inadimplencia/prazo TOTAL da carteira = tab_v + tab_vi** (mesmos 10 buckets).
+Indicador que use so a tab_v ignora R$ 242,8 bi (no REALINVEST, 89% da carteira).
+
+### Passivo e PL — aritmetica validada (2026-04, 4.102 fundos)
+- **`tab_iv_a_vl_pl = tab_i_vl_ativo - tab_iii_vl_passivo` em 4.102/4.102** (ao
+  centavo). `tab_iv_b_vl_pl_medio` = media dos ultimos 3 meses.
+- **`tab_iii_vl_passivo = a_vl_pagar (curto+longo) + b_vl_posicao_deriv`** em
+  4.102/4.102. Derivativos vendidos: termo/opcoes lancadas/ajustes futuros/swap.
+- Universo: passivo R$ 24,9 bi vs PL R$ 932,9 bi (FIDC quase nao tem passivo —
+  "valores a pagar" = despesas/taxas/obrigacoes operacionais).
+- **REALINVEST 2026-04 (validacao interna):** passivo CVM 52.069,44 =
+  `wh_cpr_movimento` Σ valor<0 (CPR a pagar) 52.068,82 — diff R$ 0,62 (mesmo
+  residuo do DC). PL CVM 25.870.794,03 = ativo - passivo exato.
+
+### PL por classe / subordinacao (tab_x_2 E o MEC)
+`tab_x_2.tab_x_qt_cota * tab_x_vl_cota` por `tab_x_classe_serie`. Validado
+REALINVEST 2026-04: quantidade, valor da cota e patrimonio **identicos ate a
+8a casa decimal** ao `wh_mec_evolucao_cotas` (30/04) — a administradora reporta
+o MEC literal. Soma das classes = PL total exato (Senior 11.721.444,60 + Mez
+2.529.899,70 + Sub 11.619.449,73). **Subordinacao** = Σ classes
+`%subord%`/PL — calculavel em 3.205/4.102 fundos na ultima competencia (897
+sao mono-classe sem serie subordinada); cobertura de qt/vl em 2026-04 e 100%,
+mas competencias historicas tem o NULL sistematico (ver Omissoes).
 
 ### I.4 "Outros Ativos" — o que e na pratica
 Schema so abre curto/longo prazo (`tab_i4a/tab_i4b`). Empiricamente (2026-04,
@@ -158,8 +180,8 @@ Usado raramente -- so para FIDCs com cotas negociadas.
 | `tab_ii` | fundo/classe x mes | Composicao setorial DC |
 | `tab_iii` | fundo/classe x mes | DC adquiridos no mes (volume + prazo + taxa) |
 | `tab_iv` | fundo/classe x mes | PL total + PL medio trimestral |
-| `tab_v` | fundo/classe x mes | DC a vencer / inadimplente / antecipado por bucket de prazo |
-| `tab_vi` | fundo/classe x mes | Passivo por prazo (mesmo esquema de buckets) |
+| `tab_v` | fundo/classe x mes | DC **COM risco** a vencer / inadimplente / antecipado por bucket de prazo |
+| `tab_vi` | fundo/classe x mes | DC **SEM risco** por bucket — espelho da tab_v (NAO e "passivo por prazo") |
 | `tab_vii` | fundo/classe x mes | Negocios do mes: qt/vl de DC + aquisicoes por origem (cedente/prestador/terceiro, com vl contabil) + substituicoes + RECOMPRAS (proxy de WOP do mercado) |
 | `tab_ix` | fundo/classe x mes | Mercado secundario |
 | `tab_x` | fundo/classe x mes | SCR ratings AA..H |
