@@ -33,6 +33,7 @@ import {
   RiFileSearchLine,
   RiGitBranchLine,
   RiGlobalLine,
+  RiGovernmentLine,
   RiNotification3Line,
   RiPlayCircleLine,
   RiRobot2Line,
@@ -45,7 +46,7 @@ import { varTypeMeta } from "@/design-system/tokens/var-type"
 import { cx } from "@/lib/utils"
 
 import { AGENT_FRIENDLY_LABEL, ETAPA_LABEL, getEtapaLabel } from "../_lib/glossary"
-import { primitiveTypeFor } from "../_lib/etapas"
+import { OFFICIAL_DOCUMENT_PALETTE, primitiveTypeFor } from "../_lib/etapas"
 
 const ICON_MAP: Record<string, RemixiconComponentType> = {
   RiPlayCircleLine,
@@ -58,6 +59,7 @@ const ICON_MAP: Record<string, RemixiconComponentType> = {
   RiFilePdf2Line,
   RiGitBranchLine,
   RiGlobalLine,
+  RiGovernmentLine,
   RiNotification3Line,
 }
 
@@ -291,6 +293,15 @@ function pickSubtitle(d: StrataNodeData): string | null {
   if (d.nodeType === "bureau_query") {
     const adapter = cfg.adapter as string | undefined
     if (adapter) return adapter
+  }
+
+  // Para official_document_fetch, mostra a receita escolhida.
+  if (d.nodeType === "official_document_fetch") {
+    const document = cfg.document as string | undefined
+    if (document) {
+      const recipe = OFFICIAL_DOCUMENT_PALETTE.find((r) => r.key === document)
+      return recipe?.label ?? document
+    }
   }
 
   // Fallback: candidatos genericos.

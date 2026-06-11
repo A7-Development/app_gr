@@ -502,9 +502,20 @@ async def list_data_products(
     definido), NAO de lista hardcoded. Retorna apenas codigo neutro +
     rotulo/categoria/descricao — o vendor nunca vaza pro tenant.
     """
+    # So datasets que o CadastralEnrichmentNode consegue executar de fato:
+    # fetch_cadastral_pj (integracoes) hoje so atende BigDataCorp. Datasets de
+    # outros provedores (ex.: JUCESP/Infosimples) entram no builder por
+    # RECEITA do node `official_document_fetch`, nao como card de
+    # enriquecimento — sem este filtro a paleta exibia cards que falhavam na
+    # primeira execucao. Generalizar = follow-up `data_query` (2026-06-11).
+    from app.shared.data_providers.enums import DataProviderSlug
+    from app.shared.data_providers.models.provider import DataProvider
+
     rows = (
         await db.execute(
             select(DataProviderDataset)
+            .join(DataProvider, DataProvider.id == DataProviderDataset.provider_id)
+            .where(DataProvider.slug == DataProviderSlug.BIGDATACORP)
             .where(DataProviderDataset.enabled_for_sale.is_(True))
             .where(DataProviderDataset.public_code.isnot(None))
             .order_by(DataProviderDataset.categoria_ui, DataProviderDataset.public_code)

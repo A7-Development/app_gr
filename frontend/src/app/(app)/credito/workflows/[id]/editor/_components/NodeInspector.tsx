@@ -46,7 +46,7 @@ import {
   ETAPA_LABEL,
   getEtapaLabel,
 } from "../_lib/glossary"
-import { DATA_PRODUCT_PALETTE } from "../_lib/etapas"
+import { DATA_PRODUCT_PALETTE, OFFICIAL_DOCUMENT_PALETTE } from "../_lib/etapas"
 
 import { AgentInputBindingsField } from "./AgentInputBindingsField"
 import { ConditionBuilder } from "./ConditionBuilder"
@@ -337,6 +337,14 @@ function NodeConfigDispatcher({
           nodes={nodes}
           edges={edges}
           producedByNode={producedByNode}
+          onUpdateConfig={onUpdateConfig}
+        />
+      )
+
+    case "official_document_fetch":
+      return (
+        <OfficialDocumentInspector
+          config={config}
           onUpdateConfig={onUpdateConfig}
         />
       )
@@ -642,6 +650,68 @@ function ConsolidatorInspector({
         edges={edges}
       />
       <AdvancedJsonToggle config={config} onUpdateConfig={onUpdateConfig} />
+    </div>
+  )
+}
+
+// ─── official_document_fetch ────────────────────────────────────────────
+//
+// O usuario escolhe o DOCUMENTO (receita curada), nao datasets crus. Lista
+// vem do `OFFICIAL_DOCUMENT_PALETTE` em `_lib/etapas.ts` — fonte unica de
+// verdade pra palette + inspector (espelha RECIPES no backend).
+
+function OfficialDocumentInspector({
+  config,
+  onUpdateConfig,
+}: {
+  config: Record<string, unknown>
+  onUpdateConfig: (cfg: Record<string, unknown>) => void
+}) {
+  const selectedKey = (config.document as string | undefined) ?? ""
+  const selectedEntry = OFFICIAL_DOCUMENT_PALETTE.find((r) => r.key === selectedKey)
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <Label htmlFor="official-document" className="text-xs">
+          Documento <span className="ml-0.5 text-red-600">*</span>
+        </Label>
+        <Select
+          value={selectedKey}
+          onValueChange={(key) => onUpdateConfig({ ...config, document: key })}
+        >
+          <SelectTrigger id="official-document">
+            <SelectValue placeholder="Selecione o documento" />
+          </SelectTrigger>
+          <SelectContent>
+            {OFFICIAL_DOCUMENT_PALETTE.map((r) => (
+              <SelectItem key={r.key} value={r.key}>
+                {r.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {selectedEntry && (
+          <p className={cx(tableTokens.cellSecondary, "mt-1")}>
+            {selectedEntry.description}
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-xs dark:border-blue-500/30 dark:bg-blue-500/10">
+        <div className="flex items-start gap-2">
+          <RiInformationLine
+            className="mt-0.5 size-3.5 shrink-0 text-blue-600 dark:text-blue-400"
+            aria-hidden
+          />
+          <p className="text-blue-800 dark:text-blue-200">
+            O documento baixado entra no dossie no mesmo fluxo de conferencia
+            do upload manual (extracao multimodal + revisao do analista). Se a
+            empresa nao for localizada na fonte, a etapa conclui com{" "}
+            <code>found=false</code> — sem travar o fluxo.
+          </p>
+        </div>
+      </div>
     </div>
   )
 }

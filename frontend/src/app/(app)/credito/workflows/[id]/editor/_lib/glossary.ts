@@ -67,6 +67,7 @@ export const ETAPA_LABEL: Record<string, string> = {
   document_request: "Pedir documentos",
   document_extractor: "Ler documentos com IA",
   bureau_query: "Consultar bureau",
+  official_document_fetch: "Buscar documento oficial",
   http_request: "Chamar servico externo",
   specialist_agent: "Analise IA",
   cross_reference: "Cruzar dados",

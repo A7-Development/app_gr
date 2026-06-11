@@ -134,6 +134,7 @@ const PRIMITIVE_BY_NODE: Record<string, PrimitiveTypeKey> = {
   document_extractor: "agente",
   bureau_query: "externo",
   cadastral_enrichment: "externo",
+  official_document_fetch: "externo",
   specialist_agent: "agente",
   consolidator: "logica",
   deterministic_check: "check",
@@ -304,6 +305,25 @@ export const DATA_PRODUCT_PALETTE: Array<{
   },
 ]
 
+// Catalogo de RECEITAS do node `official_document_fetch` — o usuario escolhe
+// o DOCUMENTO (nao os datasets crus); cada receita e uma cadeia curada de
+// 1..N consultas do catalogo de dados executada pelo backend (decisao de
+// produto 2026-06-11). Espelha `RECIPES` em
+// backend/app/agentic/playbooks/nodes/official_document_fetch.py.
+export const OFFICIAL_DOCUMENT_PALETTE: Array<{
+  /** Chave estavel da receita (vai em `config.document`). */
+  key: string
+  label: string
+  description: string
+}> = [
+  {
+    key: "social_contract_jucesp",
+    label: "Contrato Social · JUCESP",
+    description:
+      "Baixa o contrato/alteracao mais recente da Junta Comercial SP, anexa ao dossie e extrai com IA — sem clique do analista (~R$ 0,66 · 3 consultas).",
+  },
+]
+
 // ─── Build palette entries ───────────────────────────────────────────────
 //
 // Pega o `nodeTypes[]` que vem do backend e gera a lista de entries para
@@ -384,6 +404,27 @@ export function buildPaletteEntries(
           available: meta.available,
           journey: "enriquecer",
           primitiveType: primitiveTypeFor("cadastral_enrichment").key,
+          featured: FEATURED_PALETTE_IDS.has(paletteId),
+        })
+      }
+      continue
+    }
+
+    if (meta.type === "official_document_fetch") {
+      // Expandir um entry por RECEITA de documento oficial — o gerente
+      // arrasta "Contrato Social · JUCESP" direto, ja configurado.
+      for (const r of OFFICIAL_DOCUMENT_PALETTE) {
+        const paletteId = `official_document_fetch:${r.key}`
+        entries.push({
+          paletteId,
+          nodeType: "official_document_fetch",
+          initialConfig: { document: r.key },
+          label: r.label,
+          description: r.description,
+          icon: meta.icon,
+          available: meta.available,
+          journey: "enriquecer",
+          primitiveType: primitiveTypeFor("official_document_fetch").key,
           featured: FEATURED_PALETTE_IDS.has(paletteId),
         })
       }

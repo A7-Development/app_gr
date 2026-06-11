@@ -56,6 +56,7 @@ import {
   RiFlashlightLine,
   RiGitBranchLine,
   RiGlobalLine,
+  RiGovernmentLine,
   RiMapPin2Line,
   RiNodeTree,
   RiNotification3Line,
@@ -132,6 +133,7 @@ const ICON_MAP: Record<string, RemixiconComponentType> = {
   RiFilePdf2Line,
   RiGitBranchLine,
   RiGlobalLine,
+  RiGovernmentLine,
   RiNotification3Line,
   // Per-agent icons (override do RiRobot2Line generico) — variedade visual
   // sinaliza riqueza do catalogo de specialist agents.
