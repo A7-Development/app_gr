@@ -86,6 +86,13 @@ TotalDosRegistrosDeRecebiveis. Sem elas a soma das tarifas do wh_operacao
 nao reconciliava com o desagio total embutido no ValorPresente dos itens
 (= valor_compra enviado a QiTech): gap de R$ 159,00 na op 9881 (TAC 120 +
 TED 30 + reg. recebiveis 9). Base da visao de receita por acruo.
+
+v2.10.0 (2026-06-11): METODO ACRUO — engine acruo.py deriva
+wh_receita_acruo_dia (cota diaria da curva composta de desagio por titulo,
+D+1 DU, ancora PV=ValorPresente, componentes desagio/adval/tarifas na
+proporcao do desagio total, IOF fora). Saida antecipada = residual no dia
+(acruo_antecipacao). Curva PARA no vencimento ORIGINAL (prorrogacao nao
+estende — validado QiTech). 2 de 3 metodos (caixa | acruo | competencia).
 """
 
-ADAPTER_VERSION = "bitfin_adapter_v2.9.0"
+ADAPTER_VERSION = "bitfin_adapter_v2.10.0"
