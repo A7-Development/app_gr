@@ -100,6 +100,13 @@ sacado / praca do cliente / agencia do cliente / banco digital); novas
 wh_posicao_sacado_cedente (SacadoPosicaoCliente — relacao NxN com praca,
 risco e recompras) e wh_pagamento_praca_mensal (PosicaoHistoricaPagamentoPraca
 — serie mensal 5 buckets desde 2022-01, por conta operacional/cedente).
+
+v2.11.0 (2026-06-12): METODO CAIXA — engine caixa.py deriva
+wh_receita_caixa: desagio + tarifas do titulo apropriados na SAIDA
+(liquidacao/baixa/recompra pelo VN cheio/reoperacao). CORRECAO DE
+ROTULAGEM (Ricardo): o bloco 'operacao' do wh_receita_operacional
+(integral na efetivacao) e a COMPETENCIA, nao o caixa. 3 metodos
+completos: CAIXA (saida) | COMPETENCIA (efetivacao) | ACRUO (curva).
 """
 
-ADAPTER_VERSION = "bitfin_adapter_v2.10.0"
+ADAPTER_VERSION = "bitfin_adapter_v2.11.0"
