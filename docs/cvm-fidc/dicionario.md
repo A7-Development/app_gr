@@ -297,6 +297,22 @@ secundario/ordinal). Bracket auxiliar: converter tab_ix p/ mensal
 ((1+tx/100)^(30/365)-1) da o intervalo [conv(min), conv(media)] que contem a
 taxa real (REALINVEST: [2,39%, 5,59%] ∋ 3,47%).
 
+### Custos operacionais do fundo — NAO existem em dado aberto (verificado 2026-06-11)
+O Informe Mensal nao tem NENHUM campo de despesa (catalogo varrido). O
+balancete mensal e protocolado na CVM (XML COFI via CVMWeb) mas NAO e
+publicado como dado aberto para FIDC: `fi-doc-balancete` (150MB/mes) contem
+apenas TP_FUNDO_CLASSE in (FI, CLASSES-FIF) — REALINVEST ausente (testado
+2026-04); `fie-doc-balancete` cobre FAPI/FIIM/FMAI/FMP; em
+`dados.cvm.gov.br/dados/FIDC/DOC/` so existe `INF_MENSAL/`. Consequencias:
+1. **Yield bruto NAO e derivavel com precisao** de dado publico — o yield
+   efetivo (liquido) e o teto do que da pra medir cross-fund.
+2. Ponte APROXIMADA: `yield_bruto ≈ yield_efetivo + taxa_adm/12 + ΔPDD/DC`
+   — ΔPDD ja temos (provisao m vs m-1); taxa_adm contratual viria do
+   `registro_fundo_classe.zip` (ja no radar, gated). Residuo = demais
+   despesas (custodia/consultoria/auditoria — relevantes em fundo pequeno).
+3. Custos REALIZADOS por fundo: so nas DFs anuais do FNET (PDF, nao
+   estruturado) ou, p/ fundos proprios, no interno (CPR/DRE).
+
 ## Resumo por tabela
 
 | Tabela | Granularidade | Serve para... |
