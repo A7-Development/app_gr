@@ -332,7 +332,10 @@ async def sync_receita_acruo(
                 "cedente_documento": r.cedente_documento,
             }
             source_id = f"{r.titulo_id}:{dia.isoformat()}:{evento}"
-            prov = _provenance(source_id, payload, None)
+            # Hash sem tenant_id (UUID asyncpg nao e JSON-serializavel e
+            # nao e payload de negocio) — mesmo padrao do receitas.py.
+            hash_payload = {k: v for k, v in payload.items() if k != "tenant_id"}
+            prov = _provenance(source_id, hash_payload, None)
             prov["source_type"] = SourceType.DERIVED
             out.append({**payload, **prov})
 
