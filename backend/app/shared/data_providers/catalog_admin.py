@@ -96,6 +96,10 @@ class CatalogDatasetRow:
     categoria_ui: str | None
     enabled_for_sale: bool
     current_cost_brl: float | None
+    # Custo editavel manualmente quando o vendor NAO tem sync de precos
+    # (last_synced_at IS NULL). Com sync (BDC), o custo vem do /precos e a
+    # edicao manual seria sobrescrita — UI mostra read-only.
+    cost_editable: bool
     markup_pct: float | None
     mode: str  # "marketplace" | "adapter" (global = revenda; ver §15.1)
     suggested_public_code: str
@@ -252,6 +256,7 @@ async def list_catalog(
             categoria_ui=ds.categoria_ui,
             enabled_for_sale=ds.enabled_for_sale,
             current_cost_brl=_as_float(ds.current_cost_brl),
+            cost_editable=ds.last_synced_at is None,
             markup_pct=_as_float(ds.markup_pct),
             mode=_provider_mode(slug),
             suggested_public_code=sug_pc,
@@ -310,6 +315,7 @@ async def update_dataset_curation(
     categoria_ui: str | None,
     enabled_for_sale: bool | None,
     markup_pct: float | None,
+    current_cost_brl: float | None = None,
 ) -> DataProviderDataset:
     """Grava a camada A7 do dataset (preservada entre syncs do vendor).
 
@@ -346,6 +352,15 @@ async def update_dataset_curation(
         ds.enabled_for_sale = enabled_for_sale
     if markup_pct is not None:
         ds.markup_pct = Decimal(str(markup_pct))
+    if current_cost_brl is not None:
+        if ds.last_synced_at is not None:
+            raise ValueError(
+                "O custo deste dataset é sincronizado do vendor — edite o "
+                "markup; o custo atualiza no próximo sync."
+            )
+        if current_cost_brl < 0:
+            raise ValueError("Custo não pode ser negativo.")
+        ds.current_cost_brl = Decimal(str(current_cost_brl))
 
     await db.flush()
     return ds

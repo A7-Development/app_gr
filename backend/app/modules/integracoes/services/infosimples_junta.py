@@ -86,6 +86,21 @@ def _digits(raw: Any) -> str:
     return re.sub(r"\D", "", str(raw or ""))
 
 
+def _failure_message(resp: Any) -> str:
+    """Mensagem legível pro analista: code_message + motivo real do vendor.
+
+    O detalhe operacional vem em `errors[]` (ex.: "A conta está sem saldo.
+    Adicione saldo para conseguir usar a API.") — sem ele, o analista só
+    veria o 603 genérico.
+    """
+    msg = f"{resp.code} · {resp.code_message}"
+    if resp.errors:
+        first = str(resp.errors[0]).strip()
+        if first and first not in msg:
+            msg = f"{msg} — {first}"
+    return msg
+
+
 async def _load_provider_and_config(
     db: AsyncSession,
 ) -> tuple[DataProvider, InfosimplesConfig]:
@@ -240,7 +255,7 @@ async def fetch_junta_ficha(
             found=False,
             fields=None,
             raw_id=raw_id,
-            message=f"{resp.code} · {resp.code_message}",
+            message=_failure_message(resp),
         )
     first = resp.first
     if first is None:
@@ -308,7 +323,7 @@ async def fetch_junta_lista_documentos(
 
     if not resp.ok:
         return JuntaListaDocsResult(
-            found=False, raw_id=raw_id, message=f"{resp.code} · {resp.code_message}"
+            found=False, raw_id=raw_id, message=_failure_message(resp)
         )
     documentos: list[dict[str, Any]] = []
     for item in resp.data:
@@ -365,7 +380,7 @@ async def fetch_junta_documento(
         )
 
         if not resp.ok:
-            raise InfosimplesQueryError(resp.code, resp.code_message)
+            raise InfosimplesQueryError(resp.code, _failure_message(resp))
 
         # O PDF chega como URL (data[].url/arquivo/link ou site_receipts).
         url: str | None = None

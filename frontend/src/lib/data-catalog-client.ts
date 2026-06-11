@@ -26,6 +26,8 @@ export type CatalogDatasetRow = {
   categoria_ui: string | null
   enabled_for_sale: boolean
   current_cost_brl: number | null
+  /** Custo editável quando o vendor não tem sync de preços. */
+  cost_editable: boolean
   markup_pct: number | null
   mode: "marketplace" | "adapter"
   suggested_public_code: string
@@ -54,6 +56,7 @@ export type DatasetCurationPayload = {
   categoria_ui?: string | null
   enabled_for_sale?: boolean | null
   markup_pct?: number | null
+  current_cost_brl?: number | null
 }
 
 export type CreatedContract = {

@@ -330,6 +330,7 @@ function DatasetDrawer({
   const [nome, setNome] = React.useState("")
   const [categoria, setCategoria] = React.useState("")
   const [markup, setMarkup] = React.useState("")
+  const [custo, setCusto] = React.useState("")
 
   React.useEffect(() => {
     if (row) {
@@ -337,6 +338,7 @@ function DatasetDrawer({
       setNome(row.display_name_pt_br ?? "")
       setCategoria(row.categoria_ui ?? "")
       setMarkup(row.markup_pct != null ? String(row.markup_pct) : "")
+      setCusto(row.current_cost_brl != null ? String(row.current_cost_brl) : "")
     }
   }, [row])
 
@@ -348,6 +350,8 @@ function DatasetDrawer({
         display_name_pt_br: nome.trim() || null,
         categoria_ui: categoria.trim() || null,
         markup_pct: markup.trim() ? Number(markup) : null,
+        current_cost_brl:
+          row.cost_editable && custo.trim() ? Number(custo) : null,
       })
     },
     onSuccess: () => {
@@ -444,10 +448,31 @@ function DatasetDrawer({
                 className="mt-1"
               />
             </div>
+            {row.mode === "marketplace" && row.cost_editable && (
+              <div>
+                <Label htmlFor="custo" className="text-xs text-gray-500">
+                  Custo por consulta (R$) — manual (vendor sem API de preços)
+                </Label>
+                <Input
+                  id="custo"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={custo}
+                  onChange={(e) => setCusto(e.target.value)}
+                  placeholder="0,00"
+                  className="mt-1"
+                />
+              </div>
+            )}
             {row.mode === "marketplace" && (
               <div>
                 <Label htmlFor="mk" className="text-xs text-gray-500">
-                  Markup (%) — custo {brl(row.current_cost_brl)}
+                  Markup (%) — custo{" "}
+                  {row.cost_editable && custo.trim()
+                    ? brl(Number(custo))
+                    : brl(row.current_cost_brl)}
+                  {!row.cost_editable && " (sincronizado do vendor)"}
                 </Label>
                 <Input
                   id="mk"

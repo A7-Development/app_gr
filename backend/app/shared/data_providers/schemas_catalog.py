@@ -32,6 +32,7 @@ class CatalogDatasetRowRead(BaseModel):
     categoria_ui: str | None = None
     enabled_for_sale: bool
     current_cost_brl: float | None = None
+    cost_editable: bool = False
     markup_pct: float | None = None
     mode: str
     suggested_public_code: str
@@ -68,6 +69,8 @@ class DatasetCurationPayload(BaseModel):
     categoria_ui: str | None = None
     enabled_for_sale: bool | None = None
     markup_pct: float | None = None
+    # Custo manual — aceito apenas em datasets SEM sync de preços do vendor.
+    current_cost_brl: float | None = None
 
 
 class CreatedContractRead(BaseModel):
