@@ -62,6 +62,14 @@ OperacaoRentabilidade (efetivadas, Origem != recompra/homologacao) ->
 streams desagio_operacao / tarifa_operacao / ad_valorem. Receita retida do
 liquido na efetivacao (caixa por construcao). Cross-check: desagio do mes
 == Σ OperacaoResultado.TotalDeJuros das efetivadas.
+
+v2.7.1 (2026-06-11): FIX dupla contagem na mora de liquidacao — exclui
+titulos liquidados POR RECOMPRA (Situacao=1 com RecompraItem Efetivada+
+Liquidacao): o encargo deles e da regua de recompra e ja entra via stream
+recompra. Descoberta da auditoria por Situacao: 1=liquidacao real (FAT/DMS,
+regua ProcedimentoDeCobranca adere 98,5%), 5=baixa por recompra (100%),
+3=cobranca simples CBS (mora do cliente, fora). A "mora da Comissaria" era
+100% recompra. Gabarito novo: abr 31.381,79 / mai 31.329,59.
 """
 
-ADAPTER_VERSION = "bitfin_adapter_v2.7.0"
+ADAPTER_VERSION = "bitfin_adapter_v2.7.1"
