@@ -41,11 +41,13 @@ import { Textarea } from "@/components/tremor/Textarea"
 import { DynamicForm } from "@/design-system/components/DynamicForm"
 import { type WizardMultiStepStep } from "@/design-system/patterns/WizardMultiStep"
 import { DocumentWorkspace } from "./_components/DocumentWorkspace"
+import { DossierReadingView } from "./_components/DossierReadingView"
 import {
   FaturamentoStation,
   type FaturamentoPhase,
 } from "./_components/FaturamentoStation"
 import { RevenueAnalysisView } from "./_components/RevenueAnalysisView"
+import { TrailSheet, type TrailEvent } from "./_components/TrailSheet"
 import { CadastralAnalysisView } from "./_components/CadastralAnalysisView"
 import { CadastralCard } from "./_components/CadastralCard"
 import {
@@ -323,7 +325,9 @@ export default function DossierFocusPage() {
   const dossierId = params.id
 
   const stepFromUrl = sp.get("step")
+  const viewDossie = sp.get("view") === "dossie"
   const queryClient = useQueryClient()
+  const [trailOpen, setTrailOpen] = React.useState(false)
 
   const { data: state, isLoading } = useDossierState(dossierId)
   const { data: workflow } = useQuery({
@@ -356,10 +360,17 @@ export default function DossierFocusPage() {
     (id: string) => {
       const next = new URLSearchParams(sp.toString())
       next.set("step", id)
+      next.delete("view") // selecionar estação sai do modo dossiê
       router.replace(`?${next.toString()}`)
     },
     [router, sp],
   )
+
+  const onOpenDossier = React.useCallback(() => {
+    const next = new URLSearchParams(sp.toString())
+    next.set("view", "dossie")
+    router.replace(`?${next.toString()}`)
+  }, [router, sp])
 
   // ── Mutations ───────────────────────────────────────────────────────────
   const submitMutation = useMutation({
@@ -404,7 +415,6 @@ export default function DossierFocusPage() {
   const docsQuery = useQuery({
     queryKey: ["credito", "documents", dossierId],
     queryFn: () => credito.documents.list(dossierId),
-    enabled: isFaturamento,
   })
   const docs = React.useMemo(() => docsQuery.data ?? [], [docsQuery.data])
 
@@ -499,6 +509,164 @@ export default function DossierFocusPage() {
             : undefined
     return { ready, pendingText, processedOk }
   }, [docs, fatuRequired])
+
+  // ── Trilha de auditoria (projeção client-side dos eventos) ──────────────
+  const trailEvents: TrailEvent[] = React.useMemo(() => {
+    if (!state) return []
+    const stationOf = (nodeId: string): Estacao | undefined =>
+      estacoes.find((e) => e.members.some((m) => m.id === nodeId))
+    const events: TrailEvent[] = []
+
+    if (state.run?.started_at) {
+      events.push({
+        id: "run-start",
+        origin: "analista",
+        phrase: (
+          <>
+            <strong className="font-semibold text-gray-900 dark:text-gray-50">
+              Analista
+            </strong>{" "}
+            abriu a análise
+          </>
+        ),
+        meta: fmtTime(state.run.started_at),
+        at: state.run.started_at,
+      })
+    }
+
+    for (const nr of state.node_runs) {
+      if (!nr.completed_at && !nr.started_at) continue
+      const step = steps.find((s) => s.id === nr.node_id)
+      const est = stationOf(nr.node_id)
+      const secao = est ? `§${estacoes.indexOf(est) + 1} ${est.label}` : null
+      const at = nr.completed_at ?? nr.started_at!
+      const label = step?.label ?? nr.node_id
+      const base = { at, stationId: est?.id, id: `nr-${nr.id}` }
+      const metaParts = [secao, fmtTime(at)].filter(Boolean)
+
+      if (nr.node_type === "bureau_query" || nr.node_type === "cadastral_enrichment") {
+        if (nr.status !== "completed") continue
+        if (nr.duration_ms != null) {
+          metaParts.push(`resposta em ${(nr.duration_ms / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}s`)
+        }
+        events.push({
+          ...base,
+          origin: "fonte",
+          phrase: <>{label} — consulta concluída</>,
+          meta: metaParts.join(" · "),
+        })
+      } else if (nr.node_type === "specialist_agent") {
+        if (nr.status === "failed") {
+          events.push({
+            ...base,
+            origin: "agente",
+            phrase: (
+              <>
+                <strong className="font-semibold text-gray-900 dark:text-gray-50">
+                  Agente
+                </strong>{" "}
+                não concluiu — {label}
+              </>
+            ),
+            meta: metaParts.join(" · "),
+          })
+          continue
+        }
+        if (nr.status !== "completed") continue
+        const cost = Number(nr.cost_brl) || 0
+        if (cost > 0) metaParts.push(`R$ ${cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`)
+        events.push({
+          ...base,
+          origin: "agente",
+          phrase: (
+            <>
+              <strong className="font-semibold text-gray-900 dark:text-gray-50">
+                Agente
+              </strong>{" "}
+              concluiu a análise — {label}
+            </>
+          ),
+          meta: metaParts.join(" · "),
+        })
+      } else if (nr.node_type === "human_review" && nr.status === "completed") {
+        events.push({
+          ...base,
+          origin: "analista",
+          phrase: (
+            <>
+              <strong className="font-semibold text-gray-900 dark:text-gray-50">
+                Analista
+              </strong>{" "}
+              homologou — {label}
+            </>
+          ),
+          meta: metaParts.join(" · "),
+        })
+      } else if (nr.node_type === "human_input" && nr.status === "completed") {
+        events.push({
+          ...base,
+          origin: "analista",
+          phrase: (
+            <>
+              <strong className="font-semibold text-gray-900 dark:text-gray-50">
+                Analista
+              </strong>{" "}
+              preencheu — {label}
+            </>
+          ),
+          meta: metaParts.join(" · "),
+        })
+      } else if (nr.node_type === "document_request" && nr.status === "completed") {
+        events.push({
+          ...base,
+          origin: "documento",
+          phrase: <>Documentos enviados para análise — {label}</>,
+          meta: metaParts.join(" · "),
+        })
+      }
+    }
+
+    for (const d of docs) {
+      events.push({
+        id: `doc-${d.id}`,
+        origin: "documento",
+        phrase: <>Documento recebido — {d.original_filename}</>,
+        meta: fmtTime(d.uploaded_at),
+        at: d.uploaded_at,
+      })
+      if ((d.ai_extraction as Record<string, unknown> | null)?._analyst_edited === true) {
+        events.push({
+          id: `doc-adj-${d.id}`,
+          origin: "analista",
+          phrase: (
+            <>
+              <strong className="font-semibold text-gray-900 dark:text-gray-50">
+                Analista
+              </strong>{" "}
+              ajustou valores extraídos — {d.original_filename}
+            </>
+          ),
+          meta: `${fmtTime(d.uploaded_at)} · valor original da IA preservado`,
+          at: d.uploaded_at,
+        })
+      }
+    }
+
+    return events
+  }, [state, steps, estacoes, docs])
+
+  // ── Dados do dossiê de leitura (D4) ──────────────────────────────────────
+  const revenueOutput = extractAgentOutput<RevenueAnalysis>(steps, "revenue_analyst")
+  const opinionOutput = extractAgentOutput<OpinionDraft>(steps, "opinion_writer")
+  const hasCadastral = steps.some(
+    (s) => s.nodeType === "cadastral_enrichment" && s.state === "completed",
+  )
+  const completedAgents = steps.filter(
+    (s) => s.nodeType === "specialist_agent" && s.state === "completed",
+  )
+  const adjustments = docs
+    .filter((d) => (d.ai_extraction as Record<string, unknown> | null)?._analyst_edited === true)
+    .map((d) => `Valores de ${d.original_filename} ajustados pelo analista · original preservado`)
 
   // ── Loading ─────────────────────────────────────────────────────────────
   if (isLoading || !state) {
@@ -896,9 +1064,34 @@ export default function DossierFocusPage() {
         activeId={focused?.id ?? null}
         onSelect={onSelect}
         dossierLabel={`Ver dossiê · ${progressPct}% montado`}
-        trailLabel={`Trilha: ${state.node_runs.length} eventos`}
+        onOpenDossier={onOpenDossier}
+        dossierActive={viewDossie}
+        trailLabel={`Trilha: ${trailEvents.length} eventos`}
       />
 
+      <TrailSheet
+        open={trailOpen}
+        onClose={() => setTrailOpen(false)}
+        events={trailEvents}
+        onGoToStation={onSelect}
+      />
+
+      {viewDossie ? (
+        <DossierReadingView
+          dossier={dossier}
+          docs={docs}
+          redFlags={state.red_flags ?? []}
+          revenueOutput={revenueOutput}
+          opinionOutput={opinionOutput}
+          hasCadastral={hasCadastral}
+          agentSteps={completedAgents}
+          adjustments={adjustments}
+          progressPct={progressPct}
+          trailCount={trailEvents.length}
+          onOpenTrail={() => setTrailOpen(true)}
+          onGoToStation={onSelect}
+        />
+      ) : (
       <div className="flex h-screen min-w-0 flex-1 flex-col">
         {focused ? (
           <>
@@ -907,8 +1100,7 @@ export default function DossierFocusPage() {
               chip={chip}
               subtitle={subtitle || undefined}
               substeps={substeps}
-              onOpenTrail={() => {}}
-              trailDisabled
+              onOpenTrail={() => setTrailOpen(true)}
             />
             {/* block + space-y (não flex): zona com overflow-hidden teria
                 min-height 0 como flex item e seria esmagada pelo scroll. */}
@@ -981,8 +1173,17 @@ export default function DossierFocusPage() {
           </div>
         )}
       </div>
+      )}
     </div>
   )
+}
+
+function fmtTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+  } catch {
+    return iso
+  }
 }
 
 // ─── Chip do header por estado ──────────────────────────────────────────────
