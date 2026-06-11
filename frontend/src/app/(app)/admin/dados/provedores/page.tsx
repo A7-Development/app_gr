@@ -144,11 +144,14 @@ function RotatedAtCell({ value }: { value: string | null }) {
 
 function CreateForm({
   providers,
+  initialProviderId,
   submitting,
   onSubmit,
   onCancel,
 }: {
   providers: DataProviderRead[]
+  /** Pré-seleção (vindo do card do provedor na faixa do topo). */
+  initialProviderId?: string | null
   submitting: boolean
   onSubmit: (v: {
     provider_id: string
@@ -160,7 +163,9 @@ function CreateForm({
   onCancel: () => void
 }) {
   const enabled = providers.filter((p) => p.enabled)
-  const [providerId, setProviderId] = React.useState(enabled[0]?.id ?? "")
+  const [providerId, setProviderId] = React.useState(
+    initialProviderId ?? enabled[0]?.id ?? "",
+  )
   const [alias, setAlias] = React.useState("")
   const [secret, setSecret] = React.useState<Record<string, string>>({})
   const [zdr, setZdr] = React.useState(false)
@@ -207,7 +212,12 @@ function CreateForm({
 
       {fields.map((f) => (
         <div key={f.key}>
-          <Label htmlFor={f.key}>{f.label}</Label>
+          <Label htmlFor={f.key}>
+            {f.label}
+            {f.optional && (
+              <span className="ml-1 font-normal text-gray-400">(opcional)</span>
+            )}
+          </Label>
           <Input
             id={f.key}
             type="password"
@@ -386,6 +396,8 @@ export default function DataProvidersPage() {
   )
 
   const [creating, setCreating] = React.useState(false)
+  // Pré-seleção do provedor ao criar pela faixa de provedores do topo.
+  const [presetProviderId, setPresetProviderId] = React.useState<string | null>(null)
   const [editing, setEditing] = React.useState<DataProviderCredentialRead | null>(
     null,
   )
@@ -484,6 +496,7 @@ export default function DataProvidersPage() {
       await createMut.mutateAsync(v)
       toast.success(`Credencial '${v.alias}' cadastrada.`)
       setCreating(false)
+      setPresetProviderId(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Falha ao cadastrar.")
     }
@@ -534,6 +547,61 @@ export default function DataProvidersPage() {
         }
       />
 
+      {/* Provedores cadastrados — visíveis MESMO sem credencial (a tabela
+          abaixo lista credenciais; provedor sem credencial sumia da tela). */}
+      {providers.length > 0 && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {providers.map((p) => {
+            const count = data.filter((c) => c.provider_id === p.id).length
+            const active = data.filter(
+              (c) => c.provider_id === p.id && c.active,
+            ).length
+            return (
+              <div
+                key={p.id}
+                className="flex items-center gap-3 rounded border border-gray-200 bg-white p-3.5 shadow-xs dark:border-gray-800 dark:bg-gray-950"
+              >
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-gray-100 dark:bg-gray-900">
+                  <RiDatabase2Line className="size-4.5 text-gray-500" aria-hidden />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-50">
+                    {p.name}
+                  </p>
+                  <p className="mt-0.5 text-[11px]">
+                    {!p.enabled ? (
+                      <span className="text-gray-400">desabilitado</span>
+                    ) : count === 0 ? (
+                      <span className="font-medium text-amber-600 dark:text-amber-500">
+                        sem credencial — consultas indisponíveis
+                      </span>
+                    ) : (
+                      <span className="text-gray-500 dark:text-gray-400">
+                        {count} credencial{count === 1 ? "" : "s"}
+                        {active < count && ` · ${active} ativa${active === 1 ? "" : "s"}`}
+                      </span>
+                    )}
+                  </p>
+                </div>
+                {p.enabled && count === 0 && (
+                  <Button
+                    variant="secondary"
+                    className="h-8 shrink-0"
+                    onClick={() => {
+                      setPresetProviderId(p.id)
+                      setCreating(true)
+                    }}
+                  >
+                    <RiAddLine className="mr-1 size-3.5" aria-hidden />
+                    Credencial
+                  </Button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       <DataTableShell<DataProviderCredentialRead>
         data={data}
         columns={columns}
@@ -572,12 +640,17 @@ export default function DataProvidersPage() {
 
       <DrillDownSheet
         open={creating}
-        onClose={() => setCreating(false)}
+        onClose={() => {
+          setCreating(false)
+          setPresetProviderId(null)
+        }}
         title="Nova credencial de dados"
         size="md"
       >
         <div className="p-6">
           <CreateForm
+            key={presetProviderId ?? "default"}
+            initialProviderId={presetProviderId}
             providers={providers}
             submitting={createMut.isPending}
             onSubmit={handleCreate}
