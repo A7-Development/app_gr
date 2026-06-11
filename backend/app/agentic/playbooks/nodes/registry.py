@@ -25,6 +25,9 @@ from app.agentic.playbooks.nodes.http_request import HttpRequestNode
 from app.agentic.playbooks.nodes.human_input import HumanInputNode
 from app.agentic.playbooks.nodes.human_review import HumanReviewNode
 from app.agentic.playbooks.nodes.notification import NotificationNode
+from app.agentic.playbooks.nodes.official_document_fetch import (
+    OfficialDocumentFetchNode,
+)
 from app.agentic.playbooks.nodes.output_generator import OutputGeneratorNode
 from app.agentic.playbooks.nodes.specialist_agent import SpecialistAgentNode
 from app.agentic.playbooks.nodes.trigger import TriggerNode
@@ -210,6 +213,30 @@ NODE_TYPES: dict[str, NodeTypeMeta] = {
                 "type": "string",
                 "label": "Dataset (codigo)",
                 "placeholder": "CAD-PJ",
+                "required": True,
+            },
+        ),
+    ),
+    "official_document_fetch": NodeTypeMeta(
+        type="official_document_fetch",
+        cls=OfficialDocumentFetchNode,
+        label="Buscar Documento Oficial",
+        category="integracao",
+        description=(
+            "Busca um documento oficial direto da fonte publica (ex.: contrato "
+            "social mais recente na Junta Comercial SP), anexa ao dossie e "
+            "dispara a extracao multimodal — mesmo fluxo de conferencia do "
+            "upload manual, sem clique do analista. Cada opcao de documento e "
+            "uma receita curada de 1..N consultas do catalogo de dados."
+        ),
+        available=True,
+        icon="RiGovernmentLine",
+        config_schema=(
+            {
+                "key": "document",
+                "type": "string",
+                "label": "Documento",
+                "placeholder": "social_contract_jucesp",
                 "required": True,
             },
         ),
