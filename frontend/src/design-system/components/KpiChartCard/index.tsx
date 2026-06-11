@@ -51,6 +51,16 @@ export type KpiChartCardProps = {
   className?: string
 }
 
+function compactAxisLabel(v: number): string {
+  if (v === 0) return "0"
+  const fmt = (n: number) =>
+    n.toLocaleString("pt-BR", { maximumFractionDigits: 1 })
+  if (Math.abs(v) >= 1_000_000_000) return `${fmt(v / 1_000_000_000)} bi`
+  if (Math.abs(v) >= 1_000_000) return `${fmt(v / 1_000_000)} mi`
+  if (Math.abs(v) >= 1_000) return `${fmt(v / 1_000)} mil`
+  return fmt(v)
+}
+
 const BAR_NAVY = "#1B2B4B"
 const BAR_SELECTED = "#0EA5E9"
 const AXIS_LABEL = "#9CA3AF"
@@ -108,7 +118,12 @@ export function KpiChartCard({
                 return tick ? tick.label : ""
               },
             }
-          : { fontSize: 10, color: AXIS_LABEL },
+          : {
+              fontSize: 10,
+              fontFamily: "Inter, sans-serif",
+              color: AXIS_LABEL,
+              formatter: (v: number) => compactAxisLabel(v),
+            },
         splitLine: {
           lineStyle: { color: GRID_LINE, width: 1 },
         },

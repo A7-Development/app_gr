@@ -18,6 +18,8 @@ import { agentContainerTokens, provenanceTokens } from "@/design-system/tokens/p
 import { cx } from "@/lib/utils"
 
 export type AgentConclusionProps = {
+  /** Conclusão homologada: a borda "assenta" (sólida, fundo branco). */
+  homologado?: boolean
   /** Eyebrow indigo uppercase (ex.: "LEITURA DO AGENTE DE FATURAMENTO"). */
   eyebrow: string
   /** Meta à direita do header (ex.: "v1.8 · gerada após a extração"). */
@@ -33,6 +35,7 @@ export type AgentConclusionProps = {
 }
 
 export function AgentConclusion({
+  homologado = false,
   eyebrow,
   meta,
   tag,
@@ -44,8 +47,16 @@ export function AgentConclusion({
   const indigo = provenanceTokens.agente
   return (
     <section
-      className={cx("rounded", className)}
-      style={{ border: agentContainerTokens.border, background: agentContainerTokens.bg }}
+      className={cx(
+        "rounded transition-colors duration-150",
+        homologado && "border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
+        className,
+      )}
+      style={
+        homologado
+          ? undefined
+          : { border: agentContainerTokens.border, background: agentContainerTokens.bg }
+      }
     >
       <header
         className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3"

@@ -41,6 +41,10 @@ import { Textarea } from "@/components/tremor/Textarea"
 import { DynamicForm } from "@/design-system/components/DynamicForm"
 import { type WizardMultiStepStep } from "@/design-system/patterns/WizardMultiStep"
 import { DocumentWorkspace } from "./_components/DocumentWorkspace"
+import {
+  FaturamentoStation,
+  type FaturamentoPhase,
+} from "./_components/FaturamentoStation"
 import { RevenueAnalysisView } from "./_components/RevenueAnalysisView"
 import { CadastralAnalysisView } from "./_components/CadastralAnalysisView"
 import { CadastralCard } from "./_components/CadastralCard"
@@ -107,7 +111,24 @@ const RERUNNABLE = new Set([
 ])
 
 function agentOf(step: WizardMultiStepStep): string | null {
-  return (step.input as { agent?: string } | undefined)?.agent ?? null
+  return (
+    (step.input as { agent?: string } | undefined)?.agent ??
+    (step.config as { agent?: string } | undefined)?.agent ??
+    null
+  )
+}
+
+// Afinidade agente → fonte de dados da seção. Funde o specialist_agent na
+// estação que contém a fonte (D1: documento + conferência + leitura = UMA
+// estação). Interim client-side até o backend declarar "§ gera seção" no graph.
+const AGENT_STATION_AFFINITY: Record<string, string> = {
+  revenue_analyst: "document_request",
+  cadastral_analyst: "cadastral_enrichment",
+}
+
+const AGENT_STATION_LABEL: Record<string, string> = {
+  revenue_analyst: "Faturamento",
+  cadastral_analyst: "Cadastral",
 }
 
 function reviewOf(step: WizardMultiStepStep): string | null {
@@ -123,6 +144,18 @@ function buildEstacoes(steps: WizardMultiStepStep[]): Estacao[] {
       for (let i = estacoes.length - 1; i >= 0; i--) {
         if (estacoes[i].members.some((m) => m.nodeType === "document_request")) {
           return estacoes[i]
+        }
+      }
+      return null
+    }
+    if (step.nodeType === "specialist_agent") {
+      const agent = agentOf(step)
+      const affinity = agent ? AGENT_STATION_AFFINITY[agent] : undefined
+      if (affinity) {
+        for (let i = estacoes.length - 1; i >= 0; i--) {
+          if (estacoes[i].members.some((m) => m.nodeType === affinity)) {
+            return estacoes[i]
+          }
         }
       }
       return null
@@ -152,6 +185,11 @@ function buildEstacoes(steps: WizardMultiStepStep[]): Estacao[] {
     if (host) {
       host.members.push(step)
       if (step.nodeType === "human_review") host.gate = step
+      // Agente fundido batiza a estação ("Faturamento", "Cadastral").
+      const agent = agentOf(step)
+      if (step.nodeType === "specialist_agent" && agent && AGENT_STATION_LABEL[agent]) {
+        host.label = AGENT_STATION_LABEL[agent]
+      }
       continue
     }
 
@@ -357,6 +395,44 @@ export default function DossierFocusPage() {
   const waitingMember = focused?.members.find((m) => m.state === "waiting_input") ?? null
   const draft = useStepDraft(dossierId, waitingMember?.id ?? null)
 
+  // ── Estação Faturamento (D1) — documentos no nível da página ────────────
+  const isFaturamento = Boolean(
+    focused &&
+      focused.members.some((m) => m.nodeType === "document_request") &&
+      focused.members.some((m) => agentOf(m) === "revenue_analyst"),
+  )
+  const docsQuery = useQuery({
+    queryKey: ["credito", "documents", dossierId],
+    queryFn: () => credito.documents.list(dossierId),
+    enabled: isFaturamento,
+  })
+  const docs = React.useMemo(() => docsQuery.data ?? [], [docsQuery.data])
+
+  // "Enviar para análise": homologa as extrações pendentes (PATCH) e fecha o
+  // document_request — a orquestração aciona o agente em seguida.
+  const sendToAnalysisMutation = useMutation({
+    mutationFn: async (nodeId: string) => {
+      for (const d of docs) {
+        if (d.extraction_status === "success") {
+          const fields =
+            ((d.ai_extraction as Record<string, unknown> | null)?.extracted_fields as
+              | Record<string, unknown>
+              | undefined) ?? {}
+          await credito.documents.updateExtraction(dossierId, d.id, {
+            extracted_fields: fields,
+          })
+        }
+      }
+      return credito.dossies.submitNodeInput(dossierId, nodeId, {})
+    },
+    onSuccess: () => {
+      toast.success("Valores gravados no dossiê — análise acionada.")
+      queryClient.invalidateQueries({ queryKey: ["credito", "documents", dossierId] })
+      queryClient.invalidateQueries({ queryKey: ["credito", "dossie-state", dossierId] })
+    },
+    onError: (e) => toast.error(`Erro ao enviar: ${(e as Error).message}`),
+  })
+
   // ── Parecer final (estado içado pra barra de fechamento) ────────────────
   const finalGate =
     focused?.gate && !reviewOf(focused.gate) && focused.gate.state === "waiting_input"
@@ -370,6 +446,59 @@ export default function DossierFocusPage() {
       setReviewSummary(buildDraftSummary(state.red_flags ?? []))
     }
   }, [finalGate, reviewSummary, state])
+
+  // ── Estação Faturamento (D1): fase + prontidão dos documentos ───────────
+  const fatuDocStep = isFaturamento
+    ? (focused!.members.find((m) => m.nodeType === "document_request") ?? null)
+    : null
+  const fatuAgentStep = isFaturamento
+    ? (focused!.members.find((m) => agentOf(m) === "revenue_analyst") ?? null)
+    : null
+  const fatuGateStep =
+    isFaturamento && focused?.gate && reviewOf(focused.gate) === "revenue_analyst"
+      ? focused.gate
+      : null
+
+  const fatuPhase: FaturamentoPhase | null = !isFaturamento
+    ? null
+    : focused!.state === "fechada" || focused!.state === "fechada_com_ressalva"
+      ? "fechada"
+      : fatuDocStep?.state === "waiting_input"
+        ? "documento"
+        : fatuAgentStep?.state === "running"
+          ? "rodando"
+          : fatuGateStep?.state === "waiting_input"
+            ? "homologar"
+            : "fila"
+
+  const fatuRequired = React.useMemo(() => {
+    const out = (fatuDocStep?.output ?? {}) as { required?: string[] }
+    return Array.isArray(out.required) ? out.required : []
+  }, [fatuDocStep])
+
+  const fatuReadiness = React.useMemo(() => {
+    const uploaded = new Set(docs.map((d) => d.doc_type.toLowerCase()))
+    const missing = fatuRequired.filter((t) => !uploaded.has(t.toLowerCase()))
+    const processing = docs.some(
+      (d) => d.extraction_status === "pending" || d.extraction_status === "processing",
+    )
+    const hasError = docs.some((d) => d.extraction_status === "error")
+    const processedOk = docs.some(
+      (d) => d.extraction_status === "success" || d.extraction_status === "validated",
+    )
+    const ready =
+      docs.length > 0 && missing.length === 0 && !processing && !hasError && processedOk
+    const pendingText = missing.length
+      ? `falta: enviar ${missing.join(", ")}`
+      : hasError
+        ? "falta: tratar a falha da extração"
+        : processing
+          ? "falta: aguardar a extração do documento"
+          : !processedOk
+            ? "falta: enviar e processar o documento"
+            : undefined
+    return { ready, pendingText, processedOk }
+  }, [docs, fatuRequired])
 
   // ── Loading ─────────────────────────────────────────────────────────────
   if (isLoading || !state) {
@@ -437,12 +566,59 @@ export default function DossierFocusPage() {
       .join(" ")
 
   const substeps: StationSubstep[] | undefined = focused
-    ? buildSubsteps(focused)
+    ? isFaturamento && fatuPhase
+      ? fatuSubsteps(fatuPhase, fatuReadiness.processedOk)
+      : buildSubsteps(focused)
     : undefined
 
   // ── Barra de fechamento ─────────────────────────────────────────────────
-  const closure = focused
-    ? buildClosure({
+  const fatuClosure: React.ComponentProps<typeof ClosureBar> | null =
+    isFaturamento && fatuPhase && focused
+      ? fatuPhase === "documento"
+        ? fatuReadiness.ready
+          ? {
+              state: "armed",
+              statusText:
+                "Valores conferidos — enviar grava a seção no dossiê e aciona o agente de faturamento.",
+              primaryLabel: "Enviar para análise",
+              primaryIcon: RiArrowRightLine,
+              onPrimary: () =>
+                fatuDocStep && sendToAnalysisMutation.mutate(fatuDocStep.id),
+              primaryLoading: sendToAnalysisMutation.isPending,
+              statusIcon: RiArchiveDrawerLine,
+            }
+          : {
+              state: "pending",
+              statusText:
+                "Rascunho automático ativo — nada se perde se você sair.",
+              pendingText: fatuReadiness.pendingText,
+              primaryLabel: "Enviar para análise",
+              onPrimary: () => {},
+            }
+        : fatuPhase === "rodando" || fatuPhase === "fila"
+          ? {
+              state: "pending",
+              statusText: "Agente trabalhando — esta tela atualiza sozinha.",
+              pendingText: "falta: aguardar o agente concluir",
+              primaryLabel: "Fechar estação",
+              onPrimary: () => {},
+            }
+          : fatuPhase === "homologar"
+            ? {
+                state: "pending",
+                statusText:
+                  "Homologar a leitura fecha a estação e grava a seção §Faturamento no dossiê.",
+                pendingText: "falta: decidir sobre a leitura da IA",
+                primaryLabel: "Fechar estação",
+                onPrimary: () => {},
+              }
+            : null // fechada → fluxo genérico abaixo
+      : null
+
+  const closure =
+    fatuClosure ??
+    (focused
+      ? buildClosure({
         estacao: focused,
         estacoes,
         finalGate,
@@ -462,10 +638,10 @@ export default function DossierFocusPage() {
             },
           })
         },
-        onGoTo: (id) => onSelect(id),
-        onBackToQueue: () => router.push("/credito/dossies"),
-      })
-    : null
+          onGoTo: (id) => onSelect(id),
+          onBackToQueue: () => router.push("/credito/dossies"),
+        })
+      : null)
 
   // ── Renderers de zona ───────────────────────────────────────────────────
   const renderAnalysisView = (s: WizardMultiStepStep): React.ReactNode => {
@@ -734,8 +910,66 @@ export default function DossierFocusPage() {
               onOpenTrail={() => {}}
               trailDisabled
             />
-            <div className="flex flex-1 flex-col gap-5 overflow-y-auto bg-gray-50 px-8 pb-6 pt-6 dark:bg-gray-925">
-              {focused.members.map(renderMemberZone)}
+            {/* block + space-y (não flex): zona com overflow-hidden teria
+                min-height 0 como flex item e seria esmagada pelo scroll. */}
+            <div className="flex-1 space-y-5 overflow-y-auto bg-gray-50 px-8 pb-6 pt-6 dark:bg-gray-925">
+              {isFaturamento && fatuPhase ? (
+                <FaturamentoStation
+                  dossierId={dossierId}
+                  docs={docs}
+                  requiredDocTypes={fatuRequired}
+                  phase={fatuPhase}
+                  agentOutput={
+                    fatuAgentStep?.state === "completed" && fatuAgentStep.output
+                      ? (fatuAgentStep.output as unknown as RevenueAnalysis)
+                      : null
+                  }
+                  agentLabel={
+                    (fatuAgentStep?.input as { agent?: string } | undefined)?.agent
+                  }
+                  runStartedAt={state.run?.started_at ?? null}
+                  toolsLog={
+                    (
+                      fatuAgentStep?.input as {
+                        tools_log?: Array<{
+                          iso_at: string
+                          kind: "tool_use" | "tool_result"
+                          tool_name?: string
+                          duration_ms?: number
+                        }>
+                      } | undefined
+                    )?.tools_log
+                  }
+                  tokensInput={
+                    state.node_runs.find((x) => x.node_id === fatuAgentStep?.id)
+                      ?.tokens_input
+                  }
+                  tokensOutput={
+                    state.node_runs.find((x) => x.node_id === fatuAgentStep?.id)
+                      ?.tokens_output
+                  }
+                  costBrl={Number(
+                    state.node_runs.find((x) => x.node_id === fatuAgentStep?.id)
+                      ?.cost_brl ?? 0,
+                  )}
+                  onApproveGate={(notes) =>
+                    fatuGateStep &&
+                    submitMutation.mutate({
+                      nodeId: fatuGateStep.id,
+                      values: { approved: true, notes },
+                    })
+                  }
+                  approving={submitMutation.isPending}
+                  onRerunAgent={
+                    fatuAgentStep
+                      ? () => rerunMutation.mutate(fatuAgentStep.id)
+                      : undefined
+                  }
+                  rerunning={rerunMutation.isPending}
+                />
+              ) : (
+                focused.members.map(renderMemberZone)
+              )}
             </div>
             {closure && <ClosureBar {...closure} />}
           </>
@@ -805,6 +1039,33 @@ function needsYouLabel(e: Estacao): string | null {
     return "enviar e conferir o documento, depois fechar"
   }
   return "preencher os dados e salvar"
+}
+
+/** Sub-passos canônicos da Estação Faturamento (D1). */
+function fatuSubsteps(phase: FaturamentoPhase, processedOk: boolean): StationSubstep[] {
+  const done = (b: boolean): StationSubstep["state"] => (b ? "done" : "future")
+  if (phase === "documento") {
+    return [
+      { label: "Documento", state: processedOk ? "done" : "active" },
+      { label: "Conferência", state: processedOk ? "active" : "future" },
+      { label: "Conclusão da IA", state: "future" },
+      { label: "Fechamento", state: "future" },
+    ]
+  }
+  if (phase === "fila" || phase === "rodando" || phase === "homologar") {
+    return [
+      { label: "Documento", state: "done" },
+      { label: "Conferência", state: "done" },
+      { label: "Conclusão da IA", state: "active" },
+      { label: "Fechamento", state: "future" },
+    ]
+  }
+  return [
+    { label: "Documento", state: done(true) },
+    { label: "Conferência", state: done(true) },
+    { label: "Conclusão da IA", state: done(true) },
+    { label: "Fechamento", state: done(true) },
+  ]
 }
 
 function buildSubsteps(e: Estacao): StationSubstep[] | undefined {
