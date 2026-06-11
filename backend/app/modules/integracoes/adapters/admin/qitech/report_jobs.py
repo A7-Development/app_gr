@@ -483,58 +483,86 @@ async def process_fidc_estoque_callback(
     raw_id: UUID | None = raw_id_row[0] if raw_id_row else None
     await db.commit()
 
-    # 6. Mapper -> canonico (linhas)
-    canonical_rows = map_fidc_estoque(
-        csv_text=csv_text,
-        tenant_id=job.tenant_id,
-        data_referencia=job.reference_date,
-    )
-
-    # 7. Bulk upsert canonico (chunked — pode ser 1000s de linhas)
-    rows_inserted = 0
-    if canonical_rows:
-        from itertools import islice
-
-        from app.modules.integracoes.adapters.admin.qitech.etl import (
-            CHUNK_SIZE,
-            MAX_PG_PARAMS,
+    # 6+7. Mapper -> canonico + bulk upsert. Embrulhado em try/except:
+    # falha aqui NAO pode deixar o job em "SUCCESS sem completed_at" (limbo
+    # invisivel na UI — bug 2026-06-11: taxaRecebivel absurda da QiTech
+    # estourava NUMERIC(14,10) no upsert, a data inteira sumia da silver e
+    # a UI mostrava sucesso). A raw ja esta commitada; em erro o job vira
+    # ERROR com a causa real e mantem o vinculo com a raw pra reprocesso.
+    try:
+        # 6. Mapper -> canonico (linhas)
+        canonical_rows = map_fidc_estoque(
+            csv_text=csv_text,
+            tenant_id=job.tenant_id,
+            data_referencia=job.reference_date,
         )
 
-        # Business key — ver uq_wh_estoque_recebivel.
-        bk_cols = [
-            "tenant_id", "data_referencia", "fundo_doc", "cedente_doc",
-            "seu_numero", "numero_documento",
-        ]
-        all_columns = [c.name for c in EstoqueRecebivel.__table__.columns if c.name != "id"]
-        normalized = [{c: row.get(c) for c in all_columns} for row in canonical_rows]
-        # Dedup por business key (caso CSV tenha duplicata exata). Mantem
-        # ultima ocorrencia — sha16(item) deixou de ser conflict key.
-        seen: dict[tuple, dict] = {}
-        for r in normalized:
-            seen[tuple(r[c] for c in bk_cols)] = r
-        deduped = list(seen.values())
+        # 7. Bulk upsert canonico (chunked — pode ser 1000s de linhas)
+        rows_inserted = 0
+        if canonical_rows:
+            from itertools import islice
 
-        chunk_size = max(1, min(CHUNK_SIZE, MAX_PG_PARAMS // len(all_columns)))
-        update_cols = [
-            c.name
-            for c in EstoqueRecebivel.__table__.columns
-            if c.name not in {"id", *bk_cols, "ingested_at"}
-        ]
-
-        def _chunked(it, size):
-            it = iter(it)
-            while chunk := list(islice(it, size)):
-                yield chunk
-
-        for chunk in _chunked(deduped, chunk_size):
-            stmt = pg_insert(EstoqueRecebivel.__table__).values(chunk)
-            update_set = {name: stmt.excluded[name] for name in update_cols}
-            stmt = stmt.on_conflict_do_update(
-                index_elements=bk_cols, set_=update_set
+            from app.modules.integracoes.adapters.admin.qitech.etl import (
+                CHUNK_SIZE,
+                MAX_PG_PARAMS,
             )
-            await db.execute(stmt)
-            rows_inserted += len(chunk)
-        await db.commit()
+
+            # Business key — ver uq_wh_estoque_recebivel.
+            bk_cols = [
+                "tenant_id", "data_referencia", "fundo_doc", "cedente_doc",
+                "seu_numero", "numero_documento",
+            ]
+            all_columns = [c.name for c in EstoqueRecebivel.__table__.columns if c.name != "id"]
+            normalized = [{c: row.get(c) for c in all_columns} for row in canonical_rows]
+            # Dedup por business key (caso CSV tenha duplicata exata). Mantem
+            # ultima ocorrencia — sha16(item) deixou de ser conflict key.
+            seen: dict[tuple, dict] = {}
+            for r in normalized:
+                seen[tuple(r[c] for c in bk_cols)] = r
+            deduped = list(seen.values())
+
+            chunk_size = max(1, min(CHUNK_SIZE, MAX_PG_PARAMS // len(all_columns)))
+            update_cols = [
+                c.name
+                for c in EstoqueRecebivel.__table__.columns
+                if c.name not in {"id", *bk_cols, "ingested_at"}
+            ]
+
+            def _chunked(it, size):
+                it = iter(it)
+                while chunk := list(islice(it, size)):
+                    yield chunk
+
+            for chunk in _chunked(deduped, chunk_size):
+                stmt = pg_insert(EstoqueRecebivel.__table__).values(chunk)
+                update_set = {name: stmt.excluded[name] for name in update_cols}
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=bk_cols, set_=update_set
+                )
+                await db.execute(stmt)
+                rows_inserted += len(chunk)
+            await db.commit()
+    except Exception as e:  # noqa: BLE001 — qualquer falha vira ERROR auditavel
+        await db.rollback()
+        # Pos-rollback a instancia expira; re-busca evita lazy-load fora
+        # de greenlet (asyncpg).
+        job = await db.get(QitechReportJob, local_job_id)
+        if job is not None:
+            job.raw_relatorio_id = raw_id
+            job.error_message = (
+                f"raw salva mas mapper/upsert canonico falhou: "
+                f"{type(e).__name__}: {e}"
+            )[:2000]
+            job.status = QitechJobStatus.ERROR
+            await db.commit()
+        return {
+            "ok": False,
+            "idempotent": False,
+            "rows_canonical": 0,
+            "raw_id": str(raw_id) if raw_id else None,
+            "job_id": str(local_job_id),
+            "error": f"{type(e).__name__}: {e}",
+        }
 
     # 8. Atualiza job — completed
     job.raw_relatorio_id = raw_id

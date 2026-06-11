@@ -180,9 +180,12 @@ class EstoqueRecebivel(Auditable, Base):
     )
     # Taxas decimais (ex.: 0,4692739943 = ~0,47% no sample). 10 decimais —
     # CSV da QiTech entrega exatamente essa precisao em 100% dos titulos.
-    # NUMERIC(14,10) acomoda valores ate 9999.9999999999 com fidelidade total.
-    taxa_cessao: Mapped[Decimal] = mapped_column(Numeric(14, 10), nullable=False)
-    taxa_recebivel: Mapped[Decimal] = mapped_column(Numeric(14, 10), nullable=False)
+    # NUMERIC(24,10): a QiTech ocasionalmente manda taxaRecebivel absurda
+    # (observado 14.962.902.343,36 em titulo FRICOCK vencido, 2025-12) — o
+    # valor e lixo de calculo deles, mas e o que a fonte declarou; guardamos
+    # com fidelidade (§14) em vez de estourar a ingestao da data inteira.
+    taxa_cessao: Mapped[Decimal] = mapped_column(Numeric(24, 10), nullable=False)
+    taxa_recebivel: Mapped[Decimal] = mapped_column(Numeric(24, 10), nullable=False)
 
     # Coobrigacao = cedente garante credito? "SIM"/"NAO" no CSV.
     coobrigacao: Mapped[bool] = mapped_column(Boolean, nullable=False)
