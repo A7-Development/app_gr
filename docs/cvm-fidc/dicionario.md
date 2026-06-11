@@ -281,6 +281,22 @@ perfil de prazo parecido, com winsorizacao e ressalva; nivel absoluto NAO.**
 A formula defensavel (carteira agregada): `taxa_am = (Σface/Σcompra)^(30/
 prazo_pond) - 1` — p/ tenant proprio, usar o interno (taxa final operacoes5).
 
+**DERIVACAO CORRETA so com dados CVM — "Yield efetivo da carteira"
+(2026-06-11):** a taxa nao e invertivel da tab_ix (CVM nao publica face x
+preco; media de anualizadas nao desfaz por Jensen), mas o RESULTADO e:
+
+    yield_am = Σ(rentab_classe x PL_classe) / DC_bruto_medio
+             = (tab_x_3 x tab_x_2) / tab_ii
+
+E o retorno LIQUIDO que a carteira entregou (apos custos/PDD/caixa) — piso
+honesto da taxa praticada. Validado REALINVEST abr/26: derivado 2,81% a.m. vs
+taxa bruta real interna 3,47% (gap = custos+PDD+drag de caixa). Escala:
+calculavel p/ 3.036 fundos; mercado abr/26 mediana 1,40% a.m. (p25 0,09 /
+p75 2,24). E o indicador de pricing RECOMENDADO da cesta (tab_ix vira
+secundario/ordinal). Bracket auxiliar: converter tab_ix p/ mensal
+((1+tx/100)^(30/365)-1) da o intervalo [conv(min), conv(media)] que contem a
+taxa real (REALINVEST: [2,39%, 5,59%] ∋ 3,47%).
+
 ## Resumo por tabela
 
 | Tabela | Granularidade | Serve para... |

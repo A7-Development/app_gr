@@ -42,7 +42,9 @@
 | 12 | **Giro da carteira** | `tab_vii_a(1+2) aquisicoes / DC_bruto` | Velocity do lastro (FAT gira ~1x/mes; consignado quase nao gira). Contextualiza inadimplencia e prazo. ATENCAO: aquisicoes CVM nao conciliam 1:1 com QiTech (base inclui notas) |
 | 13 | **Rentabilidade da Subordinada** | `tab_x_3` da serie Sub (mes + acum 12m) | O retorno do "equity" do fundo — onde o resultado aparece primeiro. SEMPRE tab_x_3 (Δcota nao e proxy — amortizacao distorce) |
 | 14 | **Atingimento de meta** | `tab_x_6: pr_desemp_real - pr_desemp_esperado` (so series com esperado>0) | Consistencia das series senior/mez vs benchmark prometido (tracking). Sub fica fora (esperado=0, residual) |
-| 15 | **Mix SCR de risco** | `Σ tab_x_scr_risco_oper_{d..h} / Σ tab_x_scr_risco_oper_*` (parse text) | Qualidade da carteira na visao BACEN (AA..H) — 100% dos fundos reportam; unica lente de rating publica. Eixos devedor E operacao |
+| 15 | **Mix SCR de risco** | `Σ tab_x_scr_risco_oper_{d..h} / Σ tab_x_scr_risco_oper_*` (parse text; usar TODAS as letras — ha arrasto) | Qualidade da carteira na visao BACEN (AA..H) — 100% dos fundos reportam; unica lente de rating publica. A regua AA..H soma o DC bruto exato |
+| 16 | **Yield efetivo da carteira** | `Σ(tab_x_3.rentab x tab_x_2.PL_classe) / tab_ii.DC_bruto medio` | Retorno LIQUIDO entregue pela carteira (piso da taxa praticada) — derivavel p/ 3.036 fundos; mercado abr/26: mediana 1,40% a.m. Validado REALINVEST: 2,81% vs taxa bruta real 3,47%. Substitui a tab_ix como indicador de pricing (tab_ix = ordinal secundario; nivel nao confiavel) |
+| 17 | **DC de cedentes em Divida Ativa** | `tab_x_debito_tribut / DC_bruto` | Risco de constricao judicial do lastro (penhora de recebivel de cedente devedor da Uniao). REALINVEST: 14,5%. Ninguem publica isso agregado |
 
 ## Notas de desenho
 
