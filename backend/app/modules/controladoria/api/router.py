@@ -5,7 +5,6 @@ from fastapi import APIRouter
 from app.modules.controladoria.api import (
     conciliacao_boleto,
     cota_sub,
-    dre,
     evolucao_patrimonial,
     qitech_estoque_carteira,
     reports,
@@ -19,9 +18,6 @@ router.include_router(cota_sub.router)
 # L2 Evolucao Patrimonial — serie temporal do PL do passivo (todas as classes).
 router.include_router(evolucao_patrimonial.router)
 
-# L2 DRE — Demonstrativo do Resultado do Exercicio. Le silver wh_dre_mensal
-# populada pelo ETL Bitfin (bronze + classifier, ver commit 4d5399e).
-router.include_router(dre.router)
 
 # L2 Relatorios — catalogo unico de relatorios das administradoras (QiTech, ...).
 # Plano: ~/.claude/plans/shimmering-snuggling-snail.md.

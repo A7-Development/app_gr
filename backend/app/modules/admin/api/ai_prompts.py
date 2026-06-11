@@ -27,6 +27,8 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agentic.engine.prompts import repository
+from app.agentic.engine.prompts._base import Prompt as PromptDTO
 from app.core.database import get_db
 from app.core.enums import Module, Permission
 from app.core.module_guard import require_module
@@ -34,8 +36,6 @@ from app.core.system_maintainer_guard import require_system_maintainer
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.shared.ai.models.prompt import AIPrompt, CacheStrategy
 from app.shared.ai.models.prompt_active import AIPromptActive
-from app.agentic.engine.prompts import repository
-from app.agentic.engine.prompts._base import Prompt as PromptDTO
 from app.shared.ai.schemas import (
     PromptActivate,
     PromptCreate,
