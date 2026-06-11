@@ -142,6 +142,9 @@ def _map_operacao(row: dict, tenant_id: UUID) -> dict:
         "total_dos_comunicados_de_cessao": 0,
         "total_dos_documentos_digitais": 0,
         "total_dos_descontos_ou_abatimentos": 0,
+        "tarifa_por_operacao": 0,
+        "tarifa_de_ted": 0,
+        "total_dos_registros_de_recebiveis": 0,
     }
     merged = {**metric_defaults, **{k: v for k, v in row.items() if v is not None}}
     return {

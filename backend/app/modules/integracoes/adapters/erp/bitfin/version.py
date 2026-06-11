@@ -79,6 +79,13 @@ sem decomposicao + valor_referencia_regua (desconto concedido = referencia
 vencidos; mora perdoada (lancado 0, regua > 0) entra com valor 0 pra
 metrica de desconto. Coluna nova wh_receita_operacional.
 valor_referencia_regua (migration d9e3a7c1f5b2).
+
+v2.9.0 (2026-06-11): SELECT_OPERACAO ingere as 3 tarifas que faltavam do
+OperacaoResultado -- TarifaPorOperacao (TAC), TarifaDeTed e
+TotalDosRegistrosDeRecebiveis. Sem elas a soma das tarifas do wh_operacao
+nao reconciliava com o desagio total embutido no ValorPresente dos itens
+(= valor_compra enviado a QiTech): gap de R$ 159,00 na op 9881 (TAC 120 +
+TED 30 + reg. recebiveis 9). Base da visao de receita por acruo.
 """
 
-ADAPTER_VERSION = "bitfin_adapter_v2.8.0"
+ADAPTER_VERSION = "bitfin_adapter_v2.9.0"
