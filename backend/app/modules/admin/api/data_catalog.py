@@ -51,6 +51,7 @@ def _row_to_read(r: catalog_admin.CatalogDatasetRow) -> CatalogDatasetRowRead:
         categoria_ui=r.categoria_ui,
         enabled_for_sale=r.enabled_for_sale,
         current_cost_brl=r.current_cost_brl,
+        cost_editable=r.cost_editable,
         markup_pct=r.markup_pct,
         mode=r.mode,
         suggested_public_code=r.suggested_public_code,
@@ -121,6 +122,7 @@ async def curate_dataset(
             categoria_ui=payload.categoria_ui,
             enabled_for_sale=payload.enabled_for_sale,
             markup_pct=payload.markup_pct,
+            current_cost_brl=payload.current_cost_brl,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
