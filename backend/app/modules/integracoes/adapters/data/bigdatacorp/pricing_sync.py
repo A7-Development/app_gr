@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -408,7 +408,7 @@ async def apply_catalog_diff(
     Returns:
         CatalogSyncCounters agregando added/updated/unchanged/removed.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # 1. Carrega estado atual do catalogo desse provider em memoria
     # (volume tipico: ~100 datasets, OK pra in-memory).
@@ -577,9 +577,9 @@ def _diff_tiers(
 
 __all__ = [
     "ADAPTER_VERSION",
+    "CatalogSyncCounters",
     "ParsedDataset",
     "ParsedTier",
-    "CatalogSyncCounters",
     "_parse_pricing_payload",
     "apply_catalog_diff",
 ]

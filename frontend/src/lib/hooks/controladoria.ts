@@ -10,6 +10,8 @@ import { differenceInCalendarDays, parseISO } from "date-fns"
 import { useMutation, useQuery } from "@tanstack/react-query"
 
 import {
+  receitasApi,
+  type ReceitasFilters,
   ApiError,
   buildCotaSubAgenteVariacaoStreamRequest,
   coerceAgenteVariacaoRun,
@@ -19,11 +21,6 @@ import {
   type CoverageDay,
   type EvolucaoClasse,
   type EvolucaoGranularidade,
-  type DreBaseFilters,
-  type DreBreakdownFilters,
-  type DreDrillFornecedoresFilters,
-  type DrePivotFilters,
-  type DreRoaFilters,
 } from "@/lib/api-client"
 import {
   buildCoverageStripEntry,
@@ -71,16 +68,6 @@ const KEYS = {
   drillOrigem: (fundoId: string, data: string, linha: string) =>
     ["controladoria", "cota-sub", "drill", "origem", fundoId, data, linha] as const,
 
-  dreCompetencias: (f: DreBaseFilters) =>
-    ["controladoria", "dre", "competencias", f] as const,
-  drePivot: (f: DrePivotFilters) =>
-    ["controladoria", "dre", "pivot", f] as const,
-  dreFornecedores: (f: DreDrillFornecedoresFilters) =>
-    ["controladoria", "dre", "fornecedores", f] as const,
-  dreBreakdown: (f: DreBreakdownFilters) =>
-    ["controladoria", "dre", "breakdown", f] as const,
-  dreRoa: (f: DreRoaFilters) =>
-    ["controladoria", "dre", "roa", f] as const,
 }
 
 export function useDatasDisponiveis(
@@ -533,53 +520,6 @@ export function useCotaSubReadiness(
 // ── DRE — Demonstrativo do Resultado do Exercicio ──────────────────────────
 // Le silver wh_dre_mensal. fundoId aqui e INT (Bitfin), NAO UUID.
 
-export function useDreCompetencias(filters: DreBaseFilters = {}) {
-  return useQuery({
-    queryKey: KEYS.dreCompetencias(filters),
-    queryFn:  () => controladoria.dreCompetenciasDisponiveis(filters),
-    staleTime: 30 * 60 * 1000,  // ETL Bitfin nao roda toda hora
-  })
-}
-
-export function useDrePivot(filters: DrePivotFilters | null | undefined) {
-  return useQuery({
-    queryKey: KEYS.drePivot(filters ?? ({} as DrePivotFilters)),
-    queryFn:  () => controladoria.drePivot(filters!),
-    enabled:  !!filters?.competenciaDe && !!filters?.competenciaAte,
-    staleTime: 5 * 60 * 1000,
-  })
-}
-
-export function useDreFornecedores(
-  filters: DreDrillFornecedoresFilters | null | undefined,
-) {
-  return useQuery({
-    queryKey: KEYS.dreFornecedores(filters ?? ({} as DreDrillFornecedoresFilters)),
-    queryFn:  () => controladoria.dreDrillFornecedores(filters!),
-    enabled:
-      !!filters?.grupoDre && !!filters?.competenciaDe && !!filters?.competenciaAte,
-    staleTime: 5 * 60 * 1000,
-  })
-}
-
-export function useDreBreakdown(filters: DreBreakdownFilters | null | undefined) {
-  return useQuery({
-    queryKey: KEYS.dreBreakdown(filters ?? ({} as DreBreakdownFilters)),
-    queryFn:  () => controladoria.dreBreakdown(filters!),
-    enabled:  !!filters?.competencia && !!filters?.dim,
-    staleTime: 5 * 60 * 1000,
-  })
-}
-
-export function useDreRoa(filters: DreRoaFilters | null | undefined) {
-  return useQuery({
-    queryKey: KEYS.dreRoa(filters ?? ({} as DreRoaFilters)),
-    queryFn:  () => controladoria.dreRoa(filters!),
-    enabled:  !!filters?.competenciaDe && !!filters?.competenciaAte,
-    staleTime: 5 * 60 * 1000,
-  })
-}
-
 // ─── Agente IA · analista de variacao da Cota Sub Jr ─────────────────
 //
 // useMutation porque invoca LLM (side effect — grava em agent_analysis_run).
@@ -751,5 +691,55 @@ export function useConciliacaoBancoCobradorSyncStatus() {
     queryFn: () => controladoria.conciliacaoBancoCobradorSyncStatus(),
     refetchInterval: (query) =>
       query.state.data?.status === "running" ? 4000 : false,
+  })
+}
+
+
+// ── Receitas (3 metodos: caixa | competencia | acruo) ──────────────────────
+
+export function useReceitasResumo(filters: ReceitasFilters | null) {
+  return useQuery({
+    queryKey: ["controladoria", "receitas", "resumo", filters],
+    queryFn: () => receitasApi.resumo(filters as ReceitasFilters),
+    enabled: !!filters,
+  })
+}
+
+export function useReceitasDetalhe(filters: ReceitasFilters | null) {
+  return useQuery({
+    queryKey: ["controladoria", "receitas", "detalhe", filters],
+    queryFn: () => receitasApi.detalhe(filters as ReceitasFilters),
+    enabled: !!filters,
+  })
+}
+
+export function useReceitasCedentes(filters: ReceitasFilters | null) {
+  return useQuery({
+    queryKey: ["controladoria", "receitas", "cedentes", filters],
+    queryFn: () => receitasApi.cedentes(filters as ReceitasFilters),
+    enabled: !!filters,
+  })
+}
+
+export function useReceitasTitulos(
+  filters: (ReceitasFilters & { familia: string; stream: string }) | null,
+) {
+  return useQuery({
+    queryKey: ["controladoria", "receitas", "titulos", filters],
+    queryFn: () =>
+      receitasApi.titulos(
+        filters as ReceitasFilters & { familia: string; stream: string },
+      ),
+    enabled: !!filters,
+  })
+}
+
+export function useReceitasConferencias(
+  filters: Omit<ReceitasFilters, "metodo"> | null,
+) {
+  return useQuery({
+    queryKey: ["controladoria", "receitas", "conferencias", filters],
+    queryFn: () => receitasApi.conferencias(filters as Omit<ReceitasFilters, "metodo">),
+    enabled: !!filters,
   })
 }

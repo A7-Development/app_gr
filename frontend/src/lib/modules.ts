@@ -320,8 +320,7 @@ export const MODULES: ModuleDefinition[] = [
         enabled: true,
         icon: RiFileChartLine,
         children: [
-          { name: "DRE", href: "/controladoria/dre", enabled: true },
-          { name: "Receitas", href: "/controladoria/receitas", enabled: false },
+          { name: "Receitas", href: "/controladoria/receitas", enabled: true },
         ],
       },
       {

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -135,7 +135,7 @@ async def sync_catalog_for_provider(
         provider_id=provider_id,
         adapter_version=ADAPTER_VERSION,
         triggered_by=triggered_by,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         status=CatalogSyncStatus.IN_PROGRESS,
         credential_id=credential.id,
     )
@@ -166,7 +166,7 @@ async def sync_catalog_for_provider(
         run = await db.get(DataProviderCatalogSyncRun, sync_run_id)
         if run is not None:
             run.status = CatalogSyncStatus.OK
-            run.finished_at = datetime.now(timezone.utc)
+            run.finished_at = datetime.now(UTC)
             run.datasets_added = counters.added
             run.datasets_updated = counters.updated
             run.datasets_unchanged = counters.unchanged
@@ -250,7 +250,7 @@ async def _close_run_with_error(
         )
         return
     run.status = CatalogSyncStatus.ERROR
-    run.finished_at = datetime.now(timezone.utc)
+    run.finished_at = datetime.now(UTC)
     run.error_message = message[:8000]
     await db.commit()
 
@@ -265,7 +265,7 @@ def _dump_payload_to_file(path: str, result: PricingResult) -> None:
             "adapter_version": result.adapter_version,
             "status_code": result.status_code,
             "latency_ms": result.latency_ms,
-            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "captured_at": datetime.now(UTC).isoformat(),
         },
         "payload": result.payload,
     }

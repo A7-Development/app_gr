@@ -5530,459 +5530,6 @@ export const controladoria = {
     return coerceAgenteVariacaoRun(raw)
   },
 
-  // ── DRE — Demonstrativo do Resultado do Exercicio ─────────────────────
-  // Le silver wh_dre_mensal (populado pelo ETL Bitfin v2.0.0 + classifier).
-  // fundo_id e Integer (Bitfin.UnidadeAdministrativa.Id), NAO UUID — nao
-  // confundir com o fundoId UUID da cota-sub (QiTech).
-
-  dreCompetenciasDisponiveis: async (filters: DreBaseFilters = {}): Promise<string[]> => {
-    const params = _dreParams(filters)
-    return apiClient.get<string[]>(
-      `/controladoria/dre/competencias-disponiveis?${params.toString()}`,
-    )
-  },
-
-  drePivot: async (filters: DrePivotFilters): Promise<DrePivotResponse> => {
-    const params = _dreParams(filters)
-    params.set("competencia_de", filters.competenciaDe)
-    params.set("competencia_ate", filters.competenciaAte)
-    const raw = await apiClient.get<DrePivotResponseRaw>(
-      `/controladoria/dre/pivot?${params.toString()}`,
-    )
-    return _coerceDrePivot(raw)
-  },
-
-  dreDrillFornecedores: async (
-    filters: DreDrillFornecedoresFilters,
-  ): Promise<DreFornecedoresResponse> => {
-    const params = _dreParams(filters)
-    params.set("grupo_dre", filters.grupoDre)
-    params.set("competencia_de", filters.competenciaDe)
-    params.set("competencia_ate", filters.competenciaAte)
-    if (filters.subgrupo) params.set("subgrupo", filters.subgrupo)
-    if (filters.descricao) params.set("descricao", filters.descricao)
-    if (filters.top) params.set("top", String(filters.top))
-    const raw = await apiClient.get<DreFornecedoresResponseRaw>(
-      `/controladoria/dre/drill/fornecedores?${params.toString()}`,
-    )
-    return _coerceDreFornecedores(raw)
-  },
-
-  // Breakdown da receita de UM mes por dimensao (cedente/produto/subgrupo).
-  // Filtros entidadeId/subgrupo = drill (cruzar dimensoes).
-  dreBreakdown: async (
-    filters: DreBreakdownFilters,
-  ): Promise<DreBreakdownResponse> => {
-    const params = _dreParams(filters)
-    params.set("competencia", filters.competencia)
-    params.set("dim", filters.dim)
-    if (filters.entidadeId !== undefined)
-      params.set("entidade_id", String(filters.entidadeId))
-    if (filters.subgrupo) params.set("subgrupo", filters.subgrupo)
-    const raw = await apiClient.get<DreBreakdownResponseRaw>(
-      `/controladoria/dre/breakdown?${params.toString()}`,
-    )
-    return _coerceDreBreakdown(raw)
-  },
-
-  // ROA bruto 30d por competencia. Denominador (PL cotas/MEC ou PL debentures)
-  // decidido pelo backend conforme a estrutura de funding do fundo.
-  dreRoa: async (filters: DreRoaFilters): Promise<DreRoaResponse> => {
-    const params = _dreParams(filters)
-    params.set("competencia_de", filters.competenciaDe)
-    params.set("competencia_ate", filters.competenciaAte)
-    const raw = await apiClient.get<DreRoaResponseRaw>(
-      `/controladoria/dre/roa?${params.toString()}`,
-    )
-    return _coerceDreRoa(raw)
-  },
-}
-
-// ── DRE — Tipos + helpers ──────────────────────────────────────────────────
-
-export type DreBaseFilters = {
-  fundoId?:   number
-  produtoId?: number
-  fonte?:     string
-}
-
-export type DrePivotFilters = DreBaseFilters & {
-  competenciaDe:  string  // YYYY-MM-DD (1o dia do mes)
-  competenciaAte: string  // YYYY-MM-DD (1o dia do mes)
-}
-
-export type DreDrillFornecedoresFilters = DrePivotFilters & {
-  grupoDre:   string
-  subgrupo?:  string
-  descricao?: string
-  top?:       number
-}
-
-export type DreDimensao = "cedente" | "produto" | "subgrupo"
-
-export type DreBreakdownFilters = DreBaseFilters & {
-  competencia: string  // YYYY-MM-DD (1o dia do mes)
-  dim:         DreDimensao
-  entidadeId?: number  // drill: filtra um cedente
-  subgrupo?:   string  // drill
-}
-
-export type DreBreakdownRow = {
-  chave:     string
-  label:     string
-  receita:   number
-  custo:     number
-  resultado: number
-}
-
-export type DreBreakdownResponse = {
-  competencia:     string
-  dim:             DreDimensao
-  linhas:          DreBreakdownRow[]
-  totalReceita:    number
-  totalCusto:      number
-  totalResultado:  number
-}
-
-function _dreParams(f: DreBaseFilters): URLSearchParams {
-  const params = new URLSearchParams()
-  if (f.fundoId !== undefined)   params.set("fundo_id", String(f.fundoId))
-  if (f.produtoId !== undefined) params.set("produto_id", String(f.produtoId))
-  if (f.fonte)                   params.set("fonte", f.fonte)
-  return params
-}
-
-// Backend: Pydantic Decimal -> JSON string. Quantidade vem como number int.
-type DreCelulaRaw = {
-  competencia: string
-  receita:     number | string
-  custo:       number | string
-  resultado:   number | string
-  quantidade:  number
-}
-
-export type DreCelula = {
-  competencia: string  // YYYY-MM-DD
-  receita:     number
-  custo:       number
-  resultado:   number
-  quantidade:  number
-}
-
-type DreLinhaTotaisRaw = {
-  receita:    number | string
-  custo:      number | string
-  resultado:  number | string
-  quantidade: number
-}
-
-export type DreLinhaTotais = {
-  receita:    number
-  custo:      number
-  resultado:  number
-  quantidade: number
-}
-
-type DreFornecedorRaw = {
-  fornecedor:           string | null
-  fornecedor_documento: string | null
-  valores:              DreCelulaRaw[]
-  totais:               DreLinhaTotaisRaw
-}
-
-export type DreFornecedorNode = {
-  fornecedor:          string | null
-  fornecedorDocumento: string | null
-  valores:             DreCelula[]
-  totais:              DreLinhaTotais
-}
-
-type DreDescricaoRaw = {
-  descricao:    string
-  fornecedores: DreFornecedorRaw[]
-  valores:      DreCelulaRaw[]
-  totais:       DreLinhaTotaisRaw
-}
-
-export type DreDescricao = {
-  descricao:    string
-  fornecedores: DreFornecedorNode[]
-  valores:      DreCelula[]
-  totais:       DreLinhaTotais
-}
-
-type DreSubgrupoRaw = {
-  ordem_grupo: number
-  subgrupo:    string
-  descricoes:  DreDescricaoRaw[]
-  valores:     DreCelulaRaw[]
-  totais:      DreLinhaTotaisRaw
-}
-
-export type DreSubgrupo = {
-  ordemGrupo: number
-  subgrupo:   string
-  descricoes: DreDescricao[]
-  valores:    DreCelula[]
-  totais:     DreLinhaTotais
-}
-
-type DreGrupoRaw = {
-  grupo_dre:  string
-  subgrupos:  DreSubgrupoRaw[]
-  valores:    DreCelulaRaw[]
-  totais:     DreLinhaTotaisRaw
-}
-
-export type DreGrupo = {
-  grupoDre:  string
-  subgrupos: DreSubgrupo[]
-  valores:   DreCelula[]
-  totais:    DreLinhaTotais
-}
-
-type DrePivotResponseRaw = {
-  competencias:   string[]
-  grupos:         DreGrupoRaw[]
-  valores_total:  DreCelulaRaw[]
-  totais:         DreLinhaTotaisRaw
-}
-
-export type DrePivotResponse = {
-  competencias:  string[]
-  grupos:        DreGrupo[]
-  valoresTotal:  DreCelula[]
-  totais:        DreLinhaTotais
-}
-
-type DreFornecedorRowRaw = {
-  fornecedor:           string | null
-  fornecedor_documento: string | null
-  receita:              number | string
-  custo:                number | string
-  resultado:            number | string
-  quantidade:           number
-}
-
-export type DreFornecedorRow = {
-  fornecedor:          string | null
-  fornecedorDocumento: string | null
-  receita:             number
-  custo:               number
-  resultado:           number
-  quantidade:          number
-}
-
-type DreFornecedoresResponseRaw = {
-  grupo_dre:           string
-  subgrupo:            string | null
-  descricao:           string | null
-  competencia_de:      string
-  competencia_ate:     string
-  fornecedores:        DreFornecedorRowRaw[]
-  total_fornecedores:  number
-}
-
-export type DreFornecedoresResponse = {
-  grupoDre:           string
-  subgrupo:           string | null
-  descricao:          string | null
-  competenciaDe:      string
-  competenciaAte:     string
-  fornecedores:       DreFornecedorRow[]
-  totalFornecedores:  number
-}
-
-function _coerceDreCelula(r: DreCelulaRaw): DreCelula {
-  return {
-    competencia: r.competencia,
-    receita:     Number(r.receita),
-    custo:       Number(r.custo),
-    resultado:   Number(r.resultado),
-    quantidade:  r.quantidade,
-  }
-}
-
-function _coerceDreTotais(r: DreLinhaTotaisRaw): DreLinhaTotais {
-  return {
-    receita:    Number(r.receita),
-    custo:      Number(r.custo),
-    resultado:  Number(r.resultado),
-    quantidade: r.quantidade,
-  }
-}
-
-function _coerceDreFornecedor(r: DreFornecedorRaw): DreFornecedorNode {
-  return {
-    fornecedor:          r.fornecedor,
-    fornecedorDocumento: r.fornecedor_documento,
-    valores:             r.valores.map(_coerceDreCelula),
-    totais:              _coerceDreTotais(r.totais),
-  }
-}
-
-function _coerceDreDescricao(r: DreDescricaoRaw): DreDescricao {
-  return {
-    descricao:    r.descricao,
-    fornecedores: r.fornecedores.map(_coerceDreFornecedor),
-    valores:      r.valores.map(_coerceDreCelula),
-    totais:       _coerceDreTotais(r.totais),
-  }
-}
-
-function _coerceDreSubgrupo(r: DreSubgrupoRaw): DreSubgrupo {
-  return {
-    ordemGrupo: r.ordem_grupo,
-    subgrupo:   r.subgrupo,
-    descricoes: r.descricoes.map(_coerceDreDescricao),
-    valores:    r.valores.map(_coerceDreCelula),
-    totais:     _coerceDreTotais(r.totais),
-  }
-}
-
-function _coerceDreGrupo(r: DreGrupoRaw): DreGrupo {
-  return {
-    grupoDre:  r.grupo_dre,
-    subgrupos: r.subgrupos.map(_coerceDreSubgrupo),
-    valores:   r.valores.map(_coerceDreCelula),
-    totais:    _coerceDreTotais(r.totais),
-  }
-}
-
-function _coerceDrePivot(r: DrePivotResponseRaw): DrePivotResponse {
-  return {
-    competencias: r.competencias,
-    grupos:       r.grupos.map(_coerceDreGrupo),
-    valoresTotal: r.valores_total.map(_coerceDreCelula),
-    totais:       _coerceDreTotais(r.totais),
-  }
-}
-
-function _coerceDreFornecedores(r: DreFornecedoresResponseRaw): DreFornecedoresResponse {
-  return {
-    grupoDre:           r.grupo_dre,
-    subgrupo:           r.subgrupo,
-    descricao:          r.descricao,
-    competenciaDe:      r.competencia_de,
-    competenciaAte:     r.competencia_ate,
-    fornecedores: r.fornecedores.map((f) => ({
-      fornecedor:          f.fornecedor,
-      fornecedorDocumento: f.fornecedor_documento,
-      receita:             Number(f.receita),
-      custo:               Number(f.custo),
-      resultado:           Number(f.resultado),
-      quantidade:          f.quantidade,
-    })),
-    totalFornecedores: r.total_fornecedores,
-  }
-}
-
-type DreBreakdownRowRaw = {
-  chave:     string
-  label:     string
-  receita:   number | string
-  custo:     number | string
-  resultado: number | string
-}
-
-type DreBreakdownResponseRaw = {
-  competencia:     string
-  dim:             DreDimensao
-  linhas:          DreBreakdownRowRaw[]
-  total_receita:   number | string
-  total_custo:     number | string
-  total_resultado: number | string
-}
-
-function _coerceDreBreakdown(r: DreBreakdownResponseRaw): DreBreakdownResponse {
-  return {
-    competencia:    r.competencia,
-    dim:            r.dim,
-    linhas: r.linhas.map((l) => ({
-      chave:     l.chave,
-      label:     l.label,
-      receita:   Number(l.receita),
-      custo:     Number(l.custo),
-      resultado: Number(l.resultado),
-    })),
-    totalReceita:   Number(r.total_receita),
-    totalCusto:     Number(r.total_custo),
-    totalResultado: Number(r.total_resultado),
-  }
-}
-
-// ── DRE — ROA bruto 30d ────────────────────────────────────────────────────
-
-export type DreRoaFilters = DreBaseFilters & {
-  competenciaDe:  string  // YYYY-MM-DD (1o dia do mes)
-  competenciaAte: string  // YYYY-MM-DD (1o dia do mes)
-}
-
-type DreRoaCompetenciaRaw = {
-  competencia:           string
-  desagio:               number | string
-  prazo_medio:           number | string
-  desagio_30d:           number | string
-  demais_receitas:       number | string
-  numerador:             number | string
-  pl_cotas_medio:        number | string | null
-  pl_debentures_medio:   number | string | null
-  roa_cotas_30d:         number | string | null
-  roa_debentures_30d:    number | string | null
-  pl_debentures_origens: string[]
-}
-
-export type DreRoaCompetencia = {
-  competencia:          string
-  desagio:              number
-  prazoMedio:           number
-  desagio30d:           number
-  demaisReceitas:       number
-  numerador:            number
-  plCotasMedio:         number | null
-  plDebenturesMedio:    number | null
-  roaCotas30d:          number | null  // fracao (0.0347 = 3,47%)
-  roaDebentures30d:     number | null
-  plDebenturesOrigens:  string[]
-}
-
-type DreRoaResponseRaw = {
-  competencia_de:  string
-  competencia_ate: string
-  fundo_id:        number | null
-  competencias:    DreRoaCompetenciaRaw[]
-}
-
-export type DreRoaResponse = {
-  competenciaDe:  string
-  competenciaAte: string
-  fundoId:        number | null
-  competencias:   DreRoaCompetencia[]
-}
-
-function _numOrNull(v: number | string | null): number | null {
-  return v === null || v === undefined ? null : Number(v)
-}
-
-function _coerceDreRoa(r: DreRoaResponseRaw): DreRoaResponse {
-  return {
-    competenciaDe:  r.competencia_de,
-    competenciaAte: r.competencia_ate,
-    fundoId:        r.fundo_id,
-    competencias: r.competencias.map((c) => ({
-      competencia:         c.competencia,
-      desagio:             Number(c.desagio),
-      prazoMedio:          Number(c.prazo_medio),
-      desagio30d:          Number(c.desagio_30d),
-      demaisReceitas:      Number(c.demais_receitas),
-      numerador:           Number(c.numerador),
-      plCotasMedio:        _numOrNull(c.pl_cotas_medio),
-      plDebenturesMedio:   _numOrNull(c.pl_debentures_medio),
-      roaCotas30d:         _numOrNull(c.roa_cotas_30d),
-      roaDebentures30d:    _numOrNull(c.roa_debentures_30d),
-      plDebenturesOrigens: c.pl_debentures_origens ?? [],
-    })),
-  }
 }
 
 // ── Variacoes do Dia (auditoria de movimentos) ─────────────────────────────
@@ -6049,4 +5596,265 @@ function _coerceVariacaoItem(r: VariacaoItemRaw): VariacaoItem {
     descricao: r.descricao ?? null,
     valor:     Number(r.valor),
   }
+}
+
+// ── Receitas — 3 metodos de apuracao (caixa | competencia | acruo) ─────────
+// Catalogo de receitas caixa-fiel: wh_receita_caixa / wh_receita_operacional
+// / wh_receita_acruo_dia.
+
+export type ReceitasMetodo = "caixa" | "competencia" | "acruo"
+
+export type ReceitasFilters = {
+  metodo:         ReceitasMetodo
+  competenciaDe:  string  // YYYY-MM-01
+  competenciaAte: string  // YYYY-MM-01
+  fundoId?:       number
+}
+
+export type ReceitasKpis = {
+  total:            number
+  desagio:          number
+  mora:             number
+  tarifas:          number
+  recompraEncargos: number
+}
+
+export type ReceitasSerieMensalPonto = {
+  competencia: string
+  porFamilia:  Record<string, number>
+  total:       number
+}
+
+export type ReceitasComposicaoNatureza = { natureza: string; valor: number }
+
+export type ReceitasPonte = {
+  caixa:                 number
+  competencia:           number
+  acruo:                 number
+  deltaCompetenciaCaixa: number
+  deltaCompetenciaAcruo: number
+}
+
+export type ReceitasResumo = {
+  metodo:             ReceitasMetodo
+  kpis:               ReceitasKpis
+  serieMensal:        ReceitasSerieMensalPonto[]
+  composicaoNatureza: ReceitasComposicaoNatureza[]
+  ponte:              ReceitasPonte
+}
+
+export type ReceitaDetalheLinha = {
+  familia:  string
+  stream:   string
+  natureza: string
+  qtd:      number
+  valor:    number
+}
+
+export type ReceitasDetalhe = {
+  metodo: ReceitasMetodo
+  linhas: ReceitaDetalheLinha[]
+  total:  number
+}
+
+export type ReceitaCedenteLinha = {
+  cedenteNome:      string
+  cedenteDocumento: string | null
+  desagio:          number
+  mora:             number
+  tarifas:          number
+  demais:           number
+  total:            number
+  qtd:              number
+}
+
+export type ReceitasCedentes = {
+  metodo: ReceitasMetodo
+  linhas: ReceitaCedenteLinha[]
+  total:  number
+}
+
+export type ReceitaTituloLinha = {
+  data:                 string
+  tituloId:             number | null
+  documento:            string | null
+  cedenteNome:          string | null
+  natureza:             string
+  valor:                number
+  valorReferenciaRegua: number | null
+}
+
+export type ReceitasTitulos = {
+  metodo:  ReceitasMetodo
+  familia: string
+  stream:  string
+  linhas:  ReceitaTituloLinha[]
+  total:   number
+  qtd:     number
+}
+
+export type DescontoMoraCedente = {
+  cedenteNome:      string
+  cedenteDocumento: string | null
+  regua:            number
+  cobrado:          number
+  desconto:         number
+  perdoesTotais:    number
+  qtd:              number
+}
+
+export type ReceitasConferencias = {
+  competenciaDe:  string
+  competenciaAte: string
+  descontoMora:   DescontoMoraCedente[]
+  totalRegua:     number
+  totalCobrado:   number
+  totalDesconto:  number
+  totalPerdoes:   number
+}
+
+function _receitasParams(f: ReceitasFilters): URLSearchParams {
+  const p = new URLSearchParams({
+    metodo:          f.metodo,
+    competencia_de:  f.competenciaDe,
+    competencia_ate: f.competenciaAte,
+  })
+  if (f.fundoId !== undefined) p.set("fundo_id", String(f.fundoId))
+  return p
+}
+
+const _rcN = (v: number | string): number => Number(v)
+
+export const receitasApi = {
+  resumo: async (f: ReceitasFilters): Promise<ReceitasResumo> => {
+    type Raw = {
+      metodo: ReceitasMetodo
+      kpis: { total: string; desagio: string; mora: string; tarifas: string; recompra_encargos: string }
+      serie_mensal: { competencia: string; por_familia: Record<string, string>; total: string }[]
+      composicao_natureza: { natureza: string; valor: string }[]
+      ponte: { caixa: string; competencia: string; acruo: string; delta_competencia_caixa: string; delta_competencia_acruo: string }
+    }
+    const r = await apiClient.get<Raw>(
+      `/controladoria/receitas/resumo?${_receitasParams(f).toString()}`,
+    )
+    return {
+      metodo: r.metodo,
+      kpis: {
+        total: _rcN(r.kpis.total), desagio: _rcN(r.kpis.desagio), mora: _rcN(r.kpis.mora),
+        tarifas: _rcN(r.kpis.tarifas), recompraEncargos: _rcN(r.kpis.recompra_encargos),
+      },
+      serieMensal: r.serie_mensal.map((s) => ({
+        competencia: s.competencia,
+        porFamilia: Object.fromEntries(
+          Object.entries(s.por_familia).map(([k, v]) => [k, _rcN(v)]),
+        ),
+        total: _rcN(s.total),
+      })),
+      composicaoNatureza: r.composicao_natureza.map((c) => ({
+        natureza: c.natureza, valor: _rcN(c.valor),
+      })),
+      ponte: {
+        caixa: _rcN(r.ponte.caixa), competencia: _rcN(r.ponte.competencia),
+        acruo: _rcN(r.ponte.acruo),
+        deltaCompetenciaCaixa: _rcN(r.ponte.delta_competencia_caixa),
+        deltaCompetenciaAcruo: _rcN(r.ponte.delta_competencia_acruo),
+      },
+    }
+  },
+
+  detalhe: async (f: ReceitasFilters): Promise<ReceitasDetalhe> => {
+    type Raw = {
+      metodo: ReceitasMetodo
+      linhas: { familia: string; stream: string; natureza: string; qtd: number; valor: string }[]
+      total: string
+    }
+    const r = await apiClient.get<Raw>(
+      `/controladoria/receitas/detalhe?${_receitasParams(f).toString()}`,
+    )
+    return {
+      metodo: r.metodo,
+      linhas: r.linhas.map((l) => ({ ...l, valor: _rcN(l.valor) })),
+      total: _rcN(r.total),
+    }
+  },
+
+  cedentes: async (f: ReceitasFilters): Promise<ReceitasCedentes> => {
+    type Raw = {
+      metodo: ReceitasMetodo
+      linhas: { cedente_nome: string; cedente_documento: string | null; desagio: string; mora: string; tarifas: string; demais: string; total: string; qtd: number }[]
+      total: string
+    }
+    const r = await apiClient.get<Raw>(
+      `/controladoria/receitas/cedentes?${_receitasParams(f).toString()}`,
+    )
+    return {
+      metodo: r.metodo,
+      linhas: r.linhas.map((l) => ({
+        cedenteNome: l.cedente_nome, cedenteDocumento: l.cedente_documento,
+        desagio: _rcN(l.desagio), mora: _rcN(l.mora), tarifas: _rcN(l.tarifas),
+        demais: _rcN(l.demais), total: _rcN(l.total), qtd: l.qtd,
+      })),
+      total: _rcN(r.total),
+    }
+  },
+
+  titulos: async (
+    f: ReceitasFilters & { familia: string; stream: string },
+  ): Promise<ReceitasTitulos> => {
+    const p = _receitasParams(f)
+    p.set("familia", f.familia)
+    p.set("stream", f.stream)
+    type Raw = {
+      metodo: ReceitasMetodo
+      familia: string
+      stream: string
+      linhas: { data: string; titulo_id: number | null; documento: string | null; cedente_nome: string | null; natureza: string; valor: string; valor_referencia_regua: string | null }[]
+      total: string
+      qtd: number
+    }
+    const r = await apiClient.get<Raw>(
+      `/controladoria/receitas/titulos?${p.toString()}`,
+    )
+    return {
+      metodo: r.metodo, familia: r.familia, stream: r.stream,
+      linhas: r.linhas.map((l) => ({
+        data: l.data, tituloId: l.titulo_id, documento: l.documento,
+        cedenteNome: l.cedente_nome, natureza: l.natureza, valor: _rcN(l.valor),
+        valorReferenciaRegua:
+          l.valor_referencia_regua === null ? null : _rcN(l.valor_referencia_regua),
+      })),
+      total: _rcN(r.total), qtd: r.qtd,
+    }
+  },
+
+  conferencias: async (
+    f: Omit<ReceitasFilters, "metodo">,
+  ): Promise<ReceitasConferencias> => {
+    const p = new URLSearchParams({
+      competencia_de: f.competenciaDe, competencia_ate: f.competenciaAte,
+    })
+    if (f.fundoId !== undefined) p.set("fundo_id", String(f.fundoId))
+    type Raw = {
+      competencia_de: string
+      competencia_ate: string
+      desconto_mora: { cedente_nome: string; cedente_documento: string | null; regua: string; cobrado: string; desconto: string; perdoes_totais: number; qtd: number }[]
+      total_regua: string
+      total_cobrado: string
+      total_desconto: string
+      total_perdoes: number
+    }
+    const r = await apiClient.get<Raw>(
+      `/controladoria/receitas/conferencias?${p.toString()}`,
+    )
+    return {
+      competenciaDe: r.competencia_de, competenciaAte: r.competencia_ate,
+      descontoMora: r.desconto_mora.map((d) => ({
+        cedenteNome: d.cedente_nome, cedenteDocumento: d.cedente_documento,
+        regua: _rcN(d.regua), cobrado: _rcN(d.cobrado), desconto: _rcN(d.desconto),
+        perdoesTotais: d.perdoes_totais, qtd: d.qtd,
+      })),
+      totalRegua: _rcN(r.total_regua), totalCobrado: _rcN(r.total_cobrado),
+      totalDesconto: _rcN(r.total_desconto), totalPerdoes: r.total_perdoes,
+    }
+  },
 }

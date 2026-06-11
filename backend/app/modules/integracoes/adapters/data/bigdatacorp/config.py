@@ -33,7 +33,7 @@ class BigDataCorpConfig:
         return bool(self.access_token) and bool(self.token_id)
 
     @classmethod
-    def from_dict(cls, payload: dict) -> "BigDataCorpConfig":
+    def from_dict(cls, payload: dict) -> BigDataCorpConfig:
         """Materializa de um dict (envelope decifrado).
 
         Levanta `BigDataCorpConfigError` se faltar campo obrigatorio.
