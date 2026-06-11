@@ -546,6 +546,10 @@ SELECT
     sp.HistoricoDeLiquidacoesTotal AS hist_liquidacoes_valor,
     sp.HistoricoDeRecomprasQuantidade AS hist_recompras_qtd,
     sp.HistoricoDeRecomprasTotal AS hist_recompras_valor,
+    sp.PagamentosForaDaPracaDoSacadoTotal AS pagamentos_fora_praca_sacado,
+    sp.PagamentosNaPracaDoClienteTotal AS pagamentos_praca_cliente,
+    sp.PagamentosNaAgenciaDoClienteTotal AS pagamentos_agencia_cliente,
+    sp.PagamentosEmBancoDigitalTotal AS pagamentos_banco_digital,
     sp.IndiceDeLiquidez AS indice_liquidez,
     sp.VencimentarioDaLiquidez AS vencimentario_liquidez,
     sp.QtdeDeDiasDaLiquidez AS liquidez_qtde_dias,
@@ -725,4 +729,59 @@ WHERE o.Efetivada = 1
   AND o.Origem NOT IN (2, 4)
   AND r.Aplicado > 0
   AND o.DataDeEfetivacao >= ?
+"""
+
+
+# Relacao sacado x cedente (SacadoPosicaoCliente) — onde mora o sinal de
+# fraude de praca (divergencia concentrada num unico cedente).
+SELECT_POSICAO_SACADO_CEDENTE = """
+SELECT
+    spc.PosicaoId AS posicao_id,
+    spc.ContaOperacionalId AS conta_operacional_source_id,
+    s.SacadoId AS papel_source_id,
+    s.EntidadeId AS entidade_source_id,
+    cli.ClienteId AS cedente_papel_source_id,
+    cli.EntidadeId AS cedente_entidade_source_id,
+    spc.RiscoTotalQuantidade AS risco_total_qtd,
+    spc.RiscoTotalTotal AS risco_total_valor,
+    spc.RiscoVencidoQuantidade AS risco_vencido_qtd,
+    spc.RiscoVencidoTotal AS risco_vencido_valor,
+    spc.RiscoAVencerQuantidade AS risco_avencer_qtd,
+    spc.RiscoAVencerTotal AS risco_avencer_valor,
+    spc.TicketMedio AS ticket_medio,
+    spc.IndiceDeLiquidez AS indice_liquidez,
+    spc.HistoricoDeRecomprasQuantidade AS hist_recompras_qtd,
+    spc.HistoricoDeRecomprasTotal AS hist_recompras_valor,
+    spc.PagamentosForaDaPracaDoSacadoTotal AS pagamentos_fora_praca_sacado,
+    spc.PagamentosNaPracaDoClienteTotal AS pagamentos_praca_cliente,
+    spc.PagamentosNaAgenciaDoClienteTotal AS pagamentos_agencia_cliente,
+    spc.PagamentosEmBancoDigitalTotal AS pagamentos_banco_digital
+FROM dbo.SacadoPosicaoCliente spc
+INNER JOIN dbo.Sacado s
+    ON s.PosicaoId = spc.PosicaoId
+LEFT JOIN dbo.ContaOperacional co
+    ON co.ContaOperacionalId = spc.ContaOperacionalId
+LEFT JOIN dbo.Cliente cli
+    ON cli.ClienteId = co.ClienteId
+"""
+
+# Serie mensal de pagamentos por praca, por conta operacional (cedente).
+# 5 buckets somam o total pago do mes. Historico desde 2022-01.
+SELECT_PAGAMENTO_PRACA_MENSAL = """
+SELECT
+    php.ContaOperacionalId AS conta_operacional_source_id,
+    php.Ano AS ano,
+    php.Mes AS mes,
+    cli.ClienteId AS cedente_papel_source_id,
+    cli.EntidadeId AS cedente_entidade_source_id,
+    php.PagoNaPracaDoSacado AS pago_na_praca_sacado,
+    php.PagoForaDaPracaDoSacado AS pago_fora_praca_sacado,
+    php.PagoNaPracaDoCliente AS pago_na_praca_cliente,
+    php.PagoNaAgenciaDoCliente AS pago_na_agencia_cliente,
+    php.PagoEmBancoDigital AS pago_em_banco_digital
+FROM dbo.PosicaoHistoricaPagamentoPraca php
+LEFT JOIN dbo.ContaOperacional co
+    ON co.ContaOperacionalId = php.ContaOperacionalId
+LEFT JOIN dbo.Cliente cli
+    ON cli.ClienteId = co.ClienteId
 """

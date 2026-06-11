@@ -220,3 +220,144 @@ class WhPosicaoSacado(_PosicaoLiquidezMixin, _PosicaoRiscoMixin, Auditable, Base
     hist_recompras_valor: Mapped[Decimal | None] = mapped_column(
         Numeric(18, 4), nullable=True
     )
+
+    # Sinais de praca (risco de autoliquidacao) — consolidado do sacado
+    pagamentos_fora_praca_sacado: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+    pagamentos_praca_cliente: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+    pagamentos_agencia_cliente: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+    pagamentos_banco_digital: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+
+
+class WhPosicaoSacadoCedente(_PosicaoRiscoMixin, Auditable, Base):
+    """Posicao do sacado QUEBRADA POR CEDENTE (Bitfin SacadoPosicaoCliente).
+
+    A relacao N x N e onde mora o sinal de fraude de praca: divergencia de
+    pagamento concentrada num unico cedente (sacado "paga bem", mas so os
+    titulos daquele cedente, e sempre fora da praca) e o desenho classico
+    de autoliquidacao/lastro frio.
+
+    source_id = "<PosicaoId>:<ContaOperacionalId>".
+    """
+
+    __tablename__ = "wh_posicao_sacado_cedente"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "source_type", "source_id",
+            name="uq_wh_posicao_sacado_cedente",
+        ),
+        Index("ix_wh_pos_sac_ced_sacado", "tenant_id", "entidade_id"),
+        Index("ix_wh_pos_sac_ced_cedente", "tenant_id", "cedente_entidade_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Sacado (lado "dono" da posicao)
+    entidade_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("wh_entidade.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    papel_source_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # Cedente (lado da relacao)
+    cedente_entidade_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("wh_entidade.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    cedente_papel_source_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    conta_operacional_source_id: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    ticket_medio: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    indice_liquidez: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    hist_recompras_qtd: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hist_recompras_valor: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+
+    # Sinais de praca (risco de autoliquidacao)
+    pagamentos_fora_praca_sacado: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+    pagamentos_praca_cliente: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+    pagamentos_agencia_cliente: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+    pagamentos_banco_digital: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+
+
+class WhPagamentoPracaMensal(Auditable, Base):
+    """Serie mensal de pagamentos por praca, por conta operacional/cedente
+    (Bitfin PosicaoHistoricaPagamentoPraca, 2022-01 em diante).
+
+    Tendencia: cedente cuja fracao fora-de-praca cresce mes a mes e alerta
+    de risco ANTES do estouro. Os 5 buckets somam o total pago do mes.
+
+    source_id = "<ContaOperacionalId>:<Ano>-<Mes>".
+    """
+
+    __tablename__ = "wh_pagamento_praca_mensal"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "source_type", "source_id",
+            name="uq_wh_pagamento_praca_mensal",
+        ),
+        Index(
+            "ix_wh_pag_praca_cedente_mes",
+            "tenant_id", "cedente_entidade_id", "ano", "mes",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    cedente_entidade_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("wh_entidade.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    cedente_papel_source_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    conta_operacional_source_id: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    ano: Mapped[int] = mapped_column(Integer, nullable=False)
+    mes: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    pago_na_praca_sacado: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+    pago_fora_praca_sacado: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+    pago_na_praca_cliente: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+    pago_na_agencia_cliente: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+    pago_em_banco_digital: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
