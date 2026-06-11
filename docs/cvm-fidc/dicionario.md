@@ -235,6 +235,15 @@ no REALINVEST (FAT/desconto puro — juros so em credito com fluxo).
 **Indicador candidato**: "taxa media de aquisicao" comparavel entre fundos do
 mesmo setor (tab_ii) — o PRICING do mercado, unico lugar publico onde aparece.
 
+**Ocupacao (2026-04, 4.102 fundos) + gotchas**: colunas sao TEXT (parse como o
+SCR). Preenchem: a1 desconto-compra DC risco **1.074** fundos (mediana do
+mercado **28,5% a.a.** ≈ 2,11% a.m.); a2 juros-compra **480** (credito com
+fluxo — consignado/CCB reportam JUROS em vez de desconto: olhar a1 E a2);
+b1 sem-risco 727; b2 243; vendas raras (38); TPF 307 / outras RF 146 / VM 37 /
+**CDB 0**. GOTCHAS de qualidade: outliers de anualizacao de prazo curtissimo
+(REALINVEST b1 max 7.008% a.a.) e valores residuais tipo 0,05/0,1 em TPF/venda
+— winsorizar (ex.: cap p99 ou filtrar > ~500% a.a.) antes de agregar.
+
 ## Resumo por tabela
 
 | Tabela | Granularidade | Serve para... |
