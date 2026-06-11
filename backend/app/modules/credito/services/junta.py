@@ -48,16 +48,32 @@ def _digits(raw: Any) -> str:
 
 
 def _registro_of(doc: dict[str, Any]) -> str | None:
-    for key in ("registro", "numero", "protocolo"):
+    # "numdoc" e a chave oficial dos arquivamentos JUCESP (doc Infosimples);
+    # as demais cobrem variacoes de layout da lista de digitalizados.
+    for key in ("numdoc", "registro", "numero", "protocolo"):
         value = doc.get(key)
         if value is not None and str(value).strip():
             return str(value).strip()
     return None
 
 
+def _searchable_text(doc: dict[str, Any]) -> str:
+    """descricao + tipos de eventos do arquivamento, num blob pro regex."""
+    parts = [str(doc.get("descricao") or ""), str(doc.get("tipo") or "")]
+    eventos = doc.get("eventos")
+    if isinstance(eventos, list):
+        parts.extend(
+            str(e.get("tipo") or "") for e in eventos if isinstance(e, dict)
+        )
+    return " ".join(p for p in parts if p)
+
+
 def _sort_key(doc: dict[str, Any]) -> tuple:
     """Mais recente primeiro: data (dd/mm/aaaa) > registro numérico."""
-    raw_date = str(doc.get("digitalizacao") or doc.get("data") or "")
+    # "sessao" e a data oficial do arquivamento na JUCESP (dd/mm/aaaa).
+    raw_date = str(
+        doc.get("sessao") or doc.get("digitalizacao") or doc.get("data") or ""
+    )
     m = re.match(r"^(\d{2})/(\d{2})/(\d{4})", raw_date)
     date_key = (m.group(3), m.group(2), m.group(1)) if m else ("0", "0", "0")
     reg = _digits(_registro_of(doc) or "")
@@ -69,7 +85,7 @@ def _pick_latest_societario(docs: list[dict[str, Any]]) -> dict[str, Any] | None
     societarios = [
         d
         for d in docs
-        if _DOC_SOCIETARIO_RE.search(str(d.get("descricao") or "")) and _registro_of(d)
+        if _DOC_SOCIETARIO_RE.search(_searchable_text(d)) and _registro_of(d)
     ]
     pool = societarios or [d for d in docs if _registro_of(d)]
     if not pool:
