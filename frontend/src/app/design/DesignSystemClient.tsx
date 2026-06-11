@@ -14,7 +14,7 @@ import { tokens } from "@/design-system/tokens"
 import { StatusPill, type StatusKey } from "@/design-system/components/StatusPill"
 import { ApprovalQueueBadge } from "@/design-system/components/ApprovalQueueBadge"
 import { KpiCard, KpiStrip, FIDC_KPI_META } from "@/design-system/components/KpiStrip"
-import { KpiTile } from "@/design-system/components/KpiTile"
+import { KpiBand } from "@/design-system/components/KpiBand"
 import { FilterBar, FilterChip, FilterSearch, RemovableChip } from "@/design-system/components/FilterBar"
 import { InsightStrip } from "@/design-system/components/InsightStrip"
 import { DrillDownSheet } from "@/design-system/components/DrillDownSheet"
@@ -231,18 +231,22 @@ export function DesignSystemClient() {
               </div>
             </Card>
 
-            <Card title="KpiTile — KPI CANONICO Strata (anatomia cota-sub/headerKpi, decisao 2026-06-12)">
+            <Card title="KpiBand — banda de KPI CANONICA Strata (decisao Ricardo 2026-06-12)">
               <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
-                Eyebrow uppercase 11px · valor 20px tabular + delta inline · caption curta.
-                Use em grid de tiles quando o KPI nao tem grafico dono; quando tem, use o
-                headerKpi do EChartsCard (mesma anatomia). Sem sparkline, sem strip compartilhada.
+                UMA banda continua (nao cards individuais): eyebrow 10px uppercase ·
+                valor 22px semibold NEUTRO · delta 12px colorido (tone) · sub 12px gray ·
+                divider parcial entre colunas. KPI cujo numero e de um grafico usa o
+                headerKpi do proprio chart (mesma familia visual). Familia cota-sub
+                (CotaSubStatusBand e a variante local com pills de status).
               </p>
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <KpiTile label="Receita total" value="R$ 1,3 mi" delta={{ value: 4.2, suffix: "%" }} deltaSub="vs mês anterior" caption="método caixa" />
-                <KpiTile label="Mora (juros + multa)" value="R$ 189,4 mil" delta={{ value: 12.4, suffix: "%", good: false }} deltaSub="vs mês anterior" caption="todas as famílias" />
-                <KpiTile label="Prazo médio" value="32 d" caption="ponderado por face" />
-                <KpiTile label="Perdões totais" value="245" caption="mora 100% perdoada" />
-              </div>
+              <KpiBand
+                items={[
+                  { eyebrow: "PL Sub (MEC) · 10/06/2026", value: "R$ 4,57 mi" },
+                  { eyebrow: "Variação do dia", value: "+R$ 32,8 mil", delta: { value: "+0,72%", tone: "positive" }, sub: "vs D-1" },
+                  { eyebrow: "Mora do mês", value: "R$ 189,4 mil", delta: { value: "+12,4%", tone: "negative" }, sub: "vs mês ant." },
+                  { eyebrow: "Perdões totais", value: "245" },
+                ]}
+              />
             </Card>
 
             <Card title="KpiStrip — legado (so para Metricas Complementares / paginas-resumo com sparkline)">
