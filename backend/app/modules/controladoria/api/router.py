@@ -7,6 +7,7 @@ from app.modules.controladoria.api import (
     cota_sub,
     evolucao_patrimonial,
     qitech_estoque_carteira,
+    receitas,
     reports,
 )
 
@@ -17,6 +18,10 @@ router.include_router(cota_sub.router)
 
 # L2 Evolucao Patrimonial — serie temporal do PL do passivo (todas as classes).
 router.include_router(evolucao_patrimonial.router)
+
+# L2 Receitas — 3 metodos de apuracao (caixa | competencia | acruo) sobre o
+# catalogo de receitas caixa-fiel (wh_receita_*).
+router.include_router(receitas.router)
 
 
 # L2 Relatorios — catalogo unico de relatorios das administradoras (QiTech, ...).

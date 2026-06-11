@@ -10,6 +10,8 @@ import { differenceInCalendarDays, parseISO } from "date-fns"
 import { useMutation, useQuery } from "@tanstack/react-query"
 
 import {
+  receitasApi,
+  type ReceitasFilters,
   ApiError,
   buildCotaSubAgenteVariacaoStreamRequest,
   coerceAgenteVariacaoRun,
@@ -689,5 +691,55 @@ export function useConciliacaoBancoCobradorSyncStatus() {
     queryFn: () => controladoria.conciliacaoBancoCobradorSyncStatus(),
     refetchInterval: (query) =>
       query.state.data?.status === "running" ? 4000 : false,
+  })
+}
+
+
+// ── Receitas (3 metodos: caixa | competencia | acruo) ──────────────────────
+
+export function useReceitasResumo(filters: ReceitasFilters | null) {
+  return useQuery({
+    queryKey: ["controladoria", "receitas", "resumo", filters],
+    queryFn: () => receitasApi.resumo(filters as ReceitasFilters),
+    enabled: !!filters,
+  })
+}
+
+export function useReceitasDetalhe(filters: ReceitasFilters | null) {
+  return useQuery({
+    queryKey: ["controladoria", "receitas", "detalhe", filters],
+    queryFn: () => receitasApi.detalhe(filters as ReceitasFilters),
+    enabled: !!filters,
+  })
+}
+
+export function useReceitasCedentes(filters: ReceitasFilters | null) {
+  return useQuery({
+    queryKey: ["controladoria", "receitas", "cedentes", filters],
+    queryFn: () => receitasApi.cedentes(filters as ReceitasFilters),
+    enabled: !!filters,
+  })
+}
+
+export function useReceitasTitulos(
+  filters: (ReceitasFilters & { familia: string; stream: string }) | null,
+) {
+  return useQuery({
+    queryKey: ["controladoria", "receitas", "titulos", filters],
+    queryFn: () =>
+      receitasApi.titulos(
+        filters as ReceitasFilters & { familia: string; stream: string },
+      ),
+    enabled: !!filters,
+  })
+}
+
+export function useReceitasConferencias(
+  filters: Omit<ReceitasFilters, "metodo"> | null,
+) {
+  return useQuery({
+    queryKey: ["controladoria", "receitas", "conferencias", filters],
+    queryFn: () => receitasApi.conferencias(filters as Omit<ReceitasFilters, "metodo">),
+    enabled: !!filters,
   })
 }
