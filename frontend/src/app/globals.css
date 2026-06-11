@@ -26,6 +26,19 @@
   --animate-drawer-slide-left-and-fade: drawerSlideLeftAndFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-drawer-slide-right-and-fade: drawerSlideRightAndFade 150ms ease-in;
 
+  /* Pulso do dot indigo de agente ativo (esteira de credito, handoff
+   * Conceito D — ciclo 1,2s). Usar via motion-safe:animate-agent-pulse. */
+  --animate-agent-pulse: agentPulse 1.2s ease-in-out infinite;
+
+  @keyframes agentPulse {
+    0%, 100% {
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+    }
+    50% {
+      box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.08);
+    }
+  }
+
   @keyframes hide {
     from {
       opacity: 1;

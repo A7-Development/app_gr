@@ -231,3 +231,41 @@ export {
   ConcentracaoDeltaCard,
   type ConcentracaoDeltaCardProps,
 } from "./ConcentracaoDeltaCard"
+
+// ── Esteira de crédito — Conceito D (handoff 2026-06-10) ────────────────────
+// Linguagem de proveniência (4 assinaturas) + chassi de estação.
+export {
+  ProvenanceChip,
+  ProvenanceTile,
+  ProvenanceSup,
+  ProvenanceValue,
+  PROVENANCE_ICON,
+  type ProvenanceChipProps,
+  type ProvenanceOrigin,
+} from "./Provenance"
+export { AgentConclusion, type AgentConclusionProps } from "./AgentConclusion"
+export { DiffRemoved, DiffInserted, PreviousValue } from "./DiffText"
+export { AgentLiveChip, AgentPulseDot, type AgentLiveChipProps } from "./AgentLiveChip"
+export {
+  StationStateChip,
+  type StationStateChipProps,
+  type StationStateChipVariant,
+} from "./StationStateChip"
+export { ClosureBar, type ClosureBarProps, type ClosureBarState } from "./ClosureBar"
+export {
+  KpiChartCard,
+  type KpiChartCardProps,
+  type KpiChartDatum,
+} from "./KpiChartCard"
+export { FocusRail, type FocusRailItem, type FocusRailProps } from "./FocusRail"
+export {
+  StationsSidebar,
+  type StationItem,
+  type StationState,
+  type StationsSidebarProps,
+} from "./StationsSidebar"
+export {
+  StationHeader,
+  type StationHeaderProps,
+  type StationSubstep,
+} from "./StationHeader"
