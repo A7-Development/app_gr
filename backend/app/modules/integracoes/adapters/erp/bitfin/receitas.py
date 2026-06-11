@@ -340,7 +340,12 @@ async def _upsert_receitas(tenant_id: UUID, mapped: list[dict]) -> int:
                 source_updated_at.day,
                 tzinfo=UTC,
             )
-        rows.append({**m, **_provenance(source_id, m, source_updated_at)})
+        # Hash da ORIGEM de negocio: exclui tenant_id (UUID asyncpg nao e
+        # JSON-serializavel no sha256_of_row e nao e payload da fonte).
+        hash_payload = {k: v for k, v in m.items() if k != "tenant_id"}
+        rows.append(
+            {**m, **_provenance(source_id, hash_payload, source_updated_at)}
+        )
     async with AsyncSessionLocal() as db:
         return await _bulk_upsert(
             db, ReceitaOperacional, rows, ["tenant_id", "source_id"]
