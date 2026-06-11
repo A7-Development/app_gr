@@ -557,3 +557,122 @@ FROM dbo.SacadoPosicao sp
 INNER JOIN dbo.Sacado s
     ON s.PosicaoId = sp.PosicaoId
 """
+
+
+# ---- Catalogo de receitas operacionais (caixa-fiel) ----
+# Fontes que refletem liquidacao financeira REAL — nunca a
+# DemonstrativoDeResultado (mora teorica). Consumidas por receitas.py,
+# dirigidas pelo catalogo wh_bitfin_receita_stream.
+
+# Mora paga na liquidacao do titulo. Espelha o filtro da proc
+# DemonstrativoDeResultados (DM/DS/NP, produto de risco, pago apos o
+# vencimento efetivo) mas captura o CAIXA (ValorDoPagamento - ValorLiquido),
+# nao o teorico. Percentuais do ProcedimentoDeCobranca vem como PARAMETRO
+# para o split juros x multa (LEFT JOIN: titulo sem procedimento -> split
+# 100% juros). `dias_atraso` contra o vencimento ORIGINAL (convencao da
+# proc e do acruo).
+SELECT_RECEITA_MORA_TITULO = """
+SELECT
+    t.TituloId AS titulo_id,
+    t.Numero AS documento,
+    CONVERT(date, t.DataDaSituacao) AS data_evento,
+    t.ValorLiquido AS valor_liquido,
+    t.ValorDoPagamento AS valor_do_pagamento,
+    DATEDIFF(DAY, t.DataDeVencimento, CONVERT(date, t.DataDaSituacao)) AS dias_atraso,
+    pc.PercentualDeMultaPorAtraso AS pct_multa,
+    pc.PercentualDeJurosDeMora AS pct_juros,
+    t.UnidadeAdministrativaId AS unidade_administrativa_id,
+    co.ProdutoId AS produto_id,
+    ce.EntidadeId AS cedente_entidade_id,
+    ce.Nome AS cedente_nome,
+    ce.Documento AS cedente_documento,
+    se.Nome AS sacado_nome,
+    se.Documento AS sacado_documento
+FROM dbo.Titulo t
+INNER JOIN dbo.ContaOperacional co ON co.ContaOperacionalId = t.ContaOperacionalId
+INNER JOIN dbo.Produto p ON p.ProdutoId = co.ProdutoId
+LEFT JOIN dbo.ProcedimentoDeCobranca pc ON pc.TituloId = t.TituloId
+LEFT JOIN dbo.Cliente cli ON cli.ClienteId = co.ClienteId
+LEFT JOIN dbo.Entidade ce ON ce.EntidadeId = cli.EntidadeId
+LEFT JOIN dbo.Sacado sa ON sa.SacadoId = t.SacadoId
+LEFT JOIN dbo.Entidade se ON se.EntidadeId = sa.EntidadeId
+WHERE t.Situacao = 1
+  AND t.Sigla IN ('DM', 'DS', 'NP')
+  AND p.ProdutoDeRisco = 1
+  AND t.ValorDoPagamento > t.ValorLiquido
+  AND CONVERT(date, t.DataDaSituacao) > CONVERT(date, t.DataDeVencimentoEfetiva)
+  AND t.DataDaSituacao >= ?
+"""
+
+# Lancamentos de receita na conta grafica. `{codes}` e preenchido em runtime
+# com placeholders (?) — os codigos vem do catalogo de streams, nunca
+# hardcoded aqui. So debitos (Valor < 0 = cobranca ao cliente = receita);
+# estornados excluidos (mesma regra da proc DemonstrativoDeResultados).
+# UA/cliente via OUTER APPLY TOP 1 — a mesma ContaCorrente pode ter N
+# ContaOperacional (uma por produto); sem o TOP 1 o join duplicaria o
+# lancamento. ProdutoId fica NULL de proposito (ambiguo nesse grao).
+SELECT_RECEITA_GRAFICA_TEMPLATE = """
+SELECT
+    l.LancamentoId AS lancamento_id,
+    CONVERT(date, l.Data) AS data_evento,
+    l.Valor AS valor,
+    l.Codigo AS codigo,
+    l.Descricao AS descricao,
+    l.ComplementoInterno AS complemento_interno,
+    oa.UnidadeAdministrativaId AS unidade_administrativa_id,
+    oa.EntidadeId AS cedente_entidade_id,
+    oa.Nome AS cedente_nome,
+    oa.Documento AS cedente_documento
+FROM dbo.ContaCorrenteLancamento l
+OUTER APPLY (
+    SELECT TOP 1
+        co.UnidadeAdministrativaId,
+        ce.EntidadeId,
+        ce.Nome,
+        ce.Documento
+    FROM dbo.ContaOperacional co
+    LEFT JOIN dbo.Cliente cli ON cli.ClienteId = co.ClienteId
+    LEFT JOIN dbo.Entidade ce ON ce.EntidadeId = cli.EntidadeId
+    WHERE co.ContaCorrenteId = l.ContaCorrenteId
+    ORDER BY co.ContaOperacionalId
+) oa
+WHERE l.Codigo IN ({codes})
+  AND l.Valor < 0
+  AND l.Data >= ?
+  AND l.LancamentoId NOT IN (
+      SELECT IdentificadorDoLancamento
+      FROM dbo.RequerimentoContaOperacionalEstornoLancamento
+  )
+"""
+
+# Juros/multa/desagio de recompra, POR TITULO (RecompraItem), apenas
+# recompras efetivadas (liquidacao financeira via PagamentoOperacional —
+# tipicamente netting contra o liquido de operacao nova).
+SELECT_RECEITA_RECOMPRA = """
+SELECT
+    i.RecompraId AS recompra_id,
+    i.TituloId AS titulo_id,
+    t.Numero AS documento,
+    CONVERT(date, r.DataDeEfetivacao) AS data_evento,
+    i.ValorDeJuros AS valor_de_juros,
+    i.ValorDeMulta AS valor_de_multa,
+    i.ValorDeDesagio AS valor_de_desagio,
+    r.UnidadeAdministrativaId AS unidade_administrativa_id,
+    co.ProdutoId AS produto_id,
+    ce.EntidadeId AS cedente_entidade_id,
+    ce.Nome AS cedente_nome,
+    ce.Documento AS cedente_documento,
+    se.Nome AS sacado_nome,
+    se.Documento AS sacado_documento
+FROM dbo.RecompraItem i
+INNER JOIN dbo.Recompra r ON r.RecompraId = i.RecompraId
+LEFT JOIN dbo.ContaOperacional co ON co.ContaOperacionalId = r.ContaOperacionalId
+LEFT JOIN dbo.Cliente cli ON cli.ClienteId = co.ClienteId
+LEFT JOIN dbo.Entidade ce ON ce.EntidadeId = cli.EntidadeId
+LEFT JOIN dbo.Titulo t ON t.TituloId = i.TituloId
+LEFT JOIN dbo.Sacado sa ON sa.SacadoId = t.SacadoId
+LEFT JOIN dbo.Entidade se ON se.EntidadeId = sa.EntidadeId
+WHERE r.Efetivada = 1
+  AND r.DataDeEfetivacao >= ?
+  AND (i.ValorDeJuros > 0 OR i.ValorDeMulta > 0 OR i.ValorDeDesagio > 0)
+"""
