@@ -664,16 +664,35 @@ function EditorBody({
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [canEdit, selectedNodeId, selectedEdgeId, setNodes, setEdges])
 
-  // ─── Save (PATCH → new version) ──────────────────────────────────────
+  // ─── Save (PATCH → new version; template Strata → cria copia do tenant) ──
+  //
+  // Template global (tenant_id NULL) e imutavel por design — o PATCH recusa
+  // com 404. Salvar a partir de um template cria um playbook NOVO do tenant
+  // com o grafo editado (POST /workflows) e redireciona pro editor da copia.
+  const isTemplate = workflow.tenant_id === null
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      credito.workflows.update(workflow.id, {
-        graph: reactFlowToGraph(nodes, edges),
+    mutationFn: () => {
+      const graph = reactFlowToGraph(nodes, edges)
+      if (isTemplate) {
+        return credito.workflows.create({
+          name: `${workflow.name} (copia)`,
+          description: workflow.description,
+          category: workflow.category,
+          graph,
+        })
+      }
+      return credito.workflows.update(workflow.id, {
+        graph,
         description: workflow.description,
-      }),
+      })
+    },
     onSuccess: (newWorkflow) => {
-      toast.success(`Salvo como v${newWorkflow.version}.`)
+      toast.success(
+        isTemplate
+          ? `Template e imutavel — salvo como copia sua: "${newWorkflow.name}".`
+          : `Salvo como v${newWorkflow.version}.`,
+      )
       queryClient.invalidateQueries({ queryKey: ["credito", "workflow"] })
       queryClient.invalidateQueries({ queryKey: ["credito", "workflows"] })
       router.push(`/credito/workflows/${newWorkflow.id}/editor`)
@@ -815,11 +834,13 @@ function EditorBody({
                 title={
                   !dirty
                     ? "Nenhuma mudanca pra salvar"
-                    : "Salva uma nova versao em rascunho com o estado atual"
+                    : isTemplate
+                      ? "Template Strata e imutavel — salvar cria uma copia editavel sua"
+                      : "Salva uma nova versao em rascunho com o estado atual"
                 }
               >
                 <RiSaveLine className="size-4" aria-hidden />
-                {glossary.saveAsNewVersion}
+                {isTemplate ? "Salvar como copia" : glossary.saveAsNewVersion}
               </Button>
               <Button variant="ghost" onClick={onBack}>
                 <RiArrowLeftLine className="size-4" aria-hidden />
