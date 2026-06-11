@@ -7,20 +7,31 @@
  * `<EntidadeLink />`) e abre o resumo da entidade SOBRE qualquer pagina —
  * a analise em curso continua atras (abrir = push; voltar fecha).
  *
- * Blocos (design validado 2026-06-10):
- *   Hero (identidade + papeis + RJ) ->
- *   Carteira Ativa [F1] -> Limites aprovados [F1, so cedente] ->
- *   Performance [F1] -> Consultas financeiras (Serasa, REAL hoje) ->
- *   Operacoes 12M (REAL, so cedente) -> Grupo economico -> Estabelecimentos.
- *
- * Blocos F1 mostram empty state de dominio ("aguardando posicoes") — a secao
- * existe e comunica o que vira, nunca quebra (§14.6 espirito: nada some).
- * Botao "Abrir ficha completa" entra quando a rota dedicada for construida.
+ * LINGUAGEM VISUAL (pedido Ricardo 2026-06-11): mesma gramatica dos drills da
+ * Cota Sub (DrillDcContent + drillKit) — Hero com titulo/KPIs/subtitulo,
+ * secoes com titulo icone+help+fonte, `DataTable` canonica density="ultra"
+ * com rodape de totais (renderFooter), cards bordados com eyebrow. Os helpers
+ * do drillKit sao replicados localmente porque design-system nao pode
+ * importar de app/<dominio> (§3) — manter visualmente identicos ao kit.
  */
 
 import { useQuery } from "@tanstack/react-query"
 import { useQueryState } from "nuqs"
 import * as React from "react"
+import {
+  createColumnHelper,
+  type ColumnDef,
+} from "@tanstack/react-table"
+import {
+  RiBuilding2Line,
+  RiCommunityLine,
+  RiExchangeFundsLine,
+  RiFileSearchLine,
+  RiPulseLine,
+  RiShieldCheckLine,
+  RiWallet3Line,
+  type RemixiconComponentType,
+} from "@remixicon/react"
 
 import { Badge } from "@/components/tremor/Badge"
 import {
@@ -28,15 +39,91 @@ import {
   cadastrosEntidades,
   type CarteiraAtivaLinha,
   type EntidadeBureauResumo,
+  type EntidadeEstabelecimento,
+  type EntidadeGrupoMembro,
   type LimiteProduto,
+  type Operacoes5OperacaoItem,
   type PerformanceResumo,
 } from "@/lib/api-client"
 import { cx } from "@/lib/utils"
-import { DrillDownSheet } from "@/design-system/components/DrillDownSheet"
+import { DataTable } from "@/design-system/components/DataTable"
+import { DrillDownSheet, type HeroKpi } from "@/design-system/components/DrillDownSheet"
 import { EntidadeLink } from "@/design-system/components/EntidadeLink"
 import { StrataConclusaoBadge } from "@/design-system/components/StrataConclusaoBadge"
 import { fmt, fmtCNPJ, fmtDate, caption } from "@/design-system/tokens/typography"
 import { tableTokens } from "@/design-system/tokens/table"
+
+// ── Gramatica visual dos drills (replica local do drillKit da Cota Sub) ─────
+
+const fmtBRL = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+/** Props compartilhadas das DataTables do peek — todas ultra, sem toolbar,
+ *  container bordado (identico ao DT_PROPS do DrillDcContent). */
+const DT_PROPS = {
+  density: "ultra",
+  virtualize: false,
+  showColumnManager: false,
+  showDensityToggle: false,
+  showExport: false,
+  className: "rounded border border-gray-200 dark:border-gray-800",
+} as const
+
+/** Linha de rodape (tfoot) com total — mesma classe do drill DC. */
+const FOOT_ROW = "border-t-2 border-t-gray-300 dark:border-t-gray-700"
+
+/** Titulo de secao do drill (icone + label + help + fonte a direita). */
+function SectionTitle({
+  icon: Icon,
+  label,
+  counter,
+  help,
+}: {
+  icon: RemixiconComponentType
+  label: string
+  counter?: React.ReactNode
+  help?: string
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <h4 className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-700 dark:text-gray-300">
+        <Icon className="size-3.5 text-gray-400 dark:text-gray-500" aria-hidden />
+        {label}
+        {help && (
+          <span
+            className="cursor-help text-[10px] font-normal normal-case tracking-normal text-gray-400 dark:text-gray-600"
+            title={help}
+          >
+            (?)
+          </span>
+        )}
+      </h4>
+      {counter != null && counter !== "" && (
+        <span className="text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
+          {counter}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function NumCell({ value, strong }: { value: number; strong?: boolean }) {
+  return (
+    <div
+      className={cx(
+        "text-right",
+        strong ? tableTokens.cellStrong : tableTokens.cellNumber,
+        strong && "tabular-nums",
+      )}
+    >
+      {fmtBRL.format(value)}
+    </div>
+  )
+}
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -55,6 +142,10 @@ const PAPEL_LABEL: Record<string, string> = {
   avalista: "AVALISTA",
   socio: "SÓCIO",
   fornecedor: "FORNECEDOR",
+}
+
+function pct(v: number, digits = 0): string {
+  return `${v.toLocaleString("pt-BR", { maximumFractionDigits: digits })}%`
 }
 
 // ── componente ───────────────────────────────────────────────────────────────
@@ -93,6 +184,39 @@ export function EntidadePeek() {
   const outrosEstabelecimentos =
     resumo?.estabelecimentos.filter((e) => e.documento !== resumo.documento) ?? []
 
+  // ── KPIs do hero (titulo / KPI / subtitulo — padrao Cota Sub) ──
+  const heroKpis: HeroKpi[] = []
+  if (resumo) {
+    const cnpjRow = resumo.carteira_ativa.find((l) => l.escopo === "cnpj")
+    if (cnpjRow) {
+      heroKpis.push({
+        label: "Carteira ativa",
+        value: fmt.currencyCompact.format(cnpjRow.total),
+        emphasis: true,
+      })
+      const vencido = cnpjRow.cedente_vencido + cnpjRow.sacado_vencido
+      if (vencido > 0) {
+        heroKpis.push({ label: "Vencido", value: fmt.currencyCompact.format(vencido) })
+      }
+    }
+    if (resumo.limites.length > 0) {
+      const limite = resumo.limites.reduce((s, l) => s + l.limite, 0)
+      const uso = resumo.limites.reduce((s, l) => s + l.em_uso, 0)
+      if (limite > 0) {
+        heroKpis.push({ label: "Limite usado", value: pct((uso / limite) * 100) })
+      }
+    }
+    if (resumo.performance?.indice_liquidez != null) {
+      heroKpis.push({
+        label: "Liquidez",
+        value: pct(resumo.performance.indice_liquidez, 1),
+      })
+    }
+    if (resumo.bureau?.score != null) {
+      heroKpis.push({ label: "Score Serasa", value: String(resumo.bureau.score) })
+    }
+  }
+
   return (
     <DrillDownSheet
       open={entidade != null}
@@ -128,192 +252,218 @@ export function EntidadePeek() {
             ]
               .filter(Boolean)
               .join(" · ")}
+            kpis={heroKpis.length > 0 ? heroKpis : undefined}
           />
 
           <DrillDownSheet.Body>
-            {/* Papeis + alertas — a tese do party model visivel de cara */}
-            <div className="flex flex-wrap items-center gap-1.5 pb-1">
-              {resumo.papeis.map((p) => (
-                <Badge key={p.papel} variant="default">
-                  {PAPEL_LABEL[p.papel] ?? p.papel.toUpperCase()}
-                </Badge>
-              ))}
-              {resumo.em_recuperacao_judicial && (
-                <Badge variant="error">
-                  RECUPERAÇÃO JUDICIAL
-                  {resumo.data_recuperacao_judicial
-                    ? ` · ${fmtDate(isoDateOnly(resumo.data_recuperacao_judicial))}`
-                    : ""}
-                </Badge>
-              )}
-              {resumo.grupo && (
-                <Badge variant="default">Grupo {resumo.grupo.nome}</Badge>
-              )}
-            </div>
-
-            {/* ── Carteira Ativa ── */}
-            <DrillDownSheet.SectionLabel>
-              Carteira ativa
-            </DrillDownSheet.SectionLabel>
-            {resumo.carteira_ativa.length > 0 ? (
-              <CarteiraAtivaBloco linhas={resumo.carteira_ativa} />
-            ) : (
-              <p className={tableTokens.cellSecondary}>
-                Sem posição registrada para esta entidade.
-              </p>
-            )}
-
-            {/* ── Limites aprovados (so cedente — nao ha limite por sacado) ── */}
-            {isCedente && (
-              <>
-                <DrillDownSheet.SectionLabel>
-                  Limites aprovados
-                </DrillDownSheet.SectionLabel>
-                {resumo.limites.length > 0 ? (
-                  <LimitesBloco limites={resumo.limites} />
-                ) : (
-                  <p className={tableTokens.cellSecondary}>
-                    Sem limites aprovados para este cedente.
-                  </p>
+            <div className="flex flex-col gap-5">
+              {/* Papeis + alertas — a tese do party model visivel de cara */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {resumo.papeis.map((p) => (
+                  <Badge key={p.papel} variant="default">
+                    {PAPEL_LABEL[p.papel] ?? p.papel.toUpperCase()}
+                  </Badge>
+                ))}
+                {resumo.em_recuperacao_judicial && (
+                  <Badge variant="error">
+                    RECUPERAÇÃO JUDICIAL
+                    {resumo.data_recuperacao_judicial
+                      ? ` · ${fmtDate(isoDateOnly(resumo.data_recuperacao_judicial))}`
+                      : ""}
+                  </Badge>
                 )}
-              </>
-            )}
+                {resumo.grupo && (
+                  <Badge variant="default">Grupo {resumo.grupo.nome}</Badge>
+                )}
+              </div>
 
-            {/* ── Performance (vencimentario da janela de apuracao) ── */}
-            {resumo.performance && (
-              <>
-                <DrillDownSheet.SectionLabel>
-                  Performance
-                  {resumo.performance.janela_dias != null &&
-                    ` (${resumo.performance.janela_dias} dias · lente ${resumo.performance.papel})`}
-                </DrillDownSheet.SectionLabel>
-                <PerformanceBloco perf={resumo.performance} />
-              </>
-            )}
-
-            {/* ── Consultas financeiras (REAL — Serasa via silver) ── */}
-            <DrillDownSheet.SectionLabel>
-              Consultas financeiras
-            </DrillDownSheet.SectionLabel>
-            {resumo.bureau ? (
-              <BureauResumoBloco bureau={resumo.bureau} />
-            ) : (
-              <p className={tableTokens.cellSecondary}>
-                Nenhuma consulta de bureau registrada para este documento.
-              </p>
-            )}
-
-            {/* ── Operacoes 12M (REAL, so cedente) ── */}
-            {resumo.cedente_id != null && (
-              <>
-                <DrillDownSheet.SectionLabel>
-                  Operações (12 meses)
-                </DrillDownSheet.SectionLabel>
-                {opsQ.isLoading && <DrillDownSheet.Skeleton lines={3} />}
-                {ops && (
-                  <div className="space-y-1.5">
-                    <p className={tableTokens.cellText}>
-                      <span className={tableTokens.cellStrong}>
-                        {fmt.currencyCompact.format(ops.vop_total)}
-                      </span>{" "}
-                      em {fmt.number.format(ops.total)} operações · receita{" "}
-                      {fmt.currencyCompact.format(ops.receita_total)}
+              {/* ── 1. Carteira Ativa ── */}
+              <section>
+                <SectionTitle
+                  icon={RiWallet3Line}
+                  label="Carteira ativa"
+                  help="Risco em aberto nas duas pontas — como cedente (coobrigação) e como sacado (pagador). A coluna Total soma as pontas; a linha Grupo consolida todas as entidades do grupo econômico."
+                  counter={
+                    <span className="font-mono">wh_posicao_cedente · wh_posicao_sacado</span>
+                  }
+                />
+                <div className="mt-3">
+                  {resumo.carteira_ativa.length > 0 ? (
+                    <DataTable<CarteiraAtivaLinha>
+                      {...DT_PROPS}
+                      data={resumo.carteira_ativa}
+                      columns={CARTEIRA_COLUMNS}
+                    />
+                  ) : (
+                    <p className={tableTokens.cellSecondary}>
+                      Sem posição registrada para esta entidade.
                     </p>
-                    {ops.operacoes.slice(0, 5).map((op) => (
-                      <div
-                        key={op.operacao_id}
-                        className="flex items-baseline justify-between gap-2"
-                      >
-                        <span className={tableTokens.cellSecondary}>
-                          {op.data_de_efetivacao
-                            ? fmtDate(op.data_de_efetivacao)
-                            : "—"}{" "}
-                          · {op.produto}
-                        </span>
-                        <span className={cx(tableTokens.cellNumber)}>
-                          {fmt.currencyWhole.format(op.vop)}
-                          {op.taxa_final != null && (
-                            <span className={tableTokens.cellSecondary}>
-                              {" "}
-                              · {op.taxa_final.toLocaleString("pt-BR", {
-                                maximumFractionDigits: 2,
-                              })}
-                              % a.m.
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                    ))}
-                    {ops.total > 5 && (
-                      <p className={caption}>
-                        Últimas 5 de {fmt.number.format(ops.total)} — total acima
-                        soma todas.
+                  )}
+                </div>
+              </section>
+
+              {/* ── 2. Limites aprovados (so cedente — nao ha limite por sacado) ── */}
+              {isCedente && (
+                <section>
+                  <SectionTitle
+                    icon={RiShieldCheckLine}
+                    label="Limites aprovados"
+                    help="Limite operacional por produto (conceito do papel cedente). Em uso = risco total em aberto no produto."
+                    counter={<span className="font-mono">wh_posicao_cedente_produto</span>}
+                  />
+                  <div className="mt-3">
+                    {resumo.limites.length > 0 ? (
+                      <DataTable<LimiteProduto>
+                        {...DT_PROPS}
+                        data={resumo.limites}
+                        rowClassName={(l) =>
+                          cx(
+                            l.limite > 0 &&
+                              l.em_uso / l.limite >= 0.9 &&
+                              "bg-red-50/40 dark:bg-red-950/10",
+                          )
+                        }
+                        columns={LIMITE_COLUMNS}
+                        renderFooter={(rows) => {
+                          const tLim = rows.reduce((s, l) => s + l.limite, 0)
+                          const tUso = rows.reduce((s, l) => s + l.em_uso, 0)
+                          return (
+                            <tr className={FOOT_ROW}>
+                              <td className="px-3">
+                                <span className={tableTokens.cellStrong}>Total</span>
+                              </td>
+                              <td className="px-3"><NumCell value={tLim} strong /></td>
+                              <td className="px-3"><NumCell value={tUso} strong /></td>
+                              <td className="px-3">
+                                <div
+                                  className={cx(
+                                    "text-right text-xs font-semibold tabular-nums",
+                                    usoTone(tLim > 0 ? tUso / tLim : 0),
+                                  )}
+                                >
+                                  {tLim > 0 ? pct((tUso / tLim) * 100) : "—"}
+                                </div>
+                              </td>
+                              <td className="px-3">
+                                <NumCell value={Math.max(tLim - tUso, 0)} strong />
+                              </td>
+                            </tr>
+                          )
+                        }}
+                      />
+                    ) : (
+                      <p className={tableTokens.cellSecondary}>
+                        Sem limites aprovados para este cedente.
                       </p>
                     )}
                   </div>
-                )}
-              </>
-            )}
+                </section>
+              )}
 
-            {/* ── Grupo economico ── */}
-            {resumo.grupo && resumo.grupo.membros.length > 0 && (
-              <>
-                <DrillDownSheet.SectionLabel>
-                  Grupo econômico — {resumo.grupo.nome} (
-                  {resumo.grupo.membros.length})
-                </DrillDownSheet.SectionLabel>
-                <div className="space-y-1">
-                  {resumo.grupo.membros.map((m, i) => (
-                    <div key={m.documento ?? i} className="flex items-baseline justify-between gap-2">
-                      <EntidadeLink
-                        documento={m.documento}
-                        history="replace"
-                        className={tableTokens.cellText}
-                      >
-                        {m.nome ?? "(em quarentena)"}
-                      </EntidadeLink>
-                      <span className={tableTokens.cellSecondary}>
-                        {[
-                          m.vinculo,
-                          m.papeis
-                            .map((p) => PAPEL_LABEL[p] ?? p)
-                            .join(", ")
-                            .toLowerCase(),
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
+              {/* ── 3. Performance (vencimentario da janela de apuracao) ── */}
+              {resumo.performance && <PerformanceSection perf={resumo.performance} />}
 
-            {/* ── Estabelecimentos da mesma raiz ── */}
-            {outrosEstabelecimentos.length > 0 && (
-              <>
-                <DrillDownSheet.SectionLabel>
-                  Estabelecimentos da empresa ({resumo.estabelecimentos.length})
-                </DrillDownSheet.SectionLabel>
-                <div className="space-y-1">
-                  {outrosEstabelecimentos.map((e) => (
-                    <div key={e.documento} className="flex items-baseline justify-between gap-2">
-                      <EntidadeLink
-                        documento={e.documento}
-                        history="replace"
-                        className={tableTokens.cellText}
-                      >
-                        {e.is_matriz ? "Matriz" : `Filial ${e.filial_numero}`} ·{" "}
-                        {fmtCNPJ(e.documento)}
-                      </EntidadeLink>
-                      <span className={tableTokens.cellSecondary}>
-                        {[e.localidade, e.estado].filter(Boolean).join("/")}
-                      </span>
-                    </div>
-                  ))}
+              {/* ── 4. Consultas financeiras ── */}
+              <section>
+                <SectionTitle
+                  icon={RiFileSearchLine}
+                  label="Consultas financeiras"
+                  help="Última consulta de bureau registrada para este documento (relay das consultas feitas no Bitfin)."
+                  counter={<span className="font-mono">wh_serasa_pj_consulta</span>}
+                />
+                <div className="mt-3">
+                  {resumo.bureau ? (
+                    <BureauCard bureau={resumo.bureau} />
+                  ) : (
+                    <p className={tableTokens.cellSecondary}>
+                      Nenhuma consulta de bureau registrada para este documento.
+                    </p>
+                  )}
                 </div>
-              </>
-            )}
+              </section>
+
+              {/* ── 5. Operacoes 12M (so cedente) ── */}
+              {resumo.cedente_id != null && (
+                <section>
+                  <SectionTitle
+                    icon={RiExchangeFundsLine}
+                    label="Operações (12 meses)"
+                    help="Últimas 5 operações; o rodapé soma o conjunto COMPLETO dos 12 meses (não só as visíveis)."
+                    counter={
+                      ops ? (
+                        <span>
+                          últimas 5 de {fmt.number.format(ops.total)} ·{" "}
+                          <span className="font-mono">wh_operacao</span>
+                        </span>
+                      ) : undefined
+                    }
+                  />
+                  <div className="mt-3">
+                    {opsQ.isLoading && <DrillDownSheet.Skeleton lines={4} />}
+                    {ops && (
+                      <DataTable<Operacoes5OperacaoItem>
+                        {...DT_PROPS}
+                        data={ops.operacoes.slice(0, 5)}
+                        columns={OPS_COLUMNS}
+                        renderFooter={() => (
+                          <tr className={FOOT_ROW}>
+                            <td className="px-3" colSpan={2}>
+                              <span className={tableTokens.cellStrong}>
+                                Total 12M · {fmt.number.format(ops.total)} operações
+                              </span>
+                            </td>
+                            <td className="px-3"><NumCell value={ops.vop_total} strong /></td>
+                            <td className="px-3">
+                              <div className={cx("text-right", tableTokens.cellNumberSecondary)}>
+                                receita {fmt.currencyCompact.format(ops.receita_total)}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      />
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {/* ── 6. Grupo economico ── */}
+              {resumo.grupo && resumo.grupo.membros.length > 0 && (
+                <section>
+                  <SectionTitle
+                    icon={RiCommunityLine}
+                    label={`Grupo econômico — ${resumo.grupo.nome}`}
+                    help="Membros curados na fonte. Clique num membro para abrir o peek dele."
+                    counter={`${resumo.grupo.membros.length} membro${resumo.grupo.membros.length === 1 ? "" : "s"}`}
+                  />
+                  <div className="mt-3">
+                    <DataTable<EntidadeGrupoMembro>
+                      {...DT_PROPS}
+                      data={resumo.grupo.membros}
+                      columns={GRUPO_COLUMNS}
+                    />
+                  </div>
+                </section>
+              )}
+
+              {/* ── 7. Estabelecimentos da mesma raiz ── */}
+              {outrosEstabelecimentos.length > 0 && (
+                <section>
+                  <SectionTitle
+                    icon={RiBuilding2Line}
+                    label="Estabelecimentos da empresa"
+                    help="Matriz e filiais compartilham a raiz do CNPJ — juridicamente a mesma pessoa. Clique para abrir o peek do estabelecimento."
+                    counter={`${resumo.estabelecimentos.length} no total`}
+                  />
+                  <div className="mt-3">
+                    <DataTable<EntidadeEstabelecimento>
+                      {...DT_PROPS}
+                      data={outrosEstabelecimentos}
+                      columns={ESTABELECIMENTO_COLUMNS}
+                    />
+                  </div>
+                </section>
+              )}
+            </div>
           </DrillDownSheet.Body>
 
           <DrillDownSheet.Footer>
@@ -328,9 +478,331 @@ export function EntidadePeek() {
   )
 }
 
-// ── Bloco bureau (consultas financeiras) ─────────────────────────────────────
+// ── Colunas (tudo via tableTokens — regra dura §6) ──────────────────────────
 
-function BureauResumoBloco({ bureau }: { bureau: EntidadeBureauResumo }) {
+const colCarteira = createColumnHelper<CarteiraAtivaLinha>()
+const CARTEIRA_COLUMNS = [
+  colCarteira.accessor("escopo", {
+    header: "Escopo",
+    size: 90,
+    cell: (info) => (
+      <span className={tableTokens.cellStrong}>
+        {info.getValue() === "cnpj" ? "CNPJ" : "Grupo"}
+      </span>
+    ),
+  }),
+  colCarteira.accessor("cedente_valor", {
+    header: () => <div className="text-right">Como cedente</div>,
+    size: 110,
+    cell: (info) => <NumCell value={info.getValue()} />,
+  }),
+  colCarteira.accessor("sacado_valor", {
+    header: () => <div className="text-right">Como sacado</div>,
+    size: 110,
+    cell: (info) => <NumCell value={info.getValue()} />,
+  }),
+  colCarteira.display({
+    id: "vencido",
+    header: () => <div className="text-right">Vencido</div>,
+    size: 100,
+    cell: ({ row }) => {
+      const v = row.original.cedente_vencido + row.original.sacado_vencido
+      return (
+        <div
+          className={cx(
+            "text-right text-xs tabular-nums",
+            v > 0
+              ? "font-semibold text-red-600 dark:text-red-400"
+              : "text-gray-400 dark:text-gray-600",
+          )}
+        >
+          {fmtBRL.format(v)}
+        </div>
+      )
+    },
+  }),
+  colCarteira.accessor("total", {
+    header: () => <div className="text-right">Total</div>,
+    size: 110,
+    cell: (info) => <NumCell value={info.getValue()} strong />,
+  }),
+] as ColumnDef<CarteiraAtivaLinha, unknown>[]
+
+function usoTone(frac: number): string {
+  if (frac >= 0.9) return "text-red-600 dark:text-red-400"
+  if (frac >= 0.75) return "text-amber-600 dark:text-amber-400"
+  return "text-gray-900 dark:text-gray-100"
+}
+
+const colLimite = createColumnHelper<LimiteProduto>()
+const LIMITE_COLUMNS = [
+  colLimite.accessor("produto_sigla", {
+    header: "Produto",
+    size: 80,
+    cell: (info) => (
+      <span className={tableTokens.cellStrong}>{info.getValue() ?? "(produto)"}</span>
+    ),
+  }),
+  colLimite.accessor("limite", {
+    header: () => <div className="text-right">Limite</div>,
+    size: 100,
+    cell: (info) => <NumCell value={info.getValue()} />,
+  }),
+  colLimite.accessor("em_uso", {
+    header: () => <div className="text-right">Em uso</div>,
+    size: 100,
+    cell: (info) => <NumCell value={info.getValue()} />,
+  }),
+  colLimite.display({
+    id: "uso_pct",
+    header: () => <div className="text-right">Uso</div>,
+    size: 60,
+    cell: ({ row }) => {
+      const l = row.original
+      if (l.limite <= 0)
+        return <div className={cx("text-right", tableTokens.cellMuted)}>—</div>
+      const frac = l.em_uso / l.limite
+      return (
+        <div className={cx("text-right text-xs font-semibold tabular-nums", usoTone(frac))}>
+          {pct(frac * 100)}
+        </div>
+      )
+    },
+  }),
+  colLimite.display({
+    id: "disponivel",
+    header: () => <div className="text-right">Disponível</div>,
+    size: 100,
+    cell: ({ row }) => (
+      <NumCell value={Math.max(row.original.limite - row.original.em_uso, 0)} />
+    ),
+  }),
+] as ColumnDef<LimiteProduto, unknown>[]
+
+const colOps = createColumnHelper<Operacoes5OperacaoItem>()
+const OPS_COLUMNS = [
+  colOps.accessor("data_de_efetivacao", {
+    header: "Data",
+    size: 80,
+    cell: (info) => (
+      <span className={tableTokens.cellText}>
+        {info.getValue() ? fmtDate(info.getValue() as string) : "—"}
+      </span>
+    ),
+  }),
+  colOps.accessor("produto", {
+    header: "Produto",
+    size: 70,
+    cell: (info) => <span className={tableTokens.cellSecondary}>{info.getValue()}</span>,
+  }),
+  colOps.accessor("vop", {
+    header: () => <div className="text-right">VOP</div>,
+    size: 110,
+    cell: (info) => <NumCell value={info.getValue()} />,
+  }),
+  colOps.accessor("taxa_final", {
+    header: () => <div className="text-right">Taxa final</div>,
+    size: 90,
+    cell: (info) => {
+      const v = info.getValue()
+      return (
+        <div className={cx("text-right", tableTokens.cellNumber)}>
+          {v != null
+            ? `${v.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}% a.m.`
+            : "—"}
+        </div>
+      )
+    },
+  }),
+] as ColumnDef<Operacoes5OperacaoItem, unknown>[]
+
+const colGrupo = createColumnHelper<EntidadeGrupoMembro>()
+const GRUPO_COLUMNS = [
+  colGrupo.accessor("nome", {
+    header: "Membro",
+    size: 240,
+    cell: ({ row }) => (
+      <EntidadeLink
+        documento={row.original.documento}
+        history="replace"
+        className={cx("block truncate", tableTokens.cellText)}
+      >
+        {row.original.nome ?? "(em quarentena)"}
+      </EntidadeLink>
+    ),
+  }),
+  colGrupo.accessor("vinculo", {
+    header: "Vínculo",
+    size: 130,
+    cell: (info) => (
+      <span className={cx("block truncate", tableTokens.cellSecondary)}>
+        {info.getValue() ?? "—"}
+      </span>
+    ),
+  }),
+  colGrupo.accessor("papeis", {
+    header: "Papéis",
+    size: 130,
+    cell: (info) => (
+      <span className={tableTokens.cellSecondary}>
+        {info.getValue().length > 0
+          ? info
+              .getValue()
+              .map((p) => PAPEL_LABEL[p] ?? p)
+              .join(", ")
+              .toLowerCase()
+          : "—"}
+      </span>
+    ),
+  }),
+] as ColumnDef<EntidadeGrupoMembro, unknown>[]
+
+const colEst = createColumnHelper<EntidadeEstabelecimento>()
+const ESTABELECIMENTO_COLUMNS = [
+  colEst.accessor("documento", {
+    header: "Estabelecimento",
+    size: 220,
+    cell: ({ row }) => (
+      <EntidadeLink
+        documento={row.original.documento}
+        history="replace"
+        className={cx("block truncate", tableTokens.cellText)}
+      >
+        {row.original.is_matriz ? "Matriz" : `Filial ${row.original.filial_numero}`} ·{" "}
+        {fmtCNPJ(row.original.documento)}
+      </EntidadeLink>
+    ),
+  }),
+  colEst.display({
+    id: "cidade",
+    header: "Cidade/UF",
+    size: 140,
+    cell: ({ row }) => (
+      <span className={cx("block truncate", tableTokens.cellSecondary)}>
+        {[row.original.localidade, row.original.estado].filter(Boolean).join("/") || "—"}
+      </span>
+    ),
+  }),
+] as ColumnDef<EntidadeEstabelecimento, unknown>[]
+
+// ── Performance (barra de composicao + tabela com rodape reconciliado) ──────
+
+type PerfRow = { label: string; valor: number; cor: string }
+
+const colPerf = createColumnHelper<PerfRow>()
+
+function PerformanceSection({ perf }: { perf: PerformanceResumo }) {
+  const venc = perf.vencimentario ?? 0
+  const rows: PerfRow[] = [
+    { label: "Liquidados", valor: perf.liquidados ?? 0, cor: "bg-blue-500" },
+    { label: "Recomprados", valor: perf.recomprados ?? 0, cor: "bg-amber-500" },
+    {
+      label: "Vencidos em aberto",
+      valor: (perf.vencidos_penalizados ?? 0) + (perf.vencidos_nao_penalizados ?? 0),
+      cor: "bg-red-500",
+    },
+  ]
+  const columns = React.useMemo(
+    () =>
+      [
+        colPerf.accessor("label", {
+          header: "Componente",
+          size: 200,
+          cell: ({ row }) => (
+            <span className={cx("flex items-center gap-1.5", tableTokens.cellText)}>
+              <span
+                className={cx("inline-block size-2 shrink-0 rounded-full", row.original.cor)}
+              />
+              {row.original.label}
+            </span>
+          ),
+        }),
+        colPerf.accessor("valor", {
+          header: () => <div className="text-right">Valor</div>,
+          size: 110,
+          cell: (info) => <NumCell value={info.getValue()} />,
+        }),
+        colPerf.display({
+          id: "pct",
+          header: () => <div className="text-right">%</div>,
+          size: 60,
+          cell: ({ row }) => (
+            <div className={cx("text-right", tableTokens.cellNumberSecondary)}>
+              {venc > 0 ? pct((row.original.valor / venc) * 100, 1) : "—"}
+            </div>
+          ),
+        }),
+      ] as ColumnDef<PerfRow, unknown>[],
+    [venc],
+  )
+
+  const subtitulo = [
+    perf.prazo_medio_carteira != null &&
+      `prazo carteira ${perf.prazo_medio_carteira.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}d`,
+    perf.indice_pontualidade != null && `pontualidade ${pct(perf.indice_pontualidade, 1)}`,
+    perf.data_apuracao != null && `apuração ${fmtDate(isoDateOnly(perf.data_apuracao))}`,
+  ]
+    .filter(Boolean)
+    .join(" · ")
+
+  return (
+    <section>
+      <SectionTitle
+        icon={RiPulseLine}
+        label={`Performance${perf.janela_dias != null ? ` · ${perf.janela_dias} dias` : ""}`}
+        help="Vencimentário da janela de apuração do Bitfin (lente do papel). Os componentes somam o total — reconciliação on-screen."
+        counter={
+          perf.indice_liquidez != null ? (
+            <span>
+              liquidez{" "}
+              <span className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                {pct(perf.indice_liquidez, 1)}
+              </span>
+            </span>
+          ) : undefined
+        }
+      />
+      <div className="mt-3 flex flex-col gap-2">
+        {venc > 0 && (
+          <div className="flex h-2 w-full gap-px overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+            {rows
+              .filter((l) => l.valor > 0)
+              .map((l) => (
+                <div
+                  key={l.label}
+                  className={cx("h-full", l.cor)}
+                  style={{ width: `${(l.valor / venc) * 100}%` }}
+                />
+              ))}
+          </div>
+        )}
+        <DataTable<PerfRow>
+          {...DT_PROPS}
+          data={rows}
+          columns={columns}
+          renderFooter={() => (
+            <tr className={cx(FOOT_ROW, "bg-blue-50/40 dark:bg-blue-950/10")}>
+              <td className="px-3">
+                <span className={tableTokens.cellStrong}>= Vencimentário total</span>
+              </td>
+              <td className="px-3"><NumCell value={venc} strong /></td>
+              <td className="px-3">
+                <div className={cx("text-right", tableTokens.cellNumberSecondary)}>100%</div>
+              </td>
+            </tr>
+          )}
+        />
+        {subtitulo && <p className={caption}>{subtitulo}</p>}
+      </div>
+    </section>
+  )
+}
+
+// ── Card de bureau (estilo "Resultado da DC": eyebrow + numero + linhas).
+//    Preserva a deteccao de liminar judicial (#281): quando os zeros vem de
+//    supressao judicial, o "sem restricoes" seria mentira — badge substitui. ──
+
+function BureauCard({ bureau }: { bureau: EntidadeBureauResumo }) {
   const restricoes = [
     { label: "Protestos", qtd: bureau.protestos_qtd },
     { label: "PEFIN", qtd: bureau.pefin_qtd },
@@ -341,53 +813,67 @@ function BureauResumoBloco({ bureau }: { bureau: EntidadeBureauResumo }) {
   ]
   const comRestricao = restricoes.filter((r) => (r.qtd ?? 0) > 0)
   const limpos = restricoes.filter((r) => (r.qtd ?? 0) === 0)
-  // Suspeita corrente (flag da última consulta OU estado da sentinela) —
-  // o "✓ sem restrições" seria mentira quando os zeros vêm de supressão
-  // judicial, então o badge SUBSTITUI a linha de "limpo".
   const suspeitaLiminar =
     bureau.suspeita_liminar || bureau.liminar_estado === "suspeita_ativa"
   const liminarCaida = bureau.liminar_estado === "liminar_caida"
   const liminarEmRevisao = bureau.liminar_estado === "transicao_ambigua"
 
   return (
-    <div className="space-y-1">
-      <p className={tableTokens.cellText}>
-        Última: {bureau.fonte} · {fmtDate(isoDateOnly(bureau.consultado_em))}
-        {bureau.score != null && (
-          <span className={tableTokens.cellStrong}>
-            {" "}
-            · score {bureau.score}
-            {bureau.score_classe ? ` (${bureau.score_classe})` : ""}
-          </span>
+    <div className="rounded border border-gray-200 p-3 dark:border-gray-800">
+      <div className="text-[10px] uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
+        {bureau.fonte} · {fmtDate(isoDateOnly(bureau.consultado_em))}
+      </div>
+      {bureau.score != null && (
+        <div className="mt-1 text-lg font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+          score {bureau.score}
+          {bureau.score_classe && (
+            <span className="text-[12px] font-normal text-gray-500 dark:text-gray-400">
+              {" "}
+              ({bureau.score_classe})
+            </span>
+          )}
+        </div>
+      )}
+      <div className="mt-2 space-y-1 text-[11px]">
+        {comRestricao.map((r) => (
+          <div key={r.label} className="flex items-center justify-between">
+            <span className="text-red-700 dark:text-red-400">⚠ {r.label}</span>
+            <span className="font-semibold tabular-nums text-red-700 dark:text-red-400">
+              {r.qtd}
+            </span>
+          </div>
+        ))}
+        {comRestricao.length > 0 &&
+          bureau.valor_total_restricoes != null &&
+          bureau.valor_total_restricoes > 0 && (
+            <div className="flex items-center justify-between border-t border-gray-100 pt-1 dark:border-gray-900">
+              <span className="text-gray-500 dark:text-gray-400">Total de restrições</span>
+              <span className="font-semibold tabular-nums text-red-700 dark:text-red-400">
+                {fmtBRL.format(bureau.valor_total_restricoes)}
+              </span>
+            </div>
+          )}
+        {comRestricao.length === 0 &&
+          (suspeitaLiminar ? (
+            <LiminarBadge bureau={bureau} variant="warning" label="Possível Liminar" />
+          ) : liminarEmRevisao ? (
+            <LiminarBadge
+              bureau={bureau}
+              variant="neutral"
+              label="Possível Liminar (em revisão)"
+            />
+          ) : (
+            <p className="text-gray-400 dark:text-gray-500">✓ sem restrições apontadas</p>
+          ))}
+        {liminarCaida && (
+          <LiminarBadge bureau={bureau} variant="error" label="Liminar caída" />
         )}
-      </p>
-      {comRestricao.length > 0 ? (
-        <p className={cx(tableTokens.cellText, "text-red-600 dark:text-red-400")}>
-          ⚠{" "}
-          {comRestricao.map((r) => `${r.label} ${r.qtd}`).join(" · ")}
-          {bureau.valor_total_restricoes != null &&
-            bureau.valor_total_restricoes > 0 &&
-            ` · total ${fmt.currencyCompact.format(bureau.valor_total_restricoes)}`}
-        </p>
-      ) : suspeitaLiminar ? (
-        <LiminarBadge bureau={bureau} variant="warning" label="Possível Liminar" />
-      ) : liminarEmRevisao ? (
-        <LiminarBadge
-          bureau={bureau}
-          variant="neutral"
-          label="Possível Liminar (em revisão)"
-        />
-      ) : (
-        <p className={tableTokens.cellSecondary}>✓ sem restrições apontadas</p>
-      )}
-      {liminarCaida && (
-        <LiminarBadge bureau={bureau} variant="error" label="Liminar caída" />
-      )}
-      {comRestricao.length > 0 && limpos.length > 0 && (
-        <p className={tableTokens.cellSecondary}>
-          ✓ sem {limpos.map((r) => r.label.toLowerCase()).join(", ")}
-        </p>
-      )}
+        {comRestricao.length > 0 && limpos.length > 0 && (
+          <p className="text-gray-400 dark:text-gray-500">
+            ✓ sem {limpos.map((r) => r.label.toLowerCase()).join(", ")}
+          </p>
+        )}
+      </div>
     </div>
   )
 }
@@ -437,178 +923,6 @@ function LiminarBadge({
           </div>
         }
       />
-    </div>
-  )
-}
-
-
-// ── Blocos F1 (posicoes por papel) ───────────────────────────────────────────
-
-/** Mini-matriz CNPJ × Grupo nas pontas cedente/sacado. A coluna Total soma
- *  as duas pontas na tela (§14.6). */
-function CarteiraAtivaBloco({ linhas }: { linhas: CarteiraAtivaLinha[] }) {
-  const rotulo: Record<CarteiraAtivaLinha["escopo"], string> = {
-    cnpj: "CNPJ",
-    grupo: "Grupo",
-  }
-  return (
-    <div className="space-y-1">
-      <div className="grid grid-cols-[64px_1fr_1fr_1fr] gap-x-2">
-        <span />
-        <span className={cx(tableTokens.header, "text-right")}>Como cedente</span>
-        <span className={cx(tableTokens.header, "text-right")}>Como sacado</span>
-        <span className={cx(tableTokens.header, "text-right")}>Total</span>
-        {linhas.map((l) => (
-          <React.Fragment key={l.escopo}>
-            <span className={tableTokens.cellSecondary}>{rotulo[l.escopo]}</span>
-            <span className={cx(tableTokens.cellNumber, "text-right")}>
-              {fmt.currencyCompact.format(l.cedente_valor)}
-            </span>
-            <span className={cx(tableTokens.cellNumber, "text-right")}>
-              {fmt.currencyCompact.format(l.sacado_valor)}
-            </span>
-            <span className={cx(tableTokens.cellStrong, "text-right tabular-nums")}>
-              {fmt.currencyCompact.format(l.total)}
-            </span>
-          </React.Fragment>
-        ))}
-      </div>
-      {linhas.some((l) => l.cedente_vencido + l.sacado_vencido > 0) && (
-        <p className={cx(tableTokens.cellText, "text-red-600 dark:text-red-400")}>
-          vencido:{" "}
-          {linhas
-            .filter((l) => l.cedente_vencido + l.sacado_vencido > 0)
-            .map(
-              (l) =>
-                `${rotulo[l.escopo]} ${fmt.currencyCompact.format(
-                  l.cedente_vencido + l.sacado_vencido,
-                )}`,
-            )
-            .join(" · ")}
-        </p>
-      )}
-    </div>
-  )
-}
-
-/** Barra de uso de limite (azul <75% · âmbar <90% · vermelho >=90%). */
-function UsoBar({ pct }: { pct: number }) {
-  const clamped = Math.min(pct, 100)
-  return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-      <div
-        className={cx(
-          "h-full rounded-full",
-          pct >= 90 ? "bg-red-500" : pct >= 75 ? "bg-amber-500" : "bg-blue-500",
-        )}
-        style={{ width: `${clamped}%` }}
-      />
-    </div>
-  )
-}
-
-function LimitesBloco({ limites }: { limites: LimiteProduto[] }) {
-  const totalLimite = limites.reduce((s, l) => s + l.limite, 0)
-  const totalUso = limites.reduce((s, l) => s + l.em_uso, 0)
-  return (
-    <div className="space-y-1.5">
-      {limites.map((l, i) => {
-        const pct = l.limite > 0 ? (l.em_uso / l.limite) * 100 : null
-        return (
-          <div key={`${l.produto_sigla}-${i}`} className="space-y-0.5">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className={tableTokens.cellStrong}>
-                {l.produto_sigla ?? "(produto)"}
-              </span>
-              <span className={tableTokens.cellNumber}>
-                {fmt.currencyCompact.format(l.em_uso)} de{" "}
-                {fmt.currencyCompact.format(l.limite)}
-                {pct != null && (
-                  <span className={tableTokens.cellSecondary}>
-                    {" "}
-                    · {pct.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}%
-                  </span>
-                )}
-              </span>
-            </div>
-            {pct != null && <UsoBar pct={pct} />}
-          </div>
-        )
-      })}
-      {limites.length > 1 && (
-        <p className={tableTokens.cellText}>
-          Total: {fmt.currencyCompact.format(totalUso)} de{" "}
-          {fmt.currencyCompact.format(totalLimite)} · disponível{" "}
-          <span className={tableTokens.cellStrong}>
-            {fmt.currencyCompact.format(Math.max(totalLimite - totalUso, 0))}
-          </span>
-        </p>
-      )}
-    </div>
-  )
-}
-
-/** Composicao do vencimentario: liquidados (azul) / recomprados (âmbar) /
- *  vencidos (vermelho). As linhas somam o vencimentario total (§14.6). */
-function PerformanceBloco({ perf }: { perf: PerformanceResumo }) {
-  const venc = perf.vencimentario ?? 0
-  const liq = perf.liquidados ?? 0
-  const rec = perf.recomprados ?? 0
-  const vcd = (perf.vencidos_penalizados ?? 0) + (perf.vencidos_nao_penalizados ?? 0)
-  const pctOf = (v: number) =>
-    venc > 0
-      ? `${((v / venc) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`
-      : "—"
-  const linhas = [
-    { label: "Liquidados", valor: liq, cor: "bg-blue-500" },
-    { label: "Recomprados", valor: rec, cor: "bg-amber-500" },
-    { label: "Vencidos em aberto", valor: vcd, cor: "bg-red-500" },
-  ]
-  return (
-    <div className="space-y-1.5">
-      {venc > 0 && (
-        <div className="flex h-2 w-full gap-px overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-          {linhas
-            .filter((l) => l.valor > 0)
-            .map((l) => (
-              <div
-                key={l.label}
-                className={cx("h-full", l.cor)}
-                style={{ width: `${(l.valor / venc) * 100}%` }}
-              />
-            ))}
-        </div>
-      )}
-      {linhas.map((l) => (
-        <div key={l.label} className="flex items-baseline justify-between gap-2">
-          <span className={tableTokens.cellText}>
-            <span
-              className={cx("mr-1.5 inline-block size-2 rounded-full", l.cor)}
-            />
-            {l.label}
-          </span>
-          <span className={tableTokens.cellNumber}>
-            {fmt.currencyCompact.format(l.valor)}
-            <span className={tableTokens.cellSecondary}> · {pctOf(l.valor)}</span>
-          </span>
-        </div>
-      ))}
-      <div className="flex items-baseline justify-between gap-2 border-t border-gray-100 pt-1 dark:border-gray-800">
-        <span className={tableTokens.cellStrong}>Vencimentário total</span>
-        <span className={cx(tableTokens.cellStrong, "tabular-nums")}>
-          {fmt.currencyCompact.format(venc)}
-        </span>
-      </div>
-      <p className={tableTokens.cellSecondary}>
-        {perf.indice_liquidez != null &&
-          `Liquidez ${perf.indice_liquidez.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`}
-        {perf.prazo_medio_carteira != null &&
-          ` · prazo carteira ${perf.prazo_medio_carteira.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}d`}
-        {perf.indice_pontualidade != null &&
-          ` · pontualidade ${perf.indice_pontualidade.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`}
-        {perf.data_apuracao != null &&
-          ` · apuração ${fmtDate(perf.data_apuracao.slice(0, 10))}`}
-      </p>
     </div>
   )
 }
