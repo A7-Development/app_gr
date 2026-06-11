@@ -65,6 +65,7 @@ from app.warehouse.posicao_papel import (
 from app.warehouse.posicao_renda_fixa import PosicaoRendaFixa
 from app.warehouse.qitech_raw_relatorio import QiTechRawRelatorio
 from app.warehouse.receita_acruo_dia import ReceitaAcruoDia
+from app.warehouse.receita_caixa import ReceitaCaixa
 from app.warehouse.receita_operacional import ReceitaOperacional
 from app.warehouse.rentabilidade_fundo import RentabilidadeFundo
 from app.warehouse.saldo_conta_corrente import SaldoContaCorrente
@@ -130,6 +131,7 @@ __all__ = [
     "PosicaoRendaFixa",
     "QiTechRawRelatorio",
     "ReceitaAcruoDia",
+    "ReceitaCaixa",
     "ReceitaOperacional",
     "RentabilidadeFundo",
     "SaldoContaCorrente",
