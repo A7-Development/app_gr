@@ -56,9 +56,11 @@ from app.warehouse.posicao_cota_fundo import PosicaoCotaFundo
 from app.warehouse.posicao_debenture import PosicaoDebentureDia
 from app.warehouse.posicao_outros_ativos import PosicaoOutrosAtivos
 from app.warehouse.posicao_papel import (
+    WhPagamentoPracaMensal,
     WhPosicaoCedente,
     WhPosicaoCedenteProduto,
     WhPosicaoSacado,
+    WhPosicaoSacadoCedente,
 )
 from app.warehouse.posicao_renda_fixa import PosicaoRendaFixa
 from app.warehouse.qitech_raw_relatorio import QiTechRawRelatorio
@@ -160,7 +162,9 @@ __all__ = [
     "WhEntidadePapel",
     "WhGrupoEconomico",
     "WhGrupoEconomicoMembro",
+    "WhPagamentoPracaMensal",
     "WhPosicaoCedente",
     "WhPosicaoCedenteProduto",
     "WhPosicaoSacado",
+    "WhPosicaoSacadoCedente",
 ]

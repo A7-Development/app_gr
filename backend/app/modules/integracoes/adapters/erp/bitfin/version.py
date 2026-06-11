@@ -93,6 +93,13 @@ D+1 DU, ancora PV=ValorPresente, componentes desagio/adval/tarifas na
 proporcao do desagio total, IOF fora). Saida antecipada = residual no dia
 (acruo_antecipacao). Curva PARA no vencimento ORIGINAL (prorrogacao nao
 estende — validado QiTech). 2 de 3 metodos (caixa | acruo | competencia).
+
+v2.5.0 (2026-06-11): sinais de praca de pagamento (risco de autoliquidacao/
+lastro frio). wh_posicao_sacado ganha 4 totais de praca (fora da praca do
+sacado / praca do cliente / agencia do cliente / banco digital); novas
+wh_posicao_sacado_cedente (SacadoPosicaoCliente — relacao NxN com praca,
+risco e recompras) e wh_pagamento_praca_mensal (PosicaoHistoricaPagamentoPraca
+— serie mensal 5 buckets desde 2022-01, por conta operacional/cedente).
 """
 
 ADAPTER_VERSION = "bitfin_adapter_v2.10.0"
