@@ -104,19 +104,22 @@ def componentes_titulo(
 ) -> tuple[Decimal, Decimal, Decimal, Decimal] | None:
     """(total_apropriavel, juros, adval, tarifas) do titulo, ou None.
 
-    total_apropriavel = face - PV - IOF (IOF e repasse, fora da receita).
-    tarifas = residuo. Residuo negativo (PV maior que a soma das partes,
-    raro/arredondamento da fonte) e absorvido em tarifas >= 0 reduzindo o
-    total -- nunca inventa componente.
+    total_apropriavel = face - PV - IOF, SEMPRE capado no desagio
+    observavel (IOF e repasse, fora da receita). Em titulos com abatimento
+    pos-operacao a face ATUAL cai e o juros declarado pode exceder o
+    desagio observavel — capamos na ordem juros -> adval (tarifas =
+    resto >= 0). Nunca apropria mais do que face - PV permite.
     """
     desagio_total = _q2(face - pv)
     if desagio_total <= ZERO:
         return None
-    tarifas = _q2(desagio_total - juros - adval - iof)
-    if tarifas < ZERO:
-        tarifas = ZERO
-    total = _q2(juros + adval + tarifas)
-    return total, _q2(juros), _q2(adval), tarifas
+    total = _q2(desagio_total - iof)
+    if total <= ZERO:
+        return None
+    juros_c = min(_q2(juros), total)
+    adval_c = min(_q2(adval), _q2(total - juros_c))
+    tarifas = _q2(total - juros_c - adval_c)
+    return total, juros_c, adval_c, tarifas
 
 
 def _abre_componentes(
@@ -164,6 +167,7 @@ async def sync_receita_acruo(
                 OperacaoItem.valor_de_juros,
                 OperacaoItem.valor_do_ad_valorem,
                 OperacaoItem.valor_do_iof,
+                OperacaoItem.data_de_vencimento_original,
                 Titulo.valor.label("face"),
                 Titulo.numero,
                 Titulo.data_de_vencimento,
@@ -192,6 +196,11 @@ async def sync_receita_acruo(
                 Operacao.data_de_efetivacao.isnot(None),
                 OperacaoItem.valor_presente > 0,
                 Titulo.valor > OperacaoItem.valor_presente,
+            )
+            .order_by(
+                OperacaoItem.titulo_id,
+                Operacao.data_de_efetivacao,
+                OperacaoItem.operacao_id,
             )
         )
         if since is not None:
@@ -223,6 +232,18 @@ async def sync_receita_acruo(
         _bulk_upsert,
         _provenance,
     )
+
+    # Titulo re-operado: mapa (titulo, operacao_i) -> efetivacao da vida
+    # seguinte (corte da curva da vida i). rows vem ordenadas por titulo +
+    # efetivacao.
+    proximas_efetivacoes: dict[tuple[int, int], date] = {}
+    anterior = None
+    for r in rows:
+        if anterior is not None and anterior.titulo_id == r.titulo_id:
+            ef = _as_date(r.data_de_efetivacao)
+            if ef is not None:
+                proximas_efetivacoes[(anterior.titulo_id, anterior.operacao_id)] = ef
+        anterior = r
 
     out: list[dict] = []
     total_rows = 0
@@ -256,7 +277,13 @@ async def sync_receita_acruo(
             continue
 
         efetivacao = _as_date(r.data_de_efetivacao)
-        vencimento = _as_date(r.data_de_vencimento)
+        # Curva CONTRATADA para no vencimento ORIGINAL do item: o silver
+        # Titulo.data_de_vencimento ja reflete PRORROGACAO (Bitfin
+        # sobrescreve) e esticaria a curva — validado no 15565/2 (QiTech
+        # congela o VP na face no venc original).
+        vencimento = _as_date(r.data_de_vencimento_original) or _as_date(
+            r.data_de_vencimento
+        )
         if efetivacao is None or vencimento is None or vencimento < efetivacao:
             continue
 
@@ -273,20 +300,31 @@ async def sync_receita_acruo(
                 continue
             janela = [dus[k]]
 
-        # Saida antecipada encerra a curva no dia da saida.
+        # Saida antecipada encerra a curva no dia da saida. Para titulo
+        # RE-OPERADO (multi-item), a vida i termina na efetivacao da vida
+        # i+1 (recompra + reoperacao): residual apropria nesse dia.
         data_saida = (
             _as_date(r.data_da_situacao)
             if r.situacao in _SITUACOES_SAIDA
             else None
         )
+        proxima_efetivacao = proximas_efetivacoes.get(
+            (r.titulo_id, r.operacao_id)
+        )
+        if proxima_efetivacao is not None and (
+            data_saida is None or proxima_efetivacao < data_saida
+        ):
+            data_saida = proxima_efetivacao
         antecipado = (
             data_saida is not None and data_saida < janela[-1]
         )
 
         cotas = curva_cotas(pv=pv, face=face, n_dus=len(janela))
         # Reescala da curva cheia (face-PV) para o total apropriavel
-        # (face-PV-IOF): proporcional, fechamento na ultima cota.
+        # (<= face-PV por construcao: IOF fora). Fechamento na ultima cota.
         fator_total = total / _q2(face - pv)
+        if fator_total > 1:  # defensivo: nunca apropriar acima da curva
+            fator_total = Decimal("1")
 
         emitidas: list[tuple[date, str, Decimal]] = []
         acumulado = ZERO
@@ -331,7 +369,9 @@ async def sync_receita_acruo(
                 "cedente_nome": r.cedente_nome,
                 "cedente_documento": r.cedente_documento,
             }
-            source_id = f"{r.titulo_id}:{dia.isoformat()}:{evento}"
+            source_id = (
+                f"{r.titulo_id}:{r.operacao_id}:{dia.isoformat()}:{evento}"
+            )
             # Hash sem tenant_id (UUID asyncpg nao e JSON-serializavel e
             # nao e payload de negocio) — mesmo padrao do receitas.py.
             hash_payload = {k: v for k, v in payload.items() if k != "tenant_id"}
