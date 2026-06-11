@@ -22,6 +22,7 @@ export {
   type KpiCardProps, type KpiDelta, type SparklineProps,
   type IntensityTone, type IntensityLevel,
 } from "./KpiStrip"
+export { KpiTile, type KpiTileProps, type KpiTileDelta } from "./KpiTile"
 export {
   KpiHeadline,
   type KpiHeadlineProps, type KpiHeadlinePrimary,

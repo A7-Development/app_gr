@@ -14,7 +14,7 @@
 //   - AIPanel in-layout (mesmo wiring de IA da operacoes4)
 //
 // Esqueleto funcional aprovado (2026-06-12): SegmentSwitch de METODO como
-// lente global (§7.2), KpiStrip, hero mensal por familia, composicao por
+// lente global (§7.2), KpiTiles canonicos, hero mensal por familia, composicao por
 // natureza, PONTE dos 3 metodos (§14.6), DataTable familia/stream com drill
 // de titulos (?selected via nuqs), aba Conferencias (desconto de mora).
 
@@ -42,7 +42,7 @@ import { PageHeader } from "@/design-system/components/PageHeader"
 import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
 import { ProvenanceFooter, type ProvenanceSource } from "@/design-system/components/ProvenanceFooter"
 import { SegmentSwitch } from "@/design-system/components/SegmentSwitch"
-import { KpiCard, KpiStrip } from "@/design-system/components/KpiStrip"
+import { KpiTile } from "@/design-system/components/KpiTile"
 import { EChartsCard } from "@/design-system/components/EChartsCard"
 import { FilterChip } from "@/design-system/components/FilterBar"
 import { InsightStrip } from "@/design-system/components/InsightStrip"
@@ -84,6 +84,12 @@ const METODOS: { value: ReceitasMetodo; label: string }[] = [
   { value: "competencia", label: "Competência" },
   { value: "acruo",       label: "Acruo" },
 ]
+
+const METODO_LABEL_CURTO: Record<ReceitasMetodo, string> = {
+  caixa:       "método caixa",
+  competencia: "método competência",
+  acruo:       "método acruo",
+}
 
 const METODO_DESC: Record<ReceitasMetodo, string> = {
   caixa:       "deságio reconhecido na liquidação do título",
@@ -572,13 +578,13 @@ function VisaoGeral({
 
   return (
     <>
-      <KpiStrip>
-        <KpiCard label="Receita total" value={r ? fmtBRL0(r.kpis.total) : "—"} sub={METODO_DESC[metodo]} />
-        <KpiCard label="Deságio" value={r ? fmtBRL0(r.kpis.desagio) : "—"} sub="bloco operação" />
-        <KpiCard label="Mora (juros + multa)" value={r ? fmtBRL0(r.kpis.mora) : "—"} sub="todas as famílias" />
-        <KpiCard label="Tarifas" value={r ? fmtBRL0(r.kpis.tarifas) : "—"} sub="operação + serviço" />
-        <KpiCard label="Recompra (encargos)" value={r ? fmtBRL0(r.kpis.recompraEncargos) : "—"} sub="juros + multa + deságio" />
-      </KpiStrip>
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <KpiTile label="Receita total" value={r ? fmtBRL0(r.kpis.total) : "—"} caption={METODO_LABEL_CURTO[metodo]} />
+        <KpiTile label="Deságio" value={r ? fmtBRL0(r.kpis.desagio) : "—"} caption="bloco operação" />
+        <KpiTile label="Mora" value={r ? fmtBRL0(r.kpis.mora) : "—"} caption="juros + multa" />
+        <KpiTile label="Tarifas" value={r ? fmtBRL0(r.kpis.tarifas) : "—"} caption="operação + serviço" />
+        <KpiTile label="Recompra" value={r ? fmtBRL0(r.kpis.recompraEncargos) : "—"} caption="encargos cobrados" />
+      </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <EChartsCard
@@ -961,12 +967,12 @@ function Conferencias({
 
   return (
     <>
-      <KpiStrip>
-        <KpiCard label="Régua contratual" value={d ? fmtBRL0(d.totalRegua) : "—"} sub="mora devida pelo contrato" />
-        <KpiCard label="Cobrado" value={d ? fmtBRL0(d.totalCobrado) : "—"} sub="efetivamente lançado" />
-        <KpiCard label="Desconto concedido" value={d ? fmtBRL0(d.totalDesconto) : "—"} sub="régua − cobrado" />
-        <KpiCard label="Perdões totais" value={d ? d.totalPerdoes.toLocaleString("pt-BR") : "—"} sub="títulos com mora 100% perdoada" />
-      </KpiStrip>
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiTile label="Régua contratual" value={d ? fmtBRL0(d.totalRegua) : "—"} caption="mora devida em contrato" />
+        <KpiTile label="Cobrado" value={d ? fmtBRL0(d.totalCobrado) : "—"} caption="efetivamente lançado" />
+        <KpiTile label="Desconto concedido" value={d ? fmtBRL0(d.totalDesconto) : "—"} caption="régua − cobrado" />
+        <KpiTile label="Perdões totais" value={d ? d.totalPerdoes.toLocaleString("pt-BR") : "—"} caption="mora 100% perdoada" />
+      </section>
       <Card className="p-0">
         <div className="px-4 pb-2 pt-4">
           <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
