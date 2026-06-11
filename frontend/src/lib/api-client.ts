@@ -2608,6 +2608,77 @@ export const biBenchmark = {
     apiClient.delete<void>(`/bi/benchmark/favoritos/${cnpj.replace(/\D/g, "")}`),
 }
 
+// ── Benchmark · Comparador — cesta de 17 indicadores (CVM) ───────────────────
+// Endpoint /bi/benchmark/indicadores. Campos `*_rank` = percentil 0-100 do
+// indicador no universo da competencia; `direcao[key]=true` = maior e melhor.
+
+export type ComparadorIndicadoresFundo = {
+  cnpj: string
+  denom_social: string | null
+  pl: number | null
+  pl_rank: number | null
+  pl_medio: number | null
+  subordinacao_pct: number | null
+  subordinacao_pct_rank: number | null
+  passivo_ativo_pct: number | null
+  passivo_ativo_pct_rank: number | null
+  dc_ativo_pct: number | null
+  dc_ativo_pct_rank: number | null
+  alta_liquidez_pl_pct: number | null
+  alta_liquidez_pl_pct_rank: number | null
+  prazo_medio_dias: number | null
+  prazo_medio_dias_rank: number | null
+  inad_total_pct: number | null
+  inad_total_pct_rank: number | null
+  inad_90_pct: number | null
+  inad_90_pct_rank: number | null
+  cobertura_pdd_pct: number | null
+  cobertura_pdd_pct_rank: number | null
+  pdd_pl_pct: number | null
+  pdd_pl_pct_rank: number | null
+  recompra_dc_pct: number | null
+  recompra_dc_pct_rank: number | null
+  desagio_recompra: number | null
+  captacao_liq_pl_pct: number | null
+  captacao_liq_pl_pct_rank: number | null
+  giro_pct: number | null
+  giro_pct_rank: number | null
+  rentab_sub_pct: number | null
+  rentab_sub_pct_rank: number | null
+  atingimento_pp: number | null
+  atingimento_pp_rank: number | null
+  scr_dh_pct: number | null
+  scr_dh_pct_rank: number | null
+  yield_efetivo_pct: number | null
+  yield_efetivo_pct_rank: number | null
+  divida_ativa_pct: number | null
+  divida_ativa_pct_rank: number | null
+}
+
+export type ComparadorIndicadoresResponse = {
+  competencia: string // YYYY-MM-DD
+  total_fundos_universo: number
+  fundos: ComparadorIndicadoresFundo[]
+  nao_encontrados: string[]
+  mediana: Record<string, number | null>
+  direcao: Record<string, boolean>
+}
+
+export const biBenchmarkIndicadores = {
+  comparar: (cnpjs: string[], competencia?: string) => {
+    const qs = new URLSearchParams()
+    for (const c of cnpjs) qs.append("cnpjs", c.replace(/\D/g, ""))
+    if (competencia) qs.set("competencia", competencia)
+    return apiClient.get<ComparadorIndicadoresResponse>(
+      `/bi/benchmark/indicadores?${qs.toString()}`,
+    )
+  },
+  competencias: () =>
+    apiClient.get<{ competencias: string[] }>(
+      "/bi/benchmark/indicadores/competencias",
+    ),
+}
+
 //
 // Metadados do modulo BI (taxonomias para filtros de UI).
 //

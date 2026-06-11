@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.modules.bi.api import (
     benchmark,
     benchmark2,
+    benchmark_indicadores,
     metadata,
     operacoes2,
     operacoes4,
@@ -37,6 +38,10 @@ router.include_router(benchmark.router)
 
 # L2 Benchmark2 (lista completa de fundos CVM — usa <DataTableShell>).
 router.include_router(benchmark2.router)
+
+# Benchmark · Comparador — cesta de 17 indicadores por fundo + percentis
+# (docs/cvm-fidc/indicadores-benchmarking.md). Serve o /bi/comparador.
+router.include_router(benchmark_indicadores.router)
 
 # L2 Panorama (Observatorio FIDC — analise ampla do segmento CVM via
 # postgres_fdw, CLAUDE.md 13.1). Fase 1: aba Visao Geral.
