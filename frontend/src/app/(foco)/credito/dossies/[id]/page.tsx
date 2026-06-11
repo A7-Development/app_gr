@@ -428,10 +428,14 @@ export default function DossierFocusPage() {
   const docs = React.useMemo(() => docsQuery.data ?? [], [docsQuery.data])
 
   // "Enviar para análise": homologa as extrações pendentes (PATCH) e fecha o
-  // document_request — a orquestração aciona o agente em seguida.
+  // document_request — a orquestração aciona o agente em seguida. Restrito
+  // aos tipos da PRÓPRIA estação: homologar um doc de outra estação aqui
+  // validaria extração que o analista ainda não conferiu.
   const sendToAnalysisMutation = useMutation({
-    mutationFn: async (nodeId: string) => {
+    mutationFn: async (vars: { nodeId: string; docTypes: string[] }) => {
+      const allowed = new Set(vars.docTypes.map((t) => t.toLowerCase()))
       for (const d of docs) {
+        if (allowed.size > 0 && !allowed.has(d.doc_type.toLowerCase())) continue
         if (d.extraction_status === "success") {
           const fields =
             ((d.ai_extraction as Record<string, unknown> | null)?.extracted_fields as
@@ -442,7 +446,7 @@ export default function DossierFocusPage() {
           })
         }
       }
-      return credito.dossies.submitNodeInput(dossierId, nodeId, {})
+      return credito.dossies.submitNodeInput(dossierId, vars.nodeId, {})
     },
     onSuccess: () => {
       toast.success("Valores gravados no dossiê — análise acionada.")
@@ -496,17 +500,28 @@ export default function DossierFocusPage() {
   }, [fatuDocStep])
 
   const fatuReadiness = React.useMemo(() => {
-    const uploaded = new Set(docs.map((d) => d.doc_type.toLowerCase()))
+    // Só os docs DESTA estação contam pra prontidão (um contrato social com
+    // erro de extração não trava o fechamento do faturamento).
+    const stationDocs = fatuRequired.length
+      ? docs.filter((d) =>
+          fatuRequired.some((t) => t.toLowerCase() === d.doc_type.toLowerCase()),
+        )
+      : docs
+    const uploaded = new Set(stationDocs.map((d) => d.doc_type.toLowerCase()))
     const missing = fatuRequired.filter((t) => !uploaded.has(t.toLowerCase()))
-    const processing = docs.some(
+    const processing = stationDocs.some(
       (d) => d.extraction_status === "pending" || d.extraction_status === "processing",
     )
-    const hasError = docs.some((d) => d.extraction_status === "error")
-    const processedOk = docs.some(
+    const hasError = stationDocs.some((d) => d.extraction_status === "error")
+    const processedOk = stationDocs.some(
       (d) => d.extraction_status === "success" || d.extraction_status === "validated",
     )
     const ready =
-      docs.length > 0 && missing.length === 0 && !processing && !hasError && processedOk
+      stationDocs.length > 0 &&
+      missing.length === 0 &&
+      !processing &&
+      !hasError &&
+      processedOk
     const pendingText = missing.length
       ? `falta: enviar ${missing.join(", ")}`
       : hasError
@@ -693,6 +708,7 @@ export default function DossierFocusPage() {
 
   const amount = formatBRLCompact(dossier.requested_amount)
   const sidebarMeta = [
+    dossier.code,
     dossier.target_cnpj ? `CNPJ ${dossier.target_cnpj}` : null,
     amount ? `${amount} pleiteado` : null,
   ]
@@ -760,7 +776,11 @@ export default function DossierFocusPage() {
               primaryLabel: "Enviar para análise",
               primaryIcon: RiArrowRightLine,
               onPrimary: () =>
-                fatuDocStep && sendToAnalysisMutation.mutate(fatuDocStep.id),
+                fatuDocStep &&
+                sendToAnalysisMutation.mutate({
+                  nodeId: fatuDocStep.id,
+                  docTypes: fatuRequired,
+                }),
               primaryLoading: sendToAnalysisMutation.isPending,
               statusIcon: RiArchiveDrawerLine,
             }
@@ -906,13 +926,18 @@ export default function DossierFocusPage() {
     if (m.nodeType === "document_extractor") return null
 
     if (m.nodeType === "document_request") {
-      const out = (m.output ?? {}) as { required?: string[] }
+      const out = (m.output ?? {}) as { required?: string[]; optional?: string[] }
       if (m.state === "pending") return <DormantZone key={m.id} label={m.label} />
+      const required = Array.isArray(out.required) ? out.required : []
+      const optional = Array.isArray(out.optional) ? out.optional : []
+      const stationTypes = [...required, ...optional]
       return (
         <Zone key={m.id}>
           <DocumentWorkspace
             dossierId={dossierId}
-            requiredDocTypes={Array.isArray(out.required) ? out.required : []}
+            requiredDocTypes={required}
+            // Docs de OUTRAS estações não vazam pra cá (e vice-versa).
+            docTypes={stationTypes.length > 0 ? stationTypes : undefined}
           />
         </Zone>
       )
