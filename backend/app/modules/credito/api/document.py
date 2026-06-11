@@ -125,6 +125,46 @@ async def extract_document(
     return DocumentRead.model_validate(doc)
 
 
+@router.post(
+    "/dossies/{dossier_id}/documents/fetch-junta",
+    response_model=DocumentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def fetch_document_from_junta(
+    dossier_id: UUID,
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = Depends(require_module(Module.CREDITO, Permission.WRITE)),
+) -> DocumentRead:
+    """Busca o contrato social mais recente DIRETO na JUCESP e anexa ao dossiê.
+
+    Ficha completa (persiste QSA/arquivamentos oficiais em junta_data) →
+    documento societário mais recente arquivado → download → vira documento
+    do dossiê com extração multimodal disparada (mesmo fluxo do upload).
+    Bronze de cada consulta em wh_infosimples_raw_consulta.
+    """
+    from app.modules.credito.services.junta import (
+        JuntaFetchError,
+        fetch_social_contract_from_junta,
+    )
+
+    try:
+        doc = await fetch_social_contract_from_junta(
+            db,
+            tenant_id=principal.tenant_id,
+            dossier_id=dossier_id,
+            initiated_by=principal.user_id,
+        )
+    except JuntaFetchError as e:
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except DocumentServiceError as e:
+        await db.commit()  # bronze + documento persistem; extracao falhou
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    await db.commit()
+    return DocumentRead.model_validate(doc)
+
+
 @router.get("/dossies/{dossier_id}/documents/{document_id}/file")
 async def get_document_file(
     dossier_id: UUID,

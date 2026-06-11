@@ -72,14 +72,23 @@ import {
 import { cx } from "@/lib/utils"
 
 // Campos do secret por slug de provider (vendor-specific). Fallback generico.
-const SECRET_FIELDS: Record<string, { key: string; label: string }[]> = {
+// `optional`: famílias de consulta com login próprio (Infosimples: JUCESP e
+// protestos têm CPF/senha DISTINTOS) — cadastráveis depois, na mesma credencial.
+type SecretField = { key: string; label: string; optional?: boolean }
+const SECRET_FIELDS: Record<string, SecretField[]> = {
   bigdatacorp: [
     { key: "access_token", label: "Access Token" },
     { key: "token_id", label: "Token ID" },
   ],
-  infosimples: [{ key: "api_key", label: "API Key" }],
+  infosimples: [
+    { key: "api_key", label: "API Key" },
+    { key: "jucesp_login_cpf", label: "JUCESP · CPF de acesso", optional: true },
+    { key: "jucesp_login_senha", label: "JUCESP · Senha", optional: true },
+    { key: "protesto_login_cpf", label: "Protestos · CPF de acesso", optional: true },
+    { key: "protesto_login_senha", label: "Protestos · Senha", optional: true },
+  ],
 }
-function secretFieldsFor(slug?: string): { key: string; label: string }[] {
+function secretFieldsFor(slug?: string): SecretField[] {
   return (slug && SECRET_FIELDS[slug]) || [{ key: "api_key", label: "Chave" }]
 }
 
@@ -162,7 +171,7 @@ function CreateForm({
   const valid =
     providerId &&
     alias.trim() &&
-    fields.every((f) => (secret[f.key] ?? "").trim())
+    fields.every((f) => f.optional || (secret[f.key] ?? "").trim())
 
   return (
     <div className="space-y-4">
