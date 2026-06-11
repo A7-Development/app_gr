@@ -312,6 +312,76 @@ async def sync_receita_recompra(
             "rows": count}
 
 
+# ---- Sync: rentabilidade de operacao (retido na fonte) ----------------------
+
+
+def _match_stream_operacao(
+    streams: list[WhBitfinReceitaStream], descricao: str
+) -> WhBitfinReceitaStream | None:
+    """Resolve stream por descricao: `descricao_eq` exato vence; o stream
+    catch-all (`descricao_not_in`) pega o resto que nao esta na lista."""
+    for s in streams:
+        if s.criterio.get("descricao_eq") == descricao:
+            return s
+    for s in streams:
+        excl = s.criterio.get("descricao_not_in")
+        if excl is not None and descricao not in excl:
+            return s
+    return None
+
+
+async def sync_receita_operacao(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
+    """OperacaoRentabilidade (efetivadas, Origem != recompra/homologacao) ->
+    streams desagio_operacao / tarifa_operacao / ad_valorem.
+
+    Receita RETIDA do liquido na efetivacao = caixa por construcao.
+    Cross-check canonico: Σ desagio_operacao do mes == Σ
+    wh_operacao.total_de_juros das efetivadas do mes.
+    """
+    async with AsyncSessionLocal() as db:
+        streams = await load_receita_streams(db, tenant_id)
+
+    op_streams = [
+        s for s in streams.values()
+        if s.fonte_tabela == "OperacaoRentabilidade" and s.grao == "operacao"
+    ]
+    if not op_streams:
+        return {"table": "wh_receita_operacional", "stream": "operacao",
+                "rows": 0, "skipped": "streams inativos"}
+
+    cutoff = since or EPOCH
+    rows = await asyncio.to_thread(
+        fetch_rows, config, config.database_bitfin,
+        bitfin.SELECT_RECEITA_OPERACAO_RENT, (cutoff,),
+    )
+
+    mapped: list[dict] = []
+    sem_stream = 0
+    for r in rows:
+        descricao = (r["rentabilidade_descricao"] or "").strip()
+        stream = _match_stream_operacao(op_streams, descricao)
+        if stream is None:
+            sem_stream += 1
+            continue
+        valor = Decimal(str(r["aplicado"]))
+        if valor <= ZERO:
+            continue
+        src = dict(r)
+        src["documento"] = descricao[:40]  # qual tarifa/linha da rentabilidade
+        mapped.append(_base_row(
+            tenant_id=tenant_id, stream=stream, data_evento=r["data_evento"],
+            valor=valor,
+            source_id=f"oprent:{r['operacao_id']}:{descricao}",
+            src=src,
+        ))
+
+    count = await _upsert_receitas(tenant_id, mapped)
+    return {"table": "wh_receita_operacional", "stream": "operacao",
+            "rows": count, "sem_stream": sem_stream}
+
+
 # ---- Upsert ------------------------------------------------------------------
 
 
