@@ -10,6 +10,27 @@
 >
 > STATUS: PROPOSTA — aguardando aprovacao do Ricardo. Nada implementado.
 
+## Resumo executivo (cesta final consolidada, 2026-06-11)
+
+**17 indicadores em 5 dimensoes** (valores REALINVEST abr/26 como exemplo):
+
+| Dimensao | Indicadores | REALINVEST |
+|---|---|---|
+| Estrutura/porte | 1 PL · 2 Subordinacao · 3 Passivo/Ativo | 25,9mi · 54,7% · 0,2% |
+| Perfil do ativo | 4 %DC · 5 Alta Liquidez/PL (incl. I.4 curto) · 6 Prazo medio | 98% · 2,0% · ~25d |
+| Qualidade | 7 Inadimplencia total+aging · 8 Cobertura PDD · 9 PDD/PL · 10 Recompra (+desagio d3-d2) · 15 Mix SCR · 17 DC em Divida Ativa | 1,87% · 68% · 1,27% · 1,05% · 97% AA · 14,5% |
+| Fluxo | 11 Captacao liquida+fila · 12 Giro | +4,1% · 79% a.m. |
+| Performance | 13 Rentab Sub · 14 Real-vs-Meta · 16 **Yield efetivo** (pricing oficial) | 4,27% · 100% · 2,81% (mercado 1,40%) |
+
+Auxiliares: bracket tab_ix (ordinal apenas), custo total implicito (= bruto
+interno - yield efetivo; so fundos proprios), concentracao top-9 (ja existe).
+
+**4 limites estruturais** (regras duras de implementacao): (i) inadimplencia =
+v_b+vi_b sobre BRUTO; (ii) provisao positiva / subtotais ja liquidos; (iii)
+custos NAO existem em dado aberto -> yield bruto cross-fund nao derivavel
+(ponte via registro_fundo_classe.taxa_adm + ΔPDD); (iv) rentabilidade =
+tab_x_3, nunca Δcota.
+
 ## Convencoes
 
 - `DC_bruto` = `tab_ii_vl_carteira` (= 2a+2b brutos, validado ao centavo)
