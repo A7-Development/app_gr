@@ -5597,3 +5597,264 @@ function _coerceVariacaoItem(r: VariacaoItemRaw): VariacaoItem {
     valor:     Number(r.valor),
   }
 }
+
+// ── Receitas — 3 metodos de apuracao (caixa | competencia | acruo) ─────────
+// Catalogo de receitas caixa-fiel: wh_receita_caixa / wh_receita_operacional
+// / wh_receita_acruo_dia.
+
+export type ReceitasMetodo = "caixa" | "competencia" | "acruo"
+
+export type ReceitasFilters = {
+  metodo:         ReceitasMetodo
+  competenciaDe:  string  // YYYY-MM-01
+  competenciaAte: string  // YYYY-MM-01
+  fundoId?:       number
+}
+
+export type ReceitasKpis = {
+  total:            number
+  desagio:          number
+  mora:             number
+  tarifas:          number
+  recompraEncargos: number
+}
+
+export type ReceitasSerieMensalPonto = {
+  competencia: string
+  porFamilia:  Record<string, number>
+  total:       number
+}
+
+export type ReceitasComposicaoNatureza = { natureza: string; valor: number }
+
+export type ReceitasPonte = {
+  caixa:                 number
+  competencia:           number
+  acruo:                 number
+  deltaCompetenciaCaixa: number
+  deltaCompetenciaAcruo: number
+}
+
+export type ReceitasResumo = {
+  metodo:             ReceitasMetodo
+  kpis:               ReceitasKpis
+  serieMensal:        ReceitasSerieMensalPonto[]
+  composicaoNatureza: ReceitasComposicaoNatureza[]
+  ponte:              ReceitasPonte
+}
+
+export type ReceitaDetalheLinha = {
+  familia:  string
+  stream:   string
+  natureza: string
+  qtd:      number
+  valor:    number
+}
+
+export type ReceitasDetalhe = {
+  metodo: ReceitasMetodo
+  linhas: ReceitaDetalheLinha[]
+  total:  number
+}
+
+export type ReceitaCedenteLinha = {
+  cedenteNome:      string
+  cedenteDocumento: string | null
+  desagio:          number
+  mora:             number
+  tarifas:          number
+  demais:           number
+  total:            number
+  qtd:              number
+}
+
+export type ReceitasCedentes = {
+  metodo: ReceitasMetodo
+  linhas: ReceitaCedenteLinha[]
+  total:  number
+}
+
+export type ReceitaTituloLinha = {
+  data:                 string
+  tituloId:             number | null
+  documento:            string | null
+  cedenteNome:          string | null
+  natureza:             string
+  valor:                number
+  valorReferenciaRegua: number | null
+}
+
+export type ReceitasTitulos = {
+  metodo:  ReceitasMetodo
+  familia: string
+  stream:  string
+  linhas:  ReceitaTituloLinha[]
+  total:   number
+  qtd:     number
+}
+
+export type DescontoMoraCedente = {
+  cedenteNome:      string
+  cedenteDocumento: string | null
+  regua:            number
+  cobrado:          number
+  desconto:         number
+  perdoesTotais:    number
+  qtd:              number
+}
+
+export type ReceitasConferencias = {
+  competenciaDe:  string
+  competenciaAte: string
+  descontoMora:   DescontoMoraCedente[]
+  totalRegua:     number
+  totalCobrado:   number
+  totalDesconto:  number
+  totalPerdoes:   number
+}
+
+function _receitasParams(f: ReceitasFilters): URLSearchParams {
+  const p = new URLSearchParams({
+    metodo:          f.metodo,
+    competencia_de:  f.competenciaDe,
+    competencia_ate: f.competenciaAte,
+  })
+  if (f.fundoId !== undefined) p.set("fundo_id", String(f.fundoId))
+  return p
+}
+
+const _rcN = (v: number | string): number => Number(v)
+
+export const receitasApi = {
+  resumo: async (f: ReceitasFilters): Promise<ReceitasResumo> => {
+    type Raw = {
+      metodo: ReceitasMetodo
+      kpis: { total: string; desagio: string; mora: string; tarifas: string; recompra_encargos: string }
+      serie_mensal: { competencia: string; por_familia: Record<string, string>; total: string }[]
+      composicao_natureza: { natureza: string; valor: string }[]
+      ponte: { caixa: string; competencia: string; acruo: string; delta_competencia_caixa: string; delta_competencia_acruo: string }
+    }
+    const r = await apiClient.get<Raw>(
+      `/controladoria/receitas/resumo?${_receitasParams(f).toString()}`,
+    )
+    return {
+      metodo: r.metodo,
+      kpis: {
+        total: _rcN(r.kpis.total), desagio: _rcN(r.kpis.desagio), mora: _rcN(r.kpis.mora),
+        tarifas: _rcN(r.kpis.tarifas), recompraEncargos: _rcN(r.kpis.recompra_encargos),
+      },
+      serieMensal: r.serie_mensal.map((s) => ({
+        competencia: s.competencia,
+        porFamilia: Object.fromEntries(
+          Object.entries(s.por_familia).map(([k, v]) => [k, _rcN(v)]),
+        ),
+        total: _rcN(s.total),
+      })),
+      composicaoNatureza: r.composicao_natureza.map((c) => ({
+        natureza: c.natureza, valor: _rcN(c.valor),
+      })),
+      ponte: {
+        caixa: _rcN(r.ponte.caixa), competencia: _rcN(r.ponte.competencia),
+        acruo: _rcN(r.ponte.acruo),
+        deltaCompetenciaCaixa: _rcN(r.ponte.delta_competencia_caixa),
+        deltaCompetenciaAcruo: _rcN(r.ponte.delta_competencia_acruo),
+      },
+    }
+  },
+
+  detalhe: async (f: ReceitasFilters): Promise<ReceitasDetalhe> => {
+    type Raw = {
+      metodo: ReceitasMetodo
+      linhas: { familia: string; stream: string; natureza: string; qtd: number; valor: string }[]
+      total: string
+    }
+    const r = await apiClient.get<Raw>(
+      `/controladoria/receitas/detalhe?${_receitasParams(f).toString()}`,
+    )
+    return {
+      metodo: r.metodo,
+      linhas: r.linhas.map((l) => ({ ...l, valor: _rcN(l.valor) })),
+      total: _rcN(r.total),
+    }
+  },
+
+  cedentes: async (f: ReceitasFilters): Promise<ReceitasCedentes> => {
+    type Raw = {
+      metodo: ReceitasMetodo
+      linhas: { cedente_nome: string; cedente_documento: string | null; desagio: string; mora: string; tarifas: string; demais: string; total: string; qtd: number }[]
+      total: string
+    }
+    const r = await apiClient.get<Raw>(
+      `/controladoria/receitas/cedentes?${_receitasParams(f).toString()}`,
+    )
+    return {
+      metodo: r.metodo,
+      linhas: r.linhas.map((l) => ({
+        cedenteNome: l.cedente_nome, cedenteDocumento: l.cedente_documento,
+        desagio: _rcN(l.desagio), mora: _rcN(l.mora), tarifas: _rcN(l.tarifas),
+        demais: _rcN(l.demais), total: _rcN(l.total), qtd: l.qtd,
+      })),
+      total: _rcN(r.total),
+    }
+  },
+
+  titulos: async (
+    f: ReceitasFilters & { familia: string; stream: string },
+  ): Promise<ReceitasTitulos> => {
+    const p = _receitasParams(f)
+    p.set("familia", f.familia)
+    p.set("stream", f.stream)
+    type Raw = {
+      metodo: ReceitasMetodo
+      familia: string
+      stream: string
+      linhas: { data: string; titulo_id: number | null; documento: string | null; cedente_nome: string | null; natureza: string; valor: string; valor_referencia_regua: string | null }[]
+      total: string
+      qtd: number
+    }
+    const r = await apiClient.get<Raw>(
+      `/controladoria/receitas/titulos?${p.toString()}`,
+    )
+    return {
+      metodo: r.metodo, familia: r.familia, stream: r.stream,
+      linhas: r.linhas.map((l) => ({
+        data: l.data, tituloId: l.titulo_id, documento: l.documento,
+        cedenteNome: l.cedente_nome, natureza: l.natureza, valor: _rcN(l.valor),
+        valorReferenciaRegua:
+          l.valor_referencia_regua === null ? null : _rcN(l.valor_referencia_regua),
+      })),
+      total: _rcN(r.total), qtd: r.qtd,
+    }
+  },
+
+  conferencias: async (
+    f: Omit<ReceitasFilters, "metodo">,
+  ): Promise<ReceitasConferencias> => {
+    const p = new URLSearchParams({
+      competencia_de: f.competenciaDe, competencia_ate: f.competenciaAte,
+    })
+    if (f.fundoId !== undefined) p.set("fundo_id", String(f.fundoId))
+    type Raw = {
+      competencia_de: string
+      competencia_ate: string
+      desconto_mora: { cedente_nome: string; cedente_documento: string | null; regua: string; cobrado: string; desconto: string; perdoes_totais: number; qtd: number }[]
+      total_regua: string
+      total_cobrado: string
+      total_desconto: string
+      total_perdoes: number
+    }
+    const r = await apiClient.get<Raw>(
+      `/controladoria/receitas/conferencias?${p.toString()}`,
+    )
+    return {
+      competenciaDe: r.competencia_de, competenciaAte: r.competencia_ate,
+      descontoMora: r.desconto_mora.map((d) => ({
+        cedenteNome: d.cedente_nome, cedenteDocumento: d.cedente_documento,
+        regua: _rcN(d.regua), cobrado: _rcN(d.cobrado), desconto: _rcN(d.desconto),
+        perdoesTotais: d.perdoes_totais, qtd: d.qtd,
+      })),
+      totalRegua: _rcN(r.total_regua), totalCobrado: _rcN(r.total_cobrado),
+      totalDesconto: _rcN(r.total_desconto), totalPerdoes: r.total_perdoes,
+    }
+  },
+}
