@@ -22,6 +22,14 @@ Metodo = Literal["caixa", "competencia", "acruo"]
 
 class ReceitasKpis(BaseModel):
     total: Decimal
+    operacionais: Decimal = Field(
+        default=Decimal("0"),
+        description="Constituidas NA operacao (desagio/adval/tarifas de operacao + desagio de recompra)",
+    )
+    pos_operacionais: Decimal = Field(
+        default=Decimal("0"),
+        description="Nascem depois da operacao (moras, juros/multa de recompra, tarifas de servico, repasses, financeira)",
+    )
     desagio: Decimal = Field(description="Natureza DESAGIO (bloco operacao)")
     mora: Decimal = Field(
         description="JUROS_MORA + MULTA_MORA + ENCARGO_NEGOCIADO (todas as familias)"
@@ -64,6 +72,7 @@ class ReceitasResumoResponse(BaseModel):
 
 
 class ReceitaDetalheLinha(BaseModel):
+    grupo: str = Field(default="pos_operacional", description="operacional | pos_operacional")
     familia: str
     stream: str = Field(description="stream_key (competencia) ou evento (caixa/acruo)")
     natureza: str
