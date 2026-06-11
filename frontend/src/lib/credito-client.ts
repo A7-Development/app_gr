@@ -914,6 +914,13 @@ export const credito = {
       apiClient.post<CreditDocumentRead>(
         `/credito/dossies/${dossierId}/documents/${documentId}/extract`,
       ),
+    /** Busca o contrato social mais recente DIRETO na JUCESP (Infosimples):
+     *  ficha oficial (QSA + arquivamentos) + download do documento arquivado
+     *  + extração automática. Demora ~1-2 min (consulta + leitura IA). */
+    fetchFromJunta: (dossierId: string) =>
+      apiClient.post<CreditDocumentRead>(
+        `/credito/dossies/${dossierId}/documents/fetch-junta`,
+      ),
     updateExtraction: (
       dossierId: string,
       documentId: string,

@@ -958,6 +958,9 @@ export default function DossierFocusPage() {
             docs={stationDocs}
             requiredDocTypes={required}
             canUpload={m.state === "waiting_input"}
+            juntaFetch={required.some(
+              (t) => t.toLowerCase() === "social_contract",
+            )}
             onChanged={() =>
               queryClient.invalidateQueries({
                 queryKey: ["credito", "documents", dossierId],

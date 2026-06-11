@@ -21,6 +21,7 @@ import * as React from "react"
 import { useMutation } from "@tanstack/react-query"
 import {
   RiAddLine,
+  RiBankLine,
   RiCheckLine,
   RiEditLine,
   RiEyeLine,
@@ -132,13 +133,28 @@ export function DocumentSourceZone({
   requiredDocTypes,
   canUpload,
   onChanged,
+  juntaFetch = false,
 }: {
   dossierId: string
   docs: CreditDocumentRead[]
   requiredDocTypes: string[]
   canUpload: boolean
   onChanged: () => void
+  /** Habilita "Buscar na JUCESP" (estações de contrato social): baixa o
+   *  documento societário mais recente DIRETO da Junta + QSA oficial. */
+  juntaFetch?: boolean
 }) {
+  const juntaMut = useMutation({
+    mutationFn: () => credito.documents.fetchFromJunta(dossierId),
+    onSuccess: (doc) => {
+      toast.success(
+        `Documento da JUCESP anexado (${doc.original_filename}) — extração concluída.`,
+      )
+      onChanged()
+    },
+    onError: (e) =>
+      toast.error(`Busca na JUCESP falhou: ${(e as Error).message}`),
+  })
   const [showUpload, setShowUpload] = React.useState(docs.length === 0)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const replaceRef = React.useRef<{ docId: string; docType: string } | null>(null)
@@ -191,19 +207,46 @@ export function DocumentSourceZone({
         <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">
           Documento-fonte
         </span>
-        {canUpload && (
-          <button
-            type="button"
-            onClick={() => {
-              replaceRef.current = null
-              setShowUpload((v) => !v)
-            }}
-            className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
-          >
-            <RiAddLine className="size-3.5" aria-hidden />
-            Adicionar documento
-          </button>
-        )}
+        <span className="flex items-center gap-3">
+          {juntaFetch && canUpload && (
+            <button
+              type="button"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Buscar na JUCESP consulta a ficha oficial (QSA + arquivamentos) e baixa o documento societário mais recente arquivado. Leva ~1-2 min e tem custo por consulta. Continuar?",
+                  )
+                ) {
+                  juntaMut.mutate()
+                }
+              }}
+              disabled={juntaMut.isPending}
+              className="inline-flex items-center gap-1 text-xs font-medium disabled:opacity-60"
+              style={{ color: provenanceTokens.fonte.chipText }}
+              title="Baixa o contrato/alteração mais recente direto da Junta Comercial de SP"
+            >
+              {juntaMut.isPending ? (
+                <RiLoader4Line className="size-3.5 animate-spin" aria-hidden />
+              ) : (
+                <RiBankLine className="size-3.5" aria-hidden />
+              )}
+              {juntaMut.isPending ? "Buscando na JUCESP…" : "Buscar na JUCESP"}
+            </button>
+          )}
+          {canUpload && (
+            <button
+              type="button"
+              onClick={() => {
+                replaceRef.current = null
+                setShowUpload((v) => !v)
+              }}
+              className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+            >
+              <RiAddLine className="size-3.5" aria-hidden />
+              Adicionar documento
+            </button>
+          )}
+        </span>
       </header>
 
       <input

@@ -45,6 +45,14 @@ from app.modules.integracoes.services.bdc_cadastral_query import (
     CadastralQueryResult,
     fetch_cadastral_pj,
 )
+from app.modules.integracoes.services.infosimples_junta import (
+    JuntaDownloadResult,
+    JuntaFichaResult,
+    JuntaListaDocsResult,
+    fetch_junta_documento,
+    fetch_junta_ficha,
+    fetch_junta_lista_documentos,
+)
 from app.modules.integracoes.services.dia_util import (
     dia_util_anterior_qitech,
 )
@@ -143,6 +151,12 @@ __all__ = [
     "endpoint_catalog",
     "execute_serasa_pj_query",
     "fetch_cadastral_pj",
+    "fetch_junta_documento",
+    "fetch_junta_ficha",
+    "fetch_junta_lista_documentos",
+    "JuntaDownloadResult",
+    "JuntaFichaResult",
+    "JuntaListaDocsResult",
     "get_report_spec",
     "is_source_enabled",
     "list_due_endpoints",

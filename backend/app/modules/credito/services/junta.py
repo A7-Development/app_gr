@@ -1,0 +1,229 @@
+"""JUCESP no dossiê — busca direta do contrato social na fonte oficial.
+
+Orquestra (consumindo `integracoes/public.py`, §11.3):
+  1. ficha cadastral completa da JUCESP (CNPJ da empresa-alvo)
+  2. persiste o QSA/arquivamentos oficiais em
+     `credit_dossier_company.junta_data` (insumo dos cruzamentos)
+  3. localiza o documento societário mais recente arquivado (contrato /
+     alteração / consolidação)
+  4. baixa a cópia digitalizada e a transforma em `credit_dossier_document`
+     (doc_type SOCIAL_CONTRACT) — a extração multimodal dispara em seguida,
+     entrando no MESMO fluxo de conferência do upload manual.
+
+A cópia digitalizada da JUCESP não tem valor jurídico — serve à análise e à
+contraprova ("o documento que o cedente mandou é o último arquivado?").
+"""
+
+from __future__ import annotations
+
+import re
+from datetime import UTC, datetime
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.enums import CompanyRole, DocumentType
+from app.modules.credito.models.company import CreditDossierCompany
+from app.modules.credito.models.document import CreditDossierDocument
+from app.modules.integracoes.public import (
+    fetch_junta_documento,
+    fetch_junta_ficha,
+    fetch_junta_lista_documentos,
+)
+
+
+class JuntaFetchError(Exception):
+    """Falha de negócio na busca JUCESP (mensagem segura pro analista)."""
+
+
+_DOC_SOCIETARIO_RE = re.compile(
+    r"CONTRATO|ALTERA|CONSOLIDA|CONSTITUI", re.IGNORECASE
+)
+
+
+def _digits(raw: Any) -> str:
+    return re.sub(r"\D", "", str(raw or ""))
+
+
+def _registro_of(doc: dict[str, Any]) -> str | None:
+    for key in ("registro", "numero", "protocolo"):
+        value = doc.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
+def _sort_key(doc: dict[str, Any]) -> tuple:
+    """Mais recente primeiro: data (dd/mm/aaaa) > registro numérico."""
+    raw_date = str(doc.get("digitalizacao") or doc.get("data") or "")
+    m = re.match(r"^(\d{2})/(\d{2})/(\d{4})", raw_date)
+    date_key = (m.group(3), m.group(2), m.group(1)) if m else ("0", "0", "0")
+    reg = _digits(_registro_of(doc) or "")
+    return (date_key, int(reg) if reg else 0)
+
+
+def _pick_latest_societario(docs: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Documento societário mais recente; fallback = mais recente geral."""
+    societarios = [
+        d
+        for d in docs
+        if _DOC_SOCIETARIO_RE.search(str(d.get("descricao") or "")) and _registro_of(d)
+    ]
+    pool = societarios or [d for d in docs if _registro_of(d)]
+    if not pool:
+        return None
+    return max(pool, key=_sort_key)
+
+
+async def _persist_junta_data(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    dossier_id: UUID,
+    fields_json: dict[str, Any],
+    raw_id: UUID | None,
+    adapter_version: str,
+) -> None:
+    company = (
+        await db.execute(
+            select(CreditDossierCompany).where(
+                CreditDossierCompany.tenant_id == tenant_id,
+                CreditDossierCompany.dossier_id == dossier_id,
+                CreditDossierCompany.role == CompanyRole.TARGET,
+            )
+        )
+    ).scalar_one_or_none()
+    if company is None:
+        return
+    company.junta_data = {
+        **fields_json,
+        "_meta": {
+            "fonte": "junta_comercial_sp",
+            "raw_id": str(raw_id) if raw_id else None,
+            "adapter_version": adapter_version,
+            "fetched_at": datetime.now(UTC).isoformat(),
+        },
+    }
+    await db.flush()
+
+
+async def fetch_social_contract_from_junta(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    dossier_id: UUID,
+    initiated_by: UUID | None,
+) -> CreditDossierDocument:
+    """Busca o contrato social mais recente na JUCESP e anexa ao dossiê.
+
+    Returns:
+        O documento criado, já com a extração multimodal executada.
+
+    Raises:
+        JuntaFetchError: empresa sem CNPJ, não encontrada na JUCESP, sem
+            documentos societários arquivados, ou falha do provedor.
+    """
+    from app.modules.credito.services.document import (
+        create_document,
+        process_document,
+    )
+    from app.modules.credito.services.dossier import get_dossier
+    from app.modules.integracoes.adapters.data.infosimples.errors import (
+        InfosimplesAdapterError,
+    )
+
+    dossier = await get_dossier(db, tenant_id=tenant_id, dossier_id=dossier_id)
+    if dossier is None:
+        raise JuntaFetchError("Dossiê não encontrado.")
+    cnpj = _digits(dossier.target_cnpj)
+    if len(cnpj) != 14:
+        raise JuntaFetchError(
+            "O dossiê não tem CNPJ da empresa-alvo — preencha a identificação "
+            "antes de buscar na JUCESP."
+        )
+
+    triggered_by = f"dossie:{dossier_id}"
+
+    try:
+        # 1. Ficha completa (QSA oficial + arquivamentos) — também persiste.
+        ficha = await fetch_junta_ficha(
+            db, tenant_id=tenant_id, cnpj=cnpj, triggered_by=triggered_by
+        )
+        if not ficha.found or ficha.fields is None:
+            raise JuntaFetchError(
+                "Empresa não encontrada na JUCESP "
+                f"({ficha.message or 'sem resultados'}). A empresa é registrada "
+                "em SP?"
+            )
+        if ficha.fields_json:
+            await _persist_junta_data(
+                db,
+                tenant_id=tenant_id,
+                dossier_id=dossier_id,
+                fields_json=ficha.fields_json,
+                raw_id=ficha.raw_id,
+                adapter_version=ficha.adapter_version,
+            )
+
+        nire = _digits(ficha.fields.nire)
+        if not nire:
+            raise JuntaFetchError(
+                "A ficha da JUCESP veio sem NIRE — sem como localizar os "
+                "documentos arquivados."
+            )
+
+        # 2. Documentos digitalizados arquivados.
+        lista = await fetch_junta_lista_documentos(
+            db, tenant_id=tenant_id, nire=nire, triggered_by=triggered_by
+        )
+        if not lista.found:
+            raise JuntaFetchError(
+                "Nenhum documento digitalizado arquivado na JUCESP para o "
+                f"NIRE {nire}."
+            )
+        alvo = _pick_latest_societario(lista.documentos)
+        if alvo is None:
+            raise JuntaFetchError(
+                "A JUCESP listou documentos, mas nenhum com número de registro "
+                "utilizável para download."
+            )
+        registro = _registro_of(alvo) or ""
+
+        # 3. Download da cópia digitalizada.
+        download = await fetch_junta_documento(
+            db,
+            tenant_id=tenant_id,
+            nire=nire,
+            registro=registro,
+            triggered_by=triggered_by,
+        )
+    except InfosimplesAdapterError as e:
+        # Mensagem do adapter já é voltada ao operador (credencial ausente,
+        # vendor fora do ar etc.) — repassa sem stack.
+        raise JuntaFetchError(str(e)) from e
+
+    descricao = str(alvo.get("descricao") or "documento societario").strip()
+    safe_desc = re.sub(r"[^A-Za-z0-9_-]+", "_", descricao)[:60].strip("_")
+    filename = f"JUCESP_{nire}_{registro}_{safe_desc or 'documento'}.pdf"
+
+    # 4. Vira documento do dossiê + extração multimodal (mesmo fluxo do upload).
+    document = await create_document(
+        db,
+        tenant_id=tenant_id,
+        dossier_id=dossier_id,
+        doc_type=DocumentType.SOCIAL_CONTRACT,
+        filename=filename,
+        mime_type=download.mime_type or "application/pdf",
+        body=download.content,
+        uploaded_by=initiated_by,
+    )
+    document = await process_document(
+        db,
+        tenant_id=tenant_id,
+        dossier_id=dossier_id,
+        document=document,
+        initiated_by=initiated_by,
+    )
+    return document
