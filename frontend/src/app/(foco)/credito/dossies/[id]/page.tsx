@@ -40,7 +40,7 @@ import { Button } from "@/components/tremor/Button"
 import { Textarea } from "@/components/tremor/Textarea"
 import { DynamicForm } from "@/design-system/components/DynamicForm"
 import { type WizardMultiStepStep } from "@/design-system/patterns/WizardMultiStep"
-import { DocumentWorkspace } from "./_components/DocumentWorkspace"
+import { DocumentSourceZone, FichaConferenceZone } from "./_components/DocumentZones"
 import { DossierReadingView } from "./_components/DossierReadingView"
 import {
   FaturamentoStation,
@@ -73,6 +73,7 @@ import {
   type CadastralAnalysis,
   type EdgeSpec,
   type FormField,
+  type CreditDocumentRead,
   type NodeRunSummary,
   type NodeSpec,
   type OpinionInput,
@@ -231,17 +232,20 @@ function estacaoState(e: Estacao): StationState {
   }
   if (members.some((m) => m.state === "running")) return "rodando"
   if (members.every((m) => m.state === "completed" || m.state === "skipped")) return "fechada"
-  if (members.some((m) => m.state === "completed")) return "rodando"
+  // Parcialmente completa SEM membro ativo = em espera de etapas anteriores
+  // (ex.: fontes ok, conclusão espera outra estação) — não é "rodando".
   return "bloqueada"
 }
 
+// CONDUÇÃO SEQUENCIAL (decisão Ricardo 2026-06-12, sobrepõe o "puxado pelas
+// pendências" do handoff): o foco é a PRIMEIRA estação em ordem que ainda não
+// fechou — mesmo quando o agente está rodando (o analista espera vendo o
+// status ao vivo). Sem teleporte pra frente e de volta.
 function pickFocusEstacao(estacoes: Estacao[]): Estacao | null {
   return (
-    estacoes.find((e) =>
-      ["sua_vez", "homologar", "aguardando_documento"].includes(e.state),
+    estacoes.find(
+      (e) => e.state !== "fechada" && e.state !== "fechada_com_ressalva",
     ) ??
-    estacoes.find((e) => e.state === "falhou") ??
-    estacoes.find((e) => e.state === "rodando") ??
     [...estacoes].reverse().find((e) => e.state === "fechada") ??
     estacoes[0] ??
     null
@@ -821,9 +825,12 @@ export default function DossierFocusPage() {
         finalGate,
         reviewSummary,
         draftSavedAt: draft.lastSavedAt,
-        submitting: submitMutation.isPending,
+        submitting: submitMutation.isPending || sendToAnalysisMutation.isPending,
         finalizing: finalizeMutation.isPending,
+        docs,
         onSubmitEmpty: (nodeId) => submitMutation.mutate({ nodeId, values: {} }),
+        onSendToAnalysis: (nodeId, docTypes) =>
+          sendToAnalysisMutation.mutate({ nodeId, docTypes }),
         onFinalize: () => {
           if (!finalGate || !reviewSummary?.trim()) return
           finalizeMutation.mutate({
@@ -930,16 +937,41 @@ export default function DossierFocusPage() {
       if (m.state === "pending") return <DormantZone key={m.id} label={m.label} />
       const required = Array.isArray(out.required) ? out.required : []
       const optional = Array.isArray(out.optional) ? out.optional : []
-      const stationTypes = [...required, ...optional]
+      const stationTypes = [...required, ...optional].map((t) => t.toLowerCase())
+      // Docs de OUTRAS estações não vazam pra cá (e vice-versa).
+      const stationDocs = stationTypes.length
+        ? docs.filter((d) => stationTypes.includes(d.doc_type.toLowerCase()))
+        : docs
+      const primaryDoc =
+        stationDocs.find(
+          (d) =>
+            d.extraction_status === "success" || d.extraction_status === "validated",
+        ) ?? null
+      const stationOpen =
+        focused?.state !== "fechada" && focused?.state !== "fechada_com_ressalva"
+      // Zonas D1 compartilhadas (documento-fonte + conferência de ficha) —
+      // mesmo padrão da estação Faturamento, sem o DocumentWorkspace legado.
       return (
-        <Zone key={m.id}>
-          <DocumentWorkspace
+        <React.Fragment key={m.id}>
+          <DocumentSourceZone
             dossierId={dossierId}
+            docs={stationDocs}
             requiredDocTypes={required}
-            // Docs de OUTRAS estações não vazam pra cá (e vice-versa).
-            docTypes={stationTypes.length > 0 ? stationTypes : undefined}
+            canUpload={m.state === "waiting_input"}
+            onChanged={() =>
+              queryClient.invalidateQueries({
+                queryKey: ["credito", "documents", dossierId],
+              })
+            }
           />
-        </Zone>
+          {primaryDoc && (
+            <FichaConferenceZone
+              dossierId={dossierId}
+              doc={primaryDoc}
+              editable={Boolean(stationOpen)}
+            />
+          )}
+        </React.Fragment>
       )
     }
 
@@ -1347,7 +1379,9 @@ type ClosureConfig = {
   draftSavedAt: string | null
   submitting: boolean
   finalizing: boolean
+  docs: CreditDocumentRead[]
   onSubmitEmpty: (nodeId: string) => void
+  onSendToAnalysis: (nodeId: string, docTypes: string[]) => void
   onFinalize: () => void
   onGoTo: (id: string) => void
   onBackToQueue: () => void
@@ -1383,14 +1417,53 @@ function buildClosure(
   const waiting = estacao.members.find((m) => m.state === "waiting_input")
 
   if (waiting?.nodeType === "document_request") {
+    // Prontidão real dos docs DESTA estação (mesma régua da Faturamento).
+    const out = (waiting.output ?? {}) as { required?: string[] }
+    const required = Array.isArray(out.required) ? out.required : []
+    const stationDocs = required.length
+      ? cfg.docs.filter((d) =>
+          required.some((t) => t.toLowerCase() === d.doc_type.toLowerCase()),
+        )
+      : cfg.docs
+    const uploaded = new Set(stationDocs.map((d) => d.doc_type.toLowerCase()))
+    const missing = required.filter((t) => !uploaded.has(t.toLowerCase()))
+    const processing = stationDocs.some(
+      (d) => d.extraction_status === "pending" || d.extraction_status === "processing",
+    )
+    const hasError = stationDocs.some((d) => d.extraction_status === "error")
+    const processedOk = stationDocs.some(
+      (d) => d.extraction_status === "success" || d.extraction_status === "validated",
+    )
+    const ready =
+      stationDocs.length > 0 &&
+      missing.length === 0 &&
+      !processing &&
+      !hasError &&
+      processedOk
+    if (ready) {
+      return {
+        state: "armed",
+        statusText:
+          "Valores conferidos — enviar grava a seção no dossiê e aciona os cruzamentos e a análise.",
+        primaryLabel: "Enviar para análise",
+        primaryIcon: RiArrowRightLine,
+        onPrimary: () => cfg.onSendToAnalysis(waiting.id, required),
+        primaryLoading: cfg.submitting,
+        statusIcon: RiArchiveDrawerLine,
+      }
+    }
     return {
-      state: "armed",
-      statusText:
-        "Fechar grava os documentos no dossiê e segue a análise — a extração precisa estar aprovada.",
-      primaryLabel: "Fechar estação",
-      onPrimary: () => cfg.onSubmitEmpty(waiting.id),
-      primaryLoading: cfg.submitting,
-      statusIcon: RiArchiveDrawerLine,
+      state: "pending",
+      statusText: draftText,
+      pendingText: missing.length
+        ? `falta: enviar ${missing.map((t) => t.toLowerCase()).join(", ")}`
+        : hasError
+          ? "falta: tratar a falha da extração"
+          : processing
+            ? "falta: aguardar a extração do documento"
+            : "falta: enviar e processar o documento",
+      primaryLabel: "Enviar para análise",
+      onPrimary: () => {},
     }
   }
 
@@ -1445,10 +1518,14 @@ function buildClosure(
 
   if (estacao.state === "fechada" || estacao.state === "fechada_com_ressalva") {
     const idx = estacoes.indexOf(estacao)
+    // Sequencial: a próxima é a PRIMEIRA não-fechada em ordem (mesmo rodando).
     const next = estacoes.find(
       (e, i) =>
-        i !== idx &&
-        ["sua_vez", "homologar", "aguardando_documento", "falhou"].includes(e.state),
+        i > idx && e.state !== "fechada" && e.state !== "fechada_com_ressalva",
+    ) ??
+    estacoes.find(
+      (e, i) =>
+        i < idx && e.state !== "fechada" && e.state !== "fechada_com_ressalva",
     )
     if (next) {
       return {
