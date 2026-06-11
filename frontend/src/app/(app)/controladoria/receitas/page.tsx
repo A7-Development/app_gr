@@ -2,18 +2,31 @@
 //
 // Receitas — 3 metodos de apuracao (Caixa | Competencia | Acruo) sobre o
 // catalogo de receitas caixa-fiel (wh_receita_caixa / wh_receita_operacional
-// / wh_receita_acruo_dia). Nasce do pattern DashboardBiPadrao (toolbar
-// unificada A1b); esqueleto aprovado pelo Ricardo em 2026-06-12:
-//   Z3: SegmentSwitch de METODO (lente global §7.2) + periodo + UA
-//   L3: Visao geral | Por familia | Por cedente | Conferencias
-//   Visao geral: KpiStrip + hero mensal por familia + composicao por
-//   natureza + PONTE dos 3 metodos (§14.6, deltas explicados) + DataTable
-//   familia/stream com drill de titulos (?selected via nuqs).
+// / wh_receita_acruo_dia).
+//
+// ANATOMIA = /bi/operacoes4 (regua canonica de BI, exigencia 2026-06-12):
+//   - root flex h-[calc(100vh-3rem)] overflow-hidden + scroll INTERNO
+//   - title row (px-6 pt-3.5 pb-3) com PageHeader + AIQuota + HeaderActions
+//   - Z2 TabNavigation (L3) em linha propria
+//   - Z3 toolbar flat h-[52px] com FilterChips (popover) + Resetar +
+//     status "Atualizado" — scroll-shadow quando rola
+//   - InsightStrip + conteudo em flex-col gap-4 + ProvenanceFooter
+//   - AIPanel in-layout (mesmo wiring de IA da operacoes4)
+//
+// Esqueleto funcional aprovado (2026-06-12): SegmentSwitch de METODO como
+// lente global (§7.2), KpiStrip, hero mensal por familia, composicao por
+// natureza, PONTE dos 3 metodos (§14.6), DataTable familia/stream com drill
+// de titulos (?selected via nuqs), aba Conferencias (desconto de mora).
 
 "use client"
 
 import * as React from "react"
 import { useQueryState } from "nuqs"
+import {
+  RiCalendarLine,
+  RiCheckLine,
+  RiRefreshLine,
+} from "@remixicon/react"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 import type { EChartsOption } from "echarts"
 
@@ -22,7 +35,7 @@ import {
   TabNavigation,
   TabNavigationLink,
 } from "@/components/tremor/TabNavigation"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/tremor/Select"
+import { Button } from "@/components/tremor/Button"
 import { Card } from "@/components/tremor/Card"
 
 import { PageHeader } from "@/design-system/components/PageHeader"
@@ -31,11 +44,21 @@ import { ProvenanceFooter, type ProvenanceSource } from "@/design-system/compone
 import { SegmentSwitch } from "@/design-system/components/SegmentSwitch"
 import { KpiCard, KpiStrip } from "@/design-system/components/KpiStrip"
 import { EChartsCard } from "@/design-system/components/EChartsCard"
+import { FilterChip } from "@/design-system/components/FilterBar"
+import { InsightStrip } from "@/design-system/components/InsightStrip"
 import { DataTable } from "@/design-system/components/DataTable"
 import { DrillDownSheet } from "@/design-system/components/DrillDownSheet"
+import {
+  AIPanel,
+  useAIPanel,
+  type AIInsight,
+} from "@/design-system/components/AIPanel"
+import { AIQuotaIndicator } from "@/design-system/components/AIQuotaIndicator"
+import { cardTokens } from "@/design-system/tokens/card"
 import { tableTokens } from "@/design-system/tokens/table"
 import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 import { useUAs } from "@/lib/hooks/cadastros"
+import { useAIChat, useAIInsights, useAIQuota } from "@/lib/hooks/ai"
 import {
   useReceitasCedentes,
   useReceitasConferencias,
@@ -106,7 +129,6 @@ const NATUREZA_LABEL: Record<string, string> = {
 }
 
 const STREAM_LABEL: Record<string, string> = {
-  // streams (competencia)
   desagio_operacao:           "Deságio",
   tarifa_operacao:            "Tarifas de operação",
   ad_valorem:                 "Ad valorem",
@@ -123,7 +145,6 @@ const STREAM_LABEL: Record<string, string> = {
   tarifa_servico:             "Tarifas de serviço",
   repasse_custo:              "Repasses",
   financeira_correcao_diaria: "Correção diária",
-  // eventos (caixa/acruo)
   liquidacao:        "Liquidação",
   baixa:             "Baixa",
   recompra:          "Recompra",
@@ -133,12 +154,15 @@ const STREAM_LABEL: Record<string, string> = {
 }
 
 const PERIODOS = [
-  { value: "3m",   label: "Últimos 3 meses" },
-  { value: "6m",   label: "Últimos 6 meses" },
-  { value: "12m",  label: "Últimos 12 meses" },
-  { value: "ano",  label: "Este ano" },
+  { value: "3m",  label: "Últimos 3 meses" },
+  { value: "6m",  label: "Últimos 6 meses" },
+  { value: "12m", label: "Últimos 12 meses" },
+  { value: "ano", label: "Este ano" },
 ] as const
 type PeriodoKey = (typeof PERIODOS)[number]["value"]
+const PERIODO_LABEL: Record<PeriodoKey, string> = Object.fromEntries(
+  PERIODOS.map((p) => [p.value, p.label]),
+) as Record<PeriodoKey, string>
 
 const TABS = [
   { key: "visao",        label: "Visão geral" },
@@ -149,7 +173,7 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"]
 
 // ───────────────────────────────────────────────────────────────────────────
-// Helpers
+// Helpers de formatacao (pt-BR)
 // ───────────────────────────────────────────────────────────────────────────
 
 const fmtBRL = (v: number) =>
@@ -159,8 +183,8 @@ const fmtBRL0 = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })
 
 const fmtCompacto = (v: number) =>
-  v >= 1_000_000 ? `${(v / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}M`
-  : v >= 1_000   ? `${(v / 1_000).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}k`
+  v >= 1_000_000 ? `${(v / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`
+  : v >= 1_000   ? `${(v / 1_000).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} mil`
   : v.toLocaleString("pt-BR", { maximumFractionDigits: 0 })
 
 const MESES_CURTOS = ["jan", "fev", "mar", "abr", "mai", "jun",
@@ -204,13 +228,15 @@ export default function ReceitasPage() {
     parse: (v): PeriodoKey =>
       (PERIODOS.some((p) => p.value === v) ? (v as PeriodoKey) : "6m"),
   })
-  // Drill: "familia|stream" no ?selected (abre o DrillDownSheet).
   const [selected, setSelected] = useQueryState("selected")
 
   const fundosQuery = useUAs({ ativa: true })
   const [fundoUuid, setFundoUuid] = React.useState<string>("")
   const fundoSelecionado = fundosQuery.data?.find((ua) => ua.id === fundoUuid)
   const fundoBitfinId = fundoSelecionado?.bitfin_ua_id ?? undefined
+  const uaOptions = (fundosQuery.data ?? []).filter(
+    (ua) => ua.bitfin_ua_id != null,
+  )
 
   const { de, ate } = React.useMemo(() => janelaDoPeriodo(periodo), [periodo])
 
@@ -235,8 +261,48 @@ export default function ReceitasPage() {
     selected ? { ...filters, familia: selFamilia, stream: selStream } : null,
   )
 
+  // AI hooks (mesmo padrao de operacoes4).
+  const quotaQ = useAIQuota()
+  const [conversationId, setConversationId] = React.useState<string | null>(null)
+  const insightsQ = useAIInsights({
+    page: "/controladoria/receitas",
+    period: periodo,
+  })
+  const { send } = useAIChat({
+    conversationId,
+    onConversationCreated: setConversationId,
+  })
+  const insights: AIInsight[] = React.useMemo(
+    () => (insightsQ.data?.insights ?? []).map((i) => ({ text: i.text })),
+    [insightsQ.data],
+  )
+  const ai = useAIPanel()
+  const aiContext = React.useMemo(
+    () => ({
+      page: "Controladoria · Receitas",
+      period: PERIODO_LABEL[periodo],
+      filters:
+        [
+          `Método: ${METODOS.find((m) => m.value === metodo)?.label}`,
+          fundoSelecionado ? `UA: ${fundoSelecionado.nome}` : null,
+        ]
+          .filter(Boolean)
+          .join(", ") || "Nenhum",
+    }),
+    [periodo, metodo, fundoSelecionado],
+  )
+  const insightStripItems = React.useMemo(
+    () => insights.map((ins, idx) => ({ id: String(idx), text: ins.text })),
+    [insights],
+  )
+
   const [scrollRef, scrolled] = useScrollShadow<HTMLDivElement>()
-  void scrollRef  // toolbar usa window scroll; ref opcional neste layout
+
+  const isFetching =
+    resumoQ.isFetching || detalheQ.isFetching || cedentesQ.isFetching ||
+    conferenciasQ.isFetching
+
+  const hasFiltrosAtivos = periodo !== "6m" || !!fundoUuid || metodo !== "caixa"
 
   const provenance: ProvenanceSource[] = [
     { label: "Bitfin (catálogo de receitas)", updated: "sync diário", sla: "24h", stale: false },
@@ -244,26 +310,28 @@ export default function ReceitasPage() {
   ]
 
   return (
-    <div className="flex min-h-[calc(100vh-3.5rem)] flex-col">
-      <PageHeader
-        title="Receitas"
-        subtitle="Controladoria · Receitas e Resultado"
-        info="Três métodos de apuração sobre o catálogo de streams caixa-fiel: Caixa (na liquidação), Competência (na efetivação) e Acruo (curva diária do fundo). Mora, prorrogação, recompra e tarifas de serviço são idênticas nos três."
-        actions={
-          <DashboardHeaderActions ai={{ open: false, onToggle: () => {} }} />
-        }
-      />
+    <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Title row */}
+        <div className="shrink-0 bg-white px-6 pt-3.5 pb-3 dark:bg-gray-950">
+          <PageHeader
+            title="Receitas"
+            subtitle="Controladoria · Receitas e Resultado"
+            info="Três métodos de apuração sobre o catálogo de streams caixa-fiel: Caixa (deságio na liquidação do título), Competência (integral na efetivação) e Acruo (curva diária do fundo). Mora, prorrogação, recompra e tarifas de serviço são idênticas nos três."
+            actions={
+              <div className="flex items-center gap-2">
+                <AIQuotaIndicator quota={quotaQ.data} loading={quotaQ.isLoading} />
+                <DashboardHeaderActions
+                  ai={{ open: ai.open, onToggle: ai.toggle }}
+                />
+              </div>
+            }
+          />
+        </div>
 
-      {/* Toolbar unificada (pattern A1b): tabs + lentes globais */}
-      <div
-        className={cx(
-          "sticky top-0 z-10 -mx-6 border-b border-gray-200 bg-white px-6",
-          "dark:border-gray-800 dark:bg-gray-950",
-          scrolled && "shadow-xs",
-        )}
-      >
-        <div className="flex min-h-[52px] flex-wrap items-center gap-3 py-2">
-          <TabNavigation className="border-b-0">
+        {/* Z2 — Tabs L3 */}
+        <div className="shrink-0 px-6">
+          <TabNavigation>
             {TABS.map((t) => (
               <TabNavigationLink
                 key={t.key}
@@ -275,76 +343,153 @@ export default function ReceitasPage() {
               </TabNavigationLink>
             ))}
           </TabNavigation>
-          <div className="hidden h-6 w-px bg-gray-200 dark:bg-gray-800 sm:block" />
-          <SegmentSwitch
-            ariaLabel="Método de apuração"
-            options={METODOS.map((m) => ({ value: m.value, label: m.label }))}
-            value={metodo}
-            onChange={(v) => setMetodo(v)}
-          />
-          <div className="ml-auto flex items-center gap-2">
-            <Select value={periodo} onValueChange={(v) => setPeriodo(v as PeriodoKey)}>
-              <SelectTrigger className="h-[30px] w-[170px] text-[13px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PERIODOS.map((p) => (
-                  <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+        </div>
+
+        {/* Z3 — Toolbar de filtros (flat, anatomia operacoes4) */}
+        <div
+          className={cx(
+            "shrink-0 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
+            scrolled && "scroll-shadow",
+          )}
+        >
+          <div className="flex h-[52px] items-center gap-2 px-6">
+            <SegmentSwitch
+              ariaLabel="Método de apuração"
+              options={METODOS.map((m) => ({ value: m.value, label: m.label }))}
+              value={metodo}
+              onChange={(v) => setMetodo(v)}
+            />
+
+            <div className="h-6 w-px shrink-0 bg-gray-200 dark:bg-gray-800" />
+
+            <FilterChip
+              label="Período"
+              value={PERIODO_LABEL[periodo]}
+              active={periodo !== "6m"}
+              icon={RiCalendarLine}
+            >
+              <div className="py-1">
+                {PERIODOS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setPeriodo(opt.value)}
+                    className={cx(
+                      "flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors",
+                      periodo === opt.value
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
+                        : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800",
+                    )}
+                  >
+                    <span className="flex-1 text-left">{opt.label}</span>
+                    {periodo === opt.value && (
+                      <RiCheckLine className="size-3.5 shrink-0 text-blue-500" />
+                    )}
+                  </button>
                 ))}
-              </SelectContent>
-            </Select>
-            <Select value={fundoUuid || "todas"} onValueChange={(v) => setFundoUuid(v === "todas" ? "" : v)}>
-              <SelectTrigger className="h-[30px] w-[180px] text-[13px]">
-                <SelectValue placeholder="Todas as UAs" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todas">Todas as UAs</SelectItem>
-                {(fundosQuery.data ?? [])
-                  .filter((ua) => ua.bitfin_ua_id != null)
-                  .map((ua) => (
-                    <SelectItem key={ua.id} value={ua.id}>{ua.nome}</SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+              </div>
+            </FilterChip>
+
+            <FilterChip
+              label="UA"
+              value={fundoSelecionado?.nome ?? "Todas"}
+              active={!!fundoUuid}
+            >
+              <div className="max-h-72 overflow-y-auto py-1">
+                {[{ id: "", nome: "Todas as UAs" }, ...uaOptions].map((ua) => (
+                  <button
+                    key={ua.id || "todas"}
+                    type="button"
+                    onClick={() => setFundoUuid(ua.id)}
+                    className={cx(
+                      "flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors",
+                      fundoUuid === ua.id
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
+                        : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800",
+                    )}
+                  >
+                    <span className="flex-1 text-left">{ua.nome}</span>
+                    {fundoUuid === ua.id && (
+                      <RiCheckLine className="size-3.5 shrink-0 text-blue-500" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </FilterChip>
+
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setPeriodo("6m")
+                setFundoUuid("")
+                setMetodo("caixa")
+              }}
+              disabled={!hasFiltrosAtivos}
+              className="ml-1"
+            >
+              <RiRefreshLine className="size-3.5 shrink-0" aria-hidden="true" />
+              Resetar
+            </Button>
+
+            <span className="ml-auto shrink-0 text-[11px] text-gray-500 dark:text-gray-400">
+              {isFetching ? "Atualizando…" : "Atualizado"}
+            </span>
           </div>
         </div>
+
+        {/* InsightStrip */}
+        {insightStripItems.length > 0 && (
+          <div className="shrink-0 px-6 pt-3">
+            <InsightStrip insights={insightStripItems} />
+          </div>
+        )}
+
+        {/* Conteudo (scroll interno) */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4">
+          <div className="flex flex-col gap-4">
+            {tab === "visao" && (
+              <VisaoGeral
+                resumoQ={resumoQ}
+                detalheQ={detalheQ}
+                metodo={metodo}
+                presetLabel={PERIODO_LABEL[periodo]}
+                onDrill={(l) => setSelected(`${l.familia}|${l.stream}`)}
+              />
+            )}
+            {tab === "familia" && (
+              <DetalheTable
+                linhas={detalheQ.data?.linhas ?? []}
+                total={detalheQ.data?.total ?? 0}
+                loading={detalheQ.isLoading}
+                onDrill={(l) => setSelected(`${l.familia}|${l.stream}`)}
+              />
+            )}
+            {tab === "cedente" && (
+              <CedentesTable
+                linhas={cedentesQ.data?.linhas ?? []}
+                total={cedentesQ.data?.total ?? 0}
+                loading={cedentesQ.isLoading}
+              />
+            )}
+            {tab === "conferencias" && <Conferencias q={conferenciasQ} />}
+          </div>
+        </div>
+
+        <ProvenanceFooter sources={provenance} />
       </div>
 
-      <main className="flex-1 space-y-4 py-4">
-        {tab === "visao" && (
-          <VisaoGeral
-            resumoQ={resumoQ}
-            detalheQ={detalheQ}
-            metodo={metodo}
-            onDrill={(l) => setSelected(`${l.familia}|${l.stream}`)}
-          />
-        )}
-        {tab === "familia" && (
-          <DetalheTable
-            linhas={detalheQ.data?.linhas ?? []}
-            total={detalheQ.data?.total ?? 0}
-            loading={detalheQ.isLoading}
-            onDrill={(l) => setSelected(`${l.familia}|${l.stream}`)}
-            full
-          />
-        )}
-        {tab === "cedente" && (
-          <CedentesTable
-            linhas={cedentesQ.data?.linhas ?? []}
-            total={cedentesQ.data?.total ?? 0}
-            loading={cedentesQ.isLoading}
-          />
-        )}
-        {tab === "conferencias" && (
-          <Conferencias q={conferenciasQ} />
-        )}
-      </main>
-
-      <ProvenanceFooter sources={provenance} />
+      <AIPanel
+        open={ai.open}
+        onClose={() => ai.setOpen(false)}
+        context={aiContext}
+        insights={insights}
+        sendMessage={send}
+      />
 
       <DrillDownSheet
         open={!!selected}
         onClose={() => setSelected(null)}
+        size="xl"
         title={`${FAMILIA_LABEL[selFamilia] ?? selFamilia} · ${STREAM_LABEL[selStream] ?? selStream}`}
       >
         <DrillDownSheet.Body>
@@ -368,11 +513,13 @@ function VisaoGeral({
   resumoQ,
   detalheQ,
   metodo,
+  presetLabel,
   onDrill,
 }: {
   resumoQ: ReturnType<typeof useReceitasResumo>
   detalheQ: ReturnType<typeof useReceitasDetalhe>
   metodo: ReceitasMetodo
+  presetLabel: string
   onDrill: (l: ReceitaDetalheLinha) => void
 }) {
   const r = resumoQ.data
@@ -383,14 +530,16 @@ function VisaoGeral({
       new Set(serie.flatMap((p) => Object.keys(p.porFamilia))),
     ).sort((a, b) => (a === "operacao" ? -1 : b === "operacao" ? 1 : a.localeCompare(b)))
     return {
-      grid: { left: 8, right: 8, top: 28, bottom: 4, containLabel: true },
+      grid: { left: 36, right: 8, top: 28, bottom: 4, containLabel: false },
       tooltip: {
         trigger: "axis",
         valueFormatter: (v) => fmtBRL(Number(v ?? 0)),
       },
       legend: {
         top: 0,
-        textStyle: { fontSize: 11 },
+        textStyle: { fontSize: 11, color: "#6B7280" },
+        itemWidth: 10,
+        itemHeight: 10,
         data: familias.map((f) => FAMILIA_LABEL[f] ?? f),
       },
       xAxis: {
@@ -398,16 +547,22 @@ function VisaoGeral({
         data: serie.map((p) => fmtCompetencia(p.competencia)),
         axisLabel: { fontSize: 10, color: "#6B7280" },
         axisTick: { show: false },
+        axisLine: { lineStyle: { color: "#E5E7EB" } },
       },
       yAxis: {
         type: "value",
-        axisLabel: { fontSize: 10, color: "#6B7280", formatter: (v: number) => fmtCompacto(v) },
+        axisLabel: {
+          fontSize: 10,
+          color: "#6B7280",
+          formatter: (v: number) => fmtCompacto(v),
+        },
         splitLine: { lineStyle: { color: "#E5E7EB", type: "dashed" } },
       },
       series: familias.map((f) => ({
         name: FAMILIA_LABEL[f] ?? f,
         type: "bar",
         stack: "total",
+        barMaxWidth: 36,
         itemStyle: { color: FAMILIA_COR[f] ?? "#9CA3AF" },
         emphasis: { focus: "series" },
         data: serie.map((p) => p.porFamilia[f] ?? 0),
@@ -425,11 +580,15 @@ function VisaoGeral({
         <KpiCard label="Recompra (encargos)" value={r ? fmtBRL0(r.kpis.recompraEncargos) : "—"} sub="juros + multa + deságio" />
       </KpiStrip>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <EChartsCard
           className="xl:col-span-2"
-          title="Evolução mensal por família"
-          caption="Receitas no método selecionado, empilhadas por família do catálogo"
+          title="EVOLUÇÃO MENSAL"
+          headerKpi={{
+            value: r ? `R$ ${fmtCompacto(r.kpis.total)}` : "—",
+            deltaSub: "no período",
+          }}
+          caption={`Por família · ${presetLabel}`}
           option={heroOption}
           height={300}
           loading={resumoQ.isLoading}
@@ -439,7 +598,7 @@ function VisaoGeral({
           total={r?.kpis.total ?? 0}
           loading={resumoQ.isLoading}
         />
-      </div>
+      </section>
 
       {r && <PonteCard ponte={r.ponte} metodoAtivo={metodo} />}
 
@@ -463,12 +622,15 @@ function ComposicaoNaturezaCard({
   loading: boolean
 }) {
   return (
-    <Card className="p-4">
-      <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
+    <Card className={cardTokens.body}>
+      <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
         Composição por natureza
-      </h3>
-      <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-        Participação de cada natureza no total do período
+      </p>
+      <p className="mt-1 text-lg font-semibold tabular-nums text-gray-900 dark:text-gray-50">
+        {total > 0 ? `R$ ${fmtCompacto(total)}` : "—"}
+      </p>
+      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+        participação de cada natureza no total
       </p>
       <div className="mt-4 space-y-3">
         {loading && <p className="text-xs text-gray-500">Carregando…</p>}
@@ -514,26 +676,26 @@ function PonteCard({
     { metodo: "acruo",       valor: ponte.acruo },
   ]
   return (
-    <Card className="p-4">
-      <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
+    <Card className={cardTokens.body}>
+      <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
         Ponte entre os métodos
-      </h3>
-      <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-        Mesmo período, mesmos filtros — os três totais e as diferenças explicadas.
+      </p>
+      <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+        Mesmo período e filtros — os três totais e as diferenças explicadas.
         Mora, prorrogação, recompra e tarifas de serviço são idênticas nos três.
       </p>
-      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
         {itens.map((i) => (
           <div
             key={i.metodo}
             className={cx(
-              "rounded-md border p-3",
+              "rounded border p-3",
               i.metodo === metodoAtivo
                 ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/20"
                 : "border-gray-200 dark:border-gray-800",
             )}
           >
-            <p className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
               {METODOS.find((m) => m.value === i.metodo)?.label}
             </p>
             <p className="mt-1 text-lg font-semibold tabular-nums text-gray-900 dark:text-gray-50">
@@ -547,11 +709,15 @@ function PonteCard({
       </div>
       <div className="mt-3 space-y-1 border-t border-gray-100 pt-3 dark:border-gray-800">
         <p className="text-xs text-gray-600 dark:text-gray-300">
-          <span className="font-medium">Competência − Caixa = {fmtBRL(ponte.deltaCompetenciaCaixa)}</span>
-          {" "}· deságio de títulos operados no período e ainda não liquidados (em aberto)
+          <span className="font-medium">
+            Competência − Caixa = {fmtBRL(ponte.deltaCompetenciaCaixa)}
+          </span>
+          {" "}· deságio de títulos operados no período e ainda não liquidados
         </p>
         <p className="text-xs text-gray-600 dark:text-gray-300">
-          <span className="font-medium">Competência − Acruo = {fmtBRL(ponte.deltaCompetenciaAcruo)}</span>
+          <span className="font-medium">
+            Competência − Acruo = {fmtBRL(ponte.deltaCompetenciaAcruo)}
+          </span>
           {" "}· saldo a apropriar — curva que corre fora do período
         </p>
       </div>
@@ -570,13 +736,11 @@ function DetalheTable({
   total,
   loading,
   onDrill,
-  full = false,
 }: {
   linhas: ReceitaDetalheLinha[]
   total: number
   loading: boolean
   onDrill: (l: ReceitaDetalheLinha) => void
-  full?: boolean
 }) {
   const columns = React.useMemo(
     () => [
@@ -625,14 +789,14 @@ function DetalheTable({
   )
 
   return (
-    <Card className={cx("p-0", full && "mt-0")}>
+    <Card className="p-0">
       <div className="flex items-baseline justify-between px-4 pb-2 pt-4">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
             Receitas por família e stream
-          </h3>
-          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-            Clique numa linha para abrir os títulos/lançamentos
+          </p>
+          <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+            clique numa linha para abrir os títulos/lançamentos
           </p>
         </div>
         <span className={tableTokens.cellNumber}>
@@ -707,9 +871,9 @@ function CedentesTable({
   return (
     <Card className="p-0">
       <div className="flex items-baseline justify-between px-4 pb-2 pt-4">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
           Receita por cedente
-        </h3>
+        </p>
         <span className={tableTokens.cellNumber}>{loading ? "…" : fmtBRL(total)}</span>
       </div>
       <DataTable
@@ -805,13 +969,12 @@ function Conferencias({
       </KpiStrip>
       <Card className="p-0">
         <div className="px-4 pb-2 pt-4">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
             Desconto de mora por cedente
-          </h3>
-          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-            Recompras e encargos negociados com régua contratual registrada
-            (valor de referência gravado no fato). Desconto negativo = cobrado
-            acima da régua.
+          </p>
+          <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+            recompras e encargos negociados com régua contratual registrada —
+            desconto negativo = cobrado acima da régua
           </p>
         </div>
         <DataTable
