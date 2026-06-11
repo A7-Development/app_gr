@@ -728,6 +728,84 @@ export type CadastralAnalysis = {
   leitura_para_credito: string
 }
 
+// ─── Societário: payload determinístico (/societario) + análise (agente) ────
+
+export type SocietarioSocio = {
+  nome: string
+  cpf_ultimos4: string | null
+  participacao_pct: number | null
+}
+
+export type SocietarioCruzamento = {
+  campo: string
+  contrato: unknown
+  oficial: unknown
+  confere: boolean | null
+  detalhe: string
+}
+
+export type SocietarioPayload = {
+  encontrado: boolean
+  mensagem?: string
+  homologado?: boolean
+  fonte?: {
+    documento_id: string
+    arquivo: string
+    status_extracao: string
+    confianca: number | null
+    modelo: string | null
+    prompt: string | null
+    enviado_em: string | null
+    ajustado_pelo_analista: boolean
+  }
+  contrato?: {
+    cnpj: string | null
+    razao_social: string | null
+    capital_social: number | null
+    data_constituicao: string | null
+    objeto_social: string | null
+    endereco: string | null
+    socios: SocietarioSocio[]
+  }
+  estrutura?: {
+    n_socios: number
+    soma_participacoes_pct: number | null
+    soma_confere: boolean | null
+    socios_sem_participacao: number
+    controlador: {
+      nome: string
+      participacao_pct: number
+      controle_majoritario: boolean
+    } | null
+    idade_empresa_anos: number | null
+  }
+  cruzamentos?: SocietarioCruzamento[]
+}
+
+export type SocialContractAnalysis = {
+  summary: string
+  qsa_changes_recent: boolean
+  qsa_changes_detail: string | null
+  signing_powers: Record<string, string>
+  object_compatible_with_operation: boolean
+  object_compatibility_rationale: string
+  capital_social: Record<string, unknown>
+  statutory_restrictions: string[]
+  checklist_results: Array<{
+    code: string
+    description: string
+    status: "ok" | "alert" | "critical" | "not_applicable"
+    rationale: string
+    confidence: number
+  }>
+  red_flags: Array<{
+    severity: "critical" | "important" | "informational"
+    title: string
+    description: string
+    evidence: string
+  }>
+}
+
 export const credito = {
   dossies: {
     list: (params?: { status?: DossierStatus; limit?: number; offset?: number }) => {
@@ -778,6 +856,10 @@ export const credito = {
     /** Card 'Dados cadastrais coletados' (silver, white-label). */
     cadastral: (id: string) =>
       apiClient.get<CadastralCard>(`/credito/dossies/${id}/cadastral`),
+    /** Contrato social homologado + estrutura QSA + cruzamentos com o
+     *  cadastro oficial (mesmo payload da read-tool do agente — §14). */
+    societario: (id: string) =>
+      apiClient.get<SocietarioPayload>(`/credito/dossies/${id}/societario`),
   },
   attachments: {
     list: (dossierId: string, nodeId?: string | null) => {

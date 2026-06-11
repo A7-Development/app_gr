@@ -47,6 +47,7 @@ import {
   type FaturamentoPhase,
 } from "./_components/FaturamentoStation"
 import { RevenueAnalysisView } from "./_components/RevenueAnalysisView"
+import { SocialContractAnalysisView } from "./_components/SocialContractAnalysisView"
 import { TrailSheet, type TrailEvent } from "./_components/TrailSheet"
 import { CadastralAnalysisView } from "./_components/CadastralAnalysisView"
 import { CadastralCard } from "./_components/CadastralCard"
@@ -77,6 +78,7 @@ import {
   type OpinionInput,
   type RedFlagItem,
   type RevenueAnalysis,
+  type SocialContractAnalysis,
 } from "@/lib/credito-client"
 import { useDossierState, useStepDraft } from "@/lib/hooks/credito"
 import { tableTokens } from "@/design-system/tokens/table"
@@ -126,11 +128,13 @@ function agentOf(step: WizardMultiStepStep): string | null {
 const AGENT_STATION_AFFINITY: Record<string, string> = {
   revenue_analyst: "document_request",
   cadastral_analyst: "cadastral_enrichment",
+  social_contract_analyst: "document_request",
 }
 
 const AGENT_STATION_LABEL: Record<string, string> = {
   revenue_analyst: "Faturamento",
   cadastral_analyst: "Cadastral",
+  social_contract_analyst: "Contrato social",
 }
 
 function reviewOf(step: WizardMultiStepStep): string | null {
@@ -141,6 +145,11 @@ function buildEstacoes(steps: WizardMultiStepStep[]): Estacao[] {
   const estacoes: Estacao[] = []
 
   const anchorFor = (step: WizardMultiStepStep): Estacao | null => {
+    // Cruzamentos determinísticos pertencem à seção que acabou de coletar o
+    // dado — fundem na estação anterior (não viram estação própria).
+    if (step.nodeType === "deterministic_check") {
+      return estacoes[estacoes.length - 1] ?? null
+    }
     // document_extractor funde na estação do document_request anterior.
     if (step.nodeType === "document_extractor") {
       for (let i = estacoes.length - 1; i >= 0; i--) {
@@ -827,6 +836,14 @@ export default function DossierFocusPage() {
         <CadastralAnalysisView
           dossierId={dossierId}
           output={s.output as unknown as CadastralAnalysis}
+        />
+      )
+    }
+    if (agent === "social_contract_analyst" && s.output) {
+      return (
+        <SocialContractAnalysisView
+          dossierId={dossierId}
+          output={s.output as unknown as SocialContractAnalysis}
         />
       )
     }

@@ -118,11 +118,21 @@ TOOL_REF_CALC = "calculate_metric"
 CATALOG: dict[str, SpecialistAgentSpec] = {
     "social_contract_analyst": SpecialistAgentSpec(
         name="social_contract_analyst",
-        description="Analisa contrato social: firmas, poderes, alteracoes QSA, objeto.",
+        description=(
+            "Analisa o contrato social homologado do dossie: poderes de "
+            "assinatura, alteracoes recentes do QSA, compatibilidade do objeto "
+            "com a operacao, capital e restricoes estatutarias. NAO recalcula "
+            "estrutura/cruzamentos — le o pacote deterministico de "
+            "get_contrato_social_estrutura (ficha + QSA + cruzamentos com o "
+            "cadastro oficial) e raciocina; get_document_extraction da acesso "
+            "ao texto extraido quando precisar de detalhe (clausulas)."
+        ),
         prompt_name="agent.social_contract",
-        tools=(TOOL_DOSSIER_READ, TOOL_DOC_GET, TOOL_DOSSIER_FLAG, TOOL_DOSSIER_SAVE),
+        tools=("get_contrato_social_estrutura", TOOL_DOC_GET),
         output_schema=SocialContractAnalysis,
-        thinking_budget_tokens=15000,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=10000,
         section_id="social_contract",
     ),
     "financial_analyst": SpecialistAgentSpec(
