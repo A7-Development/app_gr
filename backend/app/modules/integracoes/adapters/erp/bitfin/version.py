@@ -56,6 +56,12 @@ grafica (ContaCorrenteLancamento — prorrogacao/cartorio/acerto/tarifas/
 repasses/financeira, codigos do catalogo, estornados excluidos, TituloId
 extraido do ComplementoInterno), recompra (RecompraItem Efetivada=1,
 juros/multa/desagio por titulo).
+
+v2.7.0 (2026-06-10): PR 3 do catalogo de receitas — sync_receita_operacao:
+OperacaoRentabilidade (efetivadas, Origem != recompra/homologacao) ->
+streams desagio_operacao / tarifa_operacao / ad_valorem. Receita retida do
+liquido na efetivacao (caixa por construcao). Cross-check: desagio do mes
+== Σ OperacaoResultado.TotalDeJuros das efetivadas.
 """
 
-ADAPTER_VERSION = "bitfin_adapter_v2.6.0"
+ADAPTER_VERSION = "bitfin_adapter_v2.7.0"

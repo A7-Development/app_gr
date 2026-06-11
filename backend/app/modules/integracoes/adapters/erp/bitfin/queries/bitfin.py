@@ -676,3 +676,31 @@ WHERE r.Efetivada = 1
   AND r.DataDeEfetivacao >= ?
   AND (i.ValorDeJuros > 0 OR i.ValorDeMulta > 0 OR i.ValorDeDesagio > 0)
 """
+
+# Rentabilidade da operacao (desagio + tarifas + ad valorem) — receita RETIDA
+# do liquido na efetivacao (caixa por construcao). (OperacaoId, Descricao) e
+# unico (validado 2026-06-10). Origem 2/4 (Recompra/Homologacao) excluidas:
+# o desagio de recompra ja entra via RecompraItem — incluir aqui duplicaria.
+# Cross-check canonico: SUM(Aplicado WHERE Descricao='Deságio') ==
+# SUM(OperacaoResultado.TotalDeJuros) das mesmas operacoes.
+SELECT_RECEITA_OPERACAO_RENT = """
+SELECT
+    r.OperacaoId AS operacao_id,
+    r.Descricao AS rentabilidade_descricao,
+    r.Aplicado AS aplicado,
+    CONVERT(date, o.DataDeEfetivacao) AS data_evento,
+    o.UnidadeAdministrativaId AS unidade_administrativa_id,
+    co.ProdutoId AS produto_id,
+    ce.EntidadeId AS cedente_entidade_id,
+    ce.Nome AS cedente_nome,
+    ce.Documento AS cedente_documento
+FROM dbo.OperacaoRentabilidade r
+INNER JOIN dbo.Operacao o ON o.OperacaoId = r.OperacaoId
+LEFT JOIN dbo.ContaOperacional co ON co.ContaOperacionalId = o.ContaOperacionalId
+LEFT JOIN dbo.Cliente cli ON cli.ClienteId = co.ClienteId
+LEFT JOIN dbo.Entidade ce ON ce.EntidadeId = cli.EntidadeId
+WHERE o.Efetivada = 1
+  AND o.Origem NOT IN (2, 4)
+  AND r.Aplicado > 0
+  AND o.DataDeEfetivacao >= ?
+"""

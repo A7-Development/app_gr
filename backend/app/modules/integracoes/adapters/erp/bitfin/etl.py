@@ -42,6 +42,7 @@ from app.modules.integracoes.adapters.erp.bitfin.queries import analytics, bitfi
 from app.modules.integracoes.adapters.erp.bitfin.receitas import (
     sync_receita_grafica,
     sync_receita_mora_liquidacao,
+    sync_receita_operacao,
     sync_receita_recompra,
 )
 from app.modules.integracoes.adapters.erp.bitfin.version import ADAPTER_VERSION
@@ -1285,6 +1286,7 @@ SYNC_PIPELINE = [
     sync_receita_mora_liquidacao,
     sync_receita_grafica,
     sync_receita_recompra,
+    sync_receita_operacao,
     # Reconcile (anti-join hard-delete de orfaos). Ultimo passo: roda DEPOIS
     # dos upserts (espelho ja com os dados frescos) e tem gate diario interno
     # — a varredura full so dispara 1x/dia, demais ticks viram no-op barato.
