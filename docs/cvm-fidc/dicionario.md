@@ -244,6 +244,21 @@ b1 sem-risco 727; b2 243; vendas raras (38); TPF 307 / outras RF 146 / VM 37 /
 (REALINVEST b1 max 7.008% a.a.) e valores residuais tipo 0,05/0,1 em TPF/venda
 — winsorizar (ex.: cap p99 ou filtrar > ~500% a.a.) antes de agregar.
 
+**LIMITACAO ESTRUTURAL (2026-06-11, validada pelo Ricardo com dado do fundo):
+o NIVEL da taxa na tab_ix NAO e confiavel.** A taxa REAL do REALINVEST em
+abril, calculada da carteira adquirida (2.608 recebiveis, desagio 3,23% /
+prazo ponderado 28d), e **3,47% a.m. = 51,46% a.a.** — a CVM publica 80,77.
+Causa: as administradoras anualizam POR TITULO e tiram media — anualizar
+duplicata de dias e matematicamente invalido (a media ponderada por titulo da
+mesma carteira da 343.092% a.a.; o proprio max publicado de 7.008% prova o
+metodo). Alem disso os blocos a/b cobrem subconjuntos (com/sem risco), nao a
+carteira inteira. Tentativas de reproduzir o numero da Singulare (agregacao
+por dia: 53,31; por dia x cedente: 85,80) chegam perto mas nao fecham — cada
+admin tem corte proprio. **Uso aceitavel: ordinal/comparativo entre fundos de
+perfil de prazo parecido, com winsorizacao e ressalva; nivel absoluto NAO.**
+A formula defensavel (carteira agregada): `taxa_am = (Σface/Σcompra)^(30/
+prazo_pond) - 1` — p/ tenant proprio, usar o interno (taxa final operacoes5).
+
 ## Resumo por tabela
 
 | Tabela | Granularidade | Serve para... |
