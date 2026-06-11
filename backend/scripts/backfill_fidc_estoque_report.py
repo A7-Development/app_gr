@@ -75,7 +75,7 @@ _RECENT_SUCCESS_SQL = text(
       AND created_at >= :cutoff
     """
 )
-_TENANT_SQL = text("SELECT id FROM tenant WHERE slug = :slug")
+_TENANT_SQL = text("SELECT id FROM tenants WHERE slug = :slug")
 
 
 def _business_days(start: date, end: date) -> list[date]:
