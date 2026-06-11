@@ -60,7 +60,10 @@ _UNIVERSO_QUERY = text(
     ii_prev AS (
         SELECT cnpj_fundo_classe AS cnpj, NULLIF(tab_ii_vl_carteira, 0) AS dc_bruto_prev
         FROM cvm_remote.tab_ii
-        WHERE competencia = (:comp::date - INTERVAL '1 month')::date
+        -- CAST(...) em vez de :comp::date — o text() do SQLAlchemy NAO binda
+        -- o parametro quando seguido de '::' (o ':comp' literal vazava pro
+        -- asyncpg -> syntax error). Os demais usos de :comp bindam normal.
+        WHERE competencia = (CAST(:comp AS date) - INTERVAL '1 month')::date
     ),
     iii AS (
         SELECT cnpj_fundo_classe AS cnpj, COALESCE(tab_iii_vl_passivo, 0) AS passivo
