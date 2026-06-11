@@ -340,8 +340,8 @@ export default function ReceitasPage() {
           />
         </div>
 
-        {/* Z2 — Tabs L3 */}
-        <div className="shrink-0 px-6">
+        {/* Z2 — Tabs L3 (bg-white: sem ele o gray do shell vaza por tras) */}
+        <div className="shrink-0 bg-white px-6 dark:bg-gray-950">
           <TabNavigation>
             {TABS.map((t) => (
               <TabNavigationLink
