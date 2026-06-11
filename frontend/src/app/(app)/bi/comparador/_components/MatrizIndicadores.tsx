@@ -103,7 +103,10 @@ function CelulaFundo({
           melhor && "font-semibold text-gray-900 dark:text-gray-50",
         )}
       >
-        {formatIndicador(typeof valor === "number" ? valor : null, def.fmt)}
+        {formatIndicador(
+          typeof valor === "number" || typeof valor === "string" ? valor : null,
+          def.fmt,
+        )}
       </span>
       {orientado !== null && (
         <span

@@ -18,6 +18,9 @@ class IndicadoresFundo(BaseModel):
 
     cnpj: str
     denom_social: str | None = None
+    condominio: str | None = Field(
+        default=None, description="Aberto | Fechado (cadastral, tab_i.condom)."
+    )
 
     pl: float | None = None
     pl_rank: float | None = None

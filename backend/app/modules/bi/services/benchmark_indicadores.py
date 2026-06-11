@@ -36,6 +36,7 @@ _UNIVERSO_QUERY = text(
         SELECT
             cnpj_fundo_classe AS cnpj,
             denom_social,
+            INITCAP(LOWER(NULLIF(TRIM(condom), ''))) AS condominio,
             NULLIF(tab_i_vl_ativo, 0) AS ativo,
             COALESCE(tab_i2a_vl_dircred_risco, 0)
               + COALESCE(tab_i2b_vl_dircred_sem_risco, 0) AS dc_liq,
@@ -205,6 +206,7 @@ _UNIVERSO_QUERY = text(
         SELECT
             i.cnpj,
             i.denom_social,
+            i.condominio,
             iv.pl::float AS pl,
             iv.pl_medio::float AS pl_medio,
             (100 * x2.pl_subord / NULLIF(iv.pl, 0))::float AS subordinacao_pct,

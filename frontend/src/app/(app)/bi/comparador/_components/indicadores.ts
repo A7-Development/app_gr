@@ -19,7 +19,7 @@ export const GRUPOS: GrupoIndicador[] = [
   "Performance",
 ]
 
-type FmtKind = "brl" | "pct1" | "pct2" | "dias" | "pp"
+type FmtKind = "brl" | "pct1" | "pct2" | "dias" | "pp" | "texto"
 
 export type IndicadorDef = {
   key: keyof ComparadorIndicadoresFundo
@@ -31,6 +31,8 @@ export type IndicadorDef = {
 }
 
 export const INDICADORES: IndicadorDef[] = [
+  { key: "condominio", label: "Condomínio", grupo: "Estrutura", fmt: "texto",
+    info: "Aberto (cotista resgata a qualquer tempo — exige gestão de liquidez) ou Fechado (resgate só no vencimento/amortização). Cadastral CVM." },
   { key: "pl", label: "Patrimônio Líquido", grupo: "Estrutura", fmt: "brl",
     info: "PL do fundo na competência (tab_iv). Porte." },
   { key: "subordinacao_pct", label: "Subordinação (Sub+Mez)", grupo: "Estrutura", fmt: "pct1",
@@ -71,8 +73,12 @@ export const INDICADORES: IndicadorDef[] = [
 
 const fmtInt = new Intl.NumberFormat("pt-BR")
 
-export function formatIndicador(v: number | null | undefined, fmt: FmtKind): string {
+export function formatIndicador(
+  v: number | string | null | undefined,
+  fmt: FmtKind,
+): string {
   if (v === null || v === undefined) return "—"
+  if (typeof v === "string") return v
   switch (fmt) {
     case "brl": {
       const abs = Math.abs(v)
@@ -89,6 +95,8 @@ export function formatIndicador(v: number | null | undefined, fmt: FmtKind): str
       return `${v.toFixed(0)}d`
     case "pp":
       return `${v >= 0 ? "+" : ""}${v.toFixed(2).replace(".", ",")} pp`
+    case "texto":
+      return String(v)
   }
 }
 
