@@ -602,6 +602,17 @@ WHERE t.Situacao = 1
   AND t.ValorDoPagamento > t.ValorLiquido
   AND CONVERT(date, t.DataDaSituacao) > CONVERT(date, t.DataDeVencimentoEfetiva)
   AND t.DataDaSituacao >= ?
+  -- Recompra-liquidacao FORA (descoberta 2026-06-11): quando a recompra
+  -- liquida o titulo (Liquidacao=1), o Bitfin grava ValorDoPagamento =
+  -- recomprado + encargos DE RECOMPRA na Titulo com Situacao=1 — o mesmo
+  -- encargo ja entra via RecompraItem (regua propria: TaxaDeJuros/Multa da
+  -- recompra). Sem este filtro, dupla contagem (527/551 batem centavo a
+  -- centavo). Situacao 5 (baixa por recompra pura) nunca entra (Situacao=1).
+  AND NOT EXISTS (
+      SELECT 1 FROM dbo.RecompraItem i
+      JOIN dbo.Recompra r ON r.RecompraId = i.RecompraId
+      WHERE i.TituloId = t.TituloId AND r.Efetivada = 1 AND r.Liquidacao = 1
+  )
 """
 
 # Lancamentos de receita na conta grafica. `{codes}` e preenchido em runtime
