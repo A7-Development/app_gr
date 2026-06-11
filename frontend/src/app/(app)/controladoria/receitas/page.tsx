@@ -42,7 +42,7 @@ import { PageHeader } from "@/design-system/components/PageHeader"
 import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
 import { ProvenanceFooter, type ProvenanceSource } from "@/design-system/components/ProvenanceFooter"
 import { SegmentSwitch } from "@/design-system/components/SegmentSwitch"
-import { KpiBand } from "@/design-system/components/KpiBand"
+import { BandaKpi, BandaKpiCol } from "./_components/BandaKpi"
 import { EChartsCard } from "@/design-system/components/EChartsCard"
 import { FilterChip } from "@/design-system/components/FilterBar"
 import { InsightStrip } from "@/design-system/components/InsightStrip"
@@ -583,31 +583,23 @@ function VisaoGeral({
 
   return (
     <>
-      <KpiBand
-        loading={resumoQ.isLoading}
-        items={[
-          {
-            eyebrow: `Receita total · ${METODO_LABEL_CURTO[metodo]}`,
-            value: r ? fmtBRLCompact(r.kpis.total) : "—",
-          },
-          {
-            eyebrow: "Deságio · bloco operação",
-            value: r ? fmtBRLCompact(r.kpis.desagio) : "—",
-          },
-          {
-            eyebrow: "Mora · juros + multa",
-            value: r ? fmtBRLCompact(r.kpis.mora) : "—",
-          },
-          {
-            eyebrow: "Tarifas · operação + serviço",
-            value: r ? fmtBRLCompact(r.kpis.tarifas) : "—",
-          },
-          {
-            eyebrow: "Recompra · encargos",
-            value: r ? fmtBRLCompact(r.kpis.recompraEncargos) : "—",
-          },
-        ]}
-      />
+      <BandaKpi loading={resumoQ.isLoading}>
+        <BandaKpiCol headline label={`Receita total · ${METODO_LABEL_CURTO[metodo]}`}>
+          {r ? fmtBRLCompact(r.kpis.total) : "—"}
+        </BandaKpiCol>
+        <BandaKpiCol divider label="Deságio (operação)">
+          {r ? fmtBRLCompact(r.kpis.desagio) : "—"}
+        </BandaKpiCol>
+        <BandaKpiCol divider label="Mora (juros + multa)">
+          {r ? fmtBRLCompact(r.kpis.mora) : "—"}
+        </BandaKpiCol>
+        <BandaKpiCol divider label="Tarifas">
+          {r ? fmtBRLCompact(r.kpis.tarifas) : "—"}
+        </BandaKpiCol>
+        <BandaKpiCol divider label="Recompra (encargos)">
+          {r ? fmtBRLCompact(r.kpis.recompraEncargos) : "—"}
+        </BandaKpiCol>
+      </BandaKpi>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <EChartsCard
@@ -990,30 +982,20 @@ function Conferencias({
 
   return (
     <>
-      <KpiBand
-        loading={q.isLoading}
-        items={[
-          {
-            eyebrow: "Régua contratual · mora devida",
-            value: d ? fmtBRLCompact(d.totalRegua) : "—",
-          },
-          {
-            eyebrow: "Cobrado · efetivamente lançado",
-            value: d ? fmtBRLCompact(d.totalCobrado) : "—",
-          },
-          {
-            eyebrow: "Desconto concedido · régua − cobrado",
-            value: d ? fmtBRLCompact(d.totalDesconto) : "—",
-            delta: d && d.totalDesconto > 0
-              ? { value: "concedido", tone: "negative" as const }
-              : undefined,
-          },
-          {
-            eyebrow: "Perdões totais · mora 100% perdoada",
-            value: d ? d.totalPerdoes.toLocaleString("pt-BR") : "—",
-          },
-        ]}
-      />
+      <BandaKpi loading={q.isLoading}>
+        <BandaKpiCol headline label="Régua contratual (mora devida)">
+          {d ? fmtBRLCompact(d.totalRegua) : "—"}
+        </BandaKpiCol>
+        <BandaKpiCol divider label="Cobrado">
+          {d ? fmtBRLCompact(d.totalCobrado) : "—"}
+        </BandaKpiCol>
+        <BandaKpiCol divider label="Desconto concedido" tone={d ? -d.totalDesconto : undefined}>
+          {d ? fmtBRLCompact(d.totalDesconto) : "—"}
+        </BandaKpiCol>
+        <BandaKpiCol divider label="Perdões totais">
+          {d ? d.totalPerdoes.toLocaleString("pt-BR") : "—"}
+        </BandaKpiCol>
+      </BandaKpi>
       <Card className="p-0">
         <div className="px-4 pb-2 pt-4">
           <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
