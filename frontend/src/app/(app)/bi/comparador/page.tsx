@@ -169,11 +169,28 @@ export default function ComparadorPage() {
             description="Tente novamente em instantes."
             className="mt-10"
           />
+        ) : q.isLoading ? (
+          // Primeira consulta de uma competencia calcula o universo inteiro
+          // (~4k fundos via FDW) — pode levar ate ~1 min com cache frio.
+          // Sem este estado a tela fica em branco e parece quebrada.
+          <div className="mt-16 flex flex-col items-center gap-3">
+            <span
+              className="size-6 animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 dark:border-gray-700 dark:border-t-blue-400"
+              aria-hidden="true"
+            />
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Calculando os indicadores do universo CVM…
+            </p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              A primeira consulta de uma competência avalia ~4 mil fundos e
+              pode levar até um minuto. As próximas são instantâneas.
+            </p>
+          </div>
         ) : (
           <div
             className={cx(
               "flex flex-col gap-4",
-              q.isLoading && "opacity-60 transition-opacity",
+              q.isFetching && "opacity-60 transition-opacity",
             )}
           >
             {data && data.nao_encontrados.length > 0 && (
