@@ -2615,6 +2615,7 @@ export const biBenchmark = {
 export type ComparadorIndicadoresFundo = {
   cnpj: string
   denom_social: string | null
+  condominio: string | null // "Aberto" | "Fechado" (cadastral)
   pl: number | null
   pl_rank: number | null
   pl_medio: number | null
