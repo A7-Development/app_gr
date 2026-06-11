@@ -63,9 +63,13 @@ NATUREZA_TARIFA = "TARIFA"
 NATUREZA_REPASSE_CUSTO = "REPASSE_CUSTO"
 NATUREZA_FINANCEIRA = "FINANCEIRA"
 NATUREZA_AD_VALOREM = "AD_VALOREM"
+# Mora paga fora da regua contratual (acordo): valor real sem decomposicao
+# juros x multa — decompor seria inferencia (decisao 2026-06-11).
+NATUREZA_ENCARGO_NEGOCIADO = "ENCARGO_NEGOCIADO"
 
 NATUREZAS_VALIDAS = frozenset(
     {
+        NATUREZA_ENCARGO_NEGOCIADO,
         NATUREZA_DESAGIO,
         NATUREZA_JUROS_MORA,
         NATUREZA_MULTA_MORA,

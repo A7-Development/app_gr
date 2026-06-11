@@ -668,6 +668,10 @@ SELECT
     i.ValorDeJuros AS valor_de_juros,
     i.ValorDeMulta AS valor_de_multa,
     i.ValorDeDesagio AS valor_de_desagio,
+    i.ValorBase AS valor_base,
+    i.QuantidadeDeDiasVencido AS dias_vencido,
+    pc.PercentualDeMultaPorAtraso AS pct_multa,
+    pc.PercentualDeJurosDeMora AS pct_juros,
     r.UnidadeAdministrativaId AS unidade_administrativa_id,
     co.ProdutoId AS produto_id,
     ce.EntidadeId AS cedente_entidade_id,
@@ -681,11 +685,15 @@ LEFT JOIN dbo.ContaOperacional co ON co.ContaOperacionalId = r.ContaOperacionalI
 LEFT JOIN dbo.Cliente cli ON cli.ClienteId = co.ClienteId
 LEFT JOIN dbo.Entidade ce ON ce.EntidadeId = cli.EntidadeId
 LEFT JOIN dbo.Titulo t ON t.TituloId = i.TituloId
+LEFT JOIN dbo.ProcedimentoDeCobranca pc ON pc.TituloId = i.TituloId
 LEFT JOIN dbo.Sacado sa ON sa.SacadoId = t.SacadoId
 LEFT JOIN dbo.Entidade se ON se.EntidadeId = sa.EntidadeId
 WHERE r.Efetivada = 1
   AND r.DataDeEfetivacao >= ?
-  AND (i.ValorDeJuros > 0 OR i.ValorDeMulta > 0 OR i.ValorDeDesagio > 0)
+  -- DiasVencido > 0 sem encargo lancado = mora PERDOADA na negociacao:
+  -- entra com valor 0 + referencia da regua (metrica desconto concedido).
+  AND (i.ValorDeJuros > 0 OR i.ValorDeMulta > 0 OR i.ValorDeDesagio > 0
+       OR i.QuantidadeDeDiasVencido > 0)
 """
 
 # Rentabilidade da operacao (desagio + tarifas + ad valorem) — receita RETIDA

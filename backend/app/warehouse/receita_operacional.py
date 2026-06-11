@@ -104,6 +104,16 @@ class ReceitaOperacional(Auditable, Base):
 
     valor: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
 
+    # Regua contratual de referencia (ProcedimentoDeCobranca aplicado aos
+    # dias de atraso) quando o VALOR cobrado foi NEGOCIADO (stream
+    # mora_liquidacao_negociado, ENCARGO_NEGOCIADO) ou quando a fonte e
+    # recompra (juros/multa lancados na negociacao). Desconto de mora
+    # concedido = referencia - valor (linha com valor 0 e referencia > 0 =
+    # mora perdoada por inteiro). NULL = nao se aplica.
+    valor_referencia_regua: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 2), nullable=True
+    )
+
     # Ancoras na fonte (ids nativos Bitfin; preenchidos conforme o grao do
     # stream -- titulo/operacao/recompra/lancamento).
     titulo_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
