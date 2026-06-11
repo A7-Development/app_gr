@@ -162,10 +162,14 @@ async def main() -> None:
             return
         config = QiTechConfig.from_dict(decrypt_config(cfg_row.config))
 
+        # Em 403, espera crescente (cooldown x1, x3, x6) e re-tenta a mesma
+        # data; aborta so apos 4 tentativas consecutivas falhadas. Observado
+        # 2026-06-12: bloqueio durou >10min apos ~24 dispatches em 30min —
+        # nao e burst curto, precisa de espera longa.
+        _BACKOFF_MULT = (1, 3, 6)
         for i, target in enumerate(targets, 1):
             attempt = 0
             while True:
-                attempt += 1
                 try:
                     job = await request_fidc_estoque_report(
                         db=db,
@@ -183,13 +187,16 @@ async def main() -> None:
                     )
                     break
                 except QiTechHttpError as e:
-                    if e.status_code == 403 and attempt == 1:
+                    if e.status_code == 403 and attempt < len(_BACKOFF_MULT):
+                        wait = args.cooldown * _BACKOFF_MULT[attempt]
+                        attempt += 1
                         print(
-                            f"[{i}/{len(targets)}] {target}: 403 (rate-limit?) — "
-                            f"esperando {args.cooldown:.0f}s e tentando 1x",
+                            f"[{i}/{len(targets)}] {target}: 403 (rate-limit) — "
+                            f"tentativa {attempt}/{len(_BACKOFF_MULT)}, "
+                            f"esperando {wait:.0f}s",
                             flush=True,
                         )
-                        await asyncio.sleep(args.cooldown)
+                        await asyncio.sleep(wait)
                         continue
                     print(
                         f"ABORTADO em {target}: QiTech {e.status_code}: {e}\n"
