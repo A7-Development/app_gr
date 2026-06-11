@@ -212,10 +212,28 @@ Sao **dois eixos**: risco do devedor (cedente/sacado PF/PJ) e risco da operacao.
 ### Garantias
 `cvm_remote.tab_x_7.tab_x_vl_garantia_dircred` (R$) e `tab_x_pr_garantia_dircred` (% do DC).
 
-### Mercado secundario (precos de negociacao)
-`cvm_remote.tab_ix` -- precos min/medio/max de compra e venda segmentados por
-6 faixas de rentabilidade (a, b, c, d, e, f) e 2 tipos (1, 2). 40 colunas.
-Usado raramente -- so para FIDCs com cotas negociadas.
+### Taxa de aquisicao dos DC (taxa de desconto / juros praticadas no mes)
+`cvm_remote.tab_ix` — **NAO e "mercado secundario"** (4a descricao corrigida).
+Sao as TAXAS praticadas nos negocios do fundo no mes, em **% ANUAL decimal**
+(ex.: `80.77` = 80,77% a.a.), por classe de ativo:
+
+- Blocos: `a`=DC com risco · `b`=DC sem risco · `c`=Valores Mobiliarios ·
+  `d`=Titulos Publicos · `e`=CDB · `f`=Outras RF
+- Sub-blocos: `1`=Taxa de DESCONTO (da aquisicao) · `2`=Taxa de JUROS (do DC)
+- Dimensoes: Compra|Venda x Minima|**Media (PONDERADA)**|Maxima
+- Ex.: `tab_ix_a1_1_2_compra_media` = taxa de desconto media ponderada de
+  COMPRA dos DC com risco.
+
+**Conversao p/ mes**: `taxa_am = (1 + taxa_aa/100)^(1/12) - 1`. REALINVEST
+abr/26 (DC com risco, compra): min 53,79 / media 80,77 / max 130,94 % a.a.
+(= 3,65% / 5,06% / 7,22% a.m.); sem risco media 93,89% a.a. O campo interno
+`wh_liquidacao_recebivel.taxa_aquisicao` tambem e ANUAL (media simples abril
+63,5 vs CVM ponderada 80,77 — mesma ordem; cuidado com outliers de prazo
+curtissimo anualizado, max observado 201.943%). Taxa de juros (a2/b2) vem 0
+no REALINVEST (FAT/desconto puro — juros so em credito com fluxo).
+
+**Indicador candidato**: "taxa media de aquisicao" comparavel entre fundos do
+mesmo setor (tab_ii) — o PRICING do mercado, unico lugar publico onde aparece.
 
 ## Resumo por tabela
 
@@ -228,7 +246,7 @@ Usado raramente -- so para FIDCs com cotas negociadas.
 | `tab_v` | fundo/classe x mes | DC **COM risco** a vencer / inadimplente / antecipado por bucket de prazo |
 | `tab_vi` | fundo/classe x mes | DC **SEM risco** por bucket — espelho da tab_v (NAO e "passivo por prazo") |
 | `tab_vii` | fundo/classe x mes | Negocios do mes: qt/vl de DC + aquisicoes por origem (cedente/prestador/terceiro, com vl contabil) + substituicoes + RECOMPRAS (proxy de WOP do mercado) |
-| `tab_ix` | fundo/classe x mes | Mercado secundario |
+| `tab_ix` | fundo/classe x mes | TAXAS praticadas (desconto da aquisicao + juros, % a.a., min/media/max, compra/venda) por classe de ativo — NAO e "mercado secundario" |
 | `tab_x` | fundo/classe x mes | SCR ratings AA..H |
 | `tab_x_1` | fundo x mes x **serie** | Nr de cotistas por serie |
 | `tab_x_1_1` | fundo x mes | Nr de cotistas por **tipo de investidor** (Senior/Subord) |
