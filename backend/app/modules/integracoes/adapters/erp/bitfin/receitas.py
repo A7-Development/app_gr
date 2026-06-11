@@ -73,6 +73,31 @@ async def load_receita_streams(
     return {r.stream_key: r for r in rows}
 
 
+# Tolerancia pra considerar que o pagamento SEGUIU a regua contratual:
+# cobre arredondamento bancario do pro-rata dia (faixa 0,02-1,00 observada
+# so em retorno CNAB). Acima disso = encargo negociado (sem decomposicao).
+TOLERANCIA_REGUA = Decimal("1.00")
+
+
+def regua_contratual(
+    *,
+    base: Decimal,
+    pct_juros: Decimal | None,
+    pct_multa: Decimal | None,
+    dias_atraso: int,
+) -> tuple[Decimal, Decimal]:
+    """Componentes (juros, multa) da regua contratual de mora.
+
+    Mesma formula da proc DemonstrativoDeResultados / boleto / acruo:
+        juros = base x pct_juros/100/30 x dias (venc ORIGINAL, corridos)
+        multa = base x pct_multa/100
+    """
+    dias = max(dias_atraso, 0)
+    juros = _q2(base * (pct_juros or ZERO) / Decimal(100) / Decimal(30) * Decimal(dias))
+    multa = _q2(base * (pct_multa or ZERO) / Decimal(100))
+    return juros, multa
+
+
 def split_mora_liquidacao(
     *,
     total: Decimal,
@@ -80,29 +105,33 @@ def split_mora_liquidacao(
     pct_juros: Decimal | None,
     pct_multa: Decimal | None,
     dias_atraso: int,
-) -> tuple[Decimal, Decimal]:
-    """Split (juros, multa) do caixa de mora, proporcional aos TEORICOS.
+) -> tuple[str, Decimal, Decimal, Decimal]:
+    """Classifica o caixa de mora contra a regua: retorna
+    (resultado, juros, multa, regua_teorica).
 
-    Teoricos (mesma formula da proc DemonstrativoDeResultados / acruo):
-        juros_teor = liquido x pct_juros/100/30 x dias (venc ORIGINAL)
-        multa_teor = liquido x pct_multa/100
+    - resultado='regua': |total - regua| <= TOLERANCIA_REGUA. juros/multa =
+      componentes EXATOS da regua (residuo de arredondamento no juros).
+      Nao e proporcao: e a aritmetica de como a cobranca foi composta
+      (98,5% da populacao pos-expurgo de recompra).
+    - resultado='negociado': pagamento nao segue a regua (acordo). SEM
+      decomposicao — juros/multa retornam 0; o caller grava o total numa
+      natureza unica ENCARGO_NEGOCIADO com a regua de referencia ao lado.
 
-    O TOTAL e sempre o caixa (pgto - liquido); os teoricos so dao a
-    PROPORCAO. Sem percentuais (titulo sem ProcedimentoDeCobranca) ou
-    teoricos zerados -> 100% juros. Invariante: juros + multa == total.
+    Invariante (caso regua): juros + multa == total, ambos >= 0.
     """
+    juros_teor, multa_teor = regua_contratual(
+        base=valor_liquido, pct_juros=pct_juros, pct_multa=pct_multa,
+        dias_atraso=dias_atraso,
+    )
+    teorico = juros_teor + multa_teor
     if total <= ZERO:
-        return ZERO, ZERO
-    pj = pct_juros or ZERO
-    pm = pct_multa or ZERO
-    dias = max(dias_atraso, 0)
-    juros_teor = valor_liquido * pj / Decimal(100) / Decimal(30) * Decimal(dias)
-    multa_teor = valor_liquido * pm / Decimal(100)
-    base = juros_teor + multa_teor
-    if base <= ZERO:
-        return _q2(total), ZERO
-    juros = _q2(total * juros_teor / base)
-    return juros, _q2(total - juros)
+        return "regua", ZERO, ZERO, teorico
+    if abs(total - teorico) <= TOLERANCIA_REGUA and teorico > ZERO:
+        juros = juros_teor + (total - teorico)  # residuo (centavos) no juros
+        if juros < ZERO:
+            juros = ZERO
+        return "regua", _q2(juros), _q2(total - juros), teorico
+    return "negociado", ZERO, ZERO, teorico
 
 
 def _base_row(
@@ -113,8 +142,12 @@ def _base_row(
     valor: Decimal,
     source_id: str,
     src: dict[str, Any],
+    valor_referencia_regua: Decimal | None = None,
 ) -> dict[str, Any]:
     return {
+        "valor_referencia_regua": (
+            None if valor_referencia_regua is None else _q2(valor_referencia_regua)
+        ),
         "tenant_id": tenant_id,
         "data": data_evento,
         "competencia": _competencia(data_evento),
@@ -150,6 +183,7 @@ async def sync_receita_mora_liquidacao(
         streams = await load_receita_streams(db, tenant_id)
     s_juros = streams.get("mora_liquidacao_juros")
     s_multa = streams.get("mora_liquidacao_multa")
+    s_negociado = streams.get("mora_liquidacao_negociado")
     if s_juros is None and s_multa is None:
         return {"table": "wh_receita_operacional", "stream": "mora_liquidacao",
                 "rows": 0, "skipped": "streams inativos"}
@@ -161,9 +195,10 @@ async def sync_receita_mora_liquidacao(
     )
 
     mapped: list[dict] = []
+    negociados = 0
     for r in rows:
         total = Decimal(str(r["valor_do_pagamento"])) - Decimal(str(r["valor_liquido"]))
-        juros, multa = split_mora_liquidacao(
+        resultado, juros, multa, teorico = split_mora_liquidacao(
             total=total,
             valor_liquido=Decimal(str(r["valor_liquido"])),
             pct_juros=(None if r["pct_juros"] is None else Decimal(str(r["pct_juros"]))),
@@ -171,6 +206,19 @@ async def sync_receita_mora_liquidacao(
             dias_atraso=int(r["dias_atraso"] or 0),
         )
         data_evento = r["data_evento"]
+        if resultado == "negociado":
+            # Pagamento nao segue a regua: acordo. Natureza unica, valor
+            # integral, regua contratual gravada ao lado (desconto implicito
+            # = referencia - valor, visivel em conferencia). Zero inferencia.
+            negociados += 1
+            if s_negociado is not None:
+                mapped.append(_base_row(
+                    tenant_id=tenant_id, stream=s_negociado,
+                    data_evento=data_evento, valor=total,
+                    source_id=f"titulo:{r['titulo_id']}:negociado", src=r,
+                    valor_referencia_regua=teorico,
+                ))
+            continue
         if s_juros is not None and juros > ZERO:
             mapped.append(_base_row(
                 tenant_id=tenant_id, stream=s_juros, data_evento=data_evento,
@@ -184,7 +232,7 @@ async def sync_receita_mora_liquidacao(
 
     count = await _upsert_receitas(tenant_id, mapped)
     return {"table": "wh_receita_operacional", "stream": "mora_liquidacao",
-            "rows": count}
+            "rows": count, "negociados": negociados}
 
 
 # ---- Sync: streams de conta grafica (lancamento-grain) ---------------------
@@ -294,9 +342,24 @@ async def sync_receita_recompra(
 
     mapped: list[dict] = []
     for r in rows:
+        # Referencia da regua CONTRATUAL do titulo (ProcedimentoDeCobranca)
+        # sobre os dias vencidos na recompra: o que o cliente DEVIA de mora
+        # pela regua. valor lancado < referencia = desconto negociado;
+        # lancado 0 com referencia > 0 = mora perdoada (linha valor 0 entra
+        # de proposito pra metrica de desconto concedido).
+        ref_juros, ref_multa = regua_contratual(
+            base=Decimal(str(r.get("valor_base") or 0)),
+            pct_juros=(None if r.get("pct_juros") is None
+                       else Decimal(str(r["pct_juros"]))),
+            pct_multa=(None if r.get("pct_multa") is None
+                       else Decimal(str(r["pct_multa"]))),
+            dias_atraso=int(r.get("dias_vencido") or 0),
+        )
+        referencias = {"recompra_juros": ref_juros, "recompra_multa": ref_multa}
         for stream, campo in ativos:
             valor = Decimal(str(r[campo] or 0))
-            if valor <= ZERO:
+            referencia = referencias.get(stream.stream_key)
+            if valor <= ZERO and not (referencia and referencia > ZERO):
                 continue
             mapped.append(_base_row(
                 tenant_id=tenant_id, stream=stream, data_evento=r["data_evento"],
@@ -305,6 +368,7 @@ async def sync_receita_recompra(
                     f"recompra:{r['recompra_id']}:{r['titulo_id']}:{stream.natureza}"
                 ),
                 src=r,
+                valor_referencia_regua=referencia,
             ))
 
     count = await _upsert_receitas(tenant_id, mapped)

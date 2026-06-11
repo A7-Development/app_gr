@@ -70,6 +70,15 @@ recompra. Descoberta da auditoria por Situacao: 1=liquidacao real (FAT/DMS,
 regua ProcedimentoDeCobranca adere 98,5%), 5=baixa por recompra (100%),
 3=cobranca simples CBS (mora do cliente, fora). A "mora da Comissaria" era
 100% recompra. Gabarito novo: abr 31.381,79 / mai 31.329,59.
+
+v2.8.0 (2026-06-11): split da mora de liquidacao deixa de ser proporcional
+(rejeitado pelo Ricardo) — 3 saidas pela regua: |caixa - regua| <= R$1 ->
+componentes EXATOS da regua (residuo no juros); fora -> ENCARGO_NEGOCIADO
+sem decomposicao + valor_referencia_regua (desconto concedido = referencia
+- valor). Recompra ganha referencia da regua contratual sobre dias
+vencidos; mora perdoada (lancado 0, regua > 0) entra com valor 0 pra
+metrica de desconto. Coluna nova wh_receita_operacional.
+valor_referencia_regua (migration d9e3a7c1f5b2).
 """
 
-ADAPTER_VERSION = "bitfin_adapter_v2.7.1"
+ADAPTER_VERSION = "bitfin_adapter_v2.8.0"
