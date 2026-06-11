@@ -48,6 +48,52 @@ Chave: `tab_x_classe_serie`.
 `cvm_remote.tab_x_6.tab_x_pr_desemp_esperado` e `tab_x_pr_desemp_real`
 (percentuais, por `tab_x_classe_serie`). E a unica fonte CVM de **meta**.
 
+### Como o ATIVO fecha (aritmetica validada em 2026-04, 4.102 fundos)
+`tab_i_vl_ativo = tab_i1_vl_disp + tab_i2_vl_carteira + tab_i3_vl_posicao_deriv
++ tab_i4_vl_outro_ativo` (fecha em 4.100/4.102). A carteira (I.2) = soma dos 11
+itens 2a..2j + outro (4.073/4.102). `tab_i2i_vl_cota_fidc_np` esta **100% NULL**
+(pos-RCVM 175 colapsou em `tab_i2h_vl_cota_fidc`).
+
+### Provisao (PDD) — onde esta e como funciona (REGRA DURA p/ indicadores)
+`tab_i2a11_vl_reducao_recup` / `tab_i2b11_vl_reducao_recup` — nome oficial
+"Provisao para Reducao no Valor de Recuperacao (-)". Tres fatos validados:
+1. **Armazenada POSITIVA** (0 valores negativos no universo) apesar do "(-)" —
+   quem consome SUBTRAI.
+2. **Os subtotais (2a, 2b, carteira, ativo) ja vem LIQUIDOS de provisao**
+   (3.975/4.102 fundos: `2a = soma(a1..a10) - a11`). Bruto = liquido + provisao.
+3. **`tab_ii` (setorial) e o DC BRUTO**: `tab_ii_vl_carteira = (2a+a11)+(2b+b11)`
+   — validado ao centavo no REALINVEST. KPI sobre bruto usa tab_ii ou
+   liquido+provisao; sobre liquido usa tab_i direto.
+
+### tab_v so decompoe o DC COM aquisicao de risco (afeta KPI de inadimplencia)
+Validado no universo 2026-04: dos 1.034 fundos com DC sem risco (2b>0), 898 tem
+`tab_v_a + tab_v_b + tab_v_c = 2a BRUTO` e **ZERO** casos = 2a+2b. Ou seja: os
+buckets de prazo/inadimplencia/antecipado da `tab_v` **ignoram o bloco "sem
+aquisicao substancial de riscos"** (R$ 242,8 bi no universo; no REALINVEST e
+89% da carteira). Indicador de inadimplencia por bucket so enxerga o 2a.
+
+### I.4 "Outros Ativos" — o que e na pratica
+Schema so abre curto/longo prazo (`tab_i4a/tab_i4b`). Empiricamente (2026-04,
+R$ 22,3 bi): **dois mundos** — (a) residual contabil em 2.748 fundos (mediana
+0,03% do ativo); (b) posicao DOMINANTE (>=50% do ativo) em 60 fundos / R$ 9,1
+bi, quase todos FIDC-NP de credito judicial/distressed (Latache Legal Claims
+86%, AZO/CITY/LUSO/MN I = 100% do ativo) — esses fundos ficam INVISIVEIS nas
+lentes de lastro (tab_ii/tab_v vazias). Caso BTG Consignados II (R$ 2,4 bi
+curto prazo) = floating operacional. **No REALINVEST: I.4 = CPR Contas a
+Receber (floating de liquidacao + diferidos) — bate ao centavo com a QiTech.**
+
+### Mapeamento CVM <-> QiTech (validado REALINVEST, competencia 2026-04, ao centavo)
+| CVM | QiTech (silver, posicao do ultimo dia util) |
+|---|---|
+| DC bruto (`tab_ii_vl_carteira`) | `wh_posicao_cota_fundo` "REALINVEST A VENCER"+"VENCIDOS" **+ `wh_posicao_renda_fixa` NCPX** (notas comerciais vao DENTRO do DC na CVM; campo I.2.c.3 "NP Comercial" fica 0) |
+| Provisao (a11+b11) | `wh_posicao_outros_ativos` (que E a PDD com sinal negativo — por isso o balanco estrutural a exclui) |
+| Cotas FIF (I.2.c.5) | `wh_posicao_cota_fundo` externos (ITAU SOBERANO REF SI) |
+| Titulos Publicos (I.2.d) | `wh_posicao_renda_fixa` NTN-B |
+| Outros Ativos (I.4 curto) | `wh_cpr_movimento` Σ valor>0 (CPR a receber) |
+| Disponibilidades (I.1) | tesouraria+conta corrente (residuo R$ 349,74 nao mapeado, imaterial) |
+
+Base de check mensal automatico CVM x posicao interna (candidato a Conferencia).
+
 ### Composicao da carteira em R$ (cabecalho Austin pag.2)
 `cvm_remote.tab_i` -- mapeamento pratico:
 - DC a vencer: `tab_i2a_vl_dircred_risco` (soma) + decomposicao em `tab_v.tab_v_a_vl_dircred_prazo`
@@ -114,7 +160,7 @@ Usado raramente -- so para FIDCs com cotas negociadas.
 | `tab_iv` | fundo/classe x mes | PL total + PL medio trimestral |
 | `tab_v` | fundo/classe x mes | DC a vencer / inadimplente / antecipado por bucket de prazo |
 | `tab_vi` | fundo/classe x mes | Passivo por prazo (mesmo esquema de buckets) |
-| `tab_vii` | fundo/classe x mes | Complementos (despesas, provisoes) |
+| `tab_vii` | fundo/classe x mes | Negocios do mes: qt/vl de DC + aquisicoes por origem (cedente/prestador/terceiro, com vl contabil) + substituicoes + RECOMPRAS (proxy de WOP do mercado) |
 | `tab_ix` | fundo/classe x mes | Mercado secundario |
 | `tab_x` | fundo/classe x mes | SCR ratings AA..H |
 | `tab_x_1` | fundo x mes x **serie** | Nr de cotistas por serie |
