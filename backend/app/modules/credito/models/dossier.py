@@ -51,6 +51,14 @@ class CreditDossier(Base):
     target_cnpj: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     target_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # Codigo humano unico da analise (ex.: "DC-2026-0148") — referencia de
+    # suporte/comunicacao ("a DC-2026-0148 deu flag critica"). Gerado na
+    # criacao via sequence global `credit_dossier_code_seq`; o UUID continua
+    # sendo a chave tecnica.
+    code: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, unique=True, index=True
+    )
+
     # Pleito (high-level summary; full structured pleito in `credit_dossier_pleito`)
     operation_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     requested_amount: Mapped[Decimal | None] = mapped_column(

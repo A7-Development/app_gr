@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agentic.playbooks.models.definition import PlaybookDefinition
@@ -70,6 +70,11 @@ async def create_dossier(
         status=DossierStatus.DRAFT,
     )
     db.add(dossier)
+    await db.flush()
+
+    # Código humano único (DC-AAAA-NNNN) — sequence global, ano da criação.
+    seq = await db.scalar(text("SELECT nextval('credit_dossier_code_seq')"))
+    dossier.code = f"DC-{datetime.now(UTC).year}-{int(seq):04d}"
     await db.flush()
 
     # Trigger data — apenas o que foi de fato passado. Os aliases `cnpj`

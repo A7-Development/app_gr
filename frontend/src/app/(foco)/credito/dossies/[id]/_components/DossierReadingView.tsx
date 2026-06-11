@@ -176,7 +176,7 @@ export function DossierReadingView({
           <header className="flex items-start justify-between border-b-2 border-gray-900 pb-6 dark:border-gray-100">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400 dark:text-gray-500">
-                Dossiê de crédito · {dossier.id.slice(0, 8).toUpperCase()}
+                Dossiê de crédito · {dossier.code ?? dossier.id.slice(0, 8).toUpperCase()}
               </p>
               <h1 className="mt-1.5 text-2xl font-bold tracking-[-0.02em] text-gray-900 dark:text-gray-50">
                 {titleLabel}

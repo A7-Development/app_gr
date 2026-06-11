@@ -65,6 +65,7 @@ class DossierRead(BaseModel):
 
     id: UUID
     tenant_id: UUID
+    code: str | None = None
     target_cnpj: str | None
     target_name: str | None
     operation_type: str | None
@@ -93,6 +94,7 @@ class DossierListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    code: str | None = None
     target_cnpj: str | None
     target_name: str | None
     status: DossierStatus

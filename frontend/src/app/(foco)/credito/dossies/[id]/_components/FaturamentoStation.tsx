@@ -101,7 +101,14 @@ const DOC_LABEL: Record<string, string> = {
 // ─── Componente principal ───────────────────────────────────────────────────
 
 export function FaturamentoStation(props: FaturamentoStationProps) {
-  const { dossierId, docs, phase } = props
+  const { dossierId, phase } = props
+  // Só os documentos DESTA estação — docs de outras (contrato social etc.)
+  // não vazam pra cá.
+  const docs = React.useMemo(() => {
+    if (!props.requiredDocTypes.length) return props.docs
+    const allowed = new Set(props.requiredDocTypes.map((t) => t.toLowerCase()))
+    return props.docs.filter((d) => allowed.has(d.doc_type.toLowerCase()))
+  }, [props.docs, props.requiredDocTypes])
   const qc = useQueryClient()
   const queryKey = ["credito", "documents", dossierId]
   const invalidate = React.useCallback(

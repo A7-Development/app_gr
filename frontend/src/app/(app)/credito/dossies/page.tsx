@@ -326,6 +326,11 @@ export default function FilaAnalisesPage() {
                   >
                     {name}
                   </span>
+                  {r.code && (
+                    <span className="shrink-0 text-[11px] text-gray-400 tabular-nums dark:text-gray-500">
+                      {r.code}
+                    </span>
+                  )}
                   <span
                     className={cx(
                       "flex shrink-0 items-center gap-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400",

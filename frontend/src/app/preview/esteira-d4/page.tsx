@@ -44,6 +44,7 @@ const MOCK_DOC: CreditDocumentRead = {
 
 const MOCK_DOSSIER: DossierRead = {
   id: "dc20260148-0000-0000-0000-000000000000",
+  code: "DC-2026-0148",
   tenant_id: "t",
   target_cnpj: "31.482.905/0001-44",
   target_name: "Transportes Meridiano Ltda",

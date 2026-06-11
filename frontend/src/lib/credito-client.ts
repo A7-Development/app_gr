@@ -200,6 +200,8 @@ export type NextActionKind =
 
 export type DossierListItem = {
   id: string
+  /** Código humano único da análise (ex.: "DC-2026-0148"). */
+  code: string | null
   target_cnpj: string | null
   target_name: string | null
   status: DossierStatus

@@ -51,22 +51,43 @@ const DOC_LABEL: Record<string, string> = Object.fromEntries(
 export function DocumentWorkspace({
   dossierId,
   requiredDocTypes = [],
+  docTypes,
   onContinue,
   continuing = false,
 }: {
   dossierId: string
   requiredDocTypes?: string[]
+  /** Restringe a estação a estes tipos: filtra a lista de documentos E as
+   *  opções de upload. Sem isso, docs de OUTRAS estações vazariam pra cá. */
+  docTypes?: string[]
   onContinue?: () => void
   continuing?: boolean
 }) {
   const qc = useQueryClient()
-  const [docType, setDocType] = React.useState<string>("dre")
+  const allowed = React.useMemo(
+    () =>
+      docTypes && docTypes.length > 0
+        ? new Set(docTypes.map((t) => t.toLowerCase()))
+        : null,
+    [docTypes],
+  )
+  const typeOptions = allowed
+    ? DOC_TYPES.filter((t) => allowed.has(t.value))
+    : DOC_TYPES
+  const [docType, setDocType] = React.useState<string>(
+    () => typeOptions[0]?.value ?? "dre",
+  )
   const queryKey = ["credito", "documents", dossierId]
 
-  const { data: docs = [] } = useQuery({
+  const { data: allDocs = [] } = useQuery({
     queryKey,
     queryFn: () => credito.documents.list(dossierId),
   })
+  const docs = React.useMemo(
+    () =>
+      allowed ? allDocs.filter((d) => allowed.has(d.doc_type.toLowerCase())) : allDocs,
+    [allDocs, allowed],
+  )
 
   const invalidate = () => qc.invalidateQueries({ queryKey })
 
@@ -117,13 +138,15 @@ export function DocumentWorkspace({
         </div>
       )}
 
-      {/* Upload: tipo + zona */}
+      {/* Upload: tipo + zona (chips só quando há mais de um tipo possível) */}
       <div className="space-y-2 rounded-md border border-gray-200 bg-gray-50/50 p-3 dark:border-gray-800 dark:bg-gray-950/40">
-        <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
-          Tipo do documento
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {DOC_TYPES.map((opt) => (
+        {typeOptions.length > 1 && (
+          <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+            Tipo do documento
+          </p>
+        )}
+        <div className={cx("flex flex-wrap gap-1.5", typeOptions.length <= 1 && "hidden")}>
+          {typeOptions.map((opt) => (
             <button
               key={opt.value}
               type="button"
@@ -469,9 +492,21 @@ function ExtractionReview({
   onChange: (next: Fields) => void
 }) {
   const monthly = getMonthly(fields)
-  // Chaves escalares (tudo que nao e `monthly` nem interno `_…`).
+  // Chaves escalares (tudo que nao e `monthly`, lista, objeto nem `_…`).
   const scalarKeys = Object.keys(fields).filter(
-    (k) => k !== "monthly" && !k.startsWith("_"),
+    (k) =>
+      k !== "monthly" &&
+      !k.startsWith("_") &&
+      (fields[k] === null || typeof fields[k] !== "object"),
+  )
+  // Listas de objetos (ex.: socios do contrato social) — viram mini-tabela,
+  // nunca "[object Object]".
+  const listKeys = Object.keys(fields).filter(
+    (k) =>
+      k !== "monthly" &&
+      !k.startsWith("_") &&
+      Array.isArray(fields[k]) &&
+      (fields[k] as unknown[]).length > 0,
   )
 
   const setField = (key: string, value: unknown) =>
@@ -501,6 +536,11 @@ function ExtractionReview({
           ))}
         </dl>
       )}
+
+      {/* Listas de objetos (socios etc.) */}
+      {listKeys.map((k) => (
+        <GenericListTable key={k} fieldKey={k} rows={fields[k] as unknown[]} />
+      ))}
 
       {/* Tabela mensal */}
       {monthly && (
@@ -561,6 +601,64 @@ function ScalarField({
           {displayScalar(fieldKey, value)}
         </dd>
       )}
+    </div>
+  )
+}
+
+/** Lista de objetos extraída (ex.: `socios`) como mini-tabela legível. */
+function GenericListTable({ fieldKey, rows }: { fieldKey: string; rows: unknown[] }) {
+  const objects = rows.filter(
+    (r): r is Record<string, unknown> => typeof r === "object" && r !== null,
+  )
+  if (objects.length === 0) {
+    // Lista de primitivos — vira linha única legível.
+    return (
+      <div>
+        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          {FIELD_LABELS[fieldKey] ?? humanize(fieldKey)}
+        </p>
+        <p className={tableTokens.cellText}>{rows.map(String).join(" · ")}</p>
+      </div>
+    )
+  }
+  const columns = Array.from(
+    objects.reduce<Set<string>>((acc, o) => {
+      Object.keys(o).forEach((k) => acc.add(k))
+      return acc
+    }, new Set()),
+  )
+  return (
+    <div>
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {FIELD_LABELS[fieldKey] ?? humanize(fieldKey)}
+      </p>
+      <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-gray-100 bg-gray-50/60 dark:border-gray-900 dark:bg-gray-900/40">
+              {columns.map((c) => (
+                <th key={c} className={cx(tableTokens.header, "px-3 py-1.5 text-left")}>
+                  {FIELD_LABELS[c] ?? humanize(c)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {objects.map((row, i) => (
+              <tr
+                key={i}
+                className="border-b border-gray-50 last:border-0 dark:border-gray-900/60"
+              >
+                {columns.map((c) => (
+                  <td key={c} className={cx(tableTokens.cellText, "px-3 py-1")}>
+                    {displayScalar(c, row[c])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -804,6 +902,13 @@ const FIELD_LABELS: Record<string, string> = {
   period_end: "Fim do período",
   razao_social: "Razão social",
   company: "Empresa",
+  socios: "Sócios",
+  nome: "Nome",
+  participacao_pct: "Participação (%)",
+  capital_social: "Capital social",
+  data_constituicao: "Data de constituição",
+  objeto_social: "Objeto social",
+  endereco: "Endereço",
 }
 
 const brl = new Intl.NumberFormat("pt-BR", {
