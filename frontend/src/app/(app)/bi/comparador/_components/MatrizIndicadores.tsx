@@ -13,6 +13,7 @@ import { RiAlertFill, RiInformationLine } from "@remixicon/react"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 
 import { cx } from "@/lib/utils"
+import { Badge } from "@/components/tremor/Badge"
 import { Card } from "@/components/tremor/Card"
 import { DataTable } from "@/design-system/components/DataTable"
 import { tableTokens } from "@/design-system/tokens/table"
@@ -80,6 +81,20 @@ function CelulaFundo({
     direcao[def.key],
   )
   const flag = redFlag(def, fundo)
+  // Categoricos (ex.: Condominio) viram Badge — Aberto em azul (atencao:
+  // resgate a qualquer tempo) e demais em cinza neutro.
+  if (def.fmt === "texto") {
+    if (typeof valor !== "string" || !valor) {
+      return <div className={cx("text-right", tableTokens.cellMuted)}>—</div>
+    }
+    return (
+      <div className="flex justify-end">
+        <Badge variant={valor === "Aberto" ? "default" : "neutral"}>
+          {valor}
+        </Badge>
+      </div>
+    )
+  }
   return (
     <div className="flex items-baseline justify-end gap-1.5 whitespace-nowrap">
       {flag && (

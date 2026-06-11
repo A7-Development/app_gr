@@ -14,7 +14,7 @@
 //   - AIPanel in-layout (mesmo wiring de IA da operacoes4)
 //
 // Esqueleto funcional aprovado (2026-06-12): SegmentSwitch de METODO como
-// lente global (§7.2), KpiStrip, hero mensal por familia, composicao por
+// lente global (§7.2), KpiBand canonica (anatomia CotaSubStatusBand), hero mensal
 // natureza, PONTE dos 3 metodos (§14.6), DataTable familia/stream com drill
 // de titulos (?selected via nuqs), aba Conferencias (desconto de mora).
 
@@ -42,7 +42,7 @@ import { PageHeader } from "@/design-system/components/PageHeader"
 import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
 import { ProvenanceFooter, type ProvenanceSource } from "@/design-system/components/ProvenanceFooter"
 import { SegmentSwitch } from "@/design-system/components/SegmentSwitch"
-import { KpiCard, KpiStrip } from "@/design-system/components/KpiStrip"
+import { BandaKpi, BandaKpiCol } from "./_components/BandaKpi"
 import { EChartsCard } from "@/design-system/components/EChartsCard"
 import { FilterChip } from "@/design-system/components/FilterBar"
 import { InsightStrip } from "@/design-system/components/InsightStrip"
@@ -84,6 +84,12 @@ const METODOS: { value: ReceitasMetodo; label: string }[] = [
   { value: "competencia", label: "Competência" },
   { value: "acruo",       label: "Acruo" },
 ]
+
+const METODO_LABEL_CURTO: Record<ReceitasMetodo, string> = {
+  caixa:       "método caixa",
+  competencia: "método competência",
+  acruo:       "método acruo",
+}
 
 const METODO_DESC: Record<ReceitasMetodo, string> = {
   caixa:       "deságio reconhecido na liquidação do título",
@@ -178,6 +184,11 @@ type TabKey = (typeof TABS)[number]["key"]
 
 const fmtBRL = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+
+const _fmtCompactBRL = new Intl.NumberFormat("pt-BR", {
+  style: "currency", currency: "BRL", notation: "compact", maximumFractionDigits: 2,
+})
+const fmtBRLCompact = (v: number) => _fmtCompactBRL.format(v)
 
 const fmtBRL0 = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })
@@ -572,13 +583,23 @@ function VisaoGeral({
 
   return (
     <>
-      <KpiStrip>
-        <KpiCard label="Receita total" value={r ? fmtBRL0(r.kpis.total) : "—"} sub={METODO_DESC[metodo]} />
-        <KpiCard label="Deságio" value={r ? fmtBRL0(r.kpis.desagio) : "—"} sub="bloco operação" />
-        <KpiCard label="Mora (juros + multa)" value={r ? fmtBRL0(r.kpis.mora) : "—"} sub="todas as famílias" />
-        <KpiCard label="Tarifas" value={r ? fmtBRL0(r.kpis.tarifas) : "—"} sub="operação + serviço" />
-        <KpiCard label="Recompra (encargos)" value={r ? fmtBRL0(r.kpis.recompraEncargos) : "—"} sub="juros + multa + deságio" />
-      </KpiStrip>
+      <BandaKpi loading={resumoQ.isLoading}>
+        <BandaKpiCol headline label={`Receita total · ${METODO_LABEL_CURTO[metodo]}`}>
+          {r ? fmtBRLCompact(r.kpis.total) : "—"}
+        </BandaKpiCol>
+        <BandaKpiCol divider label="Deságio (operação)">
+          {r ? fmtBRLCompact(r.kpis.desagio) : "—"}
+        </BandaKpiCol>
+        <BandaKpiCol divider label="Mora (juros + multa)">
+          {r ? fmtBRLCompact(r.kpis.mora) : "—"}
+        </BandaKpiCol>
+        <BandaKpiCol divider label="Tarifas">
+          {r ? fmtBRLCompact(r.kpis.tarifas) : "—"}
+        </BandaKpiCol>
+        <BandaKpiCol divider label="Recompra (encargos)">
+          {r ? fmtBRLCompact(r.kpis.recompraEncargos) : "—"}
+        </BandaKpiCol>
+      </BandaKpi>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <EChartsCard
@@ -961,12 +982,20 @@ function Conferencias({
 
   return (
     <>
-      <KpiStrip>
-        <KpiCard label="Régua contratual" value={d ? fmtBRL0(d.totalRegua) : "—"} sub="mora devida pelo contrato" />
-        <KpiCard label="Cobrado" value={d ? fmtBRL0(d.totalCobrado) : "—"} sub="efetivamente lançado" />
-        <KpiCard label="Desconto concedido" value={d ? fmtBRL0(d.totalDesconto) : "—"} sub="régua − cobrado" />
-        <KpiCard label="Perdões totais" value={d ? d.totalPerdoes.toLocaleString("pt-BR") : "—"} sub="títulos com mora 100% perdoada" />
-      </KpiStrip>
+      <BandaKpi loading={q.isLoading}>
+        <BandaKpiCol headline label="Régua contratual (mora devida)">
+          {d ? fmtBRLCompact(d.totalRegua) : "—"}
+        </BandaKpiCol>
+        <BandaKpiCol divider label="Cobrado">
+          {d ? fmtBRLCompact(d.totalCobrado) : "—"}
+        </BandaKpiCol>
+        <BandaKpiCol divider label="Desconto concedido" tone={d ? -d.totalDesconto : undefined}>
+          {d ? fmtBRLCompact(d.totalDesconto) : "—"}
+        </BandaKpiCol>
+        <BandaKpiCol divider label="Perdões totais">
+          {d ? d.totalPerdoes.toLocaleString("pt-BR") : "—"}
+        </BandaKpiCol>
+      </BandaKpi>
       <Card className="p-0">
         <div className="px-4 pb-2 pt-4">
           <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
