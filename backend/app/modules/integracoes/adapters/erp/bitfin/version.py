@@ -31,6 +31,75 @@ cedente e Sacado->sacado, e GrupoEconomico(Membro) para o warehouse
 canonico wh_entidade / wh_entidade_fonte (crosswalk de identidade) /
 wh_entidade_papel / wh_grupo_economico(_membro). Identidade: 1 entidade
 por (tenant, documento normalizado); documento invalido = quarentena.
+
+v2.4.0 (2026-06-10): F1 do party model -- o endpoint `bitfin.entidades`
+passa a ingerir tambem as posicoes por papel: ClientePosicao ->
+wh_posicao_cedente (risco/prazo carteira/liquidez), ClientePosicaoProduto ->
+wh_posicao_cedente_produto (LIMITE operacional/tranche/risco por produto),
+SacadoPosicao -> wh_posicao_sacado (subset essencial). Snapshot
+vendor-computed, full refresh, ancorado em wh_entidade via crosswalk.
+
+v2.5.0 (2026-06-10): REMOVIDA a classificacao por natureza do DRE
+(`wh_bitfin_dre_natureza_rule` dropada + coluna `wh_dre_mensal.natureza`).
+Motivo: a DemonstrativoDeResultado do Bitfin RECALCULA multa/juros
+teoricamente (percentual contratual x dias) — nao reflete caixa. Receita
+por natureza renasce fiel ao caixa no catalogo de receitas operacionais
+(nova wh canonica, fontes: Titulo / ContaCorrenteLancamento / Recompra /
+OperacaoRentabilidade). `wh_bitfin_tarifa_catalogo` permanece como
+vocabulario controlado.
+
+v2.6.0 (2026-06-10): ETL do catalogo de receitas (PR 2 — familias de mora):
+3 syncs novos materializam wh_receita_operacional dirigidos por
+wh_bitfin_receita_stream: mora_liquidacao (Titulo, caixa = pgto - liquido,
+split juros x multa proporcional aos teoricos do ProcedimentoDeCobranca),
+grafica (ContaCorrenteLancamento — prorrogacao/cartorio/acerto/tarifas/
+repasses/financeira, codigos do catalogo, estornados excluidos, TituloId
+extraido do ComplementoInterno), recompra (RecompraItem Efetivada=1,
+juros/multa/desagio por titulo).
+
+v2.7.0 (2026-06-10): PR 3 do catalogo de receitas — sync_receita_operacao:
+OperacaoRentabilidade (efetivadas, Origem != recompra/homologacao) ->
+streams desagio_operacao / tarifa_operacao / ad_valorem. Receita retida do
+liquido na efetivacao (caixa por construcao). Cross-check: desagio do mes
+== Σ OperacaoResultado.TotalDeJuros das efetivadas.
+
+v2.7.1 (2026-06-11): FIX dupla contagem na mora de liquidacao — exclui
+titulos liquidados POR RECOMPRA (Situacao=1 com RecompraItem Efetivada+
+Liquidacao): o encargo deles e da regua de recompra e ja entra via stream
+recompra. Descoberta da auditoria por Situacao: 1=liquidacao real (FAT/DMS,
+regua ProcedimentoDeCobranca adere 98,5%), 5=baixa por recompra (100%),
+3=cobranca simples CBS (mora do cliente, fora). A "mora da Comissaria" era
+100% recompra. Gabarito novo: abr 31.381,79 / mai 31.329,59.
+
+v2.8.0 (2026-06-11): split da mora de liquidacao deixa de ser proporcional
+(rejeitado pelo Ricardo) — 3 saidas pela regua: |caixa - regua| <= R$1 ->
+componentes EXATOS da regua (residuo no juros); fora -> ENCARGO_NEGOCIADO
+sem decomposicao + valor_referencia_regua (desconto concedido = referencia
+- valor). Recompra ganha referencia da regua contratual sobre dias
+vencidos; mora perdoada (lancado 0, regua > 0) entra com valor 0 pra
+metrica de desconto. Coluna nova wh_receita_operacional.
+valor_referencia_regua (migration d9e3a7c1f5b2).
+
+v2.9.0 (2026-06-11): SELECT_OPERACAO ingere as 3 tarifas que faltavam do
+OperacaoResultado -- TarifaPorOperacao (TAC), TarifaDeTed e
+TotalDosRegistrosDeRecebiveis. Sem elas a soma das tarifas do wh_operacao
+nao reconciliava com o desagio total embutido no ValorPresente dos itens
+(= valor_compra enviado a QiTech): gap de R$ 159,00 na op 9881 (TAC 120 +
+TED 30 + reg. recebiveis 9). Base da visao de receita por acruo.
+
+v2.10.0 (2026-06-11): METODO ACRUO — engine acruo.py deriva
+wh_receita_acruo_dia (cota diaria da curva composta de desagio por titulo,
+D+1 DU, ancora PV=ValorPresente, componentes desagio/adval/tarifas na
+proporcao do desagio total, IOF fora). Saida antecipada = residual no dia
+(acruo_antecipacao). Curva PARA no vencimento ORIGINAL (prorrogacao nao
+estende — validado QiTech). 2 de 3 metodos (caixa | acruo | competencia).
+
+v2.5.0 (2026-06-11): sinais de praca de pagamento (risco de autoliquidacao/
+lastro frio). wh_posicao_sacado ganha 4 totais de praca (fora da praca do
+sacado / praca do cliente / agencia do cliente / banco digital); novas
+wh_posicao_sacado_cedente (SacadoPosicaoCliente — relacao NxN com praca,
+risco e recompras) e wh_pagamento_praca_mensal (PosicaoHistoricaPagamentoPraca
+— serie mensal 5 buckets desde 2022-01, por conta operacional/cedente).
 """
 
-ADAPTER_VERSION = "bitfin_adapter_v2.3.0"
+ADAPTER_VERSION = "bitfin_adapter_v2.10.0"

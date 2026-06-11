@@ -91,8 +91,14 @@ const COLUMNS: ColumnDef<ResumoStatusConciliacao, unknown>[] = [
 
 export function ResumoConciliacaoTable({
   resumo,
+  statusFilter,
+  onStatusToggle,
 }: {
   resumo: ResumoStatusConciliacao[]
+  /** Filtro Status ativo na pagina (valores canonicos do status). */
+  statusFilter: string[]
+  /** Clique na linha -> toggle do filtro Status da pagina (re-escopo total). */
+  onStatusToggle: (status: StatusConciliacaoBoleto) => void
 }) {
   // Sempre todas as linhas, ordem canonica (0 onde nao ha).
   const rows = React.useMemo<ResumoStatusConciliacao[]>(() => {
@@ -141,6 +147,10 @@ export function ResumoConciliacaoTable({
 
   // Card padrao (tableTokens.cardWrapper) envolvendo a DataTable canonica —
   // mesma anatomy do DataTableShell, sem filtros/toolbar/title band.
+  // Linha clicavel = toggle do filtro Status da pagina (re-escopo total: com
+  // status filtrado o proprio resumo colapsa pro subset — clique de novo
+  // desfaz; mesma mecanica do chip Status e das linhas de banco do card ao
+  // lado). Linha selecionada destacada em azul (§4: blue = selecao).
   return (
     <Card className={tableTokens.cardWrapper}>
       <DataTable
@@ -152,6 +162,12 @@ export function ResumoConciliacaoTable({
         showExport={false}
         virtualize={false}
         renderFooter={renderFooter}
+        onRowClick={(row) => onStatusToggle(row.status)}
+        rowClassName={(row) =>
+          statusFilter.includes(row.status)
+            ? "bg-blue-50 dark:bg-blue-500/10"
+            : ""
+        }
       />
     </Card>
   )

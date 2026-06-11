@@ -3277,6 +3277,125 @@ export const cadastros = {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Cadastros · Ficha da Entidade (party model — peek `?entidade=<documento>`)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type EntidadePapelInfo = {
+  papel: "cedente" | "sacado" | "avalista" | "socio" | "fornecedor"
+  source_id: string
+  status_fonte: string | null
+}
+
+export type EntidadeEstabelecimento = {
+  documento: string
+  nome: string
+  filial_numero: string | null
+  is_matriz: boolean | null
+  localidade: string | null
+  estado: string | null
+}
+
+export type EntidadeGrupoMembro = {
+  documento: string | null
+  nome: string | null
+  vinculo: string | null
+  papeis: string[]
+}
+
+export type EntidadeGrupo = {
+  nome: string
+  segmento: string | null
+  membros: EntidadeGrupoMembro[]
+}
+
+export type CarteiraAtivaLinha = {
+  escopo: "cnpj" | "grupo"
+  cedente_valor: number
+  sacado_valor: number
+  total: number
+  cedente_vencido: number
+  sacado_vencido: number
+}
+
+export type LimiteProduto = {
+  produto_sigla: string | null
+  limite: number
+  em_uso: number
+  vencido: number
+}
+
+export type PerformanceResumo = {
+  papel: "cedente" | "sacado"
+  indice_liquidez: number | null
+  vencimentario: number | null
+  liquidados: number | null
+  recomprados: number | null
+  vencidos_penalizados: number | null
+  vencidos_nao_penalizados: number | null
+  janela_dias: number | null
+  data_apuracao: string | null
+  prazo_medio_carteira: number | null
+  indice_pontualidade: number | null
+}
+
+export type EntidadeBureauResumo = {
+  fonte: string
+  consultado_em: string
+  score: number | null
+  score_classe: string | null
+  protestos_qtd: number | null
+  pefin_qtd: number | null
+  refin_qtd: number | null
+  cheques_qtd: number | null
+  acoes_judiciais_qtd: number | null
+  falencias_qtd: number | null
+  valor_total_restricoes: number | null
+  // Conclusão derivada pelo Strata (regra serasa_liminar_v1) — não vem do
+  // bureau/ERP. Renderiza <StrataConclusaoBadge label="Possível Liminar" />.
+  suspeita_liminar: boolean
+  negative_summary_message: string | null
+  liminar_estado: "suspeita_ativa" | "liminar_caida" | "transicao_ambigua" | null
+  liminar_desde: string | null
+  liminar_regra: string | null
+}
+
+export type EntidadeResumo = {
+  documento: string
+  tipo_pessoa: "pj" | "pf"
+  nome: string
+  documento_raiz: string | null
+  filial_numero: string | null
+  is_matriz: boolean | null
+  cnae_chave: string | null
+  cnae_denominacao: string | null
+  porte: string | null
+  data_constituicao: string | null
+  em_recuperacao_judicial: boolean | null
+  data_recuperacao_judicial: string | null
+  localidade: string | null
+  estado: string | null
+  papeis: EntidadePapelInfo[]
+  /** ClienteId Bitfin do papel cedente — alimenta biOperacoes5.operacoes. */
+  cedente_id: number | null
+  estabelecimentos: EntidadeEstabelecimento[]
+  grupo: EntidadeGrupo | null
+  carteira_ativa: CarteiraAtivaLinha[]
+  limites: LimiteProduto[]
+  performance: PerformanceResumo | null
+  bureau: EntidadeBureauResumo | null
+  source_type: string
+  ingested_at: string
+}
+
+export const cadastrosEntidades = {
+  /** Resumo da entidade (peek). `documento` em digitos (com ou sem padding). */
+  resumo: (documento: string) =>
+    apiClient.get<EntidadeResumo>(
+      `/cadastros/entidades/${encodeURIComponent(documento)}/resumo`,
+    ),
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Controladoria · Cota Sub
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -4891,8 +5010,16 @@ export type LinhaConciliacaoBoleto = {
   protesto_em:       string | null  // YYYY-MM-DD
 }
 
+// Frescor do retorno de UM banco (banco parado fica visivel aqui mesmo com o
+// frescor global em dia).
+export type FrescorBancoConciliacao = {
+  banco:       string
+  retorno_ate: string  // YYYY-MM-DD
+}
+
 export type ConciliacaoBancoCobradorResponse = {
   cobranca_atualizada_ate: string | null  // frescor do lado banco (ISO)
+  frescor_bancos:          FrescorBancoConciliacao[]
   titulos_abertos:         number
   boletos_ativos:          number
   conciliados:             number
@@ -4981,6 +5108,11 @@ export const controladoria = {
       v === null || v === undefined ? null : Number(v)
     return {
       cobranca_atualizada_ate: raw.cobranca_atualizada_ate ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      frescor_bancos: (raw.frescor_bancos ?? []).map((f: any) => ({
+        banco:       f.banco,
+        retorno_ate: f.retorno_ate,
+      })),
       titulos_abertos: raw.titulos_abertos,
       boletos_ativos:  raw.boletos_ativos,
       conciliados:     raw.conciliados,
@@ -5436,8 +5568,8 @@ export const controladoria = {
     return _coerceDreFornecedores(raw)
   },
 
-  // Breakdown da receita de UM mes por dimensao (natureza/cedente/produto/
-  // subgrupo). Filtros entidadeId/natureza/subgrupo = drill (cruzar dimensoes).
+  // Breakdown da receita de UM mes por dimensao (cedente/produto/subgrupo).
+  // Filtros entidadeId/subgrupo = drill (cruzar dimensoes).
   dreBreakdown: async (
     filters: DreBreakdownFilters,
   ): Promise<DreBreakdownResponse> => {
@@ -5446,7 +5578,6 @@ export const controladoria = {
     params.set("dim", filters.dim)
     if (filters.entidadeId !== undefined)
       params.set("entidade_id", String(filters.entidadeId))
-    if (filters.natureza) params.set("natureza", filters.natureza)
     if (filters.subgrupo) params.set("subgrupo", filters.subgrupo)
     const raw = await apiClient.get<DreBreakdownResponseRaw>(
       `/controladoria/dre/breakdown?${params.toString()}`,
@@ -5487,13 +5618,12 @@ export type DreDrillFornecedoresFilters = DrePivotFilters & {
   top?:       number
 }
 
-export type DreDimensao = "natureza" | "cedente" | "produto" | "subgrupo"
+export type DreDimensao = "cedente" | "produto" | "subgrupo"
 
 export type DreBreakdownFilters = DreBaseFilters & {
   competencia: string  // YYYY-MM-DD (1o dia do mes)
   dim:         DreDimensao
   entidadeId?: number  // drill: filtra um cedente
-  natureza?:   string  // drill
   subgrupo?:   string  // drill
 }
 

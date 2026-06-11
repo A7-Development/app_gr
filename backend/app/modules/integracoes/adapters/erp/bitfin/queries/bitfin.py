@@ -45,8 +45,8 @@ ORDER BY competencia, EntidadeId, Categoria, Descricao
 
 # Catalogo de tarifas/encargos (OrganizacaoTarifa) -- template da organizacao.
 # Vocabulario CONTROLADO de (Categoria, Descricao) + Tipo (1=tarifa fixa,
-# 2=encargo variavel) que ancora a classificacao por NATUREZA do DRE
-# (wh_bitfin_dre_natureza_rule). ~60 linhas; full refresh por sync.
+# 2=encargo variavel) -- base do catalogo de receitas operacionais e
+# detector de item novo. ~60 linhas; full refresh por sync.
 SELECT_ORGANIZACAO_TARIFA = """
 SELECT
     Categoria AS categoria,
@@ -191,6 +191,9 @@ SELECT
     r.TotalDosComunicadosDeCessao AS total_dos_comunicados_de_cessao,
     r.TotalDosDocumentosDigitais AS total_dos_documentos_digitais,
     r.TotalDosDescontosOuAbatimentos AS total_dos_descontos_ou_abatimentos,
+    r.TarifaPorOperacao AS tarifa_por_operacao,
+    r.TarifaDeTed AS tarifa_de_ted,
+    r.TotalDosRegistrosDeRecebiveis AS total_dos_registros_de_recebiveis,
     r.DataDoUltimoVencimento AS data_do_ultimo_vencimento,
     -- Cedente (= Cliente, no vocabulario Bitfin). Resolvido via
     -- ContaOperacional (modelo 1:1, validado em 2026-05-22: 9269/9269
@@ -460,4 +463,325 @@ SELECT
     Vinculo AS vinculo,
     DataDeCadastro AS data_cadastro_fonte
 FROM dbo.GrupoEconomicoMembro
+"""
+
+
+# ---- Posicoes por papel (F1 do party model) ----
+# Snapshots consolidados que o Bitfin calcula por papel. JOIN com Cliente/
+# Sacado traz a ponte (ClienteId/SacadoId + EntidadeId) para ancorar na
+# entidade canonica.
+SELECT_POSICAO_CEDENTE = """
+SELECT
+    cp.PosicaoId AS posicao_id,
+    c.ClienteId AS papel_source_id,
+    c.EntidadeId AS entidade_source_id,
+    cp.RiscoTotalQuantidade AS risco_total_qtd,
+    cp.RiscoTotalTotal AS risco_total_valor,
+    cp.RiscoVencidoQuantidade AS risco_vencido_qtd,
+    cp.RiscoVencidoTotal AS risco_vencido_valor,
+    cp.RiscoAVencerQuantidade AS risco_avencer_qtd,
+    cp.RiscoAVencerTotal AS risco_avencer_valor,
+    cp.PrazoMedioDeFaturamento AS prazo_medio_carteira,
+    cp.IndiceDeLiquidez AS indice_liquidez,
+    cp.VencimentarioDaLiquidez AS vencimentario_liquidez,
+    cp.QtdeDeDiasDaLiquidez AS liquidez_qtde_dias,
+    cp.DataInicialDaLiquidez AS liquidez_data_inicial,
+    cp.DataFinalDaLiquidez AS liquidez_data_final,
+    cp.TotalDosLiquidadosDaLiquidez AS liquidez_total_liquidados,
+    cp.TotalDosRecompradosDaLiquidez AS liquidez_total_recomprados,
+    cp.TotalDoVencidosPenalizadosDaLiquidez AS liquidez_total_vencidos_penalizados,
+    cp.TotalDoVencidosNaoPenalizadosDaLiquidez AS liquidez_total_vencidos_nao_penalizados,
+    cp.DataDeApuracaoDaLiquidez AS liquidez_data_apuracao
+FROM dbo.ClientePosicao cp
+INNER JOIN dbo.Cliente c
+    ON c.PosicaoId = cp.PosicaoId
+"""
+
+SELECT_POSICAO_CEDENTE_PRODUTO = """
+SELECT
+    cpp.PosicaoId AS posicao_id,
+    cpp.ProdutoId AS produto_source_id,
+    pr.Sigla AS produto_sigla,
+    c.ClienteId AS papel_source_id,
+    c.EntidadeId AS entidade_source_id,
+    cpp.LimiteOperacional AS limite_operacional,
+    cpp.Tranche AS tranche,
+    cpp.IndiceDeLiquidez AS indice_liquidez,
+    cpp.RiscoTotalQuantidade AS risco_total_qtd,
+    cpp.RiscoTotalTotal AS risco_total_valor,
+    cpp.RiscoVencidoQuantidade AS risco_vencido_qtd,
+    cpp.RiscoVencidoTotal AS risco_vencido_valor,
+    cpp.RiscoAVencerQuantidade AS risco_avencer_qtd,
+    cpp.RiscoAVencerTotal AS risco_avencer_valor,
+    cpp.HistoricoDeLiquidacoesQuantidade AS hist_liquidacoes_qtd,
+    cpp.HistoricoDeLiquidacoesTotal AS hist_liquidacoes_valor,
+    cpp.HistoricoDeBaixadosQuantidade AS hist_baixados_qtd,
+    cpp.HistoricoDeBaixadosTotal AS hist_baixados_valor
+FROM dbo.ClientePosicaoProduto cpp
+INNER JOIN dbo.Cliente c
+    ON c.PosicaoId = cpp.PosicaoId
+LEFT JOIN dbo.Produto pr
+    ON pr.ProdutoId = cpp.ProdutoId
+"""
+
+SELECT_POSICAO_SACADO = """
+SELECT
+    sp.PosicaoId AS posicao_id,
+    s.SacadoId AS papel_source_id,
+    s.EntidadeId AS entidade_source_id,
+    sp.RiscoTotalQuantidade AS risco_total_qtd,
+    sp.RiscoTotalTotal AS risco_total_valor,
+    sp.RiscoVencidoQuantidade AS risco_vencido_qtd,
+    sp.RiscoVencidoTotal AS risco_vencido_valor,
+    sp.RiscoAVencerQuantidade AS risco_avencer_qtd,
+    sp.RiscoAVencerTotal AS risco_avencer_valor,
+    sp.TicketMedio AS ticket_medio,
+    sp.IndiceDePontualidade AS indice_pontualidade,
+    sp.ProrrogadosQuantidade AS prorrogados_qtd,
+    sp.ProrrogadosTotal AS prorrogados_valor,
+    sp.PrazoMedioDeProrrogacao AS prazo_medio_prorrogacao,
+    sp.HistoricoDeTitulosQuantidade AS hist_titulos_qtd,
+    sp.HistoricoDeTitulosTotal AS hist_titulos_valor,
+    sp.HistoricoDeLiquidacoesQuantidade AS hist_liquidacoes_qtd,
+    sp.HistoricoDeLiquidacoesTotal AS hist_liquidacoes_valor,
+    sp.HistoricoDeRecomprasQuantidade AS hist_recompras_qtd,
+    sp.HistoricoDeRecomprasTotal AS hist_recompras_valor,
+    sp.PagamentosForaDaPracaDoSacadoTotal AS pagamentos_fora_praca_sacado,
+    sp.PagamentosNaPracaDoClienteTotal AS pagamentos_praca_cliente,
+    sp.PagamentosNaAgenciaDoClienteTotal AS pagamentos_agencia_cliente,
+    sp.PagamentosEmBancoDigitalTotal AS pagamentos_banco_digital,
+    sp.IndiceDeLiquidez AS indice_liquidez,
+    sp.VencimentarioDaLiquidez AS vencimentario_liquidez,
+    sp.QtdeDeDiasDaLiquidez AS liquidez_qtde_dias,
+    sp.DataInicialDaLiquidez AS liquidez_data_inicial,
+    sp.DataFinalDaLiquidez AS liquidez_data_final,
+    sp.TotalDosLiquidadosDaLiquidez AS liquidez_total_liquidados,
+    sp.TotalDosRecompradosDaLiquidez AS liquidez_total_recomprados,
+    sp.TotalDoVencidosPenalizadosDaLiquidez AS liquidez_total_vencidos_penalizados,
+    sp.TotalDoVencidosNaoPenalizadosDaLiquidez AS liquidez_total_vencidos_nao_penalizados,
+    sp.DataDeApuracaoDaLiquidez AS liquidez_data_apuracao
+FROM dbo.SacadoPosicao sp
+INNER JOIN dbo.Sacado s
+    ON s.PosicaoId = sp.PosicaoId
+"""
+
+
+# ---- Catalogo de receitas operacionais (caixa-fiel) ----
+# Fontes que refletem liquidacao financeira REAL — nunca a
+# DemonstrativoDeResultado (mora teorica). Consumidas por receitas.py,
+# dirigidas pelo catalogo wh_bitfin_receita_stream.
+
+# Mora paga na liquidacao do titulo. Espelha o filtro da proc
+# DemonstrativoDeResultados (DM/DS/NP, produto de risco, pago apos o
+# vencimento efetivo) mas captura o CAIXA (ValorDoPagamento - ValorLiquido),
+# nao o teorico. Percentuais do ProcedimentoDeCobranca vem como PARAMETRO
+# para o split juros x multa (LEFT JOIN: titulo sem procedimento -> split
+# 100% juros). `dias_atraso` contra o vencimento ORIGINAL (convencao da
+# proc e do acruo).
+SELECT_RECEITA_MORA_TITULO = """
+SELECT
+    t.TituloId AS titulo_id,
+    t.Numero AS documento,
+    CONVERT(date, t.DataDaSituacao) AS data_evento,
+    t.ValorLiquido AS valor_liquido,
+    t.ValorDoPagamento AS valor_do_pagamento,
+    DATEDIFF(DAY, t.DataDeVencimento, CONVERT(date, t.DataDaSituacao)) AS dias_atraso,
+    pc.PercentualDeMultaPorAtraso AS pct_multa,
+    pc.PercentualDeJurosDeMora AS pct_juros,
+    t.UnidadeAdministrativaId AS unidade_administrativa_id,
+    co.ProdutoId AS produto_id,
+    ce.EntidadeId AS cedente_entidade_id,
+    ce.Nome AS cedente_nome,
+    ce.Documento AS cedente_documento,
+    se.Nome AS sacado_nome,
+    se.Documento AS sacado_documento
+FROM dbo.Titulo t
+INNER JOIN dbo.ContaOperacional co ON co.ContaOperacionalId = t.ContaOperacionalId
+INNER JOIN dbo.Produto p ON p.ProdutoId = co.ProdutoId
+LEFT JOIN dbo.ProcedimentoDeCobranca pc ON pc.TituloId = t.TituloId
+LEFT JOIN dbo.Cliente cli ON cli.ClienteId = co.ClienteId
+LEFT JOIN dbo.Entidade ce ON ce.EntidadeId = cli.EntidadeId
+LEFT JOIN dbo.Sacado sa ON sa.SacadoId = t.SacadoId
+LEFT JOIN dbo.Entidade se ON se.EntidadeId = sa.EntidadeId
+WHERE t.Situacao = 1
+  AND t.Sigla IN ('DM', 'DS', 'NP')
+  AND p.ProdutoDeRisco = 1
+  AND t.ValorDoPagamento > t.ValorLiquido
+  AND CONVERT(date, t.DataDaSituacao) > CONVERT(date, t.DataDeVencimentoEfetiva)
+  AND t.DataDaSituacao >= ?
+  -- Recompra-liquidacao FORA (descoberta 2026-06-11): quando a recompra
+  -- liquida o titulo (Liquidacao=1), o Bitfin grava ValorDoPagamento =
+  -- recomprado + encargos DE RECOMPRA na Titulo com Situacao=1 — o mesmo
+  -- encargo ja entra via RecompraItem (regua propria: TaxaDeJuros/Multa da
+  -- recompra). Sem este filtro, dupla contagem (527/551 batem centavo a
+  -- centavo). Situacao 5 (baixa por recompra pura) nunca entra (Situacao=1).
+  AND NOT EXISTS (
+      SELECT 1 FROM dbo.RecompraItem i
+      JOIN dbo.Recompra r ON r.RecompraId = i.RecompraId
+      WHERE i.TituloId = t.TituloId AND r.Efetivada = 1 AND r.Liquidacao = 1
+  )
+"""
+
+# Lancamentos de receita na conta grafica. `{codes}` e preenchido em runtime
+# com placeholders (?) — os codigos vem do catalogo de streams, nunca
+# hardcoded aqui. So debitos (Valor < 0 = cobranca ao cliente = receita);
+# estornados excluidos (mesma regra da proc DemonstrativoDeResultados).
+# UA/cliente via OUTER APPLY TOP 1 — a mesma ContaCorrente pode ter N
+# ContaOperacional (uma por produto); sem o TOP 1 o join duplicaria o
+# lancamento. ProdutoId fica NULL de proposito (ambiguo nesse grao).
+SELECT_RECEITA_GRAFICA_TEMPLATE = """
+SELECT
+    l.LancamentoId AS lancamento_id,
+    CONVERT(date, l.Data) AS data_evento,
+    l.Valor AS valor,
+    l.Codigo AS codigo,
+    l.Descricao AS descricao,
+    l.ComplementoInterno AS complemento_interno,
+    oa.UnidadeAdministrativaId AS unidade_administrativa_id,
+    oa.EntidadeId AS cedente_entidade_id,
+    oa.Nome AS cedente_nome,
+    oa.Documento AS cedente_documento
+FROM dbo.ContaCorrenteLancamento l
+OUTER APPLY (
+    SELECT TOP 1
+        co.UnidadeAdministrativaId,
+        ce.EntidadeId,
+        ce.Nome,
+        ce.Documento
+    FROM dbo.ContaOperacional co
+    LEFT JOIN dbo.Cliente cli ON cli.ClienteId = co.ClienteId
+    LEFT JOIN dbo.Entidade ce ON ce.EntidadeId = cli.EntidadeId
+    WHERE co.ContaCorrenteId = l.ContaCorrenteId
+    ORDER BY co.ContaOperacionalId
+) oa
+WHERE l.Codigo IN ({codes})
+  AND l.Valor < 0
+  AND l.Data >= ?
+  AND l.LancamentoId NOT IN (
+      SELECT IdentificadorDoLancamento
+      FROM dbo.RequerimentoContaOperacionalEstornoLancamento
+  )
+"""
+
+# Juros/multa/desagio de recompra, POR TITULO (RecompraItem), apenas
+# recompras efetivadas (liquidacao financeira via PagamentoOperacional —
+# tipicamente netting contra o liquido de operacao nova).
+SELECT_RECEITA_RECOMPRA = """
+SELECT
+    i.RecompraId AS recompra_id,
+    i.TituloId AS titulo_id,
+    t.Numero AS documento,
+    CONVERT(date, r.DataDeEfetivacao) AS data_evento,
+    i.ValorDeJuros AS valor_de_juros,
+    i.ValorDeMulta AS valor_de_multa,
+    i.ValorDeDesagio AS valor_de_desagio,
+    i.ValorBase AS valor_base,
+    i.QuantidadeDeDiasVencido AS dias_vencido,
+    pc.PercentualDeMultaPorAtraso AS pct_multa,
+    pc.PercentualDeJurosDeMora AS pct_juros,
+    r.UnidadeAdministrativaId AS unidade_administrativa_id,
+    co.ProdutoId AS produto_id,
+    ce.EntidadeId AS cedente_entidade_id,
+    ce.Nome AS cedente_nome,
+    ce.Documento AS cedente_documento,
+    se.Nome AS sacado_nome,
+    se.Documento AS sacado_documento
+FROM dbo.RecompraItem i
+INNER JOIN dbo.Recompra r ON r.RecompraId = i.RecompraId
+LEFT JOIN dbo.ContaOperacional co ON co.ContaOperacionalId = r.ContaOperacionalId
+LEFT JOIN dbo.Cliente cli ON cli.ClienteId = co.ClienteId
+LEFT JOIN dbo.Entidade ce ON ce.EntidadeId = cli.EntidadeId
+LEFT JOIN dbo.Titulo t ON t.TituloId = i.TituloId
+LEFT JOIN dbo.ProcedimentoDeCobranca pc ON pc.TituloId = i.TituloId
+LEFT JOIN dbo.Sacado sa ON sa.SacadoId = t.SacadoId
+LEFT JOIN dbo.Entidade se ON se.EntidadeId = sa.EntidadeId
+WHERE r.Efetivada = 1
+  AND r.DataDeEfetivacao >= ?
+  -- DiasVencido > 0 sem encargo lancado = mora PERDOADA na negociacao:
+  -- entra com valor 0 + referencia da regua (metrica desconto concedido).
+  AND (i.ValorDeJuros > 0 OR i.ValorDeMulta > 0 OR i.ValorDeDesagio > 0
+       OR i.QuantidadeDeDiasVencido > 0)
+"""
+
+# Rentabilidade da operacao (desagio + tarifas + ad valorem) — receita RETIDA
+# do liquido na efetivacao (caixa por construcao). (OperacaoId, Descricao) e
+# unico (validado 2026-06-10). Origem 2/4 (Recompra/Homologacao) excluidas:
+# o desagio de recompra ja entra via RecompraItem — incluir aqui duplicaria.
+# Cross-check canonico: SUM(Aplicado WHERE Descricao='Deságio') ==
+# SUM(OperacaoResultado.TotalDeJuros) das mesmas operacoes.
+SELECT_RECEITA_OPERACAO_RENT = """
+SELECT
+    r.OperacaoId AS operacao_id,
+    r.Descricao AS rentabilidade_descricao,
+    r.Aplicado AS aplicado,
+    CONVERT(date, o.DataDeEfetivacao) AS data_evento,
+    o.UnidadeAdministrativaId AS unidade_administrativa_id,
+    co.ProdutoId AS produto_id,
+    ce.EntidadeId AS cedente_entidade_id,
+    ce.Nome AS cedente_nome,
+    ce.Documento AS cedente_documento
+FROM dbo.OperacaoRentabilidade r
+INNER JOIN dbo.Operacao o ON o.OperacaoId = r.OperacaoId
+LEFT JOIN dbo.ContaOperacional co ON co.ContaOperacionalId = o.ContaOperacionalId
+LEFT JOIN dbo.Cliente cli ON cli.ClienteId = co.ClienteId
+LEFT JOIN dbo.Entidade ce ON ce.EntidadeId = cli.EntidadeId
+WHERE o.Efetivada = 1
+  AND o.Origem NOT IN (2, 4)
+  AND r.Aplicado > 0
+  AND o.DataDeEfetivacao >= ?
+"""
+
+
+# Relacao sacado x cedente (SacadoPosicaoCliente) — onde mora o sinal de
+# fraude de praca (divergencia concentrada num unico cedente).
+SELECT_POSICAO_SACADO_CEDENTE = """
+SELECT
+    spc.PosicaoId AS posicao_id,
+    spc.ContaOperacionalId AS conta_operacional_source_id,
+    s.SacadoId AS papel_source_id,
+    s.EntidadeId AS entidade_source_id,
+    cli.ClienteId AS cedente_papel_source_id,
+    cli.EntidadeId AS cedente_entidade_source_id,
+    spc.RiscoTotalQuantidade AS risco_total_qtd,
+    spc.RiscoTotalTotal AS risco_total_valor,
+    spc.RiscoVencidoQuantidade AS risco_vencido_qtd,
+    spc.RiscoVencidoTotal AS risco_vencido_valor,
+    spc.RiscoAVencerQuantidade AS risco_avencer_qtd,
+    spc.RiscoAVencerTotal AS risco_avencer_valor,
+    spc.TicketMedio AS ticket_medio,
+    spc.IndiceDeLiquidez AS indice_liquidez,
+    spc.HistoricoDeRecomprasQuantidade AS hist_recompras_qtd,
+    spc.HistoricoDeRecomprasTotal AS hist_recompras_valor,
+    spc.PagamentosForaDaPracaDoSacadoTotal AS pagamentos_fora_praca_sacado,
+    spc.PagamentosNaPracaDoClienteTotal AS pagamentos_praca_cliente,
+    spc.PagamentosNaAgenciaDoClienteTotal AS pagamentos_agencia_cliente,
+    spc.PagamentosEmBancoDigitalTotal AS pagamentos_banco_digital
+FROM dbo.SacadoPosicaoCliente spc
+INNER JOIN dbo.Sacado s
+    ON s.PosicaoId = spc.PosicaoId
+LEFT JOIN dbo.ContaOperacional co
+    ON co.ContaOperacionalId = spc.ContaOperacionalId
+LEFT JOIN dbo.Cliente cli
+    ON cli.ClienteId = co.ClienteId
+"""
+
+# Serie mensal de pagamentos por praca, por conta operacional (cedente).
+# 5 buckets somam o total pago do mes. Historico desde 2022-01.
+SELECT_PAGAMENTO_PRACA_MENSAL = """
+SELECT
+    php.ContaOperacionalId AS conta_operacional_source_id,
+    php.Ano AS ano,
+    php.Mes AS mes,
+    cli.ClienteId AS cedente_papel_source_id,
+    cli.EntidadeId AS cedente_entidade_source_id,
+    php.PagoNaPracaDoSacado AS pago_na_praca_sacado,
+    php.PagoForaDaPracaDoSacado AS pago_fora_praca_sacado,
+    php.PagoNaPracaDoCliente AS pago_na_praca_cliente,
+    php.PagoNaAgenciaDoCliente AS pago_na_agencia_cliente,
+    php.PagoEmBancoDigital AS pago_em_banco_digital
+FROM dbo.PosicaoHistoricaPagamentoPraca php
+LEFT JOIN dbo.ContaOperacional co
+    ON co.ContaOperacionalId = php.ContaOperacionalId
+LEFT JOIN dbo.Cliente cli
+    ON cli.ClienteId = co.ClienteId
 """

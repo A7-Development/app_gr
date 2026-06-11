@@ -120,6 +120,20 @@ class Operacao(Auditable, Base):
     total_dos_descontos_ou_abatimentos: Mapped[Decimal] = mapped_column(
         Numeric(18, 4), nullable=False, default=0
     )
+    # TAC (tarifa fixa por operacao) + TED + registros de recebiveis. Sem
+    # essas 3, a soma das tarifas do wh_operacao NAO reconcilia com o desagio
+    # total embutido no ValorPresente dos itens (= valor_compra QiTech):
+    # sum(valor_base - valor_presente) = total_de_juros + ad_valorem + TODAS
+    # as tarifas (validado centavo a centavo em 2026-06-10, op 9881).
+    tarifa_por_operacao: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4), nullable=False, default=0, server_default="0"
+    )
+    tarifa_de_ted: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4), nullable=False, default=0, server_default="0"
+    )
+    total_dos_registros_de_recebiveis: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4), nullable=False, default=0, server_default="0"
+    )
 
     data_do_ultimo_vencimento: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

@@ -1,8 +1,11 @@
+import { Suspense } from "react"
+
 import { AppSidebar, SidebarTrigger } from "@/design-system/components/Sidebar"
 import { AuthGuard } from "@/design-system/components/AuthGuard"
 import { HeaderBreadcrumbs } from "@/design-system/components/Breadcrumbs"
 import { SyncHealthBadge } from "@/design-system/components/SyncHealthBadge"
 import { CommandPaletteProvider } from "@/design-system/components/CommandPalette"
+import { EntidadePeek } from "@/design-system/components/EntidadePeek"
 
 export default function AppShellLayout({
   children,
@@ -40,6 +43,12 @@ export default function AppShellLayout({
                 que o scroll vertical aconteca dentro do main, nao no body. */}
             <main className="flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
           </div>
+          {/* Peek global da Ficha da Entidade — qualquer pagina abre via
+              `?entidade=<documento>` (EntidadeLink). Suspense: nuqs le
+              searchParams, que exige boundary em prerender. */}
+          <Suspense fallback={null}>
+            <EntidadePeek />
+          </Suspense>
         </div>
       </CommandPaletteProvider>
     </AuthGuard>

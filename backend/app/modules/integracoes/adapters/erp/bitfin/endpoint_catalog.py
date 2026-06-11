@@ -54,12 +54,13 @@ BITFIN_ENDPOINTS: tuple[EndpointSpec, ...] = (
         label="Bitfin · Entidades (party model)",
         description=(
             "Carrega o cadastro completo de entidades (CNPJ/CPF), papeis "
-            "(cedente/sacado) e grupos economicos para o warehouse canonico "
-            "wh_entidade. Full refresh idempotente."
+            "(cedente/sacado), grupos economicos e posicoes por papel "
+            "(risco/limites/liquidez) para o warehouse canonico. "
+            "Full refresh idempotente."
         ),
         default_schedule_kind=ScheduleKind.INTERVAL,
         default_schedule_value="360",
-        canonical_table="wh_entidade, wh_entidade_papel, wh_grupo_economico",
+        canonical_table="wh_entidade, wh_entidade_papel, wh_posicao_cedente, wh_posicao_sacado",
     ),
     EndpointSpec(
         admin_code="bitfin",

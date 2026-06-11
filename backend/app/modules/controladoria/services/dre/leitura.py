@@ -32,10 +32,6 @@ from app.modules.controladoria.schemas.dre import (
     DreGrupo,
     DreLinhaTotais,
     DrePivotResponse,
-    DreReceitaCelula,
-    DreReceitaNatureza,
-    DreReceitaNaturezaResponse,
-    DreReceitaTipo,
     DreSubgrupo,
 )
 from app.warehouse.bitfin_entidade import WhBitfinEntidade
@@ -345,164 +341,8 @@ async def compute_pivot(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Receita por NATUREZA
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Ordem canonica de exibicao das naturezas (codigo cru; frontend rotula).
-_NATUREZA_ORDER = ["DESAGIO", "TARIFA", "MULTA", "JUROS", "AD_VALOREM", "IMPOSTO"]
-
-
-def _natureza_sort_key(natureza: str) -> tuple[int, str]:
-    try:
-        return (_NATUREZA_ORDER.index(natureza), "")
-    except ValueError:
-        # Naturezas fora da ordem canonica (ex.: NAO_CLASSIFICADO) por ultimo.
-        return (len(_NATUREZA_ORDER), natureza)
-
-
-async def compute_receita_por_natureza(
-    db: AsyncSession,
-    *,
-    tenant_id: UUID,
-    competencia_de: date,
-    competencia_ate: date,
-    fundo_id: int | None = None,
-    produto_id: int | None = None,
-) -> DreReceitaNaturezaResponse:
-    """Receita operacional agrupada por NATUREZA x competencia.
-
-    Hierarquia: natureza -> tipo (descricao do catalogo) -> serie por
-    competencia. Receita = SO `receita` (total_apurado) de linhas
-    `grupo_dre='RECEITA_OPERACIONAL'`. Custos descem para outras secoes.
-
-    `natureza` NULL (linha de receita sem regra de classificacao) cai no
-    bucket `NAO_CLASSIFICADO` -- flag de governanca, exibido por ultimo.
-    """
-    natureza_col = func.coalesce(DreMensal.natureza, "NAO_CLASSIFICADO")
-    stmt = (
-        select(
-            natureza_col.label("natureza"),
-            DreMensal.descricao,
-            DreMensal.subgrupo,
-            DreMensal.competencia,
-            func.sum(DreMensal.receita).label("receita"),
-            func.sum(DreMensal.quantidade).label("quantidade"),
-        )
-        .where(
-            DreMensal.grupo_dre == "RECEITA_OPERACIONAL",
-            DreMensal.receita != 0,
-        )
-        .group_by(
-            natureza_col,
-            DreMensal.descricao,
-            DreMensal.subgrupo,
-            DreMensal.competencia,
-        )
-    )
-    stmt = _apply_filters(
-        stmt,
-        tenant_id=tenant_id,
-        competencia_de=competencia_de,
-        competencia_ate=competencia_ate,
-        fundo_id=fundo_id,
-        produto_id=produto_id,
-    )
-    rows = (await db.execute(stmt)).all()
-
-    competencias = _months_between(competencia_de, competencia_ate)
-
-    # natureza -> descricao -> {competencia: (receita, quantidade)}
-    nat_idx: dict[str, dict[str, dict[date, tuple[Decimal, int]]]] = {}
-    # (natureza, descricao) -> conjunto de subgrupos (produtos onde aparece)
-    produtos_idx: dict[tuple[str, str], set[str]] = {}
-    for r in rows:
-        descr_map = nat_idx.setdefault(r.natureza, {})
-        cells = descr_map.setdefault(r.descricao, {})
-        # ACUMULA: a mesma descricao (ex.: "Deságio", "Por Operação") pode vir
-        # de >1 subgrupo (Operação + Crédito Estruturado) na mesma competencia.
-        # Somar, nunca sobrescrever.
-        prev_rec, prev_qt = cells.get(r.competencia, (ZERO, 0))
-        cells[r.competencia] = (
-            prev_rec + (r.receita or ZERO),
-            prev_qt + int(r.quantidade or 0),
-        )
-        produtos_idx.setdefault((r.natureza, r.descricao), set()).add(r.subgrupo)
-
-    naturezas_out: list[DreReceitaNatureza] = []
-    total_por_comp: dict[date, tuple[Decimal, int]] = dict.fromkeys(competencias, (ZERO, 0))
-
-    for natureza in sorted(nat_idx.keys(), key=_natureza_sort_key):
-        descr_map = nat_idx[natureza]
-        tipos_out: list[DreReceitaTipo] = []
-        nat_por_comp: dict[date, tuple[Decimal, int]] = dict.fromkeys(competencias, (ZERO, 0))
-
-        for descricao, cells in descr_map.items():
-            valores_tipo = [
-                DreReceitaCelula(
-                    competencia=c,
-                    receita=cells.get(c, (ZERO, 0))[0],
-                    quantidade=cells.get(c, (ZERO, 0))[1],
-                )
-                for c in competencias
-            ]
-            total_tipo = sum((v.receita for v in valores_tipo), start=ZERO)
-            tipos_out.append(
-                DreReceitaTipo(
-                    descricao=descricao,
-                    produtos=sorted(produtos_idx[(natureza, descricao)]),
-                    valores=valores_tipo,
-                    total=total_tipo,
-                )
-            )
-            for v in valores_tipo:
-                rec, qt = nat_por_comp[v.competencia]
-                nat_por_comp[v.competencia] = (rec + v.receita, qt + v.quantidade)
-
-        # Tipos ordenados por receita desc.
-        tipos_out.sort(key=lambda t: t.total, reverse=True)
-
-        valores_nat = [
-            DreReceitaCelula(competencia=c, receita=nat_por_comp[c][0], quantidade=nat_por_comp[c][1])
-            for c in competencias
-        ]
-        naturezas_out.append(
-            DreReceitaNatureza(
-                natureza=natureza,
-                tipos=tipos_out,
-                valores=valores_nat,
-                total=sum((v.receita for v in valores_nat), start=ZERO),
-            )
-        )
-        for v in valores_nat:
-            rec, qt = total_por_comp[v.competencia]
-            total_por_comp[v.competencia] = (rec + v.receita, qt + v.quantidade)
-
-    valores_total = [
-        DreReceitaCelula(competencia=c, receita=total_por_comp[c][0], quantidade=total_por_comp[c][1])
-        for c in competencias
-    ]
-    return DreReceitaNaturezaResponse(
-        competencias=competencias,
-        naturezas=naturezas_out,
-        valores_total=valores_total,
-        total=sum((v.receita for v in valores_total), start=ZERO),
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Breakdown generico da receita por dimensao (abas da DRE profunda do mes)
 # ─────────────────────────────────────────────────────────────────────────────
-
-_NATUREZA_LABEL = {
-    "DESAGIO": "Deságio",
-    "TARIFA": "Tarifa",
-    "MULTA": "Multa",
-    "JUROS": "Juros",
-    "AD_VALOREM": "Ad Valorem",
-    "IMPOSTO": "Imposto",
-    "NAO_CLASSIFICADO": "Não classificado",
-}
-
 
 async def compute_breakdown(
     db: AsyncSession,
@@ -513,18 +353,16 @@ async def compute_breakdown(
     fundo_id: int | None = None,
     produto_id: int | None = None,
     entidade_id: int | None = None,
-    natureza: str | None = None,
     subgrupo: str | None = None,
 ) -> DreBreakdownResponse:
     """Receita operacional de UM mes agregada por uma dimensao.
 
-    `dim` ∈ {natureza, cedente, produto, subgrupo}. Os filtros opcionais
-    `entidade_id`/`natureza`/`subgrupo` servem o DRILL (ex.: dim=natureza
-    + entidade_id=X = naturezas daquele cedente). Receita = SO linhas de
+    `dim` ∈ {cedente, produto, subgrupo}. Os filtros opcionais
+    `entidade_id`/`subgrupo` servem o DRILL (ex.: dim=subgrupo
+    + entidade_id=X = subgrupos daquele cedente). Receita = SO linhas de
     RECEITA_OPERACIONAL; custo/resultado vem junto p/ analise de margem.
     """
     dim_col = {
-        "natureza": DreMensal.natureza,
         "cedente": DreMensal.entidade_id,
         "produto": DreMensal.produto_id,
         "subgrupo": DreMensal.subgrupo,
@@ -554,8 +392,6 @@ async def compute_breakdown(
     # Filtros de DRILL (cortes dentro da dimensao, nao filtros globais).
     if entidade_id is not None:
         stmt = stmt.where(DreMensal.entidade_id == entidade_id)
-    if natureza is not None:
-        stmt = stmt.where(DreMensal.natureza == natureza)
     if subgrupo is not None:
         stmt = stmt.where(DreMensal.subgrupo == subgrupo)
 
@@ -587,8 +423,6 @@ async def compute_breakdown(
             labels = {p.produto_id: p.nome for p in prod}
 
     def _label(chave: object) -> str:
-        if dim == "natureza":
-            return _NATUREZA_LABEL.get(chave or "NAO_CLASSIFICADO", str(chave))
         if dim == "subgrupo":
             return str(chave) if chave else "(sem subgrupo)"
         # cedente / produto

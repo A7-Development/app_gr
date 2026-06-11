@@ -35,14 +35,17 @@ from app.modules.controladoria.services.dre import (
     DreClassifier,
     load_dre_classifier,
 )
+from app.modules.integracoes.adapters.erp.bitfin.acruo import sync_receita_acruo
 from app.modules.integracoes.adapters.erp.bitfin.config import BitfinConfig
 from app.modules.integracoes.adapters.erp.bitfin.connection import fetch_rows
-from app.modules.integracoes.adapters.erp.bitfin.dre_natureza import (
-    NaturezaMap,
-    load_dre_natureza,
-)
 from app.modules.integracoes.adapters.erp.bitfin.hashing import sha256_of_row
 from app.modules.integracoes.adapters.erp.bitfin.queries import analytics, bitfin
+from app.modules.integracoes.adapters.erp.bitfin.receitas import (
+    sync_receita_grafica,
+    sync_receita_mora_liquidacao,
+    sync_receita_operacao,
+    sync_receita_recompra,
+)
 from app.modules.integracoes.adapters.erp.bitfin.version import ADAPTER_VERSION
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 from app.shared.audit_log.sync_health import last_sync_at
@@ -140,6 +143,9 @@ def _map_operacao(row: dict, tenant_id: UUID) -> dict:
         "total_dos_comunicados_de_cessao": 0,
         "total_dos_documentos_digitais": 0,
         "total_dos_descontos_ou_abatimentos": 0,
+        "tarifa_por_operacao": 0,
+        "tarifa_de_ted": 0,
+        "total_dos_registros_de_recebiveis": 0,
     }
     merged = {**metric_defaults, **{k: v for k, v in row.items() if v is not None}}
     return {
@@ -447,7 +453,6 @@ def _bronze_row_to_silver(
     tipo_origem: str,
     bronze_row: dict[str, Any],
     classifier: DreClassifier,
-    natureza_map: NaturezaMap,
     tenant_id: UUID,
 ) -> dict | None:
     """Converte 1 row do payload bronze em 1 row do silver wh_dre_mensal.
@@ -482,7 +487,6 @@ def _bronze_row_to_silver(
             "unidade_administrativa_id": ua_id,
             "fonte": fonte,
             "fonte_integracao": "bitfin",
-            "natureza": natureza_map.get((fonte, categoria, descricao)),
             "receita": _to_decimal(bronze_row.get("total_apurado")),
             "custo": _to_decimal(bronze_row.get("total_do_custo")),
             "resultado": _to_decimal(bronze_row.get("resultado")),
@@ -528,7 +532,6 @@ def _bronze_row_to_silver(
             "unidade_administrativa_id": ua_id,
             "fonte": fonte,
             "fonte_integracao": "bitfin",
-            "natureza": None,
             "receita": _ZERO,
             "custo": valor,
             "resultado": -valor,
@@ -572,7 +575,6 @@ def _bronze_row_to_silver(
             "unidade_administrativa_id": ua_id,
             "fonte": fonte,
             "fonte_integracao": "bitfin",
-            "natureza": None,
             "receita": _ZERO,
             "custo": comissao,
             "resultado": -comissao,
@@ -633,7 +635,6 @@ async def sync_dre_mensal(
 
     async with AsyncSessionLocal() as db:
         classifier = await load_dre_classifier(db, tenant_id)
-        natureza_map = await load_dre_natureza(db, tenant_id)
 
         for tipo_origem in (
             TIPO_ORIGEM_DEMONSTRATIVO,
@@ -652,7 +653,6 @@ async def sync_dre_mensal(
                         tipo_origem=tipo_origem,
                         bronze_row=bronze_row,
                         classifier=classifier,
-                        natureza_map=natureza_map,
                         tenant_id=tenant_id,
                     )
                     if silver_row is None:
@@ -887,10 +887,10 @@ async def sync_bitfin_tarifa_catalogo(
 ) -> dict[str, Any]:
     """Full refresh do catalogo de tarifas (OrganizacaoTarifa) -> dim.
 
-    Ancora a classificacao por natureza do DRE (Tipo nativo) e permite
-    detectar itens de catalogo novos (presentes aqui, ausentes nas regras
-    de natureza). ~60 linhas; full refresh, custo desprezivel. `since`
-    ignorado (catalogo nao e temporal)."""
+    Vocabulario controlado de tarifas/encargos (Tipo nativo 1=fixa,
+    2=variavel) — base do futuro catalogo de receitas operacionais e
+    detector de item novo. ~60 linhas; full refresh, custo desprezivel.
+    `since` ignorado (catalogo nao e temporal)."""
     rows = await asyncio.to_thread(
         fetch_rows, config, config.database_bitfin, bitfin.SELECT_ORGANIZACAO_TARIFA
     )
@@ -1284,6 +1284,16 @@ SYNC_PIPELINE = [
     # Snapshot diario da posicao de debentures (going-forward; Bitfin faz o
     # CDI, nos capturamos). Alimenta o denominador do ROA bruto da DRE.
     sync_debenture_posicao,
+    # Catalogo de receitas operacionais caixa-fiel (wh_receita_operacional,
+    # dirigido por wh_bitfin_receita_stream). Roda apos sync_titulo (mesma
+    # fonte) — leitura direta do MSSQL, sem dependencia das tabelas acima.
+    sync_receita_mora_liquidacao,
+    sync_receita_grafica,
+    sync_receita_recompra,
+    sync_receita_operacao,
+    # Metodo ACRUO (derivada de silver — roda DEPOIS de operacao/item/titulo
+    # estarem frescos). Caixa e acruo coexistem; competencia = futuro.
+    sync_receita_acruo,
     # Reconcile (anti-join hard-delete de orfaos). Ultimo passo: roda DEPOIS
     # dos upserts (espelho ja com os dados frescos) e tem gate diario interno
     # — a varredura full so dispara 1x/dia, demais ticks viram no-op barato.

@@ -303,6 +303,11 @@ async def _persist_serasa_to_dossier(
         "atividade_principal_cnae": consulta.atividade_principal_cnae,
         "regime_tributario": consulta.tax_option,
         "numero_funcionarios": consulta.number_employees,
+        # Conclusao DERIVADA pelo Strata (regra serasa_liminar_v1): "NADA
+        # CONSTA" explicito = padrao de supressao judicial de apontamentos.
+        # Quando true, os zeros acima NAO significam ficha limpa.
+        "suspeita_liminar": bool(consulta.suspeita_liminar),
+        "negative_summary_message": consulta.negative_summary_message,
     }
 
     raw_data: dict[str, Any] = {
@@ -357,6 +362,15 @@ async def _persist_serasa_to_dossier(
         summary_lines.append(
             f"{qtd_total} restricao(oes) ativa(s); valor total "
             f"R$ {_money(consulta.valor_total_restricoes) or 0:,.2f}."
+        )
+    elif consulta.suspeita_liminar:
+        summary_lines.append(
+            "ATENCAO — POSSIVEL LIMINAR (conclusao Strata, regra "
+            "serasa_liminar_v1): a Serasa retornou 'NADA CONSTA' explicito, "
+            "padrao de supressao JUDICIAL de apontamentos. Os zeros de "
+            "restricao NAO significam ficha limpa — a empresa provavelmente "
+            "obteve liminar para esconder negativos relevantes. Trate como "
+            "sinal de risco elevado, nao como ausencia de risco."
         )
     else:
         summary_lines.append("Sem restricoes ativas (refin/pefin/protesto/cheque).")

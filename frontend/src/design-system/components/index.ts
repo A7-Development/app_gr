@@ -175,6 +175,8 @@ export {
 } from "./DashboardHeaderActions"
 export { DropdownUserProfile } from "./DropdownUserProfile"
 export { EmptyState } from "./EmptyState"
+export { EntidadeLink } from "./EntidadeLink"
+export { EntidadePeek } from "./EntidadePeek"
 export { ErrorState } from "./ErrorState"
 export {
   CoverageHeatmap,
@@ -203,6 +205,7 @@ export { Logo } from "./Logo"
 export { DynamicForm } from "./DynamicForm"
 export { ModuleSwitcher } from "./ModuleSwitcher"
 export { StrataIcon } from "./StrataIcon"
+export { StrataConclusaoBadge } from "./StrataConclusaoBadge"
 export { MonthRangePicker, type MonthRange } from "./MonthRangePicker"
 export { OriginDot } from "./OriginDot"
 export { OverrideChip } from "./OverrideChip"

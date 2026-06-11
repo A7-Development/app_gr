@@ -33,6 +33,8 @@ Camada de composicao -- 38 componentes que compoem `tremor/*` + `charts/*` + `to
 | **DropdownUserProfile** | `DropdownUserProfile.tsx` | Menu do user no rodape da Sidebar (logout, configuracoes). |
 | **EmptyState** | `EmptyState.tsx` | Estado vazio com ilustracao + CTA. |
 | **ErrorState** | `ErrorState.tsx` | Estado de erro com retry button. |
+| **EntidadeLink** | `EntidadeLink/` | Torna qualquer nome de cedente/sacado clicavel: seta `?entidade=<documento>` (nuqs) e abre o `EntidadePeek` global. `history="push"` (default, voltar fecha) ou `"replace"` (navegacao peek->peek). Sem documento = texto plano (nunca link morto). |
+| **EntidadePeek** | `EntidadePeek/` | Drawer global da Ficha da Entidade (party model). Montado 1x no `(app)/layout`; escuta `?entidade=`. Blocos: Hero (papeis+RJ) / Carteira Ativa [F1] / Limites [F1] / Performance [F1] / Consultas Serasa (real) / Operacoes 12M (real) / Grupo / Estabelecimentos. Deep-linkavel: a URL carrega pagina+filtros+peek. |
 | **FilterPill** | `FilterPill.tsx` | Multi-select pendente com Apply/Reset (DIFERENTE do FilterChip single-select). |
 | **InfoTooltip** | `InfoTooltip.tsx` | Icon "?" com tooltip (uso em headers de KPI/colunas). |
 | **Insight + InsightBar** | `Insight.tsx` | Insights da IA -- Z4 do BI Framework. `tone`: violet/amber/blue. |
