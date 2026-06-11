@@ -18,17 +18,17 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.enums import Module, Permission
-from app.core.module_guard import require_module
-from app.core.system_maintainer_guard import require_system_maintainer
-from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.agentic.engine.catalog import CATALOG
 from app.agentic.engine.model_resolver import (
     AVAILABLE_MODELS,
     is_supported_model,
     list_agents_with_defaults,
 )
+from app.core.database import get_db
+from app.core.enums import Module, Permission
+from app.core.module_guard import require_module
+from app.core.system_maintainer_guard import require_system_maintainer
+from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.shared.ai.models.agent_config import AgentConfig
 from app.shared.ai.schemas import (
     AgentConfigRead,

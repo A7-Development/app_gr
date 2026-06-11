@@ -75,8 +75,7 @@ from app.warehouse.bdc_raw_consulta import BdcRawConsulta  # noqa: F401
 from app.warehouse.cpr_movimento import CprMovimento  # noqa: F401
 
 # Warehouse (populado pelo ETL)
-from app.warehouse.dim import DimDreClassificacao, DimMes  # noqa: F401
-from app.warehouse.dre import DreMensal  # noqa: F401
+from app.warehouse.dim import DimMes  # noqa: F401
 from app.warehouse.estoque_recebivel import EstoqueRecebivel  # noqa: F401
 from app.warehouse.extrato_bancario import ExtratoBancario  # noqa: F401
 from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel  # noqa: F401

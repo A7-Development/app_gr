@@ -32,10 +32,8 @@ from app.warehouse.cnab_raw_ocorrencia import CnabRawOcorrencia
 from app.warehouse.cobranca_sync_run import CobrancaSyncRun
 from app.warehouse.cpr_movimento import CprMovimento
 from app.warehouse.dia_util_qitech import DiaUtilQitech
-from app.warehouse.dim import DimDreClassificacao, DimMes
+from app.warehouse.dim import DimMes
 from app.warehouse.dim_dia_util import DimDiaUtil
-from app.warehouse.dre import DreMensal
-from app.warehouse.dre_classification_rule import WhDreClassificationRule
 from app.warehouse.entidade import (
     WhEntidade,
     WhEntidadeFonte,
@@ -112,9 +110,7 @@ __all__ = [
     "CprMovimento",
     "DiaUtilQitech",
     "DimDiaUtil",
-    "DimDreClassificacao",
     "DimMes",
-    "DreMensal",
     "EstoqueRecebivel",
     "LiquidacaoRecebivel",
     "MecEvolucaoCotas",
@@ -158,7 +154,6 @@ __all__ = [
     "WhBitfinEntidade",
     "WhBitfinReceitaStream",
     "WhBitfinTarifaCatalogo",
-    "WhDreClassificationRule",
     "WhEntidade",
     "WhEntidadeFonte",
     "WhEntidadePapel",

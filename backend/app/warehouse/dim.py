@@ -47,35 +47,6 @@ class DimMes(Auditable, Base):
     mes_nome: Mapped[str] = mapped_column(String(9), nullable=False)
 
 
-class DimDreClassificacao(Auditable, Base):
-    """Hierarquia de classificacao do DRE.
-
-    Fonte: `ANALYTICS.DREClassificacao`.
-    """
-
-    __tablename__ = "wh_dim_dre_classificacao"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "classificacao_id", name="uq_wh_dim_dre_classificacao"),
-        UniqueConstraint("tenant_id", "source_id", name="uq_wh_dim_dre_classificacao_source"),
-    )
-
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    tenant_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
-        ForeignKey("tenants.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
-    classificacao_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    fonte: Mapped[str] = mapped_column(String(30), nullable=False)
-    categoria: Mapped[str] = mapped_column(String(200), nullable=False)
-    grupo_dre: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    subgrupo: Mapped[str] = mapped_column(String(100), nullable=False)
-    ordem_grupo: Mapped[int] = mapped_column(Integer, nullable=False)
-    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-
-
 class DimProduto(Auditable, Base):
     """Dimensao de Produto.
 

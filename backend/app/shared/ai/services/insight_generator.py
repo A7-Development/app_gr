@@ -17,6 +17,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agentic.engine.prompts import repository
 from app.core.enums import AIProvider, AIUsageStatus, Module
 from app.core.tenant_middleware import RequestPrincipal
 from app.modules.integracoes.adapters.llm.anthropic.adapter import AnthropicAdapter
@@ -27,7 +28,6 @@ from app.modules.integracoes.adapters.llm.anthropic.config import (
 from app.modules.integracoes.adapters.llm.anthropic.version import (
     ADAPTER_VERSION as ANTHROPIC_ADAPTER_VERSION,
 )
-from app.agentic.engine.prompts import repository
 from app.shared.ai.services import audit, metering
 from app.shared.ai.services.metering import UsageRecord
 

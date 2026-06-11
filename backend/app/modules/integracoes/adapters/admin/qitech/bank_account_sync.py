@@ -37,10 +37,10 @@ from app.modules.integracoes.adapters.admin.qitech.config import QiTechConfig
 from app.modules.integracoes.adapters.admin.qitech.connection import (
     build_async_client,
 )
-from app.modules.integracoes.adapters.admin.qitech.errors import QiTechHttpError
 from app.modules.integracoes.adapters.admin.qitech.critical_fields import (
     get_critical_fields,
 )
+from app.modules.integracoes.adapters.admin.qitech.errors import QiTechHttpError
 from app.modules.integracoes.adapters.admin.qitech.etl import (
     _replace_canonical_partition,
 )

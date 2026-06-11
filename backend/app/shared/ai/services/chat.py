@@ -29,6 +29,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agentic.engine.prompts import Message, MessageContent, Prompt, repository
 from app.core.enums import AIProvider, AIUsageStatus, Module
 from app.core.tenant_middleware import RequestPrincipal
 from app.modules.integracoes.adapters.llm.anthropic.adapter import AnthropicAdapter
@@ -41,7 +42,6 @@ from app.modules.integracoes.adapters.llm.anthropic.version import (
 )
 from app.shared.ai.models.message import MessageRole
 from app.shared.ai.models.subscription import TenantAISubscription
-from app.agentic.engine.prompts import Message, MessageContent, Prompt, repository
 from app.shared.ai.services import audit, conversation, metering, rate_limit, redaction
 from app.shared.ai.services.metering import UsageRecord
 

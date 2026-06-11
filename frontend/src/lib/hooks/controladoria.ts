@@ -19,11 +19,6 @@ import {
   type CoverageDay,
   type EvolucaoClasse,
   type EvolucaoGranularidade,
-  type DreBaseFilters,
-  type DreBreakdownFilters,
-  type DreDrillFornecedoresFilters,
-  type DrePivotFilters,
-  type DreRoaFilters,
 } from "@/lib/api-client"
 import {
   buildCoverageStripEntry,
@@ -71,16 +66,6 @@ const KEYS = {
   drillOrigem: (fundoId: string, data: string, linha: string) =>
     ["controladoria", "cota-sub", "drill", "origem", fundoId, data, linha] as const,
 
-  dreCompetencias: (f: DreBaseFilters) =>
-    ["controladoria", "dre", "competencias", f] as const,
-  drePivot: (f: DrePivotFilters) =>
-    ["controladoria", "dre", "pivot", f] as const,
-  dreFornecedores: (f: DreDrillFornecedoresFilters) =>
-    ["controladoria", "dre", "fornecedores", f] as const,
-  dreBreakdown: (f: DreBreakdownFilters) =>
-    ["controladoria", "dre", "breakdown", f] as const,
-  dreRoa: (f: DreRoaFilters) =>
-    ["controladoria", "dre", "roa", f] as const,
 }
 
 export function useDatasDisponiveis(
@@ -532,53 +517,6 @@ export function useCotaSubReadiness(
 
 // ── DRE — Demonstrativo do Resultado do Exercicio ──────────────────────────
 // Le silver wh_dre_mensal. fundoId aqui e INT (Bitfin), NAO UUID.
-
-export function useDreCompetencias(filters: DreBaseFilters = {}) {
-  return useQuery({
-    queryKey: KEYS.dreCompetencias(filters),
-    queryFn:  () => controladoria.dreCompetenciasDisponiveis(filters),
-    staleTime: 30 * 60 * 1000,  // ETL Bitfin nao roda toda hora
-  })
-}
-
-export function useDrePivot(filters: DrePivotFilters | null | undefined) {
-  return useQuery({
-    queryKey: KEYS.drePivot(filters ?? ({} as DrePivotFilters)),
-    queryFn:  () => controladoria.drePivot(filters!),
-    enabled:  !!filters?.competenciaDe && !!filters?.competenciaAte,
-    staleTime: 5 * 60 * 1000,
-  })
-}
-
-export function useDreFornecedores(
-  filters: DreDrillFornecedoresFilters | null | undefined,
-) {
-  return useQuery({
-    queryKey: KEYS.dreFornecedores(filters ?? ({} as DreDrillFornecedoresFilters)),
-    queryFn:  () => controladoria.dreDrillFornecedores(filters!),
-    enabled:
-      !!filters?.grupoDre && !!filters?.competenciaDe && !!filters?.competenciaAte,
-    staleTime: 5 * 60 * 1000,
-  })
-}
-
-export function useDreBreakdown(filters: DreBreakdownFilters | null | undefined) {
-  return useQuery({
-    queryKey: KEYS.dreBreakdown(filters ?? ({} as DreBreakdownFilters)),
-    queryFn:  () => controladoria.dreBreakdown(filters!),
-    enabled:  !!filters?.competencia && !!filters?.dim,
-    staleTime: 5 * 60 * 1000,
-  })
-}
-
-export function useDreRoa(filters: DreRoaFilters | null | undefined) {
-  return useQuery({
-    queryKey: KEYS.dreRoa(filters ?? ({} as DreRoaFilters)),
-    queryFn:  () => controladoria.dreRoa(filters!),
-    enabled:  !!filters?.competenciaDe && !!filters?.competenciaAte,
-    staleTime: 5 * 60 * 1000,
-  })
-}
 
 // ─── Agente IA · analista de variacao da Cota Sub Jr ─────────────────
 //
