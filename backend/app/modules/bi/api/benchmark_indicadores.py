@@ -10,6 +10,8 @@ Aceita CNPJ com ou sem mascara (normaliza p/ formato CVM XX.XXX.XXX/XXXX-XX).
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import date
 from typing import Annotated
 
@@ -32,9 +34,36 @@ from app.modules.bi.services.benchmark_indicadores import (
 
 router = APIRouter(prefix="/benchmark/indicadores", tags=["bi:benchmark"])
 
+logger = logging.getLogger(__name__)
+
 _Guard = Depends(require_module(Module.BI, Permission.READ))
 
 _MAX_FUNDOS = 3
+
+# Warm-up do cache do universo (referencia forte p/ evitar GC da task).
+_WARMING: set[asyncio.Task] = set()
+
+
+def _warm_universo(competencia: date) -> None:
+    """Aquece o cache do universo em background (sessao DB propria).
+
+    Disparado pelo GET /competencias — que a pagina chama ANTES de o usuario
+    escolher fundos. Assim a 1a comparacao da competencia corrente nao paga o
+    calculo do universo (~4k fundos via FDW) na frente do usuario.
+    """
+
+    async def _run() -> None:
+        from app.core.database import AsyncSessionLocal
+
+        try:
+            async with AsyncSessionLocal() as db:
+                await carregar_universo(db, competencia)
+        except Exception:
+            logger.warning("warm-up do universo de indicadores falhou", exc_info=True)
+
+    task = asyncio.create_task(_run())
+    _WARMING.add(task)
+    task.add_done_callback(_WARMING.discard)
 
 
 def _cnpj_cvm(raw: str) -> str:
@@ -50,10 +79,11 @@ async def listar_competencias(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: None = _Guard,
 ) -> CompetenciasDisponiveisResponse:
-    """Competencias com informe disponivel (desc)."""
-    return CompetenciasDisponiveisResponse(
-        competencias=await competencias_disponiveis(db)
-    )
+    """Competencias com informe disponivel (desc). Aquece o cache da ultima."""
+    competencias = await competencias_disponiveis(db)
+    if competencias:
+        _warm_universo(competencias[0])
+    return CompetenciasDisponiveisResponse(competencias=competencias)
 
 
 @router.get("", response_model=ComparadorIndicadoresResponse)
