@@ -209,6 +209,28 @@ Tipos observados: `Captacoes no Mes`, `Resgates no Mes`, `Resgates Solicitados`,
 -- **colunas text** com valores numericos, precisa parse no servico.
 Sao **dois eixos**: risco do devedor (cedente/sacado PF/PJ) e risco da operacao.
 
+### XML protocolado (FNET IFP) = dataset, 100% (validado 2026-06-11)
+Cruzamos o XML IFP v6.6 do REALINVEST (abril/26) campo a campo contra o
+`cvm_remote`: **identico em tudo** — o dataset reproduz o protocolo sem perda.
+XML e o formato preferido p/ conferencias pontuais (estruturado; PDF
+desnecessario). Bonus do cruzamento:
+- **A regua SCR fecha o DC bruto AO CENTAVO**: AA+C+G+H = tab_ii_vl_carteira
+  (REALINVEST: 24.941.894,33 + 432.365,71 + 111.664,88 + 243.050,36 =
+  25.728.975,28). O SCR carrega ARRASTO (a vencer de devedor em atraso entra
+  no nivel do devedor) — por isso C+G+H (787k) > vencidos (480k). Consultar
+  TODAS as letras, nao so AA/H.
+- **Recompra tem 2 valores**: pago (`d_2`=269.089,44) vs contabil
+  (`d_3`=269.567,11) — o delta (477,67) e a perda/desconto realizado na
+  recompra. Indicador fino: desagio de recompra = d_3 - d_2.
+
+### DC de cedentes com divida ativa da Uniao (tab_x_debito_tribut)
+`(X.9.1) Valor total dos DC cedidos por cedentes que possuem debitos
+tributarios inscritos em divida ativa da Uniao` (no XML: `REG_TRIB_CED`).
+REALINVEST abr/26: **R$ 3.737.489,57 = 14,5% do DC bruto**. Indicador de
+risco de FRAUDE/PENHORA de lastro (cedente devedor da Uniao -> risco de
+constricao judicial dos recebiveis). Candidato a indicador da cesta —
+ninguem do mercado publica isso agregado.
+
 ### Garantias
 `cvm_remote.tab_x_7.tab_x_vl_garantia_dircred` (R$) e `tab_x_pr_garantia_dircred` (% do DC).
 
