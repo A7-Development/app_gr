@@ -47,6 +47,15 @@ por natureza renasce fiel ao caixa no catalogo de receitas operacionais
 (nova wh canonica, fontes: Titulo / ContaCorrenteLancamento / Recompra /
 OperacaoRentabilidade). `wh_bitfin_tarifa_catalogo` permanece como
 vocabulario controlado.
+
+v2.6.0 (2026-06-10): ETL do catalogo de receitas (PR 2 — familias de mora):
+3 syncs novos materializam wh_receita_operacional dirigidos por
+wh_bitfin_receita_stream: mora_liquidacao (Titulo, caixa = pgto - liquido,
+split juros x multa proporcional aos teoricos do ProcedimentoDeCobranca),
+grafica (ContaCorrenteLancamento — prorrogacao/cartorio/acerto/tarifas/
+repasses/financeira, codigos do catalogo, estornados excluidos, TituloId
+extraido do ComplementoInterno), recompra (RecompraItem Efetivada=1,
+juros/multa/desagio por titulo).
 """
 
-ADAPTER_VERSION = "bitfin_adapter_v2.5.0"
+ADAPTER_VERSION = "bitfin_adapter_v2.6.0"

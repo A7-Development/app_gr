@@ -39,6 +39,11 @@ from app.modules.integracoes.adapters.erp.bitfin.config import BitfinConfig
 from app.modules.integracoes.adapters.erp.bitfin.connection import fetch_rows
 from app.modules.integracoes.adapters.erp.bitfin.hashing import sha256_of_row
 from app.modules.integracoes.adapters.erp.bitfin.queries import analytics, bitfin
+from app.modules.integracoes.adapters.erp.bitfin.receitas import (
+    sync_receita_grafica,
+    sync_receita_mora_liquidacao,
+    sync_receita_recompra,
+)
 from app.modules.integracoes.adapters.erp.bitfin.version import ADAPTER_VERSION
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 from app.shared.audit_log.sync_health import last_sync_at
@@ -1274,6 +1279,12 @@ SYNC_PIPELINE = [
     # Snapshot diario da posicao de debentures (going-forward; Bitfin faz o
     # CDI, nos capturamos). Alimenta o denominador do ROA bruto da DRE.
     sync_debenture_posicao,
+    # Catalogo de receitas operacionais caixa-fiel (wh_receita_operacional,
+    # dirigido por wh_bitfin_receita_stream). Roda apos sync_titulo (mesma
+    # fonte) — leitura direta do MSSQL, sem dependencia das tabelas acima.
+    sync_receita_mora_liquidacao,
+    sync_receita_grafica,
+    sync_receita_recompra,
     # Reconcile (anti-join hard-delete de orfaos). Ultimo passo: roda DEPOIS
     # dos upserts (espelho ja com os dados frescos) e tem gate diario interno
     # — a varredura full so dispara 1x/dia, demais ticks viram no-op barato.
