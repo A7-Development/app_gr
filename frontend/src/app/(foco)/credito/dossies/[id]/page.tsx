@@ -41,6 +41,10 @@ import { Textarea } from "@/components/tremor/Textarea"
 import { DynamicForm } from "@/design-system/components/DynamicForm"
 import { type WizardMultiStepStep } from "@/design-system/patterns/WizardMultiStep"
 import { DocumentSourceZone, FichaConferenceZone } from "./_components/DocumentZones"
+import {
+  buildCoverage,
+  DossierCoverageStrip,
+} from "./_components/DossierCoverageStrip"
 import { DossierReadingView } from "./_components/DossierReadingView"
 import {
   FaturamentoStation,
@@ -1179,6 +1183,18 @@ export default function DossierFocusPage() {
         // Checkpoint FINAL — parecer (a primária mora na barra de fechamento).
         return (
           <Zone key={m.id}>
+            {/* Raio-X: o analista decide VENDO o que foi coberto. */}
+            <div className="mb-4">
+              <DossierCoverageStrip
+                items={buildCoverage({
+                  steps,
+                  docs,
+                  redFlags: state.red_flags ?? [],
+                  opinion: opinionOutput,
+                  hasCadastral,
+                })}
+              />
+            </div>
             <CheckpointReview
               flags={state.red_flags ?? []}
               summary={reviewSummary ?? ""}
@@ -1275,6 +1291,13 @@ export default function DossierFocusPage() {
 
       {viewDossie ? (
         <DossierReadingView
+          coverage={buildCoverage({
+            steps,
+            docs,
+            redFlags: state.red_flags ?? [],
+            opinion: opinionOutput,
+            hasCadastral,
+          })}
           dossier={dossier}
           docs={docs}
           redFlags={state.red_flags ?? []}
