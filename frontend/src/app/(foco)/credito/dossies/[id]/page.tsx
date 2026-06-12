@@ -933,6 +933,60 @@ export default function DossierFocusPage() {
     // Extração coberta pelo card de documento (DocumentWorkspace).
     if (m.nodeType === "document_extractor") return null
 
+    // Busca em fonte oficial (JUCESP): o node roda sozinho e fecha, mas a
+    // CONFERÊNCIA da extração (citações, trechos, PDF) continua sendo da
+    // estação — sem isto, fluxos sem "Pedir documentos" perdiam a ficha
+    // rica (regressão apontada pelo Ricardo no DC-2026-0039).
+    if (m.nodeType === "official_document_fetch") {
+      if (m.state === "pending") return <DormantZone key={m.id} label={m.label} />
+      const primaryDoc =
+        docs.find(
+          (d) =>
+            d.doc_type.toLowerCase() === "social_contract" &&
+            (d.extraction_status === "success" ||
+              d.extraction_status === "validated"),
+        ) ?? null
+      if (!primaryDoc) return null
+      return (
+        <SocialContractConferenceView
+          key={m.id}
+          dossierId={dossierId}
+          doc={primaryDoc}
+          analysis={extractAgentOutput<SocialContractAnalysis>(
+            steps,
+            "social_contract_analyst",
+          )}
+        />
+      )
+    }
+
+    // Busca em fonte oficial (JUCESP): o node roda sozinho e fecha, mas a
+    // CONFERÊNCIA da extração (citações, trechos, PDF) continua sendo da
+    // estação — sem isto, fluxos sem "Pedir documentos" perdiam a ficha
+    // rica (regressão apontada pelo Ricardo no DC-2026-0039).
+    if (m.nodeType === "official_document_fetch") {
+      if (m.state === "pending") return <DormantZone key={m.id} label={m.label} />
+      const primaryDoc =
+        docs.find(
+          (d) =>
+            d.doc_type.toLowerCase() === "social_contract" &&
+            (d.extraction_status === "success" ||
+              d.extraction_status === "validated"),
+        ) ?? null
+      if (!primaryDoc) return null
+      return (
+        <SocialContractConferenceView
+          key={m.id}
+          dossierId={dossierId}
+          doc={primaryDoc}
+          analysis={extractAgentOutput<SocialContractAnalysis>(
+            steps,
+            "social_contract_analyst",
+          )}
+        />
+      )
+    }
+
     if (m.nodeType === "document_request") {
       const out = (m.output ?? {}) as { required?: string[]; optional?: string[] }
       if (m.state === "pending") return <DormantZone key={m.id} label={m.label} />
