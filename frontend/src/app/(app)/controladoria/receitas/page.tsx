@@ -261,9 +261,9 @@ function janelaDoPeriodo(p: PeriodoKey): { de: string; ate: string } {
 
 export default function ReceitasPage() {
   const [metodo, setMetodo] = useQueryState("metodo", {
-    defaultValue: "caixa" as ReceitasMetodo,
+    defaultValue: "competencia" as ReceitasMetodo,
     parse: (v): ReceitasMetodo =>
-      v === "competencia" || v === "acruo" ? v : "caixa",
+      v === "caixa" || v === "acruo" ? v : "competencia",
   })
   const [tab, setTab] = useQueryState("tab", {
     defaultValue: "visao" as TabKey,
@@ -370,7 +370,7 @@ export default function ReceitasPage() {
     conferenciasQ.isFetching || comparativoQ.isFetching
 
   const hasFiltrosAtivos =
-    periodo !== "6m" || !!fundoUuid || metodo !== "caixa" ||
+    periodo !== "6m" || !!fundoUuid || metodo !== "competencia" ||
     mes !== mesFechadoDefault()
 
   const provenance: ProvenanceSource[] = [
@@ -521,7 +521,7 @@ export default function ReceitasPage() {
               onClick={() => {
                 setPeriodo("6m")
                 setFundoUuid("")
-                setMetodo("caixa")
+                setMetodo("competencia")
                 setMes(mesFechadoDefault())
               }}
               disabled={!hasFiltrosAtivos}
@@ -936,7 +936,7 @@ function ComparativoMensal({
         Seção de teste do par canônico FinancialTable (notação IBCS) — escolha o
         mês no filtro acima. AC = mês selecionado · PY = mês anterior.
       </p>
-      <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+      <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-3">
         <PeriodComparisonTable
           title={{
             entity,
