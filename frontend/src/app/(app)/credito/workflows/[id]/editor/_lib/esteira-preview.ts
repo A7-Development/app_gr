@@ -71,7 +71,7 @@ type FlowNodeData = {
   config?: Record<string, unknown>
 }
 
-type Ordered = {
+export type Ordered = {
   id: string
   label: string
   nodeType: string
@@ -81,7 +81,7 @@ type Ordered = {
 
 /** Ordenação topológica (Kahn) com profundidade = maior distância da raiz.
  *  Estável: empates seguem a ordem de inserção no grafo. */
-function topoOrder(nodes: Node[], edges: Edge[]): Ordered[] {
+export function topoOrder(nodes: Node[], edges: Edge[]): Ordered[] {
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const indeg = new Map<string, number>(nodes.map((n) => [n.id, 0]))
   const out = new Map<string, string[]>()
