@@ -204,11 +204,18 @@ async def delete_workflow(
 ) -> None:
     """Delete a tenant-owned workflow definition.
 
-    Constraints:
-    - Only DRAFT versions can be deleted (preserves audit trail of executed runs).
-    - Only the tenant owner can delete (Strata templates are immutable).
-    - The active version cannot be deleted — activate another first.
+    Regra (2026-06-12, fase de construcao): qualquer versao do TENANT pode
+    ser excluida — inclusive ACTIVE/ARCHIVED — desde que NADA a referencie.
+    A auditoria e preservada por REFERENCIA, nao por status: versao com
+    dossie/execucao apontando pra ela e bloqueada (exclua os dossies antes);
+    versao orfa e lixo de iteracao e pode sair. Templates Strata
+    (tenant_id NULL) continuam imutaveis (o filtro por tenant da 404).
     """
+    from sqlalchemy import func
+
+    from app.agentic.playbooks.models.run import PlaybookRun
+    from app.modules.credito.models.dossier import CreditDossier
+
     row = (
         await db.execute(
             select(PlaybookDefinition).where(
@@ -222,16 +229,39 @@ async def delete_workflow(
             status_code=404,
             detail="Workflow nao encontrado ou nao pertence ao tenant.",
         )
-    if row.status != PlaybookStatus.DRAFT:
+
+    n_dossiers = await db.scalar(
+        select(func.count())
+        .select_from(CreditDossier)
+        .where(CreditDossier.workflow_definition_id == workflow_id)
+    )
+    if n_dossiers:
         raise HTTPException(
             status_code=400,
             detail=(
-                "Somente versoes em DRAFT podem ser deletadas. Versoes ARCHIVED "
-                "ficam por auditoria e ACTIVE precisa ser substituida primeiro."
+                f"{n_dossiers} dossie(s) usam esta versao do playbook — "
+                "exclua-os primeiro (a trilha de auditoria deles referencia "
+                "este grafo)."
+            ),
+        )
+    n_runs = await db.scalar(
+        select(func.count())
+        .select_from(PlaybookRun)
+        .where(PlaybookRun.definition_id == workflow_id)
+    )
+    if n_runs:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{n_runs} execucao(oes) registradas usam esta versao — "
+                "ha trilha de auditoria apontando pra ela."
             ),
         )
 
-    # Block delete if it's currently active.
+    # Ponteiro de versao ativa: se aponta pra ESTA versao e existem OUTRAS
+    # versoes vivas do mesmo nome, peca pra ativar outra (senao o nome fica
+    # sem versao ativa por acidente). Se e a ultima versao, o ponteiro sai
+    # junto — exclusao limpa do playbook inteiro.
     active = (
         await db.execute(
             select(PlaybookDefinitionActive).where(
@@ -240,10 +270,26 @@ async def delete_workflow(
         )
     ).scalar_one_or_none()
     if active is not None:
-        raise HTTPException(
-            status_code=400,
-            detail="Esta versao esta ativa. Ative outra antes de deletar.",
+        n_outras = await db.scalar(
+            select(func.count())
+            .select_from(PlaybookDefinition)
+            .where(
+                PlaybookDefinition.name == row.name,
+                PlaybookDefinition.tenant_id == principal.tenant_id,
+                PlaybookDefinition.id != workflow_id,
+                PlaybookDefinition.archived_at.is_(None),
+            )
         )
+        if n_outras:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Esta e a versao ATIVA e existem outras versoes deste "
+                    "playbook — ative outra antes de excluir esta."
+                ),
+            )
+        await db.delete(active)
+        await db.flush()
 
     await db.delete(row)
     await db.commit()
