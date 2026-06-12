@@ -4,7 +4,7 @@ Config schema:
     {
         "adapter": "serasa_pj" | "serasa_pf" | "bigdatacorp" | "infosimples",
         "entity_type": "company" | "person",
-        "entity_ref": "<doc>" | "{{trigger.cnpj}}" | "{{node.X.output.target_cnpj}}",
+        "entity_ref": "<doc>" | "{{node.identificacao.output.cnpj}}",
         "environment": "production" | "sandbox",   # opcional, default production
     }
 
@@ -76,7 +76,7 @@ class BureauQueryNode(BaseNode):
             if not isinstance(entity_ref, str) or not entity_ref.strip():
                 raise ValueError(
                     f"bureau_query[{adapter}]: 'entity_ref' obrigatorio "
-                    "(string com documento ou template `{{trigger.cnpj}}`)."
+                    "(string com documento ou template `{{node.<etapa>.output.cnpj}}`)."
                 )
             env = self.config.get("environment", "production")
             if env not in {"production", "sandbox"}:

@@ -28,20 +28,18 @@ class TriggerNode(BaseNode):
     type = "trigger"
 
     def produces(self) -> dict[str, VarType]:
-        """Campos canônicos que `dossier_svc.create_dossier` injeta no
-        `trigger_data`. Há aliases (cnpj == target_cnpj) — declaramos os
-        dois para que `{{trigger.cnpj}}` e `{{trigger.target_cnpj}}` ambos
-        validem.
+        """O gatilho e MINIMO por decisao de produto (2026-06-12, Ricardo):
+        publica so a identidade da analise (dossier_id) + o tipo de abertura.
 
-        Quando o dossier é criado SEM CNPJ (fluxo PF ou genérico), os
-        templates `{{trigger.cnpj}}` resolvem pra null em runtime — o
-        validador estático só pode checar TIPO, não presença.
+        A identidade da EMPRESA (CNPJ/razao social) NAO e variavel de gatilho:
+        entra pelo formulario de Identificacao (human_input -> absorb_identity)
+        e materializa na empresa-alvo do DOSSIE — nodes de fonte oficial
+        (cadastral, JUCESP) leem de la. CNPJ informado na abertura vira apenas
+        pre-preenchimento do formulario. Legado {{trigger.cnpj}} removido com
+        zero dossies reais na plataforma.
         """
         return {
             "dossier_id": VarType.UUID_T,
-            "target_cnpj": VarType.CNPJ,
-            "cnpj": VarType.CNPJ,
-            "target_name": VarType.STRING,
             "trigger_kind": VarType.STRING,
         }
 
