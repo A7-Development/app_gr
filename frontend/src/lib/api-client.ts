@@ -2621,6 +2621,10 @@ export type ComparadorIndicadoresFundo = {
   pl_medio: number | null
   subordinacao_pct: number | null
   subordinacao_pct_rank: number | null
+  subordinacao_jr_pct: number | null
+  subordinacao_jr_pct_rank: number | null
+  sub_jr_sobre_sub_pct: number | null
+  sub_jr_sobre_sub_pct_rank: number | null
   passivo_ativo_pct: number | null
   passivo_ativo_pct_rank: number | null
   dc_ativo_pct: number | null
@@ -2633,6 +2637,8 @@ export type ComparadorIndicadoresFundo = {
   inad_total_pct_rank: number | null
   inad_90_pct: number | null
   inad_90_pct_rank: number | null
+  inad_180_pct: number | null
+  inad_180_pct_rank: number | null
   cobertura_pdd_pct: number | null
   cobertura_pdd_pct_rank: number | null
   pdd_pl_pct: number | null
