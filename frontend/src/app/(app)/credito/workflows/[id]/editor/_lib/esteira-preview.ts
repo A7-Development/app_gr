@@ -210,10 +210,9 @@ export function deriveEsteiraPreview(nodes: Node[], edges: Edge[]): EsteiraPrevi
       continue
     }
     estacoes.push({
-      label:
-        agentOf(step) === "opinion_writer" || step.nodeType === "human_review"
-          ? "Parecer"
-          : step.label,
+      // So o gerador de parecer (opinion_writer) batiza "Parecer"; revisao
+      // avulsa mantem o proprio nome (3x "Parecer" confundia — 2026-06-12).
+      label: agentOf(step) === "opinion_writer" ? "Parecer" : step.label,
       members: [member],
       temGate: step.nodeType === "human_review",
       depth: step.depth,

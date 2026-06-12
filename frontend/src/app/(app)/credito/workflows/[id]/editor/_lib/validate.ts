@@ -72,6 +72,23 @@ export function validateGraph(
     }
   }
 
+  // 2b. Raiz orfa (2026-06-12, pos DC-2026-0038): node sem seta de ENTRADA
+  // que nao seja o Inicio e raiz do grafo — o motor executa raizes
+  // imediatamente, entao um checkpoint solto vira "estacao fantasma"
+  // rodando na frente de tudo. ERRO bloqueador: conecte ou apague.
+  const targets = new Set(edges.map((e) => e.target))
+  for (const n of nodes) {
+    const data = n.data as unknown as StrataNodeData
+    if (data.nodeType === "trigger") continue
+    if (!targets.has(n.id)) {
+      errors.push({
+        level: "error",
+        nodeId: n.id,
+        message: `A etapa "${labelOf(n.id)}" nao esta conectada ao fluxo (sem seta de entrada) — ela rodaria ANTES de tudo. Conecte-a ou apague.`,
+      })
+    }
+  }
+
   // 3. Configs obrigatorias preenchidas + checagens por tipo de etapa.
   for (const n of nodes) {
     const data = n.data as unknown as StrataNodeData
