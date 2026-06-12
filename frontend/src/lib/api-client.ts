@@ -2621,6 +2621,10 @@ export type ComparadorIndicadoresFundo = {
   pl_medio: number | null
   subordinacao_pct: number | null
   subordinacao_pct_rank: number | null
+  subordinacao_jr_pct: number | null
+  subordinacao_jr_pct_rank: number | null
+  sub_jr_sobre_sub_pct: number | null
+  sub_jr_sobre_sub_pct_rank: number | null
   passivo_ativo_pct: number | null
   passivo_ativo_pct_rank: number | null
   dc_ativo_pct: number | null
@@ -2633,6 +2637,8 @@ export type ComparadorIndicadoresFundo = {
   inad_total_pct_rank: number | null
   inad_90_pct: number | null
   inad_90_pct_rank: number | null
+  inad_180_pct: number | null
+  inad_180_pct_rank: number | null
   cobertura_pdd_pct: number | null
   cobertura_pdd_pct_rank: number | null
   pdd_pl_pct: number | null
@@ -5685,6 +5691,8 @@ export type ReceitasFilters = {
 
 export type ReceitasKpis = {
   total:            number
+  operacionais:     number
+  posOperacionais:  number
   desagio:          number
   mora:             number
   tarifas:          number
@@ -5716,6 +5724,7 @@ export type ReceitasResumo = {
 }
 
 export type ReceitaDetalheLinha = {
+  grupo:    string
   familia:  string
   stream:   string
   natureza: string
@@ -5801,7 +5810,7 @@ export const receitasApi = {
   resumo: async (f: ReceitasFilters): Promise<ReceitasResumo> => {
     type Raw = {
       metodo: ReceitasMetodo
-      kpis: { total: string; desagio: string; mora: string; tarifas: string; recompra_encargos: string }
+      kpis: { total: string; operacionais: string; pos_operacionais: string; desagio: string; mora: string; tarifas: string; recompra_encargos: string }
       serie_mensal: { competencia: string; por_familia: Record<string, string>; total: string }[]
       composicao_natureza: { natureza: string; valor: string }[]
       ponte: { caixa: string; competencia: string; acruo: string; delta_competencia_caixa: string; delta_competencia_acruo: string }
@@ -5812,7 +5821,10 @@ export const receitasApi = {
     return {
       metodo: r.metodo,
       kpis: {
-        total: _rcN(r.kpis.total), desagio: _rcN(r.kpis.desagio), mora: _rcN(r.kpis.mora),
+        total: _rcN(r.kpis.total),
+        operacionais: _rcN(r.kpis.operacionais),
+        posOperacionais: _rcN(r.kpis.pos_operacionais),
+        desagio: _rcN(r.kpis.desagio), mora: _rcN(r.kpis.mora),
         tarifas: _rcN(r.kpis.tarifas), recompraEncargos: _rcN(r.kpis.recompra_encargos),
       },
       serieMensal: r.serie_mensal.map((s) => ({
@@ -5837,7 +5849,7 @@ export const receitasApi = {
   detalhe: async (f: ReceitasFilters): Promise<ReceitasDetalhe> => {
     type Raw = {
       metodo: ReceitasMetodo
-      linhas: { familia: string; stream: string; natureza: string; qtd: number; valor: string }[]
+      linhas: { grupo: string; familia: string; stream: string; natureza: string; qtd: number; valor: string }[]
       total: string
     }
     const r = await apiClient.get<Raw>(

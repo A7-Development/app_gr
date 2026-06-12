@@ -122,6 +122,11 @@ const FAMILIA_COR: Record<string, string> = {
   financeira:       "#A8A29E",
 }
 
+const GRUPO_LABEL: Record<string, string> = {
+  operacional:     "Operacional",
+  pos_operacional: "Pós-operacional",
+}
+
 const NATUREZA_LABEL: Record<string, string> = {
   DESAGIO:           "Deságio",
   AD_VALOREM:        "Ad valorem",
@@ -340,8 +345,8 @@ export default function ReceitasPage() {
           />
         </div>
 
-        {/* Z2 — Tabs L3 */}
-        <div className="shrink-0 px-6">
+        {/* Z2 — Tabs L3 (bg-white: sem ele o gray do shell vaza por tras) */}
+        <div className="shrink-0 bg-white px-6 dark:bg-gray-950">
           <TabNavigation>
             {TABS.map((t) => (
               <TabNavigationLink
@@ -587,17 +592,17 @@ function VisaoGeral({
         <BandaKpiCol headline label={`Receita total · ${METODO_LABEL_CURTO[metodo]}`}>
           {r ? fmtBRLCompact(r.kpis.total) : "—"}
         </BandaKpiCol>
-        <BandaKpiCol divider label="Deságio (operação)">
-          {r ? fmtBRLCompact(r.kpis.desagio) : "—"}
+        <BandaKpiCol divider label="Operacionais">
+          {r ? fmtBRLCompact(r.kpis.operacionais) : "—"}
+        </BandaKpiCol>
+        <BandaKpiCol divider label="Pós-operacionais">
+          {r ? fmtBRLCompact(r.kpis.posOperacionais) : "—"}
         </BandaKpiCol>
         <BandaKpiCol divider label="Mora (juros + multa)">
           {r ? fmtBRLCompact(r.kpis.mora) : "—"}
         </BandaKpiCol>
         <BandaKpiCol divider label="Tarifas">
           {r ? fmtBRLCompact(r.kpis.tarifas) : "—"}
-        </BandaKpiCol>
-        <BandaKpiCol divider label="Recompra (encargos)">
-          {r ? fmtBRLCompact(r.kpis.recompraEncargos) : "—"}
         </BandaKpiCol>
       </BandaKpi>
 
@@ -703,7 +708,8 @@ function PonteCard({
       </p>
       <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
         Mesmo período e filtros — os três totais e as diferenças explicadas.
-        Mora, prorrogação, recompra e tarifas de serviço são idênticas nos três.
+        As receitas PÓS-OPERACIONAIS são idênticas nos três métodos; toda a
+        diferença entre eles vive nas OPERACIONAIS.
       </p>
       <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
         {itens.map((i) => (
@@ -765,6 +771,14 @@ function DetalheTable({
 }) {
   const columns = React.useMemo(
     () => [
+      colDetalhe.accessor("grupo", {
+        header: "Grupo",
+        cell: (c) => (
+          <span className={tableTokens.cellStrong}>
+            {GRUPO_LABEL[c.getValue()] ?? c.getValue()}
+          </span>
+        ),
+      }),
       colDetalhe.accessor("familia", {
         header: "Família",
         cell: (c) => (

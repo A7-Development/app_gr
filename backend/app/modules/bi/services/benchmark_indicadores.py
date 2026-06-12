@@ -56,11 +56,20 @@ def _q_buckets(t: str, prefixo: str) -> str:
             "b10_vl_inad_maior_1080",
         )
     )
+    # >180d = faixas 181-360 / 361-720 / 721-1080 / >1080 (perda dura).
+    inad180 = " + ".join(
+        f"COALESCE({prefixo}{b}, 0)"
+        for b in (
+            "b7_vl_inad_360", "b8_vl_inad_720", "b9_vl_inad_1080",
+            "b10_vl_inad_maior_1080",
+        )
+    )
     return f"""
         SELECT cnpj_fundo_classe AS cnpj,
             COALESCE({prefixo}a_vl_dircred_prazo, 0)::float AS av_total,
             COALESCE({prefixo}b_vl_dircred_inad, 0)::float AS inad,
             ({inad90})::float AS inad_90,
+            ({inad180})::float AS inad_180,
             ({wsum})::float AS prazo_wsum
         FROM cvm_remote.{t}
         WHERE competencia = :comp
@@ -201,12 +210,15 @@ class IndicadoresUniverso:
 INDICADOR_DIRECAO: dict[str, bool] = {
     "pl": True,
     "subordinacao_pct": True,
+    "subordinacao_jr_pct": True,
+    "sub_jr_sobre_sub_pct": True,
     "passivo_ativo_pct": False,
     "dc_ativo_pct": True,
     "alta_liquidez_pl_pct": True,
     "prazo_medio_dias": False,
     "inad_total_pct": False,
     "inad_90_pct": False,
+    "inad_180_pct": False,
     "cobertura_pdd_pct": True,
     "pdd_pl_pct": False,
     "recompra_dc_pct": False,
@@ -244,6 +256,7 @@ def _montar_fundos(dados: dict[str, list[dict]]) -> list[dict]:
     # Series: PL por (cnpj, serie) + rentab por (cnpj, serie).
     pl_serie: dict[tuple[str, str], float] = {}
     pl_subord: dict[str, float] = defaultdict(float)
+    pl_sub_jr: dict[str, float] = defaultdict(float)
     pl_classes: dict[str, float] = defaultdict(float)
     for r in dados["x2"]:
         chave = (r["cnpj"], r["serie"])
@@ -251,6 +264,8 @@ def _montar_fundos(dados: dict[str, list[dict]]) -> list[dict]:
         pl_classes[r["cnpj"]] += r["pl_serie"] or 0.0
         if "subord" in (r["serie"] or "").lower():
             pl_subord[r["cnpj"]] += r["pl_serie"] or 0.0
+        if _eh_sub_pura(r["serie"]):
+            pl_sub_jr[r["cnpj"]] += r["pl_serie"] or 0.0
     resultado_mes: dict[str, float] = defaultdict(float)
     rentab_sub_wsum: dict[str, float] = defaultdict(float)
     pl_sub_puro: dict[str, float] = defaultdict(float)
@@ -283,8 +298,10 @@ def _montar_fundos(dados: dict[str, list[dict]]) -> list[dict]:
         av_total = (v.get("av_total") or 0.0) + (vi.get("av_total") or 0.0)
         inad = (v.get("inad") or 0.0) + (vi.get("inad") or 0.0)
         inad_90 = (v.get("inad_90") or 0.0) + (vi.get("inad_90") or 0.0)
+        inad_180 = (v.get("inad_180") or 0.0) + (vi.get("inad_180") or 0.0)
         prazo_wsum = (v.get("prazo_wsum") or 0.0) + (vi.get("prazo_wsum") or 0.0)
         sub = pl_subord.get(cnpj)
+        sub_jr = pl_sub_jr.get(cnpj)
         spuro = pl_sub_puro.get(cnpj, 0.0)
         dc_medio = (
             (dc_bruto + (ii_prev.get("dc_bruto_prev") or dc_bruto)) / 2
@@ -299,12 +316,17 @@ def _montar_fundos(dados: dict[str, list[dict]]) -> list[dict]:
             "pl": pl,
             "pl_medio": iv.get("pl_medio"),
             "subordinacao_pct": _ratio(sub, pl),
+            # Por tranche: Jr/PL = protecao da mezanino (first-loss real);
+            # Jr/Sub total = qualidade do colchao (100% quando nao ha mez).
+            "subordinacao_jr_pct": _ratio(sub_jr, pl),
+            "sub_jr_sobre_sub_pct": _ratio(sub_jr, sub),
             "passivo_ativo_pct": _ratio(iii.get("passivo"), i.get("ativo")),
             "dc_ativo_pct": _ratio(i.get("dc_liq"), i.get("ativo")),
             "alta_liquidez_pl_pct": _ratio(i.get("alta_liquidez"), pl),
             "prazo_medio_dias": prazo_wsum / av_total if av_total > 0 else None,
             "inad_total_pct": _ratio(inad, dc_bruto),
             "inad_90_pct": _ratio(inad_90, dc_bruto),
+            "inad_180_pct": _ratio(inad_180, dc_bruto),
             "cobertura_pdd_pct": _ratio(i.get("pdd"), inad) if inad > 0 else None,
             "pdd_pl_pct": _ratio(i.get("pdd"), pl),
             "recompra_dc_pct": _ratio(vii.get("recompra") or 0.0, dc_bruto),

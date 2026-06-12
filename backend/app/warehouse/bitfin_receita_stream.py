@@ -125,6 +125,15 @@ class WhBitfinReceitaStream(Base):
     # Grao do fato gerado: 'titulo' | 'operacao' | 'recompra' | 'lancamento'.
     grao: Mapped[str] = mapped_column(String(20), nullable=False)
 
+    # Grupo de visualizacao (decisao 2026-06-12): 'operacional' (constituida
+    # NA operacao: desagio/adval/tarifas de operacao + desagio de recompra —
+    # a NATUREZA manda, recompra e canal) | 'pos_operacional' (nasce depois:
+    # moras, juros/multa de recompra, tarifas de servico, repasses,
+    # financeira). Curadoria de catalogo, nao codigo.
+    grupo: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pos_operacional"
+    )
+
     # Receita retida do liquido na efetivacao (desagio, tarifas de operacao):
     # caixa por construcao, sem transito posterior em conta.
     retido_na_fonte: Mapped[bool] = mapped_column(

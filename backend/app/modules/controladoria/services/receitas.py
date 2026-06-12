@@ -21,7 +21,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Integer, and_, case, cast, func, select
+from sqlalchemy import Integer, and_, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.controladoria.schemas.receitas import (
@@ -40,6 +40,7 @@ from app.modules.controladoria.schemas.receitas import (
     ReceitaTituloLinha,
     SerieMensalPonto,
 )
+from app.warehouse.bitfin_receita_stream import WhBitfinReceitaStream
 from app.warehouse.receita_acruo_dia import ReceitaAcruoDia
 from app.warehouse.receita_caixa import ReceitaCaixa
 from app.warehouse.receita_operacional import ReceitaOperacional
@@ -74,6 +75,37 @@ def _apply_filters(
     if fundo_id is not None:
         conditions.append(model.unidade_administrativa_id == fundo_id)
     return stmt.where(and_(*conditions))
+
+
+async def _grupo_por_stream(db: AsyncSession, tenant_id: UUID) -> dict[str, str]:
+    """stream_key -> grupo ('operacional'|'pos_operacional'), catalogo ativo
+    (override do tenant vence a global)."""
+    stmt = (
+        select(
+            WhBitfinReceitaStream.stream_key,
+            WhBitfinReceitaStream.grupo,
+        )
+        .where(
+            WhBitfinReceitaStream.valid_until.is_(None),
+            or_(
+                WhBitfinReceitaStream.tenant_id == tenant_id,
+                WhBitfinReceitaStream.tenant_id.is_(None),
+            ),
+        )
+        .order_by(WhBitfinReceitaStream.tenant_id.is_not(None))
+    )
+    rows = (await db.execute(stmt)).all()
+    return {k: g for k, g in rows}
+
+
+def _grupo_da_linha(
+    grupo_map: dict[str, str], familia: str, stream: str
+) -> str:
+    """Bloco operacao derivado (caixa/acruo: stream=evento, sem entrada no
+    catalogo) e operacional por construcao; resto resolve pelo catalogo."""
+    if familia == _FAMILIA_OPERACAO and stream not in grupo_map:
+        return "operacional"
+    return grupo_map.get(stream, "pos_operacional")
 
 
 async def _agg_eventos(
@@ -178,13 +210,20 @@ async def compute_resumo(
         de=competencia_de, ate=competencia_ate, fundo_id=fundo_id,
     )
 
-    kpis = ReceitasKpis(total=ZERO, desagio=ZERO, mora=ZERO, tarifas=ZERO,
+    grupo_map = await _grupo_por_stream(db, tenant_id)
+
+    kpis = ReceitasKpis(total=ZERO, operacionais=ZERO, pos_operacionais=ZERO,
+                        desagio=ZERO, mora=ZERO, tarifas=ZERO,
                         recompra_encargos=ZERO)
     serie: dict[date, dict[str, Decimal]] = {}
     composicao: dict[str, Decimal] = {}
     for comp, familia, _stream, natureza, _qtd, valor in linhas:
         v = Decimal(valor)
         kpis.total += v
+        if _grupo_da_linha(grupo_map, familia, _stream) == "operacional":
+            kpis.operacionais += v
+        else:
+            kpis.pos_operacionais += v
         if natureza == "DESAGIO" and familia == _FAMILIA_OPERACAO:
             kpis.desagio += v
         if natureza in _NATUREZAS_MORA:
@@ -242,6 +281,7 @@ async def compute_detalhe(
         db, tenant_id=tenant_id, metodo=metodo,
         de=competencia_de, ate=competencia_ate, fundo_id=fundo_id,
     )
+    grupo_map = await _grupo_por_stream(db, tenant_id)
     agg: dict[tuple[str, str, str], tuple[int, Decimal]] = {}
     for _comp, familia, stream, natureza, qtd, valor in linhas_raw:
         k = (familia, stream, natureza)
@@ -250,11 +290,12 @@ async def compute_detalhe(
     linhas = sorted(
         (
             ReceitaDetalheLinha(
+                grupo=_grupo_da_linha(grupo_map, f, s),
                 familia=f, stream=s, natureza=n, qtd=q, valor=v,
             )
             for (f, s, n), (q, v) in agg.items()
         ),
-        key=lambda x: x.valor, reverse=True,
+        key=lambda x: (x.grupo != "operacional", -x.valor),
     )
     return ReceitasDetalheResponse(
         metodo=metodo, linhas=linhas,
