@@ -92,6 +92,7 @@ import { cx } from "@/lib/utils"
 import { AgentHoverCard } from "./_components/AgentHoverCard"
 import { AgentCatalogContext } from "./_components/NodeContract"
 import { EsteiraPreviewPanel } from "./_components/EsteiraPreviewPanel"
+import { RoteiroView } from "./_components/RoteiroView"
 import {
   decorateEdgesWithLabels,
   suggestBranchCondition,
@@ -344,6 +345,7 @@ function EditorBody({
   const [showValidationDetails, setShowValidationDetails] = React.useState(false)
   const [testDrawerOpen, setTestDrawerOpen] = React.useState(false)
   const [esteiraOpen, setEsteiraOpen] = React.useState(false)
+  const [viewMode, setViewMode] = React.useState<"canvas" | "roteiro">("canvas")
 
   // Re-sync when playbook changes (after save).
   React.useEffect(() => {
@@ -848,6 +850,28 @@ function EditorBody({
                   {glossary.statusArchived}
                 </span>
               )}
+              <div className="flex items-center overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+                {(["canvas", "roteiro"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setViewMode(m)}
+                    className={cx(
+                      "px-2.5 py-1 text-xs font-medium transition-colors",
+                      viewMode === m
+                        ? "bg-blue-500 text-white"
+                        : "bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-950 dark:text-gray-400 dark:hover:bg-gray-900",
+                    )}
+                    title={
+                      m === "canvas"
+                        ? "Editar o fluxo no canvas visual"
+                        : "Ler o fluxo como roteiro numerado em portugues"
+                    }
+                  >
+                    {m === "canvas" ? "Canvas" : "Roteiro"}
+                  </button>
+                ))}
+              </div>
               <Button
                 variant="ghost"
                 onClick={() => setEsteiraOpen((o) => !o)}
@@ -914,6 +938,17 @@ function EditorBody({
             <div className="absolute right-3 top-3 z-10 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
               {glossary.unsavedChanges}
             </div>
+          )}
+          {viewMode === "roteiro" && (
+            <RoteiroView
+              nodes={nodes}
+              edges={edges}
+              agentCatalog={agentCatalog}
+              onGoToNode={(id) => {
+                setViewMode("canvas")
+                setSelectedNodeId(id)
+              }}
+            />
           )}
           {esteiraOpen && (
             <EsteiraPreviewPanel
