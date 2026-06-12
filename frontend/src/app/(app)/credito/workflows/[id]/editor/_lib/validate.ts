@@ -89,6 +89,44 @@ export function validateGraph(
     }
   }
 
+  // 2c. Origem fixa sem fonte de identidade (pos-mortem DC-2026-0039):
+  // cadastral_enrichment / official_document_fetch leem o CNPJ da
+  // empresa-alvo, que e materializada por um formulario com campo de key
+  // `cnpj`. Sem esse formulario no fluxo, eles rodam vazios (found=false).
+  {
+    const hasIdentity = nodes.some((n) => {
+      const d = n.data as unknown as StrataNodeData
+      if (d.nodeType !== "human_input") return false
+      const fields = (d.config ?? {}).fields
+      return (
+        Array.isArray(fields) &&
+        fields.some((f) => {
+          const ref = f as { key?: unknown; name?: unknown }
+          const ident = ref?.key ?? ref?.name
+          return (
+            typeof ident === "string" &&
+            ["cnpj", "target_cnpj"].includes(ident.toLowerCase())
+          )
+        })
+      )
+    })
+    if (!hasIdentity) {
+      for (const n of nodes) {
+        const d = n.data as unknown as StrataNodeData
+        if (
+          d.nodeType === "cadastral_enrichment" ||
+          d.nodeType === "official_document_fetch"
+        ) {
+          errors.push({
+            level: "warning",
+            nodeId: n.id,
+            message: `A etapa "${labelOf(n.id)}" consulta o CNPJ da empresa-alvo, mas nenhum formulario do fluxo tem um campo chamado "cnpj" pra preenche-la — a consulta vai rodar vazia. Adicione/renomeie o campo no formulario de identificacao.`,
+          })
+        }
+      }
+    }
+  }
+
   // 3. Configs obrigatorias preenchidas + checagens por tipo de etapa.
   for (const n of nodes) {
     const data = n.data as unknown as StrataNodeData

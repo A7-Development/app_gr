@@ -60,8 +60,12 @@ export function findIdentitySourceLabel(
     const fields = n.config?.fields
     if (!Array.isArray(fields)) continue
     const hasCnpj = fields.some((f) => {
-      const name = (f as { name?: unknown })?.name
-      return typeof name === "string" && ["cnpj", "target_cnpj"].includes(name.toLowerCase())
+      const ref = f as { key?: unknown; name?: unknown }
+      const ident = ref?.key ?? ref?.name
+      return (
+        typeof ident === "string" &&
+        ["cnpj", "target_cnpj"].includes(ident.toLowerCase())
+      )
     })
     if (hasCnpj) return n.label || "Identificação"
   }
