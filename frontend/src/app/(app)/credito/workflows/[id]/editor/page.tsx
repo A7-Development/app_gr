@@ -64,6 +64,7 @@ import {
   RiPriceTag3Line,
   RiQuillPenLine,
   RiRobot2Line,
+  RiRouteLine,
   RiSaveLine,
   RiScales3Line,
   RiSearchLine,
@@ -90,6 +91,7 @@ import { cx } from "@/lib/utils"
 
 import { AgentHoverCard } from "./_components/AgentHoverCard"
 import { AgentCatalogContext } from "./_components/NodeContract"
+import { EsteiraPreviewPanel } from "./_components/EsteiraPreviewPanel"
 import { EdgeConditionPopover } from "./_components/EdgeConditionPopover"
 import { NodeInspector } from "./_components/NodeInspector"
 import {
@@ -343,6 +345,7 @@ function EditorBody({
   const [dirty, setDirty] = React.useState(false)
   const [showValidationDetails, setShowValidationDetails] = React.useState(false)
   const [testDrawerOpen, setTestDrawerOpen] = React.useState(false)
+  const [esteiraOpen, setEsteiraOpen] = React.useState(false)
 
   // Re-sync when playbook changes (after save).
   React.useEffect(() => {
@@ -815,6 +818,14 @@ function EditorBody({
               )}
               <Button
                 variant="ghost"
+                onClick={() => setEsteiraOpen((o) => !o)}
+                title="Mostra como este fluxo vira as estações que o analista percorre no dossiê."
+              >
+                <RiRouteLine className="size-4" aria-hidden />
+                Esteira
+              </Button>
+              <Button
+                variant="ghost"
                 onClick={() => setTestDrawerOpen(true)}
                 title="Roda o playbook em modo sandbox sem chamar Serasa nem Anthropic."
               >
@@ -871,6 +882,14 @@ function EditorBody({
             <div className="absolute right-3 top-3 z-10 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
               {glossary.unsavedChanges}
             </div>
+          )}
+          {esteiraOpen && (
+            <EsteiraPreviewPanel
+              nodes={nodes}
+              edges={edges}
+              onClose={() => setEsteiraOpen(false)}
+              onFocusNode={(id) => setSelectedNodeId(id)}
+            />
           )}
           <VariablesPill
             selectedNodeId={selectedNodeId}
