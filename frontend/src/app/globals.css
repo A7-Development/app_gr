@@ -111,14 +111,20 @@
       opacity: 1;
     }
   }
+  /* Anima as PROPRIEDADES translate/scale (nao `transform`): no Tailwind v4
+   * as utilities -translate-x-1/2 do DialogContent usam a propriedade
+   * `translate` — keyframes em `transform` SOMAVAM com ela durante a
+   * animacao (dialogo nascia no canto sup. esquerdo e "pulava" pro centro). */
   @keyframes dialogContentShow {
     from {
       opacity: 0;
-      transform: translate(-50%, -45%) scale(0.95);
+      translate: -50% -45%;
+      scale: 0.95;
     }
     to {
       opacity: 1;
-      transform: translate(-50%, -50%) scale(1);
+      translate: -50% -50%;
+      scale: 1;
     }
   }
   @keyframes drawerSlideLeftAndFade {
