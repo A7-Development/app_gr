@@ -211,6 +211,20 @@ def _compare(left: str, right: str, op: str) -> bool:
     except (ValueError, TypeError):
         pass
 
+    # Boolean-ish comparison (case-insensitive): outputs booleanos viram
+    # "True"/"False" na interpolacao (str() do Python), mas o builder
+    # serializa "true"/"false" — a comparacao de string case-sensitive
+    # reprovava OS DOIS ramos de um found sim/nao (bug 2026-06-12, pego
+    # pelo dry-run do Ricardo; afetava execucao real tambem).
+    _boolish = {"true", "false", "yes", "no", "1", "0", "none", "null", ""}
+    lb, rb = left.strip().lower(), right.strip().lower()
+    if lb in _boolish and rb in _boolish:
+        eq = _to_bool(left) == _to_bool(right)
+        if op == "==":
+            return eq
+        if op == "!=":
+            return not eq
+
     # Fall back to string compare.
     if op == "==":
         return left == right
