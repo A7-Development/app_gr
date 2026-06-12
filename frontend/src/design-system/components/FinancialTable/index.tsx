@@ -573,7 +573,15 @@ export function PeriodComparisonTable({
                     : idx === 0
                       ? "strong"
                       : "light"
-              const ruleClass = RULE_CLASS[rule]
+              // Na 1a linha do corpo a regua forte existe SO no segmento dos
+              // rotulos (IBCS): nas colunas numericas a ancora visual e a
+              // barra de cenario do header — segmento preto ali parece uma
+              // borda sob PY/AC. Linhas "="/total mantem a regua inteira.
+              const labelRuleClass = RULE_CLASS[rule]
+              const valueRuleClass =
+                rule === "strong" && idx === 0 && !row.emphasis
+                  ? RULE_CLASS.none
+                  : RULE_CLASS[rule]
               const polarity = row.polarity ?? "revenue"
               return (
                 <TableRow key={`${row.label}-${idx}`}>
@@ -581,7 +589,7 @@ export function PeriodComparisonTable({
                     className={cx(
                       "w-full whitespace-nowrap",
                       CELL_PAD,
-                      ruleClass,
+                      labelRuleClass,
                       tableTokens.cellText,
                       empText,
                       row.indent === 1 && "pl-5",
@@ -605,7 +613,7 @@ export function PeriodComparisonTable({
                               className={cx(
                                 "text-right whitespace-nowrap",
                                 CELL_PAD,
-                                ruleClass,
+                                valueRuleClass,
                               )}
                             >
                               {isMissing(raw) ? (
@@ -629,7 +637,7 @@ export function PeriodComparisonTable({
                             className={cx(
                               "text-right whitespace-nowrap",
                               CELL_PAD,
-                              ruleClass,
+                              valueRuleClass,
                             )}
                           >
                             <VarianceCellContent
@@ -968,13 +976,21 @@ export function DecompositionTable({
           ) : null}
           <TableBody className="divide-y-0">
             {displayRows.map((d, idx) => {
-              const rule: RowRule =
-                d.kind === "row" && d.row.op === "="
+              const hasHeader = scenarios.length > 1 || varCols.length > 0
+              const isEqualsRow = d.kind === "row" && d.row.op === "="
+              const rule: RowRule = isEqualsRow
+                ? "strong"
+                : idx === 0
                   ? "strong"
-                  : idx === 0
-                    ? "strong"
-                    : "light"
+                  : "light"
               const ruleClass = RULE_CLASS[rule]
+              // 1a linha sob header de cenarios: regua forte so nos rotulos
+              // (nas numericas a ancora e a barra de cenario — ver
+              // PeriodComparisonTable). Sem header, a regua atravessa.
+              const valueRuleClass =
+                rule === "strong" && idx === 0 && !isEqualsRow && hasHeader
+                  ? RULE_CLASS.none
+                  : ruleClass
               if (d.kind === "toggle") {
                 return (
                   <tr key={`toggle-${d.groupId}`}>
@@ -1018,7 +1034,7 @@ export function DecompositionTable({
                       </button>
                     </TableCell>
                     <SpacerCell />
-                    {renderValueCells(d.values, d.polarity, ruleClass)}
+                    {renderValueCells(d.values, d.polarity, valueRuleClass)}
                   </TableRow>
                 )
               }
@@ -1058,7 +1074,7 @@ export function DecompositionTable({
                   {renderValueCells(
                     row.values,
                     row.polarity,
-                    ruleClass,
+                    valueRuleClass,
                     empText,
                     d.srcIndex,
                   )}
