@@ -96,6 +96,7 @@ import {
   decorateEdgesWithLabels,
   suggestBranchCondition,
 } from "./_lib/edge-label"
+import { computeLineage, type Lineage } from "./_lib/lineage"
 import { EdgeConditionPopover } from "./_components/EdgeConditionPopover"
 import { NodeInspector } from "./_components/NodeInspector"
 import {
@@ -402,6 +403,13 @@ function EditorBody({
   // Aplica validationStatus + producedVars a cada node antes de passar pro
   // ReactFlow. StrataNode renderiza chips coloridos no rodapé com o que o
   // nó publica em runtime.
+  // F3: linhagem de dados do node selecionado — quem alimenta (refs no meu
+  // config/edges) e quem consome (refs a node.<eu>.output.* nos outros).
+  const lineage = React.useMemo<Lineage | null>(
+    () => (selectedNodeId ? computeLineage(selectedNodeId, nodes, edges) : null),
+    [selectedNodeId, nodes, edges],
+  )
+
   const nodesWithStatus = React.useMemo<Node[]>(
     () =>
       nodes.map((n) => {
@@ -409,10 +417,16 @@ function EditorBody({
         const data = n.data as unknown as StrataNodeData
         const newStatus: ValidationStatus = status?.status ?? "ok"
         const newProduced = producedByNode[n.id] ?? undefined
+        const newLineage = lineage?.roleOf(n.id)
+        const newLineageVars = lineage
+          ? (lineage.feeders.get(n.id) ?? lineage.consumers.get(n.id))
+          : undefined
         if (
           data.validationStatus === newStatus &&
           data.validationMessage === status?.message &&
-          data.producedVars === newProduced
+          data.producedVars === newProduced &&
+          data.lineageRole === newLineage &&
+          data.lineageVars === newLineageVars
         ) {
           return n
         }
@@ -423,10 +437,12 @@ function EditorBody({
             validationStatus: newStatus,
             validationMessage: status?.message,
             producedVars: newProduced,
+            lineageRole: newLineage,
+            lineageVars: newLineageVars,
           } satisfies StrataNodeData,
         }
       }),
-    [nodes, nodeStatusMap, producedByNode],
+    [nodes, nodeStatusMap, producedByNode, lineage],
   )
 
   const isActiveVersion = activeWorkflow?.id === workflow.id
