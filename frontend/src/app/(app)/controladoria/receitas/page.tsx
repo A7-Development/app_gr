@@ -936,7 +936,7 @@ function ComparativoMensal({
         Seção de teste do par canônico FinancialTable (notação IBCS) — escolha o
         mês no filtro acima. AC = mês selecionado · PY = mês anterior.
       </p>
-      <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+      <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-3">
         <PeriodComparisonTable
           title={{
             entity,
