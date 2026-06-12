@@ -12,13 +12,18 @@
 
 ## Resumo executivo (cesta final consolidada, 2026-06-11)
 
-**17 indicadores em 5 dimensoes** (valores REALINVEST abr/26 como exemplo):
+**20 indicadores em 5 dimensoes** (valores REALINVEST abr/26 como exemplo).
+Adicoes 2026-06-11 (aprovadas): 18 Subordinacao Junior (Sub Jr/PL — protecao
+da mezanino/first-loss real), 19 Junior/Sub total (qualidade do colchao;
+discrimina os 861 fundos com mez), 20 Inadimplencia >180d (faixas exatas
+b7..b10, v+vi). Condominio (Aberto/Fechado) entrou como linha categorica
+(badge) — cadastral, sem percentil.
 
 | Dimensao | Indicadores | REALINVEST |
 |---|---|---|
-| Estrutura/porte | 1 PL · 2 Subordinacao · 3 Passivo/Ativo | 25,9mi · 54,7% · 0,2% |
+| Estrutura/porte | 1 PL · 2 Subordinacao (Sub+Mez) · 18 Sub Junior/PL · 19 Junior/Sub total · 3 Passivo/Ativo · Condominio | 25,9mi · 54,7% · 44,9% · 82,1% · 0,2% · Aberto |
 | Perfil do ativo | 4 %DC · 5 Alta Liquidez/PL (incl. I.4 curto) · 6 Prazo medio | 98% · 2,0% · ~25d |
-| Qualidade | 7 Inadimplencia total+aging · 8 Cobertura PDD · 9 PDD/PL · 10 Recompra (+desagio d3-d2) · 15 Mix SCR · 17 DC em Divida Ativa | 1,87% · 68% · 1,27% · 1,05% · 97% AA · 14,5% |
+| Qualidade | 7 Inadimplencia total · 7b Inad >90d · 20 Inad >180d · 8 Cobertura PDD · 9 PDD/PL · 10 Recompra (+desagio d3-d2) · 15 Mix SCR · 17 DC em Divida Ativa | 1,87% · 0,54% · 0,09% · 68% · 1,27% · 1,05% · 97% AA · 14,5% |
 | Fluxo | 11 Captacao liquida+fila · 12 Giro | +4,1% · 79% a.m. |
 | Performance | 13 Rentab Sub · 14 Real-vs-Meta · 16 **Yield efetivo** (pricing oficial) | 4,27% · 100% · 2,81% (mercado 1,40%) |
 
