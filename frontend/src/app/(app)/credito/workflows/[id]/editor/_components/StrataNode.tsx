@@ -21,6 +21,7 @@ import {
   Position,
   useEdges,
   useNodeId,
+  useNodes,
   type NodeProps,
 } from "@xyflow/react"
 import {
@@ -109,6 +110,11 @@ export function StrataNode({ data, selected }: NodeProps) {
   // Badge so faz sentido quando ha 2+ parents (com 1 parent, join_mode e moot).
   const nodeId = useNodeId()
   const edges = useEdges()
+  const allNodes = useNodes()
+  const graphNodes = React.useMemo(
+    () => allNodes.map((n) => n.data as Record<string, unknown>),
+    [allNodes],
+  )
   const incomingCount = React.useMemo(
     () => (nodeId ? edges.filter((e) => e.target === nodeId).length : 0),
     [edges, nodeId],
@@ -122,6 +128,7 @@ export function StrataNode({ data, selected }: NodeProps) {
       config={d.config ?? {}}
       agentCatalog={agentCatalog}
       producedVars={d.producedVars}
+      graphNodes={graphNodes}
       title={d.label || friendlyTypeLabel}
     >
     <div

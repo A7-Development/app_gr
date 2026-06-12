@@ -20,7 +20,7 @@ import { varTypeMeta } from "@/design-system/tokens/var-type"
 import type { AgentMeta } from "@/lib/credito-client"
 import { cx } from "@/lib/utils"
 
-import { nodeContract } from "../_lib/contract"
+import { nodeContract, type ContractGraphNode } from "../_lib/contract"
 
 /** Catálogo de agentes disponível pro canvas inteiro — o StrataNode (dentro
  *  do React Flow) lê daqui pra montar o "RECEBE" dos specialist agents sem
@@ -56,11 +56,27 @@ function Row({
   )
 }
 
+function VarChip({ name, type }: { name: string; type: string }) {
+  const meta = varTypeMeta(type)
+  return (
+    <span
+      className={cx(
+        "inline-flex items-center gap-1 rounded px-1.5 py-px text-[10px] font-medium",
+        meta.chipClass,
+      )}
+      title={meta.label}
+    >
+      {name}
+    </span>
+  )
+}
+
 export function ContractBlock({
   nodeType,
   config,
   agentCatalog,
   producedVars,
+  graphNodes,
   compact = false,
 }: {
   nodeType: string
@@ -68,9 +84,13 @@ export function ContractBlock({
   agentCatalog: AgentMeta[]
   /** { varName: vartype } vindo da validação semântica (produces() real). */
   producedVars?: Record<string, string>
+  /** Grafo atual — permite ao contrato nomear a etapa que publica a
+   *  variável consumida (mesma palavra/cor nas duas pontas). */
+  graphNodes?: ContractGraphNode[]
   compact?: boolean
 }) {
-  const contract = nodeContract(nodeType, config, agentCatalog)
+  const contract = nodeContract(nodeType, config, agentCatalog, graphNodes)
+  const recebeVars = Object.entries(contract.recebeVars ?? {})
   const vars = Object.entries(producedVars ?? {})
 
   return (
@@ -85,6 +105,13 @@ export function ContractBlock({
         label="Recebe"
         tone="text-blue-600 dark:text-blue-400"
       >
+        {recebeVars.length > 0 && (
+          <span className="mr-1.5 inline-flex flex-wrap gap-1 align-middle">
+            {recebeVars.map(([name, type]) => (
+              <VarChip key={name} name={name} type={type} />
+            ))}
+          </span>
+        )}
         {contract.recebe}
       </Row>
       <Row icon={RiFlashlightLine} label="Faz" tone="text-gray-500 dark:text-gray-400">
@@ -116,21 +143,9 @@ export function ContractBlock({
           </span>
         ) : (
           <span className="flex flex-wrap gap-1">
-            {vars.map(([name, type]) => {
-              const meta = varTypeMeta(type)
-              return (
-                <span
-                  key={name}
-                  className={cx(
-                    "inline-flex items-center gap-1 rounded px-1.5 py-px text-[10px] font-medium",
-                    meta.chipClass,
-                  )}
-                  title={meta.label}
-                >
-                  {name}
-                </span>
-              )
-            })}
+            {vars.map(([name, type]) => (
+              <VarChip key={name} name={name} type={type} />
+            ))}
           </span>
         )}
       </Row>
@@ -144,6 +159,7 @@ export function NodeContractHover({
   config,
   agentCatalog,
   producedVars,
+  graphNodes,
   title,
   children,
 }: {
@@ -151,6 +167,7 @@ export function NodeContractHover({
   config: Record<string, unknown>
   agentCatalog: AgentMeta[]
   producedVars?: Record<string, string>
+  graphNodes?: ContractGraphNode[]
   title: string
   children: React.ReactNode
 }) {
@@ -172,6 +189,7 @@ export function NodeContractHover({
             config={config}
             agentCatalog={agentCatalog}
             producedVars={producedVars}
+            graphNodes={graphNodes}
             compact
           />
         </HoverCardPrimitives.Content>
