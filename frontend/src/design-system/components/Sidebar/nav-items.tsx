@@ -198,15 +198,15 @@ export function NavParent({
   )
 }
 
-/** Gray 1px tree-line running through expanded children. Aligned at left-[19px]
- *  to sit on the same x-coordinate as the parent's icon center. The active
+/** Gray 1px tree-line running through expanded children. Aligned at left-[17px]
+ *  (centered under the parent's icon, handoff 10/06/2026). The active
  *  sub-link's blue pill replaces the same x-coordinate, visually substituting a
  *  segment of this line. */
 export function NavTreeLine() {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute left-[19px] top-0 bottom-1 w-px bg-gray-200 dark:bg-gray-800"
+      className="pointer-events-none absolute left-[17px] top-0 bottom-1 w-px bg-gray-200 dark:bg-gray-800"
     />
   )
 }
@@ -223,14 +223,18 @@ export function NavSubLink({
   const isActive = child.enabled && (pathname === child.href || pathname.startsWith(`${child.href}/`))
   const disabled = !child.enabled
 
+  // Hierarquia v3.1 (handoff 10/06/2026): sub-item começa em x=50px —
+  // claramente mais fundo que o label do item de topo (x=36px) — e desce um
+  // tom na escala (gray-500, peso 400) vs gray-700/500 dos níveis de cima.
+  // Não reduzir o indent: é o fix do "filho parecendo mais raso que o pai".
   const className = cx(
-    "relative flex items-center gap-2 rounded-md py-1.5 pl-[34px] pr-2 text-[13px]",
+    "relative flex items-center gap-2 rounded-md py-[5px] pl-[50px] pr-2 text-[13px]",
     "transition-colors duration-100",
     isActive
       ? "bg-white text-blue-600 shadow-xs ring-1 ring-gray-200 font-medium dark:bg-gray-900 dark:text-blue-400 dark:ring-gray-800"
       : disabled
       ? "pointer-events-none text-gray-400 dark:text-gray-600"
-      : "text-gray-700 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-50",
+      : "text-gray-500 hover:text-gray-900 dark:text-gray-500 dark:hover:text-gray-50",
     focusRing,
   )
 
@@ -239,7 +243,7 @@ export function NavSubLink({
       {isActive && (
         <span
           aria-hidden="true"
-          className="absolute left-[18px] top-1/2 h-[18px] w-[2px] -translate-x-1/2 -translate-y-1/2 rounded bg-blue-500"
+          className="absolute left-[17px] top-1/2 h-[18px] w-[2px] -translate-x-1/2 -translate-y-1/2 rounded bg-blue-500"
         />
       )}
       <span className="flex-1 truncate">{child.name}</span>
