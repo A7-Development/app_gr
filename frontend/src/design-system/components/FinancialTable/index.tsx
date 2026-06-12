@@ -432,15 +432,16 @@ const RULE_CLASS: Record<RowRule, string> = {
  * variancias usam a regua forte comum.
  */
 function scenarioRuleClass(s: Scenario): string {
+  // mesma espessura da barra de cenario do header (4-5px)
   switch (s) {
     case "AC":
-      return "border-t-2 border-t-gray-900 dark:border-t-gray-100"
+      return "border-t-4 border-t-gray-900 dark:border-t-gray-100"
     case "PY":
-      return "border-t-2 border-t-gray-400 dark:border-t-gray-600"
+      return "border-t-4 border-t-gray-400 dark:border-t-gray-600"
     case "FC":
-      return "border-t-2 border-dashed border-t-gray-700 dark:border-t-gray-300"
+      return "border-t-4 border-dashed border-t-gray-700 dark:border-t-gray-300"
     default: // PL | BU
-      return "border-t-[3px] border-double border-t-gray-900 dark:border-t-gray-100"
+      return "border-t-[5px] border-double border-t-gray-900 dark:border-t-gray-100"
   }
 }
 
