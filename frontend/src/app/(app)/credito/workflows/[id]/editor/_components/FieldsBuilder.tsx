@@ -259,7 +259,20 @@ function FieldRow({
           </Label>
           <Select
             value={field.type}
-            onValueChange={(v) => onChange({ ...field, type: v as FieldDef["type"] })}
+            onValueChange={(v) => {
+              const nextType = v as FieldDef["type"]
+              // Tipo cnpj/cpf com key auto (campo_N): assume o nome canonico —
+              // e a key `cnpj` que o absorb_identity reconhece pra materializar
+              // a empresa-alvo do dossie (pos-mortem DC-2026-0039: campo_1
+              // tipo cnpj nao identificava a empresa e a JUCESP rodava vazia).
+              const autoKey = /^campo_\d+$/.test(field.key)
+              const canonical = nextType === "cnpj" ? "cnpj" : nextType === "cpf" ? "cpf" : null
+              onChange({
+                ...field,
+                type: nextType,
+                ...(autoKey && canonical ? { key: canonical } : {}),
+              })
+            }}
           >
             <SelectTrigger id={`type-${field.key}`} className="text-xs">
               <SelectValue />
