@@ -188,29 +188,49 @@ function varianceLabel(pair: [Scenario, Scenario], kind: "abs" | "pct") {
   return kind === "pct" ? `(${base})%` : base
 }
 
-function VarianceHeaderCell({
+/**
+ * Header de GRUPO de variancia (IBCS): "AC-PY" unico abarcando as subcolunas
+ * nominal e percentual, com linha propria varrendo o grupo inteiro — na mesma
+ * altura das barras de cenario (a fronteira header/corpo e UMA linha).
+ */
+function VarianceGroupHeaderCell({
   pair,
-  kind,
+  span,
   dense,
 }: {
   pair: [Scenario, Scenario]
-  kind: "abs" | "pct"
+  span: number
   dense: boolean
 }) {
   return (
     <TableHeaderCell
+      colSpan={span}
       className={cx(
-        "border-b-0 text-right align-bottom",
+        "border-b-0 text-center align-bottom",
         dense ? "px-2 py-1" : "px-2 py-1.5",
         tableTokens.header,
-        "text-gray-500 dark:text-gray-400",
+        "text-gray-600 dark:text-gray-300",
       )}
     >
-      <span className="inline-block min-w-[40px]">
-        {varianceLabel(pair, kind)}
-        {/* espaco da barra de cenario, p/ alinhar baseline dos headers */}
-        <div className="mt-1 h-[4px] w-full" />
+      <span className="inline-block w-full min-w-[40px]">
+        {varianceLabel(pair, "abs")}
+        <div className="mt-1 h-[2px] w-full bg-gray-900 dark:bg-gray-100" />
       </span>
+    </TableHeaderCell>
+  )
+}
+
+/** Segmento da fronteira header/corpo na coluna de rotulos (mesma altura
+ *  das barras de cenario — a 1a linha do corpo nao tem borda propria). */
+function LabelBoundaryHeaderCell({ dense }: { dense: boolean }) {
+  return (
+    <TableHeaderCell
+      className={cx(
+        "w-full border-b-0 align-bottom",
+        dense ? "px-2 py-1" : "px-2 py-1.5",
+      )}
+    >
+      <div className="mt-1 h-[2px] w-full bg-gray-900 dark:bg-gray-100" />
     </TableHeaderCell>
   )
 }
@@ -487,6 +507,9 @@ export function PeriodComparisonTable({
       variance === "abs" ? ["abs"] : variance === "pct" ? ["pct"] : ["abs", "pct"]
     return pairs.flatMap((p) => kinds.map((k) => ({ pair: p, kind: k })))
   }, [variance, scenarios])
+  const variancePairs =
+    variance === "none" ? [] : deriveVariancePairs(scenarios)
+  const kindsPerPair = variance === "abs+pct" ? 2 : 1
   const colsPerBlock = scenarios.length + varCols.length
 
   // Max |valor| por coluna de variancia (p/ escala das barras), por bloco.
@@ -538,21 +561,22 @@ export function PeriodComparisonTable({
                 ))}
               </TableRow>
             ) : null}
-            {/* sem borda sob os headers de cenario — a regua forte fica
-                ACIMA da 1a linha do corpo (IBCS) */}
+            {/* fronteira header/corpo = UMA linha: segmento nos rotulos +
+                barras de cenario + linha dos grupos de variancia, todos na
+                mesma altura (IBCS). A 1a linha do corpo nao tem borda. */}
             <TableRow>
-              <TableHeaderCell className={cx("w-full border-b-0", HEADER_PAD)} />
+              <LabelBoundaryHeaderCell dense={false} />
               <SpacerCell header />
               {effectiveBlocks.map((b) => (
                 <React.Fragment key={b.key}>
                   {scenarios.map((s) => (
                     <ScenarioHeaderCell key={s} scenario={s} dense={false} />
                   ))}
-                  {varCols.map((vc) => (
-                    <VarianceHeaderCell
-                      key={varianceLabel(vc.pair, vc.kind)}
-                      pair={vc.pair}
-                      kind={vc.kind}
+                  {variancePairs.map((pair) => (
+                    <VarianceGroupHeaderCell
+                      key={varianceLabel(pair, "abs")}
+                      pair={pair}
+                      span={kindsPerPair}
                       dense={false}
                     />
                   ))}
@@ -565,23 +589,18 @@ export function PeriodComparisonTable({
               const empText = row.emphasis
                 ? EMPHASIS_TEXT[row.emphasis]
                 : undefined
+              // 1a linha do corpo SEM borda: a fronteira com o header e a
+              // linha unica formada pelos segmentos do proprio header.
               const rule: RowRule =
                 row.emphasis === "total"
                   ? "strong"
                   : row.emphasis === "subtotal"
                     ? "subtotal"
                     : idx === 0
-                      ? "strong"
+                      ? "none"
                       : "light"
-              // Na 1a linha do corpo a regua forte existe SO no segmento dos
-              // rotulos (IBCS): nas colunas numericas a ancora visual e a
-              // barra de cenario do header — segmento preto ali parece uma
-              // borda sob PY/AC. Linhas "="/total mantem a regua inteira.
               const labelRuleClass = RULE_CLASS[rule]
-              const valueRuleClass =
-                rule === "strong" && idx === 0 && !row.emphasis
-                  ? RULE_CLASS.none
-                  : RULE_CLASS[rule]
+              const valueRuleClass = RULE_CLASS[rule]
               const polarity = row.polarity ?? "revenue"
               return (
                 <TableRow key={`${row.label}-${idx}`}>
@@ -768,6 +787,9 @@ export function DecompositionTable({
       variance === "abs" ? ["abs"] : variance === "pct" ? ["pct"] : ["abs", "pct"]
     return pairs.flatMap((p) => kinds.map((k) => ({ pair: p, kind: k })))
   }, [variance, scenarios])
+  const variancePairs =
+    variance === "none" ? [] : deriveVariancePairs(scenarios)
+  const kindsPerPair = variance === "abs+pct" ? 2 : 1
 
   const [expanded, setExpanded] = React.useState<Record<number, boolean>>({})
 
@@ -956,18 +978,19 @@ export function DecompositionTable({
         <Table className={TABLE_LAYOUT}>
           {scenarios.length > 1 || varCols.length > 0 ? (
             <TableHead>
-              {/* sem borda sob o header — regua forte fica acima da 1a linha */}
+              {/* fronteira header/corpo = linha unica de segmentos do header
+                  (rotulos + barras de cenario + grupos de variancia) */}
               <TableRow>
-                <TableHeaderCell className={cx("w-full border-b-0", HEADER_PAD)} />
+                <LabelBoundaryHeaderCell dense />
                 <SpacerCell header />
                 {scenarios.map((s) => (
                   <ScenarioHeaderCell key={s} scenario={s} dense />
                 ))}
-                {varCols.map((vc) => (
-                  <VarianceHeaderCell
-                    key={varianceLabel(vc.pair, vc.kind)}
-                    pair={vc.pair}
-                    kind={vc.kind}
+                {variancePairs.map((pair) => (
+                  <VarianceGroupHeaderCell
+                    key={varianceLabel(pair, "abs")}
+                    pair={pair}
+                    span={kindsPerPair}
                     dense
                   />
                 ))}
@@ -978,19 +1001,18 @@ export function DecompositionTable({
             {displayRows.map((d, idx) => {
               const hasHeader = scenarios.length > 1 || varCols.length > 0
               const isEqualsRow = d.kind === "row" && d.row.op === "="
+              // Com header, a fronteira e a linha de segmentos do proprio
+              // header — 1a linha do corpo sem borda. Sem header, a regua
+              // forte abre a tabela.
               const rule: RowRule = isEqualsRow
                 ? "strong"
                 : idx === 0
-                  ? "strong"
+                  ? hasHeader
+                    ? "none"
+                    : "strong"
                   : "light"
               const ruleClass = RULE_CLASS[rule]
-              // 1a linha sob header de cenarios: regua forte so nos rotulos
-              // (nas numericas a ancora e a barra de cenario — ver
-              // PeriodComparisonTable). Sem header, a regua atravessa.
-              const valueRuleClass =
-                rule === "strong" && idx === 0 && !isEqualsRow && hasHeader
-                  ? RULE_CLASS.none
-                  : ruleClass
+              const valueRuleClass = ruleClass
               if (d.kind === "toggle") {
                 return (
                   <tr key={`toggle-${d.groupId}`}>
