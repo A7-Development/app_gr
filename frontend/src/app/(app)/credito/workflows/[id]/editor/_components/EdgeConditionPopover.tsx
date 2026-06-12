@@ -51,7 +51,16 @@ export function EdgeConditionPopover({
 
   React.useEffect(() => {
     function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as HTMLElement)) {
+      const t = e.target as HTMLElement
+      // Dropdowns (Radix Select) renderizam em PORTAL no body — clicar num
+      // item da lista NAO e "fora" do popover (fechava e perdia a selecao).
+      if (
+        ref.current &&
+        !ref.current.contains(t) &&
+        !t.closest(
+          '[data-radix-popper-content-wrapper], [data-radix-select-viewport], [role="listbox"], [role="option"]',
+        )
+      ) {
         onClose()
       }
     }
