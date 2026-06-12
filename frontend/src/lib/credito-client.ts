@@ -736,6 +736,74 @@ export type SocietarioSocio = {
   nome: string
   cpf_ultimos4: string | null
   participacao_pct: number | null
+  // Dialeto tipado (2026-06-11): quotas/capital como escritos no documento;
+  // o % acima é DERIVADO em código a partir deles.
+  quotas?: number | null
+  capital_subscrito_socio?: number | null
+  tipo?: "pf" | "pj" | null
+}
+
+export type SocietarioCitado = {
+  trecho_literal?: string | null
+  referencia?: string | null
+}
+
+export type SocietarioPoder = SocietarioCitado & {
+  quem?: string | null
+  forma?: string | null
+  descricao?: string | null
+  limites_valor?: string | null
+}
+
+export type SocietarioRestricao = SocietarioCitado & {
+  tema?: string | null
+  status?: "vedado" | "condicionado" | "permitido_expressamente" | "sem_clausula" | null
+  resumo?: string | null
+  condicao?: string | null
+  confidence?: number | null
+}
+
+export type SocietarioPontoAtencao = SocietarioCitado & {
+  titulo?: string | null
+  descricao?: string | null
+  confidence?: number | null
+}
+
+export type SocietarioAdministrador = SocietarioCitado & {
+  nome: string
+  cpf_ultimos4?: string | null
+  socio?: boolean | null
+  forma_atuacao?: string | null
+  forma_atuacao_descricao?: string | null
+  mandato?: string | null
+}
+
+export type SocietarioCapitalDetalhe = {
+  subscrito?: number | null
+  integralizado?: number | null
+  forma_integralizacao?: string | null
+  valor_nominal_quota?: number | null
+  total_quotas?: number | null
+  parcelas_integralizacao?: Array<{ valor?: number | null; prazo?: string | null }>
+  trecho_literal?: string | null
+}
+
+export type SocietarioDocumentoMeta = {
+  tipo?: string | null
+  numero_alteracao?: number | null
+  data_documento?: string | null
+  registro_junta?: {
+    nire?: string | null
+    junta?: string | null
+    numero_arquivamento?: string | null
+    data_arquivamento?: string | null
+  } | null
+  documento_consolidado?: boolean | null
+  instrumentos_no_anexo?: Array<{
+    tipo?: string | null
+    numero?: number | null
+    data?: string | null
+  }>
 }
 
 export type SocietarioCruzamento = {
@@ -763,12 +831,25 @@ export type SocietarioPayload = {
   contrato?: {
     cnpj: string | null
     razao_social: string | null
+    tipo_societario?: string | null
     capital_social: number | null
+    capital_social_detalhe?: SocietarioCapitalDetalhe | null
     data_constituicao: string | null
     objeto_social: string | null
     endereco: string | null
     socios: SocietarioSocio[]
+    administradores?: SocietarioAdministrador[]
+    poderes_assinatura?: SocietarioPoder[]
+    restricoes_estatutarias?: SocietarioRestricao[]
+    procuracoes?: (SocietarioCitado & {
+      permitido?: boolean | null
+      condicoes?: string | null
+    }) | null
+    pontos_de_atencao?: SocietarioPontoAtencao[]
+    numero_alteracao?: number | null
+    data_ultima_alteracao?: string | null
   }
+  documento_meta?: SocietarioDocumentoMeta | null
   estrutura?: {
     n_socios: number
     soma_participacoes_pct: number | null
