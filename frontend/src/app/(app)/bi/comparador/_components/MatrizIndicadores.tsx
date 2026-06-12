@@ -177,9 +177,14 @@ export function MatrizIndicadores({
             )
           }
           return (
-            <span className="flex items-center gap-1.5 whitespace-nowrap">
+            <span className="flex items-baseline gap-1.5 whitespace-nowrap">
               <span className={tableTokens.cellText}>{row.def.label}</span>
-              <span title={row.def.info}>
+              {row.def.formula && (
+                <span className={cx("tabular-nums", tableTokens.cellMuted)}>
+                  {row.def.formula}
+                </span>
+              )}
+              <span title={row.def.info} className="self-center">
                 <RiInformationLine
                   className="size-3 text-gray-300 dark:text-gray-600"
                   aria-hidden="true"

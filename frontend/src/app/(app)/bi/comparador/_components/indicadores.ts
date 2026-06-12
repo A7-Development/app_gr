@@ -24,6 +24,8 @@ type FmtKind = "brl" | "pct1" | "pct2" | "dias" | "pp" | "texto"
 export type IndicadorDef = {
   key: keyof ComparadorIndicadoresFundo
   label: string
+  /** Fracao/formula exibida como sufixo discreto ao lado do label. */
+  formula?: string
   grupo: GrupoIndicador
   fmt: FmtKind
   /** Tooltip de definicao (proveniencia/semantica). */
@@ -35,11 +37,11 @@ export const INDICADORES: IndicadorDef[] = [
     info: "Aberto (cotista resgata a qualquer tempo — exige gestão de liquidez) ou Fechado (resgate só no vencimento/amortização). Cadastral CVM." },
   { key: "pl", label: "Patrimônio Líquido", grupo: "Estrutura", fmt: "brl",
     info: "PL do fundo na competência (tab_iv). Porte." },
-  { key: "subordinacao_pct", label: "Subordinação (Sub+Mez)", grupo: "Estrutura", fmt: "pct1",
+  { key: "subordinacao_pct", label: "Subordinação total", formula: "(Jr+Mez)/PL", grupo: "Estrutura", fmt: "pct1",
     info: "PL das classes subordinadas (incl. mezanino) ÷ PL total. Colchão de proteção da SENIOR — mercado considera >20% conservador." },
-  { key: "subordinacao_jr_pct", label: "Subordinação Júnior", grupo: "Estrutura", fmt: "pct1",
+  { key: "subordinacao_jr_pct", label: "Subordinação júnior", formula: "Jr/PL", grupo: "Estrutura", fmt: "pct1",
     info: "PL da subordinada júnior (sem mezanino) ÷ PL total. O first-loss real do fundo — e a proteção que a MEZANINO enxerga." },
-  { key: "sub_jr_sobre_sub_pct", label: "Júnior / Sub total", grupo: "Estrutura", fmt: "pct1",
+  { key: "sub_jr_sobre_sub_pct", label: "Composição do colchão", formula: "Jr/Sub total", grupo: "Estrutura", fmt: "pct1",
     info: "Quanto do colchão subordinado é first-loss genuíno (júnior) vs mezanino. 100% = sem mezanino; valores baixos = colchão 'diluído' em camadas vendidas a terceiros." },
   { key: "passivo_ativo_pct", label: "Passivo / Ativo", grupo: "Estrutura", fmt: "pct2",
     info: "Obrigações ÷ ativo total. FIDC quase não tem passivo; valor alto = estrutura atípica." },
