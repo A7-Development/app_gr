@@ -98,7 +98,7 @@ export type OpinionDraft = {
   strengths: string[]
   concerns: string[]
   recommendation: Recommendation
-  conditions: string[]
+  conditions: string[] | null
   rationale: string
 }
 
@@ -258,13 +258,13 @@ export function OpinionView({
         )}
       </div>
 
-      {output.conditions.length > 0 && (
+      {(output.conditions?.length ?? 0) > 0 && (
         <div className="mt-5 rounded-md border border-amber-200 bg-amber-50/50 p-3 dark:border-amber-500/30 dark:bg-amber-500/5">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
             Condições para aprovação
           </p>
           <ul className="space-y-1">
-            {output.conditions.map((cond, i) => (
+            {(output.conditions ?? []).map((cond, i) => (
               <li
                 key={i}
                 className="flex gap-2 text-sm text-gray-800 dark:text-gray-200"
