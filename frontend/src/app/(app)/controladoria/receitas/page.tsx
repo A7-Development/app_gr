@@ -22,6 +22,7 @@
 
 import * as React from "react"
 import { useQueryState } from "nuqs"
+import { useQuery } from "@tanstack/react-query"
 import {
   RiCalendarLine,
   RiCheckLine,
@@ -44,7 +45,11 @@ import { ProvenanceFooter, type ProvenanceSource } from "@/design-system/compone
 import { SegmentSwitch } from "@/design-system/components/SegmentSwitch"
 import { BandaKpi, BandaKpiCol } from "./_components/BandaKpi"
 import { EChartsCard } from "@/design-system/components/EChartsCard"
-import { FilterChip } from "@/design-system/components/FilterBar"
+import {
+  FilterChip,
+  MultiCheckList,
+  multiLabel,
+} from "@/design-system/components/FilterBar"
 import { InsightStrip } from "@/design-system/components/InsightStrip"
 import { DataTable } from "@/design-system/components/DataTable"
 import { DrillDownSheet } from "@/design-system/components/DrillDownSheet"
@@ -64,6 +69,8 @@ import { cardTokens } from "@/design-system/tokens/card"
 import { tableTokens } from "@/design-system/tokens/table"
 import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 import { useUAs } from "@/lib/hooks/cadastros"
+import { PRODUTO_DEFAULT } from "@/lib/hooks/useBiFilters"
+import { biMetadata } from "@/lib/api-client"
 import { useAIChat, useAIInsights, useAIQuota } from "@/lib/hooks/ai"
 import {
   useReceitasCedentes,
@@ -280,6 +287,36 @@ export default function ReceitasPage() {
     defaultValue: mesFechadoDefault(),
     parse: (v) => (/^\d{4}-\d{2}$/.test(v) ? v : mesFechadoDefault()),
   })
+  // Produto pre-selecionado (mesmo default do /bi/operacoes5): alguns
+  // produtos nao devem ter receitas consideradas. CSV na URL; limpar
+  // tudo volta ao padrao (nunca "nenhum produto").
+  const [produtoCsv, setProdutoCsv] = useQueryState("produto", {
+    defaultValue: PRODUTO_DEFAULT.join(","),
+  })
+  const produtoSigla = React.useMemo(
+    () => produtoCsv.split(",").map((s) => s.trim()).filter(Boolean),
+    [produtoCsv],
+  )
+  const setProdutoSigla = React.useCallback(
+    (next: string[]) =>
+      setProdutoCsv(
+        next.length > 0 ? next.join(",") : PRODUTO_DEFAULT.join(","),
+      ),
+    [setProdutoCsv],
+  )
+  const produtosQuery = useQuery({
+    queryKey: ["bi", "metadata", "produtos"],
+    queryFn: () => biMetadata.produtos(),
+    staleTime: 60 * 60 * 1000,
+  })
+  const produtoOptions = React.useMemo(
+    () =>
+      (produtosQuery.data ?? []).map((p) => ({
+        value: p.sigla,
+        label: `${p.nome} (${p.sigla})`,
+      })),
+    [produtosQuery.data],
+  )
 
   const fundosQuery = useUAs({ ativa: true })
   const [fundoUuid, setFundoUuid] = React.useState<string>("")
@@ -292,8 +329,14 @@ export default function ReceitasPage() {
   const { de, ate } = React.useMemo(() => janelaDoPeriodo(periodo), [periodo])
 
   const filters: ReceitasFilters = React.useMemo(
-    () => ({ metodo, competenciaDe: de, competenciaAte: ate, fundoId: fundoBitfinId }),
-    [metodo, de, ate, fundoBitfinId],
+    () => ({
+      metodo,
+      competenciaDe: de,
+      competenciaAte: ate,
+      fundoId: fundoBitfinId,
+      produtoSigla,
+    }),
+    [metodo, de, ate, fundoBitfinId, produtoSigla],
   )
 
   const resumoQ = useReceitasResumo(tab === "visao" ? filters : null)
@@ -307,8 +350,9 @@ export default function ReceitasPage() {
       competenciaDe: `${mesAnteriorDe(mes)}-01`,
       competenciaAte: `${mes}-01`,
       fundoId: fundoBitfinId,
+      produtoSigla,
     }),
-    [metodo, mes, fundoBitfinId],
+    [metodo, mes, fundoBitfinId, produtoSigla],
   )
   const comparativoQ = useReceitasResumo(
     tab === "comparativo" ? comparativoFilters : null,
@@ -319,7 +363,12 @@ export default function ReceitasPage() {
   const cedentesQ = useReceitasCedentes(tab === "cedente" ? filters : null)
   const conferenciasQ = useReceitasConferencias(
     tab === "conferencias"
-      ? { competenciaDe: de, competenciaAte: ate, fundoId: fundoBitfinId }
+      ? {
+          competenciaDe: de,
+          competenciaAte: ate,
+          fundoId: fundoBitfinId,
+          produtoSigla,
+        }
       : null,
   )
 
@@ -371,7 +420,8 @@ export default function ReceitasPage() {
 
   const hasFiltrosAtivos =
     periodo !== "6m" || !!fundoUuid || metodo !== "competencia" ||
-    mes !== mesFechadoDefault()
+    mes !== mesFechadoDefault() ||
+    produtoCsv !== PRODUTO_DEFAULT.join(",")
 
   const provenance: ProvenanceSource[] = [
     { label: "Bitfin (catálogo de receitas)", updated: "sync diário", sla: "24h", stale: false },
@@ -490,6 +540,26 @@ export default function ReceitasPage() {
             )}
 
             <FilterChip
+              label="Produto"
+              value={
+                produtoSigla.length === PRODUTO_DEFAULT.length &&
+                PRODUTO_DEFAULT.every((s) => produtoSigla.includes(s))
+                  ? `Padrão (${produtoSigla.length})`
+                  : multiLabel(produtoSigla, produtoOptions)
+              }
+              active={
+                produtoSigla.length !== PRODUTO_DEFAULT.length ||
+                !PRODUTO_DEFAULT.every((s) => produtoSigla.includes(s))
+              }
+            >
+              <MultiCheckList
+                options={produtoOptions}
+                selected={produtoSigla}
+                onChange={setProdutoSigla}
+              />
+            </FilterChip>
+
+            <FilterChip
               label="UA"
               value={fundoSelecionado?.nome ?? "Todas"}
               active={!!fundoUuid}
@@ -523,6 +593,7 @@ export default function ReceitasPage() {
                 setFundoUuid("")
                 setMetodo("competencia")
                 setMes(mesFechadoDefault())
+                setProdutoSigla(PRODUTO_DEFAULT)
               }}
               disabled={!hasFiltrosAtivos}
               className="ml-1"

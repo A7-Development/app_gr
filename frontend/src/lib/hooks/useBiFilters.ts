@@ -15,7 +15,7 @@ import type { BIFilters } from "@/lib/api-client"
  * Quando o usuario limpa o filtro, voltamos a este padrao. Para ver
  * todas as 10 siglas, o usuario marca os 3 extras manualmente no popover.
  */
-const PRODUTO_DEFAULT: string[] = [
+export const PRODUTO_DEFAULT: string[] = [
   "FAT",
   "CMS",
   "DMS",
