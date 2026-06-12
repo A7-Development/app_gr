@@ -181,8 +181,16 @@ os 10 buckets nativos com nota inline na UI.
 
 ### Prazo medio da carteira
 **Nao ha campo direto.** Derivar como media ponderada dos pontos medios
-dos buckets de `tab_v_a*` (`tab_v_a1..a10_vl_prazo_venc_*`):
+dos buckets de `tab_v_a*` + `tab_vi_a*` (com E sem risco):
 - 15, 45, 75, 105, 135, 165, 270, 540, 900, 1260 dias.
+
+**PRECISAO (validado REALINVEST 30/04/2026):** o derivado da 26,8d vs prazo
+real do estoque interno 21,7d (**+23%**). Vies SISTEMATICO: distribuicao
+intra-bucket e decrescente em carteira de desconto -> media real de cada
+faixa < ponto medio -> SUPERESTIMA carteiras curtas; e a faixa >1080d
+censurada (1260 fixo) SUBESTIMA caudas longas. **Uso: ordinal/comparativo
+sim; nivel absoluto nao.** A distribuicao por faixas e mais honesta que a
+media (mesma conclusao do panorama). Tooltip do Comparador declara isso.
 
 ### Concentracao de cedentes
 `cvm_remote.tab_i.tab_i2a12_pr_cedente_1..9` (percentuais, top-9).
