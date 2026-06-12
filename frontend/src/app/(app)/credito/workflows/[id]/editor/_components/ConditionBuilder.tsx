@@ -314,20 +314,7 @@ function ValueInput({
 
   // Boolean: dropdown true/false.
   if (fieldType === "boolean") {
-    return (
-      <Select
-        value={value.value || "true"}
-        onValueChange={(v) => onChange({ kind: "literal", value: v })}
-      >
-        <SelectTrigger className="text-xs">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="true">Verdadeiro</SelectItem>
-          <SelectItem value="false">Falso</SelectItem>
-        </SelectContent>
-      </Select>
-    )
+    return <BooleanValueSelect value={value.value} onPick={(v) => onChange({ kind: "literal", value: v })} />
   }
 
   // Number: input numerico.
@@ -432,4 +419,33 @@ function fieldTypeLabel(t: AvailableField["type"]): string {
     case "list":   return "lista"
     default:       return "?"
   }
+}
+
+
+/** Select de Verdadeiro/Falso que MATERIALIZA o default no estado.
+ *  O display defaultava pra "true" mas o valor gravado ficava "" até o
+ *  usuário trocar a opção — salvar direto gerava `found == ""` (ramo morto;
+ *  pego pelo Ricardo 2026-06-12 via rótulo 'se found = ""' na conexão). */
+function BooleanValueSelect({
+  value,
+  onPick,
+}: {
+  value: string
+  onPick: (v: string) => void
+}) {
+  React.useEffect(() => {
+    if (!value) onPick("true")
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  return (
+    <Select value={value || "true"} onValueChange={onPick}>
+      <SelectTrigger className="text-xs">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="true">Verdadeiro</SelectItem>
+        <SelectItem value="false">Falso</SelectItem>
+      </SelectContent>
+    </Select>
+  )
 }
