@@ -169,6 +169,21 @@ export { CardMenu, type MenuSection } from "./CardMenu"
 export { ChartSkeleton } from "./ChartSkeleton"
 export { CompactSeriesTable } from "./CompactSeriesTable"
 export {
+  PeriodComparisonTable,
+  DecompositionTable,
+  type PeriodComparisonTableProps,
+  type DecompositionTableProps,
+  type ComparisonRow,
+  type DecompositionRow,
+  type PeriodBlock,
+  type Scenario,
+  type Polarity,
+  type FinancialTableTitle,
+  type FinancialTableAnnotation,
+  type VarianceMode,
+  type VarianceStyle,
+} from "./FinancialTable"
+export {
   DashboardHeaderActions,
   type DashboardHeaderActionsProps,
   type DashboardHeaderMoreItem,

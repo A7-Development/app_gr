@@ -53,6 +53,12 @@ import {
   useAIPanel,
   type AIInsight,
 } from "@/design-system/components/AIPanel"
+import {
+  PeriodComparisonTable,
+  DecompositionTable,
+  type ComparisonRow,
+  type DecompositionRow,
+} from "@/design-system/components/FinancialTable"
 import { AIQuotaIndicator } from "@/design-system/components/AIQuotaIndicator"
 import { cardTokens } from "@/design-system/tokens/card"
 import { tableTokens } from "@/design-system/tokens/table"
@@ -180,6 +186,7 @@ const TABS = [
   { key: "familia",      label: "Por família" },
   { key: "cedente",      label: "Por cedente" },
   { key: "conferencias", label: "Conferências" },
+  { key: "comparativo",  label: "Comparativo (teste)" },
 ] as const
 type TabKey = (typeof TABS)[number]["key"]
 
@@ -215,6 +222,30 @@ function primeiraDoMes(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`
 }
 
+/** Mes fechado mais recente (anterior ao corrente), formato "YYYY-MM". */
+function mesFechadoDefault(): string {
+  const h = new Date()
+  const d = new Date(h.getFullYear(), h.getMonth() - 1, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+}
+
+/** Mes anterior a um "YYYY-MM". */
+function mesAnteriorDe(mes: string): string {
+  const [y, m] = mes.split("-").map(Number)
+  const d = new Date(y, m - 2, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+}
+
+/** Ultimos 18 meses fechados, do mais recente ao mais antigo. */
+function opcoesDeMes(): { value: string; label: string }[] {
+  const h = new Date()
+  return Array.from({ length: 18 }, (_, i) => {
+    const d = new Date(h.getFullYear(), h.getMonth() - 1 - i, 1)
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+    return { value, label: fmtCompetencia(value) }
+  })
+}
+
 function janelaDoPeriodo(p: PeriodoKey): { de: string; ate: string } {
   const hoje = new Date()
   const ate = primeiraDoMes(hoje)
@@ -245,6 +276,10 @@ export default function ReceitasPage() {
       (PERIODOS.some((p) => p.value === v) ? (v as PeriodoKey) : "6m"),
   })
   const [selected, setSelected] = useQueryState("selected")
+  const [mes, setMes] = useQueryState("mes", {
+    defaultValue: mesFechadoDefault(),
+    parse: (v) => (/^\d{4}-\d{2}$/.test(v) ? v : mesFechadoDefault()),
+  })
 
   const fundosQuery = useUAs({ ativa: true })
   const [fundoUuid, setFundoUuid] = React.useState<string>("")
@@ -262,6 +297,22 @@ export default function ReceitasPage() {
   )
 
   const resumoQ = useReceitasResumo(tab === "visao" ? filters : null)
+
+  // Comparativo (teste): janela propria de 2 competencias (mes escolhido +
+  // anterior) — o chip "Mês" substitui o "Período" nessa aba (§7.2: nenhum
+  // filtro exibido pode ficar sem efeito sobre os agregados da aba).
+  const comparativoFilters: ReceitasFilters = React.useMemo(
+    () => ({
+      metodo,
+      competenciaDe: `${mesAnteriorDe(mes)}-01`,
+      competenciaAte: `${mes}-01`,
+      fundoId: fundoBitfinId,
+    }),
+    [metodo, mes, fundoBitfinId],
+  )
+  const comparativoQ = useReceitasResumo(
+    tab === "comparativo" ? comparativoFilters : null,
+  )
   const detalheQ = useReceitasDetalhe(
     tab === "visao" || tab === "familia" ? filters : null,
   )
@@ -316,9 +367,11 @@ export default function ReceitasPage() {
 
   const isFetching =
     resumoQ.isFetching || detalheQ.isFetching || cedentesQ.isFetching ||
-    conferenciasQ.isFetching
+    conferenciasQ.isFetching || comparativoQ.isFetching
 
-  const hasFiltrosAtivos = periodo !== "6m" || !!fundoUuid || metodo !== "caixa"
+  const hasFiltrosAtivos =
+    periodo !== "6m" || !!fundoUuid || metodo !== "caixa" ||
+    mes !== mesFechadoDefault()
 
   const provenance: ProvenanceSource[] = [
     { label: "Bitfin (catálogo de receitas)", updated: "sync diário", sla: "24h", stale: false },
@@ -378,33 +431,63 @@ export default function ReceitasPage() {
 
             <div className="h-6 w-px shrink-0 bg-gray-200 dark:bg-gray-800" />
 
-            <FilterChip
-              label="Período"
-              value={PERIODO_LABEL[periodo]}
-              active={periodo !== "6m"}
-              icon={RiCalendarLine}
-            >
-              <div className="py-1">
-                {PERIODOS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setPeriodo(opt.value)}
-                    className={cx(
-                      "flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors",
-                      periodo === opt.value
-                        ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
-                        : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800",
-                    )}
-                  >
-                    <span className="flex-1 text-left">{opt.label}</span>
-                    {periodo === opt.value && (
-                      <RiCheckLine className="size-3.5 shrink-0 text-blue-500" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            </FilterChip>
+            {tab === "comparativo" ? (
+              <FilterChip
+                label="Mês"
+                value={fmtCompetencia(mes)}
+                active={mes !== mesFechadoDefault()}
+                icon={RiCalendarLine}
+              >
+                <div className="max-h-72 overflow-y-auto py-1">
+                  {opcoesDeMes().map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setMes(opt.value)}
+                      className={cx(
+                        "flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors",
+                        mes === opt.value
+                          ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
+                          : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800",
+                      )}
+                    >
+                      <span className="flex-1 text-left">{opt.label}</span>
+                      {mes === opt.value && (
+                        <RiCheckLine className="size-3.5 shrink-0 text-blue-500" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </FilterChip>
+            ) : (
+              <FilterChip
+                label="Período"
+                value={PERIODO_LABEL[periodo]}
+                active={periodo !== "6m"}
+                icon={RiCalendarLine}
+              >
+                <div className="py-1">
+                  {PERIODOS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setPeriodo(opt.value)}
+                      className={cx(
+                        "flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors",
+                        periodo === opt.value
+                          ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
+                          : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800",
+                      )}
+                    >
+                      <span className="flex-1 text-left">{opt.label}</span>
+                      {periodo === opt.value && (
+                        <RiCheckLine className="size-3.5 shrink-0 text-blue-500" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </FilterChip>
+            )}
 
             <FilterChip
               label="UA"
@@ -439,6 +522,7 @@ export default function ReceitasPage() {
                 setPeriodo("6m")
                 setFundoUuid("")
                 setMetodo("caixa")
+                setMes(mesFechadoDefault())
               }}
               disabled={!hasFiltrosAtivos}
               className="ml-1"
@@ -488,6 +572,14 @@ export default function ReceitasPage() {
               />
             )}
             {tab === "conferencias" && <Conferencias q={conferenciasQ} />}
+            {tab === "comparativo" && (
+              <ComparativoMensal
+                q={comparativoQ}
+                mes={mes}
+                metodo={metodo}
+                fundoNome={fundoSelecionado?.nome}
+              />
+            )}
           </div>
         </div>
 
@@ -749,6 +841,128 @@ function PonteCard({
         </p>
       </div>
     </Card>
+  )
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Comparativo mensal (teste do par canonico FinancialTable / IBCS)
+// ───────────────────────────────────────────────────────────────────────────
+
+function ComparativoMensal({
+  q,
+  mes,
+  metodo,
+  fundoNome,
+}: {
+  q: ReturnType<typeof useReceitasResumo>
+  mes: string
+  metodo: ReceitasMetodo
+  fundoNome?: string
+}) {
+  const mesAnterior = mesAnteriorDe(mes)
+  const serie = q.data?.serieMensal ?? []
+  const atual = serie.find((p) => p.competencia.startsWith(mes))
+  const anterior = serie.find((p) => p.competencia.startsWith(mesAnterior))
+
+  const { compRows, decompRows } = React.useMemo(() => {
+    const familias = Array.from(
+      new Set([
+        ...Object.keys(atual?.porFamilia ?? {}),
+        ...Object.keys(anterior?.porFamilia ?? {}),
+      ]),
+    ).sort(
+      (a, b) =>
+        Math.abs(atual?.porFamilia[b] ?? 0) - Math.abs(atual?.porFamilia[a] ?? 0),
+    )
+
+    // Familia ausente num mes COM dados = receita zero (nao "desconhecido").
+    const valorEm = (
+      p: { porFamilia: Record<string, number> } | undefined,
+      f: string,
+    ): number | null => (p ? (p.porFamilia[f] ?? 0) : null)
+
+    const totalAtual = atual
+      ? Object.values(atual.porFamilia).reduce((s, v) => s + v, 0)
+      : null
+    const totalAnterior = anterior
+      ? Object.values(anterior.porFamilia).reduce((s, v) => s + v, 0)
+      : null
+
+    const compRows: ComparisonRow[] = [
+      ...familias.map((f) => ({
+        label: FAMILIA_LABEL[f] ?? f,
+        values: { default: { PY: valorEm(anterior, f), AC: valorEm(atual, f) } },
+      })),
+      {
+        label: "Receita total",
+        emphasis: "total" as const,
+        values: { default: { PY: totalAnterior, AC: totalAtual } },
+      },
+    ]
+
+    const decompRows: DecompositionRow[] = [
+      ...familias
+        .filter((f) => (atual?.porFamilia[f] ?? 0) !== 0)
+        .map((f) => ({
+          op: "+" as const,
+          label: FAMILIA_LABEL[f] ?? f,
+          values: atual?.porFamilia[f] ?? 0,
+        })),
+      { op: "=" as const, label: "Receita total", values: totalAtual ?? 0 },
+    ]
+
+    return { compRows, decompRows }
+  }, [atual, anterior])
+
+  if (q.isLoading) {
+    return <p className="text-sm text-gray-500">Carregando comparativo…</p>
+  }
+  if (!atual && !anterior) {
+    return (
+      <Card className={cardTokens.body}>
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          Sem dados de receita para {fmtCompetencia(mes)} e{" "}
+          {fmtCompetencia(mesAnterior)} nos filtros atuais.
+        </p>
+      </Card>
+    )
+  }
+
+  const entity = fundoNome ?? "Todas as UAs"
+
+  return (
+    <>
+      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+        Seção de teste do par canônico FinancialTable (notação IBCS) — escolha o
+        mês no filtro acima. AC = mês selecionado · PY = mês anterior.
+      </p>
+      <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+        <PeriodComparisonTable
+          title={{
+            entity,
+            measure: "Receita por família",
+            unit: "R$",
+            note: `${fmtCompetencia(mes)} AC · ${fmtCompetencia(mesAnterior)} PY · ${METODO_LABEL_CURTO[metodo]}`,
+          }}
+          scenarios={["PY", "AC"]}
+          rows={compRows}
+          variance="abs+pct"
+          className="bg-white dark:bg-gray-950"
+        />
+        <DecompositionTable
+          title={{
+            entity,
+            measure: "Decomposição da receita",
+            unit: "R$",
+            note: `${fmtCompetencia(mes)} AC · ${METODO_LABEL_CURTO[metodo]}`,
+          }}
+          rows={decompRows}
+          variance="none"
+          collapseAfter={6}
+          className="bg-white dark:bg-gray-950"
+        />
+      </section>
+    </>
   )
 }
 
