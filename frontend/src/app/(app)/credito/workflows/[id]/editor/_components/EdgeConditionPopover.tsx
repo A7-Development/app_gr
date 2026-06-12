@@ -87,6 +87,7 @@ export function EdgeConditionPopover({
           value={value}
           onChange={setValue}
           targetNodeId={edge.source}
+          includeSelf
           nodes={nodes}
           edges={edges}
           hint="Sem condicao = a conexao sempre e seguida."
