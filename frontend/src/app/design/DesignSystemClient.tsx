@@ -20,6 +20,10 @@ import { InsightStrip } from "@/design-system/components/InsightStrip"
 import { DrillDownSheet } from "@/design-system/components/DrillDownSheet"
 import { CommandPaletteProvider, useCommandPalette } from "@/design-system/components/CommandPalette"
 import { EChartsCard } from "@/design-system/components/EChartsCard"
+import {
+  PeriodComparisonTable,
+  DecompositionTable,
+} from "@/design-system/components/FinancialTable"
 import { Button } from "@/components/tremor/Button"
 import { Badge } from "@/components/tremor/Badge"
 import { Input } from "@/components/tremor/Input"
@@ -342,6 +346,56 @@ export function DesignSystemClient() {
                 option={SAMPLE_CHART}
                 height={180}
               />
+            </Card>
+
+            <Card title="PeriodComparisonTable (IBCS T01/T02)">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                Comparativo de períodos com notação IBCS: cenários (PY/PL/AC/FC) identificados
+                por barra no header, variâncias nomeadas pela fórmula, cor exclusiva da variância.
+                <strong> Use</strong> para métricas × períodos/cenários com Δ.
+                <strong> Não use</strong> para listagem transacional (DataTable) nem série longa (CompactSeriesTable).
+              </p>
+              <PeriodComparisonTable
+                title={{ entity: "REALINVEST FIDC", measure: "Volume operado", unit: "R$ mil", note: "2026 PY, AC" }}
+                scenarios={["PY", "AC"]}
+                blocks={[{ key: "mes", label: "Mai/26" }, { key: "ytd", label: "Jan–Mai/26" }]}
+                variance="abs+pct"
+                rows={[
+                  { label: "Antecipação de recebíveis", values: { mes: { PY: 1180, AC: 1310 }, ytd: { PY: 5420, AC: 6105 } } },
+                  { label: "Conta garantida", values: { mes: { PY: 412, AC: 388 }, ytd: { PY: 2010, AC: 1956 } }, annotation: 1 },
+                  { label: "Cheque", values: { mes: { PY: 96, AC: 74 }, ytd: { PY: 470, AC: 391 } } },
+                  { label: "Total", emphasis: "total", values: { mes: { PY: 1688, AC: 1772 }, ytd: { PY: 7900, AC: 8452 } } },
+                ]}
+                annotations={[{ ref: 1, text: "Queda por encerramento de limite de 2 cedentes em abr/26." }]}
+              />
+              <div className="mt-3">
+                <CopyButton text={`import { PeriodComparisonTable } from "@/design-system/components"`} />
+              </div>
+            </Card>
+
+            <Card title="DecompositionTable (IBCS T03/T04)">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                Esquema de cálculo nas linhas (+/−/=) com reconciliação automática (§14.6):
+                linha &quot;=&quot; divergente da soma exibe chip de resíduo; cauda longa colapsa em
+                &quot;Outros (N)&quot; — nunca corta. <strong>Use</strong> para drill/decomposição de headline e
+                demonstrativos. <strong>Não use</strong> quando não há total a reconciliar.
+              </p>
+              <DecompositionTable
+                title={{ entity: "REALINVEST FIDC", measure: "Receita de aquisição", unit: "R$ mil", note: "Mai/26 AC" }}
+                collapseAfter={2}
+                rows={[
+                  { op: "+", label: "Deságio", values: 842 },
+                  { op: "+", label: "Multa", values: 37 },
+                  { op: "+", label: "Mora", values: 21 },
+                  { op: "+", label: "Tarifas", values: 12 },
+                  { op: "=", label: "Receita bruta", values: 912 },
+                  { op: "-", label: "Recompras", values: 64 },
+                  { op: "=", label: "Receita líquida", values: 848 },
+                ]}
+              />
+              <div className="mt-3">
+                <CopyButton text={`import { DecompositionTable } from "@/design-system/components"`} />
+              </div>
             </Card>
 
             <Card title="DrillDownSheet">
