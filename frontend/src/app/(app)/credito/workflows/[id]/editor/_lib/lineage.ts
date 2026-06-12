@@ -80,6 +80,40 @@ export function computeLineage(
     }
   }
 
+  // Fio INVISIVEL via dossie (empresa-alvo): nodes de origem fixa
+  // (cadastral/documento oficial) leem o CNPJ que o formulario de
+  // identificacao (human_input com campo cnpj) gravou na empresa-alvo.
+  // Sem isto, a linhagem nao mostrava a ligacao — exatamente a confusao
+  // apontada pelo Ricardo (2026-06-12).
+  const FIXED_ORIGIN = new Set(["cadastral_enrichment", "official_document_fetch"])
+  const isIdentitySource = (n: Node): boolean => {
+    const d = n.data as { nodeType?: string; config?: { fields?: unknown } } | undefined
+    if (d?.nodeType !== "human_input") return false
+    const fields = d.config?.fields
+    return (
+      Array.isArray(fields) &&
+      fields.some((f) => {
+        const name = (f as { name?: unknown })?.name
+        return (
+          typeof name === "string" &&
+          ["cnpj", "target_cnpj"].includes(name.toLowerCase())
+        )
+      })
+    )
+  }
+  const selType = (selected?.data as { nodeType?: string } | undefined)?.nodeType
+  if (selType && FIXED_ORIGIN.has(selType)) {
+    for (const n of nodes) {
+      if (isIdentitySource(n)) add(feeders, n.id, "cnpj (empresa-alvo)")
+    }
+  }
+  if (selected && isIdentitySource(selected)) {
+    for (const n of nodes) {
+      const t = (n.data as { nodeType?: string } | undefined)?.nodeType
+      if (t && FIXED_ORIGIN.has(t)) add(consumers, n.id, "cnpj (empresa-alvo)")
+    }
+  }
+
   return {
     feeders,
     consumers,

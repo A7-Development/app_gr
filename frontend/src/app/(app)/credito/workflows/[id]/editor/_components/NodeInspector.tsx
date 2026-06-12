@@ -140,6 +140,7 @@ export function NodeInspector({
         config={data.config ?? {}}
         agentCatalog={agentCatalog}
         producedVars={producedByNode[selectedNode.id]}
+        graphNodes={nodes.map((n) => n.data as Record<string, unknown>)}
       />
 
       <div>

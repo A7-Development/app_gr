@@ -25,10 +25,41 @@ export type InternalStep = {
 export type NodeContract = {
   /** O que a etapa CONSOME e de onde vem (pt-BR, 1 linha). */
   recebe: string
+  /** Variaveis consumidas, renderizadas como CHIPS com o MESMO visual do
+   *  PUBLICA — quem ve `cnpj` publicado num node reconhece `cnpj` recebido
+   *  no outro (mesma palavra, mesma cor). { nome: vartype }. */
+  recebeVars?: Record<string, string>
   /** O que a etapa FAZ (pt-BR, 1 frase). */
   faz: string
   /** Cadeia interna de etapas compostas (receitas) — abre a caixa-preta. */
   internalSteps?: InternalStep[]
+}
+
+/** Node minimo pro contrato enxergar o grafo (sem depender do React Flow). */
+export type ContractGraphNode = {
+  label?: string
+  nodeType?: string
+  config?: Record<string, unknown>
+}
+
+/** Acha o formulario que IDENTIFICA a empresa neste grafo: o human_input
+ *  com um campo chamado cnpj/target_cnpj (convencao do absorb_identity).
+ *  E ele quem alimenta a empresa-alvo do dossie — a origem real dos nodes
+ *  de origem fixa (cadastral, documento oficial). */
+export function findIdentitySourceLabel(
+  nodes: ContractGraphNode[] | undefined,
+): string | null {
+  for (const n of nodes ?? []) {
+    if (n.nodeType !== "human_input") continue
+    const fields = n.config?.fields
+    if (!Array.isArray(fields)) continue
+    const hasCnpj = fields.some((f) => {
+      const name = (f as { name?: unknown })?.name
+      return typeof name === "string" && ["cnpj", "target_cnpj"].includes(name.toLowerCase())
+    })
+    if (hasCnpj) return n.label || "Identificação"
+  }
+  return null
 }
 
 function fmtDocTypes(raw: unknown): string {
@@ -51,7 +82,18 @@ export function nodeContract(
   nodeType: string,
   config: Record<string, unknown>,
   agentCatalog: AgentMeta[] = [],
+  graphNodes?: ContractGraphNode[],
 ): NodeContract {
+  // RECEBE dos nodes de origem fixa: mesmo CHIP `cnpj` do PUBLICA do
+  // formulario + nome do node que o publica NESTE grafo — vocabulario
+  // unificado ponta a ponta (feedback Ricardo 2026-06-12).
+  const identitySource = findIdentitySourceLabel(graphNodes)
+  const recebeEmpresaAlvo: Pick<NodeContract, "recebe" | "recebeVars"> = {
+    recebeVars: { cnpj: "cnpj" },
+    recebe: identitySource
+      ? `publicado por «${identitySource}» e gravado na empresa-alvo do dossiê — posicione esta etapa depois dele`
+      : "da empresa-alvo do dossiê — adicione antes um formulário com o campo cnpj (é ele quem a preenche)",
+  }
   switch (nodeType) {
     case "trigger":
       return {
@@ -99,8 +141,7 @@ export function nodeContract(
 
     case "cadastral_enrichment":
       return {
-        recebe:
-          "CNPJ da empresa-alvo do dossiê — preenchido pelo formulário de Identificação (posicione esta etapa DEPOIS dele). Origem fixa: opera sempre sobre quem está sendo analisado.",
+        ...recebeEmpresaAlvo,
         faz: `Consulta o dataset ${String(config.public_code ?? "CAD-PJ")} e grava situação, CNAEs, capital e fundação na empresa-alvo — alimenta os checks de elegibilidade.`,
       }
 
@@ -109,8 +150,7 @@ export function nodeContract(
         (r) => r.key === String(config.document ?? ""),
       )
       return {
-        recebe:
-          "CNPJ da empresa-alvo do dossiê — preenchido pelo formulário de Identificação (posicione esta etapa DEPOIS dele). Origem fixa: opera sempre sobre quem está sendo analisado.",
+        ...recebeEmpresaAlvo,
         faz: recipe
           ? `Busca "${recipe.label}" direto na fonte oficial — 3 etapas internas, sem clique do analista.`
           : "Busca um documento oficial direto na fonte pública.",
