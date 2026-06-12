@@ -384,15 +384,38 @@ function Wrapper({
   )
 }
 
-const EMPHASIS_ROW: Record<RowEmphasis, { tr: string; text: string }> = {
-  subtotal: {
-    tr: "border-t border-t-gray-300 dark:border-t-gray-700",
-    text: "font-medium text-gray-900 dark:text-gray-100",
-  },
-  total: {
-    tr: "border-t-2 border-t-gray-700 dark:border-t-gray-300",
-    text: "font-semibold text-gray-900 dark:text-gray-100",
-  },
+const EMPHASIS_TEXT: Record<RowEmphasis, string> = {
+  subtotal: "font-medium text-gray-900 dark:text-gray-100",
+  total: "font-semibold text-gray-900 dark:text-gray-100",
+}
+
+/**
+ * Reguas horizontais IBCS — aplicadas CELULA a celula, nunca na <tr>.
+ * A tabela usa `border-separate` + `border-spacing-x`: borda de <tr> nao
+ * pinta nesse modo, e e o spacing entre celulas que segmenta cada regua
+ * em trechos por coluna com respiro branco (assinatura visual do padrao).
+ */
+type RowRule = "none" | "light" | "subtotal" | "strong"
+const RULE_CLASS: Record<RowRule, string> = {
+  none: "",
+  // divisoria fina entre linhas comuns (gray-200: o gray-100 era claro demais)
+  light: "border-t border-t-gray-200 dark:border-t-gray-800",
+  subtotal: "border-t border-t-gray-400 dark:border-t-gray-600",
+  // regua forte: acima da 1a linha do corpo e acima de toda linha "="/total
+  strong: "border-t-2 border-t-gray-900 dark:border-t-gray-100",
+}
+
+/** Layout IBCS: reguas segmentadas por coluna via border-separate + spacing. */
+const TABLE_LAYOUT =
+  "border-separate border-spacing-x-1.5 border-spacing-y-0 border-b-0"
+
+/** Celula vazia que abre o respiro maior entre rotulos e colunas numericas. */
+function SpacerCell({ header = false }: { header?: boolean }) {
+  return header ? (
+    <th aria-hidden className="w-3 border-0 p-0" />
+  ) : (
+    <td aria-hidden className="w-3 border-0 p-0" />
+  )
 }
 
 const CELL_PAD = "px-2 py-1"
@@ -493,17 +516,19 @@ export function PeriodComparisonTable({
     <Wrapper bordered={bordered} className={className}>
       {title ? <TitleBlock title={title} /> : null}
       <TableRoot>
-        <Table className="border-b-0">
+        <Table className={TABLE_LAYOUT}>
           <TableHead>
             {showBlockRow ? (
               <TableRow>
                 <TableHeaderCell className={cx("w-full border-b-0", HEADER_PAD)} />
+                <SpacerCell header />
                 {effectiveBlocks.map((b) => (
                   <TableHeaderCell
                     key={b.key}
                     colSpan={colsPerBlock}
                     className={cx(
-                      "border-b border-gray-300 text-center dark:border-gray-700",
+                      // regua forte sob o rotulo do bloco (IBCS: sob o ano)
+                      "border-b-2 border-b-gray-900 text-center dark:border-b-gray-100",
                       HEADER_PAD,
                       "text-xs font-semibold text-gray-900 dark:text-gray-100",
                     )}
@@ -513,8 +538,11 @@ export function PeriodComparisonTable({
                 ))}
               </TableRow>
             ) : null}
-            <TableRow className="border-b border-gray-200 dark:border-gray-800">
+            {/* sem borda sob os headers de cenario — a regua forte fica
+                ACIMA da 1a linha do corpo (IBCS) */}
+            <TableRow>
               <TableHeaderCell className={cx("w-full border-b-0", HEADER_PAD)} />
+              <SpacerCell header />
               {effectiveBlocks.map((b) => (
                 <React.Fragment key={b.key}>
                   {scenarios.map((s) => (
@@ -532,18 +560,30 @@ export function PeriodComparisonTable({
               ))}
             </TableRow>
           </TableHead>
-          <TableBody className="divide-y divide-gray-100 dark:divide-gray-800/60">
+          <TableBody className="divide-y-0">
             {rows.map((row, idx) => {
-              const emp = row.emphasis ? EMPHASIS_ROW[row.emphasis] : null
+              const empText = row.emphasis
+                ? EMPHASIS_TEXT[row.emphasis]
+                : undefined
+              const rule: RowRule =
+                row.emphasis === "total"
+                  ? "strong"
+                  : row.emphasis === "subtotal"
+                    ? "subtotal"
+                    : idx === 0
+                      ? "strong"
+                      : "light"
+              const ruleClass = RULE_CLASS[rule]
               const polarity = row.polarity ?? "revenue"
               return (
-                <TableRow key={`${row.label}-${idx}`} className={emp?.tr}>
+                <TableRow key={`${row.label}-${idx}`}>
                   <TableCell
                     className={cx(
                       "w-full whitespace-nowrap",
                       CELL_PAD,
+                      ruleClass,
                       tableTokens.cellText,
-                      emp?.text,
+                      empText,
                       row.indent === 1 && "pl-5",
                     )}
                   >
@@ -552,6 +592,7 @@ export function PeriodComparisonTable({
                       <AnnotationRef n={row.annotation} />
                     ) : null}
                   </TableCell>
+                  <SpacerCell />
                   {effectiveBlocks.map((b) => {
                     const v = row.values[b.key]
                     return (
@@ -561,7 +602,11 @@ export function PeriodComparisonTable({
                           return (
                             <TableCell
                               key={s}
-                              className={cx("text-right whitespace-nowrap", CELL_PAD)}
+                              className={cx(
+                                "text-right whitespace-nowrap",
+                                CELL_PAD,
+                                ruleClass,
+                              )}
                             >
                               {isMissing(raw) ? (
                                 <span className={tableTokens.cellMuted}>—</span>
@@ -569,7 +614,7 @@ export function PeriodComparisonTable({
                                 <span
                                   className={cx(
                                     tableTokens.cellNumber,
-                                    emp?.text,
+                                    empText,
                                   )}
                                 >
                                   {fmtNum(raw, decimals)}
@@ -581,7 +626,11 @@ export function PeriodComparisonTable({
                         {varCols.map((vc) => (
                           <TableCell
                             key={varianceLabel(vc.pair, vc.kind)}
-                            className={cx("text-right whitespace-nowrap", CELL_PAD)}
+                            className={cx(
+                              "text-right whitespace-nowrap",
+                              CELL_PAD,
+                              ruleClass,
+                            )}
                           >
                             <VarianceCellContent
                               minuend={v?.[vc.pair[0]]}
@@ -829,11 +878,13 @@ export function DecompositionTable({
     return m
   }, [displayRows, varCols, varianceStyle])
 
-  const totalCols = 1 + scenarios.length + varCols.length
+  // label + spacer + cenarios + variancias
+  const totalCols = 2 + scenarios.length + varCols.length
 
   const renderValueCells = (
     values: Partial<Record<Scenario, number | null>>,
     polarity: Polarity,
+    ruleClass: string,
     emphasisText?: string,
     srcIndex?: number,
   ) => (
@@ -843,7 +894,10 @@ export function DecompositionTable({
         const residual =
           si === 0 && srcIndex !== undefined ? residuals.get(srcIndex) : undefined
         return (
-          <TableCell key={s} className={cx("text-right whitespace-nowrap", CELL_PAD)}>
+          <TableCell
+            key={s}
+            className={cx("text-right whitespace-nowrap", CELL_PAD, ruleClass)}
+          >
             {isMissing(raw) ? (
               <span className={tableTokens.cellMuted}>—</span>
             ) : (
@@ -870,7 +924,7 @@ export function DecompositionTable({
       {varCols.map((vc) => (
         <TableCell
           key={varianceLabel(vc.pair, vc.kind)}
-          className={cx("text-right whitespace-nowrap", CELL_PAD)}
+          className={cx("text-right whitespace-nowrap", CELL_PAD, ruleClass)}
         >
           <VarianceCellContent
             minuend={values[vc.pair[0]]}
@@ -891,11 +945,13 @@ export function DecompositionTable({
     <Wrapper bordered={bordered} className={className}>
       {title ? <TitleBlock title={title} /> : null}
       <TableRoot>
-        <Table className="border-b-0">
+        <Table className={TABLE_LAYOUT}>
           {scenarios.length > 1 || varCols.length > 0 ? (
             <TableHead>
-              <TableRow className="border-b border-gray-200 dark:border-gray-800">
+              {/* sem borda sob o header — regua forte fica acima da 1a linha */}
+              <TableRow>
                 <TableHeaderCell className={cx("w-full border-b-0", HEADER_PAD)} />
+                <SpacerCell header />
                 {scenarios.map((s) => (
                   <ScenarioHeaderCell key={s} scenario={s} dense />
                 ))}
@@ -910,12 +966,22 @@ export function DecompositionTable({
               </TableRow>
             </TableHead>
           ) : null}
-          <TableBody className="divide-y divide-gray-100 dark:divide-gray-800/60">
+          <TableBody className="divide-y-0">
             {displayRows.map((d, idx) => {
+              const rule: RowRule =
+                d.kind === "row" && d.row.op === "="
+                  ? "strong"
+                  : idx === 0
+                    ? "strong"
+                    : "light"
+              const ruleClass = RULE_CLASS[rule]
               if (d.kind === "toggle") {
                 return (
                   <tr key={`toggle-${d.groupId}`}>
-                    <td colSpan={totalCols} className={cx(CELL_PAD, "text-left")}>
+                    <td
+                      colSpan={totalCols}
+                      className={cx(CELL_PAD, "text-left", ruleClass)}
+                    >
                       <button
                         type="button"
                         onClick={() =>
@@ -933,7 +999,7 @@ export function DecompositionTable({
                 return (
                   <TableRow key={`outros-${d.groupId}`}>
                     <TableCell
-                      className={cx("w-full whitespace-nowrap", CELL_PAD)}
+                      className={cx("w-full whitespace-nowrap", CELL_PAD, ruleClass)}
                     >
                       {hasScheme ? (
                         <span className="mr-1 inline-block w-2.5 text-gray-400 dark:text-gray-600">
@@ -951,21 +1017,23 @@ export function DecompositionTable({
                         Mostrar todos
                       </button>
                     </TableCell>
-                    {renderValueCells(d.values, d.polarity)}
+                    <SpacerCell />
+                    {renderValueCells(d.values, d.polarity, ruleClass)}
                   </TableRow>
                 )
               }
               const { row } = d
               const isEquals = row.op === "="
-              const emp = isEquals ? EMPHASIS_ROW.total : undefined
+              const empText = isEquals ? EMPHASIS_TEXT.total : undefined
               return (
-                <TableRow key={`${row.label}-${idx}`} className={emp?.tr}>
+                <TableRow key={`${row.label}-${idx}`}>
                   <TableCell
                     className={cx(
                       "w-full whitespace-nowrap",
                       CELL_PAD,
+                      ruleClass,
                       tableTokens.cellText,
-                      emp?.text,
+                      empText,
                       row.indent === 1 && "pl-5",
                     )}
                   >
@@ -986,7 +1054,14 @@ export function DecompositionTable({
                       <AnnotationRef n={row.annotation} />
                     ) : null}
                   </TableCell>
-                  {renderValueCells(row.values, row.polarity, emp?.text, d.srcIndex)}
+                  <SpacerCell />
+                  {renderValueCells(
+                    row.values,
+                    row.polarity,
+                    ruleClass,
+                    empText,
+                    d.srcIndex,
+                  )}
                 </TableRow>
               )
             })}
