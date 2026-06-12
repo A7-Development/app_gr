@@ -89,6 +89,7 @@ import { tableTokens } from "@/design-system/tokens/table"
 import { cx } from "@/lib/utils"
 
 import { AgentHoverCard } from "./_components/AgentHoverCard"
+import { AgentCatalogContext } from "./_components/NodeContract"
 import { EdgeConditionPopover } from "./_components/EdgeConditionPopover"
 import { NodeInspector } from "./_components/NodeInspector"
 import {
@@ -291,14 +292,18 @@ export default function WorkflowEditorPage() {
   return (
     <div className="flex h-[calc(100vh-65px)] flex-col">
       <ReactFlowProvider>
-        <EditorBody
-          workflow={workflow}
-          activeWorkflow={activeWorkflow ?? null}
-          nodeTypes={nodeTypes ?? []}
-          agentCatalog={agentCatalog ?? []}
-          dataProducts={dataProducts ?? []}
-          onBack={() => router.push("/credito/workflows")}
-        />
+        {/* Catálogo via context: o StrataNode (renderizado pelo React Flow)
+            monta o RECEBE do contrato dos agentes sem inflar node.data. */}
+        <AgentCatalogContext.Provider value={agentCatalog ?? []}>
+          <EditorBody
+            workflow={workflow}
+            activeWorkflow={activeWorkflow ?? null}
+            nodeTypes={nodeTypes ?? []}
+            agentCatalog={agentCatalog ?? []}
+            dataProducts={dataProducts ?? []}
+            onBack={() => router.push("/credito/workflows")}
+          />
+        </AgentCatalogContext.Provider>
       </ReactFlowProvider>
     </div>
   )
