@@ -373,7 +373,9 @@ function Wrapper({
     <div
       className={cx(
         "overflow-hidden",
-        bordered && "rounded-lg border border-gray-200 dark:border-gray-800",
+        // mesma anatomia do Card canonico do Tremor (radius 4px + shadow-xs)
+        bordered &&
+          "rounded border border-gray-200 bg-white shadow-xs dark:border-gray-900 dark:bg-[#090E1A]",
         className,
       )}
     >
@@ -388,7 +390,7 @@ const EMPHASIS_ROW: Record<RowEmphasis, { tr: string; text: string }> = {
     text: "font-medium text-gray-900 dark:text-gray-100",
   },
   total: {
-    tr: "border-t-2 border-t-gray-700 bg-gray-50 dark:border-t-gray-300 dark:bg-gray-900",
+    tr: "border-t-2 border-t-gray-700 dark:border-t-gray-300",
     text: "font-semibold text-gray-900 dark:text-gray-100",
   },
 }
