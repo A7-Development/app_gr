@@ -487,8 +487,18 @@ function WorkflowCard({
                 <RiMoreLine className="size-4" aria-hidden />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" sideOffset={4}>
-              <DropdownMenuItem onSelect={onOpen}>
+            {/* stopPropagation tambem AQUI: o portal do Radix borbulha
+                eventos pela arvore React — sem isso o clique no item dispara
+                o onClick do Card (abre o editor) em vez da acao. */}
+            <DropdownMenuContent
+              align="end"
+              sideOffset={4}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <DropdownMenuItem
+                onSelect={onOpen}
+                onClick={(e) => e.stopPropagation()}
+              >
                 <RiPencilLine className="mr-2 size-4" aria-hidden />
                 Abrir editor
               </DropdownMenuItem>
@@ -499,6 +509,7 @@ function WorkflowCard({
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onSelect={onDelete}
+                    onClick={(e) => e.stopPropagation()}
                     className="text-red-600 focus:text-red-700 dark:text-red-400 dark:focus:text-red-300"
                   >
                     <RiDeleteBinLine className="mr-2 size-4" aria-hidden />
