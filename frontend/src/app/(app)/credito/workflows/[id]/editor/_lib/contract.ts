@@ -33,6 +33,39 @@ export type NodeContract = {
   faz: string
   /** Cadeia interna de etapas compostas (receitas) — abre a caixa-preta. */
   internalSteps?: InternalStep[]
+  /** O que a etapa entrega ALEM das variaveis — via dossie (documento,
+   *  extracao, silver). Visivel sob o PUBLICA pra fechar o gap "output
+   *  parece minusculo" (feedback Ricardo 2026-06-12). */
+  publicaNota?: string
+  /** Proxima etapa sugerida — responde "e agora?" sem o usuario adivinhar. */
+  proxima?: string
+}
+
+/** Node minimo pro contrato enxergar o grafo (sem depender do React Flow). */
+export type ContractGraphNode = {
+  label?: string
+  nodeType?: string
+  config?: Record<string, unknown>
+}
+
+/** Acha o formulario que IDENTIFICA a empresa neste grafo: o human_input
+ *  com um campo chamado cnpj/target_cnpj (convencao do absorb_identity).
+ *  E ele quem alimenta a empresa-alvo do dossie — a origem real dos nodes
+ *  de origem fixa (cadastral, documento oficial). */
+export function findIdentitySourceLabel(
+  nodes: ContractGraphNode[] | undefined,
+): string | null {
+  for (const n of nodes ?? []) {
+    if (n.nodeType !== "human_input") continue
+    const fields = n.config?.fields
+    if (!Array.isArray(fields)) continue
+    const hasCnpj = fields.some((f) => {
+      const name = (f as { name?: unknown })?.name
+      return typeof name === "string" && ["cnpj", "target_cnpj"].includes(name.toLowerCase())
+    })
+    if (hasCnpj) return n.label || "Identificação"
+  }
+  return null
 }
 
 /** Node minimo pro contrato enxergar o grafo (sem depender do React Flow). */
@@ -159,6 +192,10 @@ export function nodeContract(
           { label: "Anexar ao dossiê", produz: "documento (PDF) no dossiê" },
           { label: "Ler com IA", produz: "campos extraídos p/ conferência do analista" },
         ],
+        publicaNota:
+          "Além das variáveis acima, grava NO DOSSIÊ: o documento (PDF) + a extração completa do contrato social (capital, QSA, administração, poderes de assinatura, 8 temas de restrições, pontos de atenção) — abastece a estação de conferência do analista e a análise do agente.",
+        proxima:
+          "Esta etapa EXTRAI, não julga. Adicione depois o agente «Análise de contrato social» — ele lê a extração homologada do dossiê e produz o parecer da seção.",
       }
     }
 

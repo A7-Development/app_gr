@@ -148,7 +148,22 @@ export function ContractBlock({
             ))}
           </span>
         )}
+        {contract.publicaNota && (
+          <span className="mt-1 block text-[11px] leading-snug text-gray-500 dark:text-gray-400">
+            {contract.publicaNota}
+          </span>
+        )}
       </Row>
+      {contract.proxima && (
+        <div className="flex items-start gap-2 rounded-md border border-violet-200/70 bg-violet-50/60 px-2 py-1.5 dark:border-violet-500/20 dark:bg-violet-500/10">
+          <span className="mt-px shrink-0 text-[10px] font-semibold uppercase tracking-[0.05em] text-violet-600 dark:text-violet-400">
+            E agora?
+          </span>
+          <p className="text-[11px] leading-snug text-violet-900 dark:text-violet-200">
+            {contract.proxima}
+          </p>
+        </div>
+      )}
     </div>
   )
 }
