@@ -68,32 +68,7 @@ export function findIdentitySourceLabel(
   return null
 }
 
-/** Node minimo pro contrato enxergar o grafo (sem depender do React Flow). */
-export type ContractGraphNode = {
-  label?: string
-  nodeType?: string
-  config?: Record<string, unknown>
-}
 
-/** Acha o formulario que IDENTIFICA a empresa neste grafo: o human_input
- *  com um campo chamado cnpj/target_cnpj (convencao do absorb_identity).
- *  E ele quem alimenta a empresa-alvo do dossie — a origem real dos nodes
- *  de origem fixa (cadastral, documento oficial). */
-export function findIdentitySourceLabel(
-  nodes: ContractGraphNode[] | undefined,
-): string | null {
-  for (const n of nodes ?? []) {
-    if (n.nodeType !== "human_input") continue
-    const fields = n.config?.fields
-    if (!Array.isArray(fields)) continue
-    const hasCnpj = fields.some((f) => {
-      const name = (f as { name?: unknown })?.name
-      return typeof name === "string" && ["cnpj", "target_cnpj"].includes(name.toLowerCase())
-    })
-    if (hasCnpj) return n.label || "Identificação"
-  }
-  return null
-}
 
 function fmtDocTypes(raw: unknown): string {
   if (!Array.isArray(raw) || raw.length === 0) return "documentos"
