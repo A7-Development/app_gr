@@ -45,6 +45,10 @@ _QDe = Annotated[date, Query(description="Primeira competencia (1o dia do mes)")
 _QAte = Annotated[date, Query(description="Ultima competencia (1o dia do mes)")]
 _QMetodo = Annotated[Metodo, Query(description="caixa | competencia | acruo")]
 _QFundo = Annotated[int | None, Query(description="UnidadeAdministrativa.Id Bitfin")]
+_QProduto = Annotated[
+    list[str] | None,
+    Query(description="Siglas de produto (parametro repetivel); vazio = todos"),
+]
 
 
 def _valida_janela(de: date, ate: date) -> None:
@@ -63,13 +67,14 @@ async def resumo(
     competencia_ate: _QAte,
     metodo: _QMetodo = "caixa",
     fundo_id: _QFundo = None,
+    produto_sigla: _QProduto = None,
     _: None = _Guard,
 ) -> ReceitasResumoResponse:
     _valida_janela(competencia_de, competencia_ate)
     return await compute_resumo(
         db, tenant_id=principal.tenant_id, metodo=metodo,
         competencia_de=competencia_de, competencia_ate=competencia_ate,
-        fundo_id=fundo_id,
+        fundo_id=fundo_id, produto_sigla=produto_sigla,
     )
 
 
@@ -81,13 +86,14 @@ async def detalhe(
     competencia_ate: _QAte,
     metodo: _QMetodo = "caixa",
     fundo_id: _QFundo = None,
+    produto_sigla: _QProduto = None,
     _: None = _Guard,
 ) -> ReceitasDetalheResponse:
     _valida_janela(competencia_de, competencia_ate)
     return await compute_detalhe(
         db, tenant_id=principal.tenant_id, metodo=metodo,
         competencia_de=competencia_de, competencia_ate=competencia_ate,
-        fundo_id=fundo_id,
+        fundo_id=fundo_id, produto_sigla=produto_sigla,
     )
 
 
@@ -99,13 +105,14 @@ async def cedentes(
     competencia_ate: _QAte,
     metodo: _QMetodo = "caixa",
     fundo_id: _QFundo = None,
+    produto_sigla: _QProduto = None,
     _: None = _Guard,
 ) -> ReceitasCedentesResponse:
     _valida_janela(competencia_de, competencia_ate)
     return await compute_cedentes(
         db, tenant_id=principal.tenant_id, metodo=metodo,
         competencia_de=competencia_de, competencia_ate=competencia_ate,
-        fundo_id=fundo_id,
+        fundo_id=fundo_id, produto_sigla=produto_sigla,
     )
 
 
@@ -119,13 +126,14 @@ async def titulos(
     stream: Annotated[str, Query()],
     metodo: _QMetodo = "caixa",
     fundo_id: _QFundo = None,
+    produto_sigla: _QProduto = None,
     _: None = _Guard,
 ) -> ReceitasTitulosResponse:
     _valida_janela(competencia_de, competencia_ate)
     return await compute_titulos(
         db, tenant_id=principal.tenant_id, metodo=metodo, familia=familia,
         stream=stream, competencia_de=competencia_de,
-        competencia_ate=competencia_ate, fundo_id=fundo_id,
+        competencia_ate=competencia_ate, fundo_id=fundo_id, produto_sigla=produto_sigla,
     )
 
 
@@ -136,11 +144,12 @@ async def conferencias(
     competencia_de: _QDe,
     competencia_ate: _QAte,
     fundo_id: _QFundo = None,
+    produto_sigla: _QProduto = None,
     _: None = _Guard,
 ) -> ReceitasConferenciasResponse:
     _valida_janela(competencia_de, competencia_ate)
     return await compute_conferencias(
         db, tenant_id=principal.tenant_id,
         competencia_de=competencia_de, competencia_ate=competencia_ate,
-        fundo_id=fundo_id,
+        fundo_id=fundo_id, produto_sigla=produto_sigla,
     )

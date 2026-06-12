@@ -5687,6 +5687,9 @@ export type ReceitasFilters = {
   competenciaDe:  string  // YYYY-MM-01
   competenciaAte: string  // YYYY-MM-01
   fundoId?:       number
+  /** Siglas de produto (vazio/undefined = todos). Linhas sem produto
+   *  vinculado (tarifas de servico, repasses) entram sempre (§14.6). */
+  produtoSigla?:  string[]
 }
 
 export type ReceitasKpis = {
@@ -5801,6 +5804,7 @@ function _receitasParams(f: ReceitasFilters): URLSearchParams {
     competencia_ate: f.competenciaAte,
   })
   if (f.fundoId !== undefined) p.set("fundo_id", String(f.fundoId))
+  for (const s of f.produtoSigla ?? []) p.append("produto_sigla", s)
   return p
 }
 
@@ -5918,6 +5922,7 @@ export const receitasApi = {
       competencia_de: f.competenciaDe, competencia_ate: f.competenciaAte,
     })
     if (f.fundoId !== undefined) p.set("fundo_id", String(f.fundoId))
+    for (const s of f.produtoSigla ?? []) p.append("produto_sigla", s)
     type Raw = {
       competencia_de: string
       competencia_ate: string

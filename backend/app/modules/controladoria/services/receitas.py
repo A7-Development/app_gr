@@ -21,7 +21,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Integer, and_, case, cast, func, or_, select
+from sqlalchemy import Integer, String, and_, case, cast, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.controladoria.schemas.receitas import (
@@ -41,6 +41,8 @@ from app.modules.controladoria.schemas.receitas import (
     SerieMensalPonto,
 )
 from app.warehouse.bitfin_receita_stream import WhBitfinReceitaStream
+from app.warehouse.dim import DimProduto
+from app.warehouse.operacao import Operacao
 from app.warehouse.receita_acruo_dia import ReceitaAcruoDia
 from app.warehouse.receita_caixa import ReceitaCaixa
 from app.warehouse.receita_operacional import ReceitaOperacional
@@ -65,6 +67,7 @@ def _apply_filters(
     competencia_de: date | None = None,
     competencia_ate: date | None = None,
     fundo_id: int | None = None,
+    produto_sigla: list[str] | None = None,
 ) -> Any:
     """Escopo canonico (§7.2) para qualquer SELECT dos fatos de receita."""
     conditions = [model.tenant_id == tenant_id]
@@ -74,6 +77,43 @@ def _apply_filters(
         conditions.append(model.competencia <= competencia_ate)
     if fundo_id is not None:
         conditions.append(model.unidade_administrativa_id == fundo_id)
+    if produto_sigla:
+        siglas = [s.upper() for s in produto_sigla]
+        if model is ReceitaOperacional:
+            dim_ids = (
+                select(DimProduto.produto_id)
+                .where(
+                    DimProduto.tenant_id == tenant_id,
+                    func.upper(DimProduto.sigla).in_(siglas),
+                )
+                .scalar_subquery()
+            )
+            # §14.6: rows WITHOUT a linked product (tarifa_servico, repasse,
+            # financeira, moras sem operacao) are ALWAYS included — they do
+            # not belong to any product and would silently vanish from the
+            # totals otherwise.
+            conditions.append(
+                or_(model.produto_id.is_(None), model.produto_id.in_(dim_ids))
+            )
+        else:
+            # caixa/acruo: product sigla via wh_operacao.modalidade
+            # ('FAT-DM' -> 'FAT'), same rule as the BI module.
+            op_ids = (
+                select(Operacao.operacao_id)
+                .where(
+                    Operacao.tenant_id == tenant_id,
+                    cast(
+                        literal_column(
+                            "split_part(wh_operacao.modalidade, '-', 1)"
+                        ),
+                        String,
+                    ).in_(siglas),
+                )
+                .scalar_subquery()
+            )
+            conditions.append(
+                or_(model.operacao_id.is_(None), model.operacao_id.in_(op_ids))
+            )
     return stmt.where(and_(*conditions))
 
 
@@ -110,7 +150,7 @@ def _grupo_da_linha(
 
 async def _agg_eventos(
     db: AsyncSession, *, tenant_id: UUID, de: date, ate: date,
-    fundo_id: int | None, incluir_operacao: bool,
+    fundo_id: int | None, produto_sigla: list[str] | None, incluir_operacao: bool,
 ) -> list[tuple]:
     """(competencia, familia, stream, natureza, qtd, valor) do fato evento.
 
@@ -134,14 +174,14 @@ async def _agg_eventos(
         stmt = stmt.where(ReceitaOperacional.familia != _FAMILIA_OPERACAO)
     stmt = _apply_filters(
         stmt, ReceitaOperacional, tenant_id=tenant_id,
-        competencia_de=de, competencia_ate=ate, fundo_id=fundo_id,
+        competencia_de=de, competencia_ate=ate, fundo_id=fundo_id, produto_sigla=produto_sigla,
     )
     return list((await db.execute(stmt)).all())
 
 
 async def _agg_operacao_derivada(
     db: AsyncSession, model: Any, *, tenant_id: UUID, de: date, ate: date,
-    fundo_id: int | None,
+    fundo_id: int | None, produto_sigla: list[str] | None,
 ) -> list[tuple]:
     """(competencia, familia='operacao', stream=evento, natureza, qtd, valor)
     a partir de wh_receita_caixa ou wh_receita_acruo_dia (componentes)."""
@@ -155,7 +195,7 @@ async def _agg_operacao_derivada(
     ).group_by(model.competencia, model.evento)
     stmt = _apply_filters(
         stmt, model, tenant_id=tenant_id,
-        competencia_de=de, competencia_ate=ate, fundo_id=fundo_id,
+        competencia_de=de, competencia_ate=ate, fundo_id=fundo_id, produto_sigla=produto_sigla,
     )
     rows = (await db.execute(stmt)).all()
     out: list[tuple] = []
@@ -172,31 +212,31 @@ async def _agg_operacao_derivada(
 
 async def _linhas_metodo(
     db: AsyncSession, *, tenant_id: UUID, metodo: Metodo, de: date, ate: date,
-    fundo_id: int | None,
+    fundo_id: int | None, produto_sigla: list[str] | None,
 ) -> list[tuple]:
     """Shape unificado (competencia, familia, stream, natureza, qtd, valor)."""
     if metodo == "competencia":
         return await _agg_eventos(
-            db, tenant_id=tenant_id, de=de, ate=ate, fundo_id=fundo_id,
+            db, tenant_id=tenant_id, de=de, ate=ate, fundo_id=fundo_id, produto_sigla=produto_sigla,
             incluir_operacao=True,
         )
     eventos = await _agg_eventos(
-        db, tenant_id=tenant_id, de=de, ate=ate, fundo_id=fundo_id,
+        db, tenant_id=tenant_id, de=de, ate=ate, fundo_id=fundo_id, produto_sigla=produto_sigla,
         incluir_operacao=False,
     )
     model = ReceitaCaixa if metodo == "caixa" else ReceitaAcruoDia
     operacao = await _agg_operacao_derivada(
-        db, model, tenant_id=tenant_id, de=de, ate=ate, fundo_id=fundo_id,
+        db, model, tenant_id=tenant_id, de=de, ate=ate, fundo_id=fundo_id, produto_sigla=produto_sigla,
     )
     return eventos + operacao
 
 
 async def _total_metodo(
     db: AsyncSession, *, tenant_id: UUID, metodo: Metodo, de: date, ate: date,
-    fundo_id: int | None,
+    fundo_id: int | None, produto_sigla: list[str] | None,
 ) -> Decimal:
     linhas = await _linhas_metodo(
-        db, tenant_id=tenant_id, metodo=metodo, de=de, ate=ate, fundo_id=fundo_id,
+        db, tenant_id=tenant_id, metodo=metodo, de=de, ate=ate, fundo_id=fundo_id, produto_sigla=produto_sigla,
     )
     return sum((Decimal(r[5]) for r in linhas), start=ZERO)
 
@@ -204,10 +244,11 @@ async def _total_metodo(
 async def compute_resumo(
     db: AsyncSession, *, tenant_id: UUID, metodo: Metodo,
     competencia_de: date, competencia_ate: date, fundo_id: int | None = None,
+    produto_sigla: list[str] | None = None,
 ) -> ReceitasResumoResponse:
     linhas = await _linhas_metodo(
         db, tenant_id=tenant_id, metodo=metodo,
-        de=competencia_de, ate=competencia_ate, fundo_id=fundo_id,
+        de=competencia_de, ate=competencia_ate, fundo_id=fundo_id, produto_sigla=produto_sigla,
     )
 
     grupo_map = await _grupo_por_stream(db, tenant_id)
@@ -256,7 +297,7 @@ async def compute_resumo(
             kpis.total if m == metodo
             else await _total_metodo(
                 db, tenant_id=tenant_id, metodo=m,
-                de=competencia_de, ate=competencia_ate, fundo_id=fundo_id,
+                de=competencia_de, ate=competencia_ate, fundo_id=fundo_id, produto_sigla=produto_sigla,
             )
         )
     ponte = PonteMetodos(
@@ -276,10 +317,11 @@ async def compute_resumo(
 async def compute_detalhe(
     db: AsyncSession, *, tenant_id: UUID, metodo: Metodo,
     competencia_de: date, competencia_ate: date, fundo_id: int | None = None,
+    produto_sigla: list[str] | None = None,
 ) -> ReceitasDetalheResponse:
     linhas_raw = await _linhas_metodo(
         db, tenant_id=tenant_id, metodo=metodo,
-        de=competencia_de, ate=competencia_ate, fundo_id=fundo_id,
+        de=competencia_de, ate=competencia_ate, fundo_id=fundo_id, produto_sigla=produto_sigla,
     )
     grupo_map = await _grupo_por_stream(db, tenant_id)
     agg: dict[tuple[str, str, str], tuple[int, Decimal]] = {}
@@ -306,6 +348,7 @@ async def compute_detalhe(
 async def compute_cedentes(
     db: AsyncSession, *, tenant_id: UUID, metodo: Metodo,
     competencia_de: date, competencia_ate: date, fundo_id: int | None = None,
+    produto_sigla: list[str] | None = None,
 ) -> ReceitasCedentesResponse:
     """Receita por cedente. Bloco operacao do metodo + eventos, agregados
     por cedente_nome/documento (denormalizados nos fatos)."""
@@ -347,7 +390,7 @@ async def compute_cedentes(
     stmt = _apply_filters(
         stmt, ReceitaOperacional, tenant_id=tenant_id,
         competencia_de=competencia_de, competencia_ate=competencia_ate,
-        fundo_id=fundo_id,
+        fundo_id=fundo_id, produto_sigla=produto_sigla,
     )
     for nome, doc, nat, fam, qtd, valor in (await db.execute(stmt)).all():
         _add(nome, doc, nat, fam, qtd, valor)
@@ -365,7 +408,7 @@ async def compute_cedentes(
         stmt = _apply_filters(
             stmt, model, tenant_id=tenant_id,
             competencia_de=competencia_de, competencia_ate=competencia_ate,
-            fundo_id=fundo_id,
+            fundo_id=fundo_id, produto_sigla=produto_sigla,
         )
         for nome, doc, qtd, v_des, v_adv, v_tar in (await db.execute(stmt)).all():
             _add(nome, doc, "DESAGIO", _FAMILIA_OPERACAO, qtd, v_des)
@@ -395,6 +438,7 @@ async def compute_titulos(
     db: AsyncSession, *, tenant_id: UUID, metodo: Metodo, familia: str,
     stream: str, competencia_de: date, competencia_ate: date,
     fundo_id: int | None = None,
+    produto_sigla: list[str] | None = None,
 ) -> ReceitasTitulosResponse:
     """Drill: linhas-titulo de um (familia, stream) no periodo. SEM corte
     (§14.6): retorna tudo; frontend virtualiza."""
@@ -409,7 +453,7 @@ async def compute_titulos(
         stmt = _apply_filters(
             stmt, model, tenant_id=tenant_id,
             competencia_de=competencia_de, competencia_ate=competencia_ate,
-            fundo_id=fundo_id,
+            fundo_id=fundo_id, produto_sigla=produto_sigla,
         )
         for data_, tid, doc, ced, v_des, v_adv, v_tar in (await db.execute(stmt)).all():
             for natureza, v in (("DESAGIO", v_des), ("AD_VALOREM", v_adv),
@@ -433,7 +477,7 @@ async def compute_titulos(
         stmt = _apply_filters(
             stmt, ReceitaOperacional, tenant_id=tenant_id,
             competencia_de=competencia_de, competencia_ate=competencia_ate,
-            fundo_id=fundo_id,
+            fundo_id=fundo_id, produto_sigla=produto_sigla,
         )
         for data_, tid, doc, ced, nat, valor, ref in (await db.execute(stmt)).all():
             linhas.append(ReceitaTituloLinha(
@@ -451,6 +495,7 @@ async def compute_titulos(
 async def compute_conferencias(
     db: AsyncSession, *, tenant_id: UUID,
     competencia_de: date, competencia_ate: date, fundo_id: int | None = None,
+    produto_sigla: list[str] | None = None,
 ) -> ReceitasConferenciasResponse:
     """Desconto de mora concedido = regua contratual - cobrado, por cedente.
 
@@ -491,7 +536,7 @@ async def compute_conferencias(
     stmt = _apply_filters(
         stmt, ReceitaOperacional, tenant_id=tenant_id,
         competencia_de=competencia_de, competencia_ate=competencia_ate,
-        fundo_id=fundo_id,
+        fundo_id=fundo_id, produto_sigla=produto_sigla,
     )
     rows = (await db.execute(stmt)).all()
 
