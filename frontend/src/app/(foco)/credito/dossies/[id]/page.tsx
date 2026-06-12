@@ -939,6 +939,28 @@ export default function DossierFocusPage() {
     // rica (regressão apontada pelo Ricardo no DC-2026-0039).
     if (m.nodeType === "official_document_fetch") {
       if (m.state === "pending") return <DormantZone key={m.id} label={m.label} />
+      // FEEDBACK AO VIVO (frente B do DC-2026-0040): a busca leva ~2 min
+      // (login gov.br + ficha + download + extração) — sem isto a tela
+      // ficava muda enquanto o motor trabalhava.
+      if (m.state === "running") {
+        return (
+          <section
+            key={m.id}
+            className="flex items-start gap-3 rounded border border-blue-200 bg-blue-50/60 px-5 py-4 dark:border-blue-500/30 dark:bg-blue-500/10"
+          >
+            <span className="mt-1 size-2 shrink-0 rounded-full bg-blue-500 motion-safe:animate-pulse" />
+            <div>
+              <p className="text-sm font-medium text-blue-900 dark:text-blue-200">
+                Buscando o contrato social na fonte oficial…
+              </p>
+              <p className="mt-0.5 text-xs text-blue-800/80 dark:text-blue-300/80">
+                JUCESP: login gov.br → ficha da empresa → documento mais recente →
+                download → leitura com IA. Costuma levar ~2 minutos.
+              </p>
+            </div>
+          </section>
+        )
+      }
       const primaryDoc =
         docs.find(
           (d) =>
@@ -946,7 +968,38 @@ export default function DossierFocusPage() {
             (d.extraction_status === "success" ||
               d.extraction_status === "validated"),
         ) ?? null
-      if (!primaryDoc) return null
+      if (!primaryDoc) {
+        // DESFECHO VISÍVEL (frente A): found=false não pode ficar mudo — o
+        // motivo (612 etc.) vinha só no texto do agente, estações depois.
+        const out = (m.output ?? {}) as { found?: boolean; message?: string }
+        return (
+          <section
+            key={m.id}
+            className="flex items-start gap-3 rounded border border-amber-200 bg-amber-50/70 px-5 py-4 dark:border-amber-500/30 dark:bg-amber-500/10"
+          >
+            <RiErrorWarningLine
+              className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400"
+              aria-hidden
+            />
+            <div>
+              <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                Documento não localizado na fonte oficial
+              </p>
+              <p className="mt-0.5 text-xs leading-relaxed text-amber-800 dark:text-amber-300">
+                {out.message ||
+                  "A consulta à JUCESP não retornou resultados para esta empresa."}
+              </p>
+              <p className="mt-1.5 text-xs leading-relaxed text-amber-800/80 dark:text-amber-300/80">
+                A JUCESP cobre empresas registradas em <strong>São Paulo</strong>.
+                Se a empresa for de outro estado (ou o registro não estiver
+                digitalizado), solicite o contrato social ao cliente — adicione a
+                etapa &quot;Pedir documentos&quot; ao playbook para habilitar o
+                upload manual nesta estação.
+              </p>
+            </div>
+          </section>
+        )
+      }
       return (
         <SocialContractConferenceView
           key={m.id}
