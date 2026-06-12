@@ -41,7 +41,7 @@ export const INDICADORES: IndicadorDef[] = [
     info: "PL das classes subordinadas (incl. mezanino) ÷ PL total. Colchão de proteção da SENIOR — mercado considera >20% conservador." },
   { key: "subordinacao_jr_pct", label: "Subordinação júnior", formula: "Jr/PL", grupo: "Estrutura", fmt: "pct1",
     info: "PL da subordinada júnior (sem mezanino) ÷ PL total. O first-loss real do fundo — e a proteção que a MEZANINO enxerga." },
-  { key: "sub_jr_sobre_sub_pct", label: "Composição do colchão", formula: "Jr/Sub total", grupo: "Estrutura", fmt: "pct1",
+  { key: "sub_jr_sobre_sub_pct", label: "Subordinação", formula: "Jr/Sub", grupo: "Estrutura", fmt: "pct1",
     info: "Quanto do colchão subordinado é first-loss genuíno (júnior) vs mezanino. 100% = sem mezanino; valores baixos = colchão 'diluído' em camadas vendidas a terceiros." },
   { key: "passivo_ativo_pct", label: "Passivo / Ativo", grupo: "Estrutura", fmt: "pct2",
     info: "Obrigações ÷ ativo total. FIDC quase não tem passivo; valor alto = estrutura atípica." },
