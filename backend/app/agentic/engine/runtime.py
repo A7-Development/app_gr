@@ -29,6 +29,7 @@ diferente de chat simples.
 from __future__ import annotations
 
 import base64
+import dataclasses
 import json
 import logging
 import mimetypes
@@ -579,6 +580,22 @@ async def run_document_extraction(
     system_text = "\n\n".join(
         block.text for msg in rendered if msg.role == "system" for block in msg.content
     )
+
+    # Contrato de dados tipado por doc_type (2026-06-11): quando o doc_type
+    # tem schema proprio, o runtime troca o DocumentExtraction permissivo
+    # pelo schema especifico e auto-injeta o <output_format> derivado dele —
+    # mesmo mecanismo dos specialist agents (compose, opcao A 2026-06-06).
+    # O prompt extract.<doc_type> passa a ser dono apenas das REGRAS DE
+    # LEITURA; editar prompt na UI nunca muda o shape que o codigo consome.
+    from app.agentic.agents._compose import render_output_schema_block
+    from app.agentic.engine.output_schemas import EXTRACTION_SCHEMA_BY_DOC_TYPE
+
+    typed_schema = EXTRACTION_SCHEMA_BY_DOC_TYPE.get(doc_type)
+    if typed_schema is not None:
+        spec = dataclasses.replace(spec, output_schema=typed_schema)
+        schema_block = render_output_schema_block(typed_schema)
+        if schema_block:
+            system_text = f"{system_text}\n\n{schema_block}"
 
     template_block = await _render_template_block(
         db,

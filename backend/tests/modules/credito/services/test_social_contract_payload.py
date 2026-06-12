@@ -12,8 +12,10 @@ from decimal import Decimal
 
 from app.modules.credito.services.social_contract import (
     _cruzamentos,
+    _derive_participacoes,
     _estrutura,
     _norm_name,
+    _normalize_fields,
     _redact_socio,
 )
 
@@ -47,12 +49,78 @@ def _socios(*pcts: float | None) -> list[dict]:
 
 def test_redact_socio_nunca_vaza_cpf_inteiro():
     s = _redact_socio({"nome": "Maria", "cpf": "123.456.789-01", "participacao_pct": 60})
-    assert s == {"nome": "Maria", "cpf_ultimos4": "8901", "participacao_pct": 60.0}
+    assert s is not None
+    assert s["nome"] == "Maria"
+    assert s["cpf_ultimos4"] == "8901"
+    assert s["participacao_pct"] == 60.0
+    assert "cpf" not in s
 
 
 def test_redact_socio_sem_nome_descarta():
     assert _redact_socio({"cpf": "12345678901"}) is None
     assert _redact_socio("string") is None
+
+
+def test_redact_socio_dialeto_tipado_cpf_cnpj():
+    """Dialeto novo usa cpf_cnpj e quotas — redação preserva ambos."""
+    s = _redact_socio({"nome": "Alice", "cpf_cnpj": "123.456.789-01", "quotas": 300})
+    assert s is not None
+    assert s["cpf_ultimos4"] == "8901"
+    assert s["quotas"] == 300
+    assert s["participacao_pct"] is None  # vem da derivação, não do LLM
+
+
+# ─── _normalize_fields + _derive_participacoes (dialeto tipado) ─────────────
+
+
+def test_normalize_capital_objeto_vira_numero():
+    nf = _normalize_fields(
+        {
+            "capital_social": {"subscrito": 500000.0, "total_quotas": 500000},
+            "endereco_sede": "Rua X, 100",
+        },
+        {"documento_meta": {"numero_alteracao": 11, "data_documento": "2024-05-10"}},
+    )
+    assert nf["capital_social"] == 500000.0
+    assert nf["capital_social_detalhe"]["total_quotas"] == 500000
+    assert nf["endereco"] == "Rua X, 100"
+    assert nf["numero_alteracao"] == 11
+    assert nf["data_ultima_alteracao"] == "2024-05-10"
+
+
+def test_normalize_dialeto_v2_passa_intacto():
+    nf = _normalize_fields(
+        {
+            "capital_social": 250000.0,
+            "endereco": "Rua Y",
+            "numero_alteracao": 3,
+            "data_ultima_alteracao": "2020-01-01",
+        },
+        {},
+    )
+    assert nf["capital_social"] == 250000.0
+    assert nf["capital_social_detalhe"] is None
+    assert nf["endereco"] == "Rua Y"
+    assert nf["numero_alteracao"] == 3
+
+
+def test_derive_participacoes_por_quotas():
+    socios = [
+        _redact_socio({"nome": "Alice", "cpf_cnpj": "111", "quotas": 300000}),
+        _redact_socio({"nome": "Bob", "cpf_cnpj": "222", "quotas": 200000}),
+    ]
+    _derive_participacoes(socios, {"subscrito": 500000.0, "total_quotas": 500000})
+    assert socios[0]["participacao_pct"] == 60.0
+    assert socios[1]["participacao_pct"] == 40.0
+
+
+def test_derive_participacoes_sem_denominador_nao_inventa():
+    """Sem total escrito no documento, % fica None — não somamos as partes."""
+    socios = [_redact_socio({"nome": "Davi", "cpf_cnpj": "111", "quotas": 10})]
+    _derive_participacoes(socios, {"subscrito": None, "total_quotas": None})
+    assert socios[0]["participacao_pct"] is None
+    _derive_participacoes(socios, None)
+    assert socios[0]["participacao_pct"] is None
 
 
 # ─── _estrutura ──────────────────────────────────────────────────────────────

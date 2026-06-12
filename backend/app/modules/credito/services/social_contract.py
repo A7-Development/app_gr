@@ -65,17 +65,90 @@ def _parse_date(raw: Any) -> date | None:
 
 
 def _redact_socio(item: Any) -> dict[str, Any] | None:
-    """Sócio com CPF reduzido aos 4 últimos dígitos (LGPD §19.9)."""
+    """Sócio com CPF reduzido aos 4 últimos dígitos (LGPD §19.9).
+
+    Aceita os dois dialetos de extração que coexistem no banco (extração é
+    imutável — documentos antigos ficam no shape em que foram extraídos):
+      - v2: {nome, cpf, participacao_pct}
+      - v3+/tipado: {nome, cpf_cnpj, quotas, capital_subscrito_socio, ...}
+    No dialeto novo, `participacao_pct` NÃO vem do LLM — é derivado em
+    `_derive_participacoes` (aritmética no código, não no modelo).
+    """
     if not isinstance(item, dict):
         return None
     nome = item.get("nome")
     if not isinstance(nome, str) or not nome.strip():
         return None
-    cpf_digits = _digits(item.get("cpf"))
+    cpf_digits = _digits(item.get("cpf") or item.get("cpf_cnpj"))
     return {
         "nome": nome.strip(),
         "cpf_ultimos4": cpf_digits[-4:] if len(cpf_digits) >= 4 else None,
         "participacao_pct": _to_float(item.get("participacao_pct")),
+        "quotas": item.get("quotas") if isinstance(item.get("quotas"), int) else None,
+        "capital_subscrito_socio": _to_float(item.get("capital_subscrito_socio")),
+        "tipo": item.get("tipo") if item.get("tipo") in ("pf", "pj") else None,
+    }
+
+
+def _derive_participacoes(
+    socios: list[dict[str, Any]], capital: dict[str, Any] | None
+) -> None:
+    """Deriva `participacao_pct` em CÓDIGO quando a extração não a traz.
+
+    Base preferida: quotas do sócio / total de quotas declarado no capital;
+    fallback: capital subscrito do sócio / capital subscrito total. Só deriva
+    quando o denominador veio ESCRITO no documento (total_quotas/subscrito) —
+    nunca soma as partes pra inventar um total (regra da extração vale aqui).
+    Muta os dicts in-place.
+    """
+    pendentes = [s for s in socios if s.get("participacao_pct") is None]
+    if not pendentes:
+        return
+    total_quotas = (capital or {}).get("total_quotas")
+    subscrito = _to_float((capital or {}).get("subscrito"))
+    for s in pendentes:
+        if isinstance(total_quotas, int) and total_quotas > 0 and s.get("quotas"):
+            s["participacao_pct"] = round(s["quotas"] / total_quotas * 100.0, 2)
+        elif subscrito and subscrito > 0 and s.get("capital_subscrito_socio"):
+            s["participacao_pct"] = round(
+                s["capital_subscrito_socio"] / subscrito * 100.0, 2
+            )
+
+
+def _normalize_fields(fields: dict[str, Any], extraction: dict[str, Any]) -> dict[str, Any]:
+    """Normaliza `extracted_fields` dos dois dialetos pro shape de leitura.
+
+    Saída canônica (consumida por cruzamentos, estrutura, payload e UI):
+      - capital_social: NÚMERO (v2 direto; v3 = capital_social.subscrito)
+      - capital_social_detalhe: objeto completo do dialeto novo (ou None)
+      - endereco: v2 `endereco` ou v3 `endereco_sede`
+      - numero_alteracao / data_ultima_alteracao: v2 top-level ou
+        v3 `documento_meta` (numero_alteracao / data_documento)
+    """
+    meta = extraction.get("documento_meta")
+    meta = meta if isinstance(meta, dict) else {}
+
+    capital_raw = fields.get("capital_social")
+    if isinstance(capital_raw, dict):
+        capital_num = _to_float(capital_raw.get("subscrito"))
+        capital_detalhe: dict[str, Any] | None = capital_raw
+    else:
+        capital_num = _to_float(capital_raw)
+        capital_detalhe = None
+
+    return {
+        **fields,
+        "capital_social": capital_num,
+        "capital_social_detalhe": capital_detalhe,
+        "endereco": fields.get("endereco") or fields.get("endereco_sede"),
+        "numero_alteracao": (
+            fields.get("numero_alteracao")
+            if fields.get("numero_alteracao") is not None
+            else meta.get("numero_alteracao")
+        ),
+        "data_ultima_alteracao": (
+            fields.get("data_ultima_alteracao") or meta.get("data_documento")
+        ),
     }
 
 
@@ -299,6 +372,7 @@ async def build_societario_payload(
     fields = extraction.get("extracted_fields")
     if not isinstance(fields, dict):
         fields = {}
+    fields = _normalize_fields(fields, extraction)
 
     raw_socios = fields.get("socios")
     socios = (
@@ -306,6 +380,8 @@ async def build_societario_payload(
         if isinstance(raw_socios, list)
         else []
     )
+    # Participação derivada em código (dialeto novo traz quotas, não %).
+    _derive_participacoes(socios, fields.get("capital_social_detalhe"))
 
     company = (
         await db.execute(
@@ -340,20 +416,34 @@ async def build_societario_payload(
         "contrato": {
             "cnpj": fields.get("cnpj"),
             "razao_social": fields.get("razao_social"),
-            "capital_social": _to_float(fields.get("capital_social")),
+            "tipo_societario": fields.get("tipo_societario"),
+            # Sempre NÚMERO (normalizado) — detalhe estruturado ao lado.
+            "capital_social": fields.get("capital_social"),
+            "capital_social_detalhe": fields.get("capital_social_detalhe"),
             "data_constituicao": fields.get("data_constituicao"),
             "objeto_social": fields.get("objeto_social"),
             "endereco": fields.get("endereco"),
             "socios": socios,
-            # extract.social_contract v2 — cláusulas (insumo nobre do agente):
+            # Cláusulas (insumo nobre do agente):
             "administradores": _redact_pessoas(fields.get("administradores")),
             "poderes_assinatura": _lista_de_dicts(fields.get("poderes_assinatura")),
             "restricoes_estatutarias": _lista_de_dicts(
                 fields.get("restricoes_estatutarias")
             ),
+            "procuracoes": (
+                fields.get("procuracoes")
+                if isinstance(fields.get("procuracoes"), dict)
+                else None
+            ),
             "numero_alteracao": fields.get("numero_alteracao"),
             "data_ultima_alteracao": fields.get("data_ultima_alteracao"),
         },
+        # Identificação do instrumento (dialeto novo) — cruza com junta_data.
+        "documento_meta": (
+            extraction.get("documento_meta")
+            if isinstance(extraction.get("documento_meta"), dict)
+            else None
+        ),
         "estrutura": _estrutura(socios, _parse_date(fields.get("data_constituicao"))),
         "cruzamentos": _cruzamentos(fields, company, target_cnpj),
     }
