@@ -208,23 +208,38 @@ async def delete_workflow(
     ser excluida — inclusive ACTIVE/ARCHIVED — desde que NADA a referencie.
     A auditoria e preservada por REFERENCIA, nao por status: versao com
     dossie/execucao apontando pra ela e bloqueada (exclua os dossies antes);
-    versao orfa e lixo de iteracao e pode sair. Templates Strata
-    (tenant_id NULL) continuam imutaveis (o filtro por tenant da 404).
+    versao orfa e lixo de iteracao e pode sair.
+
+    Templates Strata (tenant_id NULL): excluiveis APENAS pelo tenant
+    mantenedor do sistema (master user) — mesmas travas de referencia,
+    checadas SEM filtro de tenant (template global pode estar em uso por
+    qualquer tenant).
     """
     from sqlalchemy import func
 
     from app.agentic.playbooks.models.run import PlaybookRun
     from app.modules.credito.models.dossier import CreditDossier
+    from app.shared.identity.tenant import Tenant
 
     row = (
         await db.execute(
-            select(PlaybookDefinition).where(
-                PlaybookDefinition.id == workflow_id,
-                PlaybookDefinition.tenant_id == principal.tenant_id,
-            )
+            select(PlaybookDefinition).where(PlaybookDefinition.id == workflow_id)
         )
     ).scalar_one_or_none()
     if row is None:
+        raise HTTPException(status_code=404, detail="Workflow nao encontrado.")
+
+    if row.tenant_id is None:
+        tenant = await db.get(Tenant, principal.tenant_id)
+        if tenant is None or not tenant.is_system_maintainer:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Template Strata so pode ser excluido pelo tenant "
+                    "mantenedor do sistema."
+                ),
+            )
+    elif row.tenant_id != principal.tenant_id:
         raise HTTPException(
             status_code=404,
             detail="Workflow nao encontrado ou nao pertence ao tenant.",
@@ -262,20 +277,28 @@ async def delete_workflow(
     # versoes vivas do mesmo nome, peca pra ativar outra (senao o nome fica
     # sem versao ativa por acidente). Se e a ultima versao, o ponteiro sai
     # junto — exclusao limpa do playbook inteiro.
-    active = (
-        await db.execute(
-            select(PlaybookDefinitionActive).where(
-                PlaybookDefinitionActive.active_definition_id == workflow_id
+    # Template global pode ter VARIOS ponteiros (um por tenant) — trata lista.
+    actives = list(
+        (
+            await db.execute(
+                select(PlaybookDefinitionActive).where(
+                    PlaybookDefinitionActive.active_definition_id == workflow_id
+                )
             )
         )
-    ).scalar_one_or_none()
-    if active is not None:
+        .scalars()
+        .all()
+    )
+    if actives:
         n_outras = await db.scalar(
             select(func.count())
             .select_from(PlaybookDefinition)
             .where(
                 PlaybookDefinition.name == row.name,
-                PlaybookDefinition.tenant_id == principal.tenant_id,
+                # Irmas no MESMO escopo da versao (tenant ou global/Strata).
+                PlaybookDefinition.tenant_id.is_(None)
+                if row.tenant_id is None
+                else PlaybookDefinition.tenant_id == row.tenant_id,
                 PlaybookDefinition.id != workflow_id,
                 PlaybookDefinition.archived_at.is_(None),
             )
@@ -288,7 +311,8 @@ async def delete_workflow(
                     "playbook — ative outra antes de excluir esta."
                 ),
             )
-        await db.delete(active)
+        for a in actives:
+            await db.delete(a)
         await db.flush()
 
     await db.delete(row)
