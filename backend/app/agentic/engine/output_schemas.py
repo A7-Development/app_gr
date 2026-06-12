@@ -358,6 +358,11 @@ class DocumentExtraction(BaseModel):
 
     The actual structured fields vary per document type; we keep the schema
     permissive (extra=allow) and the prompt for each type pins the shape.
+
+    Doc types with a typed contract live in `EXTRACTION_SCHEMA_BY_DOC_TYPE`
+    below — the runtime swaps this base schema for the specific one and
+    auto-injects its `<output_format>` (same mechanism as specialist agents).
+    The prompt then owns only the READING rules, never the shape (2026-06-11).
     """
 
     model_config = ConfigDict(extra="allow")
@@ -366,6 +371,195 @@ class DocumentExtraction(BaseModel):
     extracted_fields: dict
     confidence: float = Field(..., ge=0.0, le=1.0)
     notes: str | None = None
+
+
+# ─── Contrato social — contrato de dados tipado (2026-06-11) ──────────────
+#
+# Shape canonico da extracao de contrato social (consolida o conteudo do
+# prompt extract.social_contract v3 escrito pelo Ricardo). Regras:
+#   - Tudo opcional: campo ausente do documento => None (o prompt proibe
+#     inventar). Tipos garantem a ESTRUTURA pros consumidores deterministas
+#     (social_contract.py, checks, UI de conferencia).
+#   - Percentual de participacao NAO existe aqui de proposito: e derivado em
+#     CODIGO (quotas/total_quotas) — aritmetica no deterministico, nao no LLM.
+#   - `trecho_literal` em blocos sensiveis = proveniencia em nivel de campo
+#     (§14): o analista homologa conferindo a citacao contra o PDF.
+
+
+class RegistroJunta(BaseModel):
+    """Chancela/etiqueta de registro visivel no documento."""
+
+    model_config = ConfigDict(extra="allow")
+
+    nire: str | None = None
+    junta: str | None = None
+    numero_arquivamento: str | None = None
+    data_arquivamento: str | None = None
+
+
+class InstrumentoNoAnexo(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    tipo: str | None = None
+    numero: int | None = None
+    data: str | None = None
+
+
+class DocumentoMeta(BaseModel):
+    """Identificacao do instrumento societario (etapa 1 da leitura)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    tipo: (
+        Literal[
+            "constituicao",
+            "alteracao",
+            "consolidacao",
+            "alteracao_com_consolidacao",
+            "estatuto_social",
+            "outro",
+        ]
+        | None
+    ) = None
+    numero_alteracao: int | None = None
+    data_documento: str | None = None
+    registro_junta: RegistroJunta | None = None
+    alteracoes_anteriores_mencionadas: list[int] = Field(default_factory=list)
+    documento_consolidado: bool | None = None
+    instrumentos_no_anexo: list[InstrumentoNoAnexo] = Field(default_factory=list)
+
+
+class ParcelaIntegralizacao(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    valor: float | None = None
+    prazo: str | None = None
+
+
+class CapitalSocial(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    subscrito: float | None = None
+    integralizado: float | None = None
+    forma_integralizacao: str | None = None
+    valor_nominal_quota: float | None = None
+    total_quotas: int | None = None
+    parcelas_integralizacao: list[ParcelaIntegralizacao] = Field(default_factory=list)
+    trecho_literal: str | None = None
+
+
+class SocioExtraido(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    nome: str | None = None
+    tipo: Literal["pf", "pj"] | None = None
+    cpf_cnpj: str | None = None
+    quotas: int | None = None
+    capital_subscrito_socio: float | None = None
+    regime_casamento: str | None = None
+    residente_exterior: bool | None = None
+    qualificacao_resumo: str | None = None
+
+
+class AdministradorExtraido(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    nome: str | None = None
+    cpf: str | None = None
+    socio: bool | None = None
+    forma_atuacao: str | None = None
+    forma_atuacao_descricao: str | None = None
+    mandato: str | None = None
+    trecho_literal: str | None = None
+
+
+class PoderAssinatura(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    quem: str | None = None
+    forma: str | None = None
+    descricao: str | None = None
+    limites_valor: str | None = None
+    trecho_literal: str | None = None
+    referencia: str | None = None
+
+
+class RegrasProcuracao(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    permitido: bool | None = None
+    condicoes: str | None = None
+    trecho_literal: str | None = None
+    referencia: str | None = None
+
+
+class RestricaoEstatutaria(BaseModel):
+    """Item da varredura tematica obrigatoria (temas a..h do prompt).
+
+    `status="sem_clausula"` e informacao, nao omissao — analogo do §14.6:
+    a ausencia de clausula sobre o tema e reportada explicitamente.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    tema: str | None = None
+    status: (
+        Literal["vedado", "condicionado", "permitido_expressamente", "sem_clausula"]
+        | None
+    ) = None
+    resumo: str | None = None
+    condicao: str | None = None
+    trecho_literal: str | None = None
+    referencia: str | None = None
+    confidence: float | None = None
+
+
+class AcordoSociosMencao(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    existe_mencao: bool | None = None
+    referencia: str | None = None
+
+
+class ContratoSocialFields(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    cnpj: str | None = None
+    razao_social: str | None = None
+    tipo_societario: str | None = None
+    data_constituicao: str | None = None
+    objeto_social: str | None = None
+    endereco_sede: str | None = None
+    prazo_duracao: str | None = None
+    capital_social: CapitalSocial | None = None
+    socios: list[SocioExtraido] = Field(default_factory=list)
+    administradores: list[AdministradorExtraido] = Field(default_factory=list)
+    poderes_assinatura: list[PoderAssinatura] = Field(default_factory=list)
+    procuracoes: RegrasProcuracao | None = None
+    restricoes_estatutarias: list[RestricaoEstatutaria] = Field(default_factory=list)
+    acordo_socios_mencionado: AcordoSociosMencao | None = None
+    alteracao_quadro_societario: str | None = None
+
+
+class ContratoSocialExtraction(BaseModel):
+    """Output tipado do extrator para doc_type=social_contract."""
+
+    model_config = ConfigDict(extra="allow")
+
+    document_type: str
+    documento_meta: DocumentoMeta | None = None
+    extracted_fields: ContratoSocialFields
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    campos_ilegiveis: list[str] = Field(default_factory=list)
+    paginas_ilegiveis: list[int] = Field(default_factory=list)
+    notes: str | None = None
+
+
+# Doc types com contrato tipado. Ausente do mapa => DocumentExtraction
+# (permissivo, prompt define o shape — legado).
+EXTRACTION_SCHEMA_BY_DOC_TYPE: dict[str, type[BaseModel]] = {
+    "social_contract": ContratoSocialExtraction,
+}
 
 
 class PleitoExtraction(BaseModel):

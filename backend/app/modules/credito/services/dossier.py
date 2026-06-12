@@ -864,6 +864,30 @@ async def absorb_partners_from_social_contract(
     if not isinstance(socios, list) or not socios:
         return
 
+    # Dialeto tipado (2026-06-11): a extração traz quotas/capital por sócio,
+    # não percentual — o % é aritmética DERIVADA EM CÓDIGO (nunca pelo LLM),
+    # e só quando o denominador veio escrito no documento.
+    capital = fields.get("capital_social")
+    capital = capital if isinstance(capital, dict) else {}
+    total_quotas = capital.get("total_quotas")
+    capital_subscrito = capital.get("subscrito")
+
+    def _pct_of(item: dict[str, Any]) -> Decimal | None:
+        pct = _parse_pct(item.get("participacao_pct"))
+        if pct is not None:
+            return pct
+        quotas = item.get("quotas")
+        if isinstance(total_quotas, int) and total_quotas > 0 and isinstance(quotas, int):
+            return Decimal(str(round(quotas / total_quotas * 100.0, 2)))
+        sub_socio = item.get("capital_subscrito_socio")
+        if (
+            isinstance(capital_subscrito, (int, float))
+            and capital_subscrito > 0
+            and isinstance(sub_socio, (int, float))
+        ):
+            return Decimal(str(round(sub_socio / capital_subscrito * 100.0, 2)))
+        return None
+
     target = (
         await db.execute(
             select(CreditDossierCompany).where(
@@ -897,7 +921,8 @@ async def absorb_partners_from_social_contract(
         if not isinstance(nome, str) or not nome.strip():
             continue
         cpf_red: str | None = None
-        raw_cpf = item.get("cpf")
+        # Dialeto v2 usa `cpf`; o tipado (2026-06-11) usa `cpf_cnpj`.
+        raw_cpf = item.get("cpf") or item.get("cpf_cnpj")
         if isinstance(raw_cpf, str):
             cpf_digits = _digits(raw_cpf)
             if cpf_digits:
@@ -910,7 +935,7 @@ async def absorb_partners_from_social_contract(
                 role=PersonRole.PARTNER,
                 company_cnpj=company_cnpj,
                 cpf_redacted=cpf_red,
-                ownership_pct=_parse_pct(item.get("participacao_pct")),
+                ownership_pct=_pct_of(item),
             )
         )
     await db.flush()
