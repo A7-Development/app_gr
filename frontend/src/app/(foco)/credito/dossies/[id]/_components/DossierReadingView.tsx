@@ -34,6 +34,11 @@ import type {
   RevenueAnalysis,
 } from "@/lib/credito-client"
 import { cx } from "@/lib/utils"
+
+import {
+  DossierCoverageStrip,
+  type CoverageItem,
+} from "./DossierCoverageStrip"
 import { CadastralCard } from "./CadastralCard"
 
 type OpinionOutput = {
@@ -52,6 +57,7 @@ export type LastroEntry = {
 }
 
 export function DossierReadingView({
+  coverage,
   dossier,
   docs,
   redFlags,
@@ -65,6 +71,7 @@ export function DossierReadingView({
   onOpenTrail,
   onGoToStation,
 }: {
+  coverage?: CoverageItem[]
   dossier: DossierRead
   docs: CreditDocumentRead[]
   redFlags: RedFlagItem[]
@@ -172,6 +179,12 @@ export function DossierReadingView({
       {/* Documento */}
       <div className="flex-1 overflow-y-auto bg-gray-50 px-8 pt-7 dark:bg-gray-925">
         <article className="mx-auto max-w-[860px] rounded-t border border-gray-200 bg-white px-14 py-12 shadow-xs dark:border-gray-800 dark:bg-gray-950">
+          {/* Raio-X de cobertura — bate o olho e sabe o que foi visto. */}
+          {coverage && coverage.length > 0 && (
+            <div className="mb-8">
+              <DossierCoverageStrip items={coverage} />
+            </div>
+          )}
           {/* Capa */}
           <header className="flex items-start justify-between border-b-2 border-gray-900 pb-6 dark:border-gray-100">
             <div>
