@@ -77,6 +77,11 @@ export type StrataNodeData = {
    *  Vem de SemanticValidationResult.produced_by_node (Fase 2/3a).
    *  Renderizado como chips coloridos no rodapé do nó. */
   producedVars?: Record<string, string>
+  /** F3 — papel na linhagem do node selecionado: feeder (me alimenta, azul),
+   *  consumer (consome meu output, verde), dim (sem relacao de dado). */
+  lineageRole?: "feeder" | "consumer" | "dim"
+  /** Variaveis que fluem entre este node e o selecionado. */
+  lineageVars?: string[]
   /** Fan-in semantics quando o node tem 2+ incoming edges.
    *  "all" = espera todas as etapas anteriores; "any" = qualquer uma dispara.
    *  Default backend: "all". Renderizado como badge no header so quando
@@ -122,7 +127,7 @@ export function StrataNode({ data, selected }: NodeProps) {
     <div
       data-validation={status}
       className={cx(
-        "relative min-w-[180px] max-w-[260px] rounded-md border bg-white shadow-sm transition-shadow dark:bg-gray-950",
+        "relative min-w-[180px] max-w-[260px] rounded-md border bg-white shadow-sm transition-all dark:bg-gray-950",
         selected
           ? "border-blue-500 shadow-md"
           : status === "error"
@@ -130,9 +135,35 @@ export function StrataNode({ data, selected }: NodeProps) {
             : status === "warning"
               ? "border-amber-400 dark:border-amber-500/60"
               : "border-gray-200 dark:border-gray-800",
+        // F3 — linhagem do selecionado: quem alimenta (azul) / quem consome
+        // (verde) ganha anel; sem relacao de dado esmaece.
+        d.lineageRole === "feeder" && "ring-2 ring-blue-400/70 dark:ring-blue-500/50",
+        d.lineageRole === "consumer" &&
+          "ring-2 ring-emerald-400/70 dark:ring-emerald-500/50",
+        d.lineageRole === "dim" && "opacity-35",
       )}
       title={d.validationMessage ?? undefined}
     >
+      {(d.lineageRole === "feeder" || d.lineageRole === "consumer") &&
+        (d.lineageVars?.length ?? 0) > 0 && (
+          <span
+            className={cx(
+              "absolute -top-2 left-2 z-10 rounded px-1.5 py-px text-[9px] font-semibold shadow-sm",
+              d.lineageRole === "feeder"
+                ? "bg-blue-600 text-white"
+                : "bg-emerald-600 text-white",
+            )}
+            title={
+              d.lineageRole === "feeder"
+                ? "Envia estas variaveis pro node selecionado"
+                : "Consome estas variaveis do node selecionado"
+            }
+          >
+            {d.lineageRole === "feeder" ? "envia → " : "← consome "}
+            {d.lineageVars?.slice(0, 3).join(", ")}
+            {(d.lineageVars?.length ?? 0) > 3 ? "…" : ""}
+          </span>
+        )}
       {/* 4 handles de conexão — um em cada lado. Todos `source` + ReactFlow
        *  configurado com `connectionMode=Loose` (no page.tsx) permite que
        *  qualquer handle se conecte a qualquer outro, independente do tipo.
