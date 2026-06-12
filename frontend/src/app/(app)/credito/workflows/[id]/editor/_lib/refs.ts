@@ -49,15 +49,12 @@ export type AvailableSource = {
 //
 // MVP — em Phase 2 vem do backend ou de inspecao do schema Pydantic.
 
-/** Campos expostos pelo trigger_data de um dossie. Espelha o
- *  trigger_data construido em
- *  `backend/app/modules/credito/services/dossier.py::create_dossier`.
- *  `cnpj` e `target_cnpj` sao aliases — ambos resolvem pro mesmo valor. */
+/** Campos do gatilho — MINIMO por decisao de produto (2026-06-12):
+ *  identidade da empresa NAO e variavel de gatilho (entra pelo formulario
+ *  de Identificacao). Espelha TriggerNode.produces(). */
 const TRIGGER_FIELDS: AvailableField[] = [
-  { key: "cnpj",          label: "CNPJ",                type: "string" },
-  { key: "target_cnpj",   label: "CNPJ (alvo)",         type: "string" },
-  { key: "target_name",   label: "Razao social (alvo)", type: "string" },
-  { key: "dossier_id",    label: "ID do dossie",        type: "string" },
+  { key: "dossier_id",   label: "ID do dossie",      type: "string" },
+  { key: "trigger_kind", label: "Tipo de abertura",  type: "string" },
 ]
 
 /** Outputs por agente especialista (espelha output_schemas.py). */
@@ -221,7 +218,26 @@ export function getNodeOutputFields(
         { key: "approved", label: "Aprovado pelo analista", type: "boolean" },
         { key: "comment",  label: "Comentario do analista", type: "string"  },
       ]
+    case "official_document_fetch":
+      return [
+        { key: "found",       label: "Documento localizado (sim/nao)", type: "boolean" },
+        { key: "document_id", label: "ID do documento anexado",        type: "string"  },
+        { key: "filename",    label: "Nome do arquivo",                type: "string"  },
+        { key: "doc_type",    label: "Tipo do documento",              type: "string"  },
+        { key: "message",     label: "Mensagem (quando nao localiza)", type: "string"  },
+      ]
     default:
+      // Fallback: usa o produces() REAL vindo da validacao semantica —
+      // tipo novo de node nunca mais fica invisivel no picker/condicao
+      // (pos-mortem 2026-06-12: JUCESP publicava found e o construtor de
+      // condicao nao listava).
+      if (data.producedVars && Object.keys(data.producedVars).length > 0) {
+        return Object.entries(data.producedVars).map(([key, t]) => ({
+          key,
+          label: key,
+          type: mapFieldType(t),
+        }))
+      }
       return []
   }
 }
