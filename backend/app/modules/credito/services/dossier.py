@@ -77,14 +77,14 @@ async def create_dossier(
     dossier.code = f"DC-{datetime.now(UTC).year}-{int(seq):04d}"
     await db.flush()
 
-    # Trigger data — apenas o que foi de fato passado. Os aliases `cnpj`
-    # / `target_cnpj` so existem se o caller forneceu (compat com fluxos
-    # legados que usam `{{trigger.cnpj}}` direto). Fluxos novos coletam
-    # via human_input e usam `{{node.<id>.output.<campo>}}`.
+    # Trigger data minimo (2026-06-12): o CONTRATO do gatilho e so
+    # dossier_id + trigger_kind (ver TriggerNode.produces). target_cnpj/
+    # target_name seguem aqui como payload INTERNO (cabecalho de contexto
+    # dos agentes em runtime) — nao sao variaveis publicadas; CNPJ entra
+    # pelo formulario de Identificacao e vive na empresa-alvo do dossie.
     trigger_data: dict[str, Any] = {"dossier_id": str(dossier.id)}
     if target_cnpj:
         trigger_data["target_cnpj"] = target_cnpj
-        trigger_data["cnpj"] = target_cnpj
     if target_name:
         trigger_data["target_name"] = target_name
 

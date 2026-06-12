@@ -182,7 +182,7 @@ NODE_TYPES: dict[str, NodeTypeMeta] = {
                 "key": "entity_ref",
                 "type": "string",
                 "label": "CNPJ a consultar",
-                "placeholder": "{{trigger.cnpj}}",
+                "placeholder": "{{node.identificacao.output.cnpj}}",
                 "required": True,
             },
             {

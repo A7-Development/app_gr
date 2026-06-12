@@ -162,7 +162,7 @@ export function validateGraph(
           errors.push({
             level: "error",
             nodeId: n.id,
-            message: `A etapa "${etapaName}" precisa do CNPJ (use {{trigger.cnpj}} ou um valor literal).`,
+            message: `A etapa "${etapaName}" precisa do CNPJ — ligue na variavel da Identificacao (ex.: {{node.identificacao.output.cnpj}}) ou digite um valor.`,
           })
         }
       } else if (adapter) {

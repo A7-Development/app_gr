@@ -55,8 +55,8 @@ export function nodeContract(
   switch (nodeType) {
     case "trigger":
       return {
-        recebe: "Dados de abertura do dossiê (empresa-alvo, analista)",
-        faz: "Inicia a análise — todo fluxo parte daqui.",
+        recebe: "Nada — é o ponto zero",
+        faz: "Abre a análise e publica a identidade do dossiê. O CNPJ da empresa NÃO nasce aqui: entra no formulário de Identificação, confirmado pelo analista.",
       }
 
     case "human_input": {
