@@ -139,9 +139,44 @@ def main():
                 lambda v: str(v).strip().removesuffix(".0") if pd.notna(v) else "0")
             out["coobrigacao"] = out["coobrigacao"].map(
                 lambda v: "SIM" if str(v).strip().upper() == "SIM" else "NAO")
-            # sanity: dataReferencia unica e igual a data do manifesto
-            refs = {x for x in out["dataReferencia"] if x}
+
+            # ---- filtro de linha valida -------------------------------
+            # Acervo tem anotacoes manuais fora da tabela ("baixa manual",
+            # "Total", side-tables). Linha REAL de recebivel exige:
+            # dataReferencia == data esperada, DOC_CEDENTE com cara de
+            # CNPJ/CPF, seuNumero presente e valorPresente numerico.
             esperado = date.fromisoformat(d).strftime("%d/%m/%Y")
+
+            def _num_ok(v):
+                s = str(v).strip()
+                if not s:
+                    return False
+                try:
+                    float(s.replace(".", "").replace(",", "."))
+                    return True
+                except ValueError:
+                    return False
+
+            doc_digits = out["docCedente"].map(
+                lambda v: len([c for c in str(v) if c.isdigit()]))
+            validas = (
+                (out["dataReferencia"] == esperado)
+                & doc_digits.isin((11, 14))
+                & (out["seuNumero"].astype(str).str.strip() != "")
+                & out["valorPresente"].map(_num_ok)
+            )
+            descartadas = int((~validas).sum())
+            out = out[validas].copy()
+            if len(out) == 0:
+                raise ValueError("zero linhas validas apos filtro")
+
+            # numericas secundarias com lixo -> vazio (mapper trata como 0)
+            sanit = 0
+            for c in COLS_NUM - {"valorPresente"}:
+                ruim = ~out[c].map(lambda v: _num_ok(v) or str(v).strip() == "")
+                sanit += int(ruim.sum())
+                out.loc[ruim, c] = ""
+            refs = {x for x in out["dataReferencia"] if x}
             if refs != {esperado}:
                 raise ValueError(f"dataReferencia {refs} != {esperado}")
             buf = io.StringIO()
@@ -152,6 +187,7 @@ def main():
                 fh.write(txt)
             out_manifest.append({
                 "data": d, "arquivo_origem": arq, "linhas": len(out),
+                "descartadas": descartadas, "sanitizadas": sanit,
                 "sha256": hashlib.sha256(txt.encode()).hexdigest()[:16],
             })
         except Exception as e:
@@ -160,7 +196,7 @@ def main():
             print(f"  ... {i}/{len(rows)}")
 
     with open(os.path.join(HERE, "staging_manifest.csv"), "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=["data", "arquivo_origem", "linhas", "sha256"], delimiter=";")
+        w = csv.DictWriter(fh, fieldnames=["data", "arquivo_origem", "linhas", "descartadas", "sanitizadas", "sha256"], delimiter=";")
         w.writeheader()
         w.writerows(out_manifest)
 
