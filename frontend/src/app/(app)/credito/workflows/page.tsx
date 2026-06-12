@@ -64,6 +64,7 @@ import {
 } from "@/design-system/components"
 import { cardTokens } from "@/design-system/tokens/card"
 import { tableTokens } from "@/design-system/tokens/table"
+import { fetchMe } from "@/lib/api-client"
 import { cx } from "@/lib/utils"
 import {
   credito,
@@ -82,6 +83,10 @@ export default function WorkflowsPage() {
   const action = sp.get("action") // "new" | null
 
   // ── Query ───────────────────────────────────────────────────────────────
+  // Master user (tenant mantenedor) pode excluir templates Strata.
+  const meQuery = useQuery({ queryKey: ["me"], queryFn: fetchMe, staleTime: 5 * 60 * 1000 })
+  const isMaintainer = Boolean(meQuery.data?.tenant?.is_system_maintainer)
+
   const { data: workflows, isLoading } = useQuery({
     queryKey: ["credito", "workflows"],
     queryFn: () => credito.workflows.list(),
@@ -271,6 +276,7 @@ export default function WorkflowsPage() {
                 <WorkflowCard
                   key={wf.id}
                   workflow={wf}
+                  canDeleteStrata={isMaintainer}
                   onOpen={() => openEditor(wf)}
                   onDelete={() => setPendingDelete(wf)}
                 />
@@ -411,14 +417,18 @@ function detectWorkflowIssues(wf: WorkflowDefinitionRead): {
 
 function WorkflowCard({
   workflow,
+  canDeleteStrata,
   onOpen,
   onDelete,
 }: {
   workflow: WorkflowDefinitionRead
+  /** Master user (tenant mantenedor) pode excluir templates Strata. */
+  canDeleteStrata: boolean
   onOpen: () => void
   onDelete: () => void
 }) {
   const isStrata = workflow.tenant_id === null
+  const canDelete = !isStrata || canDeleteStrata
   const nodeCount = workflow.graph.nodes.length
   const statusMeta = STATUS_META[workflow.status]
   const StatusIcon = statusMeta.icon
@@ -502,9 +512,10 @@ function WorkflowCard({
                 <RiPencilLine className="mr-2 size-4" aria-hidden />
                 Abrir editor
               </DropdownMenuItem>
-              {/* Excluir: templates Strata (tenant_id NULL) sao imutaveis.
-                  O backend so deleta versao DRAFT nao-ativa do tenant. */}
-              {!isStrata && (
+              {/* Excluir: playbooks do tenant sempre; template Strata so
+                  pro master user (mantenedor). Backend valida referencia
+                  (dossies/execucoes) antes de apagar. */}
+              {canDelete && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
