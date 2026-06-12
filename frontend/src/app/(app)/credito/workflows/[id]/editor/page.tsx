@@ -92,6 +92,10 @@ import { cx } from "@/lib/utils"
 import { AgentHoverCard } from "./_components/AgentHoverCard"
 import { AgentCatalogContext } from "./_components/NodeContract"
 import { EsteiraPreviewPanel } from "./_components/EsteiraPreviewPanel"
+import {
+  decorateEdgesWithLabels,
+  suggestBranchCondition,
+} from "./_lib/edge-label"
 import { EdgeConditionPopover } from "./_components/EdgeConditionPopover"
 import { NodeInspector } from "./_components/NodeInspector"
 import {
@@ -194,16 +198,9 @@ function graphToReactFlow(
       width: 16,
       height: 16,
     },
-    label: e.condition ? `se: ${e.condition.slice(0, 40)}` : undefined,
+    // Rotulo de dominio ("se score >= 700" / "senao") e aplicado de forma
+    // centralizada por decorateEdgesWithLabels (F5) — aqui so o dado.
     data: { condition: e.condition },
-    labelStyle: {
-      fontSize: 10,
-      fill: "rgb(107 114 128)",
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-    },
-    labelBgPadding: [4, 2],
-    labelBgBorderRadius: 4,
-    labelBgStyle: { fill: "white", fillOpacity: 0.9 },
     animated: false,
   }))
   return { nodes, edges }
@@ -508,7 +505,6 @@ function EditorBody({
             ? {
                 ...e,
                 data: { ...(e.data ?? {}), condition },
-                label: condition ? `se: ${condition.slice(0, 40)}` : undefined,
               }
             : e,
         ),
@@ -517,6 +513,10 @@ function EditorBody({
     },
     [setEdges],
   )
+
+  // F5: rotulos de dominio nas conexoes ("se score ≥ 700" / "senao") —
+  // derivados a cada mudanca; o estado original das edges fica intacto.
+  const displayEdges = React.useMemo(() => decorateEdgesWithLabels(edges), [edges])
 
   // ─── Adicionar etapa ao canvas (compartilhado por drag-drop e click) ─
 
@@ -621,20 +621,36 @@ function EditorBody({
         toast.error("Nao da pra conectar uma etapa a ela mesma.")
         return
       }
-      setEdges((eds) =>
-        addEdge(
+      setEdges((eds) => {
+        // F5: saindo de um Branch Condicional, sugere o par sim/nao — a 1a
+        // saida ganha "resultado e sim", a 2a "resultado e nao". O usuario
+        // edita no popover da conexao se quiser outra regra.
+        const sourceNode = reactFlow.getNode(connection.source as string)
+        const sourceType = (sourceNode?.data as { nodeType?: string } | undefined)
+          ?.nodeType
+        let condition: string | null = null
+        if (sourceType === "conditional_branch") {
+          const outgoing = eds.filter((e) => e.source === connection.source)
+          condition = suggestBranchCondition(connection.source as string, outgoing)
+          if (condition) {
+            toast.info(
+              `Conector sugerido: "${condition.includes("true") ? "se resultado e sim" : "senao"}" — clique na conexao pra ajustar.`,
+            )
+          }
+        }
+        return addEdge(
           {
             ...connection,
             id: `e_${connection.source}_${connection.target}_${Math.random().toString(36).slice(2, 6)}`,
             type: "smoothstep",
-            data: { condition: null },
+            data: { condition },
           },
           eds,
-        ),
-      )
+        )
+      })
       setDirty(true)
     },
-    [canEdit, setEdges],
+    [canEdit, setEdges, reactFlow],
   )
 
   // ─── Delete on keydown ───────────────────────────────────────────────
@@ -905,7 +921,7 @@ function EditorBody({
           )}
           <ReactFlow
             nodes={nodesWithStatus}
-            edges={edges}
+            edges={displayEdges}
             onNodesChange={handleNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeClick={handleNodeClick}
