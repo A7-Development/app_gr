@@ -291,8 +291,13 @@ export function getAvailableSources(
   targetNodeId: string,
   nodes: Node[],
   edges: Edge[],
+  /** Inclui o PROPRIO node nas fontes — uso: condicao de CONEXAO, onde o
+   *  caso primario e rotear pelo output da etapa de onde a seta SAI
+   *  (ex.: "se found e nao" saindo da busca JUCESP). Pos-mortem 2026-06-12. */
+  includeSelf = false,
 ): AvailableSource[] {
   const upstreamIds = findUpstreamNodeIds(targetNodeId, edges)
+  if (includeSelf) upstreamIds.add(targetNodeId)
   const sources: AvailableSource[] = []
 
   // Trigger sempre primeiro.

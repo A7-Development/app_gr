@@ -78,6 +78,8 @@ export type ConditionBuilderProps = {
   edges: Edge[]
   /** Mensagem auxiliar (ex.: "Vazio = sempre passa"). */
   hint?: string
+  /** Inclui o proprio targetNodeId nas fontes (condicao de conexao). */
+  includeSelf?: boolean
 }
 
 export function ConditionBuilder({
@@ -87,10 +89,11 @@ export function ConditionBuilder({
   nodes,
   edges,
   hint,
+  includeSelf = false,
 }: ConditionBuilderProps) {
   const sources = React.useMemo(
-    () => getAvailableSources(targetNodeId, nodes, edges),
-    [targetNodeId, nodes, edges],
+    () => getAvailableSources(targetNodeId, nodes, edges, includeSelf),
+    [targetNodeId, nodes, edges, includeSelf],
   )
 
   // Parse value into structured Condition. If unparseable, fall back to
