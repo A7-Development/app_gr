@@ -41,7 +41,7 @@ type OpinionOutput = {
   recommendation?: "approve" | "conditional" | "deny"
   strengths?: string[]
   concerns?: string[]
-  conditions?: string[]
+  conditions?: string[] | null
 }
 
 export type LastroEntry = {
