@@ -947,7 +947,6 @@ function ComparativoMensal({
           scenarios={["PY", "AC"]}
           rows={compRows}
           variance="abs+pct"
-          className="bg-white dark:bg-gray-950"
         />
         <DecompositionTable
           title={{
@@ -959,7 +958,6 @@ function ComparativoMensal({
           rows={decompRows}
           variance="none"
           collapseAfter={6}
-          className="bg-white dark:bg-gray-950"
         />
       </section>
     </>
