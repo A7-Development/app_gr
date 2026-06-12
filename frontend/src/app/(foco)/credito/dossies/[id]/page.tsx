@@ -48,6 +48,7 @@ import {
 } from "./_components/FaturamentoStation"
 import { RevenueAnalysisView } from "./_components/RevenueAnalysisView"
 import { SocialContractAnalysisView } from "./_components/SocialContractAnalysisView"
+import { SocialContractConferenceView } from "./_components/SocialContractConferenceView"
 import { TrailSheet, type TrailEvent } from "./_components/TrailSheet"
 import { CadastralAnalysisView } from "./_components/CadastralAnalysisView"
 import { CadastralCard } from "./_components/CadastralCard"
@@ -967,13 +968,25 @@ export default function DossierFocusPage() {
               })
             }
           />
-          {primaryDoc && (
-            <FichaConferenceZone
-              dossierId={dossierId}
-              doc={primaryDoc}
-              editable={Boolean(stationOpen)}
-            />
-          )}
+          {primaryDoc &&
+            (primaryDoc.doc_type.toLowerCase() === "social_contract" ? (
+              // Conferência GUIADA do contrato social (extração tipada tem
+              // seções/tabelas/citações — a comparação plana fica pequena).
+              <SocialContractConferenceView
+                dossierId={dossierId}
+                doc={primaryDoc}
+                analysis={extractAgentOutput<SocialContractAnalysis>(
+                  steps,
+                  "social_contract_analyst",
+                )}
+              />
+            ) : (
+              <FichaConferenceZone
+                dossierId={dossierId}
+                doc={primaryDoc}
+                editable={Boolean(stationOpen)}
+              />
+            ))}
         </React.Fragment>
       )
     }
