@@ -27,6 +27,10 @@ class IndicadoresFundo(BaseModel):
     pl_medio: float | None = None
     subordinacao_pct: float | None = None
     subordinacao_pct_rank: float | None = None
+    subordinacao_jr_pct: float | None = None
+    subordinacao_jr_pct_rank: float | None = None
+    sub_jr_sobre_sub_pct: float | None = None
+    sub_jr_sobre_sub_pct_rank: float | None = None
     passivo_ativo_pct: float | None = None
     passivo_ativo_pct_rank: float | None = None
     dc_ativo_pct: float | None = None
@@ -39,6 +43,8 @@ class IndicadoresFundo(BaseModel):
     inad_total_pct_rank: float | None = None
     inad_90_pct: float | None = None
     inad_90_pct_rank: float | None = None
+    inad_180_pct: float | None = None
+    inad_180_pct_rank: float | None = None
     cobertura_pdd_pct: float | None = None
     cobertura_pdd_pct_rank: float | None = None
     pdd_pl_pct: float | None = None
