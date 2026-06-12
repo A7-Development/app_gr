@@ -435,6 +435,9 @@ async def build_societario_payload(
                 if isinstance(fields.get("procuracoes"), dict)
                 else None
             ),
+            # Achados fora do esperado (penhora, usufruto, gravame...) — fato
+            # + citacao, capturados quando nao cabem em campo estruturado.
+            "pontos_de_atencao": _lista_de_dicts(fields.get("pontos_de_atencao")),
             "numero_alteracao": fields.get("numero_alteracao"),
             "data_ultima_alteracao": fields.get("data_ultima_alteracao"),
         },
