@@ -99,7 +99,8 @@ export function nodeContract(
 
     case "cadastral_enrichment":
       return {
-        recebe: "CNPJ da empresa-alvo (do dossiê)",
+        recebe:
+          "CNPJ da empresa-alvo do dossiê — preenchido pelo formulário de Identificação (posicione esta etapa DEPOIS dele). Origem fixa: opera sempre sobre quem está sendo analisado.",
         faz: `Consulta o dataset ${String(config.public_code ?? "CAD-PJ")} e grava situação, CNAEs, capital e fundação na empresa-alvo — alimenta os checks de elegibilidade.`,
       }
 
@@ -108,7 +109,8 @@ export function nodeContract(
         (r) => r.key === String(config.document ?? ""),
       )
       return {
-        recebe: "CNPJ da empresa-alvo (do dossiê)",
+        recebe:
+          "CNPJ da empresa-alvo do dossiê — preenchido pelo formulário de Identificação (posicione esta etapa DEPOIS dele). Origem fixa: opera sempre sobre quem está sendo analisado.",
         faz: recipe
           ? `Busca "${recipe.label}" direto na fonte oficial — 3 etapas internas, sem clique do analista.`
           : "Busca um documento oficial direto na fonte pública.",
