@@ -72,6 +72,10 @@ class OfficialDocumentFetchNode(BaseNode):
 
     async def execute(self, ctx: NodeContext, db: AsyncSession) -> NodeOutput:
         # Late imports: evita ciclo (nodes -> credito service -> workflow public).
+        from sqlalchemy import desc, select
+
+        from app.core.enums import DocumentType
+        from app.modules.credito.models.document import CreditDossierDocument
         from app.modules.credito.services.junta import (
             JuntaFetchError,
             fetch_social_contract_from_junta,
@@ -87,6 +91,51 @@ class OfficialDocumentFetchNode(BaseNode):
             raise RuntimeError(
                 "official_document_fetch: trigger_data sem dossier_id — "
                 "node so roda dentro de um dossie de credito."
+            )
+
+        # GATE DE HOMOLOGACAO (2026-06-12, decisao de produto): a estacao NAO
+        # fecha sozinha. Apos anexar+extrair, o node PAUSA ate o analista
+        # homologar a conferencia (PATCH extraction -> validated, que tambem
+        # retoma o run). Tambem torna o node idempotente: re-execucao no
+        # resume NAO re-consulta a JUCESP (custo + 2min) — le o documento que
+        # ja esta no dossie (vindo desta busca OU de upload manual paralelo).
+        existing = (
+            await db.execute(
+                select(CreditDossierDocument)
+                .where(
+                    CreditDossierDocument.tenant_id == ctx.tenant_id,
+                    CreditDossierDocument.dossier_id == UUID(str(dossier_id_raw)),
+                    CreditDossierDocument.doc_type == DocumentType.SOCIAL_CONTRACT,
+                )
+                .order_by(desc(CreditDossierDocument.uploaded_at))
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if existing is not None and existing.extraction_status == "validated":
+            return NodeOutput(
+                data={
+                    "found": True,
+                    "document_id": str(existing.id),
+                    "filename": existing.original_filename,
+                    "doc_type": existing.doc_type.value,
+                    "message": "",
+                },
+                status_hint="conferência homologada pelo analista",
+            )
+        if existing is not None and existing.extraction_status in (
+            "success",
+            "processing",
+        ):
+            return NodeOutput(
+                data={
+                    "found": True,
+                    "document_id": str(existing.id),
+                    "filename": existing.original_filename,
+                    "doc_type": existing.doc_type.value,
+                    "message": "Aguardando o analista homologar a conferência da extração.",
+                },
+                should_pause=True,
+                status_hint="aguardando homologação da conferência",
             )
 
         # Receita unica hoje; branch explicito pra proxima receita nao virar if-cego.
@@ -115,13 +164,17 @@ class OfficialDocumentFetchNode(BaseNode):
                 status_hint="documento nao localizado na fonte",
             )
 
+        # Documento anexado + extraido — PAUSA pro analista conferir e
+        # homologar (gate). A homologacao retoma o run e a re-execucao cai
+        # no branch "validated" acima, completando com found=true.
         return NodeOutput(
             data={
                 "found": True,
                 "document_id": str(doc.id),
                 "filename": doc.original_filename,
                 "doc_type": doc.doc_type.value,
-                "message": "",
+                "message": "Aguardando o analista homologar a conferência da extração.",
             },
-            status_hint=f"documento anexado: {doc.original_filename[:60]}",
+            should_pause=True,
+            status_hint=f"documento anexado: {doc.original_filename[:48]} — aguardando homologação",
         )

@@ -229,8 +229,56 @@ async def update_document_extraction(
         extracted_fields=payload.extracted_fields,
         confidence=payload.confidence,
     )
+
+    # GATE (2026-06-12): se o run esta pausado num official_document_fetch
+    # aguardando homologacao, a homologacao (validated) RETOMA o fluxo — a
+    # re-execucao do node ve extraction_status=validated e completa com
+    # found=true, liberando a conducao pro agente.
+    await _resume_official_fetch_if_waiting(
+        db, tenant_id=principal.tenant_id, dossier_id=dossier_id
+    )
+
     await db.commit()
     return DocumentRead.model_validate(doc)
+
+
+async def _resume_official_fetch_if_waiting(
+    db: AsyncSession, *, tenant_id: UUID, dossier_id: UUID
+) -> None:
+    """Retoma o run quando a homologacao destrava o gate da busca oficial."""
+    from sqlalchemy import select
+
+    from app.agentic.playbooks.models.run import PlaybookRunStep
+    from app.agentic.playbooks.services import engine as workflow_engine
+    from app.core.enums import NodeRunStatus
+    from app.modules.credito.services import dossier as dossier_svc
+
+    dossier = await dossier_svc.get_dossier(
+        db, tenant_id=tenant_id, dossier_id=dossier_id
+    )
+    if dossier is None or dossier.workflow_run_id is None:
+        return
+    waiting = (
+        await db.execute(
+            select(PlaybookRunStep).where(
+                PlaybookRunStep.run_id == dossier.workflow_run_id,
+                PlaybookRunStep.node_type == "official_document_fetch",
+                PlaybookRunStep.status == NodeRunStatus.WAITING_INPUT,
+            )
+        )
+    ).scalars().all()
+    if not waiting:
+        return
+    node_ids = [w.node_id for w in waiting]
+    for w in waiting:
+        await db.delete(w)
+    await db.flush()
+    await workflow_engine.resume_run(
+        db,
+        run_id=dossier.workflow_run_id,
+        pending_inputs={nid: {} for nid in node_ids},
+    )
+    await dossier_svc.sync_status_from_workflow(db, dossier=dossier)
 
 
 @router.delete(

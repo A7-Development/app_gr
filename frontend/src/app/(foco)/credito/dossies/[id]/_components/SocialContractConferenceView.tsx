@@ -21,7 +21,7 @@
 "use client"
 
 import * as React from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as HoverCardPrimitives from "@radix-ui/react-hover-card"
 import {
   RiArrowDownSLine,
@@ -50,7 +50,11 @@ import {
 } from "@/lib/credito-client"
 import { cx } from "@/lib/utils"
 
-import { OriginPanel } from "./DocumentZones"
+import { toast } from "sonner"
+
+import { Button } from "@/components/tremor/Button"
+
+import { extractedFieldsOf, OriginPanel } from "./DocumentZones"
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" })
 const num = new Intl.NumberFormat("pt-BR")
@@ -493,6 +497,23 @@ export function SocialContractConferenceView({
 
   const [checked, setChecked] = React.useState<Set<string>>(new Set())
   const [focusLabel, setFocusLabel] = React.useState<string | null>(null)
+  const queryClient = useQueryClient()
+
+  // HOMOLOGAR = PATCH extraction (status validated) — materializa o QSA no
+  // dossiê E retoma o run quando a estação é o gate da busca oficial
+  // (official_document_fetch pausado aguardando homologação, 2026-06-12).
+  const homologarMut = useMutation({
+    mutationFn: () =>
+      credito.documents.updateExtraction(dossierId, doc.id, {
+        extracted_fields: (extractedFieldsOf(doc) ?? {}) as Record<string, unknown>,
+      }),
+    onSuccess: () => {
+      toast.success("Conferência homologada — o fluxo segue pra análise.")
+      queryClient.invalidateQueries({ queryKey: ["credito"] })
+    },
+    onError: (e) =>
+      toast.error(`Erro ao homologar: ${(e as Error).message}`),
+  })
 
   const toggle = (id: string) =>
     setChecked((prev) => {
@@ -557,9 +578,14 @@ export function SocialContractConferenceView({
             homologada
           </span>
         ) : (
-          <span className={cx(tableTokens.badge, STATUS_TONE.condicionado)}>
-            aguardando homologação
-          </span>
+          <Button
+            className="h-7"
+            onClick={() => homologarMut.mutate()}
+            isLoading={homologarMut.isPending}
+            title="Confirma que você conferiu a extração contra o documento — vira a verdade do dossiê e libera o fluxo pra análise."
+          >
+            Homologar conferência
+          </Button>
         )}
       </header>
 
