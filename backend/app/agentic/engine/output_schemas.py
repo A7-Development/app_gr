@@ -521,6 +521,25 @@ class AcordoSociosMencao(BaseModel):
     referencia: str | None = None
 
 
+class PontoDeAtencao(BaseModel):
+    """Achado FORA DO ESPERADO que nao cabe em nenhum campo estruturado.
+
+    Valvula de escape disciplinada (decisao 2026-06-11): titulo LIVRE (penhora
+    de quotas, usufruto, socio falecido, clausula manuscrita...), mas evidencia
+    obrigatoria — fato escrito no documento + citacao + referencia, nunca
+    opiniao (julgamento e do social_contract_analyst). Titulos recorrentes
+    entre dossies sao candidatos a promocao a campo estruturado proprio.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    titulo: str | None = None
+    descricao: str | None = None
+    trecho_literal: str | None = None
+    referencia: str | None = None
+    confidence: float | None = None
+
+
 class ContratoSocialFields(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -539,6 +558,7 @@ class ContratoSocialFields(BaseModel):
     restricoes_estatutarias: list[RestricaoEstatutaria] = Field(default_factory=list)
     acordo_socios_mencionado: AcordoSociosMencao | None = None
     alteracao_quadro_societario: str | None = None
+    pontos_de_atencao: list[PontoDeAtencao] = Field(default_factory=list)
 
 
 class ContratoSocialExtraction(BaseModel):
