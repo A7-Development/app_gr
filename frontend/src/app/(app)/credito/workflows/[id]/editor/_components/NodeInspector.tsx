@@ -49,6 +49,7 @@ import {
 import { DATA_PRODUCT_PALETTE, OFFICIAL_DOCUMENT_PALETTE } from "../_lib/etapas"
 
 import { AgentInputBindingsField } from "./AgentInputBindingsField"
+import { ContractBlock } from "./NodeContract"
 import { ConditionBuilder } from "./ConditionBuilder"
 import {
   ConsolidatorBuilder,
@@ -131,6 +132,15 @@ export function NodeInspector({
           </p>
         )}
       </div>
+
+      {/* Contrato da etapa — RECEBE → FAZ → PUBLICA (F1, mesma fonte do
+          hover no canvas). PUBLICA vem do produced_by_node da validação. */}
+      <ContractBlock
+        nodeType={data.nodeType}
+        config={data.config ?? {}}
+        agentCatalog={agentCatalog}
+        producedVars={producedByNode[selectedNode.id]}
+      />
 
       <div>
         <Label htmlFor="node-label" className="text-xs">

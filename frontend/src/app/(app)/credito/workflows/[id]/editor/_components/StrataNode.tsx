@@ -47,6 +47,7 @@ import { cx } from "@/lib/utils"
 
 import { AGENT_FRIENDLY_LABEL, ETAPA_LABEL, getEtapaLabel } from "../_lib/glossary"
 import { OFFICIAL_DOCUMENT_PALETTE, primitiveTypeFor } from "../_lib/etapas"
+import { AgentCatalogContext, NodeContractHover } from "./NodeContract"
 
 const ICON_MAP: Record<string, RemixiconComponentType> = {
   RiPlayCircleLine,
@@ -86,6 +87,9 @@ export type StrataNodeData = {
 export function StrataNode({ data, selected }: NodeProps) {
   const d = data as unknown as StrataNodeData
   const meta = d.meta
+  // Contrato RECEBE→FAZ→PUBLICA no hover (F1) — catálogo via context pra não
+  // inflar o data de cada node.
+  const agentCatalog = React.useContext(AgentCatalogContext)
   const Icon = meta ? ICON_MAP[meta.icon] ?? RiRobot2Line : RiRobot2Line
   // Tile colorido por TIPO de primitivo (agente/check/externo/...), mesma
   // linguagem de cor da palette — quem aprende "violeta = agente" na palette
@@ -108,6 +112,13 @@ export function StrataNode({ data, selected }: NodeProps) {
   const joinMode = d.joinMode ?? "all"
 
   return (
+    <NodeContractHover
+      nodeType={d.nodeType}
+      config={d.config ?? {}}
+      agentCatalog={agentCatalog}
+      producedVars={d.producedVars}
+      title={d.label || friendlyTypeLabel}
+    >
     <div
       data-validation={status}
       className={cx(
@@ -210,6 +221,7 @@ export function StrataNode({ data, selected }: NodeProps) {
         className="!size-2.5 !-translate-x-1/2 !border !border-white !bg-gray-400 hover:!bg-blue-500 dark:!border-gray-950 dark:!bg-gray-600"
       />
     </div>
+    </NodeContractHover>
   )
 }
 
