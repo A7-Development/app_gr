@@ -239,7 +239,12 @@ export function EChartsCard({
       // style default, mas o spread acima trata como visualMap real e o ECharts
       // renderiza uma barra de gradient roxa colada no eixo Y. Suprimimos por
       // default; chart que precisar de visualMap explicito sobrescreve.
-      visualMap: option.visualMap ?? { show: false },
+      // GOTCHA (bug "barras todas da mesma cor", 2026-05-06 → 2026-06-12):
+      // `{ show: false }` esconde so o WIDGET — o mapeamento de cor por valor
+      // continua ativo e SEQUESTRA o itemStyle.color de TODAS as series
+      // (provado via SSR: fills viram rgb(211,219,247) p/ todas). O
+      // `seriesIndex: []` desliga o mapeamento de fato.
+      visualMap: option.visualMap ?? { show: false, seriesIndex: [] },
     } as EChartsOption
   }, [option, theme])
 
