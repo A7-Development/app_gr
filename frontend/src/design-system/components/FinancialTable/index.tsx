@@ -425,6 +425,25 @@ const RULE_CLASS: Record<RowRule, string> = {
   strong: "border-t-2 border-t-gray-900 dark:border-t-gray-100",
 }
 
+/**
+ * Em linhas "="/total, a regua de cada coluna de CENARIO repete a identidade
+ * visual da barra do header (IBCS): AC preta solida, PY cinza, PL/BU dupla,
+ * FC tracejada (aproximacao da hachura num traco de 2px). Rotulos e
+ * variancias usam a regua forte comum.
+ */
+function scenarioRuleClass(s: Scenario): string {
+  switch (s) {
+    case "AC":
+      return "border-t-2 border-t-gray-900 dark:border-t-gray-100"
+    case "PY":
+      return "border-t-2 border-t-gray-400 dark:border-t-gray-600"
+    case "FC":
+      return "border-t-2 border-dashed border-t-gray-700 dark:border-t-gray-300"
+    default: // PL | BU
+      return "border-t-[3px] border-double border-t-gray-900 dark:border-t-gray-100"
+  }
+}
+
 /** Layout IBCS: reguas segmentadas por coluna via border-separate + spacing. */
 const TABLE_LAYOUT =
   "border-separate border-spacing-x-1.5 border-spacing-y-0 border-b-0"
@@ -632,7 +651,9 @@ export function PeriodComparisonTable({
                               className={cx(
                                 "text-right whitespace-nowrap",
                                 CELL_PAD,
-                                valueRuleClass,
+                                valueRuleClass === RULE_CLASS.strong
+                                  ? scenarioRuleClass(s)
+                                  : valueRuleClass,
                               )}
                             >
                               {isMissing(raw) ? (
@@ -926,7 +947,11 @@ export function DecompositionTable({
         return (
           <TableCell
             key={s}
-            className={cx("text-right whitespace-nowrap", CELL_PAD, ruleClass)}
+            className={cx(
+              "text-right whitespace-nowrap",
+              CELL_PAD,
+              ruleClass === RULE_CLASS.strong ? scenarioRuleClass(s) : ruleClass,
+            )}
           >
             {isMissing(raw) ? (
               <span className={tableTokens.cellMuted}>—</span>
