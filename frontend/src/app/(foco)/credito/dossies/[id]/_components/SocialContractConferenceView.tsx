@@ -679,6 +679,9 @@ export function SocialContractConferenceView({
               data={c.socios ?? []}
               columns={socioColumns(setFocusLabel)}
               density="ultra"
+              showDensityToggle={false}
+              showColumnManager={false}
+              showExport={false}
             />
             {e && (
               <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
@@ -725,6 +728,9 @@ export function SocialContractConferenceView({
                 data={admins}
                 columns={adminColumns(setFocusLabel)}
                 density="ultra"
+              showDensityToggle={false}
+              showColumnManager={false}
+              showExport={false}
               />
             </Section>
           )}
@@ -741,6 +747,9 @@ export function SocialContractConferenceView({
                 data={poderes}
                 columns={poderColumns(setFocusLabel)}
                 density="ultra"
+              showDensityToggle={false}
+              showColumnManager={false}
+              showExport={false}
               />
             </Section>
           )}
@@ -762,6 +771,9 @@ export function SocialContractConferenceView({
                 data={restricoes}
                 columns={restricaoColumns(setFocusLabel)}
                 density="ultra"
+              showDensityToggle={false}
+              showColumnManager={false}
+              showExport={false}
               />
               <p className="text-[11px] italic text-gray-400 dark:text-gray-500">
                 os 8 temas são varridos sempre — &quot;sem cláusula&quot; é resultado
