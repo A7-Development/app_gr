@@ -298,6 +298,9 @@ export default function FilaAnalisesPage() {
                 tabIndex={0}
                 onClick={() => openRow(r)}
                 onKeyDown={(e) => {
+                  // So navega quando o teclado esta NA linha — Enter dentro
+                  // do menu de acoes (portal borbulha) nao pode abrir o dossie.
+                  if (e.target !== e.currentTarget) return
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault()
                     openRow(r)
@@ -358,9 +361,18 @@ export default function FilaAnalisesPage() {
                           <RiMoreLine className="size-4" aria-hidden />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" sideOffset={4}>
+                      {/* O portal do Radix ainda BORBULHA eventos pela arvore
+                          React — sem stopPropagation aqui o clique no item
+                          dispara o onClick da linha (navega pro dossie) antes
+                          do dialogo abrir. */}
+                      <DropdownMenuContent
+                        align="end"
+                        sideOffset={4}
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <DropdownMenuItem
                           onSelect={() => setPendingDelete(r)}
+                          onClick={(e) => e.stopPropagation()}
                           className="text-red-600 focus:text-red-700 dark:text-red-400 dark:focus:text-red-300"
                         >
                           <RiDeleteBinLine className="mr-2 size-4" aria-hidden />
