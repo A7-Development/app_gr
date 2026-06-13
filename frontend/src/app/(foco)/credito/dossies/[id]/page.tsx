@@ -238,10 +238,14 @@ function estacaoState(e: Estacao): StationState {
   return "bloqueada"
 }
 
-// CONDUÇÃO SEQUENCIAL (decisão Ricardo 2026-06-12, sobrepõe o "puxado pelas
-// pendências" do handoff): o foco é a PRIMEIRA estação em ordem que ainda não
-// fechou — mesmo quando o agente está rodando (o analista espera vendo o
-// status ao vivo). Sem teleporte pra frente e de volta.
+// BÚSSOLA, NÃO CADEADO (decisão 2026-06-13, §1.1 — substitui a "condução
+// sequencial estrita" de 2026-06-12). Esta função devolve apenas a SUGESTÃO de
+// próxima estação (a primeira em ordem que ainda não fechou); o analista
+// continua livre pra navegar pra qualquer estação via `onSelect` (que seta
+// ?step= sem gating). É a versão local de `pickRecommendedNext`
+// (@/design-system/types/section) — quando o cockpit migrar pra
+// StationDescriptor com `dependsOn` declarado no grafo (Etapa 4), adota-se o
+// helper canônico (prontidão por dependência em vez de ordem linear).
 function pickFocusEstacao(estacoes: Estacao[]): Estacao | null {
   return (
     estacoes.find(

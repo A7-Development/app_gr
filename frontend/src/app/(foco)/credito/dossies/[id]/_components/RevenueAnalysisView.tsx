@@ -1,20 +1,20 @@
-// RevenueAnalysisView — mostra a análise de faturamento no cockpit.
+// RevenueAnalysisView — análise de faturamento no cockpit.
 //
 // Duas camadas, fiéis à tese (§14): em cima, os NÚMEROS determinísticos
 // (fonte: endpoint /faturamento/analytics — os mesmos fatos que o agente leu);
-// embaixo, o JULGAMENTO do agente (revenue_analyst). O analista vê o número
-// auditável e a leitura lado a lado.
+// embaixo, o JULGAMENTO do agente (revenue_analyst).
+//
+// Fase 1 / Etapa 2: a camada de julgamento agora renderiza via <SectionRenderer>
+// (vocabulário de blocos), não mais JSX bespoke. A camada determinística segue
+// como está — é o produtor "consulta/silver" que vira Ficha/Tabela via Contrato
+// de Dados na Etapa 4. Ver docs/esteira-credito-interface-camadas.md.
 
 "use client"
 
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
-import {
-  RiAlertLine,
-  RiCheckLine,
-  RiInformationLine,
-} from "@remixicon/react"
 
+import { SectionRenderer } from "@/design-system/components/SectionRenderer"
 import { tableTokens } from "@/design-system/tokens/table"
 import {
   credito,
@@ -22,6 +22,7 @@ import {
   type RevenueAnalysis,
 } from "@/lib/credito-client"
 import { cx } from "@/lib/utils"
+import { revenueToSection } from "../_lib/section-mappers"
 
 type FaturamentoAnalyticsOk = Extract<FaturamentoAnalytics, { encontrado: true }>
 
@@ -39,16 +40,7 @@ function fmtMonth(s: string): string {
   return months[idx] ? `${months[idx]}/${m[1].slice(2)}` : s
 }
 
-const SEV_TONE: Record<string, string> = {
-  alta: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300",
-  media: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
-  baixa: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
-}
-const NIVEL_TONE: Record<string, string> = {
-  alto: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300",
-  medio: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
-  baixo: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300",
-}
+const OUTLIER_TONE = "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
 
 export function RevenueAnalysisView({
   dossierId,
@@ -67,118 +59,8 @@ export function RevenueAnalysisView({
       {/* Camada 1 — números determinísticos (fonte auditável) */}
       {data && data.encontrado && <DeterministicPanel data={data} />}
 
-      {/* Camada 2 — julgamento do agente */}
-      <div className="space-y-3">
-        <SectionTitle>Leitura do analista IA</SectionTitle>
-        <p className="text-sm text-gray-900 dark:text-gray-100">{output.resumo_executivo}</p>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Tendência">
-            <span className="font-medium capitalize">{output.tendencia.direcao}</span>
-            <span className={cx(tableTokens.cellSecondary, "ml-1")}>
-              · {output.tendencia.intensidade}
-            </span>
-            <p className={cx(tableTokens.cellSecondary, "mt-0.5")}>{output.tendencia.leitura}</p>
-          </Field>
-          <Field label="Sazonalidade">
-            <span className="font-medium">
-              {output.sazonalidade.detectada ? "Detectada" : "Sem padrão claro"}
-            </span>
-            {!output.sazonalidade.confiavel && (
-              <span className={cx(tableTokens.badge, SEV_TONE.baixa, "ml-1.5")}>
-                leitura fraca
-              </span>
-            )}
-            {output.sazonalidade.padrao && (
-              <p className={cx(tableTokens.cellSecondary, "mt-0.5")}>
-                {output.sazonalidade.padrao}
-              </p>
-            )}
-          </Field>
-        </div>
-
-        {output.pontos_de_atencao.length > 0 && (
-          <div>
-            <p className={cx(tableTokens.header, "mb-1")}>Pontos de atenção</p>
-            <ul className="space-y-1.5">
-              {output.pontos_de_atencao.map((p, i) => (
-                <li
-                  key={i}
-                  className="flex items-start gap-2 rounded-md border border-gray-100 bg-gray-50/50 p-2 dark:border-gray-900 dark:bg-gray-950/40"
-                >
-                  <span className={cx(tableTokens.badge, SEV_TONE[p.severidade] ?? SEV_TONE.baixa)}>
-                    {p.severidade}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs text-gray-900 dark:text-gray-100">
-                      {p.mes ? `${fmtMonth(p.mes)} · ` : ""}
-                      <span className="capitalize">{p.tipo}</span>
-                      <span
-                        className={cx(
-                          "ml-1.5",
-                          p.esperado_ou_anomalo === "anomalo"
-                            ? "text-red-600 dark:text-red-400"
-                            : "text-gray-500 dark:text-gray-400",
-                        )}
-                      >
-                        ({p.esperado_ou_anomalo})
-                      </span>
-                    </p>
-                    <p className={tableTokens.cellSecondary}>{p.observacao}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Qualidade do dado">
-            <span className="inline-flex items-center gap-1">
-              {output.qualidade_do_dado.soma_confere ? (
-                <RiCheckLine className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
-              ) : (
-                <RiAlertLine className="size-3.5 text-amber-600 dark:text-amber-400" aria-hidden />
-              )}
-              <span className="text-xs">
-                {output.qualidade_do_dado.n_meses} mês(es)
-                {output.qualidade_do_dado.meses_faltantes.length > 0 &&
-                  ` · faltam ${output.qualidade_do_dado.meses_faltantes.length}`}
-              </span>
-            </span>
-            <p className={cx(tableTokens.cellSecondary, "mt-0.5")}>
-              {output.qualidade_do_dado.observacao}
-            </p>
-          </Field>
-          <Field label="Credibilidade do documento">
-            <span className={cx(tableTokens.badge, NIVEL_TONE[output.credibilidade_documento.nivel] ?? NIVEL_TONE.medio)}>
-              {output.credibilidade_documento.nivel}
-            </span>
-            <p className={cx(tableTokens.cellSecondary, "mt-0.5")}>
-              {output.credibilidade_documento.leitura}
-            </p>
-            {output.credibilidade_documento.ressalvas.length > 0 && (
-              <ul className="mt-1 space-y-0.5">
-                {output.credibilidade_documento.ressalvas.map((r, i) => (
-                  <li key={i} className="flex items-start gap-1 text-[11px] text-amber-700 dark:text-amber-300">
-                    <RiInformationLine className="mt-0.5 size-3 shrink-0" aria-hidden />
-                    {r}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Field>
-        </div>
-
-        <div className="rounded-md bg-blue-50/60 p-2.5 dark:bg-blue-500/10">
-          <p className={cx(tableTokens.header, "mb-0.5 text-blue-700 dark:text-blue-300")}>
-            Leitura para crédito
-          </p>
-          <p className="text-sm text-gray-900 dark:text-gray-100">
-            {output.leitura_para_credito}
-          </p>
-        </div>
-      </div>
+      {/* Camada 2 — julgamento do agente (via vocabulário de blocos) */}
+      <SectionRenderer section={revenueToSection(output)} mode="work" />
     </div>
   )
 }
@@ -225,7 +107,7 @@ function DeterministicPanel({ data }: { data: FaturamentoAnalyticsOk }) {
                     <td className="px-3 py-0.5">
                       <span className={tableTokens.cellText}>{fmtMonth(r.mes)}</span>
                       {isOut && (
-                        <span className={cx(tableTokens.badge, SEV_TONE.media, "ml-1.5")}>outlier</span>
+                        <span className={cx(tableTokens.badge, OUTLIER_TONE, "ml-1.5")}>outlier</span>
                       )}
                     </td>
                     <td className="px-3 py-0.5 text-right">
@@ -265,15 +147,6 @@ function DeterministicPanel({ data }: { data: FaturamentoAnalyticsOk }) {
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
     <p className="text-sm font-medium text-gray-900 dark:text-gray-50">{children}</p>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className={tableTokens.header}>{label}</span>
-      <div className="text-sm text-gray-900 dark:text-gray-100">{children}</div>
-    </div>
   )
 }
 
