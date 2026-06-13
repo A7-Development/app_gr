@@ -12,8 +12,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agentic.playbooks.models.definition import PlaybookDefinition
 from app.agentic.playbooks.models.run import PlaybookRun, PlaybookRunStep
+from app.agentic.playbooks.schemas.definition import PlaybookGraph
+from app.agentic.playbooks.schemas.dossier_descriptor_builder import (
+    NodeStep,
+    build_dossier_descriptor,
+)
+from app.agentic.playbooks.schemas.section_descriptor import DossierDescriptor
 from app.agentic.playbooks.services import engine as workflow_engine
+from app.agentic.playbooks.services.graph_validator import _topological_order
 from app.core.database import get_db
 from app.core.enums import DossierStatus, Module, NodeRunStatus, Permission
 from app.core.module_guard import require_module
@@ -268,6 +276,89 @@ async def get_dossie_state(
         pending_node=pending_node,
         red_flags=red_flags,
     )
+
+
+@router.get("/dossies/{dossier_id}/descriptor", response_model=DossierDescriptor)
+async def get_dossie_descriptor(
+    dossier_id: UUID,
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = Depends(require_module(Module.CREDITO, Permission.READ)),
+) -> DossierDescriptor:
+    """DossierDescriptor (Fase 1 / Etapa 4): estações + seções de agente
+    derivadas SERVER-SIDE (decisão A1), portando o buildEstacoes do cockpit.
+
+    ADITIVO: o cockpit ainda NÃO consome isto (segue no /state com a derivação
+    client-side). O rewire pra consumir aqui — e matar o buildEstacoes/afinidade
+    do frontend — é o passo LIVE. Ver docs/esteira-credito-interface-camadas.md §5.
+    """
+    dossier = await dossier_svc.get_dossier(
+        db, tenant_id=principal.tenant_id, dossier_id=dossier_id
+    )
+    if dossier is None:
+        raise HTTPException(status_code=404, detail="Dossie nao encontrado.")
+    code = dossier.code or str(dossier_id)
+    if dossier.workflow_run_id is None:
+        return DossierDescriptor(code=code, stations=[])
+
+    run_row = (
+        await db.execute(
+            select(PlaybookRun).where(PlaybookRun.id == dossier.workflow_run_id)
+        )
+    ).scalar_one_or_none()
+    if run_row is None:
+        return DossierDescriptor(code=code, stations=[])
+
+    definition = (
+        await db.execute(
+            select(PlaybookDefinition).where(PlaybookDefinition.id == run_row.definition_id)
+        )
+    ).scalar_one_or_none()
+    if definition is None:
+        return DossierDescriptor(code=code, stations=[])
+
+    graph = PlaybookGraph.model_validate(definition.graph)
+    ordered = _topological_order(graph)
+
+    step_rows = (
+        await db.execute(
+            select(PlaybookRunStep).where(PlaybookRunStep.run_id == run_row.id)
+        )
+    ).scalars().all()
+    by_node = {s.node_id: s for s in step_rows}
+
+    node_steps: list[NodeStep] = []
+    for spec in ordered:
+        run_step = by_node.get(spec.id)
+        if run_step is None:
+            node_steps.append(
+                NodeStep(
+                    id=spec.id,
+                    label=spec.label or spec.type,
+                    node_type=spec.type,
+                    state="pending",
+                    config=spec.config,
+                )
+            )
+            continue
+        status_val = (
+            run_step.status.value
+            if hasattr(run_step.status, "value")
+            else str(run_step.status)
+        )
+        node_steps.append(
+            NodeStep(
+                id=spec.id,
+                label=spec.label or spec.type,
+                node_type=spec.type,
+                state=status_val,
+                output=run_step.output_data or None,
+                input=run_step.input_data or None,
+                config=spec.config,
+            )
+        )
+
+    return build_dossier_descriptor(code, node_steps)
 
 
 @router.post(
