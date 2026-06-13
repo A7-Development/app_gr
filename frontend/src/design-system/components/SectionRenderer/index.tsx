@@ -64,6 +64,13 @@ const SEV_ICON: Record<Apontamento["severidade"], typeof RiAlertLine> = {
   info: RiInformationLine,
 }
 
+// Cor do ícone no modo READ (documento): sem badge/card, só o glifo colorido.
+const READ_SEV_ICON_COLOR: Record<Apontamento["severidade"], string> = {
+  critico: "text-red-600",
+  atencao: "text-amber-600",
+  info: "text-gray-400",
+}
+
 // ─── Sup de lastro (citação inline = proveniência + localizador) ──────────────
 
 function ProvenanceSup({ provenance }: { provenance?: ProvenanceRef }) {
@@ -230,8 +237,51 @@ function ConclusaoAgenteBlockView({ block, mode }: { block: ConclusaoAgenteBlock
   )
 }
 
-function ApontamentosBlockView({ block }: { block: ApontamentosBlock }) {
+function ApontamentosBlockView({ block, mode }: { block: ApontamentosBlock; mode: RenderMode }) {
   if (block.itens.length === 0) return null
+
+  // READ (dossiê): estilo documento — ícone colorido + título + descrição, sem
+  // card/badge de workbench. Espelha o §Apontamentos da projeção A4.
+  if (mode === "read") {
+    return (
+      <div>
+        <p className={cx(tableTokens.header, "mb-1.5")}>
+          {block.titulo ?? "Apontamentos e cruzamentos"}
+        </p>
+        <ul className="space-y-2.5">
+          {block.itens.map((p, i) => {
+            const Icon = SEV_ICON[p.severidade]
+            return (
+              <li key={i} className="flex items-start gap-2.5">
+                <Icon
+                  className={cx("mt-0.5 size-4 shrink-0", READ_SEV_ICON_COLOR[p.severidade])}
+                  aria-hidden
+                />
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-gray-900 dark:text-gray-50">
+                    {p.titulo}
+                    <ProvenanceSup provenance={p.provenance} />
+                  </p>
+                  {p.descricao && (
+                    <p className="mt-0.5 text-[12.5px] leading-relaxed text-gray-600 dark:text-gray-400">
+                      {p.descricao}
+                    </p>
+                  )}
+                  {p.evidencia && (
+                    <p className="mt-0.5 text-[12px] italic text-gray-500 dark:text-gray-500">
+                      {p.evidencia}
+                    </p>
+                  )}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    )
+  }
+
+  // WORK (workbench): cards com badge de severidade.
   return (
     <div>
       <p className={cx(tableTokens.header, "mb-1")}>{block.titulo ?? "Pontos de atenção"}</p>
@@ -265,7 +315,20 @@ function ApontamentosBlockView({ block }: { block: ApontamentosBlock }) {
   )
 }
 
-function TextoBlockView({ block }: { block: TextoBlock }) {
+function TextoBlockView({ block, mode }: { block: TextoBlock; mode: RenderMode }) {
+  // READ (dossiê): prosa de documento, sem a caixa azul de destaque do workbench.
+  if (mode === "read") {
+    return (
+      <div>
+        {block.titulo && <p className={cx(tableTokens.header, "mb-1")}>{block.titulo}</p>}
+        <div className="prose prose-sm max-w-none text-sm leading-relaxed text-gray-700 dark:prose-invert dark:text-gray-300">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.markdown}</ReactMarkdown>
+        </div>
+      </div>
+    )
+  }
+
+  // WORK: caixa azul de destaque ("leitura para crédito").
   return (
     <div className="rounded-md bg-blue-50/60 p-2.5 dark:bg-blue-500/10">
       {block.titulo && (
@@ -367,9 +430,9 @@ function BlockView({ block, mode }: { block: Block; mode: RenderMode }) {
     case "conclusao_agente":
       return <ConclusaoAgenteBlockView block={block} mode={mode} />
     case "apontamentos":
-      return <ApontamentosBlockView block={block} />
+      return <ApontamentosBlockView block={block} mode={mode} />
     case "texto":
-      return <TextoBlockView block={block} />
+      return <TextoBlockView block={block} mode={mode} />
     case "conferencia":
       return <ConferenciaBlockView block={block} />
     case "fonte_origem":
