@@ -22,9 +22,11 @@ import { Button } from "@/components/tremor/Button"
 import {
   KpiChartCard,
   ProvenanceSup,
+  SectionRenderer,
   StrataIcon,
   type KpiChartDatum,
 } from "@/design-system/components"
+import type { StationDescriptor } from "@/design-system/types/section"
 import type { WizardMultiStepStep } from "@/design-system/patterns/WizardMultiStep"
 import { provenanceTokens, type ProvenanceOrigin } from "@/design-system/tokens/provenance"
 import type {
@@ -70,8 +72,11 @@ export function DossierReadingView({
   trailCount,
   onOpenTrail,
   onGoToStation,
+  descriptorStations,
 }: {
   coverage?: CoverageItem[]
+  /** Quando presente (flag ?descriptor=1), o §miolo vem do /descriptor (read-mode). */
+  descriptorStations?: StationDescriptor[]
   dossier: DossierRead
   docs: CreditDocumentRead[]
   redFlags: RedFlagItem[]
@@ -285,44 +290,63 @@ export function DossierReadingView({
             />
           </section>
 
-          {/* §Cadastral */}
-          {hasCadastral && (
-            <SectionBlock title="Identificação e cadastro">
-              <CadastralCard dossierId={dossier.id} />
-              <SourceNote>
-                Fonte: Receita Federal via BDC
-                <ProvenanceSup origin="fonte" index={1} />
-              </SourceNote>
-            </SectionBlock>
-          )}
+          {descriptorStations ? (
+            /* §miolo UNIFICADO: as §seções vêm do /descriptor via SectionRenderer
+               read-mode (Fase 1 / Etapa 1.4 — mesma gramática do workbench). Flag
+               ?descriptor=1. Sem flag, cai no miolo hand-built abaixo. */
+            descriptorStations
+              .filter((st) => st.sections.length > 0)
+              .map((st) => (
+                <SectionBlock key={st.id} title={st.label}>
+                  <div className="space-y-4">
+                    {st.sections.map((sec) => (
+                      <SectionRenderer key={sec.id} section={sec} mode="read" />
+                    ))}
+                  </div>
+                </SectionBlock>
+              ))
+          ) : (
+            <>
+              {/* §Cadastral */}
+              {hasCadastral && (
+                <SectionBlock title="Identificação e cadastro">
+                  <CadastralCard dossierId={dossier.id} />
+                  <SourceNote>
+                    Fonte: Receita Federal via BDC
+                    <ProvenanceSup origin="fonte" index={1} />
+                  </SourceNote>
+                </SectionBlock>
+              )}
 
-          {/* §Faturamento */}
-          {monthly.length > 0 && (
-            <SectionBlock title="Faturamento">
-              <KpiChartCard
-                eyebrow={`Faturamento mensal · ${monthly.length} meses`}
-                value={fmtBRLCompact(avg)}
-                context={`média mensal · total ${fmtBRLCompact(sum)}`}
-                data={monthly.map(
-                  (r): KpiChartDatum => ({
-                    label: fmtMonth(r.month),
-                    value: r.value,
-                  }),
-                )}
-                height={210}
-              />
-              <SourceNote>
-                Fonte: {primaryDoc?.original_filename ?? "documento homologado"}
-                <ProvenanceSup origin="documento" index={1} />
-                {revenueOutput && (
-                  <>
-                    {" "}
-                    · leitura do agente: {revenueOutput.leitura_para_credito}
-                    <ProvenanceSup origin="agente" index={1} />
-                  </>
-                )}
-              </SourceNote>
-            </SectionBlock>
+              {/* §Faturamento */}
+              {monthly.length > 0 && (
+                <SectionBlock title="Faturamento">
+                  <KpiChartCard
+                    eyebrow={`Faturamento mensal · ${monthly.length} meses`}
+                    value={fmtBRLCompact(avg)}
+                    context={`média mensal · total ${fmtBRLCompact(sum)}`}
+                    data={monthly.map(
+                      (r): KpiChartDatum => ({
+                        label: fmtMonth(r.month),
+                        value: r.value,
+                      }),
+                    )}
+                    height={210}
+                  />
+                  <SourceNote>
+                    Fonte: {primaryDoc?.original_filename ?? "documento homologado"}
+                    <ProvenanceSup origin="documento" index={1} />
+                    {revenueOutput && (
+                      <>
+                        {" "}
+                        · leitura do agente: {revenueOutput.leitura_para_credito}
+                        <ProvenanceSup origin="agente" index={1} />
+                      </>
+                    )}
+                  </SourceNote>
+                </SectionBlock>
+              )}
+            </>
           )}
 
           {/* §Apontamentos */}
