@@ -216,6 +216,7 @@ def build_dossier_descriptor(code: str, steps: list[NodeStep]) -> DossierDescrip
                 # Prontidão por dependência: linear (estação anterior). Quando o
                 # grafo declarar deps explícitas, troca-se aqui.
                 depends_on=[prev_id] if prev_id else [],
+                member_node_ids=[m.id for m in e.members],
                 sections=_build_sections(e.members),
             )
         )

@@ -17,12 +17,17 @@ from app.agentic.playbooks.models.run import PlaybookRun, PlaybookRunStep
 from app.agentic.playbooks.schemas.definition import PlaybookGraph
 from app.agentic.playbooks.schemas.deterministic_producers import (
     cadastral_card_to_section,
+    faturamento_to_section,
+    societario_to_section,
 )
 from app.agentic.playbooks.schemas.dossier_descriptor_builder import (
     NodeStep,
     build_dossier_descriptor,
 )
-from app.agentic.playbooks.schemas.section_descriptor import DossierDescriptor
+from app.agentic.playbooks.schemas.section_descriptor import (
+    DossierDescriptor,
+    StationDescriptor,
+)
 from app.agentic.playbooks.services import engine as workflow_engine
 from app.agentic.playbooks.services.graph_validator import _topological_order
 from app.core.database import get_db
@@ -363,27 +368,55 @@ async def get_dossie_descriptor(
 
     descriptor = build_dossier_descriptor(code, node_steps)
 
-    # Passo 2-A: anexa a seção DETERMINÍSTICA (cadastral/silver) à estação do
-    # nó-fonte (id da estação == id do nó âncora cadastral_enrichment). A seção
-    # do agente fica DEPOIS da determinística (números primeiro, julgamento
-    # depois — §14). Faturamento/societário: próximos produtores.
-    cadastral_node_ids = [
-        s.id for s in node_steps if s.node_type == "cadastral_enrichment"
-    ]
-    if cadastral_node_ids:
+    # Passo 2-A: anexa as seções DETERMINÍSTICAS (silver) ANTES da seção do
+    # agente em cada estação (números primeiro, julgamento depois — §14). Cada
+    # produtor acha sua estação pelo nó-fonte via member_node_ids (o agente pode
+    # ter fundido em outra estação — ex.: social → estação do documento).
+    def _station_for_node(node_id: str) -> StationDescriptor | None:
+        return next(
+            (st for st in descriptor.stations if node_id in st.member_node_ids), None
+        )
+
+    def _agent_node_id(agent_name: str) -> str | None:
+        return next(
+            (
+                s.id
+                for s in node_steps
+                if s.node_type == "specialist_agent"
+                and (s.config or {}).get("agent") == agent_name
+            ),
+            None,
+        )
+
+    cad_node = next(
+        (s.id for s in node_steps if s.node_type == "cadastral_enrichment"), None
+    )
+    soc_node = _agent_node_id("social_contract_analyst")
+    rev_node = _agent_node_id("revenue_analyst")
+
+    if cad_node and (st := _station_for_node(cad_node)) is not None:
         card = await build_cadastral_card_projection(
             db, tenant_id=principal.tenant_id, dossier_id=dossier_id
         )
-        if card:
-            det_by_station = {}
-            for nid in cadastral_node_ids:
-                sec = cadastral_card_to_section(card, station_id=nid)
-                if sec is not None:
-                    det_by_station[nid] = sec
-            for st in descriptor.stations:
-                det = det_by_station.get(st.id)
-                if det is not None:
-                    st.sections = [det, *st.sections]
+        sec = cadastral_card_to_section(card, station_id=st.id) if card else None
+        if sec is not None:
+            st.sections = [sec, *st.sections]
+
+    if soc_node and (st := _station_for_node(soc_node)) is not None:
+        payload = await build_societario_payload(
+            db, tenant_id=principal.tenant_id, dossier_id=dossier_id
+        )
+        sec = societario_to_section(payload, station_id=st.id) if payload else None
+        if sec is not None:
+            st.sections = [sec, *st.sections]
+
+    if rev_node and (st := _station_for_node(rev_node)) is not None:
+        payload = await build_faturamento_payload(
+            db, tenant_id=principal.tenant_id, dossier_id=dossier_id
+        )
+        sec = faturamento_to_section(payload, station_id=st.id) if payload else None
+        if sec is not None:
+            st.sections = [sec, *st.sections]
 
     return descriptor
 
