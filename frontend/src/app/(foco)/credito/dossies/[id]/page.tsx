@@ -355,6 +355,14 @@ export default function DossierFocusPage() {
   const queryClient = useQueryClient()
   const [trailOpen, setTrailOpen] = React.useState(false)
 
+  // Fase 1 / Etapa 1.4 (flag): com ?descriptor=1, o §miolo do dossiê (A4) vem do
+  // /descriptor (server) via SectionRenderer read-mode. Sem flag, A4 hand-built.
+  const descriptorQ = useQuery({
+    queryKey: ["credito", "descriptor", dossierId],
+    queryFn: () => credito.dossies.descriptor(dossierId),
+    enabled: descriptorDebug,
+  })
+
   const { data: state, isLoading } = useDossierState(dossierId)
   const { data: workflow } = useQuery({
     queryKey: ["credito", "workflow-def", state?.dossier?.workflow_definition_id],
@@ -1318,6 +1326,7 @@ export default function DossierFocusPage() {
           trailCount={trailEvents.length}
           onOpenTrail={() => setTrailOpen(true)}
           onGoToStation={onSelect}
+          descriptorStations={descriptorDebug ? descriptorQ.data?.stations : undefined}
         />
       ) : (
       <div className="flex h-screen min-w-0 flex-1 flex-col">
