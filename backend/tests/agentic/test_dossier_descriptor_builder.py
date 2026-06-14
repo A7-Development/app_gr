@@ -96,3 +96,19 @@ def test_trilha_nodes_excluded() -> None:
     ]
     d = build_dossier_descriptor("DC-2026-0002", steps)
     assert [s.id for s in d.stations] == ["hi"]
+
+
+def test_serializes_camelcase_for_frontend() -> None:
+    """O endpoint serializa by_alias (FastAPI default) → camelCase, alinhado aos
+    tipos TS. Trava o gotcha #1 do auto-review (snake x camel no wiring)."""
+    d = build_dossier_descriptor("DC-2026-0001", _flow())
+    dumped = d.model_dump(by_alias=True)
+    st = dumped["stations"][0]
+    assert "dependsOn" in st and "depends_on" not in st
+    assert "isRecommendedNext" in st
+    # seção camelCase
+    fat = next(s for s in dumped["stations"] if s["label"] == "Faturamento")
+    sec = fat["sections"][0]
+    assert "stationId" in sec and "generatesDossierSection" in sec
+    # construção por nome snake ainda funciona (populate_by_name)
+    assert d.stations[0].depends_on == []

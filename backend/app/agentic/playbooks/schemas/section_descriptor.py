@@ -18,6 +18,13 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
+
+# camelCase na serializacao (alinha o JSON do endpoint /descriptor com os tipos
+# TS do frontend: station_id->stationId, valor_ia->valorIa, ...). populate_by_name
+# mantem a construcao/validacao por nome snake_case (builders, tests). Resolve o
+# gotcha #1 do auto-review antes do wiring da Etapa 4.
+_CAMEL = ConfigDict(extra="forbid", alias_generator=to_camel, populate_by_name=True)
 
 # ════════════════════════════════════════════════════════════════════════════
 # Provenance + citation (mirror of tokens/provenance.ts)
@@ -27,7 +34,7 @@ ProvenanceOrigin = Literal["fonte", "agente", "documento", "analista"]
 
 
 class DocLocator(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     kind: Literal["doc"] = "doc"
     doc_id: str
     page: int | None = None
@@ -36,14 +43,14 @@ class DocLocator(BaseModel):
 
 
 class SilverLocator(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     kind: Literal["silver"] = "silver"
     table: str
     field: str
 
 
 class AgentStepLocator(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     kind: Literal["agent_step"] = "agent_step"
     run_id: str
     step_id: str | None = None
@@ -58,7 +65,7 @@ ProvenanceLocator = Annotated[
 class ProvenanceRef(BaseModel):
     """Travels on every block/field/value. Citation = origin + locator."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
 
     origin: ProvenanceOrigin
     locator: ProvenanceLocator | None = None
@@ -84,13 +91,13 @@ BlockType = Literal[
 
 
 class FichaBadge(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     texto: str
     tom: Literal["ok", "atencao", "critico", "neutro"]
 
 
 class FichaCampo(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     label: str
     valor: str
     # Linha secundária (muted) — ex.: a leitura do agente sob um valor.
@@ -101,7 +108,7 @@ class FichaCampo(BaseModel):
 
 
 class FichaBlock(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     type: Literal["ficha"] = "ficha"
     id: str
     provenance: ProvenanceRef | None = None
@@ -110,7 +117,7 @@ class FichaBlock(BaseModel):
 
 
 class TabelaColuna(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     key: str
     label: str
     align: Literal["left", "right", "center"] | None = None
@@ -118,13 +125,13 @@ class TabelaColuna(BaseModel):
 
 
 class TabelaCelula(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     valor: str | float | int | None = None
     provenance: ProvenanceRef | None = None
 
 
 class TabelaBlock(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     type: Literal["tabela"] = "tabela"
     id: str
     provenance: ProvenanceRef | None = None
@@ -136,13 +143,13 @@ class TabelaBlock(BaseModel):
 
 
 class GraficoSerie(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     nome: str
     pontos: list[dict[str, Any]] = Field(default_factory=list)  # {x: str, y: float}
 
 
 class GraficoKpi(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     eyebrow: str | None = None
     valor: str
     delta: str | None = None
@@ -150,7 +157,7 @@ class GraficoKpi(BaseModel):
 
 
 class GraficoBlock(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     type: Literal["grafico"] = "grafico"
     id: str
     provenance: ProvenanceRef | None = None
@@ -160,13 +167,13 @@ class GraficoBlock(BaseModel):
 
 
 class ConclusaoRecomendacao(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     veredito: Literal["aprovar", "negar", "condicional"]
     condicoes: list[str] = Field(default_factory=list)
 
 
 class ConclusaoAgenteBlock(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     type: Literal["conclusao_agente"] = "conclusao_agente"
     id: str
     provenance: ProvenanceRef | None = None
@@ -177,7 +184,7 @@ class ConclusaoAgenteBlock(BaseModel):
 
 
 class Apontamento(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     severidade: Literal["critico", "atencao", "info"]
     titulo: str
     descricao: str | None = None
@@ -186,7 +193,7 @@ class Apontamento(BaseModel):
 
 
 class ApontamentosBlock(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     type: Literal["apontamentos"] = "apontamentos"
     id: str
     provenance: ProvenanceRef | None = None
@@ -195,7 +202,7 @@ class ApontamentosBlock(BaseModel):
 
 
 class TextoBlock(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     type: Literal["texto"] = "texto"
     id: str
     provenance: ProvenanceRef | None = None
@@ -204,7 +211,7 @@ class TextoBlock(BaseModel):
 
 
 class ConferenciaLinha(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     campo: str
     valor_ia: str
     valor_dossie: str
@@ -213,7 +220,7 @@ class ConferenciaLinha(BaseModel):
 
 
 class ConferenciaBlock(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     type: Literal["conferencia"] = "conferencia"
     id: str
     provenance: ProvenanceRef | None = None
@@ -222,7 +229,7 @@ class ConferenciaBlock(BaseModel):
 
 
 class FonteOrigemBlock(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     type: Literal["fonte_origem"] = "fonte_origem"
     id: str
     provenance: ProvenanceRef | None = None
@@ -233,7 +240,7 @@ class FonteOrigemBlock(BaseModel):
 class SubDossieBlock(BaseModel):
     """Recursive (Phase 2 — the dream). Declared and idle in Phase 1."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
     type: Literal["sub_dossie"] = "sub_dossie"
     id: str
     provenance: ProvenanceRef | None = None
@@ -261,7 +268,7 @@ Block = Annotated[
 
 
 class SectionDescriptor(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
 
     id: str
     # Station this section belongs to (declared in the graph — Etapa 4).
@@ -293,7 +300,7 @@ CLOSED_STATION_STATES: frozenset[str] = frozenset(
 
 
 class StationDescriptor(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
 
     id: str
     label: str
@@ -310,7 +317,7 @@ class StationDescriptor(BaseModel):
 
 
 class DossierDescriptor(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _CAMEL
 
     # Human code (DC-AAAA-NNNN).
     code: str
