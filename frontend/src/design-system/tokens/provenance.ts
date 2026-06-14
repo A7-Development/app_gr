@@ -17,6 +17,55 @@ import type * as React from "react"
 
 export type ProvenanceOrigin = "fonte" | "agente" | "documento" | "analista"
 
+// ────────────────────────────────────────────────────────────────────────────
+// Citação = proveniência + localizador (Fase 1, decisão 2026-06-13)
+// ────────────────────────────────────────────────────────────────────────────
+//
+// Citação NÃO é bloco — é a cauda mais profunda da proveniência. O mesmo
+// `origin` (4 assinaturas) + um `locator` que aponta o trecho exato da origem.
+// Renderiza inline como sup de lastro (cor = a assinatura); drill abre o bloco
+// Fonte+Origem naquele localizador. Ver docs/esteira-credito-interface-camadas.md §1.
+
+/** Aponta o ponto exato da origem de um valor (discriminado por tipo de origem). */
+export type ProvenanceLocator =
+  | {
+      kind: "doc"
+      /** Id do documento no storage do dossiê. */
+      docId: string
+      /** Página 1-based, quando aplicável. */
+      page?: number
+      /** Bounding box [x0,y0,x1,y1] normalizado (0–1), quando houver. */
+      bbox?: [number, number, number, number]
+      /** Trecho literal citado (fallback quando não há bbox). */
+      trecho?: string
+    }
+  | {
+      kind: "silver"
+      /** Tabela canônica silver (ex.: "credit_dossier_company"). */
+      table: string
+      /** Campo/coluna de onde o valor saiu. */
+      field: string
+    }
+  | {
+      kind: "agent_step"
+      /** Run do agente que produziu o valor. */
+      runId: string
+      /** Passo específico do trace, quando relevante. */
+      stepId?: string
+    }
+
+/**
+ * Referência de proveniência que viaja em todo bloco/campo/valor da esteira.
+ * `origin` é obrigatório (uma das 4 assinaturas); `locator` é a citação opcional.
+ */
+export type ProvenanceRef = {
+  origin: ProvenanceOrigin
+  /** Citação: ponteiro pro trecho exato. Ausente = proveniência sem drill fino. */
+  locator?: ProvenanceLocator
+  /** Conclusão de agente: pontilhada → contínua ao homologar (assinatura E3). */
+  homologado?: boolean
+}
+
 export type ProvenanceOriginToken = {
   /** Cor base da assinatura (glifos, sublinhas, sups, dots). */
   color: string

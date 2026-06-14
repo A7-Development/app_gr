@@ -28,18 +28,11 @@ import {
 import { Button } from "@/components/tremor/Button"
 import { AgentPulseDot } from "@/design-system/components/AgentLiveChip"
 import { provenanceTokens } from "@/design-system/tokens/provenance"
+import type { StationState } from "@/design-system/types/section"
 import { cx } from "@/lib/utils"
 
-export type StationState =
-  | "fechada"
-  | "fechada_com_ressalva"
-  | "sua_vez"
-  | "homologar"
-  | "rodando"
-  | "aguardando_documento"
-  | "em_espera"
-  | "bloqueada"
-  | "falhou"
+// Vocabulário canônico de estados mora em types/section (dono do contrato, Fase 1).
+export type { StationState }
 
 export type StationItem = {
   id: string
