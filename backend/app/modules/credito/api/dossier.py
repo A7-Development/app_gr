@@ -15,6 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agentic.playbooks.models.definition import PlaybookDefinition
 from app.agentic.playbooks.models.run import PlaybookRun, PlaybookRunStep
 from app.agentic.playbooks.schemas.definition import PlaybookGraph
+from app.agentic.playbooks.schemas.deterministic_producers import (
+    cadastral_card_to_section,
+)
 from app.agentic.playbooks.schemas.dossier_descriptor_builder import (
     NodeStep,
     build_dossier_descriptor,
@@ -358,7 +361,31 @@ async def get_dossie_descriptor(
             )
         )
 
-    return build_dossier_descriptor(code, node_steps)
+    descriptor = build_dossier_descriptor(code, node_steps)
+
+    # Passo 2-A: anexa a seção DETERMINÍSTICA (cadastral/silver) à estação do
+    # nó-fonte (id da estação == id do nó âncora cadastral_enrichment). A seção
+    # do agente fica DEPOIS da determinística (números primeiro, julgamento
+    # depois — §14). Faturamento/societário: próximos produtores.
+    cadastral_node_ids = [
+        s.id for s in node_steps if s.node_type == "cadastral_enrichment"
+    ]
+    if cadastral_node_ids:
+        card = await build_cadastral_card_projection(
+            db, tenant_id=principal.tenant_id, dossier_id=dossier_id
+        )
+        if card:
+            det_by_station = {}
+            for nid in cadastral_node_ids:
+                sec = cadastral_card_to_section(card, station_id=nid)
+                if sec is not None:
+                    det_by_station[nid] = sec
+            for st in descriptor.stations:
+                det = det_by_station.get(st.id)
+                if det is not None:
+                    st.sections = [det, *st.sections]
+
+    return descriptor
 
 
 @router.post(
