@@ -77,6 +77,13 @@ _AGENT_STATION_LABEL = {
     "social_contract_analyst": "Contrato social",
 }
 
+# O rótulo/aspecto da estação vem do DOCUMENTO que ela coleta, não do nome do
+# agente (decoupling Fatia 2a). Espelha DOC_TYPE_STATION_LABEL do frontend.
+_DOC_TYPE_STATION_LABEL = {
+    "revenue_report": "Faturamento",
+    "social_contract": "Contrato social",
+}
+
 # Agente → builder de seção (os 3 migrados na Etapa 2). Outros: seção vazia
 # (camada determinística / outros produtores ainda não portados).
 _SECTION_BUILDER_BY_AGENT = {
@@ -101,6 +108,14 @@ def _review_of(step: NodeStep) -> str | None:
     return None
 
 
+def _required_doc_types(step: NodeStep) -> list[str]:
+    """Tipos de documento exigidos por um document_request (config ou output)."""
+    for src in (step.config, step.output):
+        if isinstance(src, dict) and isinstance(src.get("required"), list):
+            return [str(t) for t in src["required"]]
+    return []
+
+
 class _Estacao:
     """Acumulador interno (espelha o type Estacao do frontend)."""
 
@@ -121,11 +136,24 @@ def _anchor_for(step: NodeStep, estacoes: list[_Estacao]) -> _Estacao | None:
         return None
     if step.node_type == "specialist_agent":
         agent = _agent_of(step)
+        # opinion_writer é o sintetizador → estação "Parecer" própria.
+        if agent == "opinion_writer":
+            return None
         affinity = _AGENT_STATION_AFFINITY.get(agent) if agent else None
         if affinity:
             for e in reversed(estacoes):
                 if any(m.node_type == affinity for m in e.members):
                     return e
+        # Fallback decoupled (Fatia 2a): analista que continua um pipeline de
+        # documento funde na estação dele, independente do nome do agente. Só a
+        # última estação, e só se ela coleta documento e ainda não tem analista.
+        last = estacoes[-1] if estacoes else None
+        if (
+            last is not None
+            and any(m.node_type == "document_request" for m in last.members)
+            and not any(m.node_type == "specialist_agent" for m in last.members)
+        ):
+            return last
         return None
     if step.node_type == "human_review":
         target = _review_of(step)
@@ -203,6 +231,23 @@ def build_dossier_descriptor(code: str, steps: list[NodeStep]) -> DossierDescrip
             else step.label
         )
         estacoes.append(_Estacao(step, label))
+
+    # Rótulo pelo ASPECTO do documento coletado (decoupled do nome do agente):
+    # override quando o document_request declara um tipo conhecido.
+    for e in estacoes:
+        doc_req = next((m for m in e.members if m.node_type == "document_request"), None)
+        if doc_req is None:
+            continue
+        aspect = next(
+            (
+                _DOC_TYPE_STATION_LABEL[t]
+                for t in _required_doc_types(doc_req)
+                if t in _DOC_TYPE_STATION_LABEL
+            ),
+            None,
+        )
+        if aspect:
+            e.label = aspect
 
     stations: list[StationDescriptor] = []
     prev_id: str | None = None

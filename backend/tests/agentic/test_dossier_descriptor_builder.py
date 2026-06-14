@@ -88,6 +88,39 @@ def test_dependencies_are_linear() -> None:
         assert cur.depends_on == [prev.id]
 
 
+def test_analyst_fuses_by_document_not_agent_name() -> None:
+    """Decoupling (Fatia 2a): um analista que segue um document_request(revenue_report)
+    funde na estação do documento MESMO sem afinidade nomeada (ex.: financial_analyst).
+    A estação herda o aspecto "Faturamento" do tipo de documento, não do agente.
+    Espelha a BLB (DC-2026-0043), onde o nó foi fiado a financial_analyst.
+    """
+    steps = [
+        NodeStep(id="ident", label="Identificação", node_type="human_input", state="completed"),
+        NodeStep(
+            id="coleta", label="Documento", node_type="document_request", state="completed",
+            config={"required": ["revenue_report"]},
+        ),
+        NodeStep(id="extrai", label="Extração", node_type="document_extractor", state="completed"),
+        NodeStep(
+            id="analise", label="Análise", node_type="specialist_agent", state="completed",
+            config={"agent": "financial_analyst"}, output={"summary": "ok"},
+        ),
+        NodeStep(
+            id="parecer", label="Parecer", node_type="specialist_agent", state="pending",
+            config={"agent": "opinion_writer"},
+        ),
+    ]
+    d = build_dossier_descriptor("DC-2026-0043", steps)
+    labels = [s.label for s in d.stations]
+    assert labels == ["Identificação", "Faturamento", "Parecer"]
+    fat = next(s for s in d.stations if s.label == "Faturamento")
+    # documento + extração + analista (sem afinidade nomeada) na MESMA estação
+    assert fat.member_node_ids == ["coleta", "extrai", "analise"]
+    # opinion_writer nunca funde na fonte
+    parecer = next(s for s in d.stations if s.label == "Parecer")
+    assert parecer.member_node_ids == ["parecer"]
+
+
 def test_trilha_nodes_excluded() -> None:
     steps = [
         NodeStep(id="trig", label="t", node_type="trigger", state="completed"),

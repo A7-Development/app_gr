@@ -34,6 +34,7 @@ import { Textarea } from "@/components/tremor/Textarea"
 import {
   AgentConclusion,
   AgentLiveStatus,
+  AgentOutputRenderer,
   KpiChartCard,
   type KpiChartDatum,
 } from "@/design-system/components"
@@ -63,8 +64,11 @@ export type FaturamentoStationProps = {
   docs: CreditDocumentRead[]
   requiredDocTypes: string[]
   phase: FaturamentoPhase
-  /** Output do revenue_analyst (quando já concluiu). */
-  agentOutput: RevenueAnalysis | null
+  /** Output do analista fundido (quando já concluiu). Pode ser revenue_analyst
+   *  (schema rico) OU outro analista fiado ao documento (render genérico). */
+  agentOutput: Record<string, unknown> | null
+  /** Nome do agente fundido — decide o renderer da leitura (revenue vs genérico). */
+  agentName?: string | null
   /** Live status do agente (fase rodando). */
   agentLabel?: string
   runStartedAt?: string | null
@@ -590,6 +594,32 @@ function AgentReadingZone(props: FaturamentoStationProps) {
 
   const homologado = phase === "fechada"
 
+  // Decoupling (Fatia 2a): a conferência + o gráfico acima vêm do DOCUMENTO e
+  // aparecem para qualquer analista. A LEITURA, porém, depende do schema do
+  // agente — só o revenue_analyst tem a leitura rica abaixo; outros analistas
+  // fiados ao documento (ex.: financial_analyst) renderizam pelo renderer
+  // genérico, na mesma moldura índigo (proveniência = agente).
+  const isRevenueShape =
+    "resumo_executivo" in agentOutput && "tendencia" in agentOutput
+  if (!isRevenueShape) {
+    return (
+      <AgentConclusion
+        homologado={homologado}
+        eyebrow={`Leitura do agente${props.agentName ? ` · ${props.agentName}` : ""}`}
+        meta={
+          homologado
+            ? "homologada — registrada na trilha"
+            : "gerada após a extração"
+        }
+        tag="julgamento"
+      >
+        <AgentOutputRenderer agentName={props.agentName} output={agentOutput} />
+      </AgentConclusion>
+    )
+  }
+
+  const rev = agentOutput as unknown as RevenueAnalysis
+
   return (
     <AgentConclusion
       homologado={homologado}
@@ -657,33 +687,33 @@ function AgentReadingZone(props: FaturamentoStationProps) {
       }
     >
       <div className="space-y-3">
-        <p>{agentOutput.resumo_executivo}</p>
+        <p>{rev.resumo_executivo}</p>
 
         <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-[12px]">
           <span>
             <span className="text-gray-400">tendência: </span>
             <strong className="font-semibold text-gray-800 dark:text-gray-200">
-              {agentOutput.tendencia.direcao} · {agentOutput.tendencia.intensidade}
+              {rev.tendencia.direcao} · {rev.tendencia.intensidade}
             </strong>
           </span>
           <span>
             <span className="text-gray-400">credibilidade do documento: </span>
             <strong className="font-semibold text-gray-800 dark:text-gray-200">
-              {agentOutput.credibilidade_documento.nivel}
+              {rev.credibilidade_documento.nivel}
             </strong>
           </span>
           <span>
             <span className="text-gray-400">qualidade do dado: </span>
             <strong className="font-semibold text-gray-800 dark:text-gray-200">
-              {agentOutput.qualidade_do_dado.n_meses} meses
-              {agentOutput.qualidade_do_dado.soma_confere ? " · soma confere" : " · soma diverge"}
+              {rev.qualidade_do_dado.n_meses} meses
+              {rev.qualidade_do_dado.soma_confere ? " · soma confere" : " · soma diverge"}
             </strong>
           </span>
         </div>
 
-        {agentOutput.pontos_de_atencao.length > 0 && (
+        {rev.pontos_de_atencao.length > 0 && (
           <ul className="space-y-1 text-[12.5px]">
-            {agentOutput.pontos_de_atencao.map((p, i) => (
+            {rev.pontos_de_atencao.map((p, i) => (
               <li key={i} className="flex items-start gap-1.5">
                 <span
                   className={cx(
@@ -708,7 +738,7 @@ function AgentReadingZone(props: FaturamentoStationProps) {
         <p>
           <span className="text-gray-400">Leitura para crédito: </span>
           <strong className="font-semibold text-gray-900 dark:text-gray-50">
-            {agentOutput.leitura_para_credito}
+            {rev.leitura_para_credito}
           </strong>
         </p>
 
