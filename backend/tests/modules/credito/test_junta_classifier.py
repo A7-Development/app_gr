@@ -9,6 +9,7 @@ from __future__ import annotations
 from app.modules.credito.services.junta import (
     _pick_latest_societario,
     _searchable_text,
+    build_document_options,
 )
 
 # Lista REAL de arquivamentos da "blb" (campo `texto` da consulta completa),
@@ -63,3 +64,33 @@ def test_constituicao_pura_e_pega() -> None:
 
 def test_lista_vazia_none() -> None:
     assert _pick_latest_societario([]) is None
+
+
+# Dado REAL da consulta `lista-dcs` da blb (resultados[]: registro/sessao/
+# descricao/protocolo/digitalizacao).
+_BLB_LISTA_DCS = [
+    {"registro": "415.509/20-8", "sessao": "04/11/2020", "protocolo": "0838427200", "digitalizacao": "DISPONÍVEL", "descricao": "ALTERAÇÃO DA ATIVIDADE. CONSOLIDAÇÃO CONTRATUAL DA MATRIZ."},
+    {"registro": "417.748/24-3", "sessao": "19/12/2024", "protocolo": "2892593244", "digitalizacao": "DISPONÍVEL", "descricao": "ENCERRAMENTO DA FILIAL. CONSOLIDAÇÃO CONTRATUAL DA MATRIZ."},
+    {"registro": "827.633/15-4", "sessao": "18/11/2015", "protocolo": "2146740152", "digitalizacao": "DISPONÍVEL", "descricao": "DECLARAÇÃO DE ENQUADRAMENTO DE EPP."},
+    {"registro": "1.074.745/26-7", "sessao": "07/02/2026", "protocolo": "SPJ2500165238", "digitalizacao": "DISPONÍVEL", "descricao": "A.R.Q. DISTRIBUICAO DOS LUCROS."},
+]
+
+
+def test_build_options_marca_sugestao_e_mapeia() -> None:
+    opts = build_document_options(_BLB_LISTA_DCS)
+    assert len(opts) == 4
+    # toda opção tem as chaves do contrato
+    o = opts[0]
+    assert set(o) == {"registro", "protocolo", "descricao", "data", "disponivel", "suggested"}
+    # exatamente 1 sugerido = a consolidação mais recente (2024)
+    sugeridos = [o for o in opts if o["suggested"]]
+    assert len(sugeridos) == 1 and sugeridos[0]["registro"] == "417.748/24-3"
+    # protocolo preservado (pro download-dc) + disponivel
+    assert sugeridos[0]["protocolo"] == "2892593244"
+    assert all(o["disponivel"] for o in opts)
+
+
+def test_build_options_sem_constitutivo_nenhum_sugerido() -> None:
+    so_outros = [d for d in _BLB_LISTA_DCS if "CONSOLIDA" not in d["descricao"].upper()]
+    opts = build_document_options(so_outros)
+    assert opts and not any(o["suggested"] for o in opts)
