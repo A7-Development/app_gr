@@ -313,6 +313,10 @@ class StationDescriptor(BaseModel):
     blocked_reason: str | None = None
     # The compass: suggested next station. NOT a lock — every ready station is navigable.
     is_recommended_next: bool = False
+    # Node ids fused into this station (anchor + fused members). Lets producers
+    # (deterministic/document) attach their section to the right station even
+    # when the source node fused into another (e.g., social agent → doc station).
+    member_node_ids: list[str] = Field(default_factory=list)
     sections: list[SectionDescriptor] = Field(default_factory=list)
 
 

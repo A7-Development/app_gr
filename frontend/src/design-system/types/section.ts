@@ -248,6 +248,8 @@ export type StationDescriptor = {
   blockedReason?: string
   /** A bússola: estação sugerida como próxima. NÃO é cadeado — as prontas são todas navegáveis. */
   isRecommendedNext?: boolean
+  /** Ids dos nodes fundidos nesta estação (âncora + fundidos). */
+  memberNodeIds?: string[]
   sections: SectionDescriptor[]
 }
 
