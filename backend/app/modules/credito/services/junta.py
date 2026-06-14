@@ -41,6 +41,9 @@ class JuntaFetchError(Exception):
 _DOC_SOCIETARIO_RE = re.compile(
     r"CONTRATO|ALTERA|CONSOLIDA|CONSTITUI", re.IGNORECASE
 )
+# Contrato CONSOLIDADO = retrato vigente completo da sociedade — o melhor doc
+# único pra análise. Preferido sobre os demais atos societários.
+_CONSOLIDA_RE = re.compile(r"CONSOLIDA", re.IGNORECASE)
 
 
 def _digits(raw: Any) -> str:
@@ -58,8 +61,18 @@ def _registro_of(doc: dict[str, Any]) -> str | None:
 
 
 def _searchable_text(doc: dict[str, Any]) -> str:
-    """descricao + tipos de eventos do arquivamento, num blob pro regex."""
-    parts = [str(doc.get("descricao") or ""), str(doc.get("tipo") or "")]
+    """Descrição do ato + tipos de eventos, num blob pro regex.
+
+    GOTCHA (2026-06-14): a JUCESP/Infosimples manda a descrição do ato no campo
+    `texto` (consulta `completa`) ou `descricao` (consulta `lista-dcs`) — NÃO em
+    `tipo`/`eventos`, que vêm null. Sem ler `texto`, o regex não casava nada e o
+    pick caía no fallback por data (pegava encerramento de filial, etc.).
+    """
+    parts = [
+        str(doc.get("texto") or ""),
+        str(doc.get("descricao") or ""),
+        str(doc.get("tipo") or ""),
+    ]
     eventos = doc.get("eventos")
     if isinstance(eventos, list):
         parts.extend(
@@ -81,16 +94,23 @@ def _sort_key(doc: dict[str, Any]) -> tuple:
 
 
 def _pick_latest_societario(docs: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Documento societário mais recente; fallback = mais recente geral."""
+    """Melhor doc constitutivo da JUCESP — sugestão pro analista.
+
+    Prefere o contrato CONSOLIDADO (retrato vigente) mais recente; senão, o ato
+    societário (constituição/alteração) mais recente. Retorna None quando NÃO há
+    ato constitutivo (só encerramento/procuração/deliberação/etc.) — aí o fluxo
+    cai em `found=false` e o analista anexa o documento. SEM fallback "pega
+    qualquer doc por data" (era a causa do pick de encerramento de filial).
+    """
     societarios = [
         d
         for d in docs
         if _DOC_SOCIETARIO_RE.search(_searchable_text(d)) and _registro_of(d)
     ]
-    pool = societarios or [d for d in docs if _registro_of(d)]
-    if not pool:
+    if not societarios:
         return None
-    return max(pool, key=_sort_key)
+    consolidados = [d for d in societarios if _CONSOLIDA_RE.search(_searchable_text(d))]
+    return max(consolidados or societarios, key=_sort_key)
 
 
 async def _persist_junta_data(
