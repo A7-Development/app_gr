@@ -281,6 +281,14 @@ export {
 } from "./StationsSidebar"
 export { SectionRenderer, type SectionRendererProps } from "./SectionRenderer"
 export {
+  DenseTable,
+  type DenseTableProps,
+  type DenseColumn,
+  type DenseRow,
+  type DenseAlign,
+  type DenseFormat,
+} from "./DenseTable"
+export {
   StationHeader,
   type StationHeaderProps,
   type StationSubstep,

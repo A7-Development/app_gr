@@ -23,6 +23,7 @@ import remarkGfm from "remark-gfm"
 
 import { KpiChartCard } from "@/design-system/components/KpiChartCard"
 import { AgentConclusion } from "@/design-system/components/AgentConclusion"
+import { DenseTable, type DenseColumn, type DenseRow } from "@/design-system/components/DenseTable"
 import { provenanceTokens, type ProvenanceRef } from "@/design-system/tokens/provenance"
 import { tableTokens } from "@/design-system/tokens/table"
 import type {
@@ -38,7 +39,6 @@ import type {
   SectionDescriptor,
   SubDossieBlock,
   TabelaBlock,
-  TabelaColuna,
   TextoBlock,
 } from "@/design-system/types/section"
 import { cx } from "@/lib/utils"
@@ -119,73 +119,28 @@ function FichaBlockView({ block }: { block: FichaBlock }) {
   )
 }
 
-function fmtCelula(valor: string | number | null, formato?: TabelaColuna["formato"]): string {
-  if (valor == null) return "—"
-  if (typeof valor === "string") return valor
-  switch (formato) {
-    case "brl":
-      return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
-    case "pct":
-      return `${valor.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`
-    case "numero":
-      return valor.toLocaleString("pt-BR")
-    default:
-      return String(valor)
-  }
-}
-
 function TabelaBlockView({ block }: { block: TabelaBlock }) {
-  const alignClass = (a?: TabelaColuna["align"]) =>
-    a === "right" ? "text-right" : a === "center" ? "text-center" : "text-left"
-  const renderRow = (row: Record<string, { valor: string | number | null }>, strong = false) => (
-    <>
-      {block.colunas.map((col) => {
-        const cell = row[col.key]
-        const numeric = col.formato === "brl" || col.formato === "numero" || col.formato === "pct"
-        return (
-          <td key={col.key} className={cx("px-3 py-0.5", alignClass(col.align))}>
-            <span
-              className={cx(
-                numeric ? tableTokens.cellNumber : tableTokens.cellText,
-                strong && "font-semibold",
-              )}
-            >
-              {fmtCelula(cell?.valor ?? null, col.formato)}
-            </span>
-          </td>
-        )
-      })}
-    </>
-  )
+  // Mapeia o contrato do bloco -> <DenseTable> canônica (mesmo look, agora
+  // padronizado). Célula do bloco é {valor, provenance?}; a DenseTable consome
+  // o valor cru e formata por coluna.
+  const columns: DenseColumn[] = block.colunas.map((c) => ({
+    key: c.key,
+    label: c.label,
+    align: c.align,
+    format: c.formato,
+  }))
+  const toRow = (r: Record<string, { valor: string | number | null }>): DenseRow => {
+    const out: DenseRow = {}
+    for (const c of block.colunas) out[c.key] = r[c.key]?.valor ?? null
+    return out
+  }
   return (
-    <div className="space-y-1.5">
-      {block.titulo && <p className={cx(tableTokens.header, "mb-1")}>{block.titulo}</p>}
-      <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-100 bg-gray-50/60 dark:border-gray-900 dark:bg-gray-900/40">
-              {block.colunas.map((col) => (
-                <th key={col.key} className={cx(tableTokens.header, "px-3 py-1", alignClass(col.align))}>
-                  {col.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {block.linhas.map((row, i) => (
-              <tr key={i} className="border-b border-gray-50 last:border-0 dark:border-gray-900/60">
-                {renderRow(row)}
-              </tr>
-            ))}
-            {block.rodape && (
-              <tr className="border-t border-t-gray-200 bg-gray-50/60 dark:border-t-gray-800 dark:bg-gray-900/40">
-                {renderRow(block.rodape, true)}
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <DenseTable
+      caption={block.titulo}
+      columns={columns}
+      rows={block.linhas.map(toRow)}
+      footer={block.rodape ? toRow(block.rodape) : undefined}
+    />
   )
 }
 
