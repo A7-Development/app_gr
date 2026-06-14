@@ -7,6 +7,7 @@
 // backend/app/modules/credito/api/.
 
 import { apiClient } from "@/lib/api-client"
+import type { DossierDescriptor } from "@/design-system/types/section"
 
 // ─── Workflow types ──────────────────────────────────────────────────────
 
@@ -943,6 +944,11 @@ export const credito = {
      *  cadastro oficial (mesmo payload da read-tool do agente — §14). */
     societario: (id: string) =>
       apiClient.get<SocietarioPayload>(`/credito/dossies/${id}/societario`),
+    /** DossierDescriptor derivado server-side (Fase 1/Etapa 4). Hoje usado só
+     *  pelo painel de paridade (?descriptor=1) p/ validar a derivacao do backend
+     *  vs. a client-side, antes do rewire. camelCase (alias_generator). */
+    descriptor: (id: string) =>
+      apiClient.get<DossierDescriptor>(`/credito/dossies/${id}/descriptor`),
   },
   attachments: {
     list: (dossierId: string, nodeId?: string | null) => {

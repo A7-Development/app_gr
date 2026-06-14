@@ -40,6 +40,7 @@ import { Button } from "@/components/tremor/Button"
 import { Textarea } from "@/components/tremor/Textarea"
 import { DynamicForm } from "@/design-system/components/DynamicForm"
 import { type WizardMultiStepStep } from "@/design-system/patterns/WizardMultiStep"
+import { DescriptorParityPanel } from "./_components/DescriptorParityPanel"
 import { DocumentSourceZone, FichaConferenceZone } from "./_components/DocumentZones"
 import {
   buildCoverage,
@@ -348,6 +349,9 @@ export default function DossierFocusPage() {
 
   const stepFromUrl = sp.get("step")
   const viewDossie = sp.get("view") === "dossie"
+  // QA do wiring (Etapa 4): ?descriptor=1 mostra o painel de paridade
+  // server (/descriptor) × client (buildEstacoes). Não altera o rendering.
+  const descriptorDebug = sp.get("descriptor") === "1"
   const queryClient = useQueryClient()
   const [trailOpen, setTrailOpen] = React.useState(false)
 
@@ -1329,6 +1333,16 @@ export default function DossierFocusPage() {
             {/* block + space-y (não flex): zona com overflow-hidden teria
                 min-height 0 como flex item e seria esmagada pelo scroll. */}
             <div className="flex-1 space-y-5 overflow-y-auto bg-gray-50 px-8 pb-6 pt-6 dark:bg-gray-925">
+              {descriptorDebug && (
+                <DescriptorParityPanel
+                  dossierId={dossierId}
+                  clientStations={estacoes.map((e) => ({
+                    id: e.id,
+                    label: e.label,
+                    state: e.state,
+                  }))}
+                />
+              )}
               {isFaturamento && fatuPhase ? (
                 <FaturamentoStation
                   dossierId={dossierId}
