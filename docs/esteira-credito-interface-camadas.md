@@ -350,6 +350,22 @@ Transforma views bespoke + heurística hardcoded em blocos dirigidos por
   `DossierDescriptor`. Code-implementável; **validação exige DB + builder live**.
 - **Etapa 5** (estação como primitivo do builder): UI do `@xyflow`; **teste live**.
 
+**⚠️ Gotchas travados no auto-review (resolver NO wiring da Etapa 4):**
+1. **snake_case × camelCase (bloqueador silencioso do rewire):** o endpoint
+   `/descriptor` serializa snake_case (`station_id`, `generates_dossier_section`,
+   `valor_ia`…); os tipos TS (`types/section.ts`) leem camelCase (`stationId`,
+   `valorIa`…). Hoje não quebra (cockpit usa os mappers TS). No rewire, o
+   `SectionRenderer` leria `undefined` — resolver com `alias_generator=to_camel`
+   + `populate_by_name=True` num base Pydantic compartilhado dos models de
+   `section_descriptor.py`, OU um adapter snake→camel no frontend. Decidir no wiring.
+2. **Afinidade/severidade espelhadas TS↔Python** (`_AGENT_STATION_AFFINITY`,
+   `sevFromPt`): interim nos dois lados. Ao wirar o endpoint, **deletar a versão
+   TS** (buildEstacoes/affinity/mappers) pra não divergir.
+3. **Label overwrite:** se 2 agentes fundirem na MESMA estação (mesmo
+   `document_request`), o label batiza pelo último (fiel ao frontend). Em fluxos
+   reais faturamento e contrato social têm document_request distintos; se um fluxo
+   reusar o mesmo nó-fonte pra 2 agentes, revisar.
+
 **FASE 2 — o sonho (nível 3, versão segura):**
 - Detecção barata de achado (BDC `ECONOMIC_GROUP_RELATIONSHIPS` ~R$0,05) → achado tipado.
 - Painel de Achados + "incluir" → invoca `sub_playbook` **leve** (talvez só gate cadastral).
