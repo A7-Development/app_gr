@@ -279,6 +279,61 @@ function EmptyInspector() {
   )
 }
 
+// ─── human_review (declaração de review_of — Fase 1 / Etapa 1.3) ──────────
+
+/** Declara QUAL análise este checkpoint homologa. Define em que estação ele se
+ *  funde (sem isto, a heurística trata como checkpoint final → pode gerar o
+ *  "double-Parecer"). Vazio = checkpoint final (revisa o parecer). */
+function HumanReviewInspector({
+  config,
+  nodes,
+  onUpdateConfig,
+}: {
+  config: Record<string, unknown>
+  nodes: Node[]
+  onUpdateConfig: (cfg: Record<string, unknown>) => void
+}) {
+  const reviewOf = (config.review_of as string | undefined) ?? ""
+  const agents = Array.from(
+    new Set(
+      nodes
+        .map((n) => n.data as unknown as StrataNodeData)
+        .filter((d) => d.nodeType === "specialist_agent")
+        .map((d) => (d.config?.agent as string | undefined))
+        .filter((a): a is string => Boolean(a)),
+    ),
+  )
+
+  const FINAL = "__final__"
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs">Revisa qual análise?</Label>
+      <Select
+        value={reviewOf || FINAL}
+        onValueChange={(v) =>
+          onUpdateConfig({ ...config, review_of: v === FINAL ? undefined : v })
+        }
+      >
+        <SelectTrigger>
+          <SelectValue placeholder="Selecione" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={FINAL}>Parecer final (revisa o parecer)</SelectItem>
+          {agents.map((a) => (
+            <SelectItem key={a} value={a}>
+              {AGENT_FRIENDLY_LABEL[a] ?? a}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p className="text-[11px] leading-snug text-gray-500 dark:text-gray-400">
+        Define em que estação o checkpoint se funde. Sem declaração, vira um
+        &ldquo;Parecer&rdquo; solto (double-Parecer).
+      </p>
+    </div>
+  )
+}
+
 // ─── Dispatcher ─────────────────────────────────────────────────────────
 
 function NodeConfigDispatcher({
@@ -369,6 +424,11 @@ function NodeConfigDispatcher({
           edges={edges}
           onUpdateConfig={onUpdateConfig}
         />
+      )
+
+    case "human_review":
+      return (
+        <HumanReviewInspector config={config} nodes={nodes} onUpdateConfig={onUpdateConfig} />
       )
 
     default:
