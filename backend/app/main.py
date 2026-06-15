@@ -22,6 +22,22 @@ _SCHEDULER_ENABLED = os.getenv("APP_SCHEDULER", "on").lower() not in {"off", "fa
 async def lifespan(_: FastAPI):
     """App lifespan (startup/shutdown hooks)."""
     # Startup
+    # §1b — reconcilia runs orfaos: como o motor roda em processo unico, um
+    # run em RUNNING apos um restart perdeu sua task de execucao. Marca FAILED
+    # pra nao ficar girando pra sempre (em vez do antigo "RUNNING preso").
+    try:
+        from app.agentic.playbooks.services.engine import reconcile_orphaned_runs
+        from app.core.database import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as db:
+            await reconcile_orphaned_runs(db)
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "reconcile_orphaned_runs falhou no startup (seguindo mesmo assim)"
+        )
+
     if _SCHEDULER_ENABLED:
         start_scheduler()
     yield

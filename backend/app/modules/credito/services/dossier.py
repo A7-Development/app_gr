@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -13,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agentic.playbooks.models.definition import PlaybookDefinition
 from app.agentic.playbooks.models.run import PlaybookRun, PlaybookRunStep
 from app.agentic.playbooks.services import engine as workflow_engine
+from app.core.database import AsyncSessionLocal
 from app.core.enums import (
     CompanyRole,
     DossierStatus,
@@ -27,6 +30,75 @@ from app.modules.credito.models.dossier import CreditDossier
 from app.modules.credito.models.opinion import CreditDossierOpinion
 from app.modules.credito.models.person import CreditDossierPerson
 from app.modules.credito.models.red_flag import CreditDossierRedFlag
+
+logger = logging.getLogger(__name__)
+
+# Referencias fortes das tasks de fundo (1b) — sem isto o GC pode coletar uma
+# task ainda em execucao. add_done_callback remove ao terminar.
+_BG_RESUME_TASKS: set[asyncio.Task[None]] = set()
+
+
+def spawn_resume_execution(
+    *, run_id: UUID, dossier_id: UUID, tenant_id: UUID
+) -> None:
+    """Dispara a execucao do grafo em BACKGROUND (§1b).
+
+    O submit do dossie chama `prepare_resume` (marca RUNNING) + commit e ENTAO
+    isto — retornando na hora, sem bloquear 1-2 min na consulta JUCESP/agente.
+    O polling de 3s do cockpit mostra o progresso (node RUNNING -> feedback ao
+    vivo). A task usa sessao PROPRIA (a da request fecha ao responder) e tem
+    guard que marca FAILED se algo estourar (nunca fica RUNNING pra sempre).
+    """
+    task = asyncio.create_task(
+        _resume_execution_bg(
+            run_id=run_id, dossier_id=dossier_id, tenant_id=tenant_id
+        )
+    )
+    _BG_RESUME_TASKS.add(task)
+    task.add_done_callback(_BG_RESUME_TASKS.discard)
+
+
+async def _resume_execution_bg(
+    *, run_id: UUID, dossier_id: UUID, tenant_id: UUID
+) -> None:
+    try:
+        async with AsyncSessionLocal() as db:
+            # _execute_run nao levanta em falha de node (seta FAILED e retorna);
+            # o commit aqui persiste PAUSED/COMPLETED/FAILED + o status do dossie.
+            await workflow_engine.execute_paused_run(db, run_id=run_id)
+            dossier = await get_dossier(
+                db, tenant_id=tenant_id, dossier_id=dossier_id
+            )
+            if dossier is not None:
+                await sync_status_from_workflow(db, dossier=dossier)
+            await db.commit()
+    except Exception:
+        # Erro inesperado (sessao/conexao/bug) — garante que o run nao fica
+        # preso em RUNNING. Sessao limpa pra escrever o FAILED.
+        logger.exception("resume em background falhou: run=%s", run_id)
+        try:
+            async with AsyncSessionLocal() as db:
+                run = (
+                    await db.execute(
+                        select(PlaybookRun).where(PlaybookRun.id == run_id)
+                    )
+                ).scalar_one_or_none()
+                if run is not None and run.status == PlaybookRunStatus.RUNNING:
+                    run.status = PlaybookRunStatus.FAILED
+                    run.error_detail = (
+                        "Falha inesperada ao executar a etapa em background."
+                    )
+                    run.completed_at = datetime.now(UTC)
+                    dossier = await get_dossier(
+                        db, tenant_id=tenant_id, dossier_id=dossier_id
+                    )
+                    if dossier is not None:
+                        await sync_status_from_workflow(db, dossier=dossier)
+                    await db.commit()
+        except Exception:
+            logger.exception(
+                "resume em background: falha ao marcar FAILED run=%s", run_id
+            )
 
 
 class DossierServiceError(RuntimeError):

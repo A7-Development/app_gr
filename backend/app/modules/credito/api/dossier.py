@@ -525,19 +525,30 @@ async def submit_node_input(
         submitted=submitted,
     )
 
-    # Resume the workflow run with the submitted values — os nodes downstream
-    # ja enxergam a identidade + grafo persistidos acima (mesma sessao).
-    await workflow_engine.resume_run(
+    # §1b — resume em BACKGROUND. Marca o run RUNNING + injeta o input
+    # (barato), sincroniza o status, COMMITA, e só então dispara a execução do
+    # grafo (JUCESP / agente, 1-2 min) por fora da requisição. O submit retorna
+    # na hora; o cockpit polla (3s) e mostra o progresso ao vivo (node RUNNING
+    # -> feedback). Antes isto rodava inline: o "Salvar" travava até a JUCESP
+    # terminar, com risco de timeout do proxy. Os nodes downstream já enxergam
+    # a identidade + grafo persistidos acima (commitados antes do spawn).
+    await workflow_engine.prepare_resume(
         db,
         run_id=dossier.workflow_run_id,
         pending_inputs={node_id: submitted},
     )
-
-    # Sync dossier status from updated workflow run.
     await dossier_svc.sync_status_from_workflow(db, dossier=dossier)
     await db.commit()
 
-    # Return the fresh state.
+    # Dispara a execução em background (sessão própria; guard marca FAILED se
+    # estourar). Só após o commit acima — a task lê o estado já persistido.
+    dossier_svc.spawn_resume_execution(
+        run_id=dossier.workflow_run_id,
+        dossier_id=dossier_id,
+        tenant_id=principal.tenant_id,
+    )
+
+    # Estado fresco (run já em RUNNING) — o polling assume daqui.
     return await get_dossie_state(
         dossier_id=dossier_id,
         principal=principal,
