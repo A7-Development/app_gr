@@ -2,9 +2,9 @@
 
 // Preview page — fora do (app) auth shell.
 import {
-  CompactSeriesTable,
-  type CompactSeriesRow,
-} from "@/design-system/components/CompactSeriesTable"
+  DenseTable,
+  type DenseSeriesRow,
+} from "@/design-system/components/DenseTable"
 
 // Dados ficticios estilo Austin (Puma FIDC, % do PL, 12 meses)
 const MONTHS_12 = [
@@ -30,7 +30,7 @@ function series(base: number, drift: number, noise = 0.5): Record<string, number
   return out
 }
 
-const carteiraPctRows: CompactSeriesRow[] = [
+const carteiraPctRows: DenseSeriesRow[] = [
   { label: "Direitos Creditorios", emphasis: "header", values: {} },
   { label: "A vencer", format: "pct", indent: 1, values: series(72.1, 0.3) },
   { label: "Vencidos", format: "pct", indent: 1, values: series(8.2, -0.1, 0.3) },
@@ -45,7 +45,7 @@ const carteiraPctRows: CompactSeriesRow[] = [
   { label: "Total Geral Carteira", format: "pct", emphasis: "total", values: series(92.9, 0.08) },
 ]
 
-const carteiraBrlRows: CompactSeriesRow[] = [
+const carteiraBrlRows: DenseSeriesRow[] = [
   { label: "Direitos Creditorios", emphasis: "header", values: {} },
   { label: "A vencer", format: "brl", indent: 1, values: series(187_540, 820) },
   { label: "Vencidos", format: "brl", indent: 1, values: series(21_330, -80) },
@@ -58,7 +58,7 @@ const carteiraBrlRows: CompactSeriesRow[] = [
   { label: "Total Geral Carteira", format: "brl", emphasis: "total", values: series(241_680, 595) },
 ]
 
-const atrasoRows: CompactSeriesRow[] = [
+const atrasoRows: DenseSeriesRow[] = [
   { label: "0-30 dias", format: "pct", values: series(3.1, 0.02) },
   { label: "30-60 dias", format: "pct", values: series(1.8, -0.01) },
   { label: "60-90 dias", format: "pct", values: series(0.9, 0.01) },
@@ -69,15 +69,15 @@ const atrasoRows: CompactSeriesRow[] = [
   { label: "Total Vencidos", format: "pct", emphasis: "total", values: series(8.2, -0.01) },
 ]
 
-export default function CompactSeriesTablePreviewPage() {
+export default function DenseSeriesTablePreviewPage() {
   return (
     <div className="flex flex-col gap-6 px-12 py-6 pb-20">
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-50">
-          CompactSeriesTable · preview
+          DenseTable.Series · preview
         </h1>
         <p className="text-sm text-gray-500 dark:text-gray-500">
-          Proposta de tabela canonica para series temporais (estilo Austin Rating). Dados ficticios. Use para validar densidade, enfases e formato de data antes de migrar a FichaFundoTab.
+          Modo série (transposto) da DenseTable canonica — séries temporais estilo Austin Rating. Dados ficticios. Use para validar densidade, enfases e formato de data.
         </p>
       </div>
 
@@ -85,7 +85,7 @@ export default function CompactSeriesTablePreviewPage() {
         <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
           1. Density <code className="font-mono text-xs">compact</code> (default) · Posicao da Carteira % do PL
         </h2>
-        <CompactSeriesTable
+        <DenseTable.Series
           label="Indicador"
           periods={MONTHS_12}
           rows={carteiraPctRows}
@@ -98,7 +98,7 @@ export default function CompactSeriesTablePreviewPage() {
         <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
           2. Density <code className="font-mono text-xs">ultra</code> · Mesmos dados, mais denso
         </h2>
-        <CompactSeriesTable
+        <DenseTable.Series
           label="Indicador"
           periods={MONTHS_12}
           rows={carteiraPctRows}
@@ -110,7 +110,7 @@ export default function CompactSeriesTablePreviewPage() {
         <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
           3. Density <code className="font-mono text-xs">comfortable</code> · Versao espacada
         </h2>
-        <CompactSeriesTable
+        <DenseTable.Series
           label="Indicador"
           periods={MONTHS_12}
           rows={carteiraPctRows}
@@ -122,7 +122,7 @@ export default function CompactSeriesTablePreviewPage() {
         <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
           4. Formato <code className="font-mono text-xs">mmm/aa</code> · Posicao em R$ mil
         </h2>
-        <CompactSeriesTable
+        <DenseTable.Series
           label="Indicador (R$ mil)"
           periods={MONTHS_12}
           rows={carteiraBrlRows}
@@ -137,7 +137,7 @@ export default function CompactSeriesTablePreviewPage() {
           5. Tabela curta · Atraso em buckets (%PL)
         </h2>
         <div className="lg:max-w-[720px]">
-          <CompactSeriesTable
+          <DenseTable.Series
             label="Bucket de atraso"
             periods={MONTHS_12}
             rows={atrasoRows}

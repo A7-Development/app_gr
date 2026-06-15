@@ -5,9 +5,9 @@ import { useQuery } from "@tanstack/react-query"
 import * as React from "react"
 
 import {
-  CompactSeriesTable,
-  type CompactSeriesRow,
-} from "@/design-system/components/CompactSeriesTable"
+  DenseTable,
+  type DenseSeriesRow,
+} from "@/design-system/components/DenseTable"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { Badge } from "@/components/tremor/Badge"
 import {
@@ -43,7 +43,7 @@ import { FavoritoStar } from "./FavoritoStar"
 
 //
 // Helpers de mapping — converte posicional (array paralelo a `periodos`) para
-// keyed (Record<competencia, number>) exigido pelo CompactSeriesTable.
+// keyed (Record<competencia, number>) exigido pelo DenseTable.Series.
 //
 function toValuesByComp<T extends { competencia: string }>(
   items: T[],
@@ -266,7 +266,7 @@ function PlEvolucaoTable({ ficha }: { ficha: FichaFundo }) {
     )
   }
   const periodos = serie.map((p) => p.competencia)
-  const rows: CompactSeriesRow[] = [
+  const rows: DenseSeriesRow[] = [
     {
       label: "PL (IV.a)",
       emphasis: "emphasis",
@@ -297,7 +297,7 @@ function PlEvolucaoTable({ ficha }: { ficha: FichaFundo }) {
       info="PL (tab_iv.a) + variacao mensal derivada. Valores em milhares de reais, sem casas decimais (formato 000.000). Fonte: Informe Mensal FIDC / CVM."
       className="w-fit max-w-full"
     >
-      <CompactSeriesTable
+      <DenseTable.Series
         label="Indicador"
         periods={periodos}
         rows={rows}
@@ -318,7 +318,7 @@ export function RecompraTable({ ficha }: { ficha: FichaFundo }) {
     )
   }
   const periodos = serie.map((p) => p.competencia)
-  const rows: CompactSeriesRow[] = [
+  const rows: DenseSeriesRow[] = [
     {
       label: "Valor de recompra (VII.d.2)",
       emphasis: "emphasis",
@@ -337,7 +337,7 @@ export function RecompraTable({ ficha }: { ficha: FichaFundo }) {
       info="Valor de recompra (tab_vii.d.2) e % do PL (tab_iv.a). Valores em milhares de reais, sem casas decimais (formato 000.000). Fonte: Informe Mensal FIDC / CVM."
       className="w-fit max-w-full"
     >
-      <CompactSeriesTable
+      <DenseTable.Series
         label="Indicador"
         periods={periodos}
         rows={rows}
@@ -369,7 +369,7 @@ function CotistasSerieCard({
     )
   }
   const periodos = serie.map((p) => p.competencia)
-  const rows: CompactSeriesRow[] = subs.map((s) => ({
+  const rows: DenseSeriesRow[] = subs.map((s) => ({
     label: s,
     format: "num",
     values: toValuesByComp(serie, (p) => p.por_serie[s] ?? null),
@@ -388,7 +388,7 @@ function CotistasSerieCard({
       info="Evolucao do numero de cotistas por serie/subclasse (tab_x_1)."
       className={cx("w-fit max-w-full", className)}
     >
-      <CompactSeriesTable
+      <DenseTable.Series
         label="Subclasse"
         periods={periodos}
         rows={rows}
@@ -437,10 +437,10 @@ function CotistasPorTipoTable({ ficha }: { ficha: FichaFundo }) {
   const hasAny = (bag: "senior" | "subord", key: string) =>
     serie.some((p) => (p[bag][key] ?? 0) > 0)
 
-  const buildBloco = (bag: "senior" | "subord", header: string): CompactSeriesRow[] => {
+  const buildBloco = (bag: "senior" | "subord", header: string): DenseSeriesRow[] => {
     const tipos = _COTST_TIPO_LABELS.filter((t) => hasAny(bag, t.key))
     if (tipos.length === 0) return []
-    const rows: CompactSeriesRow[] = [
+    const rows: DenseSeriesRow[] = [
       { label: header, emphasis: "header", values: {} },
     ]
     for (const t of tipos) {
@@ -462,11 +462,11 @@ function CotistasPorTipoTable({ ficha }: { ficha: FichaFundo }) {
     return rows
   }
 
-  const rows: CompactSeriesRow[] = [
+  const rows: DenseSeriesRow[] = [
     ...buildBloco("senior", "Senior"),
     ...(serie.some((p) => Object.values(p.senior).some((v) => v > 0)) &&
     serie.some((p) => Object.values(p.subord).some((v) => v > 0))
-      ? ([{ separator: true }] as CompactSeriesRow[])
+      ? ([{ separator: true }] as DenseSeriesRow[])
       : []),
     ...buildBloco("subord", "Subordinada"),
   ]
@@ -485,7 +485,7 @@ function CotistasPorTipoTable({ ficha }: { ficha: FichaFundo }) {
       info="Numero de cotistas por tipo (PF, PJ, banco, RPPS, etc.) quebrado em Senior vs Subordinada. Fonte: tab_x_1_1 (Informe Mensal FIDC / CVM). Linhas 100% zeradas no periodo ficam ocultas."
       className="w-fit max-w-full"
     >
-      <CompactSeriesTable
+      <DenseTable.Series
         label="Tipo de investidor"
         periods={periodos}
         rows={rows}
@@ -553,8 +553,8 @@ function buildCarteiraRows(
   serie: FundoCarteiraPonto[],
   format: "brlK" | "pct",
   plByComp?: Map<string, number>,
-): CompactSeriesRow[] {
-  const out: CompactSeriesRow[] = []
+): DenseSeriesRow[] {
+  const out: DenseSeriesRow[] = []
   for (const r of CARTEIRA_ROWS) {
     if (r.kind === "separator") {
       // Evita 2 separadores consecutivos se a linha anterior foi ocultada.
@@ -611,7 +611,7 @@ function CarteiraReaisTable({ ficha }: { ficha: FichaFundo }) {
       info="Composicao do ativo do fundo conforme Tabela I do Informe Mensal FIDC (CVM). Valores em milhares de reais, sem casas decimais (formato 000.000). Linhas zeradas no periodo sao ocultadas. PDD e informativa (ja contida em I.2.a)."
       className="w-fit max-w-full"
     >
-      <CompactSeriesTable
+      <DenseTable.Series
         label="Linha"
         periods={periodos}
         rows={rows}
@@ -638,7 +638,7 @@ function CarteiraPctPlTable({ ficha }: { ficha: FichaFundo }) {
       info="Mesmas linhas da Tabela I, normalizadas pelo PL mensal (tab_iv_a_vl_pl)."
       className="w-fit max-w-full"
     >
-      <CompactSeriesTable
+      <DenseTable.Series
         label="Linha"
         periods={periodos}
         rows={rows}
@@ -685,7 +685,7 @@ export function AtrasoTable({
     )
   }
   const periodos = serie.map((p) => p.competencia)
-  const rows: CompactSeriesRow[] = ATRASO_BUCKETS.map((b) => ({
+  const rows: DenseSeriesRow[] = ATRASO_BUCKETS.map((b) => ({
     label: b.label,
     format: "pct",
     values: toValuesByComp(serie, (p) => {
@@ -707,7 +707,7 @@ export function AtrasoTable({
       info="CVM nao separa bucket 0-15d da lamina Austin. Granularidade nativa aqui e 0-30d/30-60d/..."
       className={cx("w-fit max-w-full", className)}
     >
-      <CompactSeriesTable
+      <DenseTable.Series
         label="Bucket"
         periods={periodos}
         rows={rows}
@@ -785,7 +785,7 @@ export function PlSubclassesTable({ ficha }: { ficha: FichaFundo }) {
     )
   }
   const periodos = serie.map((p) => p.competencia)
-  const rows: CompactSeriesRow[] = subs.map((s) => ({
+  const rows: DenseSeriesRow[] = subs.map((s) => ({
     label: s,
     format: "brlK",
     values: toValuesByComp(serie, (p) => p.por_subclasse[s] ?? null),
@@ -804,7 +804,7 @@ export function PlSubclassesTable({ ficha }: { ficha: FichaFundo }) {
       info="Qt cotas x Vl cota por serie (tab_x_2). Valores em milhares de reais, sem casas decimais (formato 000.000)."
       className="w-fit max-w-full"
     >
-      <CompactSeriesTable
+      <DenseTable.Series
         label="Subclasse"
         periods={periodos}
         rows={rows}
@@ -833,7 +833,7 @@ export function RentMensalTable({ ficha }: { ficha: FichaFundo }) {
     )
   }
   const periodos = serie.map((p) => p.competencia)
-  const rows: CompactSeriesRow[] = subs.map((s) => ({
+  const rows: DenseSeriesRow[] = subs.map((s) => ({
     label: s,
     format: "pct",
     values: toValuesByComp(serie, (p) => p.por_subclasse[s] ?? null),
@@ -844,7 +844,7 @@ export function RentMensalTable({ ficha }: { ficha: FichaFundo }) {
       info="% ao mes realizado por subclasse (tab_x_3). %CDI nao computado no MVP."
       className="w-fit max-w-full"
     >
-      <CompactSeriesTable
+      <DenseTable.Series
         label="Subclasse"
         periods={periodos}
         rows={rows}
@@ -870,7 +870,7 @@ export function RentAcumuladaTable({ ficha }: { ficha: FichaFundo }) {
     )
   }
   const periodos = serie.map((p) => p.competencia)
-  const rows: CompactSeriesRow[] = subs.map((s) => ({
+  const rows: DenseSeriesRow[] = subs.map((s) => ({
     label: s,
     format: "pct",
     values: toValuesByComp(serie, (p) => p.por_subclasse[s] ?? null),
@@ -889,7 +889,7 @@ export function RentAcumuladaTable({ ficha }: { ficha: FichaFundo }) {
       info="Produtorio de (1 + rent_mes). CDI pendente de ingestao Bacen SGS 12."
       className="w-fit max-w-full"
     >
-      <CompactSeriesTable
+      <DenseTable.Series
         label="Subclasse"
         periods={periodos}
         rows={rows}
@@ -962,7 +962,7 @@ function FluxoCotasTable({ ficha }: { ficha: FichaFundo }) {
 
   const rowsFromEntries = (
     entries: [string, Map<string, number>][],
-  ): CompactSeriesRow[] =>
+  ): DenseSeriesRow[] =>
     entries.map(([label, m]) => {
       const values: Record<string, number | null> = {}
       for (const c of periodos) values[c] = m.get(c) ?? 0
@@ -974,7 +974,7 @@ function FluxoCotasTable({ ficha }: { ficha: FichaFundo }) {
       }
     })
 
-  const rows: CompactSeriesRow[] = []
+  const rows: DenseSeriesRow[] = []
 
   // Grupo 1 — Captacao
   rows.push({ label: "Captacao", emphasis: "header", values: {} })
@@ -1036,7 +1036,7 @@ function FluxoCotasTable({ ficha }: { ficha: FichaFundo }) {
       info="Captacao (entrada, positivo) e amortizacao/resgate (saida, negativo) de cotas publicados em tab_x_4. Resultado liquido = captacao + saidas. Valores em milhares de reais, sem casas decimais (formato 000.000)."
       className="w-fit max-w-full"
     >
-      <CompactSeriesTable
+      <DenseTable.Series
         label="Operacao · subclasse"
         periods={periodos}
         rows={rows}
@@ -1071,7 +1071,7 @@ function LiquidezTable({ ficha }: { ficha: FichaFundo }) {
     )
   }
   const periodos = serie.map((p) => p.competencia)
-  const rows: CompactSeriesRow[] = LIQUIDEZ_KEYS.map((k) => ({
+  const rows: DenseSeriesRow[] = LIQUIDEZ_KEYS.map((k) => ({
     label: k.label,
     format: "brlK",
     values: toValuesByComp(
@@ -1096,7 +1096,7 @@ function LiquidezTable({ ficha }: { ficha: FichaFundo }) {
       info="Caixa + recebiveis esperados por faixa de prazo (tab_x_5). Valores em milhares de reais, sem casas decimais (formato 000.000)."
       className="w-fit max-w-full"
     >
-      <CompactSeriesTable
+      <DenseTable.Series
         label="Faixa"
         periods={periodos}
         rows={rows}

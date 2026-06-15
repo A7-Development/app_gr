@@ -40,7 +40,7 @@ src/design-system/
 │   ├── Breadcrumbs.tsx     # HeaderBreadcrumbs (sticky, 3 niveis)
 │   ├── CardMenu.tsx        # Menu "..." canonico p/ VizCard / EChartsCard
 │   ├── ChartSkeleton.tsx   # Loading skeleton p/ charts
-│   ├── CompactSeriesTable.tsx  # Tabela compacta p/ series temporais FIDC (Austin-style)
+│   ├── DenseTable.tsx      # Tabela densa: <DenseTable> (leitura) + <DenseTable.Series> (serie temporal transposta, Austin-style)
 │   ├── DropdownUserProfile.tsx # Menu do user no rodape da Sidebar
 │   ├── EmptyState.tsx      # Estado vazio com ilustracao + CTA
 │   ├── ErrorState.tsx      # Estado de erro com retry
@@ -109,7 +109,7 @@ import {
 
   // A7 Credit composites
   AdapterStatusBadge, AuthGuard, HeaderBreadcrumbs,
-  CardMenu, ChartSkeleton, CompactSeriesTable,
+  CardMenu, ChartSkeleton, DenseTable,
   DropdownUserProfile, EmptyState, ErrorState,
   FilterPill, InfoTooltip,
   Insight, InsightBar,
@@ -156,7 +156,7 @@ import { DashboardOperacional, ListagemComDrilldown } from "@/design-system/patt
 | Caso | Use | Por que |
 |---|---|---|
 | Listagem transacional (cessoes, sacados) | `<DataTable>` | TanStack Table v8 + Virtual; > 100 rows virtualiza auto |
-| Series temporais FIDC (PL mes-a-mes) | `<CompactSeriesTable>` | Austin-style, density compact |
+| Series temporais FIDC (PL mes-a-mes) | `<DenseTable.Series>` | Austin-style transposta, density compact |
 | Tabela ad-hoc (< 10 rows, dentro de DrillDownSheet) | `<Table>` Tremor cru | DataTable e overkill |
 
 ### Filtros

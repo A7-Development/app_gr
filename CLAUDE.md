@@ -221,7 +221,7 @@ src/design-system/components/      <- Componentes do Strata Design System (FIDC-
                                        CommandPalette, EChartsCard, ApprovalQueueBadge, Sidebar,
                                        SegmentSwitch.
                                        A7 Credit composites: PageHeader, EmptyState, ErrorState,
-                                       OriginDot, CompactSeriesTable, etc.
+                                       OriginDot, DenseTable, etc.
                                        USA apenas tremor/ + charts/ + tokens/, nunca Tailwind
                                        bruto de cor / Radix cru.
 
@@ -242,7 +242,7 @@ src/components/<dominio>/          <- Componentes amarrados a um dominio especif
                                        Compostos de design-system/ + tremor/ + charts/.
 ```
 
-**Catalogo completo de componentes:** ver [`frontend/src/design-system/components/README.md`](frontend/src/design-system/components/README.md) — registro vivo dos 37 componentes (9 canonicos do handoff Strata + 28 A7 Credit composites como `PageHeader`, `ModuleSwitcher`, `AuthGuard`, `Breadcrumbs`, `OriginDot`, `FilterPill`, `CardMenu`, `CompactSeriesTable`, etc.). Antes de criar componente novo, consulte este catalogo — provavelmente ja existe.
+**Catalogo completo de componentes:** ver [`frontend/src/design-system/components/README.md`](frontend/src/design-system/components/README.md) — registro vivo dos 37 componentes (9 canonicos do handoff Strata + 28 A7 Credit composites como `PageHeader`, `ModuleSwitcher`, `AuthGuard`, `Breadcrumbs`, `OriginDot`, `FilterPill`, `CardMenu`, `DenseTable`, etc.). Antes de criar componente novo, consulte este catalogo — provavelmente ja existe.
 
 **Imports permitidos por camada:**
 
@@ -350,11 +350,11 @@ Uso de `hero.*` fora de `surfaces/` e bloqueador de PR. Pagina autenticada conti
 **Tabelas:**
 - **Listagens CRUD/admin** (Provedores, Usuarios, Etiquetas, Templates — pequenas a medias, ~5-200 rows) — usar **`<DataTableShell>`** em `src/design-system/components/DataTableShell/`. Encapsula `Card + FilterSearch + SegmentSwitch + counter + DataTable` num so componente. Garante layout/gap/ordem identicos entre paginas. Demo isolada: `/preview/data-table-shell`.
 - **Transacionais grandes** (cessoes, cedentes, sacados — milhares de rows com filtros complexos) — usar `<DataTable>` direta em `src/design-system/components/DataTable/`. Virtualization automatica se rows > 100.
-- **Series temporais FIDC** (PL, cotas, rentabilidade mes a mes) — usar `<CompactSeriesTable>` (Austin-style, density compact default).
+- **Series temporais FIDC** (PL, cotas, rentabilidade mes a mes) — usar `<DenseTable.Series>` (modo transposto da DenseTable: periodos como colunas, Austin-style, density compact default; absorveu a antiga CompactSeriesTable).
 - **Tabelas hierarquicas** (BalanceTable, etc — multi-nivel com expand) — `<DataTable>` direta + `enableExpanding`/`getSubRows`/`expandedColumnId`. Nao cabe no `<DataTableShell>`.
 - **Tipografia + cores em CELL renderers**: SEMPRE via **`tableTokens.*`** de `@/design-system/tokens/table` — NUNCA `text-xs`, `text-sm`, `text-[Npx]`, `text-gray-XXX` literais inline. Excecao com `// MOTIVO:` no proprio cell. Tokens disponiveis: `cellText` (12px texto), `cellTextMono` (12px mono), `cellSecondary` (12px gray-500), `cellMuted` (12px placeholder), `cellStrong` (12px semibold), `cellNumber`/`cellNumberSecondary`/`cellNumberPositive`/`cellNumberNegative` (tabular-nums), `badge`/`badgeWithDot` (11px), `header` (10px eyebrow). Tudo 12px de base — cabe em row de density compact (h-8). **Texto principal em dark = `gray-100`, NAO `gray-50`.**
 - **Bordas em `rowClassName` da DataTable**: use sempre `border-t-{color}` / `border-b-{color}` / `border-y-{color}` (forma com lado explicito) — NUNCA o shorthand `border-{color}`. O shorthand seta `border-color` nos 4 lados, sobrescrevendo a `border-bottom-color: gray-100` default que a DataTable aplica em todo `<tr>`. Resultado visual: linhas com `border-t border-gray-200` ficam parecendo "boxed" (borda tambem embaixo, na cor errada). Mesma regra para `subtotal`, `total`, `section` em tabelas hierarquicas.
-- Nunca AG Grid, nunca data grid externo, nunca `Table` do Tremor cru em pagina (Tremor `Table` so como primitivo dentro de DataTable/CompactSeriesTable).
+- Nunca AG Grid, nunca data grid externo, nunca `Table` do Tremor cru em pagina (Tremor `Table` so como primitivo dentro de DataTable/DenseTable.Series).
 
 ---
 

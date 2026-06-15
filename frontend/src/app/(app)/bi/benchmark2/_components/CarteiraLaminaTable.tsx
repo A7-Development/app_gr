@@ -1,9 +1,9 @@
 "use client"
 
 import {
-  CompactSeriesTable,
-  type CompactSeriesRow,
-} from "@/design-system/components/CompactSeriesTable"
+  DenseTable,
+  type DenseSeriesRow,
+} from "@/design-system/components/DenseTable"
 import type { FichaFundo, FundoCarteiraPonto } from "@/lib/api-client"
 
 import { SectionCard } from "./SectionCard"
@@ -83,7 +83,7 @@ export function CarteiraLaminaTable({ ficha, format }: Props) {
     )
   }
 
-  const rows: CompactSeriesRow[] = [
+  const rows: DenseSeriesRow[] = [
     { label: "DIREITOS CREDITORIOS", emphasis: "header", values: {} },
     {
       label: "A vencer (com risco)",
@@ -170,7 +170,7 @@ export function CarteiraLaminaTable({ ficha, format }: Props) {
       label: "PDD",
       format: formatRow,
       emphasis: "emphasis",
-      // PDD negativo: vermelho automatico pelo CompactSeriesTable.
+      // PDD negativo: vermelho automatico pelo DenseTable.Series.
       values: valuesByComp(serie, (p) =>
         get(-Math.abs(p.pdd_aprox), p.competencia),
       ),
@@ -191,7 +191,7 @@ export function CarteiraLaminaTable({ ficha, format }: Props) {
       }
       info="Fonte: CVM Informe Mensal FIDC. DC decomposto em 4 linhas: com risco (i2a) vs sem risco (i2b), cada qual em a-vencer e vencidos. Imoveis = tab_i4 (Outros Ativos)."
     >
-      <CompactSeriesTable
+      <DenseTable.Series
         label="Linha"
         periods={periodos}
         rows={rows}

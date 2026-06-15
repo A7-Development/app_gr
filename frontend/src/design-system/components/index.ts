@@ -167,7 +167,6 @@ export { AuthGuard } from "./AuthGuard"
 export { HeaderBreadcrumbs } from "./Breadcrumbs"
 export { CardMenu, type MenuSection } from "./CardMenu"
 export { ChartSkeleton } from "./ChartSkeleton"
-export { CompactSeriesTable } from "./CompactSeriesTable"
 export {
   PeriodComparisonTable,
   DecompositionTable,
@@ -287,6 +286,8 @@ export {
   type DenseRow,
   type DenseAlign,
   type DenseFormat,
+  type DenseSeriesRow,
+  type DenseSeriesTableProps,
 } from "./DenseTable"
 export {
   StationHeader,

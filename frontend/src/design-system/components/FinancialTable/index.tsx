@@ -3,7 +3,7 @@
 // FinancialTable — par canonico de tabelas financeiras IBCS-style.
 //
 // Dois componentes irmaos sobre um nucleo compartilhado, construidos a partir
-// dos primitivos `Table` do Tremor (CLAUDE.md §1/§3, linhagem CompactSeriesTable):
+// dos primitivos `Table` do Tremor (CLAUDE.md §1/§3, linhagem DenseTable.Series):
 //
 //   - <PeriodComparisonTable>  — IBCS T01/T02: dimensoes nas linhas, cenarios
 //     (PY/PL/AC/FC) nas colunas, blocos de periodo (mes | YTD), colunas de
