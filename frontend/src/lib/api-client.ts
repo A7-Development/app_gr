@@ -5707,10 +5707,17 @@ export type ReceitasKpis = {
   recompraEncargos: number
 }
 
+export type ReceitasGrupoNaturezaValor = {
+  grupo:    string // 'operacional' | 'pos_operacional'
+  natureza: string
+  valor:    number
+}
+
 export type ReceitasSerieMensalPonto = {
-  competencia: string
-  porFamilia:  Record<string, number>
-  total:       number
+  competencia:      string
+  porFamilia:       Record<string, number>
+  porGrupoNatureza: ReceitasGrupoNaturezaValor[]
+  total:            number
 }
 
 export type ReceitasComposicaoNatureza = { natureza: string; valor: number }
@@ -5820,7 +5827,7 @@ export const receitasApi = {
     type Raw = {
       metodo: ReceitasMetodo
       kpis: { total: string; operacionais: string; pos_operacionais: string; desagio: string; mora: string; tarifas: string; recompra_encargos: string }
-      serie_mensal: { competencia: string; por_familia: Record<string, string>; total: string }[]
+      serie_mensal: { competencia: string; por_familia: Record<string, string>; por_grupo_natureza?: { grupo: string; natureza: string; valor: string }[]; total: string }[]
       composicao_natureza: { natureza: string; valor: string }[]
       ponte: { caixa: string; competencia: string; acruo: string; delta_competencia_caixa: string; delta_competencia_acruo: string }
     }
@@ -5841,6 +5848,11 @@ export const receitasApi = {
         porFamilia: Object.fromEntries(
           Object.entries(s.por_familia).map(([k, v]) => [k, _rcN(v)]),
         ),
+        porGrupoNatureza: (s.por_grupo_natureza ?? []).map((g) => ({
+          grupo: g.grupo,
+          natureza: g.natureza,
+          valor: _rcN(g.valor),
+        })),
         total: _rcN(s.total),
       })),
       composicaoNatureza: r.composicao_natureza.map((c) => ({

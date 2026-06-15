@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.controladoria.schemas.receitas import (
     ComposicaoNatureza,
     DescontoMoraCedente,
+    GrupoNaturezaValor,
     Metodo,
     PonteMetodos,
     ReceitaCedenteLinha,
@@ -135,7 +136,7 @@ async def _grupo_por_stream(db: AsyncSession, tenant_id: UUID) -> dict[str, str]
         .order_by(WhBitfinReceitaStream.tenant_id.is_not(None))
     )
     rows = (await db.execute(stmt)).all()
-    return {k: g for k, g in rows}
+    return dict(rows)
 
 
 def _grupo_da_linha(
@@ -257,11 +258,15 @@ async def compute_resumo(
                         desagio=ZERO, mora=ZERO, tarifas=ZERO,
                         recompra_encargos=ZERO)
     serie: dict[date, dict[str, Decimal]] = {}
+    # (competencia) -> (grupo, natureza) -> valor: alimenta a tabela IBCS
+    # hierarquica do comparativo (grupo 1o nivel, natureza 2o).
+    serie_gn: dict[date, dict[tuple[str, str], Decimal]] = {}
     composicao: dict[str, Decimal] = {}
     for comp, familia, _stream, natureza, _qtd, valor in linhas:
         v = Decimal(valor)
+        grupo = _grupo_da_linha(grupo_map, familia, _stream)
         kpis.total += v
-        if _grupo_da_linha(grupo_map, familia, _stream) == "operacional":
+        if grupo == "operacional":
             kpis.operacionais += v
         else:
             kpis.pos_operacionais += v
@@ -275,12 +280,18 @@ async def compute_resumo(
             kpis.recompra_encargos += v
         serie.setdefault(comp, {})
         serie[comp][familia] = serie[comp].get(familia, ZERO) + v
+        serie_gn.setdefault(comp, {})
+        serie_gn[comp][(grupo, natureza)] = serie_gn[comp].get((grupo, natureza), ZERO) + v
         composicao[natureza] = composicao.get(natureza, ZERO) + v
 
     serie_mensal = [
         SerieMensalPonto(
             competencia=c,
             por_familia=fam,
+            por_grupo_natureza=[
+                GrupoNaturezaValor(grupo=g, natureza=n, valor=val)
+                for (g, n), val in serie_gn.get(c, {}).items()
+            ],
             total=sum(fam.values(), start=ZERO),
         )
         for c, fam in sorted(serie.items())
