@@ -1145,11 +1145,19 @@ export default function DossierFocusPage() {
       // (que tem upload/JUCESP + ficha). Aqui fica só a confirmação compacta de
       // que a busca automática trouxe o doc — sem duplicar a conferência.
       const fetchType = officialFetchDocType(m)
+      // Só DELEGA a conferência ao irmão `document_request` quando ele está ATIVO
+      // (rodou / aguarda upload). No fluxo de busca bem-sucedida (found==true), o
+      // irmão fica `pending` (gated pela aresta found==false) e renderiza apenas um
+      // DormantZone — delegar pra ele deixava o aviso "conferência logo abaixo"
+      // apontando pra um placeholder vazio, sem a conferência nem o botão de
+      // homologar (DC-2026-0044). Quando o irmão está pending, renderiza a
+      // conferência AQUI mesmo.
       const siblingRequest =
         fetchType &&
         focused?.members.some(
           (s) =>
             s.nodeType === "document_request" &&
+            s.state !== "pending" &&
             requiredDocTypes(s).includes(fetchType),
         )
       if (siblingRequest) {
@@ -1813,6 +1821,21 @@ function buildClosure(
       statusText:
         "Escolha o documento na lista acima — a busca dispara assim que você confirmar.",
       pendingText: "falta: escolher o documento (ou anexar manual)",
+    }
+  }
+
+  // Gate de HOMOLOGAÇÃO da busca oficial (waiting_input SEM phase=select): o doc
+  // já foi baixado e extraído; a homologação é o PATCH da conferência (botão na
+  // própria <SocialContractConferenceView>), NÃO um submit vazio do node. Sem
+  // este branch a barra caía no genérico abaixo e oferecia "Fechar estação" →
+  // onSubmitEmpty, reenviando o node vazio (só a idempotência do node evitava
+  // cair no fluxo manual). DC-2026-0044.
+  if (waiting?.nodeType === "official_document_fetch") {
+    return {
+      state: "pending",
+      statusText:
+        "Documento localizado e lido. Homologue a conferência abaixo para seguir pra análise.",
+      pendingText: "falta: homologar a conferência da extração",
     }
   }
 
