@@ -43,6 +43,10 @@ import { type WizardMultiStepStep } from "@/design-system/patterns/WizardMultiSt
 import { DescriptorParityPanel } from "./_components/DescriptorParityPanel"
 import { DocumentSourceZone, FichaConferenceZone } from "./_components/DocumentZones"
 import {
+  JucespDocSelector,
+  type JucespDocOption,
+} from "./_components/JucespDocSelector"
+import {
   buildCoverage,
   DossierCoverageStrip,
 } from "./_components/DossierCoverageStrip"
@@ -427,6 +431,9 @@ export default function DossierFocusPage() {
   const descriptorDebug = sp.get("descriptor") === "1"
   const queryClient = useQueryClient()
   const [trailOpen, setTrailOpen] = React.useState(false)
+  // Gate JUCESP (opção B): node cuja escolha o analista acabou de confirmar →
+  // a fase de download está rodando (muda o texto do feedback ao vivo).
+  const [downloadingNode, setDownloadingNode] = React.useState<string | null>(null)
 
   // Fase 1 / Etapa 1.4 (flag): com ?descriptor=1, o §miolo do dossiê (A4) vem do
   // /descriptor (server) via SectionRenderer read-mode. Sem flag, A4 hand-built.
@@ -1042,10 +1049,41 @@ export default function DossierFocusPage() {
     // rica (regressão apontada pelo Ricardo no DC-2026-0039).
     if (m.nodeType === "official_document_fetch") {
       if (m.state === "pending") return <DormantZone key={m.id} label={m.label} />
-      // FEEDBACK AO VIVO (frente B do DC-2026-0040): a busca leva ~2 min
-      // (login gov.br + ficha + download + extração) — sem isto a tela
-      // ficava muda enquanto o motor trabalhava.
+
+      // GATE DE SELEÇÃO (opção B): node pausado expondo a lista de documentos
+      // arquivados — o analista escolhe qual usar (a máquina sugere).
+      const fetchOut = m.output as
+        | { phase?: string; options?: JucespDocOption[]; nire?: string }
+        | null
+      if (m.state === "waiting_input" && fetchOut?.phase === "select") {
+        return (
+          <JucespDocSelector
+            key={m.id}
+            dossierId={dossierId}
+            nodeId={m.id}
+            options={fetchOut.options ?? []}
+            onChoose={() => setDownloadingNode(m.id)}
+          />
+        )
+      }
+
+      // FEEDBACK AO VIVO (frente B do DC-2026-0040): sem isto a tela fica muda
+      // enquanto o motor trabalha. No gate (opção B) a mensagem muda por fase:
+      // consultar a lista (segundos) vs baixar+ler o doc escolhido (~1 min).
       if (m.state === "running") {
+        const selectMode =
+          (m.config as { mode?: string } | undefined)?.mode === "select"
+        const downloading = downloadingNode === m.id
+        const title = !selectMode
+          ? "Buscando o contrato social na fonte oficial…"
+          : downloading
+            ? "Baixando o documento escolhido e lendo com IA…"
+            : "Consultando os arquivamentos na JUCESP…"
+        const detail = !selectMode
+          ? "JUCESP: login gov.br → ficha da empresa → documento mais recente → download → leitura com IA. Costuma levar ~2 minutos."
+          : downloading
+            ? "Download da cópia digitalizada na JUCESP + extração multimodal. Costuma levar ~1 minuto."
+            : "JUCESP: ficha da empresa → lista de documentos societários arquivados. Uns segundos."
         return (
           <section
             key={m.id}
@@ -1054,11 +1092,10 @@ export default function DossierFocusPage() {
             <span className="mt-1 size-2 shrink-0 rounded-full bg-blue-500 motion-safe:animate-pulse" />
             <div>
               <p className="text-sm font-medium text-blue-900 dark:text-blue-200">
-                Buscando o contrato social na fonte oficial…
+                {title}
               </p>
               <p className="mt-0.5 text-xs text-blue-800/80 dark:text-blue-300/80">
-                JUCESP: login gov.br → ficha da empresa → documento mais recente →
-                download → leitura com IA. Costuma levar ~2 minutos.
+                {detail}
               </p>
             </div>
           </section>
@@ -1761,6 +1798,21 @@ function buildClosure(
       pendingText: "falta: homologar a conclusão do agente",
       primaryLabel: "Fechar estação",
       onPrimary: () => {},
+    }
+  }
+
+  // Gate de seleção JUCESP (opção B): o próprio <JucespDocSelector> tem os botões
+  // ("usar este" / "anexar manual"). A barra só orienta — sem primária aqui pra
+  // não criar uma segunda ação que enviaria o node vazio (= cair no manual).
+  if (
+    waiting?.nodeType === "official_document_fetch" &&
+    (waiting.output as { phase?: string } | null)?.phase === "select"
+  ) {
+    return {
+      state: "pending",
+      statusText:
+        "Escolha o documento na lista acima — a busca dispara assim que você confirmar.",
+      pendingText: "falta: escolher o documento (ou anexar manual)",
     }
   }
 
