@@ -22,6 +22,18 @@ class IndicadoresFundo(BaseModel):
         default=None, description="Aberto | Fechado (cadastral, tab_i.condom)."
     )
 
+    ativo_total: float | None = Field(
+        default=None, description="Ativo total (tab_i) — denominador da composicao."
+    )
+    composicao_ativo: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "Composicao do ativo em BRL por bucket/folha (vocabulario fechado "
+            "COMPOSICAO_BUCKETS). Soma dos buckets = ativo_total (reconcilia §14.6). "
+            "Front converte para % (valor/ativo_total) — fecha em 100%."
+        ),
+    )
+
     pl: float | None = None
     pl_rank: float | None = None
     pl_medio: float | None = None
@@ -82,6 +94,10 @@ class ComparadorIndicadoresResponse(BaseModel):
     )
     mediana: dict[str, float | None] = Field(
         description="Mediana do universo por indicador (mesmas chaves dos campos)."
+    )
+    composicao_mediana: dict[str, float | None] = Field(
+        default_factory=dict,
+        description="Mediana do universo (% do ativo) por bucket/folha da composicao.",
     )
     direcao: dict[str, bool] = Field(
         description="Por indicador: true = maior e melhor (orienta realce/radar)."

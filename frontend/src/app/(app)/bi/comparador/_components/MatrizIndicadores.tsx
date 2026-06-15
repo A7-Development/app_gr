@@ -9,7 +9,12 @@
 // mesma mecanica das tabelas hierarquicas (§6).
 
 import * as React from "react"
-import { RiAlertFill, RiInformationLine } from "@remixicon/react"
+import {
+  RiAlertFill,
+  RiArrowDownSLine,
+  RiArrowRightSLine,
+  RiInformationLine,
+} from "@remixicon/react"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 
 import { cx } from "@/lib/utils"
@@ -19,6 +24,12 @@ import { DataTable } from "@/design-system/components/DataTable"
 import { tableTokens } from "@/design-system/tokens/table"
 import type { ComparadorIndicadoresFundo } from "@/lib/api-client"
 
+import {
+  COMPOSICAO_BUCKETS,
+  pctDaComposicao,
+  type ComposicaoBucket,
+  type ComposicaoFolha,
+} from "./composicao"
 import {
   GRUPOS,
   INDICADORES,
@@ -30,16 +41,45 @@ import {
 type Linha =
   | { tipo: "secao"; label: string }
   | { tipo: "indicador"; def: IndicadorDef }
+  | { tipo: "comp_bucket"; bucket: ComposicaoBucket }
+  | { tipo: "comp_folha"; bucketKey: string; folha: ComposicaoFolha }
+  | { tipo: "comp_total" }
 
-function montarLinhas(): Linha[] {
+// Grupo onde a decomposicao do ativo (que fecha em 100%) e injetada — abre o
+// grupo, com os ratios soltos (% em DC, liquidez) logo abaixo.
+const GRUPO_COMPOSICAO = "Perfil do ativo"
+
+function montarLinhas(expandidos: Set<string>): Linha[] {
   const linhas: Linha[] = []
   for (const grupo of GRUPOS) {
     linhas.push({ tipo: "secao", label: grupo })
+    if (grupo === GRUPO_COMPOSICAO) {
+      for (const bucket of COMPOSICAO_BUCKETS) {
+        linhas.push({ tipo: "comp_bucket", bucket })
+        if (expandidos.has(bucket.key)) {
+          for (const folha of bucket.folhas) {
+            linhas.push({ tipo: "comp_folha", bucketKey: bucket.key, folha })
+          }
+        }
+      }
+      linhas.push({ tipo: "comp_total" })
+    }
     for (const def of INDICADORES.filter((i) => i.grupo === grupo)) {
       linhas.push({ tipo: "indicador", def })
     }
   }
   return linhas
+}
+
+/** % total da composicao de um fundo (soma dos buckets ÷ ativo) — deve dar 100%
+ * por construcao; se divergir, o residuo aparece (zero ocultacao §14.6). */
+function pctTotalComposicao(fundo: ComparadorIndicadoresFundo): number | null {
+  if (!fundo.ativo_total || fundo.ativo_total <= 0) return null
+  const soma = COMPOSICAO_BUCKETS.reduce(
+    (acc, b) => acc + (fundo.composicao_ativo?.[b.key] ?? 0),
+    0,
+  )
+  return (100 * soma) / fundo.ativo_total
 }
 
 /** Red flags de leitura combinada (retorna tooltip ou null). */
@@ -135,16 +175,52 @@ function CelulaFundo({
   )
 }
 
+/** Celula de composicao do ativo (% que fecha em 100% por fundo). Sem
+ * percentil/marcador — e decomposicao, nao ratio benchmarkado. */
+function CelulaComposicao({
+  pct,
+  folha,
+  forte,
+}: {
+  pct: number | null
+  folha?: boolean
+  forte?: boolean
+}) {
+  const tom = forte
+    ? cx(tableTokens.cellNumber, "font-semibold text-gray-900 dark:text-gray-50")
+    : folha
+      ? tableTokens.cellNumberSecondary
+      : tableTokens.cellNumber
+  return (
+    <div className={cx("text-right tabular-nums", tom)}>
+      {pct === null ? "—" : formatIndicador(pct, "pct2")}
+    </div>
+  )
+}
+
 export function MatrizIndicadores({
   fundos,
   mediana,
+  composicaoMediana,
   direcao,
 }: {
   fundos: ComparadorIndicadoresFundo[]
   mediana: Record<string, number | null>
+  composicaoMediana: Record<string, number | null>
   direcao: Record<string, boolean>
 }) {
-  const linhas = React.useMemo(montarLinhas, [])
+  // Buckets da composicao expandidos (drill -> folhas). Vazio = so buckets.
+  const [expandidos, setExpandidos] = React.useState<Set<string>>(new Set())
+  const toggleBucket = React.useCallback((key: string) => {
+    setExpandidos((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+
+  const linhas = React.useMemo(() => montarLinhas(expandidos), [expandidos])
 
   // Melhor da linha (na direcao do indicador) — so quando ha 2+ fundos.
   const melhorPorIndicador = React.useMemo(() => {
@@ -172,8 +248,40 @@ export function MatrizIndicadores({
         cell: (info) => {
           const row = info.row.original
           if (row.tipo === "secao") {
+            return <span className={tableTokens.header}>{row.label}</span>
+          }
+          if (row.tipo === "comp_bucket") {
+            const aberto = expandidos.has(row.bucket.key)
+            const Chevron = aberto ? RiArrowDownSLine : RiArrowRightSLine
             return (
-              <span className={tableTokens.header}>{row.label}</span>
+              <button
+                type="button"
+                onClick={() => toggleBucket(row.bucket.key)}
+                className="flex items-center gap-1 whitespace-nowrap text-left"
+                title={aberto ? "Recolher" : "Ver detalhe"}
+              >
+                <Chevron
+                  className="size-3.5 shrink-0 text-gray-400 dark:text-gray-500"
+                  aria-hidden="true"
+                />
+                <span className={tableTokens.cellText}>{row.bucket.label}</span>
+              </button>
+            )
+          }
+          if (row.tipo === "comp_folha") {
+            return (
+              <span className="flex whitespace-nowrap pl-[18px]">
+                <span className={tableTokens.cellSecondary}>
+                  {row.folha.label}
+                </span>
+              </span>
+            )
+          }
+          if (row.tipo === "comp_total") {
+            return (
+              <span className={cx(tableTokens.cellStrong, "whitespace-nowrap")}>
+                Total do Ativo
+              </span>
             )
           }
           return (
@@ -214,6 +322,32 @@ export function MatrizIndicadores({
             cell: (info) => {
               const row = info.row.original
               if (row.tipo === "secao") return null
+              if (row.tipo === "comp_bucket") {
+                return (
+                  <CelulaComposicao
+                    pct={pctDaComposicao(
+                      fundo.composicao_ativo,
+                      fundo.ativo_total,
+                      row.bucket.key,
+                    )}
+                  />
+                )
+              }
+              if (row.tipo === "comp_folha") {
+                return (
+                  <CelulaComposicao
+                    pct={pctDaComposicao(
+                      fundo.composicao_ativo,
+                      fundo.ativo_total,
+                      row.folha.key,
+                    )}
+                    folha
+                  />
+                )
+              }
+              if (row.tipo === "comp_total") {
+                return <CelulaComposicao pct={pctTotalComposicao(fundo)} forte />
+              }
               return (
                 <CelulaFundo
                   def={row.def}
@@ -240,6 +374,22 @@ export function MatrizIndicadores({
         cell: (info) => {
           const row = info.row.original
           if (row.tipo === "secao") return null
+          if (row.tipo === "comp_total") {
+            return (
+              <div className={cx("text-right", tableTokens.cellNumberSecondary)}>
+                100,00%
+              </div>
+            )
+          }
+          if (row.tipo === "comp_bucket" || row.tipo === "comp_folha") {
+            const key =
+              row.tipo === "comp_bucket" ? row.bucket.key : row.folha.key
+            return (
+              <div className={cx("text-right", tableTokens.cellNumberSecondary)}>
+                {formatIndicador(composicaoMediana[key] ?? null, "pct2")}
+              </div>
+            )
+          }
           return (
             <div className={cx("text-right", tableTokens.cellNumberSecondary)}>
               {formatIndicador(mediana[row.def.key] ?? null, row.def.fmt)}
@@ -249,7 +399,15 @@ export function MatrizIndicadores({
       }) as ColumnDef<Linha, unknown>,
     ]
     return defs
-  }, [fundos, mediana, direcao, melhorPorIndicador])
+  }, [
+    fundos,
+    mediana,
+    composicaoMediana,
+    direcao,
+    melhorPorIndicador,
+    expandidos,
+    toggleBucket,
+  ])
 
   return (
     <Card className={tableTokens.cardWrapper}>
@@ -264,7 +422,9 @@ export function MatrizIndicadores({
         rowClassName={(row) =>
           row.tipo === "secao"
             ? "bg-gray-50 dark:bg-gray-900/60 border-t-gray-200 dark:border-t-gray-800"
-            : ""
+            : row.tipo === "comp_total"
+              ? "border-t-gray-200 dark:border-t-gray-800"
+              : ""
         }
       />
     </Card>

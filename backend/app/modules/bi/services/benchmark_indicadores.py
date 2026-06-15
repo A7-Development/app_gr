@@ -35,6 +35,44 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # Pontos medios (dias) dos 10 buckets de prazo da tab_v/tab_vi.
 _BUCKETS = (15, 45, 75, 105, 135, 165, 270, 540, 900, 1260)
 
+# Vocabulario fechado da COMPOSICAO DO ATIVO (Tabela I CVM). Cada folha entra em
+# EXATAMENTE um bucket -> a soma de todos os buckets = ativo total do fundo
+# (reconciliacao §14.6). Buckets e folhas sao sempre emitidos (0 quando
+# ausentes) — e isso que garante que o comparador liste TODOS os ativos, feche
+# em 100% e mantenha as mesmas linhas para qualquer fundo (comparavel lado a
+# lado). As chaves casam com os aliases `c_*` de _Q_I; os rotulos pt-BR vivem no
+# front (composicao.ts).
+COMPOSICAO_BUCKETS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("dc", ("c_dc_risco", "c_dc_sem_risco")),
+    ("cota_fidc", ("c_cota_fidc", "c_cota_fidc_np")),
+    ("cota_fundo", ("c_cota_fundo",)),
+    ("vm", ("c_deb", "c_cri", "c_np", "c_lf", "c_vm_outro")),
+    ("caixa_rf", ("c_disp", "c_tpf", "c_cdb", "c_compromissada", "c_outro_rf")),
+    ("derivativos", ("c_futuro", "c_deriv")),
+    ("outros", ("c_carteira_outro", "c_outro_ativo")),
+)
+
+# Todas as chaves (buckets + folhas) que ganham mediana de mercado.
+_COMPOSICAO_CHAVES: tuple[str, ...] = tuple(
+    chave
+    for bucket, folhas in COMPOSICAO_BUCKETS
+    for chave in (bucket, *folhas)
+)
+
+
+def _composicao_do_fundo(i: dict) -> dict[str, float]:
+    """Valor (BRL) de cada folha + subtotal de cada bucket, a partir da row
+    de _Q_I. Sempre retorna TODAS as chaves do vocabulario (0 quando ausente)."""
+    comp: dict[str, float] = {}
+    for bucket, folhas in COMPOSICAO_BUCKETS:
+        subtotal = 0.0
+        for folha in folhas:
+            valor = i.get(folha) or 0.0
+            comp[folha] = valor
+            subtotal += valor
+        comp[bucket] = subtotal
+    return comp
+
 
 def _q_buckets(t: str, prefixo: str) -> str:
     """Expressoes SQL dos 10 buckets a-vencer (soma ponderada p/ prazo medio)."""
@@ -92,7 +130,29 @@ _Q_I = text("""
           + COALESCE(tab_i2g_vl_outro_rf, 0)
           + COALESCE(tab_i2c5_vl_cota_fif, 0)
           + COALESCE(tab_i2c5_vl_cota_fundo_icvm555, 0)
-          + COALESCE(tab_i4a_vl_cprazo, 0))::float AS alta_liquidez
+          + COALESCE(tab_i4a_vl_cprazo, 0))::float AS alta_liquidez,
+        -- Folhas da Tabela I (composicao do ativo). Cada folha entra em UM
+        -- bucket (ver COMPOSICAO_BUCKETS) -> soma = ativo total (reconcilia §14.6).
+        COALESCE(tab_i1_vl_disp, 0)::float AS c_disp,
+        COALESCE(tab_i2a_vl_dircred_risco, 0)::float AS c_dc_risco,
+        COALESCE(tab_i2b_vl_dircred_sem_risco, 0)::float AS c_dc_sem_risco,
+        COALESCE(tab_i2c1_vl_debenture, 0)::float AS c_deb,
+        COALESCE(tab_i2c2_vl_cri, 0)::float AS c_cri,
+        COALESCE(tab_i2c3_vl_np_comerc, 0)::float AS c_np,
+        COALESCE(tab_i2c4_vl_letra_financ, 0)::float AS c_lf,
+        (COALESCE(tab_i2c5_vl_cota_fif, 0)
+          + COALESCE(tab_i2c5_vl_cota_fundo_icvm555, 0))::float AS c_cota_fundo,
+        COALESCE(tab_i2c6_vl_outro, 0)::float AS c_vm_outro,
+        COALESCE(tab_i2d_vl_titpub_fed, 0)::float AS c_tpf,
+        COALESCE(tab_i2e_vl_cdb, 0)::float AS c_cdb,
+        COALESCE(tab_i2f_vl_oper_comprom, 0)::float AS c_compromissada,
+        COALESCE(tab_i2g_vl_outro_rf, 0)::float AS c_outro_rf,
+        COALESCE(tab_i2h_vl_cota_fidc, 0)::float AS c_cota_fidc,
+        COALESCE(tab_i2i_vl_cota_fidc_np, 0)::float AS c_cota_fidc_np,
+        COALESCE(tab_i2j_vl_contrato_futuro, 0)::float AS c_futuro,
+        COALESCE(tab_i2_vl_outro_ativo, 0)::float AS c_carteira_outro,
+        COALESCE(tab_i3_vl_posicao_deriv, 0)::float AS c_deriv,
+        COALESCE(tab_i4_vl_outro_ativo, 0)::float AS c_outro_ativo
     FROM cvm_remote.tab_i
     WHERE competencia = :comp
 """)
@@ -201,6 +261,7 @@ class IndicadoresUniverso:
     competencia: date
     fundos: dict[str, dict]  # cnpj -> row dict (indicadores + percentis)
     medianas: dict[str, float | None]
+    composicao_mediana: dict[str, float | None]  # bucket/folha -> mediana % do universo
     total_fundos: int
 
 
@@ -313,6 +374,10 @@ def _montar_fundos(dados: dict[str, list[dict]]) -> list[dict]:
             "cnpj": cnpj,
             "denom_social": i.get("denom_social"),
             "condominio": i.get("condominio"),
+            "ativo_total": i.get("ativo"),
+            # Decomposicao que FECHA em 100% do ativo (vocabulario fixo) —
+            # complementa o ratio dc_ativo_pct, que e so uma fatia solta.
+            "composicao_ativo": _composicao_do_fundo(i),
             "pl": pl,
             "pl_medio": iv.get("pl_medio"),
             "subordinacao_pct": _ratio(sub, pl),
@@ -373,6 +438,26 @@ def _percentis_e_medianas(rows: list[dict]) -> dict[str, float | None]:
     return medianas
 
 
+def _medianas_composicao(rows: list[dict]) -> dict[str, float | None]:
+    """Mediana do universo, em % do ativo, de cada bucket/folha da composicao —
+    referencia de mercado para a coluna Mediana das linhas de composicao."""
+    medianas: dict[str, float | None] = {}
+    for chave in _COMPOSICAO_CHAVES:
+        pcts = sorted(
+            100.0 * r["composicao_ativo"][chave] / r["ativo_total"]
+            for r in rows
+            if r.get("ativo_total") and r["ativo_total"] > 0
+        )
+        n = len(pcts)
+        if n == 0:
+            medianas[chave] = None
+        elif n % 2 == 1:
+            medianas[chave] = pcts[n // 2]
+        else:
+            medianas[chave] = (pcts[n // 2 - 1] + pcts[n // 2]) / 2
+    return medianas
+
+
 async def carregar_universo(
     db: AsyncSession, competencia: date
 ) -> IndicadoresUniverso:
@@ -417,10 +502,12 @@ async def carregar_universo(
 
         rows = _montar_fundos(dados)
         medianas = _percentis_e_medianas(rows)
+        composicao_mediana = _medianas_composicao(rows)
         universo = IndicadoresUniverso(
             competencia=competencia,
             fundos={r["cnpj"]: r for r in rows},
             medianas=medianas,
+            composicao_mediana=composicao_mediana,
             total_fundos=len(rows),
         )
         # Cache simples com teto (12 competencias ~ 4k rows cada).
