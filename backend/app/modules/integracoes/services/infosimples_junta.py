@@ -65,6 +65,10 @@ class JuntaFichaResult:
     fields_json: dict[str, Any] | None = None
     adapter_version: str = ADAPTER_VERSION
     message: str | None = None
+    # True quando a falha foi indisponibilidade transitória da fonte (ver
+    # _TRANSIENT_SOURCE_CODES) — distinto de "não encontrado". O caller decide
+    # apresentar como "tente de novo" em vez de "não existe / não é de SP".
+    transient: bool = False
 
 
 @dataclass(slots=True)
@@ -73,6 +77,7 @@ class JuntaListaDocsResult:
     documentos: list[dict[str, Any]] = field(default_factory=list)
     raw_id: UUID | None = None
     message: str | None = None
+    transient: bool = False
 
 
 @dataclass(slots=True)
@@ -99,6 +104,30 @@ def _failure_message(resp: Any) -> str:
         if first and first not in msg:
             msg = f"{msg} — {first}"
     return msg
+
+
+# Códigos aplicacionais da Infosimples que indicam o PORTAL DA FONTE
+# (gov.br / JUCESP) instável, fora do ar ou lento — TRANSITÓRIOS e re-tentáveis,
+# NÃO "empresa não encontrada". Tratá-los como found=false mente pro analista
+# ("a empresa é registrada em SP?") e desvia pro upload manual sem necessidade.
+# 609 = "tentativas de consultar o site ou aplicativo de origem excedidas" (o
+# portal não respondeu a tempo). DC-2026-0044. O "não encontrado" real vem como
+# code 200 + data vazio (tratado à parte). Conjunto pode crescer conforme novos
+# códigos de indisponibilidade aparecerem no vendor.
+_TRANSIENT_SOURCE_CODES = frozenset({606, 607, 609, 612})
+
+
+def _is_transient(resp: Any) -> bool:
+    return int(getattr(resp, "code", 0) or 0) in _TRANSIENT_SOURCE_CODES
+
+
+def _transient_message(resp: Any) -> str:
+    """Mensagem honesta de indisponibilidade transitória (≠ 'não existe')."""
+    return (
+        "A JUCESP (portal gov.br) está instável ou lenta agora e a consulta não "
+        f"completou ({_failure_message(resp)}). Isso NÃO significa que a empresa "
+        "não existe — tente novamente em instantes."
+    )
 
 
 async def _load_provider_and_config(
@@ -251,11 +280,13 @@ async def fetch_junta_ficha(
     )
 
     if not resp.ok:
+        transient = _is_transient(resp)
         return JuntaFichaResult(
             found=False,
             fields=None,
             raw_id=raw_id,
-            message=_failure_message(resp),
+            message=_transient_message(resp) if transient else _failure_message(resp),
+            transient=transient,
         )
     first = resp.first
     if first is None:
@@ -322,8 +353,12 @@ async def fetch_junta_lista_documentos(
     )
 
     if not resp.ok:
+        transient = _is_transient(resp)
         return JuntaListaDocsResult(
-            found=False, raw_id=raw_id, message=_failure_message(resp)
+            found=False,
+            raw_id=raw_id,
+            message=_transient_message(resp) if transient else _failure_message(resp),
+            transient=transient,
         )
     documentos: list[dict[str, Any]] = []
     for item in resp.data:

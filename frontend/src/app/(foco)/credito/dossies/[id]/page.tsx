@@ -460,6 +460,26 @@ export default function DossierFocusPage() {
 
   const estacoes = React.useMemo(() => buildEstacoes(steps), [steps])
 
+  // Nodes cujo SUCESSOR direto é uma busca JUCESP (official_document_fetch):
+  // ao submeter esses passos, o resume roda a consulta JUCESP — SÍNCRONA e
+  // demorada (1-2 min). Mostramos feedback honesto em vez do "Salvar" mudo
+  // girando (DC-2026-0044). [1b: tornar o resume assíncrono é o fix de raiz.]
+  const jucespTriggerNodes = React.useMemo(() => {
+    const set = new Set<string>()
+    const g = workflow?.graph as
+      | {
+          nodes?: Array<{ id: string; type: string }>
+          edges?: Array<{ source: string; target: string }>
+        }
+      | undefined
+    if (!g?.nodes || !g?.edges) return set
+    const typeById = new Map(g.nodes.map((n) => [n.id, n.type]))
+    for (const e of g.edges) {
+      if (typeById.get(e.target) === "official_document_fetch") set.add(e.source)
+    }
+    return set
+  }, [workflow])
+
   const focused = React.useMemo(() => {
     if (stepFromUrl) {
       const direct = estacoes.find(
@@ -1111,7 +1131,43 @@ export default function DossierFocusPage() {
       if (!primaryDoc) {
         // DESFECHO VISÍVEL (frente A): found=false não pode ficar mudo — o
         // motivo (612 etc.) vinha só no texto do agente, estações depois.
-        const out = (m.output ?? {}) as { found?: boolean; message?: string }
+        const out = (m.output ?? {}) as {
+          found?: boolean
+          message?: string
+          transient?: boolean
+        }
+        // Indisponibilidade TRANSITÓRIA da JUCESP (609 etc.): não é "não existe"
+        // nem "não é de SP" — é portal instável. Mensagem honesta + caminho de
+        // retry (o "Buscar na JUCESP"/upload da estação manual logo abaixo).
+        // DC-2026-0044.
+        if (out.transient) {
+          return (
+            <section
+              key={m.id}
+              className="flex items-start gap-3 rounded border border-amber-200 bg-amber-50/70 px-5 py-4 dark:border-amber-500/30 dark:bg-amber-500/10"
+            >
+              <RiErrorWarningLine
+                className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400"
+                aria-hidden
+              />
+              <div>
+                <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                  A consulta à JUCESP não completou agora
+                </p>
+                <p className="mt-0.5 text-xs leading-relaxed text-amber-800 dark:text-amber-300">
+                  {out.message ||
+                    "A JUCESP (portal gov.br) está instável ou lenta neste momento."}
+                </p>
+                <p className="mt-1.5 text-xs leading-relaxed text-amber-800/80 dark:text-amber-300/80">
+                  Isso <strong>não</strong> quer dizer que a empresa não existe ou
+                  não é de SP. Clique em <strong>&quot;Buscar na JUCESP&quot;</strong>{" "}
+                  novamente em instantes, ou anexe o contrato social manualmente
+                  abaixo.
+                </p>
+              </div>
+            </section>
+          )
+        }
         return (
           <section
             key={m.id}
@@ -1391,8 +1447,24 @@ export default function DossierFocusPage() {
       for (const f of fields) {
         if (triggerData[f.key] !== undefined) initialValues[f.key] = triggerData[f.key]
       }
+      const consultingJucesp =
+        submitMutation.isPending && jucespTriggerNodes.has(m.id)
       return (
         <Zone key={m.id}>
+          {consultingJucesp && (
+            <section className="mb-3 flex items-start gap-3 rounded border border-blue-200 bg-blue-50/60 px-5 py-4 dark:border-blue-500/30 dark:bg-blue-500/10">
+              <span className="mt-1 size-2 shrink-0 rounded-full bg-blue-500 motion-safe:animate-pulse" />
+              <div>
+                <p className="text-sm font-medium text-blue-900 dark:text-blue-200">
+                  Consultando a JUCESP…
+                </p>
+                <p className="mt-0.5 text-xs text-blue-800/80 dark:text-blue-300/80">
+                  Login gov.br → ficha da empresa → documentos arquivados. Costuma
+                  levar 1–2 minutos — pode deixar a tela aberta.
+                </p>
+              </div>
+            </section>
+          )}
           <DynamicForm
             fields={fields}
             initialValues={initialValues}
