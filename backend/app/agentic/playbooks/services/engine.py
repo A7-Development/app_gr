@@ -203,17 +203,19 @@ async def start_run(
     return run
 
 
-async def resume_run(
+async def prepare_resume(
     db: AsyncSession,
     *,
     run_id: UUID,
     pending_inputs: dict[str, dict[str, Any]],
 ) -> PlaybookRun:
-    """Resume a paused run with submitted input(s).
+    """Setup-only do resume: valida PAUSED, injeta os inputs e marca RUNNING.
 
-    `pending_inputs` is keyed by node_id. Each value is the data submitted
-    for that node (e.g. the form payload of a human_input node, the analyst
-    review verdict of a human_review node).
+    NAO executa o grafo — quem executa e `execute_paused_run`, inline
+    (`resume_run`) ou numa task de fundo (1b: o submit do dossie retorna na
+    hora com o run ja em RUNNING e o polling mostra o progresso). Separar o
+    setup barato (esta funcao) da execucao cara permite commitar o RUNNING na
+    requisicao e rodar `_execute_run` por fora.
     """
     run = (
         await db.execute(select(PlaybookRun).where(PlaybookRun.id == run_id))
@@ -234,15 +236,86 @@ async def resume_run(
     run.status = PlaybookRunStatus.RUNNING
     run.paused_at = None
     await db.flush()
+    return run
 
+
+async def execute_paused_run(db: AsyncSession, *, run_id: UUID) -> PlaybookRun:
+    """Executa o grafo de um run JA em RUNNING (setup feito por `prepare_resume`).
+
+    Roda inline (dentro de `resume_run`) ou numa task de fundo com sessao
+    propria. `_execute_run` NAO levanta em falha de node — seta o run em FAILED
+    e retorna; o caller commita. Erro inesperado (sessao/conexao) propaga e o
+    caller-de-fundo marca FAILED no guard.
+    """
+    run = (
+        await db.execute(select(PlaybookRun).where(PlaybookRun.id == run_id))
+    ).scalar_one_or_none()
+    if run is None:
+        raise PlaybookEngineError(f"PlaybookRun {run_id} not found.")
     definition = (
         await db.execute(
             select(PlaybookDefinition).where(PlaybookDefinition.id == run.definition_id)
         )
     ).scalar_one()
-
     await _execute_run(db, run, definition)
     return run
+
+
+async def resume_run(
+    db: AsyncSession,
+    *,
+    run_id: UUID,
+    pending_inputs: dict[str, dict[str, Any]],
+) -> PlaybookRun:
+    """Resume SINCRONO (setup + execucao inline) — bloqueia ate terminar.
+
+    Mantido para callers que querem o resultado na mesma requisicao (finalize,
+    reprocess, document fetch manual). O submit do dossie usa a versao em
+    background (prepare_resume + execute_paused_run via task) — ver §1b.
+
+    `pending_inputs` is keyed by node_id. Each value is the data submitted for
+    that node (form payload de human_input, verdict de human_review, etc.).
+    """
+    await prepare_resume(db, run_id=run_id, pending_inputs=pending_inputs)
+    return await execute_paused_run(db, run_id=run_id)
+
+
+async def reconcile_orphaned_runs(db: AsyncSession) -> int:
+    """Startup sweep: runs em RUNNING sao ORFAOS e sao marcados FAILED.
+
+    O motor roda em processo unico (uvicorn); um run so fica RUNNING enquanto
+    a task que o executa esta viva. Apos um restart, qualquer run em RUNNING
+    perdeu sua task — marca-lo FAILED evita o "spinner eterno" (antes o
+    docstring admitia deixar RUNNING preso). Node_runs em RUNNING idem.
+    Retorna a contagem de runs reconciliados.
+    """
+    rows = (
+        await db.execute(
+            select(PlaybookRun).where(PlaybookRun.status == PlaybookRunStatus.RUNNING)
+        )
+    ).scalars().all()
+    if not rows:
+        return 0
+    now = datetime.now(UTC)
+    msg = "Execucao interrompida por reinicio do servidor. Reprocesse a etapa."
+    for run in rows:
+        run.status = PlaybookRunStatus.FAILED
+        run.error_detail = msg
+        run.completed_at = now
+        await db.execute(
+            update(PlaybookRunStep)
+            .where(
+                PlaybookRunStep.run_id == run.id,
+                PlaybookRunStep.status == NodeRunStatus.RUNNING,
+            )
+            .values(status=NodeRunStatus.FAILED, completed_at=now, error_detail=msg)
+        )
+    await db.commit()
+    logger.warning(
+        "reconcile_orphaned_runs: %d run(s) em RUNNING marcados FAILED no startup",
+        len(rows),
+    )
+    return len(rows)
 
 
 # ─── Internal executor ─────────────────────────────────────────────────────
