@@ -17,6 +17,7 @@ contraprova ("o documento que o cedente mandou é o último arquivado?").
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -293,3 +294,159 @@ async def fetch_social_contract_from_junta(
         initiated_by=initiated_by,
     )
     return document
+
+
+# ─── Gate de seleção (opção B) — duas fases ──────────────────────────────────
+# A busca em UMA chamada (`fetch_social_contract_from_junta`, auto-pick) continua
+# servindo o botão manual "Buscar na JUCESP". O GATE (analista escolhe o doc na
+# lista) usa as duas funções abaixo: prepara as opções (sem custo de download)
+# e, depois da escolha, baixa só o registro escolhido.
+
+
+@dataclass(slots=True)
+class SocialContractOptions:
+    """Resultado da fase de SELEÇÃO (lista-dcs) do gate JUCESP."""
+
+    found_company: bool
+    message: str
+    nire: str | None
+    documentos: list[dict[str, Any]]  # arquivamentos crus (p/ auto-pick legado)
+    options: list[dict[str, Any]]  # build_document_options (p/ a lista da UI)
+
+
+async def prepare_social_contract_options(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    dossier_id: UUID,
+) -> SocialContractOptions:
+    """Fase 1 do gate: ficha (persiste QSA + NIRE) + lista de documentos
+    arquivados → opções pro analista escolher. NÃO baixa nada (sem custo de
+    download-dc). `found_company=False` quando a empresa não está na JUCESP /
+    sem NIRE — aí o fluxo cai no upload manual (aresta found==false).
+    """
+    from app.modules.credito.services.dossier import get_dossier
+    from app.modules.integracoes.adapters.data.infosimples.errors import (
+        InfosimplesAdapterError,
+    )
+
+    dossier = await get_dossier(db, tenant_id=tenant_id, dossier_id=dossier_id)
+    if dossier is None:
+        raise JuntaFetchError("Dossiê não encontrado.")
+    cnpj = _digits(dossier.target_cnpj)
+    if len(cnpj) != 14:
+        raise JuntaFetchError(
+            "O dossiê não tem CNPJ da empresa-alvo — preencha a identificação "
+            "antes de buscar na JUCESP."
+        )
+    triggered_by = f"dossie:{dossier_id}"
+
+    try:
+        ficha = await fetch_junta_ficha(
+            db, tenant_id=tenant_id, cnpj=cnpj, triggered_by=triggered_by
+        )
+        if not ficha.found or ficha.fields is None:
+            return SocialContractOptions(
+                found_company=False,
+                message=(
+                    "Empresa não encontrada na JUCESP "
+                    f"({ficha.message or 'sem resultados'}). A empresa é registrada em SP?"
+                ),
+                nire=None,
+                documentos=[],
+                options=[],
+            )
+        if ficha.fields_json:
+            await _persist_junta_data(
+                db,
+                tenant_id=tenant_id,
+                dossier_id=dossier_id,
+                fields_json=ficha.fields_json,
+                raw_id=ficha.raw_id,
+                adapter_version=ficha.adapter_version,
+            )
+        nire = _digits(ficha.fields.nire)
+        if not nire:
+            return SocialContractOptions(
+                found_company=False,
+                message=(
+                    "A ficha da JUCESP veio sem NIRE — sem como localizar os "
+                    "documentos arquivados."
+                ),
+                nire=None,
+                documentos=[],
+                options=[],
+            )
+        lista = await fetch_junta_lista_documentos(
+            db, tenant_id=tenant_id, nire=nire, triggered_by=triggered_by
+        )
+        documentos = list(lista.documentos) if lista.found else []
+    except InfosimplesAdapterError as e:
+        # Infra (credencial, vendor fora do ar) → erro de negócio repassado.
+        raise JuntaFetchError(str(e)) from e
+
+    return SocialContractOptions(
+        found_company=True,
+        message=(
+            ""
+            if documentos
+            else f"Nenhum documento digitalizado arquivado na JUCESP para o NIRE {nire}."
+        ),
+        nire=nire,
+        documentos=documentos,
+        options=build_document_options(documentos),
+    )
+
+
+async def download_social_contract_by_registro(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    dossier_id: UUID,
+    nire: str,
+    registro: str,
+    descricao: str = "documento societario",
+    initiated_by: UUID | None = None,
+) -> CreditDossierDocument:
+    """Fase 2 do gate: baixa a cópia digitalizada do registro ESCOLHIDO e anexa
+    ao dossiê (extração multimodal no mesmo fluxo de conferência do upload).
+    """
+    from app.modules.credito.services.document import (
+        create_document,
+        process_document,
+    )
+    from app.modules.integracoes.adapters.data.infosimples.errors import (
+        InfosimplesAdapterError,
+    )
+
+    try:
+        download = await fetch_junta_documento(
+            db,
+            tenant_id=tenant_id,
+            nire=nire,
+            registro=registro,
+            triggered_by=f"dossie:{dossier_id}",
+        )
+    except InfosimplesAdapterError as e:
+        raise JuntaFetchError(str(e)) from e
+
+    safe_desc = re.sub(r"[^A-Za-z0-9_-]+", "_", str(descricao))[:60].strip("_")
+    filename = f"JUCESP_{nire}_{registro}_{safe_desc or 'documento'}.pdf"
+
+    document = await create_document(
+        db,
+        tenant_id=tenant_id,
+        dossier_id=dossier_id,
+        doc_type=DocumentType.SOCIAL_CONTRACT,
+        filename=filename,
+        mime_type=download.mime_type or "application/pdf",
+        body=download.content,
+        uploaded_by=initiated_by,
+    )
+    return await process_document(
+        db,
+        tenant_id=tenant_id,
+        dossier_id=dossier_id,
+        document=document,
+        initiated_by=initiated_by,
+    )
