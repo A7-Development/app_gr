@@ -935,7 +935,7 @@ function ComparativoMensal({
   const atual = serie.find((p) => p.competencia.startsWith(mes))
   const anterior = serie.find((p) => p.competencia.startsWith(mesAnterior))
 
-  const { compRows, decompRows } = React.useMemo(() => {
+  const { compRows, decompRows, gnRows } = React.useMemo(() => {
     const familias = Array.from(
       new Set([
         ...Object.keys(atual?.porFamilia ?? {}),
@@ -982,7 +982,68 @@ function ComparativoMensal({
       { op: "=" as const, label: "Receita total", values: totalAtual ?? 0 },
     ]
 
-    return { compRows, decompRows }
+    // Tabela IBCS hierarquica: GRUPO (1o nivel, subtotal) -> NATUREZA (2o nivel).
+    // Soma dos grupos == Receita total (mesma fonte do por_familia) -> reconcilia
+    // com o headline (§14.6).
+    const GRUPO_LABEL: Record<string, string> = {
+      operacional: "Operacionais",
+      pos_operacional: "Pós-operacionais",
+    }
+    const GRUPO_ORDER = ["operacional", "pos_operacional"]
+    const gnMapOf = (pts?: { grupo: string; natureza: string; valor: number }[]) => {
+      const m = new Map<string, number>()
+      for (const x of pts ?? []) {
+        const k = `${x.grupo}|${x.natureza}`
+        m.set(k, (m.get(k) ?? 0) + x.valor)
+      }
+      return m
+    }
+    const acMap = atual ? gnMapOf(atual.porGrupoNatureza) : null
+    const pyMap = anterior ? gnMapOf(anterior.porGrupoNatureza) : null
+    const natByGrupo = new Map<string, Set<string>>()
+    for (const pts of [atual?.porGrupoNatureza, anterior?.porGrupoNatureza]) {
+      for (const x of pts ?? []) {
+        if (!natByGrupo.has(x.grupo)) natByGrupo.set(x.grupo, new Set())
+        natByGrupo.get(x.grupo)!.add(x.natureza)
+      }
+    }
+    const gruposPresentes = [
+      ...GRUPO_ORDER.filter((g) => natByGrupo.has(g)),
+      ...Array.from(natByGrupo.keys()).filter((g) => !GRUPO_ORDER.includes(g)),
+    ]
+    const valGN = (m: Map<string, number> | null, g: string, n: string): number | null =>
+      m ? (m.get(`${g}|${n}`) ?? 0) : null
+    const gnRows: ComparisonRow[] = []
+    for (const g of gruposPresentes) {
+      const nats = Array.from(natByGrupo.get(g) ?? []).sort(
+        (a, b) => (acMap?.get(`${g}|${b}`) ?? 0) - (acMap?.get(`${g}|${a}`) ?? 0),
+      )
+      gnRows.push({
+        label: GRUPO_LABEL[g] ?? g,
+        emphasis: "subtotal",
+        indent: 0,
+        values: {
+          default: {
+            PY: anterior ? nats.reduce((s, n) => s + (pyMap?.get(`${g}|${n}`) ?? 0), 0) : null,
+            AC: atual ? nats.reduce((s, n) => s + (acMap?.get(`${g}|${n}`) ?? 0), 0) : null,
+          },
+        },
+      })
+      for (const n of nats) {
+        gnRows.push({
+          label: NATUREZA_LABEL[n] ?? n,
+          indent: 1,
+          values: { default: { PY: valGN(pyMap, g, n), AC: valGN(acMap, g, n) } },
+        })
+      }
+    }
+    gnRows.push({
+      label: "Receita total",
+      emphasis: "total",
+      values: { default: { PY: totalAnterior, AC: totalAtual } },
+    })
+
+    return { compRows, decompRows, gnRows }
   }, [atual, anterior])
 
   if (q.isLoading) {
@@ -1029,6 +1090,17 @@ function ComparativoMensal({
           rows={decompRows}
           variance="none"
           collapseAfter={6}
+        />
+        <PeriodComparisonTable
+          title={{
+            entity,
+            measure: "Receita por grupo e natureza",
+            unit: "R$",
+            note: `${fmtCompetencia(mes)} AC · ${fmtCompetencia(mesAnterior)} PY · ${METODO_LABEL_CURTO[metodo]}`,
+          }}
+          scenarios={["PY", "AC"]}
+          rows={gnRows}
+          variance="abs+pct"
         />
       </section>
     </>

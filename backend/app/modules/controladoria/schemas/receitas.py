@@ -38,9 +38,20 @@ class ReceitasKpis(BaseModel):
     recompra_encargos: Decimal = Field(description="Familia recompra (juros+multa+desagio)")
 
 
+class GrupoNaturezaValor(BaseModel):
+    """Receita de um par (grupo, natureza) num periodo — alimenta a tabela IBCS
+    hierarquica do comparativo (grupo no 1o nivel, natureza no 2o)."""
+
+    grupo: str  # 'operacional' | 'pos_operacional'
+    natureza: str
+    valor: Decimal
+
+
 class SerieMensalPonto(BaseModel):
     competencia: date
     por_familia: dict[str, Decimal]
+    # Quebra por (grupo, natureza) do MESMO periodo — usada no comparativo IBCS.
+    por_grupo_natureza: list[GrupoNaturezaValor] = []
     total: Decimal
 
 
