@@ -555,6 +555,18 @@ export default function DossierFocusPage() {
   const docsQuery = useQuery({
     queryKey: ["credito", "documents", dossierId],
     queryFn: () => credito.documents.list(dossierId),
+    // Polla enquanto o run está ativo: nodes como official_document_fetch
+    // anexam documentos SERVER-SIDE no resume (sem mutation no front). Sem
+    // isto, a lista de docs ficava stale e a conferência não aparecia — a
+    // estação mostrava "Documento não localizado" mesmo com found=true
+    // (DC-2026-0044). Espelha o polling do useDossierState.
+    refetchInterval: () => {
+      const status = state?.run?.status
+      if (status && ["completed", "failed", "cancelled"].includes(status)) {
+        return false
+      }
+      return 3000
+    },
   })
   const docs = React.useMemo(() => docsQuery.data ?? [], [docsQuery.data])
 
@@ -1135,6 +1147,31 @@ export default function DossierFocusPage() {
           found?: boolean
           message?: string
           transient?: boolean
+        }
+        // CONTRADIÇÃO a evitar: o node achou + anexou o doc (found=true,
+        // aguardando homologação), mas a lista de docs ainda não trouxe a
+        // extração (a query de docs atualiza no polling). NUNCA mostrar
+        // "Documento não localizado / não é de SP" aqui — é mentira. Mostra
+        // "preparando" até o primaryDoc chegar e a conferência renderizar.
+        // DC-2026-0044.
+        if (out.found) {
+          return (
+            <section
+              key={m.id}
+              className="flex items-start gap-3 rounded border border-blue-200 bg-blue-50/60 px-5 py-4 dark:border-blue-500/30 dark:bg-blue-500/10"
+            >
+              <span className="mt-1 size-2 shrink-0 rounded-full bg-blue-500 motion-safe:animate-pulse" />
+              <div>
+                <p className="text-sm font-medium text-blue-900 dark:text-blue-200">
+                  Preparando a conferência da extração…
+                </p>
+                <p className="mt-0.5 text-xs text-blue-800/80 dark:text-blue-300/80">
+                  Documento localizado e lido na JUCESP. Carregando a ficha para
+                  homologação — alguns segundos.
+                </p>
+              </div>
+            </section>
+          )
         }
         // Indisponibilidade TRANSITÓRIA da JUCESP (609 etc.): não é "não existe"
         // nem "não é de SP" — é portal instável. Mensagem honesta + caminho de
