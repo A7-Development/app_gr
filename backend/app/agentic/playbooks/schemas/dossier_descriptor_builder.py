@@ -84,6 +84,21 @@ _DOC_TYPE_STATION_LABEL = {
     "social_contract": "Contrato social",
 }
 
+# Receita de busca oficial → tipo de documento que ela produz. Uma busca oficial
+# e o pedido manual do MESMO documento são uma estação só (Fatia 2c). Espelha
+# OFFICIAL_FETCH_DOC_TYPE do frontend / RECIPES do node.
+_OFFICIAL_FETCH_DOC_TYPE = {
+    "social_contract_jucesp": "social_contract",
+}
+
+
+def _official_fetch_doc_type(step: NodeStep) -> str | None:
+    recipe = (step.config or {}).get("document") if isinstance(step.config, dict) else None
+    from_output = (step.output or {}).get("doc_type") if isinstance(step.output, dict) else None
+    if isinstance(recipe, str) and recipe in _OFFICIAL_FETCH_DOC_TYPE:
+        return _OFFICIAL_FETCH_DOC_TYPE[recipe]
+    return from_output if isinstance(from_output, str) else None
+
 # Agente → builder de seção (os 3 migrados na Etapa 2). Outros: seção vazia
 # (camada determinística / outros produtores ainda não portados).
 _SECTION_BUILDER_BY_AGENT = {
@@ -129,6 +144,22 @@ def _anchor_for(step: NodeStep, estacoes: list[_Estacao]) -> _Estacao | None:
     """Porte fiel de buildEstacoes.anchorFor — a que estação o nó se funde."""
     if step.node_type == "deterministic_check":
         return estacoes[-1] if estacoes else None
+    if step.node_type == "document_request":
+        # Pedido manual que é fallback de uma busca oficial do MESMO documento
+        # funde na estação dela (Fatia 2c). Só a última estação.
+        req = _required_doc_types(step)
+        last = estacoes[-1] if estacoes else None
+        if last is not None:
+            fetch_types = [
+                t
+                for m in last.members
+                if m.node_type == "official_document_fetch"
+                for t in [_official_fetch_doc_type(m)]
+                if t is not None
+            ]
+            if any(t in req for t in fetch_types):
+                return last
+        return None
     if step.node_type == "document_extractor":
         for e in reversed(estacoes):
             if any(m.node_type == "document_request" for m in e.members):

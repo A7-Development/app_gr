@@ -165,6 +165,19 @@ function requiredDocTypes(step: WizardMultiStepStep): string[] {
   return cfg ?? out ?? []
 }
 
+// Receita de busca oficial → tipo de documento que ela produz. Sinal do ASPECTO
+// (Fatia 2c): uma busca oficial e o pedido manual do MESMO documento são duas
+// formas de obter a mesma fonte → uma estação só. Espelha RECIPES do backend.
+const OFFICIAL_FETCH_DOC_TYPE: Record<string, string> = {
+  social_contract_jucesp: "social_contract",
+}
+
+function officialFetchDocType(step: WizardMultiStepStep): string | null {
+  const recipe = (step.config as { document?: string } | undefined)?.document
+  const fromOutput = (step.output as { doc_type?: string } | undefined)?.doc_type
+  return (recipe ? OFFICIAL_FETCH_DOC_TYPE[recipe] : undefined) ?? fromOutput ?? null
+}
+
 function buildEstacoes(steps: WizardMultiStepStep[]): Estacao[] {
   const estacoes: Estacao[] = []
 
@@ -173,6 +186,22 @@ function buildEstacoes(steps: WizardMultiStepStep[]): Estacao[] {
     // dado — fundem na estação anterior (não viram estação própria).
     if (step.nodeType === "deterministic_check") {
       return estacoes[estacoes.length - 1] ?? null
+    }
+    // Pedido manual que é FALLBACK de uma busca oficial do MESMO documento
+    // (official_document_fetch) funde na estação dela — uma estação por aspecto
+    // (busca automática + fallback manual + análise = "Contrato social"). Mata a
+    // duplicação estação-fonte × estação-pedido (Fatia 2c). Só a última estação.
+    if (step.nodeType === "document_request") {
+      const reqTypes = requiredDocTypes(step)
+      const last = estacoes[estacoes.length - 1]
+      if (last) {
+        const fetchTypes = last.members
+          .filter((m) => m.nodeType === "official_document_fetch")
+          .map((m) => officialFetchDocType(m))
+          .filter((t): t is string => Boolean(t))
+        if (fetchTypes.some((t) => reqTypes.includes(t))) return last
+      }
+      return null
     }
     // document_extractor funde na estação do document_request anterior.
     if (step.nodeType === "document_extractor") {
@@ -1071,6 +1100,36 @@ export default function DossierFocusPage() {
                 upload manual nesta estação.
               </p>
             </div>
+          </section>
+        )
+      }
+      // Estação fundida (Fatia 2c): se um pedido manual irmão (document_request)
+      // do mesmo documento está na estação, a CONFERÊNCIA renderiza por ele
+      // (que tem upload/JUCESP + ficha). Aqui fica só a confirmação compacta de
+      // que a busca automática trouxe o doc — sem duplicar a conferência.
+      const fetchType = officialFetchDocType(m)
+      const siblingRequest =
+        fetchType &&
+        focused?.members.some(
+          (s) =>
+            s.nodeType === "document_request" &&
+            requiredDocTypes(s).includes(fetchType),
+        )
+      if (siblingRequest) {
+        return (
+          <section
+            key={m.id}
+            className="flex items-start gap-3 rounded border border-emerald-200 bg-emerald-50/60 px-5 py-3 dark:border-emerald-500/30 dark:bg-emerald-500/10"
+          >
+            <RiCheckLine
+              className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+              aria-hidden
+            />
+            <p className="text-xs leading-relaxed text-emerald-900 dark:text-emerald-200">
+              <strong className="font-semibold">Localizado na fonte oficial (JUCESP)</strong>{" "}
+              — a conferência da extração está logo abaixo. Você pode substituir
+              por um upload manual se preferir.
+            </p>
           </section>
         )
       }

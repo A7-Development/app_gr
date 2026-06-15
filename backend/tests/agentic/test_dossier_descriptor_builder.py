@@ -121,6 +121,40 @@ def test_analyst_fuses_by_document_not_agent_name() -> None:
     assert parecer.member_node_ids == ["parecer"]
 
 
+def test_official_fetch_and_manual_request_fuse_one_station() -> None:
+    """Fatia 2c: a busca oficial (official_document_fetch · social_contract) e o
+    pedido manual (document_request · social_contract) são duas formas de obter o
+    MESMO documento → uma única estação "Contrato social" (mata a duplicação
+    estação 2 vs 3 da BLB). O analista + a homologação fundem na mesma.
+    """
+    steps = [
+        NodeStep(id="ident", label="Identificação", node_type="human_input", state="completed"),
+        NodeStep(
+            id="busca", label="Contrato Social — JUCESP", node_type="official_document_fetch",
+            state="completed", config={"document": "social_contract_jucesp"},
+            output={"found": True, "doc_type": "social_contract"},
+        ),
+        NodeStep(
+            id="manual", label="Pedir documentos", node_type="document_request", state="completed",
+            config={"required": ["social_contract"]},
+        ),
+        NodeStep(
+            id="analise", label="Análise", node_type="specialist_agent", state="completed",
+            config={"agent": "social_contract_analyst"}, output={"summary": "ok"},
+        ),
+        NodeStep(
+            id="homolog", label="Homologação", node_type="human_review", state="completed",
+            config={"review_of": "social_contract_analyst"},
+        ),
+    ]
+    d = build_dossier_descriptor("DC-2026-0043", steps)
+    labels = [s.label for s in d.stations]
+    assert labels == ["Identificação", "Contrato social"]
+    sc = next(s for s in d.stations if s.label == "Contrato social")
+    # busca + pedido manual + analista + homologação numa estação só
+    assert sc.member_node_ids == ["busca", "manual", "analise", "homolog"]
+
+
 def test_trilha_nodes_excluded() -> None:
     steps = [
         NodeStep(id="trig", label="t", node_type="trigger", state="completed"),
