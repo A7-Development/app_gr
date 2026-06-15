@@ -144,8 +144,38 @@ const AGENT_STATION_LABEL: Record<string, string> = {
   social_contract_analyst: "Contrato social",
 }
 
+// O aspecto (e o rótulo) de uma estação vêm do DOCUMENTO que ela coleta, não do
+// nome do agente — a conferência + o gráfico são do documento. Um analista que
+// segue o documento herda o aspecto dele, qualquer que seja o agente fiado
+// (revenue_analyst, financial_analyst, …). Decoupling da Fatia 2(a).
+const DOC_TYPE_STATION_LABEL: Record<string, string> = {
+  revenue_report: "Faturamento",
+  social_contract: "Contrato social",
+}
+
 function reviewOf(step: WizardMultiStepStep): string | null {
   return (step.config as { review_of?: string } | undefined)?.review_of ?? null
+}
+
+// Tipos de documento exigidos por um nó document_request (config no grafo, ou
+// output em runtime). Sinal do ASPECTO da estação — robusto ao nome do agente.
+function requiredDocTypes(step: WizardMultiStepStep): string[] {
+  const cfg = (step.config as { required?: string[] } | undefined)?.required
+  const out = (step.output as { required?: string[] } | undefined)?.required
+  return cfg ?? out ?? []
+}
+
+// Receita de busca oficial → tipo de documento que ela produz. Sinal do ASPECTO
+// (Fatia 2c): uma busca oficial e o pedido manual do MESMO documento são duas
+// formas de obter a mesma fonte → uma estação só. Espelha RECIPES do backend.
+const OFFICIAL_FETCH_DOC_TYPE: Record<string, string> = {
+  social_contract_jucesp: "social_contract",
+}
+
+function officialFetchDocType(step: WizardMultiStepStep): string | null {
+  const recipe = (step.config as { document?: string } | undefined)?.document
+  const fromOutput = (step.output as { doc_type?: string } | undefined)?.doc_type
+  return (recipe ? OFFICIAL_FETCH_DOC_TYPE[recipe] : undefined) ?? fromOutput ?? null
 }
 
 function buildEstacoes(steps: WizardMultiStepStep[]): Estacao[] {
@@ -156,6 +186,22 @@ function buildEstacoes(steps: WizardMultiStepStep[]): Estacao[] {
     // dado — fundem na estação anterior (não viram estação própria).
     if (step.nodeType === "deterministic_check") {
       return estacoes[estacoes.length - 1] ?? null
+    }
+    // Pedido manual que é FALLBACK de uma busca oficial do MESMO documento
+    // (official_document_fetch) funde na estação dela — uma estação por aspecto
+    // (busca automática + fallback manual + análise = "Contrato social"). Mata a
+    // duplicação estação-fonte × estação-pedido (Fatia 2c). Só a última estação.
+    if (step.nodeType === "document_request") {
+      const reqTypes = requiredDocTypes(step)
+      const last = estacoes[estacoes.length - 1]
+      if (last) {
+        const fetchTypes = last.members
+          .filter((m) => m.nodeType === "official_document_fetch")
+          .map((m) => officialFetchDocType(m))
+          .filter((t): t is string => Boolean(t))
+        if (fetchTypes.some((t) => reqTypes.includes(t))) return last
+      }
+      return null
     }
     // document_extractor funde na estação do document_request anterior.
     if (step.nodeType === "document_extractor") {
@@ -168,6 +214,9 @@ function buildEstacoes(steps: WizardMultiStepStep[]): Estacao[] {
     }
     if (step.nodeType === "specialist_agent") {
       const agent = agentOf(step)
+      // opinion_writer é o sintetizador → estação "Parecer" própria, nunca funde
+      // numa fonte.
+      if (agent === "opinion_writer") return null
       const affinity = agent ? AGENT_STATION_AFFINITY[agent] : undefined
       if (affinity) {
         for (let i = estacoes.length - 1; i >= 0; i--) {
@@ -175,6 +224,18 @@ function buildEstacoes(steps: WizardMultiStepStep[]): Estacao[] {
             return estacoes[i]
           }
         }
+      }
+      // Fallback decoupled (Fatia 2a): um analista que CONTINUA um pipeline de
+      // documento funde na estação dele, independente do nome do agente. Só a
+      // última estação e só se ela coleta documento e ainda não tem analista —
+      // evita capturar analista de bureau (que segue bureau_query, não doc).
+      const last = estacoes[estacoes.length - 1]
+      if (
+        last &&
+        last.members.some((m) => m.nodeType === "document_request") &&
+        !last.members.some((m) => m.nodeType === "specialist_agent")
+      ) {
+        return last
       }
       return null
     }
@@ -221,6 +282,18 @@ function buildEstacoes(steps: WizardMultiStepStep[]): Estacao[] {
       gate: step.nodeType === "human_review" ? step : null,
       state: "bloqueada",
     })
+  }
+
+  // Rótulo da estação pelo ASPECTO do documento que ela coleta (decoupled do
+  // nome do agente). Override do label-por-agente quando o document_request
+  // declara um tipo conhecido — fonte única do "Faturamento"/"Contrato social".
+  for (const e of estacoes) {
+    const docReq = e.members.find((m) => m.nodeType === "document_request")
+    if (!docReq) continue
+    const aspect = requiredDocTypes(docReq)
+      .map((t) => DOC_TYPE_STATION_LABEL[t])
+      .find(Boolean)
+    if (aspect) e.label = aspect
   }
 
   for (const e of estacoes) e.state = estacaoState(e)
@@ -441,10 +514,16 @@ export default function DossierFocusPage() {
   const draft = useStepDraft(dossierId, waitingMember?.id ?? null)
 
   // ── Estação Faturamento (D1) — documentos no nível da página ────────────
+  // Dirigido pelo DOCUMENTO (revenue_report), não pelo nome do agente: a
+  // conferência + o gráfico são do documento. Vale para qualquer analista
+  // fundido (revenue_analyst, financial_analyst, …). Decoupling da Fatia 2(a).
   const isFaturamento = Boolean(
     focused &&
-      focused.members.some((m) => m.nodeType === "document_request") &&
-      focused.members.some((m) => agentOf(m) === "revenue_analyst"),
+      focused.members.some(
+        (m) =>
+          m.nodeType === "document_request" &&
+          requiredDocTypes(m).includes("revenue_report"),
+      ),
   )
   const docsQuery = useQuery({
     queryKey: ["credito", "documents", dossierId],
@@ -499,11 +578,15 @@ export default function DossierFocusPage() {
   const fatuDocStep = isFaturamento
     ? (focused!.members.find((m) => m.nodeType === "document_request") ?? null)
     : null
+  // Qualquer analista fundido na estação (decoupled do nome) — a leitura é
+  // renderizada conforme o schema do agente (revenue rico, demais genérico).
   const fatuAgentStep = isFaturamento
-    ? (focused!.members.find((m) => agentOf(m) === "revenue_analyst") ?? null)
+    ? (focused!.members.find((m) => m.nodeType === "specialist_agent") ?? null)
     : null
   const fatuGateStep =
-    isFaturamento && focused?.gate && reviewOf(focused.gate) === "revenue_analyst"
+    isFaturamento &&
+    focused?.gate &&
+    reviewOf(focused.gate) === agentOf(fatuAgentStep ?? ({} as WizardMultiStepStep))
       ? focused.gate
       : null
 
@@ -1020,6 +1103,36 @@ export default function DossierFocusPage() {
           </section>
         )
       }
+      // Estação fundida (Fatia 2c): se um pedido manual irmão (document_request)
+      // do mesmo documento está na estação, a CONFERÊNCIA renderiza por ele
+      // (que tem upload/JUCESP + ficha). Aqui fica só a confirmação compacta de
+      // que a busca automática trouxe o doc — sem duplicar a conferência.
+      const fetchType = officialFetchDocType(m)
+      const siblingRequest =
+        fetchType &&
+        focused?.members.some(
+          (s) =>
+            s.nodeType === "document_request" &&
+            requiredDocTypes(s).includes(fetchType),
+        )
+      if (siblingRequest) {
+        return (
+          <section
+            key={m.id}
+            className="flex items-start gap-3 rounded border border-emerald-200 bg-emerald-50/60 px-5 py-3 dark:border-emerald-500/30 dark:bg-emerald-500/10"
+          >
+            <RiCheckLine
+              className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+              aria-hidden
+            />
+            <p className="text-xs leading-relaxed text-emerald-900 dark:text-emerald-200">
+              <strong className="font-semibold">Localizado na fonte oficial (JUCESP)</strong>{" "}
+              — a conferência da extração está logo abaixo. Você pode substituir
+              por um upload manual se preferir.
+            </p>
+          </section>
+        )
+      }
       return (
         <SocialContractConferenceView
           key={m.id}
@@ -1360,9 +1473,10 @@ export default function DossierFocusPage() {
                   phase={fatuPhase}
                   agentOutput={
                     fatuAgentStep?.state === "completed" && fatuAgentStep.output
-                      ? (fatuAgentStep.output as unknown as RevenueAnalysis)
+                      ? (fatuAgentStep.output as Record<string, unknown>)
                       : null
                   }
+                  agentName={agentOf(fatuAgentStep ?? ({} as WizardMultiStepStep))}
                   agentLabel={
                     (fatuAgentStep?.input as { agent?: string } | undefined)?.agent
                   }

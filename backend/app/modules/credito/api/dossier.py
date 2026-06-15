@@ -388,11 +388,25 @@ async def get_dossie_descriptor(
             None,
         )
 
+    def _doc_request_node(doc_type: str) -> str | None:
+        return next(
+            (
+                s.id
+                for s in node_steps
+                if s.node_type == "document_request"
+                and doc_type in ((s.config or {}).get("required") or [])
+            ),
+            None,
+        )
+
     cad_node = next(
         (s.id for s in node_steps if s.node_type == "cadastral_enrichment"), None
     )
     soc_node = _agent_node_id("social_contract_analyst")
-    rev_node = _agent_node_id("revenue_analyst")
+    # Faturamento ancora no DOCUMENTO (revenue_report), não no nome do agente —
+    # a seção (gráfico + números) é do documento e vale para qualquer analista
+    # fiado a ele (revenue_analyst, financial_analyst, …). Decoupling Fatia 2(a).
+    rev_node = _doc_request_node("revenue_report") or _agent_node_id("revenue_analyst")
 
     if cad_node and (st := _station_for_node(cad_node)) is not None:
         card = await build_cadastral_card_projection(

@@ -113,6 +113,36 @@ def _pick_latest_societario(docs: list[dict[str, Any]]) -> dict[str, Any] | None
     return max(consolidados or societarios, key=_sort_key)
 
 
+def build_document_options(documentos: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Lista de arquivamentos JUCESP -> opções pro seletor (Fatia 2 / opção B).
+
+    Cada opção: {registro, protocolo, descricao, data, disponivel, suggested}.
+    `suggested=True` no doc que o classificador escolheria (consolidação mais
+    recente) — só uma sugestão; o analista vê a lista e decide. Sem ato
+    constitutivo, nenhum `suggested` (analista escolhe ou anexa manualmente).
+    """
+    suggested = _pick_latest_societario(documentos)
+    suggested_reg = _registro_of(suggested) if suggested is not None else None
+    options: list[dict[str, Any]] = []
+    for d in documentos:
+        reg = _registro_of(d)
+        if reg is None:
+            continue
+        descricao = str(d.get("texto") or d.get("descricao") or "").strip()
+        digit = str(d.get("digitalizacao") or "").strip().upper()
+        options.append(
+            {
+                "registro": reg,
+                "protocolo": (str(d.get("protocolo") or "").strip() or None),
+                "descricao": descricao or "(sem descrição)",
+                "data": (str(d.get("sessao") or d.get("data") or "").strip() or None),
+                "disponivel": digit == "DISPONÍVEL",
+                "suggested": reg == suggested_reg,
+            }
+        )
+    return options
+
+
 async def _persist_junta_data(
     db: AsyncSession,
     *,
