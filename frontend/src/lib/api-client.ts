@@ -2616,6 +2616,10 @@ export type ComparadorIndicadoresFundo = {
   cnpj: string
   denom_social: string | null
   condominio: string | null // "Aberto" | "Fechado" (cadastral)
+  // Composicao do ativo (vocabulario fechado): valor BRL por bucket/folha;
+  // soma dos buckets = ativo_total. Front converte p/ % -> fecha em 100%.
+  ativo_total: number | null
+  composicao_ativo: Record<string, number>
   pl: number | null
   pl_rank: number | null
   pl_medio: number | null
@@ -2668,6 +2672,7 @@ export type ComparadorIndicadoresResponse = {
   fundos: ComparadorIndicadoresFundo[]
   nao_encontrados: string[]
   mediana: Record<string, number | null>
+  composicao_mediana: Record<string, number | null>
   direcao: Record<string, boolean>
 }
 

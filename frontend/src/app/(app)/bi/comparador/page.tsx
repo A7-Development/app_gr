@@ -206,6 +206,7 @@ export default function ComparadorPage() {
                     <MatrizIndicadores
                       fundos={data.fundos}
                       mediana={data.mediana}
+                      composicaoMediana={data.composicao_mediana}
                       direcao={data.direcao}
                     />
                   </div>

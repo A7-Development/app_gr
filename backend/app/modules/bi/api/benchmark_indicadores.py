@@ -118,5 +118,6 @@ async def comparador_indicadores(
         fundos=fundos,
         nao_encontrados=nao_encontrados,
         mediana=universo.medianas,
+        composicao_mediana=universo.composicao_mediana,
         direcao=INDICADOR_DIRECAO,
     )
