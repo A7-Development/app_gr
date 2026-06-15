@@ -110,11 +110,16 @@ def _failure_message(resp: Any) -> str:
 # (gov.br / JUCESP) instável, fora do ar ou lento — TRANSITÓRIOS e re-tentáveis,
 # NÃO "empresa não encontrada". Tratá-los como found=false mente pro analista
 # ("a empresa é registrada em SP?") e desvia pro upload manual sem necessidade.
-# 609 = "tentativas de consultar o site ou aplicativo de origem excedidas" (o
-# portal não respondeu a tempo). DC-2026-0044. O "não encontrado" real vem como
-# code 200 + data vazio (tratado à parte). Conjunto pode crescer conforme novos
-# códigos de indisponibilidade aparecerem no vendor.
-_TRANSIENT_SOURCE_CODES = frozenset({606, 607, 609, 612})
+# Familia 606-615 = portal de origem indisponivel / instavel / em manutencao /
+# timeout / tentativas excedidas. Conhecidos: 606 (site fora do ar/instável),
+# 607 (manutenção), 609 ("tentativas de consultar o site ou aplicativo de origem
+# excedidas"), 612 (timeout), 615 ("o site ou aplicativo de origem parece estar
+# indisponível"). Os intermediários (608/610/611/613/614) são da mesma família
+# de indisponibilidade da fonte — incluídos por segurança. DC-2026-0044.
+# NÃO inclui 600 (sem resultados = "não encontrado" real, tratado à parte como
+# code 200 + data vazio) nem 601/602/603 (parâmetros/captcha/saldo — mensagem
+# própria, não "tente de novo").
+_TRANSIENT_SOURCE_CODES = frozenset(range(606, 616))
 
 
 def _is_transient(resp: Any) -> bool:
