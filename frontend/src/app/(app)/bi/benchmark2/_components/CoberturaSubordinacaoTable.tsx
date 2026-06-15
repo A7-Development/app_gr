@@ -1,9 +1,9 @@
 "use client"
 
 import {
-  CompactSeriesTable,
-  type CompactSeriesRow,
-} from "@/design-system/components/CompactSeriesTable"
+  DenseTable,
+  type DenseSeriesRow,
+} from "@/design-system/components/DenseTable"
 import type { FichaFundo } from "@/lib/api-client"
 
 import { SectionCard } from "./SectionCard"
@@ -47,7 +47,7 @@ export function CoberturaSubordinacaoTable({ ficha }: { ficha: FichaFundo }) {
     return out
   }
 
-  const rows: CompactSeriesRow[] = [
+  const rows: DenseSeriesRow[] = [
     {
       label: "PL Sub / (maior Cedente)",
       format: "num",
@@ -76,7 +76,7 @@ export function CoberturaSubordinacaoTable({ ficha }: { ficha: FichaFundo }) {
       title="Indices de Cobertura da Subordinacao (vezes)"
       info="Cobertura = PL Subordinada / (% maiores cedentes x PL total). Fonte: CVM tab_x_2 (PL Sub derivado de qt*vl) + tab_i2a12 (concentracao). CVM publica so cedentes (sem sacados) e so top-9 (limite legal)."
     >
-      <CompactSeriesTable
+      <DenseTable.Series
         label="Linha"
         periods={periodos}
         rows={rows}

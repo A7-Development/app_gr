@@ -37,9 +37,9 @@ import { Insight, InsightBar } from "@/design-system/components/Insight"
 import { KpiCard, KpiStrip } from "@/design-system/components/KpiStrip"
 import { SegmentSwitch } from "@/design-system/components/SegmentSwitch"
 import {
-  CompactSeriesTable,
-  type CompactSeriesRow,
-} from "@/design-system/components/CompactSeriesTable"
+  DenseTable,
+  type DenseSeriesRow,
+} from "@/design-system/components/DenseTable"
 import { ProvenanceFooter } from "@/design-system/components/ProvenanceFooter"
 import { AIPanel, useAIPanel } from "@/design-system/components/AIPanel"
 
@@ -192,7 +192,7 @@ export default function EvolucaoPatrimonialPage() {
     granularidade,
     classes: classesParam,
   })
-  // Tabela mes-a-mes sempre mensal (CompactSeriesTable e serie temporal FIDC).
+  // Tabela mes-a-mes sempre mensal (DenseTable.Series e serie temporal FIDC).
   // React Query dedupa quando granularidade ja e "mensal".
   const mensalQuery = useEvolucaoPatrimonial(fundoId, {
     periodoInicio,
@@ -901,7 +901,7 @@ function EvolucaoContent({
 
       {/* Tabela mes-a-mes */}
       {tabela && (
-        <CompactSeriesTable
+        <DenseTable.Series
           label="Serie mes-a-mes por classe"
           periods={tabela.periods}
           rows={tabela.rows}
@@ -955,13 +955,13 @@ function buildInsights(data: EvolucaoPatrimonialResponse | undefined) {
   return buildInsightTexts(data).map((t) => ({ text: t.text }))
 }
 
-// Monta a tabela mes-a-mes (CompactSeriesTable) a partir da serie mensal.
+// Monta a tabela mes-a-mes (DenseTable.Series) a partir da serie mensal.
 function buildTabela(
   data: EvolucaoPatrimonialResponse | undefined,
-): { periods: string[]; rows: CompactSeriesRow[] } | null {
+): { periods: string[]; rows: DenseSeriesRow[] } | null {
   if (!data || data.serie.length === 0) return null
   const periods = data.serie.map((p) => p.data)
-  const rows: CompactSeriesRow[] = []
+  const rows: DenseSeriesRow[] = []
 
   // PL total (linha de destaque).
   rows.push({

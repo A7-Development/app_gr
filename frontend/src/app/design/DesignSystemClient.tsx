@@ -354,7 +354,7 @@ export function DesignSystemClient() {
                 Comparativo de períodos com notação IBCS: cenários (PY/PL/AC/FC) identificados
                 por barra no header, variâncias nomeadas pela fórmula, cor exclusiva da variância.
                 <strong> Use</strong> para métricas × períodos/cenários com Δ.
-                <strong> Não use</strong> para listagem transacional (DataTable) nem série longa (CompactSeriesTable).
+                <strong> Não use</strong> para listagem transacional (DataTable) nem série longa (DenseTable.Series).
               </p>
               <PeriodComparisonTable
                 title={{ entity: "REALINVEST FIDC", measure: "Volume operado", unit: "R$ mil", note: "2026 PY, AC" }}
@@ -399,15 +399,15 @@ export function DesignSystemClient() {
               </div>
             </Card>
 
-            <Card title="DenseTable">
+            <Card title="DenseTable (+ DenseTable.Series)">
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                Tabela densa &quot;limpa&quot; de LEITURA — preenche o gap entre a
-                pesada <strong>DataTable</strong> (toolbar/sort/export/virtualização) e a
-                <strong> CompactSeriesTable</strong> (série transposta). Colunas tipadas
-                (`texto`/`numero`/`brl`/`pct`/`data`) com alinhamento e `tableTokens`;
-                rodapé de reconciliação opcional (§14.6). <strong>Use</strong> em blocos de
-                dossiê, fichas e breakdowns mês × valor. <strong>Não use</strong> para
-                listagem grande (DataTable) nem série temporal longa (CompactSeriesTable).
+                Família de tabela densa canônica, 2 modos. <strong>&lt;DenseTable&gt;</strong>:
+                leitura linha × coluna, colunas tipadas (`texto`/`numero`/`brl`/`pct`/`data`)
+                com alinhamento e `tableTokens`; rodapé de reconciliação opcional (§14.6).
+                <strong> &lt;DenseTable.Series&gt;</strong>: série temporal FIDC transposta
+                (períodos como colunas, ênfases/indent/separator — absorveu a antiga
+                CompactSeriesTable; preview em <code className="font-mono">/preview/dense-series-table</code>).
+                <strong> Não use</strong> para listagem grande (DataTable).
               </p>
               <DenseTable
                 caption="Faturamento mensal"
@@ -423,6 +423,23 @@ export function DesignSystemClient() {
                   { mes: "2026-04", receita: 252800, share: 25.0 },
                 ]}
                 footer={{ mes: "Total", receita: 811500, share: 80.2 }}
+              />
+              <p className="mt-4 mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                DenseTable.Series (transposta · períodos como colunas)
+              </p>
+              <DenseTable.Series
+                label="Indicador"
+                periods={["2026-01", "2026-02", "2026-03", "2026-04"]}
+                rows={[
+                  { label: "Direitos Creditórios", emphasis: "header", values: {} },
+                  { label: "A vencer", format: "pct", indent: 1, values: { "2026-01": 72.1, "2026-02": 73.0, "2026-03": 71.4, "2026-04": 74.2 } },
+                  { label: "Vencidos", format: "pct", indent: 1, values: { "2026-01": 8.2, "2026-02": 7.9, "2026-03": 8.6, "2026-04": 7.1 } },
+                  { label: "Total DC", format: "pct", emphasis: "subtotal", values: { "2026-01": 80.3, "2026-02": 80.9, "2026-03": 80.0, "2026-04": 81.3 } },
+                  { separator: true },
+                  { label: "PDD", format: "pct", emphasis: "total", values: { "2026-01": -1.8, "2026-02": -1.9, "2026-03": -2.1, "2026-04": -1.6 } },
+                ]}
+                density="compact"
+                footnote="Em % do PL. Ênfases header/subtotal/total + indent; negativo em vermelho."
               />
               <div className="mt-3">
                 <CopyButton text={`import { DenseTable } from "@/design-system/components"`} />
