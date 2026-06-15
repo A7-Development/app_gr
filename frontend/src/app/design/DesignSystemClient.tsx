@@ -24,6 +24,7 @@ import {
   PeriodComparisonTable,
   DecompositionTable,
 } from "@/design-system/components/FinancialTable"
+import { DenseTable } from "@/design-system/components/DenseTable"
 import { Button } from "@/components/tremor/Button"
 import { Badge } from "@/components/tremor/Badge"
 import { Input } from "@/components/tremor/Input"
@@ -395,6 +396,36 @@ export function DesignSystemClient() {
               />
               <div className="mt-3">
                 <CopyButton text={`import { DecompositionTable } from "@/design-system/components"`} />
+              </div>
+            </Card>
+
+            <Card title="DenseTable">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                Tabela densa &quot;limpa&quot; de LEITURA — preenche o gap entre a
+                pesada <strong>DataTable</strong> (toolbar/sort/export/virtualização) e a
+                <strong> CompactSeriesTable</strong> (série transposta). Colunas tipadas
+                (`texto`/`numero`/`brl`/`pct`/`data`) com alinhamento e `tableTokens`;
+                rodapé de reconciliação opcional (§14.6). <strong>Use</strong> em blocos de
+                dossiê, fichas e breakdowns mês × valor. <strong>Não use</strong> para
+                listagem grande (DataTable) nem série temporal longa (CompactSeriesTable).
+              </p>
+              <DenseTable
+                caption="Faturamento mensal"
+                columns={[
+                  { key: "mes", label: "Mês", format: "data" },
+                  { key: "receita", label: "Receita", format: "brl" },
+                  { key: "share", label: "% do total", format: "pct" },
+                ]}
+                rows={[
+                  { mes: "2026-01", receita: 184000, share: 18.2 },
+                  { mes: "2026-02", receita: 201500, share: 19.9 },
+                  { mes: "2026-03", receita: 173200, share: 17.1 },
+                  { mes: "2026-04", receita: 252800, share: 25.0 },
+                ]}
+                footer={{ mes: "Total", receita: 811500, share: 80.2 }}
+              />
+              <div className="mt-3">
+                <CopyButton text={`import { DenseTable } from "@/design-system/components"`} />
               </div>
             </Card>
 
