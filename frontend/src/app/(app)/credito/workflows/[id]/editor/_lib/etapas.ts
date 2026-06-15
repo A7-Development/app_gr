@@ -12,9 +12,9 @@
 // linha propria da palette (ex.: "Analise financeira" arrastavel direto,
 // nao precisa arrastar specialist_agent generico e configurar `agent`).
 
-import type { DataProduct, NodeTypeMeta } from "@/lib/credito-client"
+import type { AgentMeta, DataProduct, NodeTypeMeta } from "@/lib/credito-client"
 
-import { AGENT_FRIENDLY_LABEL, ETAPA_LABEL } from "./glossary"
+import { ETAPA_LABEL } from "./glossary"
 
 export type JourneyCategory =
   | "inicio"
@@ -200,33 +200,12 @@ export type PaletteEntry = {
   featured?: boolean
 }
 
-// Catalogo de specialist agents que viram entries proprios na palette.
-// (Nao confundir com backend/app/shared/agents/catalog.py — aqui so
-// listamos quais agentes APARECEM como entry na palette.)
-//
-// `icon` substitui o RiRobot2Line generico do tipo specialist_agent. Cada
-// agente ganha icone proprio sinalizando seu dominio — variedade visual
-// comunica a riqueza do catalogo.
-export const SPECIALIST_AGENT_PALETTE: Array<{
-  agent: string
-  description: string
-  icon?: string
-}> = [
-  // NOTA: `document_extractor` NAO entra aqui. A extracao multimodal que LE o
-  // arquivo e o node-type `document_extractor` (grupo Coletar / "Extrair
-  // Documentos"), nao um specialist_agent. Um specialist_agent com
-  // agent=document_extractor rodaria run_specialist_agent, que nao anexa o
-  // documento — extracao vazia. Ver TYPE_INITIAL_CONFIG acima.
-  { agent: "social_contract_analyst",  description: "IA avalia QSA, poderes, restricoes do contrato social.",         icon: "RiFileList3Line" },
-  { agent: "financial_analyst",        description: "IA avalia DRE/Balanco/Faturamento — indicadores e tendencias.",  icon: "RiBarChart2Line" },
-  { agent: "indebtedness_analyst",     description: "IA estima capacidade de pagamento via SCR + dividas.",           icon: "RiBankLine" },
-  { agent: "legal_analyst",            description: "IA classifica risco de processos judiciais e protestos.",        icon: "RiScales3Line" },
-  { agent: "partner_analyst",          description: "IA cruza socios com bureaus e processos.",                       icon: "RiTeamLine" },
-  { agent: "commercial_visit_analyst", description: "IA confronta visita comercial com declaracoes da empresa.",      icon: "RiMapPin2Line" },
-  { agent: "cross_reference_analyst",  description: "IA detecta inconsistencias entre todas as analises.",            icon: "RiNodeTree" },
-  { agent: "opinion_writer",           description: "IA escreve parecer consolidado com recomendacao final.",         icon: "RiQuillPenLine" },
-  { agent: "pleito_extractor",         description: "IA extrai produto/volume/taxa/prazo de email/texto livre.",      icon: "RiPriceTag3Line" },
-]
+// Os specialist agents da palette NAO sao mais listados aqui — a curadoria
+// (quais agentes + label/icone/blurb) vive no BACKEND (engine/catalog.py::
+// CREDIT_BUILDER_PALETTE) e chega via GET /credito/agent-catalog (AgentMeta.
+// palette). `buildPaletteEntries` deriva os entries do catalogo recebido.
+// Manter a lista aqui era a causa de agente novo "sumir do builder"
+// (DC-2026-0044).
 
 // Catalogo de CONSULTAS DE BUREAU que aparecem na palette.
 //
@@ -347,21 +326,28 @@ export function buildPaletteEntries(
   // Expande `cadastral_enrichment` em um entry por dataset habilitado — o
   // vendor nunca aparece, so o public_code + label curado.
   dataProducts: DataProduct[] = [],
+  // Catalogo de agentes (GET /credito/agent-catalog). Os entries de
+  // specialist_agent sao DERIVADOS daqui (campo `palette`) — sem lista
+  // hardcoded no frontend. Agente novo no backend aparece sozinho no builder.
+  agentCatalog: AgentMeta[] = [],
 ): PaletteEntry[] {
   const entries: PaletteEntry[] = []
 
   for (const meta of nodeTypes) {
     if (meta.type === "specialist_agent") {
-      // Expandir um entry por agente do catalogo.
-      for (const ag of SPECIALIST_AGENT_PALETTE) {
-        const paletteId = `specialist_agent:${ag.agent}`
+      // Um entry por agente que o backend marcou pra paleta de credito
+      // (AgentMeta.palette != null). Curadoria + label/icone/blurb vem do
+      // backend (CREDIT_BUILDER_PALETTE) — fonte unica de verdade.
+      for (const ag of agentCatalog) {
+        if (!ag.palette) continue
+        const paletteId = `specialist_agent:${ag.name}`
         entries.push({
           paletteId,
           nodeType: "specialist_agent",
-          initialConfig: { agent: ag.agent },
-          label: AGENT_FRIENDLY_LABEL[ag.agent] ?? ag.agent,
-          description: ag.description,
-          icon: ag.icon ?? meta.icon,
+          initialConfig: { agent: ag.name },
+          label: ag.palette.label,
+          description: ag.palette.blurb,
+          icon: ag.palette.icon || meta.icon,
           available: meta.available,
           journey: "ia",
           primitiveType: primitiveTypeFor("specialist_agent").key,

@@ -44,6 +44,7 @@ import {
   RiArrowRightSLine,
   RiBankLine,
   RiBarChart2Line,
+  RiLineChartLine,
   RiCheckboxCircleLine,
   RiCheckLine,
   RiCloseLine,
@@ -147,6 +148,7 @@ const ICON_MAP: Record<string, RemixiconComponentType> = {
   // Per-agent icons (override do RiRobot2Line generico) — variedade visual
   // sinaliza riqueza do catalogo de specialist agents.
   RiBarChart2Line,
+  RiLineChartLine,
   RiBankLine,
   RiScales3Line,
   RiTeamLine,
@@ -804,10 +806,10 @@ function EditorBody({
     [onNodesChange],
   )
 
-  // ─── Palette entries (build once from nodeTypes) ─────────────────────
+  // ─── Palette entries (build from nodeTypes + catalogos data-driven) ──
   const paletteEntries = React.useMemo(
-    () => buildPaletteEntries(nodeTypes, dataProducts),
-    [nodeTypes, dataProducts],
+    () => buildPaletteEntries(nodeTypes, dataProducts, agentCatalog ?? []),
+    [nodeTypes, dataProducts, agentCatalog],
   )
 
   return (

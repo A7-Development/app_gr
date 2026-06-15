@@ -507,9 +507,12 @@ async def get_agent_catalog(
     (`inputs: [{name, type, description, optional}]`) so the frontend can
     render the slot-binding UI.
 
-    Source of truth: `app.agentic.engine.catalog.CATALOG`.
+    Source of truth: `app.agentic.engine.catalog.CATALOG` (+ CREDIT_BUILDER_PALETTE
+    para a curadoria da paleta do builder). `palette` é null quando o agente NÃO
+    entra na paleta de crédito (ex.: auditores de Cota Sub) — o frontend deriva a
+    paleta 100% daqui, sem lista própria.
     """
-    from app.agentic.engine.catalog import CATALOG
+    from app.agentic.engine.catalog import CATALOG, CREDIT_BUILDER_PALETTE
 
     return [
         {
@@ -526,6 +529,11 @@ async def get_agent_catalog(
                 }
                 for slot in spec.inputs
             ],
+            "palette": (
+                {"label": pal.label, "icon": pal.icon, "blurb": pal.blurb}
+                if (pal := CREDIT_BUILDER_PALETTE.get(spec.name)) is not None
+                else None
+            ),
         }
         for spec in CATALOG.values()
     ]

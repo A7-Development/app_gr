@@ -616,3 +616,82 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         section_id="investigador_cota",
     ),
 }
+
+
+@dataclass(frozen=True, slots=True)
+class AgentPaletteMeta:
+    """Como um agente aparece na paleta do builder de playbook (frontend).
+
+    SINGLE SOURCE: a curadoria de quais agentes aparecem no builder de credito
+    (+ label/icone/blurb) vive AQUI, junto do CATALOG. O frontend deriva 100%
+    de GET /credito/agent-catalog -- NAO mantem lista propria. A lista hardcoded
+    no frontend era a causa de agente novo (revenue_analyst, cadastral_analyst)
+    "sumir do builder" enquanto ja existia no backend (DC-2026-0044).
+    """
+
+    label: str  # titulo curto pt-BR no card da paleta
+    icon: str  # chave do ICON_MAP do editor (ex.: "RiBarChart2Line")
+    blurb: str  # uma linha do que o agente faz
+
+
+# Agentes oferecidos na paleta do builder de CREDITO, em ordem de afinidade com
+# a esteira. Agente fora deste dict (ex.: auditores de Cota Sub) NAO polui a
+# paleta de credito. Adicionar um agente de credito ao builder = 1 entrada aqui
+# (co-locada com o CATALOG) -- nenhuma mudanca no frontend.
+CREDIT_BUILDER_PALETTE: dict[str, AgentPaletteMeta] = {
+    "cadastral_analyst": AgentPaletteMeta(
+        "Analise cadastral",
+        "RiGovernmentLine",
+        "IA avalia situacao, CNAE, capital social e tempo de atividade.",
+    ),
+    "social_contract_analyst": AgentPaletteMeta(
+        "Analise de contrato social",
+        "RiFileList3Line",
+        "IA avalia QSA, poderes, restricoes do contrato social.",
+    ),
+    "revenue_analyst": AgentPaletteMeta(
+        "Analise de faturamento",
+        "RiLineChartLine",
+        "IA avalia tendencia, sazonalidade e crescimento do faturamento.",
+    ),
+    "financial_analyst": AgentPaletteMeta(
+        "Analise financeira",
+        "RiBarChart2Line",
+        "IA avalia DRE e Balanco - indicadores e tendencias.",
+    ),
+    "indebtedness_analyst": AgentPaletteMeta(
+        "Analise de endividamento",
+        "RiBankLine",
+        "IA estima capacidade de pagamento via SCR + dividas.",
+    ),
+    "legal_analyst": AgentPaletteMeta(
+        "Analise juridica",
+        "RiScales3Line",
+        "IA classifica risco de processos judiciais e protestos.",
+    ),
+    "partner_analyst": AgentPaletteMeta(
+        "Analise de socios",
+        "RiTeamLine",
+        "IA cruza socios com bureaus e processos.",
+    ),
+    "commercial_visit_analyst": AgentPaletteMeta(
+        "Analise de visita comercial",
+        "RiMapPin2Line",
+        "IA confronta visita comercial com declaracoes da empresa.",
+    ),
+    "cross_reference_analyst": AgentPaletteMeta(
+        "Cruzar dados (cross-reference)",
+        "RiNodeTree",
+        "IA detecta inconsistencias entre todas as analises.",
+    ),
+    "pleito_extractor": AgentPaletteMeta(
+        "Extrair pleito de texto livre",
+        "RiPriceTag3Line",
+        "IA extrai produto/volume/taxa/prazo de email/texto livre.",
+    ),
+    "opinion_writer": AgentPaletteMeta(
+        "Gerar parecer final",
+        "RiQuillPenLine",
+        "IA escreve parecer consolidado com recomendacao final.",
+    ),
+}
