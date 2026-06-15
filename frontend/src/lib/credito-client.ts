@@ -129,6 +129,10 @@ export type AgentMeta = {
   section_id: string
   multimodal: boolean
   inputs: AgentInputMeta[]
+  /** Curadoria da paleta do builder (vem do backend CREDIT_BUILDER_PALETTE).
+   *  `null` = agente NÃO aparece na paleta de crédito. A paleta do editor é
+   *  derivada 100% daqui — sem lista hardcoded no frontend. */
+  palette: { label: string; icon: string; blurb: string } | null
 }
 
 /** Produto de dado externo (WHITE-LABEL) exposto por GET /credito/data-products.

@@ -87,7 +87,9 @@ export const ETAPA_LABEL: Record<string, string> = {
 
 export const AGENT_FRIENDLY_LABEL: Record<string, string> = {
   social_contract_analyst: "Analise de contrato social",
+  cadastral_analyst: "Analise cadastral",
   financial_analyst: "Analise financeira",
+  revenue_analyst: "Analise de faturamento",
   indebtedness_analyst: "Analise de endividamento",
   legal_analyst: "Analise juridica",
   partner_analyst: "Analise de socios",
@@ -105,7 +107,9 @@ export const AGENT_FRIENDLY_LABEL: Record<string, string> = {
 
 export const AGENT_SECTION_ID: Record<string, string> = {
   social_contract_analyst: "social_contract",
+  cadastral_analyst: "cadastral",
   financial_analyst: "financial",
+  revenue_analyst: "revenue",
   indebtedness_analyst: "indebtedness",
   legal_analyst: "legal",
   partner_analyst: "partners",
