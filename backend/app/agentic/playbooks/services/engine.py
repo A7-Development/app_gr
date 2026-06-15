@@ -32,6 +32,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.agentic.memory import (
     AnalysisSession,
@@ -228,11 +229,26 @@ async def prepare_resume(
         )
 
     # Inject submitted inputs into context_data so the resumed node sees them.
-    ctx = dict(run.context_data or {})
+    #
+    # JSONB MUTAVEL (pegadinha SQLAlchemy): `dict(run.context_data)` e copia
+    # RASA — os nested dicts continuam o MESMO objeto do valor committed. Um
+    # `setdefault(node)` devolvia esse nested compartilhado e o mutava in-place;
+    # como o objeto committed muda junto, o SQLAlchemy NAO detecta diff e o
+    # pending_input NUNCA era persistido. O resume SINCRONO mascarava (lia o
+    # context_data da MESMA sessao, em memoria); o resume em BACKGROUND (§1b) lê
+    # de uma sessao nova (DB) e via None -> human_input re-pausava sem consumir
+    # o input. Copia profunda dos entries + flag_modified garante deteccao e
+    # persistencia. DC-2026-0044.
+    ctx = {
+        k: (dict(v) if isinstance(v, dict) else v)
+        for k, v in (run.context_data or {}).items()
+    }
     for node_id, payload in pending_inputs.items():
-        entry = ctx.setdefault(node_id, {})
+        entry = dict(ctx.get(node_id) or {})
         entry["pending_input"] = payload
+        ctx[node_id] = entry
     run.context_data = ctx
+    flag_modified(run, "context_data")
     run.status = PlaybookRunStatus.RUNNING
     run.paused_at = None
     await db.flush()
