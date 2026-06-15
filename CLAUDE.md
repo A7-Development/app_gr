@@ -444,6 +444,22 @@ A rota `/design` (dev-only via `process.env.NODE_ENV !== "production"`) mostra t
 
 **Em PR:** consumo de `Operacao` (ou warehouse derivado) em service de BI sem `_apply_filters` e bloqueador. Reviewer rejeita.
 
+### 7.3 Feedback de progresso — FUNDAMENTO (regra dura, inviolavel)
+
+> Decisao 2026-06-15 (Ricardo, recorrente): **o usuario NUNCA pode ficar sem saber se o sistema esta travado ou trabalhando.** Toda acao que nao retorna instantaneamente DEVE comunicar estado o tempo todo. Isso e basico de UX e e **fundamento do produto** — vale pra TODA tela, agora e no futuro, sem excecao. Reincidencia desse problema (tela muda durante operacao longa) e bug de prioridade alta, nao polish.
+
+**As 3 regras:**
+
+1. **Nenhum estado morto/ambiguo.** Qualquer operacao > ~400ms expõe um indicador de atividade: spinner no botao (`isLoading`/`isPending` dos primitivos Tremor), banner "trabalhando…", skeleton, ou barra de progresso. Botao que dispara trabalho **sempre** entra em `isLoading` (nunca fica clicavel e mudo). Operacao longa (segundos+) **sempre** tem texto do que esta acontecendo + expectativa de tempo ("Consultando a JUCESP — pode levar 1-2 min").
+
+2. **Trabalho de backend longo e VISIVEL ao vivo, nao so no fim.** Quando um processo roda em background/assincrono (resume de playbook, agente, sync, JUCESP, extracao), o estado intermediario tem que ser **observavel pelo frontend enquanto roda** — node `RUNNING` commitado e visivel ao polling, SSE de tool_use, ou status incremental. "Commita so no fim" (o usuario ve `running` generico sem detalhe por minutos) **e o bug recorrente** — nao repetir. Cada etapa/no de um processo multi-step mostra: pendente (dormante) → rodando (ativo, com o que faz) → concluido/falhou. As transicoes aparecem **conforme acontecem**.
+
+3. **Desfecho sempre explicito.** Sucesso, vazio, erro e falha tem estado visivel e honesto (ver tambem §14.6 e o tratamento de erro transitorio vs definitivo). Nada de "parou e nao sei por que". Erro mostra o que houve + o que fazer; sucesso confirma; vazio explica.
+
+**Ferramentas canonicas (use, nao reinvente):** `isLoading`/`isPending` dos primitivos Tremor (`Button`, etc.); polling de `useQuery` com `refetchInterval` enquanto o recurso nao e terminal; `AgentLiveStatus` (trace de agente ao vivo); banners de fase (estilo o box azul "Consultando…" do cockpit de credito); `prefers-reduced-motion` respeitado nas animacoes.
+
+**Em PR (bloqueador):** acao que dispara trabalho sem `isLoading` no gatilho; operacao longa sem indicador de progresso/texto; processo de backend cujo estado intermediario nao chega ao frontend enquanto roda; "parou" sem desfecho visivel. Reviewer rejeita.
+
 ---
 
 ## 8. Skills do projeto
@@ -995,6 +1011,7 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] **Cells custom (inline ou em `_components/<X>Table.tsx`) usam `tableTokens.*` (nao escrevem `text-xs|sm|[Npx]` ou `text-gray-XXX` literais)?**
 - [ ] **Fuga do `<DataTableShell>`, do pattern, ou de `tableTokens.*` tem comentario `// MOTIVO:` no caller?**
 - [ ] **Zero ocultacao (§14.6): toda tabela/drill reconcilia com o total/headline da tela? Se corta com `.slice`/top-N, ou (a) tem expand "Mostrar todos" + footer somando o array inteiro, ou (b) linha explicita "Outros (N) · valor". Nenhum contador (`qtd_*`) maior que as linhas alcancaveis?**
+- [ ] **Feedback de progresso (§7.3 — FUNDAMENTO): toda acao > ~400ms tem `isLoading`/`isPending` no gatilho; operacao longa tem texto + expectativa de tempo; processo de backend assincrono expoe estado intermediario AO VIVO (node RUNNING visivel ao polling / SSE / status incremental), nao so no fim; desfecho (sucesso/vazio/erro) sempre explicito. Nenhum estado morto/ambiguo.**
 - [ ] `npx tsc --noEmit` passa?
 - [ ] `npm run build` passa?
 

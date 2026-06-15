@@ -553,6 +553,15 @@ async def _execute_node(
     )
     db.add(node_run)
     await db.flush()
+    # FUNDAMENTO §7.3 (feedback ao vivo): COMMITA o marcador RUNNING agora, ANTES
+    # de executar o node (que pode levar minutos — JUCESP, agente). Sem isto a
+    # linha RUNNING ficava só "flushed" (invisivel a outras sessoes) ate o node
+    # pausar/concluir -> o polling do cockpit via run=running mas NENHUM node
+    # ativo -> o box "Consultando…"/AgentLiveStatus nao aparecia durante a
+    # chamada (o "nao sei se travou ou trabalha" recorrente). expire_on_commit=
+    # False (core/database.py) -> commitar aqui NAO expira run/node_run, segue
+    # seguro usa-los abaixo. Durabilidade por-step tambem ajuda o reconciliador.
+    await db.commit()
 
     ctx = NodeContext(
         run_id=run.id,
