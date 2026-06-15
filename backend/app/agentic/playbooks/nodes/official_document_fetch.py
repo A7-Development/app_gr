@@ -182,7 +182,10 @@ class OfficialDocumentFetchNode(BaseNode):
                     )
                 if not prep.found_company or not prep.options:
                     # Sem empresa / sem doc digitalizado -> upload manual
-                    # (a aresta found==false roteia pro document_request).
+                    # (a aresta found==false roteia pro document_request, que
+                    # tem "Buscar na JUCESP" de novo + upload). `transient=True`
+                    # quando a JUCESP esteve instável: a UI mostra "tente de
+                    # novo", NÃO "não é de SP". DC-2026-0044.
                     return NodeOutput(
                         data={
                             "found": False,
@@ -190,9 +193,14 @@ class OfficialDocumentFetchNode(BaseNode):
                             "filename": "",
                             "doc_type": "social_contract",
                             "message": prep.message,
+                            "transient": bool(prep.source_unavailable),
                             "options": [],
                         },
-                        status_hint="nada para escolher — anexar manualmente",
+                        status_hint=(
+                            "JUCESP instável — tentar de novo"
+                            if prep.source_unavailable
+                            else "nada para escolher — anexar manualmente"
+                        ),
                     )
                 return NodeOutput(
                     data={

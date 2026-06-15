@@ -219,6 +219,11 @@ async def fetch_social_contract_from_junta(
             db, tenant_id=tenant_id, cnpj=cnpj, triggered_by=triggered_by
         )
         if not ficha.found or ficha.fields is None:
+            if ficha.transient:
+                raise JuntaFetchError(
+                    ficha.message
+                    or "A JUCESP está instável agora — tente novamente em instantes."
+                )
             raise JuntaFetchError(
                 "Empresa não encontrada na JUCESP "
                 f"({ficha.message or 'sem resultados'}). A empresa é registrada "
@@ -246,6 +251,11 @@ async def fetch_social_contract_from_junta(
             db, tenant_id=tenant_id, nire=nire, triggered_by=triggered_by
         )
         if not lista.found:
+            if lista.transient:
+                raise JuntaFetchError(
+                    lista.message
+                    or "A JUCESP está instável agora — tente novamente em instantes."
+                )
             raise JuntaFetchError(
                 "Nenhum documento digitalizado arquivado na JUCESP para o "
                 f"NIRE {nire}."
@@ -312,6 +322,10 @@ class SocialContractOptions:
     nire: str | None
     documentos: list[dict[str, Any]]  # arquivamentos crus (p/ auto-pick legado)
     options: list[dict[str, Any]]  # build_document_options (p/ a lista da UI)
+    # True quando a JUCESP esteve indisponível/lenta (transitório, ver
+    # infosimples_junta._TRANSIENT_SOURCE_CODES) — distinto de "empresa não
+    # encontrada". O node/UI apresentam como "tente de novo", não "não é de SP".
+    source_unavailable: bool = False
 
 
 async def prepare_social_contract_options(
@@ -348,8 +362,12 @@ async def prepare_social_contract_options(
         if not ficha.found or ficha.fields is None:
             return SocialContractOptions(
                 found_company=False,
+                source_unavailable=bool(ficha.transient),
                 message=(
-                    "Empresa não encontrada na JUCESP "
+                    ficha.message
+                    or "A JUCESP está instável agora — tente novamente em instantes."
+                    if ficha.transient
+                    else "Empresa não encontrada na JUCESP "
                     f"({ficha.message or 'sem resultados'}). A empresa é registrada em SP?"
                 ),
                 nire=None,
@@ -380,6 +398,20 @@ async def prepare_social_contract_options(
         lista = await fetch_junta_lista_documentos(
             db, tenant_id=tenant_id, nire=nire, triggered_by=triggered_by
         )
+        if lista.transient:
+            # Ficha veio, mas a lista de documentos esbarrou na instabilidade do
+            # portal — também é "tente de novo", não "sem documentos".
+            return SocialContractOptions(
+                found_company=True,
+                source_unavailable=True,
+                message=(
+                    lista.message
+                    or "A JUCESP está instável agora — tente novamente em instantes."
+                ),
+                nire=nire,
+                documentos=[],
+                options=[],
+            )
         documentos = list(lista.documentos) if lista.found else []
     except InfosimplesAdapterError as e:
         # Infra (credencial, vendor fora do ar) → erro de negócio repassado.

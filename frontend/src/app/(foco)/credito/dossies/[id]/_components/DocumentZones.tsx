@@ -249,6 +249,24 @@ export function DocumentSourceZone({
         </span>
       </header>
 
+      {juntaMut.isPending && (
+        <div className="flex items-start gap-3 border-b border-blue-100 bg-blue-50/60 px-5 py-3 dark:border-blue-500/20 dark:bg-blue-500/10">
+          <RiLoader4Line
+            className="mt-0.5 size-4 shrink-0 animate-spin text-blue-500"
+            aria-hidden
+          />
+          <div>
+            <p className="text-sm font-medium text-blue-900 dark:text-blue-200">
+              Consultando a JUCESP…
+            </p>
+            <p className="mt-0.5 text-xs text-blue-800/80 dark:text-blue-300/80">
+              Login gov.br → ficha da empresa → documento societário → download.
+              Costuma levar 1–2 minutos; pode deixar a tela aberta.
+            </p>
+          </div>
+        </div>
+      )}
+
       <input
         ref={fileInputRef}
         type="file"
