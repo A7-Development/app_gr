@@ -37,6 +37,7 @@ import {
   dataCatalog,
   type CatalogDatasetRow,
   type CatalogProviderGroup,
+  type DatasetCurationPayload,
 } from "@/lib/data-catalog-client"
 import { cx } from "@/lib/utils"
 
@@ -129,9 +130,24 @@ export default function CatalogoPage() {
     qc.invalidateQueries({ queryKey: ["admin", "data-catalog"] })
 
   const enableMut = useMutation({
-    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      dataCatalog.curate(id, { enabled_for_sale: enabled }),
-    onSuccess: () => invalidate(),
+    mutationFn: ({ row, enabled }: { row: CatalogDatasetRow; enabled: boolean }) => {
+      const patch: DatasetCurationPayload = { enabled_for_sale: enabled }
+      // Ativar um dataset ainda-sem-nome adota a sugestão no mesmo clique, pra
+      // ele ganhar um public_code estável (exigido por contratos e pelos nodes
+      // de lote, que referenciam dataset por public_code). Editável depois no
+      // drawer "Gerenciar".
+      if (enabled && !row.public_code) {
+        patch.public_code = row.suggested_public_code
+        patch.display_name_pt_br = row.display_name_pt_br ?? row.suggested_name
+      }
+      return dataCatalog.curate(row.dataset_id, patch)
+    },
+    onSuccess: (_data, vars) => {
+      invalidate()
+      if (vars.enabled && !vars.row.public_code) {
+        toast.success(`Dataset ativado como ${vars.row.suggested_public_code}.`)
+      }
+    },
     onError: (e) => toast.error(`Erro: ${(e as Error).message}`),
   })
 
@@ -224,7 +240,7 @@ export default function CatalogoPage() {
                       <tr className="border-y border-gray-100 dark:border-gray-900">
                         <th className={cx(tableTokens.header, "px-3 py-1.5 text-left")}>Dataset (vendor)</th>
                         <th className={cx(tableTokens.header, "px-3 py-1.5 text-left")}>Nome · public_code</th>
-                        <th className={cx(tableTokens.header, "px-3 py-1.5 text-center")}>Vender</th>
+                        <th className={cx(tableTokens.header, "px-3 py-1.5 text-center")}>Ativo</th>
                         <th className={cx(tableTokens.header, "px-3 py-1.5 text-left")}>Contrato</th>
                         <th className={cx(tableTokens.header, "px-3 py-1.5 text-right")}>Custo</th>
                         <th className={cx(tableTokens.header, "px-3 py-1.5")}></th>
@@ -262,9 +278,12 @@ export default function CatalogoPage() {
                             <div className="flex justify-center">
                               <Switch
                                 checked={d.enabled_for_sale}
-                                disabled={!d.public_code || enableMut.isPending}
+                                disabled={
+                                  enableMut.isPending &&
+                                  enableMut.variables?.row.dataset_id === d.dataset_id
+                                }
                                 onCheckedChange={(v) =>
-                                  enableMut.mutate({ id: d.dataset_id, enabled: v })
+                                  enableMut.mutate({ row: d, enabled: v })
                                 }
                               />
                             </div>
