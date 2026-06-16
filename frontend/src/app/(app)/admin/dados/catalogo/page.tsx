@@ -98,10 +98,17 @@ export default function CatalogoPage() {
   const [openApis, setOpenApis] = React.useState<Set<string>>(new Set())
   const [editing, setEditing] = React.useState<CatalogDatasetRow | null>(null)
 
-  const group = (listQ.data ?? []).find((g) => g.provider_slug === provider) ?? null
-  const filtered = group
-    ? filterGroup(group, search, onlyEnabled, onlyNoContract)
-    : null
+  // Memoizado: sem isto, `filterGroup` devolve um objeto novo a cada render e o
+  // efeito abaixo (que tem `filtered` nas deps) dispara setOpenApis em loop ao
+  // usar o filtro — React #185 (Maximum update depth exceeded).
+  const group = React.useMemo(
+    () => (listQ.data ?? []).find((g) => g.provider_slug === provider) ?? null,
+    [listQ.data, provider],
+  )
+  const filtered = React.useMemo(
+    () => (group ? filterGroup(group, search, onlyEnabled, onlyNoContract) : null),
+    [group, search, onlyEnabled, onlyNoContract],
+  )
 
   // Abre automaticamente as APIs com match quando há busca/filtro.
   React.useEffect(() => {
