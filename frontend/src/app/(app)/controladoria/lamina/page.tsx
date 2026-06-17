@@ -44,7 +44,7 @@ export default function LaminaPage() {
           <label className="flex items-center gap-1.5 text-[13px] text-gray-600 dark:text-gray-300">
             <span className="text-gray-500 dark:text-gray-400">Competencia</span>
             <select
-              className="h-[30px] rounded border border-gray-300 bg-white px-2 text-[13px] text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-50"
+              className="rounded border border-gray-300 bg-white px-2 py-1.5 text-[13px] leading-tight text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-50"
               value={competenciaAtual}
               onChange={(e) => void setCompetencia(e.target.value || null)}
               disabled={competenciasQ.isLoading || !competenciasQ.data?.competencias.length}
