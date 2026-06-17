@@ -51,6 +51,7 @@ from app.warehouse.operacao import Operacao, OperacaoItem
 from app.warehouse.operacao_remessa import OperacaoRemessa
 from app.warehouse.pj_cadastro import PjCadastro
 from app.warehouse.pj_grupo_indicador import PjGrupoIndicador
+from app.warehouse.pj_kyc import PjKyc, PjKycOcorrencia
 from app.warehouse.pj_vinculo import PjVinculo
 from app.warehouse.posicao_compromissada import PosicaoCompromissada
 from app.warehouse.posicao_cota_fundo import PosicaoCotaFundo
@@ -125,6 +126,8 @@ __all__ = [
     "OperacaoRemessa",
     "PjCadastro",
     "PjGrupoIndicador",
+    "PjKyc",
+    "PjKycOcorrencia",
     "PjVinculo",
     "PosicaoCompromissada",
     "PosicaoCotaFundo",

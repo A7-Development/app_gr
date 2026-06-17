@@ -42,10 +42,13 @@ from app.agentic.playbooks.nodes._base import (
     VarType,
 )
 from app.core.enums import Environment
-from app.modules.integracoes.public import execute_serasa_pj_query
+from app.modules.integracoes.public import (
+    execute_serasa_pj_query,
+    fetch_bdc_dossie_pj,
+)
 
 _SUPPORTED_ADAPTERS = {"serasa_pj", "serasa_pf", "bigdatacorp", "infosimples"}
-_WIRED_ADAPTERS = {"serasa_pj"}  # outros caem no placeholder
+_WIRED_ADAPTERS = {"serasa_pj", "bigdatacorp"}  # demais caem no placeholder
 
 # Mapa adapter -> tipo do documento principal de entrada.
 # Usado por `requires()` para validar que o entity_ref resolve para
@@ -87,6 +90,18 @@ class BureauQueryNode(BaseNode):
 
     def produces(self) -> dict[str, VarType]:
         """Outputs disponíveis pra nós downstream após bureau_query OK."""
+        if self.config.get("adapter") == "bigdatacorp":
+            return {
+                "adapter": VarType.STRING,
+                "status": VarType.STRING,
+                "raw_id": VarType.UUID_T,
+                "cnpj": VarType.CNPJ,
+                "cadastral_found": VarType.BOOLEAN,
+                "vinculos_count": VarType.NUMBER,
+                "grupo_found": VarType.BOOLEAN,
+                "kyc_subjects": VarType.NUMBER,
+                "kyc_ocorrencias": VarType.NUMBER,
+            }
         return {
             "adapter": VarType.STRING,
             "status": VarType.STRING,
@@ -134,6 +149,9 @@ class BureauQueryNode(BaseNode):
 
         if adapter == "serasa_pj":
             return await self._execute_serasa_pj(ctx, db)
+
+        if adapter == "bigdatacorp":
+            return await self._execute_bigdatacorp(ctx, db)
 
         # Adapters ainda nao wired.
         return NodeOutput(
@@ -202,6 +220,40 @@ class BureauQueryNode(BaseNode):
                 "reciprocity_downgrade": summary["reciprocity_downgrade"],
                 "latency_ms": summary["latency_ms"],
                 "counts": summary["counts"],
+            },
+        )
+
+    async def _execute_bigdatacorp(
+        self, ctx: NodeContext, db: AsyncSession
+    ) -> NodeOutput:
+        """Consulta multi-dataset BDC (cadastral + societario + KYC).
+
+        Uma chamada -> popula wh_pj_cadastro + wh_pj_vinculo +
+        wh_pj_grupo_indicador + wh_pj_kyc(+_ocorrencia). Os outputs expoem os
+        contadores; nodes/agentes downstream leem o silver via tool/secao.
+        """
+        cnpj = self.config["entity_ref"]
+        result = await fetch_bdc_dossie_pj(
+            tenant_id=ctx.tenant_id,
+            cnpj=cnpj,
+            triggered_by=f"workflow_run:{ctx.run_id}",
+        )
+        if not result.ok:
+            raise RuntimeError(
+                "bureau_query[bigdatacorp]: consulta nao concluiu — "
+                + "; ".join(result.errors)
+            )
+        return NodeOutput(
+            data={
+                "adapter": "bigdatacorp",
+                "status": "ok" if result.found else "not_found",
+                "raw_id": str(result.raw_id) if result.raw_id else None,
+                "cnpj": result.cnpj,
+                "cadastral_found": result.cadastral_found,
+                "vinculos_count": result.vinculos_count,
+                "grupo_found": result.grupo_found,
+                "kyc_subjects": result.kyc_subjects,
+                "kyc_ocorrencias": result.kyc_ocorrencias,
             },
         )
 
