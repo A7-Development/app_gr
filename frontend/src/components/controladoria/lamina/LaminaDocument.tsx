@@ -187,9 +187,6 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
               </tbody>
             </table>
           </div>
-          <div style={{ fontSize: 9.5, color: "#6B7280", marginTop: 7, fontStyle: "italic" }}>
-            Classe constituída no meio do período não exibe o retorno do mês de constituição (período parcial).
-          </div>
         </div>
 
         {/* acum + distrib */}
