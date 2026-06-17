@@ -24,7 +24,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -417,21 +417,28 @@ async def activate_version(
             detail="Versao arquivada nao pode ser ativada — desarquive primeiro.",
         )
 
+    # Delete-then-insert NULL-safe. NAO usar ON CONFLICT (tenant_id, name): pra
+    # agentes globais (tenant_id NULL) o Postgres trata NULL como distinto, o
+    # conflito nao dispara e cada ativacao INSERE um ponteiro novo (duplica).
+    # Removemos o ponteiro vigente de (tenant_id, name) — com `is_(None)` quando
+    # global — e inserimos o novo.
+    tenant_cond = (
+        AgentDefinitionActive.tenant_id.is_(None)
+        if target.tenant_id is None
+        else AgentDefinitionActive.tenant_id == target.tenant_id
+    )
     await db.execute(
-        pg_insert(AgentDefinitionActive)
-        .values(
+        delete(AgentDefinitionActive).where(
+            AgentDefinitionActive.name == name,
+            tenant_cond,
+        )
+    )
+    db.add(
+        AgentDefinitionActive(
             tenant_id=target.tenant_id,
             name=name,
             definition_id=target.id,
             activated_by_user_id=principal.user_id,
-        )
-        .on_conflict_do_update(
-            constraint="uq_agent_definition_active_tenant_name",
-            set_={
-                "definition_id": target.id,
-                "activated_by_user_id": principal.user_id,
-                "activated_at": datetime.now(UTC),
-            },
         )
     )
     await db.commit()
