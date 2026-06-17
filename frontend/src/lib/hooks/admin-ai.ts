@@ -446,6 +446,37 @@ export function usePreviewAgentDefinition() {
   })
 }
 
+export function useAgentVersions(id: string | null) {
+  return useQuery({
+    queryKey: ["admin", "ai", "agent-definitions", id ?? "", "versions"],
+    queryFn: () => adminAI.agentDefinitions.listVersions(id!),
+    enabled: !!id,
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useDeleteAgentVersion() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => adminAI.agentDefinitions.deleteVersion(id),
+    onSuccess: () =>
+      qc.invalidateQueries({
+        queryKey: ["admin", "ai", "agent-definitions"],
+      }),
+  })
+}
+
+export function useDeleteAgentFamily() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => adminAI.agentDefinitions.deleteFamily(id),
+    onSuccess: () =>
+      qc.invalidateQueries({
+        queryKey: ["admin", "ai", "agent-definitions"],
+      }),
+  })
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Tools (F2.c.4 — read-only, CLAUDE.md §19.0)
 // ───────────────────────────────────────────────────────────────────────────
