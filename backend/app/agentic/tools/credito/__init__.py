@@ -8,6 +8,7 @@ from app.agentic.tools.credito import (  # noqa: F401
     cadastral,
     document,
     dossier,
+    evolucao,
     kyc,
     revenue,
     serasa,
