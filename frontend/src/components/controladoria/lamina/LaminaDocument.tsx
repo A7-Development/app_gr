@@ -374,7 +374,7 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
 
         <div style={{ padding: "22px 44px 0" }}>
           <div style={{ fontSize: 8.5, color: "#9CA3AF", lineHeight: 1.5 }}>
-            Dados fornecidos pela administradora e modelados pela consultoria A7 Credit. Posição {formatDate(data.posicao)}.
+            Dados fornecidos pela administradora e modelados pela ONBOARD CONSULTORIA LTDA. Posição {formatDate(data.posicao)}.
           </div>
         </div>
 
