@@ -31,3 +31,13 @@ class ChatVariacaoResposta(BaseModel):
 
     resposta:     str
     tools_usadas: list[str] = Field(default_factory=list)
+
+
+class ChatAgenteInfo(BaseModel):
+    """Identidade DISCRETA do agente que atende esta janela de chat.
+
+    Expoe so o codigo (ex.: AGT-AB5F5221) — pra rastreabilidade na UI sem
+    revelar o nome interno do agente ao usuario final. Derivado no backend
+    da constante do endpoint (fonte unica da verdade)."""
+
+    code: str

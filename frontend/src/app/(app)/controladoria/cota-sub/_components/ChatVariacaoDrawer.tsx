@@ -43,11 +43,28 @@ export function ChatVariacaoDrawer({ fundoId, data, open, onClose }: Props) {
   const [messages, setMessages] = React.useState<ChatMensagem[]>([])
   const [input, setInput] = React.useState("")
   const [loading, setLoading] = React.useState(false)
+  // Codigo discreto do agente que atende esta janela (rastreabilidade).
+  const [agentCode, setAgentCode] = React.useState<string | null>(null)
   const endRef = React.useRef<HTMLDivElement>(null)
 
   React.useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, loading])
+
+  // Busca o codigo do agente ao abrir (uma vez — e estavel).
+  React.useEffect(() => {
+    if (!open || agentCode) return
+    let alive = true
+    controladoria
+      .cotaSubVariacaoChatAgente()
+      .then((r) => {
+        if (alive) setAgentCode(r.code)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [open, agentCode])
 
   const send = React.useCallback(async (texto: string) => {
     const pergunta = texto.trim()
@@ -69,6 +86,21 @@ export function ChatVariacaoDrawer({ fundoId, data, open, onClose }: Props) {
   return (
     <DrillDownSheet open={open} onClose={onClose} size="lg" title="Perguntar sobre o dia">
       <div className="flex h-full min-h-0 flex-col">
+        {/* Barra discreta: identifica o agente desta janela pelo codigo. */}
+        <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2 dark:border-gray-800">
+          <span className="flex items-center gap-1.5 text-[12px] text-gray-500 dark:text-gray-400">
+            <RiSparkling2Line className="size-3.5 text-violet-500" aria-hidden />
+            Assistente
+          </span>
+          {agentCode && (
+            <span
+              className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+              title="Codigo do agente que atende esta janela"
+            >
+              {agentCode}
+            </span>
+          )}
+        </div>
         <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
           {messages.length === 0 && !loading && (
             <div className="flex flex-col items-start gap-3 pt-2">

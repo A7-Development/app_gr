@@ -13,6 +13,7 @@ from app.core.enums import Module, Permission
 from app.core.module_guard import require_module
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.modules.controladoria.schemas.chat_variacao import (
+    ChatAgenteInfo,
     ChatVariacaoRequest,
     ChatVariacaoResposta,
 )
@@ -69,10 +70,15 @@ from app.modules.controladoria.services.variacao_resumo import (
 )
 from app.modules.controladoria.services.variacoes_dia import compute_variacoes_dia
 from app.modules.integracoes.public import listar_datas_disponiveis_qitech
+from app.shared.ai.agent_code import derive_agent_code
 
 router = APIRouter(prefix="/cota-sub", tags=["controladoria:cota-sub"])
 
 _Guard = Depends(require_module(Module.CONTROLADORIA, Permission.READ))
+
+# Agente que atende a janela de chat-investigador desta pagina. Fonte unica:
+# usado pra invocar o agente E pra expor o codigo discreto na UI (GET abaixo).
+_CHAT_AGENT_NAME = "controladoria.investigador_cota"
 
 
 @router.get("/balanco-estrutural", response_model=BalancoEstruturalResponse)
@@ -283,7 +289,7 @@ async def variacao_chat(
         extras={"ua_id": str(fundo_id), "data_d0": data.isoformat()},
     )
     result = await run_standalone_agent(
-        agent_name="controladoria.investigador_cota",
+        agent_name=_CHAT_AGENT_NAME,
         scope=scope,
         user_context={
             "fundo_nome": resumo.fundo_nome,
@@ -299,6 +305,15 @@ async def variacao_chat(
         resposta=str(out.get("resposta", "Nao consegui responder agora.")),
         tools_usadas=list(out.get("tools_usadas", []) or []),
     )
+
+
+@router.get("/variacao/chat/agente", response_model=ChatAgenteInfo)
+async def variacao_chat_agente(_: None = _Guard) -> ChatAgenteInfo:
+    """Codigo discreto do agente que atende esta janela de chat.
+
+    Pra UI exibir "qual agente" sem revelar o nome interno. Derivado da
+    constante `_CHAT_AGENT_NAME` (mesma que invoca o agente)."""
+    return ChatAgenteInfo(code=derive_agent_code(_CHAT_AGENT_NAME))
 
 
 @router.get("/datas-disponiveis", response_model=list[date])
