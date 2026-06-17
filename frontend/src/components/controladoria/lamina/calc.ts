@@ -55,6 +55,12 @@ export const CLASSE_COLOR: Record<LaminaClasse, string> = {
   mez: "#3B82F6", // blue-500
   sub: "#1B2B4B", // brand navy
 }
+// Rotulos abreviados de exibicao (lamina) — consistentes com os KPIs.
+export const CLASSE_SHORT: Record<LaminaClasse, string> = {
+  sr: "Sênior",
+  mez: "Sub Mez",
+  sub: "Sub Jr",
+}
 export const COL = {
   cdiLine: "#9CA3AF", // gray-400
   subLine: "#2563EB", // blue-600

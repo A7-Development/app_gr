@@ -21,6 +21,7 @@ import {
 } from "./charts"
 import {
   CLASSE_COLOR,
+  CLASSE_SHORT,
   COL,
   compound,
   derive,
@@ -72,19 +73,20 @@ const LAMINA_CSS = `
 }
 `
 
-function Wordmark() {
+function Wordmark({ h = 52 }: { h?: number }) {
+  // Logo institucional A7 Credit (lockup vertical). Plain <img>: superficie de
+  // impressao (next/image nao agrega aqui e atrapalha o print).
   return (
-    <div className="lam-wordmark">
-      A7<span>/</span>CREDIT
-    </div>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src="/a7-credit.png" alt="A7 Credit" style={{ height: h, width: "auto", display: "block", marginLeft: "auto" }} />
   )
 }
 
-function Tag({ s }: { s: LaminaClasseSerie }) {
+function Tag({ s, small }: { s: LaminaClasseSerie; small?: boolean }) {
   return (
-    <span className="lam-tag">
+    <span className="lam-tag" style={small ? { fontSize: 8.5 } : undefined}>
       <i style={{ background: CLASSE_COLOR[s.classe] }} />
-      {s.label}
+      {CLASSE_SHORT[s.classe]}
     </span>
   )
 }
@@ -110,7 +112,7 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
       <div className="lam-page">
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", padding: "30px 44px 18px" }}>
           <div>
-            <div className="lam-eyebrow" style={{ marginBottom: 6 }}>Lamina mensal do fundo</div>
+            <div className="lam-eyebrow" style={{ marginBottom: 6 }}>Lâmina mensal do fundo</div>
             <div className="lam-h1">{data.fundo_nome}</div>
             <div className="lam-sub">
               CNPJ {formatCnpj(data.cnpj)}
@@ -120,26 +122,26 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
           <div style={{ textAlign: "right" }}>
             <Wordmark />
             <div style={{ fontSize: 10.5, fontWeight: 600, color: "#1B2B4B", marginTop: 8 }}>{data.competencia_label}</div>
-            <div style={{ fontSize: 9.5, color: "#6B7280", marginTop: 1 }}>posicao {formatDate(data.posicao)}</div>
+            <div style={{ fontSize: 9.5, color: "#6B7280", marginTop: 1 }}>posição {formatDate(data.posicao)}</div>
           </div>
         </header>
 
         {/* ficha discreta */}
         <div style={{ margin: "0 44px", padding: "9px 0 10px", borderTop: "1px solid #E5E7EB", borderBottom: "1px solid #E5E7EB", fontSize: 10, color: "#6B7280" }}>
-          Administrador <strong style={{ color: "#4B5563", fontWeight: 500 }}>{data.gestor_nome ? "QiTech" : "QiTech"}</strong>
+          Administrador <strong style={{ color: "#4B5563", fontWeight: 500 }}>QiTech</strong>
           <span style={{ color: "#D1D5DB", margin: "0 7px" }}>·</span>
           Originador <strong style={{ color: "#4B5563", fontWeight: 500 }}>{data.originador_nome ?? "—"}</strong>
           <span style={{ color: "#D1D5DB", margin: "0 7px" }}>·</span>
-          Classes <strong style={{ color: "#4B5563", fontWeight: 500 }}>{classes.map((c) => c.label).join(" · ")}</strong>
+          Classes <strong style={{ color: "#4B5563", fontWeight: 500 }}>{classes.map((c) => CLASSE_SHORT[c.classe]).join(" · ")}</strong>
         </div>
 
         {/* KPI hero */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", margin: "0 44px", borderBottom: "1px solid #E5E7EB" }}>
           <Kpi label="PL total" value={`R$ ${fmtMi(d.kpi.plTotal)} mi`} sub={`${classes.length} classes · ${formatDate(data.posicao, true)}`} />
-          <KpiClasse color={CLASSE_COLOR.sr} label="Senior 12M" value={`${p1(d.kpi.sen12)}%`} cdi={d.kpi.sen12Cdi} />
-          <KpiClasse color={CLASSE_COLOR.mez} label="Mezanino 12M" value={`${p1(d.kpi.mez12)}%`} cdi={d.kpi.mez12Cdi} />
-          <KpiClasse color={CLASSE_COLOR.sub} label="Subordinada 12M" value={`${p1(d.kpi.sub12)}%`} cdi={d.kpi.sub12Cdi} valueColor="#1B2B4B" />
-          <Kpi label="Subordinacao" value={`${p1(d.kpi.razao)}%`} sub="Sub + Mez / PL" />
+          <KpiClasse color={CLASSE_COLOR.sr} label="Sênior 12M" value={`${p1(d.kpi.sen12)}%`} cdi={d.kpi.sen12Cdi} />
+          <KpiClasse color={CLASSE_COLOR.mez} label="Sub Mez 12M" value={`${p1(d.kpi.mez12)}%`} cdi={d.kpi.mez12Cdi} />
+          <KpiClasse color={CLASSE_COLOR.sub} label="Sub Jr 12M" value={`${p1(d.kpi.sub12)}%`} cdi={d.kpi.sub12Cdi} valueColor="#1B2B4B" />
+          <Kpi label="Subordinação" value={`${p1(d.kpi.razao)}%`} sub="Sub + Mez / PL" />
           <Kpi label="PDD / carteira" value={`${p2(d.kpi.pddCarteira)}%`} sub={meses[last]} last />
         </div>
 
@@ -166,7 +168,7 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
                   return (
                     <React.Fragment key={c.classe}>
                       <tr>
-                        <td className="pTDL" rowSpan={2}><Tag s={c} /></td>
+                        <td className="pTDL" rowSpan={2}><Tag s={c} small /></td>
                         <td className="pTDsub">Rent. %</td>
                         {c.var_mensal.map((v, i) => <td key={i} className="pTD">{p2(v)}</td>)}
                         <td className="pTD" style={{ fontWeight: 700, color: "#1B2B4B" }}>{p2(acum)}</td>
@@ -186,7 +188,7 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
             </table>
           </div>
           <div style={{ fontSize: 9.5, color: "#6B7280", marginTop: 7, fontStyle: "italic" }}>
-            Classe constituida no meio do periodo nao exibe o retorno do mes de constituicao (periodo parcial).
+            Classe constituída no meio do período não exibe o retorno do mês de constituição (período parcial).
           </div>
         </div>
 
@@ -199,7 +201,7 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
                 <thead>
                   <tr>
                     <th className="th thl" /><th className="th thl" />
-                    <th className="th">Mes</th><th className="th">6M</th><th className="th">12M</th>
+                    <th className="th">Mês</th><th className="th">6M</th><th className="th">12M</th>
                     <th className="th" style={{ borderBottomColor: "#1B2B4B" }}>{`20${yy}`}</th>
                   </tr>
                 </thead>
@@ -233,11 +235,11 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
             </div>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="lam-secline"><span className="lam-h2">Distribuicao de cotas</span></div>
+            <div className="lam-secline"><span className="lam-h2">Distribuição de cotas</span></div>
             <div style={{ marginTop: 10 }}>
               <table>
                 <thead>
-                  <tr><th className="th thl">Classe</th><th className="th">Nro cotas</th><th className="th">PL (R$)</th><th className="th">% PL</th></tr>
+                  <tr><th className="th thl">Classe</th><th className="th">Nº cotas</th><th className="th">PL (R$)</th><th className="th">% PL</th></tr>
                 </thead>
                 <tbody>
                   {classes.map((c) => (
@@ -260,18 +262,18 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
         {/* charts */}
         <div style={{ display: "flex", gap: 34, padding: "24px 44px 0" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#111827" }}>Rentabilidade historica acumulada</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#111827" }}>Rentabilidade histórica acumulada</div>
             <Legend items={[["Sub JR", COL.subLine, true], ["CDI", COL.cdiLine, true]]} />
             <RentHistChart meses={meses} varSub={d.byClasse.sub?.var_mensal ?? meses.map(() => null)} cdi={cdi} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#111827" }}>Evolucao do patrimonio liquido</div>
-            <Legend items={classes.map((c) => [c.label, CLASSE_COLOR[c.classe], false] as [string, string, boolean])} />
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#111827" }}>Evolução do patrimônio líquido</div>
+            <Legend items={classes.map((c) => [CLASSE_SHORT[c.classe], CLASSE_COLOR[c.classe], false] as [string, string, boolean])} />
             <PLStackedChart meses={meses} classes={classes} />
           </div>
         </div>
 
-        <Footer left={`A7 Credit · FIDC Analytics — ${data.fundo_nome}`} page="Pagina 1 de 3" />
+        <Footer left={`A7 Credit · FIDC Analytics — ${data.fundo_nome}`} page="Página 1 de 3" />
       </div>
 
       {/* ============ PAGINA 2 ============ */}
@@ -281,12 +283,12 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
         <div style={{ padding: "26px 44px 0" }}>
           <div className="lam-secline" style={{ justifyContent: "space-between" }}>
             <span style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-              <span className="lam-h2">Razao de garantia</span>
+              <span className="lam-h2">Razão de garantia</span>
               <span className="lam-hint">(PL Subordinada + Mezanino) / PL total · {meses[0]} → {meses[last]}</span>
             </span>
             <span style={{ fontSize: 11, fontWeight: 600, color: "#1B2B4B" }}>{p1(d.kpi.razao)}% atual</span>
           </div>
-          <Legend items={[...classes.map((c) => [`% PL ${c.label}`, CLASSE_COLOR[c.classe], false] as [string, string, boolean]), ["Razao de garantia (Sub+Mez)", COL.alert, true]]} />
+          <Legend items={[...classes.map((c) => [`% PL ${CLASSE_SHORT[c.classe]}`, CLASSE_COLOR[c.classe], false] as [string, string, boolean]), ["Razão de garantia (Sub+Mez)", COL.alert, true]]} />
           <GarantiaChart meses={meses} classes={classes} totals={d.totals} razao={d.razaoMensal} />
           <div style={{ marginTop: 10 }}>
             <table>
@@ -299,7 +301,7 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
                   </tr>
                 ))}
                 <tr>
-                  <td className="tot totl">Razao de garantia</td>
+                  <td className="tot totl">Razão de garantia</td>
                   {d.razaoMensal.map((v, i) => <td key={i} className="tot">{p1(v)}</td>)}
                 </tr>
               </tbody>
@@ -308,7 +310,7 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
         </div>
 
         <div style={{ padding: "26px 44px 0" }}>
-          <div className="lam-secline"><span className="lam-h2">Evolucao do ativo</span><span className="lam-hint">a vencer · vencido · caixa, com PDD sobre a carteira</span></div>
+          <div className="lam-secline"><span className="lam-h2">Evolução do ativo</span><span className="lam-hint">a vencer · vencido · caixa, com PDD sobre a carteira</span></div>
           <Legend items={[["Direitos a vencer", CLASSE_COLOR.mez, false], ["Direitos vencidos", COL.vencido, false], ["Caixa", COL.caixa, false], ["PDD / carteira", COL.alert, true]]} />
           <AtivoChart meses={meses} aVencer={data.aging.a_vencer} vencido={data.aging.vencido} caixa={data.aging.caixa} pddPct={d.pddCarteiraPct} />
           <div style={{ marginTop: 10 }}>
@@ -324,11 +326,11 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
         </div>
 
         <div style={{ padding: "26px 44px 0" }}>
-          <div className="lam-secline"><span className="lam-h2">Resumo por serie</span><span className="lam-hint">valor da cota e rentabilidade</span></div>
+          <div className="lam-secline"><span className="lam-h2">Resumo por série</span><span className="lam-hint">valor da cota e rentabilidade</span></div>
           <div style={{ marginTop: 10 }}>
             <table>
               <thead>
-                <tr><th className="th thl">Cota</th><th className="th">Valor da cota</th><th className="th">Rent. 12M</th><th className="th">% CDI 12M</th><th className="th" style={{ borderBottomColor: "#1B2B4B" }}>Desde inicio</th></tr>
+                <tr><th className="th thl">Cota</th><th className="th">Valor da cota</th><th className="th">Rent. 12M</th><th className="th">% CDI 12M</th></tr>
               </thead>
               <tbody>
                 {classes.map((c) => {
@@ -340,7 +342,6 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
                       <td className="td">{p2(c.valor_cota)}</td>
                       <td className="td">{p2(r12)}</td>
                       <td className="td" style={{ color: cdiColor(k) }}>{p1(k)}</td>
-                      <td className="td" style={{ fontWeight: 700, color: "#1B2B4B" }}>{p2(c.variacao_total)}</td>
                     </tr>
                   )
                 })}
@@ -349,12 +350,12 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
           </div>
         </div>
 
-        <Footer left="Aging reconcilia: a vencer + vencido = estoque total. Sem papeis baixados no estoque." page="Pagina 2 de 3" />
+        <Footer left="Aging reconcilia: a vencer + vencido = estoque total. Sem papéis baixados no estoque." page="Página 2 de 3" />
       </div>
 
       {/* ============ PAGINA 3 ============ */}
       <div className="lam-page">
-        <PageHeader fundo={data.fundo_nome} subtitle="Concentracao de cedentes e sacados" />
+        <PageHeader fundo={data.fundo_nome} subtitle="Concentração de cedentes e sacados" />
 
         <div style={{ display: "flex", gap: 34, padding: "26px 44px 0" }}>
           <ConcTable title="Cedentes" prefix="Cedente" items={data.concentracao.cedentes} plTotal={d.kpi.plTotal} posicao={formatDate(data.posicao, true)} />
@@ -363,12 +364,12 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
 
         <div style={{ display: "flex", gap: 34, padding: "26px 44px 0" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#111827" }}>Historico de concentracao — cedentes</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#111827" }}>Histórico de concentração — cedentes</div>
             <Legend items={[["Maior cedente", CLASSE_COLOR.sub, false], ["10 maiores", CLASSE_COLOR.sr, false]]} />
             <ConcHistChart meses={meses} maior={data.concentracao.historico.cedente_maior} top10={data.concentracao.historico.cedente_top10} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#111827" }}>Historico de concentracao — sacados</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#111827" }}>Histórico de concentração — sacados</div>
             <Legend items={[["Maior sacado", CLASSE_COLOR.sub, false], ["10 maiores", CLASSE_COLOR.sr, false]]} />
             <ConcHistChart meses={meses} maior={data.concentracao.historico.sacado_maior} top10={data.concentracao.historico.sacado_top10} />
           </div>
@@ -376,13 +377,13 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
 
         <div style={{ padding: "22px 44px 0" }}>
           <div style={{ fontSize: 8.5, color: "#9CA3AF", lineHeight: 1.5 }}>
-            Proveniencia: warehouse silver (adapter QiTech) — evolucao de cotas, rentabilidade, estoque e saldo de conta
-            corrente. Posicao {formatDate(data.posicao)}. Campos cadastrais de regulamento (rating, subordinacao minima,
-            benchmark-alvo, taxas de adm./perf.) nao disponiveis na fonte.
+            Proveniência: warehouse silver (adapter QiTech) — evolução de cotas, rentabilidade, estoque e saldo de conta
+            corrente. Posição {formatDate(data.posicao)}. Campos cadastrais de regulamento (rating, subordinação mínima,
+            benchmark-alvo, taxas de adm./perf.) não disponíveis na fonte.
           </div>
         </div>
 
-        <Footer left="Rentabilidade passada nao representa garantia de rentabilidade futura. Material meramente informativo." page="Pagina 3 de 3" />
+        <Footer left="Rentabilidade passada não representa garantia de rentabilidade futura. Material meramente informativo." page="Página 3 de 3" />
       </div>
     </div>
   )
@@ -418,7 +419,7 @@ function PageHeader({ fundo, subtitle }: { fundo: string; subtitle: string }) {
         <div className="lam-h1-sm">{fundo}</div>
         <div style={{ fontSize: 10, color: "#6B7280", marginTop: 5 }}>{subtitle}</div>
       </div>
-      <Wordmark />
+      <Wordmark h={38} />
     </header>
   )
 }
