@@ -58,9 +58,11 @@ import {
   RiGitBranchLine,
   RiGlobalLine,
   RiGovernmentLine,
+  RiGroupLine,
   RiMapPin2Line,
   RiNodeTree,
   RiNotification3Line,
+  RiOrganizationChart,
   RiPlayCircleLine,
   RiPriceTag3Line,
   RiQuillPenLine,
@@ -69,6 +71,7 @@ import {
   RiSaveLine,
   RiScales3Line,
   RiSearchLine,
+  RiShieldCheckLine,
   RiShieldStarLine,
   RiStarSmileLine,
   RiTeamLine,
@@ -157,6 +160,9 @@ const ICON_MAP: Record<string, RemixiconComponentType> = {
   RiQuillPenLine,
   RiFileList3Line,
   RiPriceTag3Line,
+  RiGroupLine,
+  RiOrganizationChart,
+  RiShieldCheckLine,
 }
 
 // Drag-and-drop payload key — encoded JSON pra carregar nodeType + initialConfig.
