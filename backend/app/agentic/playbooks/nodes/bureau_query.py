@@ -14,10 +14,11 @@ e digitos).
 
 Adapters wired:
     - serasa_pj: Business Information Report (PJ analitico) -> raw + silver.
-    - bigdatacorp: consulta multi-dataset (cadastral + societario + KYC) ->
-      raw + silver. Ambos devolvem metadados; nodes/agentes downstream leem o
-      silver via read-tools (get_serasa_pj / get_quadro_societario / get_kyc_pj),
-      nao por secao persistida no dossie.
+    - bigdatacorp: consulta multi-dataset (cadastral + societario + KYC +
+      evolucao) -> raw + silver. Ambos devolvem metadados; nodes/agentes
+      downstream leem o silver via read-tools (get_serasa_pj /
+      get_quadro_societario / get_kyc_pj / get_evolucao_pj), nao por secao
+      persistida no dossie.
 
 Adapters ainda placeholder:
     - serasa_pf, infosimples — retornam status "em breve".
@@ -99,6 +100,8 @@ class BureauQueryNode(BaseNode):
                 "grupo_found": VarType.BOOLEAN,
                 "kyc_subjects": VarType.NUMBER,
                 "kyc_ocorrencias": VarType.NUMBER,
+                "evolucao_found": VarType.BOOLEAN,
+                "evolucao_meses": VarType.NUMBER,
             }
         return {
             "adapter": VarType.STRING,
@@ -236,6 +239,8 @@ class BureauQueryNode(BaseNode):
                 "grupo_found": result.grupo_found,
                 "kyc_subjects": result.kyc_subjects,
                 "kyc_ocorrencias": result.kyc_ocorrencias,
+                "evolucao_found": result.evolucao_found,
+                "evolucao_meses": result.evolucao_meses,
             },
         )
 
