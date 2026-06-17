@@ -624,6 +624,10 @@ export const adminAI = {
       apiClient.post<AIAgentDefinitionPreview>(
         `/admin/ia/agents/${id}/preview`,
       ),
+    stats: (id: string, windowDays = 30) =>
+      apiClient.get<AIAgentStats>(
+        `/admin/ia/agents/${id}/stats?window_days=${windowDays}`,
+      ),
   },
   // F2.c.2 — CRUD versionado de expertises (CLAUDE.md §19.12).
   expertises: {
@@ -805,6 +809,48 @@ export type AIAgentDefinitionPreview = {
   max_tokens: number | null
 }
 
+// Telemetria de uso (Fatia B) — agregado de agent_analysis_run por agente.
+export type AIAgentStatsByModel = {
+  model: string
+  runs: number
+  tokens_total: number
+  cost_brl: number
+}
+
+export type AIAgentRunRecent = {
+  version: number
+  model_used: string
+  status: string
+  tokens_input: number
+  tokens_output: number
+  tokens_cache_read: number
+  tokens_cache_creation: number
+  cost_brl: number | null
+  duration_ms: number | null
+  triggered_at: string
+}
+
+export type AIAgentStats = {
+  agent_name: string
+  window_days: number
+  total_runs: number
+  runs_success: number
+  runs_error: number
+  runs_partial: number
+  tokens_input: number
+  tokens_output: number
+  tokens_cache_read: number
+  tokens_cache_creation: number
+  cost_brl_total: number
+  avg_duration_ms: number | null
+  last_run_at: string | null
+  window_runs: number
+  window_cost_brl: number
+  window_tokens_total: number
+  by_model: AIAgentStatsByModel[]
+  recent_runs: AIAgentRunRecent[]
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Tipos do admin de personas
 // ───────────────────────────────────────────────────────────────────────────
@@ -862,6 +908,8 @@ export type AIPromptVersionInfo = {
   temperature: number
   max_tokens: number
   description: string | null
+  // Quantos agentes (nao arquivados) usam este prompt (por nome).
+  usage_count: number
   created_at: string
   archived_at: string | null
 }
@@ -880,6 +928,7 @@ export type AIPromptDetail = {
   max_tokens: number
   cache_strategy: "none" | "after_system"
   description: string | null
+  usage_count: number
   created_at: string
   updated_at: string
   archived_at: string | null

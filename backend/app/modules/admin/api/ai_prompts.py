@@ -23,7 +23,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +34,7 @@ from app.core.enums import Module, Permission
 from app.core.module_guard import require_module
 from app.core.system_maintainer_guard import require_system_maintainer
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
+from app.shared.ai.models.agent_definition import AgentDefinition
 from app.shared.ai.models.prompt import AIPrompt, CacheStrategy
 from app.shared.ai.models.prompt_active import AIPromptActive
 from app.shared.ai.schemas import (
@@ -57,7 +58,11 @@ _GUARD = [
 # ─── Helpers ──────────────────────────────────────────────────────────────
 
 
-def _to_version_info(row: AIPrompt, active_map: dict[str, str]) -> PromptVersionInfo:
+def _to_version_info(
+    row: AIPrompt,
+    active_map: dict[str, str],
+    usage_map: dict[str, int],
+) -> PromptVersionInfo:
     return PromptVersionInfo(
         id=row.id,
         name=row.name,
@@ -68,12 +73,17 @@ def _to_version_info(row: AIPrompt, active_map: dict[str, str]) -> PromptVersion
         temperature=float(row.temperature),
         max_tokens=row.max_tokens,
         description=row.description,
+        usage_count=usage_map.get(row.name, 0),
         created_at=row.created_at,
         archived_at=row.archived_at,
     )
 
 
-def _to_detail(row: AIPrompt, active_map: dict[str, str]) -> PromptDetail:
+def _to_detail(
+    row: AIPrompt,
+    active_map: dict[str, str],
+    usage_map: dict[str, int],
+) -> PromptDetail:
     cache = row.cache_strategy.value if hasattr(row.cache_strategy, "value") else str(row.cache_strategy)
     return PromptDetail(
         id=row.id,
@@ -89,6 +99,7 @@ def _to_detail(row: AIPrompt, active_map: dict[str, str]) -> PromptDetail:
         max_tokens=row.max_tokens,
         cache_strategy=cache.lower(),
         description=row.description,
+        usage_count=usage_map.get(row.name, 0),
         created_at=row.created_at,
         updated_at=row.updated_at,
         archived_at=row.archived_at,
@@ -98,6 +109,22 @@ def _to_detail(row: AIPrompt, active_map: dict[str, str]) -> PromptDetail:
 async def _load_active_map(db: AsyncSession) -> dict[str, str]:
     rows = (await db.execute(select(AIPromptActive))).scalars().all()
     return {r.name: r.active_version for r in rows}
+
+
+async def _load_usage_map(db: AsyncSession) -> dict[str, int]:
+    """Retorna {prompt_name: count} — quantos agent_definition usam cada prompt.
+
+    Conta por `prompt_name` (string), pois agent_definition referencia o
+    NOME do prompt e o runtime resolve a versao ativa. Todas as versoes de
+    um mesmo nome compartilham o mesmo usage_count — e o que importa para
+    avisar "editar este prompt afeta N agentes".
+    """
+    stmt = (
+        select(AgentDefinition.prompt_name, func.count(AgentDefinition.id))
+        .where(AgentDefinition.archived_at.is_(None))
+        .group_by(AgentDefinition.prompt_name)
+    )
+    return {row[0]: row[1] for row in (await db.execute(stmt)).all()}
 
 
 async def _get_or_404(db: AsyncSession, prompt_id: UUID) -> AIPrompt:
@@ -123,7 +150,8 @@ async def list_prompts(
         stmt = stmt.where(AIPrompt.archived_at.is_(None))
     rows = (await db.execute(stmt)).scalars().all()
     active_map = await _load_active_map(db)
-    return [_to_version_info(r, active_map) for r in rows]
+    usage_map = await _load_usage_map(db)
+    return [_to_version_info(r, active_map, usage_map) for r in rows]
 
 
 @router.get("/{prompt_id}", response_model=PromptDetail, dependencies=_GUARD)
@@ -134,7 +162,8 @@ async def get_prompt(
     """Get full detail of one prompt version (text included)."""
     row = await _get_or_404(db, prompt_id)
     active_map = await _load_active_map(db)
-    return _to_detail(row, active_map)
+    usage_map = await _load_usage_map(db)
+    return _to_detail(row, active_map, usage_map)
 
 
 @router.post(
@@ -191,7 +220,8 @@ async def create_prompt(
     await db.commit()
     await db.refresh(row)
     active_map = await _load_active_map(db)
-    return _to_detail(row, active_map)
+    usage_map = await _load_usage_map(db)
+    return _to_detail(row, active_map, usage_map)
 
 
 @router.put("/{prompt_id}", response_model=PromptDetail, dependencies=_GUARD)
@@ -253,7 +283,8 @@ async def update_prompt(
     await db.commit()
     await db.refresh(new_row)
     active_map = await _load_active_map(db)
-    return _to_detail(new_row, active_map)
+    usage_map = await _load_usage_map(db)
+    return _to_detail(new_row, active_map, usage_map)
 
 
 @router.put(
@@ -295,7 +326,8 @@ async def activate_version(
     )
     await db.commit()
     active_map = await _load_active_map(db)
-    return _to_version_info(target, active_map)
+    usage_map = await _load_usage_map(db)
+    return _to_version_info(target, active_map, usage_map)
 
 
 @router.post(
@@ -325,7 +357,8 @@ async def archive_version(
     await db.commit()
     await db.refresh(row)
     active_map = await _load_active_map(db)
-    return _to_detail(row, active_map)
+    usage_map = await _load_usage_map(db)
+    return _to_detail(row, active_map, usage_map)
 
 
 @router.post(

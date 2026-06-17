@@ -325,6 +325,8 @@ const AGENT_DEFINITION_KEYS = {
     ["admin", "ai", "agent-definitions", opts] as const,
   detail: (id: string) =>
     ["admin", "ai", "agent-definitions", id] as const,
+  stats: (id: string, windowDays: number) =>
+    ["admin", "ai", "agent-definitions", id, "stats", windowDays] as const,
 }
 
 export function useAgentDefinitions(
@@ -352,6 +354,18 @@ export function useAgentDefinitionDetail(id: string | null) {
   return useQuery({
     queryKey: AGENT_DEFINITION_KEYS.detail(id ?? ""),
     queryFn: () => adminAI.agentDefinitions.get(id!),
+    enabled: !!id,
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useAgentDefinitionStats(
+  id: string | null,
+  windowDays = 30,
+) {
+  return useQuery({
+    queryKey: AGENT_DEFINITION_KEYS.stats(id ?? "", windowDays),
+    queryFn: () => adminAI.agentDefinitions.stats(id!, windowDays),
     enabled: !!id,
     staleTime: 30 * 1000,
   })
