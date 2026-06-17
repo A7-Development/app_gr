@@ -20,12 +20,15 @@ from app.core.enums import Module, Permission
     description=(
         "Retorna o quadro societario da empresa-alvo do dossie: controle atual "
         "(socios/quotistas ativos com papel e data de entrada), mudancas "
-        "recentes de controle (saidas/entradas = churn) e indicadores do grupo "
-        "economico de 1o nivel (empresas, ativas, sancionados, PEPs, processos). "
-        "Dado oficial — use como fato. Sua funcao e JULGAR a estrutura de "
-        "controle para o credito: o controle e estavel ou ha rotatividade "
-        "recente? ha concentracao ou partes relacionadas? o grupo tem sancao ou "
-        "litigio em volume relevante? Cada bloco traz a idade da informacao."
+        "recentes de controle (saidas/entradas = churn), resumo de vinculos "
+        "(qtd de socios, empresas possuidas, flag de empresa familiar) e "
+        "indicadores do grupo economico de 1o nivel (empresas, ativas, "
+        "sancionados, PEPs, processos + FAIXAS de faturamento/funcionarios e "
+        "CNAEs do grupo). Dado oficial — use como fato. Sua funcao e JULGAR a "
+        "estrutura de controle para o credito: o controle e estavel ou ha "
+        "rotatividade recente? ha concentracao ou partes relacionadas? o grupo "
+        "tem sancao ou litigio em volume relevante, e que porte ele tem? Cada "
+        "bloco traz a idade da informacao."
     ),
     input_schema={
         "type": "object",

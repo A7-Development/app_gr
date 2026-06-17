@@ -1,9 +1,10 @@
-"""Visões PARA O AGENTE do dossie societario + KYC (silver-first).
+"""Visões PARA O AGENTE do dossie societario + KYC + evolucao (silver-first).
 
-Builders que alimentam as read-tools `get_quadro_societario` e `get_kyc_pj`.
-Resolvem a empresa-alvo (TARGET) do dossie -> CNPJ e leem o silver canonico
-no warehouse (`wh_pj_vinculo`, `wh_pj_grupo_indicador`, `wh_pj_kyc`,
-`wh_pj_kyc_ocorrencia`) — populado deterministicamente pelo node BDC. O agente
+Builders que alimentam as read-tools `get_quadro_societario`, `get_kyc_pj` e
+`get_evolucao_pj`. Resolvem a empresa-alvo (TARGET) do dossie -> CNPJ e leem o
+silver canonico no warehouse (`wh_pj_vinculo`, `wh_pj_grupo_indicador`,
+`wh_pj_cadastro`, `wh_pj_kyc`, `wh_pj_kyc_ocorrencia`, `wh_pj_evolucao`,
+`wh_pj_evolucao_mensal`) — populado deterministicamente pelo node BDC. O agente
 nunca toca silver direto (§13.2.1); consome esta view ja modelada.
 
 Frescor (§14): cada view expoe a idade da informacao (source_updated_at quando
@@ -27,6 +28,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import CompanyRole
 from app.modules.credito.models.company import CreditDossierCompany
+from app.warehouse.pj_cadastro import PjCadastro
+from app.warehouse.pj_evolucao import PjEvolucao, PjEvolucaoMensal
 from app.warehouse.pj_grupo_indicador import PjGrupoIndicador
 from app.warehouse.pj_kyc import PjKyc, PjKycOcorrencia
 from app.warehouse.pj_vinculo import PjVinculo
@@ -137,6 +140,40 @@ async def build_quadro_societario_agent_view(
             "sancionados": grupo_row.total_sanctioned,
             "peps": grupo_row.total_peps,
             "processos": grupo_row.total_lawsuits,
+            # Porte agregado do grupo (faixas — o BDC nao da valor exato).
+            "faturamento_faixa": grupo_row.faturamento_faixa,
+            "faturamento_faixa_min": grupo_row.faturamento_faixa_min,
+            "faturamento_faixa_max": grupo_row.faturamento_faixa_max,
+            "faturamento_faixa_media": grupo_row.faturamento_faixa_media,
+            "funcionarios_faixa": grupo_row.funcionarios_faixa,
+            "funcionarios_faixa_min": grupo_row.funcionarios_faixa_min,
+            "funcionarios_faixa_max": grupo_row.funcionarios_faixa_max,
+            "funcionarios_faixa_media": grupo_row.funcionarios_faixa_media,
+            "cnaes": grupo_row.cnaes,  # atividades economicas do grupo
+        }
+
+    # Resumo do `relationships` (gravado na wh_pj_cadastro pelo node BDC):
+    # contagens + flags de empresa familiar. Sinal de concentracao/governanca.
+    cad_row = (
+        await db.execute(
+            select(
+                PjCadastro.qtd_socios,
+                PjCadastro.qtd_empresas_possuidas,
+                PjCadastro.empresa_familiar,
+                PjCadastro.operada_pela_familia,
+            ).where(
+                PjCadastro.tenant_id == tenant_id,
+                PjCadastro.cnpj == cnpj,
+            )
+        )
+    ).first()
+    resumo_vinculos = None
+    if cad_row is not None:
+        resumo_vinculos = {
+            "qtd_socios": cad_row.qtd_socios,
+            "qtd_empresas_possuidas": cad_row.qtd_empresas_possuidas,
+            "empresa_familiar": cad_row.empresa_familiar,
+            "operada_pela_familia": cad_row.operada_pela_familia,
         }
 
     return {
@@ -145,12 +182,15 @@ async def build_quadro_societario_agent_view(
         "controle_atual": controle_atual,
         "saidas_recentes": saidas_recentes,  # churn de controle (sinal)
         "vinculos_total": len(vinculos),
+        "resumo_vinculos": resumo_vinculos,
         "grupo_economico": grupo,
         "idade_da_informacao": _iso(frescor),  # data da fonte (LastUpdateDate)
         "nota": (
             "controle_atual = socios/quotistas ativos; saidas_recentes = "
-            "mudanca recente de controle (avaliar estabilidade). Numeros do "
-            "grupo sao agregados do 1o nivel."
+            "mudanca recente de controle (avaliar estabilidade). resumo_vinculos "
+            "= contagens + flag de empresa familiar (concentracao/governanca). "
+            "Numeros do grupo sao agregados do 1o nivel; faturamento/funcionarios "
+            "sao FAIXAS (o bureau nao da valor exato)."
         ),
     }
 
@@ -191,6 +231,13 @@ async def build_kyc_agent_view(
             "sancionado": h.is_currently_sanctioned,
             "qtd_sancoes": h.count_sanctions,
             "qtd_pep": h.count_peps,
+            # Recencia do vinculo PEP (quao recente foi a exposicao politica).
+            "pep_buckets": {
+                "ultimo_ano": h.last_year_pep,
+                "ultimos_3a": h.last_3y_pep,
+                "ultimos_5a": h.last_5y_pep,
+                "acima_5a": h.last_5plus_pep,
+            },
         }
         for h in headers
     ]
@@ -251,6 +298,109 @@ async def build_kyc_agent_view(
             "O bureau casa sancoes/PEP por NOME e devolve match_rate (0-100). "
             f"match_rate >= {int(_MATCH_RATE_ALTA)} = confianca alta; abaixo = "
             "provavel homonimo. Cada ocorrencia traz a data da fonte "
-            "(atualizado_em) — pese o quao recente e o achado."
+            "(atualizado_em) — pese o quao recente e o achado. pep_buckets por "
+            "sujeito mostra a RECENCIA da exposicao politica (ultimo ano / 3a / "
+            "5a / acima de 5a)."
+        ),
+    }
+
+
+def _float(value: Decimal | None) -> float | None:
+    return float(value) if value is not None else None
+
+
+async def build_evolucao_agent_view(
+    db: AsyncSession, *, tenant_id: UUID, dossier_id: UUID
+) -> dict | None:
+    """Visão de evolução temporal para o agente: porte atual + trajetória.
+
+    Header (agregados + tendência) + série mensal (a curva de funcionários e
+    faixa de faturamento). O headcount ATUAL vem daqui (último ponto da série),
+    não do `relationships.TotalEmployees` (que é acumulado). Returns None quando
+    não há empresa-alvo no dossie.
+    """
+    cnpj = await _target_cnpj(db, tenant_id=tenant_id, dossier_id=dossier_id)
+    if cnpj is None:
+        return None
+
+    header = (
+        await db.execute(
+            select(PjEvolucao).where(
+                PjEvolucao.tenant_id == tenant_id, PjEvolucao.cnpj == cnpj
+            )
+        )
+    ).scalar_one_or_none()
+    if header is None:
+        return {
+            "encontrado": False,
+            "cnpj": cnpj,
+            "mensagem": (
+                "Sem evolucao temporal coletada para esta empresa. "
+                "Rode a consulta BDC antes."
+            ),
+        }
+
+    pontos = (
+        await db.execute(
+            select(PjEvolucaoMensal)
+            .where(
+                PjEvolucaoMensal.tenant_id == tenant_id,
+                PjEvolucaoMensal.cnpj == cnpj,
+            )
+            .order_by(PjEvolucaoMensal.mes.asc())
+        )
+    ).scalars().all()
+
+    serie = [
+        {
+            "mes": p.mes.isoformat(),
+            "funcionarios": p.funcionarios,
+            "faturamento_faixa": p.faturamento_faixa,
+        }
+        for p in pontos
+    ]
+
+    return {
+        "encontrado": True,
+        "cnpj": cnpj,
+        "funcionarios": {
+            "atual": header.funcionarios_atual,
+            "max": header.funcionarios_max,
+            "min": header.funcionarios_min,
+            "media": header.funcionarios_media,
+            "distintos": header.funcionarios_distintos,
+            "media_1a": header.funcionarios_media_1a,
+            "media_3a": header.funcionarios_media_3a,
+            "media_5a": header.funcionarios_media_5a,
+        },
+        "crescimento_yoy": {
+            "1a": header.crescimento_yoy_1a,
+            "3a": header.crescimento_yoy_3a,
+            "5a": header.crescimento_yoy_5a,
+        },
+        "qsa_mudou": header.qsa_mudou,
+        "faturamento_faixa_atual": header.faturamento_faixa_atual,
+        "socios": {
+            "max": header.socios_max,
+            "min": header.socios_min,
+            "media": header.socios_media,
+            "distintos": header.socios_distintos,
+            "media_1a": header.socios_media_1a,
+            "media_3a": header.socios_media_3a,
+            "media_5a": header.socios_media_5a,
+        },
+        "atividade": {
+            "max": _float(header.atividade_max),
+            "min": _float(header.atividade_min),
+            "media": _float(header.atividade_media),
+        },
+        "serie_mensal": serie,
+        "serie_meses": len(serie),
+        "nota": (
+            "funcionarios.atual = headcount corrente (ultimo ponto da serie), "
+            "NAO acumulado. crescimento_yoy compara janelas (GROW UP/STABLE/"
+            "SHRINK). serie_mensal e a curva — use pra ver tendencia de porte/"
+            "faturamento ao longo do tempo. Dataset derivado: idade = data da "
+            "consulta."
         ),
     }
