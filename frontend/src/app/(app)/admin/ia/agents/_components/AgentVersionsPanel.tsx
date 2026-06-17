@@ -14,16 +14,30 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { RiCheckLine, RiExternalLinkLine, RiLoader4Line } from "@remixicon/react"
+import {
+  RiCheckLine,
+  RiDeleteBin6Line,
+  RiExternalLinkLine,
+  RiLoader4Line,
+} from "@remixicon/react"
 import { formatDistanceToNow, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
 
 import { Button } from "@/components/tremor/Button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/tremor/Dialog"
 import type { AIAgentDefinitionVersionInfo } from "@/lib/api-client"
 import {
   useActivateAgentDefinitionVersion,
-  useAgentDefinitions,
+  useAgentVersions,
   useArchiveAgentDefinition,
+  useDeleteAgentVersion,
 } from "@/lib/hooks/admin-ai"
 import { cx } from "@/lib/utils"
 
@@ -32,24 +46,22 @@ import { StatusBadge } from "./AgentBadges"
 const BASE_HREF = "/admin/ia/agents"
 
 export function AgentVersionsPanel({
-  agentName,
   currentId,
 }: {
-  agentName: string
   currentId: string
 }) {
   const router = useRouter()
-  // Inclui arquivadas — a aba de versoes mostra a familia inteira.
-  const q = useAgentDefinitions({ includeArchived: true })
+  // Endpoint dedicado: todas as versoes da familia (a lista principal colapsa).
+  const q = useAgentVersions(currentId)
   const activateMut = useActivateAgentDefinitionVersion()
   const archiveMut = useArchiveAgentDefinition()
+  const deleteMut = useDeleteAgentVersion()
+  const [deleting, setDeleting] =
+    React.useState<AIAgentDefinitionVersionInfo | null>(null)
 
   const versions = React.useMemo(
-    () =>
-      (q.data ?? [])
-        .filter((v) => v.name === agentName)
-        .sort((a, b) => b.version - a.version),
-    [q.data, agentName],
+    () => (q.data ?? []).slice().sort((a, b) => b.version - a.version),
+    [q.data],
   )
 
   const handleActivate = async (row: AIAgentDefinitionVersionInfo) => {
@@ -67,6 +79,17 @@ export function AgentVersionsPanel({
       toast.success(`${row.name}@v${row.version} arquivado.`)
     } catch (e) {
       toast.error(`Falha ao arquivar: ${(e as Error).message}`)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!deleting) return
+    try {
+      await deleteMut.mutateAsync(deleting.id)
+      toast.success(`${deleting.name}@v${deleting.version} excluido.`)
+      setDeleting(null)
+    } catch (e) {
+      toast.error(`Falha ao excluir: ${(e as Error).message}`)
     }
   }
 
@@ -163,11 +186,22 @@ export function AgentVersionsPanel({
                       {!v.is_active && !isArchived && (
                         <Button
                           variant="ghost"
-                          className="h-7 px-2 text-[12px] text-red-600 dark:text-red-500"
+                          className="h-7 px-2 text-[12px]"
                           onClick={() => handleArchive(v)}
                           disabled={archiveMut.isPending}
                         >
                           Arquivar
+                        </Button>
+                      )}
+                      {!v.is_active && (
+                        <Button
+                          variant="ghost"
+                          className="h-7 px-2 text-[12px] text-red-600 dark:text-red-500"
+                          onClick={() => setDeleting(v)}
+                          disabled={deleteMut.isPending}
+                          aria-label="Excluir versao"
+                        >
+                          <RiDeleteBin6Line className="size-3.5" />
                         </Button>
                       )}
                     </div>
@@ -178,6 +212,39 @@ export function AgentVersionsPanel({
           </tbody>
         </table>
       </div>
+
+      {/* Excluir versao (hard-delete) */}
+      <Dialog
+        open={deleting !== null}
+        onOpenChange={(open) => !open && setDeleting(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir versao</DialogTitle>
+            <DialogDescription>
+              Exclui <b>{deleting?.name}@v{deleting?.version}</b> em definitivo.
+              So versoes nao-ativas podem ser excluidas (ative outra antes, ou
+              use &quot;Excluir agente&quot; na lista pra remover tudo).
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              onClick={() => setDeleting(null)}
+              disabled={deleteMut.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteMut.isPending}
+            >
+              Excluir versao
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -67,6 +67,9 @@ class AgentDefinitionVersionInfo(BaseModel):
     code: str
     name: str
     version: int
+    # Quantas versoes a familia (name) tem. A lista mostra 1 linha por agente
+    # (versao ATIVA como representante); versoes sao detalhe da aba Versoes.
+    version_count: int = 1
     module: str
     persona_name: str | None = None  # resolved at server
     expertise_count: int = 0

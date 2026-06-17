@@ -211,7 +211,7 @@ export default function AgentCockpitPage() {
             </div>
           ) : cockpitTab === "versoes" ? (
             <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">
-              <AgentVersionsPanel agentName={agent.name} currentId={agent.id} />
+              <AgentVersionsPanel currentId={agent.id} />
             </div>
           ) : (
             <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">

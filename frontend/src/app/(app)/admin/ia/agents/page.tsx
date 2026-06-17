@@ -14,10 +14,9 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
   RiAddLine,
-  RiArchive2Line,
   RiBarChartBoxLine,
-  RiCheckLine,
   RiCpuLine,
+  RiDeleteBin6Line,
   RiEdit2Line,
   RiEyeLine,
   RiMoreLine,
@@ -47,9 +46,8 @@ import type {
   AIAgentDefinitionVersionInfo,
 } from "@/lib/api-client"
 import {
-  useActivateAgentDefinitionVersion,
   useAgentDefinitions,
-  useArchiveAgentDefinition,
+  useDeleteAgentFamily,
   usePreviewAgentDefinition,
 } from "@/lib/hooks/admin-ai"
 import { cx } from "@/lib/utils"
@@ -62,19 +60,20 @@ const BASE_HREF = "/admin/ia/agents"
 export default function AgentsAdminPage() {
   const router = useRouter()
 
-  const [archivingId, setArchivingId] = React.useState<string | null>(null)
+  // Agente (familia) a excluir — guarda a linha pra mostrar code/versoes no aviso.
+  const [deleting, setDeleting] =
+    React.useState<AIAgentDefinitionVersionInfo | null>(null)
   const [previewing, setPreviewing] =
     React.useState<AIAgentDefinitionPreview | null>(null)
   const [segment, setSegment] = React.useState<
-    "todos" | "ativos" | "inativos" | "arquivados"
+    "todos" | "ativos" | "arquivados"
   >("todos")
   const [search, setSearch] = React.useState("")
 
-  const includeArchived = segment === "arquivados"
+  const includeArchived = segment === "arquivados" || segment === "todos"
   const agentsQuery = useAgentDefinitions({ includeArchived })
 
-  const activateMut = useActivateAgentDefinitionVersion()
-  const archiveMut = useArchiveAgentDefinition()
+  const deleteFamilyMut = useDeleteAgentFamily()
   const previewMut = usePreviewAgentDefinition()
 
   const agentsData = React.useMemo(
@@ -91,23 +90,14 @@ export default function AgentsAdminPage() {
     [router],
   )
 
-  const handleActivate = async (row: AIAgentDefinitionVersionInfo) => {
+  const handleDeleteFamily = async () => {
+    if (!deleting) return
     try {
-      await activateMut.mutateAsync({ name: row.name, versionId: row.id })
-      toast.success(`${row.name}@v${row.version} ativado.`)
+      await deleteFamilyMut.mutateAsync(deleting.id)
+      toast.success(`Agente ${deleting.code} excluido.`)
+      setDeleting(null)
     } catch (e) {
-      toast.error(`Falha ao ativar: ${(e as Error).message}`)
-    }
-  }
-
-  const handleArchive = async () => {
-    if (!archivingId) return
-    try {
-      const archived = await archiveMut.mutateAsync(archivingId)
-      toast.success(`${archived.name}@v${archived.version} arquivado.`)
-      setArchivingId(null)
-    } catch (e) {
-      toast.error(`Falha ao arquivar: ${(e as Error).message}`)
+      toast.error(`Falha ao excluir: ${(e as Error).message}`)
     }
   }
 
@@ -156,6 +146,11 @@ export default function AgentsAdminPage() {
         cell: ({ row }) => (
           <span className={tableTokens.cellSecondary}>
             v{row.original.version}
+            {row.original.version_count > 1 && (
+              <span className="ml-1 text-[11px] text-gray-400">
+                · {row.original.version_count} versoes
+              </span>
+            )}
           </span>
         ),
       },
@@ -246,29 +241,18 @@ export default function AgentsAdminPage() {
                   <RiEdit2Line className="mr-2 size-4" />
                   Abrir cockpit
                 </DropdownMenuItem>
-                {!row.original.is_active &&
-                  row.original.archived_at === null && (
-                    <DropdownMenuItem
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        void handleActivate(row.original)
-                      }}
-                    >
-                      <RiCheckLine className="mr-2 size-4" />
-                      Ativar
-                    </DropdownMenuItem>
-                  )}
+                {/* Ativar/Arquivar sao por-versao -> vivem na aba Versoes do
+                    cockpit. A lista lida com a familia (abrir / excluir). */}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  disabled={row.original.is_active}
                   onClick={(e) => {
                     e.stopPropagation()
-                    setArchivingId(row.original.id)
+                    setDeleting(row.original)
                   }}
                   className="text-red-600 dark:text-red-500"
                 >
-                  <RiArchive2Line className="mr-2 size-4" />
-                  Arquivar
+                  <RiDeleteBin6Line className="mr-2 size-4" />
+                  Excluir agente
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -326,12 +310,7 @@ export default function AgentsAdminPage() {
             {
               value: "ativos",
               label: "Ativos",
-              filter: (a) => a.is_active && a.archived_at === null,
-            },
-            {
-              value: "inativos",
-              label: "Inativos",
-              filter: (a) => !a.is_active && a.archived_at === null,
+              filter: (a) => a.archived_at === null,
             },
             {
               value: "arquivados",
@@ -356,33 +335,35 @@ export default function AgentsAdminPage() {
         }}
       />
 
-      {/* Archive confirmation */}
+      {/* Excluir agente (familia inteira) */}
       <Dialog
-        open={archivingId !== null}
-        onOpenChange={(open) => !open && setArchivingId(null)}
+        open={deleting !== null}
+        onOpenChange={(open) => !open && setDeleting(null)}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Arquivar agente</DialogTitle>
+            <DialogTitle>Excluir agente</DialogTitle>
             <DialogDescription>
-              A versao sera marcada como arquivada e nao podera mais ser
-              ativada.
+              Exclui <b>{deleting?.code}</b> (<code>{deleting?.name}</code>) e
+              suas {deleting?.version_count ?? 1} versao(es) — definitivo. Se o
+              agente existir no codigo (CATALOG), volta a rodar pelo fallback; a
+              tela que o usa nao quebra. Historico de uso e preservado.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button
               variant="secondary"
-              onClick={() => setArchivingId(null)}
-              disabled={archiveMut.isPending}
+              onClick={() => setDeleting(null)}
+              disabled={deleteFamilyMut.isPending}
             >
               Cancelar
             </Button>
             <Button
               variant="destructive"
-              onClick={handleArchive}
-              disabled={archiveMut.isPending}
+              onClick={handleDeleteFamily}
+              disabled={deleteFamilyMut.isPending}
             >
-              Arquivar
+              Excluir agente
             </Button>
           </DialogFooter>
         </DialogContent>

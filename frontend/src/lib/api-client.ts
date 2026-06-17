@@ -628,6 +628,17 @@ export const adminAI = {
       apiClient.get<AIAgentStats>(
         `/admin/ia/agents/${id}/stats?window_days=${windowDays}`,
       ),
+    // Todas as versoes da familia a que `id` pertence (aba Versoes).
+    listVersions: (id: string) =>
+      apiClient.get<AIAgentDefinitionVersionInfo[]>(
+        `/admin/ia/agents/${id}/versions`,
+      ),
+    // Exclui (hard-delete) UMA versao.
+    deleteVersion: (id: string) =>
+      apiClient.delete<void>(`/admin/ia/agents/${id}`),
+    // Exclui o AGENTE inteiro (familia a que `id` pertence).
+    deleteFamily: (id: string) =>
+      apiClient.delete<void>(`/admin/ia/agents/${id}/family`),
     usageOverview: (windowDays = 30) =>
       apiClient.get<AIAgentUsageOverviewRow[]>(
         `/admin/ia/agents/usage/overview?window_days=${windowDays}`,
@@ -738,6 +749,7 @@ export type AIAgentDefinitionVersionInfo = {
   code: string
   name: string
   version: number
+  version_count: number
   module: string
   persona_name: string | null
   expertise_count: number

@@ -100,6 +100,7 @@ def _to_version_info(
     row: AgentDefinition,
     active_map: dict[tuple[UUID | None, str], UUID],
     persona_map: dict[UUID, AgentPersona],
+    version_count: int = 1,
 ) -> AgentDefinitionVersionInfo:
     persona_name = None
     if row.persona_id is not None:
@@ -111,6 +112,7 @@ def _to_version_info(
         code=derive_agent_code(row.name),
         name=row.name,
         version=row.version,
+        version_count=version_count,
         module=row.module,
         persona_name=persona_name,
         expertise_count=len(row.expertise_ids or []),
@@ -239,20 +241,43 @@ async def list_agents(
     include_archived: bool = False,
     module: str | None = None,
 ) -> list[AgentDefinitionVersionInfo]:
-    """Lista todos os agentes + versoes, marcando o ativo por (tenant, name)."""
-    stmt = select(AgentDefinition).order_by(
-        AgentDefinition.module.asc(),
-        AgentDefinition.name.asc(),
-        AgentDefinition.version.desc(),
-    )
-    if not include_archived:
-        stmt = stmt.where(AgentDefinition.archived_at.is_(None))
+    """Lista 1 linha por AGENTE (familia name), nao por versao.
+
+    Representante da familia = versao ATIVA (fallback: ultima nao-arquivada,
+    senao a ultima). `version_count` = total de versoes da familia. Versoes
+    sao detalhe da aba Versoes do cockpit — a lista nao incha quando se cria
+    uma versao nova. `include_archived` mostra familias totalmente arquivadas.
+    """
+    stmt = select(AgentDefinition)
     if module:
         stmt = stmt.where(AgentDefinition.module == module)
     rows = (await db.execute(stmt)).scalars().all()
     active_map = await _load_active_map(db)
     persona_map = await _load_persona_map(db)
-    return [_to_version_info(r, active_map, persona_map) for r in rows]
+
+    # Agrupa por familia (tenant_id, name).
+    families: dict[tuple[UUID | None, str], list[AgentDefinition]] = {}
+    for r in rows:
+        families.setdefault((r.tenant_id, r.name), []).append(r)
+
+    out: list[AgentDefinitionVersionInfo] = []
+    for (tenant_id, name), versions in families.items():
+        active_id = active_map.get((tenant_id, name))
+        live = [v for v in versions if v.archived_at is None]
+        # Representante: ativa > ultima viva > ultima qualquer.
+        rep = next((v for v in versions if v.id == active_id), None)
+        if rep is None:
+            pool = live or versions
+            rep = max(pool, key=lambda v: v.version)
+        family_archived = not live
+        if family_archived and not include_archived:
+            continue
+        out.append(
+            _to_version_info(rep, active_map, persona_map, version_count=len(versions))
+        )
+
+    out.sort(key=lambda x: (x.module, x.name))
+    return out
 
 
 @router.get(
@@ -268,6 +293,37 @@ async def get_agent(
     persona_map = await _load_persona_map(db)
     expertise_map = await _load_expertise_map(db)
     return await _to_detail(db, row, active_map, persona_map, expertise_map)
+
+
+@router.get(
+    "/{definition_id}/versions",
+    response_model=list[AgentDefinitionVersionInfo],
+    dependencies=_GUARD,
+)
+async def list_agent_versions(
+    definition_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[AgentDefinitionVersionInfo]:
+    """Todas as versoes da familia a que `definition_id` pertence.
+
+    A lista principal (GET "") colapsa 1 linha por agente; a aba Versoes do
+    cockpit usa este endpoint pra ver/gerir as versoes individuais.
+    """
+    row = await _get_or_404(db, definition_id)
+    stmt = (
+        select(AgentDefinition)
+        .where(AgentDefinition.name == row.name)
+        .where(_tenant_cond(AgentDefinition.tenant_id, row.tenant_id))
+        .order_by(AgentDefinition.version.desc())
+    )
+    versions = (await db.execute(stmt)).scalars().all()
+    active_map = await _load_active_map(db)
+    persona_map = await _load_persona_map(db)
+    n = len(versions)
+    return [
+        _to_version_info(v, active_map, persona_map, version_count=n)
+        for v in versions
+    ]
 
 
 @router.post(
@@ -475,6 +531,85 @@ async def archive_version(
     persona_map = await _load_persona_map(db)
     expertise_map = await _load_expertise_map(db)
     return await _to_detail(db, row, active_map, persona_map, expertise_map)
+
+
+def _tenant_cond(col, tenant_id: UUID | None):
+    """Comparacao NULL-safe de tenant_id (global = IS NULL)."""
+    return col.is_(None) if tenant_id is None else col == tenant_id
+
+
+@router.delete(
+    "/{definition_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=_GUARD,
+)
+async def delete_agent_version(
+    definition_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    """Exclui (hard-delete) UMA versao do agente.
+
+    Guarda: se for a versao ATIVA e houver outras versoes, bloqueia (ative
+    outra antes). Se for a unica versao, remove tambem o ponteiro ativo
+    (equivale a excluir o agente). Agentes que vivem no CATALOG voltam a rodar
+    pelo fallback do codigo — a tela nao quebra.
+    """
+    row = await _get_or_404(db, definition_id)
+    active_map = await _load_active_map(db)
+    is_active = active_map.get((row.tenant_id, row.name)) == row.id
+    others = (
+        await db.execute(
+            select(func.count(AgentDefinition.id))
+            .where(AgentDefinition.name == row.name)
+            .where(AgentDefinition.id != row.id)
+            .where(_tenant_cond(AgentDefinition.tenant_id, row.tenant_id))
+        )
+    ).scalar() or 0
+    if is_active and others > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"'{row.name}' v{row.version} e a versao ativa. Ative outra "
+                "versao antes de excluir, ou exclua o agente inteiro."
+            ),
+        )
+    if is_active:
+        await db.execute(
+            delete(AgentDefinitionActive).where(
+                AgentDefinitionActive.name == row.name,
+                _tenant_cond(AgentDefinitionActive.tenant_id, row.tenant_id),
+            )
+        )
+    await db.execute(delete(AgentDefinition).where(AgentDefinition.id == row.id))
+    await db.commit()
+
+
+@router.delete(
+    "/{definition_id}/family",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=_GUARD,
+)
+async def delete_agent_family(
+    definition_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    """Exclui (hard-delete) o AGENTE inteiro — todas as versoes da familia a
+    que `definition_id` pertence + ponteiro ativo. Agente que vive no CATALOG
+    volta a rodar pelo fallback do codigo (a tela nao quebra)."""
+    row = await _get_or_404(db, definition_id)
+    await db.execute(
+        delete(AgentDefinitionActive).where(
+            AgentDefinitionActive.name == row.name,
+            _tenant_cond(AgentDefinitionActive.tenant_id, row.tenant_id),
+        )
+    )
+    await db.execute(
+        delete(AgentDefinition).where(
+            AgentDefinition.name == row.name,
+            _tenant_cond(AgentDefinition.tenant_id, row.tenant_id),
+        )
+    )
+    await db.commit()
 
 
 @router.post(
