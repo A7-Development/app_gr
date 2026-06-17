@@ -197,36 +197,17 @@ export default function AgentCockpitPage() {
                 <h1 className="font-mono text-lg font-semibold text-gray-900 dark:text-gray-50">
                   {agent.name}
                 </h1>
-                {editing && (
-                  <span className="text-[12px] text-gray-500 dark:text-gray-400">
-                    editando · cria v{agent.version + 1}
-                  </span>
-                )}
               </div>
 
-              {editing ? (
-                <AgentEditForm
-                  agent={agent}
-                  personas={personasQuery.data ?? []}
-                  expertises={expertisesQuery.data ?? []}
-                  prompts={promptsQuery.data ?? []}
-                  models={modelsQuery.data ?? []}
-                  tools={toolsQuery.data ?? []}
-                  onSubmit={handleEdit}
-                  onCancel={() => setEditing(false)}
-                  submitting={updateMut.isPending}
-                />
-              ) : (
-                <AgentDetailView
-                  agent={agent}
-                  onEdit={() => setEditing(true)}
-                  onActivate={handleActivate}
-                  onArchive={() => setArchiving(true)}
-                  onPreview={handlePreview}
-                  activating={activateMut.isPending}
-                  previewing={previewMut.isPending}
-                />
-              )}
+              <AgentDetailView
+                agent={agent}
+                onEdit={() => setEditing(true)}
+                onActivate={handleActivate}
+                onArchive={() => setArchiving(true)}
+                onPreview={handlePreview}
+                activating={activateMut.isPending}
+                previewing={previewMut.isPending}
+              />
             </div>
           ) : cockpitTab === "versoes" ? (
             <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">
@@ -237,6 +218,36 @@ export default function AgentCockpitPage() {
               <AgentStatsPanel agentId={id} />
             </div>
           )}
+
+          {/* Parametrizacao em modal centralizado (decisao 2026-06-17) — a
+              pagina hospeda detalhe/versoes/uso; editar abre o form focado. */}
+          <Dialog
+            open={editing}
+            onOpenChange={(open) => !open && setEditing(false)}
+          >
+            <DialogContent className="max-h-[88vh] max-w-3xl overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="font-mono text-[15px]">
+                  Editar {agent.name}
+                </DialogTitle>
+                <DialogDescription>
+                  Cria a versao v{agent.version + 1} (imutavel). A versao ativa
+                  nao muda automaticamente — promova na aba Versoes.
+                </DialogDescription>
+              </DialogHeader>
+              <AgentEditForm
+                agent={agent}
+                personas={personasQuery.data ?? []}
+                expertises={expertisesQuery.data ?? []}
+                prompts={promptsQuery.data ?? []}
+                models={modelsQuery.data ?? []}
+                tools={toolsQuery.data ?? []}
+                onSubmit={handleEdit}
+                onCancel={() => setEditing(false)}
+                submitting={updateMut.isPending}
+              />
+            </DialogContent>
+          </Dialog>
         </>
       )}
 

@@ -35,6 +35,7 @@ from app.core.enums import Module, Permission
 from app.core.module_guard import require_module
 from app.core.system_maintainer_guard import require_system_maintainer
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
+from app.shared.ai.agent_code import derive_agent_code
 from app.shared.ai.models.agent_definition import (
     AgentDefinition,
     AgentDefinitionActive,
@@ -107,6 +108,7 @@ def _to_version_info(
             persona_name = p.display_name
     return AgentDefinitionVersionInfo(
         id=row.id,
+        code=derive_agent_code(row.name),
         name=row.name,
         version=row.version,
         module=row.module,
@@ -179,6 +181,7 @@ async def _to_detail(
 
     return AgentDefinitionDetail(
         id=row.id,
+        code=derive_agent_code(row.name),
         name=row.name,
         version=row.version,
         module=row.module,

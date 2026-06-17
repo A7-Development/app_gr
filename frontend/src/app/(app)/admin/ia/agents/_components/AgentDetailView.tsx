@@ -47,6 +47,12 @@ export function AgentDetailView({
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center gap-2">
+        <span
+          className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+          title="Codigo discreto do agente (rastreabilidade)"
+        >
+          {agent.code}
+        </span>
         <span className={cx("font-mono text-[13px]", tableTokens.cellStrong)}>
           {agent.name}
         </span>
