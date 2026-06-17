@@ -212,10 +212,12 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
             "CNAE, capital social, fundacao, regime): julga se esta ativa e "
             "regular, o tempo de atividade, a aderencia do CNAE/objeto a "
             "operacao de credito e a coerencia do capital. Le o silver "
-            "normalizado de get_dados_cadastrais (source-agnostic)."
+            "normalizado de get_dados_cadastrais (source-agnostic) e cruza com "
+            "a trajetoria de porte (funcionarios/faturamento ao longo do tempo) "
+            "de get_evolucao_pj."
         ),
         prompt_name="agent.cadastral",
-        tools=("get_dados_cadastrais",),
+        tools=("get_dados_cadastrais", "get_evolucao_pj"),
         output_schema=CadastralAnalysis,
         preferred_model="claude-opus-4-7",
         fallback_model="claude-sonnet-4-6",
@@ -295,7 +297,15 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         name="partner_analyst",
         description="Analisa socios e representantes (patrimonio, processos, ligacoes).",
         prompt_name="agent.partners",
-        tools=(TOOL_DOSSIER_READ, TOOL_DOC_GET, TOOL_DOSSIER_FLAG, TOOL_DOSSIER_SAVE),
+        tools=(
+            TOOL_DOSSIER_READ,
+            TOOL_DOC_GET,
+            TOOL_DOSSIER_FLAG,
+            TOOL_DOSSIER_SAVE,
+            # Silver BDC: estrutura de controle + KYC/sancao dos socios.
+            "get_quadro_societario",
+            "get_kyc_pj",
+        ),
         output_schema=PartnerAnalysis,
         thinking_budget_tokens=10000,
         section_id="partners",
