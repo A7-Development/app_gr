@@ -8,6 +8,8 @@ from app.agentic.tools.credito import (  # noqa: F401
     cadastral,
     document,
     dossier,
+    kyc,
     revenue,
     social_contract,
+    societario,
 )
