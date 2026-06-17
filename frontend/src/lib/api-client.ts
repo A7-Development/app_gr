@@ -5109,6 +5109,78 @@ export type EvolucaoPatrimonialResponse = {
   proveniencia:        EvolucaoProveniencia
 }
 
+// ── Lamina mensal do FIDC (Controladoria > Fechamento Mensal) ────────────────
+// Endpoints /controladoria/lamina e /controladoria/lamina/competencias. Arrays
+// mensais (12 pontos) lidos das silver QiTech; o display (acumulado, %CDI,
+// razao de garantia) e derivado no cliente. Numeros = number (backend float).
+
+export type LaminaClasse = "sub" | "mez" | "sr"
+
+export type LaminaClasseSerie = {
+  classe:         LaminaClasse
+  label:          string
+  var_mensal:     (number | null)[]
+  patrimonio:     number[]
+  quantidade:     number
+  valor_cota:     number
+  variacao_total: number
+}
+
+export type LaminaAging = {
+  a_vencer: number[]
+  vencido:  number[]
+  pdd:      number[]
+  caixa:    number[]
+}
+
+export type LaminaConcentracaoItem = {
+  posicao:    number
+  financeiro: number
+}
+
+export type LaminaConcentracaoHistorico = {
+  cedente_maior: number[]
+  cedente_top10: number[]
+  sacado_maior:  number[]
+  sacado_top10:  number[]
+}
+
+export type LaminaConcentracao = {
+  cedentes:  LaminaConcentracaoItem[]
+  sacados:   LaminaConcentracaoItem[]
+  historico: LaminaConcentracaoHistorico
+}
+
+export type LaminaResponse = {
+  fundo_id:          string
+  fundo_nome:        string
+  cnpj:              string
+  gestor_nome:       string | null
+  originador_nome:   string | null
+  competencia:       string   // "2026-05"
+  competencia_label: string   // "Maio / 2026"
+  posicao:           string   // ISO date
+  meses:             string[] // 12 rotulos "jun/25"
+  cdi:               number[] // 12
+  classes:           LaminaClasseSerie[]
+  pl_total:          number
+  aging:             LaminaAging
+  concentracao:      LaminaConcentracao
+  proveniencia:      { fonte: string; atualizado_em: string | null }
+}
+
+export type LaminaCompetencia = {
+  competencia: string
+  label:       string
+  posicao:     string
+}
+
+export type LaminaCompetenciasResponse = {
+  fundo_id:     string
+  fundo_nome:   string
+  competencias: LaminaCompetencia[]
+}
+
 // ── Conciliacao de boletos (Banco Cobrador) ──────────────────────────────────
 // Endpoint /controladoria/conciliacao/banco-cobrador. Cruza wh_titulo (aberto)
 // x wh_boleto (ativo). Decimal do backend chega como string -> coercao p/ number.
@@ -5243,6 +5315,29 @@ export const controladoria = {
     // float no backend -> number direto, sem coerce.
     return apiClient.get<EvolucaoPatrimonialResponse>(
       `/controladoria/evolucao-patrimonial/serie?${params.toString()}`,
+    )
+  },
+
+  // Lamina mensal do FIDC. `fundoId` omitido => backend usa o FIDC do tenant.
+  laminaCompetencias: async (
+    fundoId?: string,
+  ): Promise<LaminaCompetenciasResponse> => {
+    const qs = fundoId ? `?fundo_id=${encodeURIComponent(fundoId)}` : ""
+    return apiClient.get<LaminaCompetenciasResponse>(
+      `/controladoria/lamina/competencias${qs}`,
+    )
+  },
+
+  lamina: async (opts: {
+    fundoId?:     string
+    competencia?: string  // YYYY-MM. Omitida/parcial => ultima fechada.
+  } = {}): Promise<LaminaResponse> => {
+    const params = new URLSearchParams()
+    if (opts.fundoId) params.set("fundo_id", opts.fundoId)
+    if (opts.competencia) params.set("competencia", opts.competencia)
+    const qs = params.toString()
+    return apiClient.get<LaminaResponse>(
+      `/controladoria/lamina${qs ? `?${qs}` : ""}`,
     )
   },
 
