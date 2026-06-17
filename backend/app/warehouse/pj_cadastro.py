@@ -16,7 +16,15 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Date, ForeignKey, Numeric, String, UniqueConstraint, text
+from sqlalchemy import (
+    Boolean,
+    Date,
+    ForeignKey,
+    Numeric,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -76,6 +84,24 @@ class PjCadastro(Auditable, Base):
     cnae_principal: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Lista de CNAEs (código+descrição) como veio normalizada do mapper.
     cnaes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+
+    # ── Campos promovidos do basic_data (seleção Ricardo 2026-06-17) ──
+    regime_tributario: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    porte: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    optante_simples: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    natureza_juridica_codigo: Mapped[str | None] = mapped_column(
+        String(16), nullable=True
+    )
+    natureza_juridica: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # SpecialSituation — "RECUPERAÇÃO JUDICIAL"/"FALIDA" quando preenchido.
+    situacao_especial: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    situacao_cadastral_desde: Mapped[date | None] = mapped_column(Date, nullable=True)
+    data_inicio_atividade: Mapped[date | None] = mapped_column(Date, nullable=True)
+    origem_cadastral: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mudou_nome: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    mudou_regime: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # [{valor, desde, ate}] — evolução do nome fantasia.
+    historico_nomes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     def __repr__(self) -> str:
         return f"<PjCadastro tenant={self.tenant_id} cnpj={self.cnpj!r}>"

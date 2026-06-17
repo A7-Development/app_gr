@@ -42,8 +42,22 @@ class CadastralFields:
     trade_name: str | None
     tax_id_number: str | None
     # BasicData cru — vai pra credit_dossier_company.receita_data (preserva
-    # tudo que nao virou coluna: TaxRegime, LegalNature, HistoricalData, ...).
+    # tudo que nao virou coluna).
     basic_data: dict[str, Any] = field(default_factory=dict)
+    # ── Campos promovidos do basic_data (selecao Ricardo 2026-06-17) ──
+    regime_tributario: str | None = None  # TaxRegime
+    porte: str | None = None  # CompanyType_ReceitaFederal (ME/EPP/Demais)
+    optante_simples: bool | None = None  # TaxRegimes.Simples
+    natureza_juridica_codigo: str | None = None  # LegalNature.Code
+    natureza_juridica: str | None = None  # LegalNature.Activity
+    situacao_especial: str | None = None  # SpecialSituation (RJ/falida)
+    situacao_cadastral_desde: date | None = None  # TaxIdStatusDate
+    data_inicio_atividade: date | None = None  # TaxIdStatusRegistrationDate
+    origem_cadastral: str | None = None  # TaxIdOrigin
+    mudou_nome: bool | None = None  # HistoricalData.HasChangedTradeName
+    mudou_regime: bool | None = None  # HistoricalData.HasChangedTaxRegime
+    # [{valor, desde, ate}] de HistoricalDataEvolution.TradeName
+    historico_nomes: list[dict[str, Any]] | None = None
 
 
 @dataclass(frozen=True)
@@ -126,6 +140,31 @@ def _str_or_none(raw: Any) -> str | None:
     return s or None
 
 
+def _bool_or_none(raw: Any) -> bool | None:
+    """None quando ausente; senao coage o JSON bool da fonte."""
+    return None if raw is None else bool(raw)
+
+
+def _parse_nome_evolucao(raw: Any) -> list[dict[str, Any]] | None:
+    """HistoricalDataEvolution.TradeName[] -> [{valor, desde, ate}]."""
+    if not isinstance(raw, list):
+        return None
+    out: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        desde = _parse_iso_date(item.get("StartDate"))
+        ate = _parse_iso_date(item.get("EndDate"))
+        out.append(
+            {
+                "valor": _str_or_none(item.get("Value")),
+                "desde": desde.isoformat() if desde else None,
+                "ate": ate.isoformat() if ate else None,
+            }
+        )
+    return out or None
+
+
 def map_basic_data(payload: dict[str, Any], *, dataset: str = "basic_data") -> CadastralMapResult:
     """Extrai campos cadastrais do envelope BDC `basic_data`.
 
@@ -170,6 +209,14 @@ def map_basic_data(payload: dict[str, Any], *, dataset: str = "basic_data") -> C
     capital_raw = (
         additional.get("CapitalRS") if isinstance(additional, dict) else None
     )
+    legal = basic.get("LegalNature")
+    legal = legal if isinstance(legal, dict) else {}
+    historical = basic.get("HistoricalData")
+    historical = historical if isinstance(historical, dict) else {}
+    evolution = historical.get("HistoricalDataEvolution")
+    evolution = evolution if isinstance(evolution, dict) else {}
+    tax_regimes = basic.get("TaxRegimes")
+    tax_regimes = tax_regimes if isinstance(tax_regimes, dict) else {}
 
     fields = CadastralFields(
         tax_status=_str_or_none(basic.get("TaxIdStatus")),
@@ -180,6 +227,20 @@ def map_basic_data(payload: dict[str, Any], *, dataset: str = "basic_data") -> C
         trade_name=_str_or_none(basic.get("TradeName")),
         tax_id_number=_str_or_none(basic.get("TaxIdNumber")),
         basic_data=basic,
+        regime_tributario=_str_or_none(basic.get("TaxRegime")),
+        porte=_str_or_none(basic.get("CompanyType_ReceitaFederal")),
+        optante_simples=_bool_or_none(tax_regimes.get("Simples")),
+        natureza_juridica_codigo=_str_or_none(legal.get("Code")),
+        natureza_juridica=_str_or_none(legal.get("Activity")),
+        situacao_especial=_str_or_none(basic.get("SpecialSituation")),
+        situacao_cadastral_desde=_parse_iso_date(basic.get("TaxIdStatusDate")),
+        data_inicio_atividade=_parse_iso_date(
+            basic.get("TaxIdStatusRegistrationDate")
+        ),
+        origem_cadastral=_str_or_none(basic.get("TaxIdOrigin")),
+        mudou_nome=_bool_or_none(historical.get("HasChangedTradeName")),
+        mudou_regime=_bool_or_none(historical.get("HasChangedTaxRegime")),
+        historico_nomes=_parse_nome_evolucao(evolution.get("TradeName")),
     )
 
     return CadastralMapResult(
