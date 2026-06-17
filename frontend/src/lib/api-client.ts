@@ -5455,6 +5455,12 @@ export const controladoria = {
     )
   },
 
+  // Codigo discreto do agente que atende a janela de chat (rastreabilidade).
+  cotaSubVariacaoChatAgente: async (): Promise<{ code: string }> =>
+    apiClient.get<{ code: string }>(
+      "/controladoria/cota-sub/variacao/chat/agente",
+    ),
+
   cotaSubVariacaoDetalhamento: async (
     fundoId: string,
     data: string,
