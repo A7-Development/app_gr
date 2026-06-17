@@ -122,6 +122,21 @@ export default function AgentsAdminPage() {
   const columns = React.useMemo<ColumnDef<AIAgentDefinitionVersionInfo>[]>(
     () => [
       {
+        accessorKey: "code",
+        header: "Codigo",
+        cell: ({ row }) => (
+          <span
+            className={cx(
+              "rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] font-medium",
+              "text-gray-600 dark:bg-gray-800 dark:text-gray-300",
+            )}
+            title="Codigo discreto do agente (rastreabilidade)"
+          >
+            {row.original.code}
+          </span>
+        ),
+      },
+      {
         accessorKey: "name",
         header: "Nome canonico",
         cell: ({ row }) => (

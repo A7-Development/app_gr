@@ -735,6 +735,7 @@ export type AIAgentPromptRef = {
 
 export type AIAgentDefinitionVersionInfo = {
   id: string
+  code: string
   name: string
   version: number
   module: string
@@ -751,6 +752,7 @@ export type AIAgentDefinitionVersionInfo = {
 
 export type AIAgentDefinitionDetail = {
   id: string
+  code: string
   name: string
   version: number
   module: string

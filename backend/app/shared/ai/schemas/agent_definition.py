@@ -62,6 +62,9 @@ class AgentDefinitionVersionInfo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: UUID
+    # Codigo curto/discreto derivado do nome (ex.: AGT-3F9A2C). Estavel por
+    # familia; pra rastreabilidade na UI sem expor o nome interno.
+    code: str
     name: str
     version: int
     module: str
@@ -82,6 +85,7 @@ class AgentDefinitionDetail(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: UUID
+    code: str  # codigo curto derivado do nome (ver AgentDefinitionVersionInfo)
     name: str
     version: int
     module: str
