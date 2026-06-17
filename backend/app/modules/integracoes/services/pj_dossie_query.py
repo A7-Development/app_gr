@@ -5,9 +5,10 @@ cadastral + societario + KYC (o BDC aceita `Datasets` separado por virgula =
 1 round-trip, cobrado por dataset), materializando todos os silver de uma vez:
 
     basic_data                  -> wh_pj_cadastro
-    relationships               -> wh_pj_vinculo
+    relationships               -> wh_pj_vinculo (+ resumo na wh_pj_cadastro)
     economic_group_first_level  -> wh_pj_grupo_indicador
     kyc + owners_kyc            -> wh_pj_kyc (+ _ocorrencia)
+    company_evolution           -> wh_pj_evolucao (+ _mensal)
 
 Resolve white-label por public_code (CAD-PJ / VINCULOS-PJ / GRUPO-PJ / KYC-PJ /
 KYC-SOCIOS-PJ); so consulta os que estiverem `enabled_for_sale`. Exposto via
@@ -37,6 +38,9 @@ from app.modules.integracoes.adapters.data.bigdatacorp.errors import (
 from app.modules.integracoes.adapters.data.bigdatacorp.mappers.cadastral import (
     map_basic_data,
 )
+from app.modules.integracoes.adapters.data.bigdatacorp.mappers.evolucao import (
+    map_company_evolution,
+)
 from app.modules.integracoes.adapters.data.bigdatacorp.mappers.kyc import (
     map_kyc,
     map_owners_kyc,
@@ -49,9 +53,14 @@ from app.modules.integracoes.adapters.data.bigdatacorp.version import (
     ADAPTER_VERSION,
 )
 from app.modules.integracoes.services.pj_cadastro_silver import upsert_pj_cadastro
+from app.modules.integracoes.services.pj_evolucao_silver import (
+    replace_pj_evolucao_mensal,
+    upsert_pj_evolucao,
+)
 from app.modules.integracoes.services.pj_kyc_silver import replace_pj_kyc
 from app.modules.integracoes.services.pj_societario_silver import (
     replace_pj_vinculos,
+    set_cadastro_vinculos_resumo,
     upsert_pj_grupo_indicador,
 )
 from app.shared.crypto.envelope import decrypt_envelope
@@ -70,6 +79,7 @@ _PLAN: list[tuple[str, str]] = [
     ("GRUPO-PJ", "grupo"),
     ("KYC-PJ", "kyc_empresa"),
     ("KYC-SOCIOS-PJ", "kyc_socios"),
+    ("EVOLUCAO-PJ", "evolucao"),
 ]
 
 
@@ -85,6 +95,8 @@ class DossieResult:
     grupo_found: bool
     kyc_subjects: int
     kyc_ocorrencias: int
+    evolucao_found: bool
+    evolucao_meses: int
     adapter_version: str
     errors: list[str]
 
@@ -124,7 +136,8 @@ async def fetch_bdc_dossie_pj(
         return DossieResult(
             ok=False, found=False, cnpj=cnpj_digits, raw_id=None, query_id=None,
             cadastral_found=False, vinculos_count=0, grupo_found=False,
-            kyc_subjects=0, kyc_ocorrencias=0, adapter_version=ADAPTER_VERSION,
+            kyc_subjects=0, kyc_ocorrencias=0, evolucao_found=False,
+            evolucao_meses=0, adapter_version=ADAPTER_VERSION,
             errors=errors,
         )
 
@@ -221,6 +234,8 @@ async def fetch_bdc_dossie_pj(
     grupo_found = False
     kyc_subjects = 0
     kyc_occ = 0
+    evo_found = False
+    evo_meses = 0
     common: dict[str, Any] = {
         "raw_id": raw_id,
         "hash_origem": hash_origem,
@@ -248,6 +263,11 @@ async def fetch_bdc_dossie_pj(
                     db, tenant_id=tenant_id, cnpj=cnpj_digits,
                     vinculos=rel.vinculos, **common,
                 )
+                if rel.resumo is not None:
+                    await set_cadastro_vinculos_resumo(
+                        db, tenant_id=tenant_id, cnpj=cnpj_digits,
+                        resumo=rel.resumo,
+                    )
 
             if "grupo" in role_query:
                 grp = map_economic_group(payload, dataset=role_query["grupo"])
@@ -273,6 +293,21 @@ async def fetch_bdc_dossie_pj(
                     subjects=subjects, **common,
                 )
 
+            if "evolucao" in role_query:
+                ev = map_company_evolution(
+                    payload, dataset=role_query["evolucao"]
+                )
+                if ev.found and ev.header is not None:
+                    evo_found = True
+                    await upsert_pj_evolucao(
+                        db, tenant_id=tenant_id, cnpj=cnpj_digits,
+                        header=ev.header, **common,
+                    )
+                    evo_meses = await replace_pj_evolucao_mensal(
+                        db, tenant_id=tenant_id, cnpj=cnpj_digits,
+                        serie=ev.serie, **common,
+                    )
+
             await db.commit()
     except Exception as e:
         logger.exception("BDC dossie: silver falhou (cnpj=%s)", cnpj_digits)
@@ -284,6 +319,7 @@ async def fetch_bdc_dossie_pj(
         cnpj=cnpj_digits, raw_id=raw_id, query_id=query_id,
         cadastral_found=cad_found, vinculos_count=vinc_count,
         grupo_found=grupo_found, kyc_subjects=kyc_subjects,
-        kyc_ocorrencias=kyc_occ, adapter_version=ADAPTER_VERSION,
+        kyc_ocorrencias=kyc_occ, evolucao_found=evo_found,
+        evolucao_meses=evo_meses, adapter_version=ADAPTER_VERSION,
         errors=errors,
     )

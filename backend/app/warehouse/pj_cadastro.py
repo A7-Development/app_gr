@@ -20,6 +20,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     ForeignKey,
+    Integer,
     Numeric,
     String,
     UniqueConstraint,
@@ -102,6 +103,16 @@ class PjCadastro(Auditable, Base):
     mudou_regime: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # [{valor, desde, ate}] — evolução do nome fantasia.
     historico_nomes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+
+    # ── Resumo de relacionamentos (do dataset `relationships`) ──
+    qtd_socios: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    qtd_empresas_possuidas: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    empresa_familiar: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    operada_pela_familia: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True
+    )
 
     def __repr__(self) -> str:
         return f"<PjCadastro tenant={self.tenant_id} cnpj={self.cnpj!r}>"

@@ -75,6 +75,10 @@ async def replace_pj_kyc(
                 last_90_days_sanctions=subj.last_90_days_sanctions,
                 last_180_days_sanctions=subj.last_180_days_sanctions,
                 last_365_days_sanctions=subj.last_365_days_sanctions,
+                last_year_pep=subj.last_year_pep,
+                last_3y_pep=subj.last_3y_pep,
+                last_5y_pep=subj.last_5y_pep,
+                last_5plus_pep=subj.last_5plus_pep,
                 source_type=source_type,
                 source_id=f"{cnpj_digits}:{subj_doc}"[:255],
                 source_updated_at=None,  # header computado -> idade = consulta
