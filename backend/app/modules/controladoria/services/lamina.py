@@ -447,7 +447,12 @@ async def _aging(
     est_month_date: dict[tuple[int, int], date],
     est_dates: list[date],
 ) -> dict[str, list[float]]:
-    """A vencer / vencido / PDD por mes (fim de mes). A vencer = total - vencido."""
+    """A vencer / vencido / PDD por mes (fim de mes). A vencer = total - vencido.
+
+    Exclui a faixa 'WOP' (Write-Off Papers -- papeis baixados, 100%
+    provisionados) tanto da carteira quanto do PDD: a lamina mede a carteira
+    ativa e PDD/PL ex-WOP (indicador oficial do gestor).
+    """
     by_date: dict[date, tuple[float, float, float]] = {}
     if est_dates:
         rows = (
@@ -468,6 +473,7 @@ async def _aging(
                 )
                 .where(EstoqueRecebivel.tenant_id == tenant_id)
                 .where(EstoqueRecebivel.fundo_doc == fundo_doc)
+                .where(EstoqueRecebivel.faixa_pdd != "WOP")
                 .where(EstoqueRecebivel.data_referencia.in_(est_dates))
                 .group_by(EstoqueRecebivel.data_referencia)
             )
