@@ -51,7 +51,7 @@ _WINDOW = 12
 _CLASSE_LABEL: dict[ClasseCota, str] = {
     "sub": "Subordinada",
     "mez": "Mezanino",
-    "sr": "Senior",
+    "sr": "Sênior",
 }
 # Ordem de exibicao na lamina: Senior, Mezanino, Subordinada.
 _CLASSE_ORDER: list[ClasseCota] = ["sr", "mez", "sub"]
