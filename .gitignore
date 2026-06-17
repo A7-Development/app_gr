@@ -70,6 +70,9 @@ qitech_samples/
 *_samples/
 backend/payload-*.json
 backend/payload_*.json
+# Fixtures BDC capturadas via scripts/capture_bdc_fixtures.py — payload bruto
+# com PII real (CPF/CNPJ/sancoes). NAO commitar (LGPD §19.9); use anonimizado.
+backend/tests/modules/integracoes/adapters/data/bigdatacorp/fixtures/
 
 # ---------- Claude Code ----------
 .claude/settings.local.json
