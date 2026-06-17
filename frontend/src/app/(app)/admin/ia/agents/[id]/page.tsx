@@ -49,10 +49,11 @@ import { AgentEditForm } from "../_components/AgentForm"
 import { AgentDetailView } from "../_components/AgentDetailView"
 import { AgentPreviewDialog } from "../_components/AgentPreviewDialog"
 import { AgentStatsPanel } from "../_components/AgentStatsPanel"
+import { AgentVersionsPanel } from "../_components/AgentVersionsPanel"
 
 const LIST_HREF = "/admin/ia/agents"
 
-type CockpitTab = "config" | "uso"
+type CockpitTab = "config" | "versoes" | "uso"
 
 export default function AgentCockpitPage() {
   const router = useRouter()
@@ -165,6 +166,7 @@ export default function AgentCockpitPage() {
             {(
               [
                 { id: "config", label: "Configuracao" },
+                { id: "versoes", label: "Versoes" },
                 { id: "uso", label: "Uso" },
               ] as const
             ).map((t) => {
@@ -225,6 +227,10 @@ export default function AgentCockpitPage() {
                   previewing={previewMut.isPending}
                 />
               )}
+            </div>
+          ) : cockpitTab === "versoes" ? (
+            <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">
+              <AgentVersionsPanel agentName={agent.name} currentId={agent.id} />
             </div>
           ) : (
             <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">

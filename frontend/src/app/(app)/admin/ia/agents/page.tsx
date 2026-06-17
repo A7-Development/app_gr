@@ -15,6 +15,7 @@ import { toast } from "sonner"
 import {
   RiAddLine,
   RiArchive2Line,
+  RiBarChartBoxLine,
   RiCheckLine,
   RiCpuLine,
   RiEdit2Line,
@@ -271,14 +272,23 @@ export default function AgentsAdminPage() {
         subtitle="Inteligencia Artificial · Administracao"
         info="Catalogo central de agentes (CLAUDE.md §19.12). Cada agente compoe persona + expertises + prompt + modelo. Versionado: editar cria nova versao; ativar em 1 click sem deploy."
         actions={
-          <Button
-            variant="primary"
-            onClick={openCreate}
-            disabled={agentsQuery.isLoading}
-          >
-            <RiAddLine className="mr-1 size-4" aria-hidden />
-            Novo agente
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => router.push(`${BASE_HREF}/uso`)}
+            >
+              <RiBarChartBoxLine className="mr-1 size-4" aria-hidden />
+              Uso do catalogo
+            </Button>
+            <Button
+              variant="primary"
+              onClick={openCreate}
+              disabled={agentsQuery.isLoading}
+            >
+              <RiAddLine className="mr-1 size-4" aria-hidden />
+              Novo agente
+            </Button>
+          </div>
         }
       />
 
