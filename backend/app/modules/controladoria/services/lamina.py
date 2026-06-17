@@ -259,8 +259,8 @@ async def compute_lamina(
     window = _window_months(cy, cm, _WINDOW)
     meses = [_mes_label(y, m) for (y, m) in window]
 
-    # ---- MEC: fotos de fim de mes por classe (+ 1 mes anterior p/ detectar parcial) ----
-    lo = _month_first(*_prev_month(*window[0]))
+    # ---- MEC: fotos de fim de mes por classe ----
+    lo = _month_first(*window[0])
     hi = _month_last(cy, cm)
     mec_rows = (
         (
@@ -280,7 +280,6 @@ async def compute_lamina(
     by_month_class: dict[tuple[int, int], dict[ClasseCota, MecEvolucaoCotas]] = (
         defaultdict(dict)
     )
-    present: dict[ClasseCota, set[tuple[int, int]]] = defaultdict(set)
     max_source_updated: object | None = None
     for row in mec_rows:
         if row.patrimonio == 0 and row.quantidade == 0 and row.valor_da_cota == 0:
@@ -289,7 +288,6 @@ async def compute_lamina(
         if classe is None:
             continue
         ym = (row.data_posicao.year, row.data_posicao.month)
-        present[classe].add(ym)
         cur = by_month_class[ym].get(classe)
         if cur is None or row.data_posicao > cur.data_posicao:
             by_month_class[ym][classe] = row
@@ -317,10 +315,10 @@ async def compute_lamina(
                 patrimonio.append(0.0)
                 continue
             patrimonio.append(_f(row.patrimonio))
-            # Mes parcial de constituicao (sem mes anterior) -> retorno nao exibido.
-            var_mensal.append(
-                _f(row.variacao_mensal) if _prev_month(*ym) in present[c] else None
-            )
+            # Exibe sempre o retorno mensal (MTD), inclusive no mes de
+            # constituicao parcial -- alinhado ao relatorio oficial do gestor
+            # (ex.: Mezanino jun/25 = 0,39%).
+            var_mensal.append(_f(row.variacao_mensal))
         last = by_month_class.get(window[-1], {}).get(c)
         classes.append(
             ClasseSerie(
