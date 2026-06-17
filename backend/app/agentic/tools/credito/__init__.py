@@ -10,6 +10,7 @@ from app.agentic.tools.credito import (  # noqa: F401
     dossier,
     kyc,
     revenue,
+    serasa,
     social_contract,
     societario,
 )
