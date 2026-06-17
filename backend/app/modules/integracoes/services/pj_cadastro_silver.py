@@ -10,6 +10,7 @@ fluxo on-demand (`fetch_cadastral_pj`) quanto pelo backfill sobre o raw.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -61,8 +62,12 @@ async def upsert_pj_cadastro(
     hash_origem: str | None,
     ingested_by_version: str,
     unidade_administrativa_id: UUID | None = None,
+    source_updated_at: datetime | None = None,
 ) -> None:
     """Upsert do cadastro canônico em `wh_pj_cadastro` (por tenant+cnpj).
+
+    `source_updated_at` = `BasicData.LastUpdateDate` da fonte (idade do dado,
+    §14). Opcional/None para retrocompat; o fetch unificado passa o valor.
 
     NÃO commita — o caller controla a transação.
     """
@@ -81,7 +86,7 @@ async def upsert_pj_cadastro(
         "cnaes": fields.cnaes or None,
         "source_type": SourceType.BUREAU_BDC,
         "source_id": cnpj_digits,
-        "source_updated_at": None,
+        "source_updated_at": source_updated_at,
         "ingested_by_version": ingested_by_version,
         "hash_origem": hash_origem,
         "trust_level": TrustLevel.HIGH,

@@ -67,6 +67,10 @@ from app.modules.integracoes.services.infosimples_junta import (
     fetch_junta_ficha,
     fetch_junta_lista_documentos,
 )
+from app.modules.integracoes.services.pj_dossie_query import (
+    DossieResult,
+    fetch_bdc_dossie_pj,
+)
 from app.modules.integracoes.services.serasa_pj_query import (
     execute_pj_query as execute_serasa_pj_query,
 )
@@ -144,6 +148,7 @@ __all__ = [
     "SERASA_LIMINAR_RULE_VERSION",
     "CadastralFields",
     "CadastralQueryResult",
+    "DossieResult",
     "JuntaDownloadResult",
     "JuntaFichaResult",
     "JuntaListaDocsResult",
@@ -153,6 +158,7 @@ __all__ = [
     "dia_util_anterior_qitech",
     "endpoint_catalog",
     "execute_serasa_pj_query",
+    "fetch_bdc_dossie_pj",
     "fetch_cadastral_pj",
     "fetch_junta_documento",
     "fetch_junta_ficha",
