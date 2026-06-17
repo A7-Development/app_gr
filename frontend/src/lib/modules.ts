@@ -280,6 +280,15 @@ export const MODULES: ModuleDefinition[] = [
         ],
       },
       {
+        name: "Fechamento Mensal",
+        href: "#fechamento-mensal",
+        enabled: true,
+        icon: RiFileChartLine,
+        children: [
+          { name: "Lamina do Fundo", href: "/controladoria/lamina", enabled: true },
+        ],
+      },
+      {
         name: "Carteira",
         href: "#carteira",
         enabled: true,

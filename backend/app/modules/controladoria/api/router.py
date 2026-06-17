@@ -6,6 +6,7 @@ from app.modules.controladoria.api import (
     conciliacao_boleto,
     cota_sub,
     evolucao_patrimonial,
+    lamina,
     qitech_estoque_carteira,
     receitas,
     reports,
@@ -18,6 +19,9 @@ router.include_router(cota_sub.router)
 
 # L2 Evolucao Patrimonial — serie temporal do PL do passivo (todas as classes).
 router.include_router(evolucao_patrimonial.router)
+
+# L2 Fechamento Mensal > Lamina do Fundo — fact sheet do FIDC (silver QiTech).
+router.include_router(lamina.router)
 
 # L2 Receitas — 3 metodos de apuracao (caixa | competencia | acruo) sobre o
 # catalogo de receitas caixa-fiel (wh_receita_*).
