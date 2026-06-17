@@ -628,6 +628,10 @@ export const adminAI = {
       apiClient.get<AIAgentStats>(
         `/admin/ia/agents/${id}/stats?window_days=${windowDays}`,
       ),
+    usageOverview: (windowDays = 30) =>
+      apiClient.get<AIAgentUsageOverviewRow[]>(
+        `/admin/ia/agents/usage/overview?window_days=${windowDays}`,
+      ),
   },
   // F2.c.2 — CRUD versionado de expertises (CLAUDE.md §19.12).
   expertises: {
@@ -828,6 +832,17 @@ export type AIAgentRunRecent = {
   cost_brl: number | null
   duration_ms: number | null
   triggered_at: string
+}
+
+export type AIAgentUsageOverviewRow = {
+  agent_name: string
+  total_runs: number
+  window_runs: number
+  runs_error: number
+  cost_brl_total: number
+  cost_brl_window: number
+  tokens_total: number
+  last_run_at: string | null
 }
 
 export type AIAgentStats = {

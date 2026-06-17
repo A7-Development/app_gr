@@ -219,6 +219,23 @@ class AgentRunRecent(BaseModel):
     triggered_at: datetime
 
 
+class AgentUsageOverviewRow(BaseModel):
+    """Uso agregado de UM agente, para o ranking power-law do catalogo.
+
+    Por `agent_name` (familia), cross-tenant. Lição central do relatório
+    Prosus: ~2% dos agentes geram impacto desproporcional — este ranking
+    ajuda a achar em quem dobrar a aposta (e o que nunca roda)."""
+
+    agent_name: str
+    total_runs: int
+    window_runs: int
+    runs_error: int
+    cost_brl_total: float
+    cost_brl_window: float
+    tokens_total: int
+    last_run_at: datetime | None
+
+
 class AgentStatsResponse(BaseModel):
     """Telemetria de uso de um agente (aba Uso do cockpit)."""
 
