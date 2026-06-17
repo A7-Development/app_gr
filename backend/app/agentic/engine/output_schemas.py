@@ -261,6 +261,174 @@ class CadastralAnalysis(BaseModel):
     )
 
 
+# ─── Porte analyst (trajetória/evolução) — esteira BDC 2026-06-17 ──────────
+#
+# Lente PORTE: julga o tamanho ATUAL e a TRAJETÓRIA da empresa-alvo a partir do
+# silver de `get_evolucao_pj` (company_evolution BDC): headcount corrente +
+# série mensal, crescimento YoY, faixa de faturamento no tempo, sócios e
+# atividade. Source-agnostic; não recalcula — julga o que a curva significa.
+
+
+class PontoAtencaoPorte(BaseModel):
+    """Um sinal de porte/trajetória que merece atenção."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tipo: Literal["funcionarios", "faturamento", "atividade", "qsa", "outro"]
+    severidade: Literal["alta", "media", "baixa"]
+    observacao: str = Field(description="Por que chama atenção, 1 frase concreta.")
+
+
+class PorteAnalysis(BaseModel):
+    """Output of `porte_analyst` — julgamento sobre porte atual + trajetória.
+
+    Lê `get_evolucao_pj` (headcount atual + série mensal, crescimento YoY, faixa
+    de faturamento, sócios, atividade) e produz a leitura: a empresa cresce,
+    estabilizou ou encolhe? O porte atual é coerente com a operação? Usa a
+    CURVA, não só o ponto atual. Não recalcula números.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    resumo_executivo: str = Field(description="A trajetória de porte em 2-3 frases.")
+    tendencia: Literal["crescimento", "estavel", "contracao", "desconhecida"] = Field(
+        description="Leitura do crescimento YoY (GROW UP=crescimento, STABLE="
+                    "estavel, SHRINK=contracao; sem dado=desconhecida).",
+    )
+    funcionarios_leitura: str = Field(
+        description="Leitura do headcount ATUAL + trajetória (min/max/série).",
+    )
+    faturamento_leitura: str = Field(
+        description="Leitura da faixa de faturamento atual e sua evolução.",
+    )
+    coerencia_porte_operacao: str = Field(
+        description="O porte atual (funcionários/faturamento) é coerente com a "
+                    "operação de crédito pretendida?",
+    )
+    pontos_de_atencao: list[PontoAtencaoPorte] = Field(
+        default_factory=list,
+        description="Sinais de porte/trajetória a observar. Trajetória saudável = [].",
+    )
+    leitura_para_credito: str = Field(
+        description="O que o porte e a trajetória significam para a decisão de crédito.",
+    )
+
+
+# ─── Societário analyst (controle/grupo) — esteira BDC 2026-06-17 ───────────
+#
+# Lente SOCIETÁRIA: julga quem controla a empresa-alvo e o risco do grupo, a
+# partir do silver de `get_quadro_societario` (relationships + economic_group
+# BDC): controle atual, churn, resumo de vínculos (familiar) e indicadores do
+# grupo. Source-agnostic; não recalcula — julga estabilidade e concentração.
+
+
+class PontoAtencaoSocietario(BaseModel):
+    """Um sinal societário que merece atenção."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tipo: Literal["controle", "churn", "concentracao", "grupo", "governanca", "outro"]
+    severidade: Literal["alta", "media", "baixa"]
+    observacao: str = Field(description="Por que chama atenção, 1 frase concreta.")
+
+
+class SocietarioAnalysis(BaseModel):
+    """Output of `societario_analyst` — julgamento sobre estrutura de controle.
+
+    Lê `get_quadro_societario` (controle atual, churn, resumo de vínculos,
+    indicadores do grupo econômico) e produz a leitura: o controle é estável ou
+    houve troca recente? Há concentração ou partes relacionadas? O grupo tem
+    litígio/sanção material e que porte tem? Não recalcula números.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    resumo_executivo: str = Field(description="A estrutura de controle em 2-3 frases.")
+    estabilidade_controle: Literal[
+        "estavel", "mudanca_recente", "instavel", "desconhecida"
+    ] = Field(
+        description="estavel = sem churn; mudanca_recente = saída/entrada recente "
+                    "de controle; instavel = rotatividade alta; desconhecida = sem dado.",
+    )
+    concentracao_leitura: str = Field(
+        description="Leitura da concentração de controle e partes relacionadas "
+                    "(empresas em comum, sócios cruzados).",
+    )
+    grupo_economico_leitura: str = Field(
+        description="Leitura do grupo: porte (faturamento/funcionários) e volume "
+                    "de litígio/sanção/PEP.",
+    )
+    governanca_leitura: str = Field(
+        description="Leitura de governança: empresa familiar / operada pela "
+                    "família e o que implica.",
+    )
+    pontos_de_atencao: list[PontoAtencaoSocietario] = Field(
+        default_factory=list,
+        description="Sinais societários a observar. Controle saudável = [].",
+    )
+    leitura_para_credito: str = Field(
+        description="O que a estrutura de controle/grupo significa para o crédito.",
+    )
+
+
+# ─── KYC analyst (PEP/sanção, match_rate) — esteira BDC 2026-06-17 ──────────
+#
+# Lente KYC/COMPLIANCE: julga exposição a sanção e PEP da empresa-alvo + sócios,
+# a partir do silver de `get_kyc_pj`. O bureau casa por NOME (não por documento):
+# match alto = fato; baixo = provável homônimo. O agente faz o VEREDITO que
+# separa sanção real de ruído de nome — não condena por count cru.
+
+
+class PontoAtencaoKyc(BaseModel):
+    """Um achado KYC que merece atenção."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tipo: Literal["sancao", "pep", "homonimo", "outro"]
+    severidade: Literal["alta", "media", "baixa"]
+    observacao: str = Field(description="Por que chama atenção, 1 frase concreta.")
+
+
+class KycAnalysis(BaseModel):
+    """Output of `kyc_analyst` — veredito de KYC/compliance.
+
+    Lê `get_kyc_pj` (flags + ocorrências separadas em alta/baixa confiança pelo
+    match_rate). O bureau casa por NOME — alta confiança = fato; baixa =
+    provável homônimo. O agente NÃO condena pelo count cru: separa sanção real
+    de ruído de nome e dá o veredito.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    resumo_executivo: str = Field(description="O veredito de compliance em 2-3 frases.")
+    sancao_confirmada: bool = Field(
+        description="Há sanção de ALTA confiança (match alto / por documento) em "
+                    "algum sujeito? Homônimo de baixa confiança NÃO conta.",
+    )
+    pep_identificado: bool = Field(
+        description="Há PEP (pessoa politicamente exposta) identificado entre os sujeitos?",
+    )
+    veredito_compliance: Literal["limpo", "atencao", "impeditivo", "desconhecido"] = Field(
+        description="limpo = sem achado confirmado; atencao = sinal a investigar; "
+                    "impeditivo = sanção confirmada relevante; desconhecido = sem dado.",
+    )
+    achados_alta_confianca: list[str] = Field(
+        default_factory=list,
+        description="Ocorrências de match_rate alto (fato): sujeito + fonte + tipo.",
+    )
+    achados_baixa_confianca_resumo: str | None = Field(
+        default=None,
+        description="Resumo dos homônimos (count + faixa de match) — contexto, não veredito.",
+    )
+    pontos_de_atencao: list[PontoAtencaoKyc] = Field(
+        default_factory=list,
+        description="Achados KYC a observar. KYC limpo = [].",
+    )
+    leitura_para_credito: str = Field(
+        description="O que o KYC significa para a decisão de crédito.",
+    )
+
+
 class IndebtednessAnalysis(BaseModel):
     """Output of `indebtedness_analyst`."""
 

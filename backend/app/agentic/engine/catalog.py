@@ -39,12 +39,15 @@ from app.agentic.engine.output_schemas import (
     DocumentExtraction,
     FinancialAnalysis,
     IndebtednessAnalysis,
+    KycAnalysis,
     LegalAnalysis,
     OpinionDraft,
     PartnerAnalysis,
     PleitoExtraction,
+    PorteAnalysis,
     RevenueAnalysis,
     SocialContractAnalysis,
+    SocietarioAnalysis,
 )
 from app.agentic.playbooks.nodes._base import VarType
 
@@ -212,18 +215,86 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
             "CNAE, capital social, fundacao, regime): julga se esta ativa e "
             "regular, o tempo de atividade, a aderencia do CNAE/objeto a "
             "operacao de credito e a coerencia do capital. Le o silver "
-            "normalizado de get_dados_cadastrais (source-agnostic) e cruza com "
-            "a trajetoria de porte (funcionarios/faturamento ao longo do tempo) "
-            "de get_evolucao_pj."
+            "normalizado de get_dados_cadastrais (source-agnostic)."
         ),
         prompt_name="agent.cadastral",
-        tools=("get_dados_cadastrais", "get_evolucao_pj"),
+        tools=("get_dados_cadastrais",),
         output_schema=CadastralAnalysis,
         preferred_model="claude-opus-4-7",
         fallback_model="claude-sonnet-4-6",
         thinking_budget_tokens=6000,
         timeout_seconds=300,
         section_id="cadastral",
+    ),
+    # ─── Credito · analista de PORTE/trajetória (BDC) — esteira 2026-06-17 ────
+    # Lê get_evolucao_pj (company_evolution): headcount atual + série mensal,
+    # crescimento YoY, faixa de faturamento no tempo. Julga tamanho atual +
+    # trajetória. NÃO recalcula — lê a curva e a interpreta.
+    "porte_analyst": SpecialistAgentSpec(
+        name="porte_analyst",
+        description=(
+            "Analisa o PORTE atual e a TRAJETORIA da empresa-alvo: numero de "
+            "funcionarios corrente + serie mensal, crescimento ano-a-ano "
+            "(1a/3a/5a), faixa de faturamento ao longo do tempo, evolucao de "
+            "socios e atividade. Julga se cresce/estabilizou/encolhe e se o "
+            "porte e coerente com a operacao. Le o silver de get_evolucao_pj "
+            "(source-agnostic) — usa a CURVA, nao so o ponto atual."
+        ),
+        prompt_name="agent.porte",
+        tools=("get_evolucao_pj",),
+        output_schema=PorteAnalysis,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=6000,
+        timeout_seconds=300,
+        section_id="porte",
+    ),
+    # ─── Credito · analista SOCIETARIO (controle/grupo, BDC) — esteira 2026-06-17
+    # Lê get_quadro_societario (relationships + economic_group): controle atual,
+    # churn, resumo de vínculos (familiar), indicadores do grupo. Julga
+    # estabilidade e concentração do controle + risco do grupo.
+    "societario_analyst": SpecialistAgentSpec(
+        name="societario_analyst",
+        description=(
+            "Analisa a ESTRUTURA SOCIETARIA da empresa-alvo: controle atual "
+            "(quem controla, papel, desde quando), churn de controle "
+            "(entradas/saidas recentes), resumo de vinculos (qtd de socios, "
+            "empresas possuidas, empresa familiar) e indicadores do grupo "
+            "economico (empresas, sancionados, PEPs, processos, faixas de "
+            "porte, CNAEs). Julga estabilidade e concentracao do controle e o "
+            "risco do grupo. Le o silver de get_quadro_societario (source-agnostic)."
+        ),
+        prompt_name="agent.societario",
+        tools=("get_quadro_societario",),
+        output_schema=SocietarioAnalysis,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=8000,
+        timeout_seconds=300,
+        section_id="societario",
+    ),
+    # ─── Credito · analista de KYC/COMPLIANCE (BDC) — esteira 2026-06-17 ──────
+    # Lê get_kyc_pj: flags PEP/sanção + ocorrências separadas em alta/baixa
+    # confiança (match_rate). O bureau casa por NOME — alta = fato, baixa =
+    # homônimo. Faz o VEREDITO; não condena pelo count cru.
+    "kyc_analyst": SpecialistAgentSpec(
+        name="kyc_analyst",
+        description=(
+            "Analisa o KYC/COMPLIANCE da empresa-alvo e seus socios: exposicao "
+            "a sancao e PEP. O bureau casa por NOME (nao por documento), entao "
+            "achados de BAIXA confianca (match_rate baixo) sao provavel "
+            "HOMONIMO, NAO sancao. Da o VEREDITO que separa sancao confirmada "
+            "(alta confianca) de ruido de nome — NAO condena pelo count cru. "
+            "Avalia PEP e a recencia da exposicao. Le o silver de get_kyc_pj."
+        ),
+        prompt_name="agent.kyc",
+        tools=("get_kyc_pj",),
+        output_schema=KycAnalysis,
+        preferred_model="claude-opus-4-7",
+        fallback_model="claude-sonnet-4-6",
+        thinking_budget_tokens=8000,
+        timeout_seconds=300,
+        section_id="kyc",
     ),
     "indebtedness_analyst": SpecialistAgentSpec(
         name="indebtedness_analyst",
@@ -297,15 +368,10 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
         name="partner_analyst",
         description="Analisa socios e representantes (patrimonio, processos, ligacoes).",
         prompt_name="agent.partners",
-        tools=(
-            TOOL_DOSSIER_READ,
-            TOOL_DOC_GET,
-            TOOL_DOSSIER_FLAG,
-            TOOL_DOSSIER_SAVE,
-            # Silver BDC: estrutura de controle + KYC/sancao dos socios.
-            "get_quadro_societario",
-            "get_kyc_pj",
-        ),
+        # Mandato PF (patrimonio/processos/ligacoes do socio). A lente de
+        # controle societario + KYC do grupo migrou para os especialistas
+        # dedicados societario_analyst + kyc_analyst (esteira BDC 2026-06-17).
+        tools=(TOOL_DOSSIER_READ, TOOL_DOC_GET, TOOL_DOSSIER_FLAG, TOOL_DOSSIER_SAVE),
         output_schema=PartnerAnalysis,
         thinking_budget_tokens=10000,
         section_id="partners",
@@ -653,6 +719,21 @@ CREDIT_BUILDER_PALETTE: dict[str, AgentPaletteMeta] = {
         "Analise cadastral",
         "RiGovernmentLine",
         "IA avalia situacao, CNAE, capital social e tempo de atividade.",
+    ),
+    "porte_analyst": AgentPaletteMeta(
+        "Analise de porte",
+        "RiGroupLine",
+        "IA avalia tamanho atual e trajetoria (funcionarios/faturamento no tempo).",
+    ),
+    "societario_analyst": AgentPaletteMeta(
+        "Analise societaria",
+        "RiOrganizationChart",
+        "IA avalia controle, churn de socios e risco do grupo economico.",
+    ),
+    "kyc_analyst": AgentPaletteMeta(
+        "Analise de KYC/compliance",
+        "RiShieldCheckLine",
+        "IA separa sancao confirmada de homonimo e avalia PEP.",
     ),
     "social_contract_analyst": AgentPaletteMeta(
         "Analise de contrato social",
