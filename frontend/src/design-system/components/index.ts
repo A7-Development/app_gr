@@ -129,8 +129,7 @@ export {
 } from "./AgentLiveStatus"
 export {
   AgentOutputRenderer,
-  OpinionView, IndebtednessView, FinancialView, LegalView, PartnerView,
-  CrossReferenceView, DocumentExtractorView, JsonView, DeterministicCheckView,
+  OpinionView, IndebtednessView, JsonView, DeterministicCheckView,
   type AgentOutputRendererProps, type Recommendation, type RedFlag,
   type OpinionDraft, type IndebtednessAnalysis, type DeterministicFlag,
 } from "./AgentOutputRenderer"

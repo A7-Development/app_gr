@@ -4,19 +4,16 @@
 // estruturado daquele agente. Compoe o corpo de <AgentCompletedView /> do
 // WizardWorkspace via o prop renderCompleted.
 //
-// Sub-views suportadas (canonicas):
+// Views dedicadas (schema rico e proprio):
 //   - opinion_writer            -> OpinionView (recomendacao + strengths + concerns + red_flags)
 //   - indebtedness_analyst      -> IndebtednessView (SCR + concentracao bancaria)
-//   - financial_analyst         -> FinancialView (DRE/Balanco + indicadores)
-//   - legal_analyst             -> LegalView (processos + protestos)
-//   - partner_analyst           -> PartnerView (socios + processos vinculados)
-//   - cross_reference_analyst   -> CrossReferenceView (inconsistencias)
-//   - document_extractor        -> DocumentExtractorView (campos extraidos com confidence)
-//   - default / desconhecido    -> JsonView (collapsible)
 //
-// As 6 views de "estrutura desconhecida" hoje sao stubs que delegam pro
-// JsonView com um header customizado — viram renderers ricos quando os
-// schemas das ferramentas estabilizarem (ver backlog).
+// Default (GENERICO por SHAPE): qualquer agente cujo output siga a gramatica de
+// julgamento da esteira (resumo_executivo + leituras + pontos_de_atencao +
+// leitura_para_credito) renderiza pelos blocos canonicos do <SectionRenderer>
+// via `esteiraOutputToSection` — plug-and-play, ZERO view por agente. Agente
+// novo com esse shape ja monta na tela sem tocar aqui. So cai no JsonView
+// (collapsible) quando o output nao tem essa forma.
 
 "use client"
 
@@ -32,6 +29,12 @@ import {
 
 import { tableTokens } from "@/design-system/tokens/table"
 import { cx } from "@/lib/utils"
+
+import { SectionRenderer } from "@/design-system/components/SectionRenderer"
+import {
+  esteiraOutputToSection,
+  hasEsteiraShape,
+} from "./esteiraSection"
 
 // ─── Top-level switch ──────────────────────────────────────────────────────
 
@@ -67,18 +70,21 @@ export function AgentOutputRenderer({
           className={className}
         />
       )
-    case "financial_analyst":
-      return <FinancialView output={output} className={className} />
-    case "legal_analyst":
-      return <LegalView output={output} className={className} />
-    case "partner_analyst":
-      return <PartnerView output={output} className={className} />
-    case "cross_reference_analyst":
-      return <CrossReferenceView output={output} className={className} />
-    case "document_extractor":
-      return <DocumentExtractorView output={output} className={className} />
     default:
-      return <JsonView output={output} className={className} />
+      // Genérico por SHAPE: qualquer agente cujo output siga a gramática de
+      // julgamento da esteira (resumo_executivo + leituras + pontos_de_atencao
+      // + leitura_para_credito) renderiza pelos blocos canônicos do
+      // SectionRenderer — plug-and-play, sem view por agente. Só cai no JSON
+      // cru quando o output não tem essa forma.
+      return hasEsteiraShape(output) ? (
+        <SectionRenderer
+          section={esteiraOutputToSection(agentName, output)}
+          mode="work"
+          className={className}
+        />
+      ) : (
+        <JsonView output={output} className={className} />
+      )
   }
 }
 
@@ -487,126 +493,6 @@ function RedFlagList({ flags }: { flags: RedFlag[] }) {
         })}
       </ul>
     </div>
-  )
-}
-
-// ─── Stubs para os outros agentes ──────────────────────────────────────────
-// Cada um exibe titulo + summary (se vier) + JsonView abaixo. Substituidos
-// por renderers ricos quando os schemas estabilizarem.
-
-function GenericAgentView({
-  output,
-  title,
-  subtitle,
-  className,
-}: {
-  output: Record<string, unknown>
-  title: string
-  subtitle: string
-  className?: string
-}) {
-  const summary =
-    typeof output.summary === "string" ? output.summary : null
-  return (
-    <div className={cx("space-y-3", className)}>
-      <div>
-        <p className="text-sm font-medium text-gray-900 dark:text-gray-50">
-          {title}
-        </p>
-        <p className={cx(tableTokens.cellSecondary, "mt-0.5")}>{subtitle}</p>
-      </div>
-      {summary && (
-        <p className="text-sm leading-relaxed text-gray-800 dark:text-gray-200">
-          {summary}
-        </p>
-      )}
-      <JsonView output={output} />
-    </div>
-  )
-}
-
-export function FinancialView({
-  output,
-  className,
-}: {
-  output: Record<string, unknown>
-  className?: string
-}) {
-  return (
-    <GenericAgentView
-      output={output}
-      title="Análise financeira"
-      subtitle="DRE + Balanço + indicadores de saúde financeira"
-      className={className}
-    />
-  )
-}
-
-export function LegalView({
-  output,
-  className,
-}: {
-  output: Record<string, unknown>
-  className?: string
-}) {
-  return (
-    <GenericAgentView
-      output={output}
-      title="Análise jurídica"
-      subtitle="Processos + protestos + risco jurídico"
-      className={className}
-    />
-  )
-}
-
-export function PartnerView({
-  output,
-  className,
-}: {
-  output: Record<string, unknown>
-  className?: string
-}) {
-  return (
-    <GenericAgentView
-      output={output}
-      title="Análise de sócios"
-      subtitle="QSA + processos vinculados aos sócios"
-      className={className}
-    />
-  )
-}
-
-export function CrossReferenceView({
-  output,
-  className,
-}: {
-  output: Record<string, unknown>
-  className?: string
-}) {
-  return (
-    <GenericAgentView
-      output={output}
-      title="Cruzamento de seções"
-      subtitle="Inconsistências entre fontes/seções do dossiê"
-      className={className}
-    />
-  )
-}
-
-export function DocumentExtractorView({
-  output,
-  className,
-}: {
-  output: Record<string, unknown>
-  className?: string
-}) {
-  return (
-    <GenericAgentView
-      output={output}
-      title="Extração de documento"
-      subtitle="Campos extraídos via Claude Vision (com confiança)"
-      className={className}
-    />
   )
 }
 
