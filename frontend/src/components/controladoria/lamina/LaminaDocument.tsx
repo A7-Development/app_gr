@@ -377,9 +377,7 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
 
         <div style={{ padding: "22px 44px 0" }}>
           <div style={{ fontSize: 8.5, color: "#9CA3AF", lineHeight: 1.5 }}>
-            Proveniência: warehouse silver (adapter QiTech) — evolução de cotas, rentabilidade, estoque e saldo de conta
-            corrente. Posição {formatDate(data.posicao)}. Campos cadastrais de regulamento (rating, subordinação mínima,
-            benchmark-alvo, taxas de adm./perf.) não disponíveis na fonte.
+            Dados fornecidos pela administradora e modelados pela consultoria A7 Credit. Posição {formatDate(data.posicao)}.
           </div>
         </div>
 
