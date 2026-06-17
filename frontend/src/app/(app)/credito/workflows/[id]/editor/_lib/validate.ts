@@ -210,8 +210,8 @@ export function validateGraph(
         })
       }
       // Adapters wired no backend exigem entity_ref. Lista espelha
-      // _WIRED_ADAPTERS em backend/app/shared/workflow/nodes/bureau_query.py.
-      const wiredAdapters = ["serasa_pj"]
+      // _WIRED_ADAPTERS em backend/app/agentic/playbooks/nodes/bureau_query.py.
+      const wiredAdapters = ["serasa_pj", "bigdatacorp"]
       if (adapter && wiredAdapters.includes(adapter)) {
         if (!entityRef || entityRef.trim() === "") {
           errors.push({

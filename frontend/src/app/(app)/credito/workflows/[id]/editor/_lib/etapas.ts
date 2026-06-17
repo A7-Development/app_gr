@@ -209,8 +209,8 @@ export type PaletteEntry = {
 
 // Catalogo de CONSULTAS DE BUREAU que aparecem na palette.
 //
-// Hoje so `serasa_pj` esta wired no backend (ver _WIRED_ADAPTERS em
-// `backend/app/shared/workflow/nodes/bureau_query.py`). Os 4 produtos
+// `serasa_pj` e `bigdatacorp` estao wired no backend (ver _WIRED_ADAPTERS em
+// `backend/app/agentic/playbooks/nodes/bureau_query.py`). Os 4 produtos
 // nomeados (Dados Basicos RFB, Processos Detalhado, etc.) sao
 // placeholders pra fontes futuras — quando uma API for ligada, basta
 // flippar `available: true` e ajustar o `config` pro adapter correto.
@@ -234,6 +234,17 @@ export const DATA_PRODUCT_PALETTE: Array<{
     available: true,
     config: {
       adapter: "serasa_pj",
+      entity_ref: "",
+      environment: "production",
+    },
+  },
+  {
+    key: "bigdatacorp",
+    label: "Consultar BigDataCorp PJ",
+    description: "Dossie multi-dataset numa consulta — cadastral, quadro societario, grupo economico e KYC (empresa + socios).",
+    available: true,
+    config: {
+      adapter: "bigdatacorp",
       entity_ref: "",
       environment: "production",
     },
@@ -313,6 +324,7 @@ export const OFFICIAL_DOCUMENT_PALETTE: Array<{
 // tracking de uso. Promover/despromover edita esta linha.
 const FEATURED_PALETTE_IDS = new Set<string>([
   "bureau_query:serasa_pj",
+  "bureau_query:bigdatacorp",
   "document_extractor",
   "specialist_agent:financial_analyst",
   "specialist_agent:opinion_writer",

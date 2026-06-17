@@ -138,9 +138,10 @@ const AGENT_OUTPUT_FIELDS: Record<string, AvailableField[]> = {
 }
 
 /** Bureaus tem outputs comuns. Map por adapter. Espelha o output real
- *  retornado pelo BureauQueryNode (`backend/app/shared/workflow/nodes/
- *  bureau_query.py`). Para Serasa PJ os scores detalhados ficam no
- *  warehouse silver — etapas downstream leem via `consulta_id`. */
+ *  retornado pelo BureauQueryNode (`backend/app/agentic/playbooks/nodes/
+ *  bureau_query.py`). Os dados detalhados ficam no warehouse silver —
+ *  etapas/agentes downstream leem via read-tools (get_serasa_pj /
+ *  get_quadro_societario / get_kyc_pj). */
 const BUREAU_OUTPUT_FIELDS: Record<string, AvailableField[]> = {
   serasa_pj: [
     { key: "consulta_id",             label: "ID da consulta",                  type: "string"  },
@@ -163,10 +164,13 @@ const BUREAU_OUTPUT_FIELDS: Record<string, AvailableField[]> = {
     { key: "cpf",                label: "CPF consultado",   type: "string" },
   ],
   bigdatacorp: [
-    { key: "consulta_id",        label: "ID da consulta",        type: "string" },
-    { key: "score_credito",      label: "Score de credito",      type: "number" },
-    { key: "ativo_estimado",     label: "Ativo estimado (R$)",   type: "number" },
-    { key: "funcionarios",       label: "Funcionarios (qtd)",    type: "number" },
+    { key: "raw_id",          label: "ID da consulta (raw)",       type: "string"  },
+    { key: "cnpj",            label: "CNPJ consultado",            type: "string"  },
+    { key: "cadastral_found", label: "Cadastral encontrado",       type: "boolean" },
+    { key: "vinculos_count",  label: "Vinculos societarios (qtd)", type: "number"  },
+    { key: "grupo_found",     label: "Grupo economico encontrado", type: "boolean" },
+    { key: "kyc_subjects",    label: "Sujeitos KYC (qtd)",         type: "number"  },
+    { key: "kyc_ocorrencias", label: "Ocorrencias KYC (qtd)",      type: "number"  },
   ],
   infosimples: [
     { key: "consulta_id",        label: "ID da consulta",        type: "string" },
