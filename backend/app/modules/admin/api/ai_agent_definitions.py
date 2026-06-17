@@ -62,6 +62,7 @@ from app.shared.ai.schemas.agent_definition import (
     AgentRunRecent,
     AgentStatsByModel,
     AgentStatsResponse,
+    AgentUsageOverviewRow,
 )
 
 router = APIRouter(prefix="/ia/agents", tags=["admin:ia-agents"])
@@ -558,6 +559,58 @@ async def preview_agent(
 def _f(v: object) -> float:
     """Coage Decimal/None -> float (0.0)."""
     return float(v) if v is not None else 0.0
+
+
+@router.get(
+    "/usage/overview",
+    response_model=list[AgentUsageOverviewRow],
+    dependencies=_GUARD,
+)
+async def agents_usage_overview(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    window_days: int = 30,
+) -> list[AgentUsageOverviewRow]:
+    """Ranking de uso por agente (power-law do catalogo, read-only).
+
+    Agrega `agent_analysis_run` por `agent_name`, cross-tenant, ordenado por
+    total de execucoes. Rota static `/usage/overview` (2 segmentos) nao colide
+    com `/{definition_id}`.
+    """
+    window_days = max(1, min(window_days, 365))
+    rows = (
+        await db.execute(
+            text(
+                "SELECT agent_name, "
+                "  count(*) AS total_runs, "
+                "  count(*) FILTER ("
+                "    WHERE triggered_at >= now() - make_interval(days => :wd)"
+                "  ) AS window_runs, "
+                "  count(*) FILTER (WHERE status='error') AS runs_error, "
+                "  coalesce(sum(cost_brl_estimated),0) AS cost_brl_total, "
+                "  coalesce(sum(cost_brl_estimated) FILTER ("
+                "    WHERE triggered_at >= now() - make_interval(days => :wd)"
+                "  ),0) AS cost_brl_window, "
+                "  coalesce(sum(tokens_input+tokens_output+tokens_cache_read"
+                "    +tokens_cache_creation),0) AS tokens_total, "
+                "  max(triggered_at) AS last_run_at "
+                "FROM agent_analysis_run "
+                "GROUP BY agent_name ORDER BY total_runs DESC"
+            ).bindparams(wd=window_days)
+        )
+    ).all()
+    return [
+        AgentUsageOverviewRow(
+            agent_name=r.agent_name,
+            total_runs=r.total_runs,
+            window_runs=r.window_runs,
+            runs_error=r.runs_error,
+            cost_brl_total=_f(r.cost_brl_total),
+            cost_brl_window=_f(r.cost_brl_window),
+            tokens_total=r.tokens_total,
+            last_run_at=r.last_run_at,
+        )
+        for r in rows
+    ]
 
 
 @router.get(

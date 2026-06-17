@@ -371,6 +371,14 @@ export function useAgentDefinitionStats(
   })
 }
 
+export function useAgentUsageOverview(windowDays = 30) {
+  return useQuery({
+    queryKey: ["admin", "ai", "agent-definitions", "usage-overview", windowDays],
+    queryFn: () => adminAI.agentDefinitions.usageOverview(windowDays),
+    staleTime: 30 * 1000,
+  })
+}
+
 export function useCreateAgentDefinition() {
   const qc = useQueryClient()
   return useMutation({
