@@ -332,10 +332,13 @@ async def compute_lamina(
             )
         )
 
-    last_month_rows = by_month_class.get(window[-1], {})
-    pl_total = round(
-        sum(_f(row.patrimonio) for row in last_month_rows.values()), 2
-    )
+    # PL por mes (soma do patrimonio das classes no fim de cada mes) -- e o
+    # denominador das concentracoes: VP do titulo / PL das classes no mesmo dia.
+    totals = [
+        round(sum(_f(r.patrimonio) for r in by_month_class.get(ym, {}).values()), 2)
+        for ym in window
+    ]
+    pl_total = totals[-1] if totals else 0.0
 
     # ---- CDI mensal (retorno do proprio CDI por mes) ----
     rent_rows = (
@@ -393,7 +396,7 @@ async def compute_lamina(
     aging = await _aging(db, tenant_id, fundo_doc, window, est_month_date, est_dates)
     caixa = await _caixa(db, tenant_id, fundo_doc, window)
     concentracao = await _concentracao(
-        db, tenant_id, fundo_doc, window, est_month_date, est_dates
+        db, tenant_id, fundo_doc, window, est_month_date, est_dates, totals
     )
 
     # ---- Cadastrais que a QiTech entrega (gestor/originador) ----
@@ -550,23 +553,25 @@ async def _caixa(
     return out
 
 
-# Razao maior/top10 por data, em % do total do estoque na data.
+# Maior/top10 (valor presente, EX-WOP) por data -- valores absolutos em R$.
+# A divisao pelo PL (soma das classes no mesmo dia) acontece no Python, igual a
+# tabela de 10 maiores -- concentracao = VP do titulo / PL das classes no dia.
 _CONC_SQL = """
 WITH g AS (
     SELECT data_referencia, {dim} AS k, SUM(valor_presente) AS fin
     FROM wh_estoque_recebivel
     WHERE tenant_id = :tenant AND fundo_doc = :fundo
+      AND faixa_pdd <> 'WOP'
       AND data_referencia IN :dates
     GROUP BY data_referencia, {dim}
 ), r AS (
     SELECT data_referencia, fin,
-           SUM(fin) OVER (PARTITION BY data_referencia) AS tot,
            ROW_NUMBER() OVER (PARTITION BY data_referencia ORDER BY fin DESC) AS rn
     FROM g
 )
 SELECT data_referencia,
-       MAX(fin) FILTER (WHERE rn = 1) / NULLIF(MAX(tot), 0) * 100 AS maior,
-       SUM(fin) FILTER (WHERE rn <= 10) / NULLIF(MAX(tot), 0) * 100 AS top10
+       MAX(fin) FILTER (WHERE rn = 1) AS maior,
+       SUM(fin) FILTER (WHERE rn <= 10) AS top10
 FROM r GROUP BY data_referencia
 """
 
@@ -579,7 +584,10 @@ async def _conc_hist_dim(
     est_month_date: dict[tuple[int, int], date],
     window: list[tuple[int, int]],
     est_dates: list[date],
+    totals: list[float],
 ) -> tuple[list[float], list[float]]:
+    # by_date guarda (maior_vp, top10_vp) ABSOLUTOS por data; divide-se pelo PL
+    # do mes (totals) na montagem da serie -> % sobre o PL.
     by_date: dict[date, tuple[float, float]] = {}
     if est_dates:
         stmt = text(_CONC_SQL.format(dim=dim)).bindparams(
@@ -594,11 +602,12 @@ async def _conc_hist_dim(
             by_date[d] = (float(maior or 0), float(top10 or 0))
     maior_l: list[float] = []
     top10_l: list[float] = []
-    for ym in window:
+    for i, ym in enumerate(window):
         ed = est_month_date.get(ym)
-        maior, top10 = by_date.get(ed, (0.0, 0.0)) if ed else (0.0, 0.0)
-        maior_l.append(round(maior, 1))
-        top10_l.append(round(top10, 1))
+        maior_vp, top10_vp = by_date.get(ed, (0.0, 0.0)) if ed else (0.0, 0.0)
+        pl = totals[i] if i < len(totals) else 0.0
+        maior_l.append(round(maior_vp / pl * 100, 1) if pl else 0.0)
+        top10_l.append(round(top10_vp / pl * 100, 1) if pl else 0.0)
     return maior_l, top10_l
 
 
@@ -609,17 +618,20 @@ async def _concentracao(
     window: list[tuple[int, int]],
     est_month_date: dict[tuple[int, int], date],
     est_dates: list[date],
+    totals: list[float],
 ) -> Concentracao:
     latest = est_month_date.get(window[-1])
 
     async def _top10(dim_col: object) -> list[ConcentracaoItem]:
         if latest is None:
             return []
+        # Numerador = valor presente do titulo (carteira QiTech), EX-WOP.
         rows = (
             await db.execute(
                 select(dim_col, func.sum(EstoqueRecebivel.valor_presente).label("fin"))
                 .where(EstoqueRecebivel.tenant_id == tenant_id)
                 .where(EstoqueRecebivel.fundo_doc == fundo_doc)
+                .where(EstoqueRecebivel.faixa_pdd != "WOP")
                 .where(EstoqueRecebivel.data_referencia == latest)
                 .group_by(dim_col)
                 .order_by(func.sum(EstoqueRecebivel.valor_presente).desc())
@@ -634,10 +646,10 @@ async def _concentracao(
     cedentes = await _top10(EstoqueRecebivel.cedente_doc)
     sacados = await _top10(EstoqueRecebivel.sacado_doc)
     ced_maior, ced_top10 = await _conc_hist_dim(
-        db, tenant_id, fundo_doc, "cedente_doc", est_month_date, window, est_dates
+        db, tenant_id, fundo_doc, "cedente_doc", est_month_date, window, est_dates, totals
     )
     sac_maior, sac_top10 = await _conc_hist_dim(
-        db, tenant_id, fundo_doc, "sacado_doc", est_month_date, window, est_dates
+        db, tenant_id, fundo_doc, "sacado_doc", est_month_date, window, est_dates, totals
     )
     return Concentracao(
         cedentes=cedentes,
