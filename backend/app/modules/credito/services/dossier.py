@@ -24,7 +24,6 @@ from app.core.enums import (
     PersonRole,
     PlaybookRunStatus,
 )
-from app.modules.credito.models.analysis import CreditDossierAnalysis
 from app.modules.credito.models.company import CreditDossierCompany
 from app.modules.credito.models.dossier import CreditDossier
 from app.modules.credito.models.opinion import CreditDossierOpinion
@@ -575,46 +574,6 @@ async def absorb_graph_from_human_input(
         await db.flush()
 
 
-async def save_bureau_analysis(
-    db: AsyncSession,
-    *,
-    tenant_id: UUID,
-    dossier_id: UUID,
-    subsection: str,
-    summary: str,
-    indicators: dict[str, Any],
-    raw_data: dict[str, Any],
-    source_meta: dict[str, Any],
-) -> CreditDossierAnalysis:
-    """Persist a bureau query result into the dossier so agents can read it.
-
-    Writes one `CreditDossierAnalysis` row with section='bureau_queries'. The
-    payload follows the same shape that `read_dossier_section` exposes back to
-    agent tools, plus a `raw_data` block with a trimmed dump of the silver
-    tables (top sócios / restrições / etc.) and a `source_meta` block carrying
-    provenance (consulta_id, raw_id, adapter version).
-
-    `subsection` distinguishes multiple bureaus saved into the same section
-    ('serasa_pj', 'bigdatacorp', 'infosimples', ...). Stored inside
-    `ai_analysis.subsection` since the table has no native column for it.
-    """
-    analysis = CreditDossierAnalysis(
-        tenant_id=tenant_id,
-        dossier_id=dossier_id,
-        section="bureau_queries",
-        ai_analysis={
-            "subsection": subsection,
-            "summary": summary,
-            "indicators": indicators,
-            "raw_data": raw_data,
-            "source_meta": source_meta,
-        },
-    )
-    db.add(analysis)
-    await db.flush()
-    return analysis
-
-
 async def create_opinion(
     db: AsyncSession,
     *,
@@ -1026,6 +985,5 @@ __all__ = [
     "get_dossier",
     "list_dossiers",
     "rerun_node",
-    "save_bureau_analysis",
     "sync_status_from_workflow",
 ]
