@@ -86,7 +86,7 @@ export type LaminaKpi = {
   sub12: number | null
   sub12Cdi: number | null
   razao: number
-  pddCarteira: number
+  pddPl: number
 }
 
 export type LaminaDerived = {
@@ -95,7 +95,7 @@ export type LaminaDerived = {
   c12: number
   totals: number[]
   razaoMensal: number[]
-  pddCarteiraPct: number[]
+  pddPlPct: number[]
   kpi: LaminaKpi
 }
 
@@ -129,10 +129,8 @@ export function derive(d: LaminaResponse): LaminaDerived {
   }
 
   const ag = d.aging
-  const pddCarteiraPct = d.meses.map((_, i) => {
-    const den = (ag.a_vencer[i] ?? 0) + (ag.vencido[i] ?? 0) + (ag.caixa[i] ?? 0)
-    return den ? ((ag.pdd[i] ?? 0) / den) * 100 : 0
-  })
+  // PDD sobre o PL (ex-WOP -- o backend ja exclui WOP do PDD/carteira).
+  const pddPlPct = totals.map((pl, i) => (pl ? ((ag.pdd[i] ?? 0) / pl) * 100 : 0))
 
   const sen12 = cl12("sr")
   const mez12 = cl12("mez")
@@ -144,7 +142,7 @@ export function derive(d: LaminaResponse): LaminaDerived {
     c12,
     totals,
     razaoMensal,
-    pddCarteiraPct,
+    pddPlPct,
     kpi: {
       plTotal: d.pl_total,
       sen12,
@@ -154,7 +152,7 @@ export function derive(d: LaminaResponse): LaminaDerived {
       sub12,
       sub12Cdi: cdiPct(sub12),
       razao: razaoMensal[last] ?? 0,
-      pddCarteira: pddCarteiraPct[last] ?? 0,
+      pddPl: pddPlPct[last] ?? 0,
     },
   }
 }

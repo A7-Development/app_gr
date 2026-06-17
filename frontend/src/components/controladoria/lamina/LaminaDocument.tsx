@@ -142,7 +142,7 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
           <KpiClasse color={CLASSE_COLOR.mez} label="Sub Mez 12M" value={`${p1(d.kpi.mez12)}%`} cdi={d.kpi.mez12Cdi} />
           <KpiClasse color={CLASSE_COLOR.sub} label="Sub Jr 12M" value={`${p1(d.kpi.sub12)}%`} cdi={d.kpi.sub12Cdi} valueColor="#1B2B4B" />
           <Kpi label="Subordinação" value={`${p1(d.kpi.razao)}%`} sub="Sub + Mez / PL" />
-          <Kpi label="PDD / carteira" value={`${p2(d.kpi.pddCarteira)}%`} sub={meses[last]} last />
+          <Kpi label="PDD / PL" value={`${p2(d.kpi.pddPl)}%`} sub="ex-WOP" last />
         </div>
 
         {/* performance mensal */}
@@ -311,15 +311,15 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
 
         <div style={{ padding: "26px 44px 0" }}>
           <div className="lam-secline"><span className="lam-h2">Evolução do ativo</span><span className="lam-hint">a vencer · vencido · caixa, com PDD sobre a carteira</span></div>
-          <Legend items={[["Direitos a vencer", CLASSE_COLOR.mez, false], ["Direitos vencidos", COL.vencido, false], ["Caixa", COL.caixa, false], ["PDD / carteira", COL.alert, true]]} />
-          <AtivoChart meses={meses} aVencer={data.aging.a_vencer} vencido={data.aging.vencido} caixa={data.aging.caixa} pddPct={d.pddCarteiraPct} />
+          <Legend items={[["Direitos a vencer", CLASSE_COLOR.mez, false], ["Direitos vencidos", COL.vencido, false], ["Caixa", COL.caixa, false], ["PDD / PL", COL.alert, true]]} />
+          <AtivoChart meses={meses} aVencer={data.aging.a_vencer} vencido={data.aging.vencido} caixa={data.aging.caixa} pddPct={d.pddPlPct} />
           <div style={{ marginTop: 10 }}>
             <table>
               <thead><tr><th className="th thl">R$ mi</th>{meses.map((m) => <th key={m} className="th">{m}</th>)}</tr></thead>
               <tbody>
                 <tr><td className="td tdl">A vencer</td>{data.aging.a_vencer.map((v, i) => <td key={i} className="td">{fmtMi(v)}</td>)}</tr>
                 <tr><td className="td tdl">Vencido</td>{data.aging.vencido.map((v, i) => <td key={i} className="td">{fmtMi(v)}</td>)}</tr>
-                <tr><td className="td tdl">PDD / carteira %</td>{d.pddCarteiraPct.map((v, i) => <td key={i} className="td">{p1(v)}</td>)}</tr>
+                <tr><td className="td tdl">PDD / PL %</td>{d.pddPlPct.map((v, i) => <td key={i} className="td">{p1(v)}</td>)}</tr>
               </tbody>
             </table>
           </div>
@@ -350,7 +350,7 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
           </div>
         </div>
 
-        <Footer left="Aging reconcilia: a vencer + vencido = estoque total. Sem papéis baixados no estoque." page="Página 2 de 3" />
+        <Footer left="Carteira e PDD excluem WOP (papéis baixados, 100% provisionados). PDD medido sobre o PL." page="Página 2 de 3" />
       </div>
 
       {/* ============ PAGINA 3 ============ */}
