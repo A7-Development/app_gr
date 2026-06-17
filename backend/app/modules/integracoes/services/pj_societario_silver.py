@@ -21,7 +21,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
@@ -30,7 +30,9 @@ from app.core.enums import SourceType, TrustLevel
 from app.modules.integracoes.adapters.data.bigdatacorp.mappers.societario import (
     GrupoIndicadorFields,
     VinculoFields,
+    VinculosResumo,
 )
+from app.warehouse.pj_cadastro import PjCadastro
 from app.warehouse.pj_grupo_indicador import PjGrupoIndicador
 from app.warehouse.pj_vinculo import PjVinculo
 
@@ -117,6 +119,15 @@ _GRUPO_UPSERT_COLS = (
     "first_passage_date",
     "last_passage_date",
     "last_12m_passages",
+    "faturamento_faixa",
+    "faturamento_faixa_min",
+    "faturamento_faixa_max",
+    "faturamento_faixa_media",
+    "funcionarios_faixa",
+    "funcionarios_faixa_min",
+    "funcionarios_faixa_max",
+    "funcionarios_faixa_media",
+    "cnaes",
     "source_id",
     "source_updated_at",
     "ingested_by_version",
@@ -160,6 +171,15 @@ async def upsert_pj_grupo_indicador(
         "first_passage_date": fields.first_passage_date,
         "last_passage_date": fields.last_passage_date,
         "last_12m_passages": fields.last_12m_passages,
+        "faturamento_faixa": fields.faturamento_faixa,
+        "faturamento_faixa_min": fields.faturamento_faixa_min,
+        "faturamento_faixa_max": fields.faturamento_faixa_max,
+        "faturamento_faixa_media": fields.faturamento_faixa_media,
+        "funcionarios_faixa": fields.funcionarios_faixa,
+        "funcionarios_faixa_min": fields.funcionarios_faixa_min,
+        "funcionarios_faixa_max": fields.funcionarios_faixa_max,
+        "funcionarios_faixa_media": fields.funcionarios_faixa_media,
+        "cnaes": fields.cnaes,
         "source_type": source_type,
         "source_id": cnpj_digits,
         # Dataset DERIVADO: sem LastUpdateDate -> idade = data da consulta.
@@ -175,3 +195,30 @@ async def upsert_pj_grupo_indicador(
         constraint="uq_wh_pj_grupo_indicador", set_=update_set
     )
     await db.execute(stmt)
+
+
+async def set_cadastro_vinculos_resumo(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    cnpj: str,
+    resumo: VinculosResumo,
+) -> None:
+    """Grava o resumo do `relationships` (qtd_socios, familiar...) na wh_pj_cadastro.
+
+    UPDATE da linha existente — no fetch unificado o upsert cadastral roda antes,
+    entao a linha existe. Sem linha = 0 rows (silencioso). Nao commita.
+    """
+    await db.execute(
+        update(PjCadastro)
+        .where(
+            PjCadastro.tenant_id == tenant_id,
+            PjCadastro.cnpj == _digits(cnpj),
+        )
+        .values(
+            qtd_socios=resumo.qtd_socios,
+            qtd_empresas_possuidas=resumo.qtd_empresas_possuidas,
+            empresa_familiar=resumo.empresa_familiar,
+            operada_pela_familia=resumo.operada_pela_familia,
+        )
+    )

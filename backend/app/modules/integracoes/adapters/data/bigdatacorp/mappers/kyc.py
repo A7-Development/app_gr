@@ -104,6 +104,10 @@ class KycSubjectFields:
     last_90_days_sanctions: int | None
     last_180_days_sanctions: int | None
     last_365_days_sanctions: int | None
+    last_year_pep: int | None = None
+    last_3y_pep: int | None = None
+    last_5y_pep: int | None = None
+    last_5plus_pep: int | None = None
     ocorrencias: list[KycOcorrenciaFields] = field(default_factory=list)
 
 
@@ -171,6 +175,10 @@ def _subject_from_record(
         last_90_days_sanctions=_parse_int(record.get("Last90DaysSanctions")),
         last_180_days_sanctions=_parse_int(record.get("Last180DaysSanctions")),
         last_365_days_sanctions=_parse_int(record.get("Last365DaysSanctions")),
+        last_year_pep=_parse_int(record.get("LastYearPEPOccurence")),
+        last_3y_pep=_parse_int(record.get("Last3YearsPEPOccurence")),
+        last_5y_pep=_parse_int(record.get("Last5YearsPEPOccurence")),
+        last_5plus_pep=_parse_int(record.get("Last5PlusYearsPEPOccurence")),
         ocorrencias=ocorrencias,
     )
 

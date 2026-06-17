@@ -98,6 +98,11 @@ class PjKyc(Auditable, Base):
     last_90_days_sanctions: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_180_days_sanctions: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_365_days_sanctions: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Buckets de recencia de PEP (simetria com os de sancao).
+    last_year_pep: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_3y_pep: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_5y_pep: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_5plus_pep: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     def __repr__(self) -> str:
         return (

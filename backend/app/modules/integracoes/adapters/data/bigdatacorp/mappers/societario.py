@@ -115,12 +115,27 @@ class VinculoFields:
     source_updated_at: datetime | None
 
 
+def _bool_or_none(raw: Any) -> bool | None:
+    return None if raw is None else bool(raw)
+
+
+@dataclass(frozen=True)
+class VinculosResumo:
+    """Resumo de topo do bloco relationships (atributos da empresa)."""
+
+    qtd_socios: int | None
+    qtd_empresas_possuidas: int | None
+    empresa_familiar: bool | None
+    operada_pela_familia: bool | None
+
+
 @dataclass(frozen=True)
 class RelationshipsMapResult:
     found: bool
     dataset_status_code: int | None
     query_id: str | None
     vinculos: list[VinculoFields]
+    resumo: VinculosResumo | None = None
 
 
 _TIPO_PESSOA = {"CPF": "PF", "CNPJ": "PJ"}
@@ -188,9 +203,17 @@ def map_relationships(
     inner = root.get("Relationships")
     if isinstance(inner, dict):
         holder = inner
+
+    resumo = VinculosResumo(
+        qtd_socios=_parse_int(holder.get("TotalOwners")),
+        qtd_empresas_possuidas=_parse_int(holder.get("TotalOwned")),
+        empresa_familiar=_bool_or_none(holder.get("IsFamilyCompany")),
+        operada_pela_familia=_bool_or_none(holder.get("IsFamilyOperated")),
+    )
+
     edges_raw = holder.get("Relationships")
     if not isinstance(edges_raw, list):
-        return RelationshipsMapResult(True, status_code, query_id, [])
+        return RelationshipsMapResult(True, status_code, query_id, [], resumo)
 
     seen: set[tuple] = set()
     vinculos: list[VinculoFields] = []
@@ -209,7 +232,7 @@ def map_relationships(
         seen.add(key)
         vinculos.append(edge)
 
-    return RelationshipsMapResult(True, status_code, query_id, vinculos)
+    return RelationshipsMapResult(True, status_code, query_id, vinculos, resumo)
 
 
 # ───────────────────────── Indicadores do grupo ────────────────────────────
@@ -235,6 +258,15 @@ class GrupoIndicadorFields:
     first_passage_date: datetime | None
     last_passage_date: datetime | None
     last_12m_passages: int | None
+    faturamento_faixa: str | None = None
+    faturamento_faixa_min: str | None = None
+    faturamento_faixa_max: str | None = None
+    faturamento_faixa_media: str | None = None
+    funcionarios_faixa: str | None = None
+    funcionarios_faixa_min: str | None = None
+    funcionarios_faixa_max: str | None = None
+    funcionarios_faixa_media: str | None = None
+    cnaes: list | None = None
 
 
 @dataclass(frozen=True)
@@ -278,5 +310,18 @@ def map_economic_group(
         first_passage_date=_parse_datetime(g.get("FirstPassageDate")),
         last_passage_date=_parse_datetime(g.get("LastPassageDate")),
         last_12m_passages=_parse_int(g.get("Last12MonthsPassages")),
+        faturamento_faixa=_str_or_none(g.get("TotalIncomeRange")),
+        faturamento_faixa_min=_str_or_none(g.get("MinIncomeRange")),
+        faturamento_faixa_max=_str_or_none(g.get("MaxIncomeRange")),
+        faturamento_faixa_media=_str_or_none(g.get("AverageIncomeRange")),
+        funcionarios_faixa=_str_or_none(g.get("TotalEmployeesRange")),
+        funcionarios_faixa_min=_str_or_none(g.get("MinEmployeesRange")),
+        funcionarios_faixa_max=_str_or_none(g.get("MaxEmployeesRange")),
+        funcionarios_faixa_media=_str_or_none(g.get("AverageEmployeesRange")),
+        cnaes=(
+            g.get("EconomicActivities")
+            if isinstance(g.get("EconomicActivities"), list)
+            else None
+        ),
     )
     return GrupoIndicadorMapResult(True, status_code, query_id, fields)

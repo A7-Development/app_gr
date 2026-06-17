@@ -29,6 +29,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -105,6 +106,30 @@ class PjGrupoIndicador(Auditable, Base):
         DateTime(timezone=True), nullable=True
     )
     last_12m_passages: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # ── Faturamento / porte agregado do grupo (faixas BDC) ──
+    faturamento_faixa: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    faturamento_faixa_min: Mapped[str | None] = mapped_column(
+        String(48), nullable=True
+    )
+    faturamento_faixa_max: Mapped[str | None] = mapped_column(
+        String(48), nullable=True
+    )
+    faturamento_faixa_media: Mapped[str | None] = mapped_column(
+        String(48), nullable=True
+    )
+    funcionarios_faixa: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    funcionarios_faixa_min: Mapped[str | None] = mapped_column(
+        String(48), nullable=True
+    )
+    funcionarios_faixa_max: Mapped[str | None] = mapped_column(
+        String(48), nullable=True
+    )
+    funcionarios_faixa_media: Mapped[str | None] = mapped_column(
+        String(48), nullable=True
+    )
+    # EconomicActivities[] — CNAEs do grupo.
+    cnaes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     def __repr__(self) -> str:
         return (
