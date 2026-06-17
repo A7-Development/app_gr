@@ -8,6 +8,7 @@
 //
 
 import * as React from "react"
+import Link from "next/link"
 import { Controller, useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import {
@@ -17,6 +18,7 @@ import {
   RiToolsLine,
 } from "@remixicon/react"
 
+import { Badge } from "@/components/tremor/Badge"
 import { Button } from "@/components/tremor/Button"
 import { Divider } from "@/components/tremor/Divider"
 import { Input } from "@/components/tremor/Input"
@@ -45,6 +47,7 @@ import {
   type AgentDefinitionUpdateValues,
 } from "@/lib/schemas/ai-agent-definition-schema"
 import { cx } from "@/lib/utils"
+import { PromptInstructionsField } from "./PromptInstructionsField"
 
 // ───────────────────────────────────────────────────────────────────────────
 // Helpers visuais (compartilhados com Persona/Expertise forms)
@@ -70,6 +73,19 @@ function RequiredMarker() {
     <span className="ml-1 text-red-600 dark:text-red-500" aria-hidden>
       *
     </span>
+  )
+}
+
+// Badge "usado por N agentes" — torna o relacionamento (cadastro compartilhado)
+// visivel direto no cockpit. >1 ganha tom amber (editar afeta varios).
+function UsageBadge({ count, href }: { count: number; href: string }) {
+  if (count <= 0) return null
+  return (
+    <Link href={href} className="shrink-0">
+      <Badge variant={count > 1 ? "warning" : "neutral"}>
+        usado por {count} agente{count > 1 ? "s" : ""}
+      </Badge>
+    </Link>
   )
 }
 
@@ -176,8 +192,13 @@ function ExpertisePicker({ available, selected, onChange }: ExpertisePickerProps
                   className="mt-0.5 size-4 rounded border-gray-300 dark:border-gray-700"
                 />
                 <div className="flex flex-col">
-                  <span className="text-[13px] font-medium text-gray-900 dark:text-gray-100">
+                  <span className="flex items-center gap-1.5 text-[13px] font-medium text-gray-900 dark:text-gray-100">
                     {e.display_name}
+                    {e.usage_count > 0 && (
+                      <span className="text-[10px] font-normal text-gray-400 dark:text-gray-500">
+                        · {e.usage_count} agente{e.usage_count > 1 ? "s" : ""}
+                      </span>
+                    )}
                   </span>
                   <span className="font-mono text-[11px] text-gray-500 dark:text-gray-400">
                     {e.name}@v{e.version}
@@ -437,6 +458,110 @@ type CommonFormProps = {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// Cockpit em abas (Fatia C) — espelha o painel do Toqan
+// (Identidade · Composicao · Tools · Modelo · Avancado).
+// ───────────────────────────────────────────────────────────────────────────
+
+const COCKPIT_TABS = [
+  { id: "identidade", label: "Identidade" },
+  { id: "composicao", label: "Composicao" },
+  { id: "tools", label: "Tools" },
+  { id: "modelo", label: "Modelo" },
+  { id: "avancado", label: "Avancado" },
+] as const
+
+type TabId = (typeof COCKPIT_TABS)[number]["id"]
+
+// Qual campo mora em qual aba — usado pra (a) pintar o ponto de erro na aba
+// e (b) saltar pra aba do primeiro erro quando o submit falha validacao.
+const FIELD_TAB: Record<string, TabId> = {
+  name: "identidade",
+  module: "identidade",
+  persona_id: "composicao",
+  expertise_ids: "composicao",
+  prompt_name: "composicao",
+  allowed_tools: "tools",
+  model: "modelo",
+  fallback_model: "modelo",
+  temperature: "modelo",
+  max_tokens: "modelo",
+  cross_module: "avancado",
+  credit_hint: "avancado",
+}
+
+function CockpitTabBar({
+  active,
+  onChange,
+  errorTabs,
+}: {
+  active: TabId
+  onChange: (id: TabId) => void
+  errorTabs: Set<TabId>
+}) {
+  return (
+    <div
+      role="tablist"
+      className="flex flex-wrap gap-1 border-b border-gray-200 dark:border-gray-800"
+    >
+      {COCKPIT_TABS.map((t) => {
+        const isActive = t.id === active
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            onClick={() => onChange(t.id)}
+            className={cx(
+              "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] font-medium transition-colors",
+              isActive
+                ? "border-blue-500 text-blue-700 dark:text-blue-300"
+                : "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
+            )}
+          >
+            {t.label}
+            {errorTabs.has(t.id) && (
+              <span
+                className="size-1.5 rounded-full bg-red-500"
+                aria-label="contem erro"
+              />
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// Painel: fica montado o tempo todo (preserva estado do react-hook-form),
+// so alterna visibilidade — NUNCA desmonta (senao perde registro de campos).
+function TabPanel({
+  id,
+  active,
+  children,
+}: {
+  id: TabId
+  active: TabId
+  children: React.ReactNode
+}) {
+  return (
+    <div hidden={id !== active} className="flex flex-col gap-4 pt-4">
+      {children}
+    </div>
+  )
+}
+
+// Deriva quais abas tem erro a partir do objeto `errors` do RHF.
+function errorTabsFrom(errors: Record<string, unknown>): Set<TabId> {
+  const set = new Set<TabId>()
+  for (const key of Object.keys(errors)) {
+    const tab = FIELD_TAB[key]
+    if (tab) set.add(tab)
+  }
+  return set
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Create form
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -480,6 +605,8 @@ export function AgentCreateForm({
     },
   })
 
+  const [activeTab, setActiveTab] = React.useState<TabId>("identidade")
+
   // Modulo atual (campo do form) — escopa o ToolPicker.
   const watchedModule = useWatch({ control, name: "module" }) ?? "credito"
 
@@ -488,14 +615,25 @@ export function AgentCreateForm({
   const expertisesAtivas = expertises.filter((e) => e.is_active)
   const promptsAtivos = prompts.filter((p) => p.is_active)
 
-  return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
-      {/* IDENTIDADE */}
-      <section className="flex flex-col gap-4">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-          Identidade
-        </h3>
+  const jumpToFirstError = (errs: Record<string, unknown>) => {
+    const first = Object.keys(errs)[0]
+    const tab = first ? FIELD_TAB[first] : undefined
+    if (tab) setActiveTab(tab)
+  }
 
+  return (
+    <form
+      onSubmit={handleSubmit(onSubmit, jumpToFirstError)}
+      className="flex flex-col gap-5"
+    >
+      <CockpitTabBar
+        active={activeTab}
+        onChange={setActiveTab}
+        errorTabs={errorTabsFrom(errors)}
+      />
+
+      {/* IDENTIDADE */}
+      <TabPanel id="identidade" active={activeTab}>
         <div>
           <Label htmlFor="agent-name">
             Nome canonico
@@ -545,31 +683,39 @@ export function AgentCreateForm({
           </FieldHint>
           <FieldError message={errors.module?.message} />
         </div>
-      </section>
-
-      <Divider />
+      </TabPanel>
 
       {/* COMPOSICAO */}
-      <CompositionFields
-        control={control}
-        register={register}
-        errors={errors}
-        personas={personasAtivas}
-        expertises={expertisesAtivas}
-        prompts={promptsAtivos}
-        tools={tools}
-        agentModule={watchedModule}
-      />
+      <TabPanel id="composicao" active={activeTab}>
+        <CompositionFields
+          control={control}
+          register={register}
+          errors={errors}
+          personas={personasAtivas}
+          expertises={expertisesAtivas}
+          prompts={promptsAtivos}
+        />
+      </TabPanel>
 
-      <Divider />
+      {/* TOOLS */}
+      <TabPanel id="tools" active={activeTab}>
+        <ToolField control={control} tools={tools ?? []} agentModule={watchedModule} />
+      </TabPanel>
 
       {/* MODELO */}
-      <ModelFields
-        control={control}
-        register={register}
-        errors={errors}
-        models={models}
-      />
+      <TabPanel id="modelo" active={activeTab}>
+        <ModelFields
+          control={control}
+          register={register}
+          errors={errors}
+          models={models}
+        />
+      </TabPanel>
+
+      {/* AVANCADO */}
+      <TabPanel id="avancado" active={activeTab}>
+        <AdvancedFields control={control} register={register} errors={errors} />
+      </TabPanel>
 
       <FormFooter
         submitting={submitting}
@@ -625,12 +771,23 @@ export function AgentEditForm({
     },
   })
 
+  const [activeTab, setActiveTab] = React.useState<TabId>("composicao")
+
   const personasAtivas = personas.filter((p) => p.is_active)
   const expertisesAtivas = expertises.filter((e) => e.is_active)
   const promptsAtivos = prompts.filter((p) => p.is_active)
 
+  const jumpToFirstError = (errs: Record<string, unknown>) => {
+    const first = Object.keys(errs)[0]
+    const tab = first ? FIELD_TAB[first] : undefined
+    if (tab) setActiveTab(tab)
+  }
+
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
+    <form
+      onSubmit={handleSubmit(onSubmit, jumpToFirstError)}
+      className="flex flex-col gap-5"
+    >
       <div
         className={cx(
           "rounded-md border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900",
@@ -645,38 +802,56 @@ export function AgentEditForm({
         </p>
       </div>
 
-      <section>
-        <Label>Nome canonico</Label>
-        <Input value={agent.name} disabled className="font-mono text-[13px]" />
-        <FieldHint>Nao editavel.</FieldHint>
-      </section>
-
-      <section>
-        <Label>Modulo</Label>
-        <Input value={agent.module} disabled className="font-mono text-[13px]" />
-      </section>
-
-      <Divider />
-
-      <CompositionFields
-        control={control}
-        register={register}
-        errors={errors}
-        personas={personasAtivas}
-        expertises={expertisesAtivas}
-        prompts={promptsAtivos}
-        tools={tools}
-        agentModule={agent.module}
+      <CockpitTabBar
+        active={activeTab}
+        onChange={setActiveTab}
+        errorTabs={errorTabsFrom(errors)}
       />
 
-      <Divider />
+      {/* IDENTIDADE (read-only na edicao) */}
+      <TabPanel id="identidade" active={activeTab}>
+        <section>
+          <Label>Nome canonico</Label>
+          <Input value={agent.name} disabled className="font-mono text-[13px]" />
+          <FieldHint>Nao editavel — identidade da familia de versoes.</FieldHint>
+        </section>
+        <section>
+          <Label>Modulo</Label>
+          <Input value={agent.module} disabled className="font-mono text-[13px]" />
+        </section>
+      </TabPanel>
 
-      <ModelFields
-        control={control}
-        register={register}
-        errors={errors}
-        models={models}
-      />
+      {/* COMPOSICAO */}
+      <TabPanel id="composicao" active={activeTab}>
+        <CompositionFields
+          control={control}
+          register={register}
+          errors={errors}
+          personas={personasAtivas}
+          expertises={expertisesAtivas}
+          prompts={promptsAtivos}
+        />
+      </TabPanel>
+
+      {/* TOOLS */}
+      <TabPanel id="tools" active={activeTab}>
+        <ToolField control={control} tools={tools ?? []} agentModule={agent.module} />
+      </TabPanel>
+
+      {/* MODELO */}
+      <TabPanel id="modelo" active={activeTab}>
+        <ModelFields
+          control={control}
+          register={register}
+          errors={errors}
+          models={models}
+        />
+      </TabPanel>
+
+      {/* AVANCADO */}
+      <TabPanel id="avancado" active={activeTab}>
+        <AdvancedFields control={control} register={register} errors={errors} />
+      </TabPanel>
 
       <FormFooter
         submitting={submitting}
@@ -693,15 +868,28 @@ export function AgentEditForm({
 // ───────────────────────────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function CompositionFields({ control, errors, personas, expertises, prompts, tools, agentModule }: any) {
+function CompositionFields({ control, errors, personas, expertises, prompts }: any) {
+  // Persona selecionada — pra mostrar "usada por N agentes" no cabecalho.
+  const selectedPersonaId = useWatch({ control, name: "persona_id" }) as
+    | string
+    | null
+    | undefined
+  const selectedPersona = (personas as AIPersonaVersionInfo[]).find(
+    (p) => p.id === selectedPersonaId,
+  )
+
   return (
     <section className="flex flex-col gap-4">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-        Composicao
-      </h3>
-
       <div>
-        <Label htmlFor="agent-persona">Persona</Label>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="agent-persona">Persona</Label>
+          {selectedPersona && (
+            <UsageBadge
+              count={selectedPersona.usage_count}
+              href="/admin/ia/personas"
+            />
+          )}
+        </div>
         <Controller
           name="persona_id"
           control={control}
@@ -782,12 +970,13 @@ function CompositionFields({ control, errors, personas, expertises, prompts, too
         />
         <FieldHint>
           Instrucao especifica da task. Aparece dentro de
-          <code>&lt;task&gt;</code>. Edite em /admin/ia/prompts.
+          <code>&lt;task&gt;</code>.
         </FieldHint>
         <FieldError message={errors.prompt_name?.message} />
       </div>
 
-      <ToolField control={control} tools={tools ?? []} agentModule={agentModule} />
+      {/* Fatia A: ver/editar o system_text do prompt sem sair do cockpit. */}
+      <PromptInstructionsField control={control} prompts={prompts ?? []} />
     </section>
   )
 }
@@ -796,10 +985,6 @@ function CompositionFields({ control, errors, personas, expertises, prompts, too
 function ModelFields({ control, register, errors, models }: any) {
   return (
     <section className="flex flex-col gap-4">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-        Modelo (override)
-      </h3>
-
       <FieldHint>
         Deixe vazio pra usar o default do prompt. Override aqui tem prioridade
         sobre `agent_config` (legado) e prompt default.
@@ -896,13 +1081,18 @@ function ModelFields({ control, register, errors, models }: any) {
           <FieldError message={errors.max_tokens?.message} />
         </div>
       </div>
+    </section>
+  )
+}
 
-      <Divider />
-
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-        Governance
-      </h3>
-
+// Aba "Avancado" — governance + hints. So expoe params REAIS e funcionais
+// (cross_module e consumido pelo registry; credit_hint vira metadado de
+// billing). thinking_budget/timeout/memory_scopes NAO entram aqui: o runtime
+// ainda nao os consome como override de DB — seriam botoes mortos (§7.3).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function AdvancedFields({ control, register, errors }: any) {
+  return (
+    <section className="flex flex-col gap-4">
       <div className="flex items-center gap-3">
         <Controller
           name="cross_module"
@@ -923,6 +1113,27 @@ function ModelFields({ control, register, errors, models }: any) {
             module invocations.
           </FieldHint>
         </Label>
+      </div>
+
+      <Divider />
+
+      <div className="max-w-xs">
+        <Label htmlFor="agent-credit-hint">Credit hint (billing)</Label>
+        <Input
+          id="agent-credit-hint"
+          type="number"
+          step="1"
+          min="0"
+          {...register("credit_hint", {
+            setValueAs: (v: string) => (v === "" ? null : Number(v)),
+          })}
+          placeholder="(opcional)"
+        />
+        <FieldHint>
+          Estimativa de creditos por execucao — metadado pra billing/quota.
+          Vazio = sem hint.
+        </FieldHint>
+        <FieldError message={errors.credit_hint?.message} />
       </div>
     </section>
   )

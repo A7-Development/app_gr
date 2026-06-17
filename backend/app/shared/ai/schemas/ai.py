@@ -182,6 +182,11 @@ class PromptVersionInfo(BaseModel):
     temperature: float
     max_tokens: int
     description: str | None
+    # Quantos agent_definition (nao arquivados) referenciam este `name`.
+    # Por nome (nao por versao) — agent_definition.prompt_name aponta para
+    # o nome, e o runtime resolve a versao ativa. Util para avisar impacto
+    # de "editar instrucoes" de um prompt compartilhado.
+    usage_count: int = 0
     created_at: datetime
     archived_at: datetime | None
 
@@ -202,6 +207,8 @@ class PromptDetail(BaseModel):
     max_tokens: int
     cache_strategy: str
     description: str | None
+    # Ver PromptVersionInfo.usage_count.
+    usage_count: int = 0
     created_at: datetime
     updated_at: datetime
     archived_at: datetime | None

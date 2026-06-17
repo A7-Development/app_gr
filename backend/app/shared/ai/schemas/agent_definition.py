@@ -185,3 +185,63 @@ class AgentDefinitionPreviewResponse(BaseModel):
     fallback_model: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
+
+
+# ─── Stats / telemetria (Fatia B) ───────────────────────────────────────────
+#
+# Uso REAL do agente, agregado de `agent_analysis_run` (a unica fonte com
+# atribuicao por agente — `ai_usage_event` nao carrega agent_id). Agregado
+# por `agent_name` (familia de versoes) e cross-tenant (visao do system
+# maintainer). Read-only.
+
+
+class AgentStatsByModel(BaseModel):
+    """Quebra de uso por modelo."""
+
+    model: str
+    runs: int
+    tokens_total: int
+    cost_brl: float
+
+
+class AgentRunRecent(BaseModel):
+    """Uma execucao recente (linha da lista de runs)."""
+
+    version: int
+    model_used: str
+    status: str
+    tokens_input: int
+    tokens_output: int
+    tokens_cache_read: int
+    tokens_cache_creation: int
+    cost_brl: float | None
+    duration_ms: int | None
+    triggered_at: datetime
+
+
+class AgentStatsResponse(BaseModel):
+    """Telemetria de uso de um agente (aba Uso do cockpit)."""
+
+    agent_name: str
+    window_days: int
+
+    # Histórico completo (all-time)
+    total_runs: int
+    runs_success: int
+    runs_error: int
+    runs_partial: int
+    tokens_input: int
+    tokens_output: int
+    tokens_cache_read: int
+    tokens_cache_creation: int
+    cost_brl_total: float
+    avg_duration_ms: float | None
+    last_run_at: datetime | None
+
+    # Janela (ultimos `window_days`)
+    window_runs: int
+    window_cost_brl: float
+    window_tokens_total: int
+
+    by_model: list[AgentStatsByModel]
+    recent_runs: list[AgentRunRecent]

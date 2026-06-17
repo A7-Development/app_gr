@@ -24,7 +24,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,6 +59,9 @@ from app.shared.ai.schemas.agent_definition import (
     AgentExpertiseRef,
     AgentPersonaRef,
     AgentPromptRef,
+    AgentRunRecent,
+    AgentStatsByModel,
+    AgentStatsResponse,
 )
 
 router = APIRouter(prefix="/ia/agents", tags=["admin:ia-agents"])
@@ -546,4 +549,143 @@ async def preview_agent(
             float(row.temperature) if row.temperature is not None else None
         ),
         max_tokens=row.max_tokens,
+    )
+
+
+# ─── Telemetria (Fatia B) ──────────────────────────────────────────────────
+
+
+def _f(v: object) -> float:
+    """Coage Decimal/None -> float (0.0)."""
+    return float(v) if v is not None else 0.0
+
+
+@router.get(
+    "/{definition_id}/stats",
+    response_model=AgentStatsResponse,
+    dependencies=_GUARD,
+)
+async def agent_stats(
+    definition_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    window_days: int = 30,
+) -> AgentStatsResponse:
+    """Telemetria de USO de um agente (read-only).
+
+    Agrega `agent_analysis_run` por `agent_name` (familia de versoes),
+    cross-tenant (visao do system maintainer). Esta e a unica fonte com
+    atribuicao por agente — `ai_usage_event` nao carrega agent_id.
+    """
+    row = await _get_or_404(db, definition_id)
+    name = row.name
+    window_days = max(1, min(window_days, 365))
+
+    # 1) Agregado all-time (contagens por status + tokens + custo + duracao).
+    overall = (
+        await db.execute(
+            text(
+                "SELECT count(*) AS total_runs, "
+                "  count(*) FILTER (WHERE status='success') AS runs_success, "
+                "  count(*) FILTER (WHERE status='error') AS runs_error, "
+                "  count(*) FILTER (WHERE status='partial') AS runs_partial, "
+                "  coalesce(sum(tokens_input),0) AS tokens_input, "
+                "  coalesce(sum(tokens_output),0) AS tokens_output, "
+                "  coalesce(sum(tokens_cache_read),0) AS tokens_cache_read, "
+                "  coalesce(sum(tokens_cache_creation),0) AS tokens_cache_creation, "
+                "  coalesce(sum(cost_brl_estimated),0) AS cost_brl_total, "
+                "  avg(duration_ms) AS avg_duration_ms, "
+                "  max(triggered_at) AS last_run_at "
+                "FROM agent_analysis_run WHERE agent_name = :name"
+            ).bindparams(name=name)
+        )
+    ).one()
+
+    # 2) Janela (ultimos window_days).
+    window = (
+        await db.execute(
+            text(
+                "SELECT count(*) AS window_runs, "
+                "  coalesce(sum(cost_brl_estimated),0) AS window_cost_brl, "
+                "  coalesce(sum(tokens_input+tokens_output+tokens_cache_read"
+                "    +tokens_cache_creation),0) AS window_tokens_total "
+                "FROM agent_analysis_run "
+                "WHERE agent_name = :name "
+                "  AND triggered_at >= now() - make_interval(days => :wd)"
+            ).bindparams(name=name, wd=window_days)
+        )
+    ).one()
+
+    # 3) Quebra por modelo.
+    by_model_rows = (
+        await db.execute(
+            text(
+                "SELECT model_used AS model, count(*) AS runs, "
+                "  coalesce(sum(tokens_input+tokens_output+tokens_cache_read"
+                "    +tokens_cache_creation),0) AS tokens_total, "
+                "  coalesce(sum(cost_brl_estimated),0) AS cost_brl "
+                "FROM agent_analysis_run WHERE agent_name = :name "
+                "GROUP BY model_used ORDER BY runs DESC"
+            ).bindparams(name=name)
+        )
+    ).all()
+
+    # 4) Execucoes recentes.
+    recent_rows = (
+        await db.execute(
+            text(
+                "SELECT agent_version AS version, model_used, status, "
+                "  tokens_input, tokens_output, tokens_cache_read, "
+                "  tokens_cache_creation, cost_brl_estimated AS cost_brl, "
+                "  duration_ms, triggered_at "
+                "FROM agent_analysis_run WHERE agent_name = :name "
+                "ORDER BY triggered_at DESC LIMIT 10"
+            ).bindparams(name=name)
+        )
+    ).all()
+
+    return AgentStatsResponse(
+        agent_name=name,
+        window_days=window_days,
+        total_runs=overall.total_runs,
+        runs_success=overall.runs_success,
+        runs_error=overall.runs_error,
+        runs_partial=overall.runs_partial,
+        tokens_input=overall.tokens_input,
+        tokens_output=overall.tokens_output,
+        tokens_cache_read=overall.tokens_cache_read,
+        tokens_cache_creation=overall.tokens_cache_creation,
+        cost_brl_total=_f(overall.cost_brl_total),
+        avg_duration_ms=(
+            _f(overall.avg_duration_ms)
+            if overall.avg_duration_ms is not None
+            else None
+        ),
+        last_run_at=overall.last_run_at,
+        window_runs=window.window_runs,
+        window_cost_brl=_f(window.window_cost_brl),
+        window_tokens_total=window.window_tokens_total,
+        by_model=[
+            AgentStatsByModel(
+                model=r.model,
+                runs=r.runs,
+                tokens_total=r.tokens_total,
+                cost_brl=_f(r.cost_brl),
+            )
+            for r in by_model_rows
+        ],
+        recent_runs=[
+            AgentRunRecent(
+                version=r.version,
+                model_used=r.model_used,
+                status=r.status,
+                tokens_input=r.tokens_input,
+                tokens_output=r.tokens_output,
+                tokens_cache_read=r.tokens_cache_read,
+                tokens_cache_creation=r.tokens_cache_creation,
+                cost_brl=_f(r.cost_brl) if r.cost_brl is not None else None,
+                duration_ms=r.duration_ms,
+                triggered_at=r.triggered_at,
+            )
+            for r in recent_rows
+        ],
     )
