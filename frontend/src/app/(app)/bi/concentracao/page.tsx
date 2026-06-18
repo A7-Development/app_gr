@@ -13,7 +13,12 @@ import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 import { parseAsString, useQueryState } from "nuqs"
 import { toast } from "sonner"
-import { RiCalendarLine, RiCheckLine, RiHistoryLine } from "@remixicon/react"
+import {
+  RiBuilding2Line,
+  RiCalendarLine,
+  RiCheckLine,
+  RiHistoryLine,
+} from "@remixicon/react"
 
 import { PageHeader } from "@/design-system/components/PageHeader"
 import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
@@ -81,6 +86,13 @@ function OptList({
   )
 }
 
+function fmtMi(v: number): string {
+  return `R$ ${(v / 1e6).toLocaleString("pt-BR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })} mi`
+}
+
 function fmtData(iso: string | undefined, long = false): string {
   if (!iso) return "—"
   const d = new Date(iso)
@@ -94,6 +106,7 @@ function fmtData(iso: string | undefined, long = false): string {
 
 export default function ConcentracaoPage() {
   // Filtros globais (§7.2) — deep-linkaveis via URL (nuqs).
+  const [uaParam, setUaParam] = useQueryState("ua")
   const [dataParam, setDataParam] = useQueryState("data")
   const [janela, setJanela] = useQueryState(
     "janela",
@@ -101,13 +114,20 @@ export default function ConcentracaoPage() {
   )
 
   const q = useQuery({
-    queryKey: ["bi", "concentracao", dataParam, janela],
-    queryFn: () => biConcentracao.get(dataParam, janela),
+    queryKey: ["bi", "concentracao", uaParam, dataParam, janela],
+    queryFn: () => biConcentracao.get(uaParam, dataParam, janela),
   })
 
   const data = q.data?.data
   const loading = q.isLoading
   const posicao = fmtData(data?.data_posicao)
+  const suportado = data?.suportado ?? true
+
+  // Opcoes do chip UA (todas as UAs do tenant).
+  const uaOpts = React.useMemo(
+    () => (data?.uas ?? []).map((u) => ({ value: u.id, label: u.nome })),
+    [data?.uas],
+  )
 
   // Toolbar shadow ao rolar.
   const scrollRef = React.useRef<HTMLDivElement>(null)
@@ -206,6 +226,18 @@ export default function ConcentracaoPage() {
         >
           <div className="flex h-[52px] items-center gap-2 px-6">
             <FilterChip
+              label="UA"
+              value={data?.ua?.nome ?? "—"}
+              active={uaParam !== null}
+              icon={RiBuilding2Line}
+            >
+              <OptList
+                options={uaOpts}
+                selected={uaParam ?? data?.ua?.id ?? null}
+                onSelect={(v) => setUaParam(v)}
+              />
+            </FilterChip>
+            <FilterChip
               label="Posição"
               value={posicaoChipValue}
               active={dataParam !== null}
@@ -230,15 +262,32 @@ export default function ConcentracaoPage() {
                 onSelect={(v) => setJanela(v ?? "12m")}
               />
             </FilterChip>
-            <span className="ml-auto shrink-0 text-[11px] text-gray-500 dark:text-gray-400">
-              {q.isFetching ? "Atualizando…" : "Atualizado"}
-            </span>
+            <div className="ml-auto flex shrink-0 items-center gap-3">
+              {suportado && (data?.pl_total ?? 0) > 0 && (
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                  PL de referência ·{" "}
+                  <span className="font-medium tabular-nums text-gray-700 dark:text-gray-300">
+                    {fmtMi(data!.pl_total)}
+                  </span>
+                </span>
+              )}
+              <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                {q.isFetching ? "Atualizando…" : "Atualizado"}
+              </span>
+            </div>
           </div>
         </div>
 
         {/* Conteúdo */}
         <div ref={scrollRef} className="flex-1 overflow-auto">
           <div className="flex flex-col gap-6 px-6 pt-4 pb-8">
+            {data && !suportado && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900 dark:border-amber-900/50 dark:bg-amber-500/10 dark:text-amber-200">
+                Concentração ainda não disponível para{" "}
+                <b>{data.ua?.nome ?? "esta UA"}</b> — a lógica de cálculo desta
+                UA está em construção. Por enquanto, apenas Realinvest.
+              </div>
+            )}
             {/* Tabelas — Cedentes | Sacados */}
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
               <ConcentracaoCard

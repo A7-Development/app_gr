@@ -1404,7 +1404,12 @@ export type ConcentracaoHistoricoPonto = {
   top10_pct: number
 }
 
+export type ConcentracaoUA = { id: string; nome: string }
+
 export type ConcentracaoData = {
+  ua: ConcentracaoUA | null
+  uas: ConcentracaoUA[]
+  suportado: boolean
   data_posicao: string
   pl_total: number
   datas_disponiveis: string[]
@@ -1415,8 +1420,9 @@ export type ConcentracaoData = {
 }
 
 export const biConcentracao = {
-  get: (data: string | null, janela: string) => {
+  get: (uaId: string | null, data: string | null, janela: string) => {
     const p = new URLSearchParams()
+    if (uaId) p.set("ua_id", uaId)
     if (data) p.set("data", data)
     if (janela) p.set("janela", janela)
     const qs = p.toString()

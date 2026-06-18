@@ -7,6 +7,7 @@ total do fundo (Realinvest), + serie historica diaria. CLAUDE.md §10
 
 from datetime import date
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,10 @@ _Guard = Depends(require_module(Module.BI, Permission.READ))
 async def concentracao(
     db: Annotated[AsyncSession, Depends(get_db)],
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    ua_id: Annotated[
+        UUID | None,
+        Query(description="UA (fundo). Vazio = Realinvest (default)."),
+    ] = None,
     data: Annotated[
         date | None,
         Query(description="Data da posicao (YYYY-MM-DD). Vazio = ultima disponivel."),
@@ -36,9 +41,9 @@ async def concentracao(
         str, Query(description="Janela do historico: 6m|12m|24m|tudo.")
     ] = "12m",
 ) -> BIResponse[ConcentracaoData]:
-    """Concentracao da carteira FIDC (Realinvest): Top-10 cedentes/sacados por
-    valor presente sobre o PL total do fundo + historico diario."""
+    """Concentracao da carteira FIDC: Top-10 cedentes/sacados por valor presente
+    sobre o PL total do fundo + historico diario."""
     data_out, prov = await svc.get_concentracao(
-        db, tenant_id=principal.tenant_id, data=data, janela=janela
+        db, tenant_id=principal.tenant_id, ua_id=ua_id, data=data, janela=janela
     )
     return BIResponse(data=data_out, provenance=prov)

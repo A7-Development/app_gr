@@ -45,9 +45,21 @@ class HistoricoPonto(BaseModel):
     top10_pct: float = Field(description="% do PL dos 10 maiores")
 
 
+class ConcentracaoUA(BaseModel):
+    """Unidade administrativa (fundo) — para o filtro UA."""
+
+    id: str
+    nome: str
+
+
 class ConcentracaoData(BaseModel):
     """Payload da pagina /bi/concentracao."""
 
+    # UA atual (selecionada/default) + todas as UAs do tenant (filtro UA).
+    ua: ConcentracaoUA | None
+    uas: list[ConcentracaoUA]
+    # False = UA sem logica de concentracao ainda (so Realinvest por enquanto).
+    suportado: bool
     data_posicao: date
     pl_total: float
     # Datas de carteira disponiveis (recentes, desc) — popula o filtro Posicao.
