@@ -2,25 +2,22 @@
 
 //
 // ConcentracaoCard — card de ranking Top-10 (cedentes ou sacados).
-// Tabela canonica (DataTable, toolbar off) + linha "10 maiores" no footer
-// que reconcilia o total (§14.6). Cells via tableTokens (§6).
+// Lâmina de leitura -> DenseTable canônica (modo padrão): coluna de posição
+// (#), nome, valor presente, % PL + rodapé "10 maiores" (subtotal) e
+// "Outros (N)" (cauda) que reconciliam a carteira (§14.6).
 //
 
 import * as React from "react"
-import { type ColumnDef } from "@tanstack/react-table"
 
 import { Card } from "@/components/tremor/Card"
-import { DataTable } from "@/design-system/components/DataTable"
+import {
+  DenseTable,
+  type DenseColumn,
+  type DenseRow,
+} from "@/design-system/components/DenseTable"
 import { cardTokens } from "@/design-system/tokens/card"
-import { tableTokens } from "@/design-system/tokens/table"
-import type { ConcentracaoItem, ConcentracaoTabela } from "@/lib/api-client"
 import { cx } from "@/lib/utils"
-
-const fmtNum = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 })
-const fmtPct = new Intl.NumberFormat("pt-BR", {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-})
+import type { ConcentracaoTabela } from "@/lib/api-client"
 
 export function ConcentracaoCard({
   titulo,
@@ -35,80 +32,37 @@ export function ConcentracaoCard({
   tabela: ConcentracaoTabela | undefined
   loading: boolean
 }) {
-  const columns = React.useMemo<ColumnDef<ConcentracaoItem, unknown>[]>(
+  const columns = React.useMemo<DenseColumn[]>(
     () => [
-      {
-        accessorKey: "nome",
-        header: eyebrow,
-        cell: ({ row }) => (
-          <span className={cx(tableTokens.cellText, "block truncate")}>
-            {row.original.nome}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "financeiro",
-        header: "Valor Presente",
-        meta: { align: "right" },
-        cell: ({ row }) => (
-          <div className={cx(tableTokens.cellNumber, "text-right")}>
-            {fmtNum.format(row.original.financeiro)}
-          </div>
-        ),
-      },
-      {
-        accessorKey: "pct_pl",
-        header: "% PL",
-        meta: { align: "right" },
-        cell: ({ row }) => (
-          <div className={cx(tableTokens.cellNumber, "text-right")}>
-            {fmtPct.format(row.original.pct_pl)}
-          </div>
-        ),
-      },
+      { key: "rank", label: "#", format: "numero" },
+      { key: "nome", label: eyebrow, format: "texto" },
+      { key: "financeiro", label: "Valor Presente", format: "numero" },
+      { key: "pct_pl", label: "% PL", format: "pct" },
     ],
     [eyebrow],
   )
 
-  const renderFooter = React.useCallback(() => {
-    if (!tabela) return null
-    return (
-      <>
-        <tr className="border-t border-t-gray-200 dark:border-t-gray-800">
-          <td className="px-3 py-2.5">
-            <span className={tableTokens.cellStrong}>10 maiores</span>
-          </td>
-          <td className="px-3 py-2.5 text-right">
-            <span className={cx(tableTokens.cellStrong, "tabular-nums")}>
-              {fmtNum.format(tabela.total_financeiro)}
-            </span>
-          </td>
-          <td className="px-3 py-2.5 text-right">
-            <span className={cx(tableTokens.cellStrong, "tabular-nums")}>
-              {fmtPct.format(tabela.total_pct_pl)}
-            </span>
-          </td>
-        </tr>
-        <tr>
-          <td className="px-3 py-2">
-            <span className={tableTokens.cellSecondary}>
-              Outros ({fmtNum.format(tabela.outros_qtd)})
-            </span>
-          </td>
-          <td className="px-3 py-2 text-right">
-            <span className={cx(tableTokens.cellNumberSecondary)}>
-              {fmtNum.format(tabela.outros_financeiro)}
-            </span>
-          </td>
-          <td className="px-3 py-2 text-right">
-            <span className={cx(tableTokens.cellNumberSecondary)}>
-              {fmtPct.format(tabela.outros_pct_pl)}
-            </span>
-          </td>
-        </tr>
-      </>
-    )
-  }, [tabela])
+  const rows = React.useMemo<DenseRow[]>(
+    () =>
+      (tabela?.itens ?? []).map((i) => ({
+        rank: i.rank,
+        nome: i.nome,
+        financeiro: Math.round(i.financeiro),
+        pct_pl: i.pct_pl,
+      })),
+    [tabela],
+  )
+
+  const footer: DenseRow | undefined = tabela && {
+    nome: "10 maiores",
+    financeiro: Math.round(tabela.total_financeiro),
+    pct_pl: tabela.total_pct_pl,
+  }
+  const footerSecondary: DenseRow | undefined = tabela && {
+    nome: `Outros (${tabela.outros_qtd})`,
+    financeiro: Math.round(tabela.outros_financeiro),
+    pct_pl: tabela.outros_pct_pl,
+  }
 
   return (
     <Card className="p-0">
@@ -120,16 +74,26 @@ export function ConcentracaoCard({
           10 maiores · {posicao}
         </span>
       </div>
-      <DataTable<ConcentracaoItem>
-        data={tabela?.itens ?? []}
-        columns={columns}
-        density="compact"
-        loading={loading}
-        showDensityToggle={false}
-        showColumnManager={false}
-        showExport={false}
-        renderFooter={renderFooter}
-      />
+      {loading ? (
+        <div className="space-y-1.5 px-3 pb-3">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-5 animate-pulse rounded bg-gray-100 dark:bg-gray-800"
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="px-3 pb-3">
+          <DenseTable
+            bordered={false}
+            columns={columns}
+            rows={rows}
+            footer={footer}
+            footerSecondary={footerSecondary}
+          />
+        </div>
+      )}
     </Card>
   )
 }
