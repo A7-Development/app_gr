@@ -10,6 +10,7 @@
 // Dados). Aqui ficam só pra destravar a tela sem esperar o pipeline backend.
 // Ver docs/esteira-credito-interface-camadas.md §5 (Etapas 1.2 vs 1.3).
 
+import type { ProvenanceRef } from "@/design-system/tokens/provenance"
 import type {
   Apontamento,
   Block,
@@ -20,6 +21,26 @@ import type {
   RevenueAnalysis,
   SocialContractAnalysis,
 } from "@/lib/credito-client"
+
+// ─── Assinaturas de proveniência (F4 — regra estrutural, 2026-06-18) ──────────
+//
+// A origem de cada valor é DETERMINÍSTICA pelo fluxo do dado, não subjetiva:
+//   • agente    → leitura / julgamento / cálculo do agente (tendência, aderência,
+//                 "soma confere", credibilidade, pontos de atenção). Pontilhada
+//                 enquanto pendente; assenta em contínua ao homologar (E3).
+//   • fonte     → fato echoado de bureau/silver (situação cadastral). Contínua.
+//   • documento → valor levantado verbatim do doc enviado (poderes de assinatura,
+//                 cláusulas estatutárias). Tracejada.
+//   • analista  → o que o humano edita (campo "Sua análise"). Dupla.
+//
+// INTERIM: o mapper roda no front sobre o output do agente, que NÃO carrega o
+// localizador (página/bbox do doc, tabela/campo silver, runId). Por isso aqui só
+// a ASSINATURA visível (cor + ícone + forma de linha) — sem `locator`, pra não
+// fabricar drill (§14: localizador inventado = sistema mentindo sobre origem). O
+// "ver evidência" liga quando o backend emitir o ponteiro real (Etapa 4).
+const P_AGENTE: ProvenanceRef = { origin: "agente", homologado: false }
+const P_FONTE: ProvenanceRef = { origin: "fonte" }
+const P_DOC: ProvenanceRef = { origin: "documento" }
 
 // "alta/media/baixa" (revenue, cadastral) -> severidade canônica do bloco.
 function sevFromPt(s: string): Apontamento["severidade"] {
@@ -50,6 +71,7 @@ export function revenueToSection(output: RevenueAnalysis): SectionDescriptor {
           label: "Tendência",
           valor: `${output.tendencia.direcao} · ${output.tendencia.intensidade}`,
           nota: output.tendencia.leitura,
+          provenance: P_AGENTE,
         },
         {
           label: "Sazonalidade",
@@ -58,6 +80,7 @@ export function revenueToSection(output: RevenueAnalysis): SectionDescriptor {
           badge: output.sazonalidade.confiavel
             ? undefined
             : { texto: "leitura fraca", tom: "neutro" },
+          provenance: P_AGENTE,
         },
         {
           label: "Qualidade do dado",
@@ -70,6 +93,7 @@ export function revenueToSection(output: RevenueAnalysis): SectionDescriptor {
           badge: output.qualidade_do_dado.soma_confere
             ? { texto: "soma confere", tom: "ok" }
             : { texto: "soma ≠", tom: "atencao" },
+          provenance: P_AGENTE,
         },
         {
           label: "Credibilidade do documento",
@@ -81,6 +105,7 @@ export function revenueToSection(output: RevenueAnalysis): SectionDescriptor {
               : output.credibilidade_documento.nivel === "baixo"
                 ? { texto: "baixo", tom: "critico" }
                 : { texto: "médio", tom: "atencao" },
+          provenance: P_AGENTE,
         },
       ],
     },
@@ -94,6 +119,7 @@ export function revenueToSection(output: RevenueAnalysis): SectionDescriptor {
         severidade: sevFromPt(p.severidade),
         titulo: `${p.mes ? `${p.mes} · ` : ""}${p.tipo} (${p.esperado_ou_anomalo})`,
         descricao: p.observacao,
+        provenance: P_AGENTE,
       })),
     })
   }
@@ -106,6 +132,7 @@ export function revenueToSection(output: RevenueAnalysis): SectionDescriptor {
       itens: output.credibilidade_documento.ressalvas.map((r) => ({
         severidade: "atencao" as const,
         titulo: r,
+        provenance: P_AGENTE,
       })),
     })
   }
@@ -152,10 +179,23 @@ export function cadastralToSection(output: CadastralAnalysis): SectionDescriptor
           label: "Situação cadastral",
           valor: output.situacao_cadastral,
           badge: { texto: output.situacao_cadastral, tom: sitTom },
+          provenance: P_FONTE,
         },
-        { label: "Tempo de atividade", valor: output.tempo_atividade_leitura },
-        { label: "Aderência da atividade (CNAE)", valor: output.aderencia_atividade },
-        { label: "Capital vs porte", valor: output.porte_capital_leitura },
+        {
+          label: "Tempo de atividade",
+          valor: output.tempo_atividade_leitura,
+          provenance: P_AGENTE,
+        },
+        {
+          label: "Aderência da atividade (CNAE)",
+          valor: output.aderencia_atividade,
+          provenance: P_AGENTE,
+        },
+        {
+          label: "Capital vs porte",
+          valor: output.porte_capital_leitura,
+          provenance: P_AGENTE,
+        },
       ],
     },
   ]
@@ -168,6 +208,7 @@ export function cadastralToSection(output: CadastralAnalysis): SectionDescriptor
         severidade: sevFromPt(p.severidade),
         titulo: p.tipo,
         descricao: p.observacao,
+        provenance: P_AGENTE,
       })),
     })
   }
@@ -210,6 +251,7 @@ export function socialContractToSection(output: SocialContractAnalysis): Section
           valor: output.qsa_changes_recent ? "Sim — atenção" : "Não identificadas",
           nota: output.qsa_changes_detail ?? undefined,
           badge: output.qsa_changes_recent ? { texto: "atenção", tom: "atencao" } : undefined,
+          provenance: P_AGENTE,
         },
         {
           label: "Objeto social x operação",
@@ -218,6 +260,7 @@ export function socialContractToSection(output: SocialContractAnalysis): Section
           badge: output.object_compatible_with_operation
             ? { texto: "compatível", tom: "ok" }
             : { texto: "incompatível", tom: "critico" },
+          provenance: P_AGENTE,
         },
       ],
     },
@@ -228,7 +271,11 @@ export function socialContractToSection(output: SocialContractAnalysis): Section
       id: "soc-poderes",
       type: "ficha",
       titulo: "Poderes de assinatura",
-      campos: signing.map(([nome, forma]) => ({ label: nome, valor: String(forma) })),
+      campos: signing.map(([nome, forma]) => ({
+        label: nome,
+        valor: String(forma),
+        provenance: P_DOC,
+      })),
     })
   }
 
@@ -238,6 +285,8 @@ export function socialContractToSection(output: SocialContractAnalysis): Section
       type: "texto",
       titulo: "Restrições estatutárias",
       markdown: output.statutory_restrictions.map((r) => `- ${r}`).join("\n"),
+      // Cláusulas transcritas do contrato — voz do documento, não do agente.
+      provenance: P_DOC,
     })
   }
 
@@ -250,6 +299,7 @@ export function socialContractToSection(output: SocialContractAnalysis): Section
         severidade: sevFromChecklist(c.status),
         titulo: `${c.code} — ${c.description}`,
         descricao: c.rationale,
+        provenance: P_AGENTE,
       })),
     })
   }
