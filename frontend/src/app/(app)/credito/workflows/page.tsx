@@ -201,7 +201,7 @@ export default function WorkflowsPage() {
       <PageHeader
         title="Playbooks"
         info="Templates Strata e playbooks do tenant. Cada análise executa um playbook."
-        subtitle="StrataFlow · Configuração"
+        subtitle="Crédito · Configuração"
         actions={
           <Button variant="primary" onClick={openNew} disabled={isLoading}>
             <RiAddLine className="mr-1 size-4" aria-hidden />

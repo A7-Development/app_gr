@@ -1,6 +1,6 @@
 // src/app/(app)/credito/dossies/novo/page.tsx
 //
-// "Iniciar análise" — entrada minimalista do StrataFlow.
+// "Iniciar análise" — entrada minimalista do módulo Crédito.
 //
 // Filosofia (Fase 1): NÃO há mais "empresa-alvo" cobrada upfront. O fluxo
 // escolhido é quem decide o que coletar (CNPJ, CPF, nada). O que o analista
@@ -105,7 +105,7 @@ export default function NovoAnalisePage() {
     <div className="flex flex-col gap-6 px-12 py-6 pb-28">
       <PageHeader
         title="Iniciar análise"
-        subtitle="StrataFlow · Crédito"
+        subtitle="Crédito · Dossiês"
         info="O fluxo selecionado decide o que coletar (CNPJ, CPF, documentos, etc) ao longo da execução. Você não precisa preencher nada antes."
         actions={
           <Button variant="ghost" onClick={() => router.back()}>
