@@ -1,28 +1,27 @@
 // src/design-system/components/StationsSidebar/index.tsx
 //
-// Sidebar de etapas do modo foco (292px, handoff Conceito D).
-// Gerada da mesma definição do fluxo: estação = node com gate humano ou
-// que gera seção do dossiê. Mostra estados AO VIVO — o analista é puxado
-// pelas pendências, não percorre 1→N.
+// Trilha do modo foco — tratamento A2 "Espinha conectada" (handoff redesenho
+// Construtor de Dossiê, 2026-06-18). Timeline vertical: cada estação e um no
+// na linha; o gradiente da linha marca percorrido (verde) -> presente (indigo)
+// -> futuro (cinza). A trilha CONDUZ ("bussola, nao cadeado"): toda estacao
+// pronta e navegavel.
 //
-// Anatomia: header (← fila, eyebrow, cedente, meta, progresso 4px) ·
-// lista de estações (6 estados visuais) · rodapé ("Ver dossiê · X% montado"
-// + linha da trilha).
+// Anatomia: header (← fila · eyebrow · cedente · meta · progresso 4px) ·
+// espinha de estacoes (no + linha por estado) · rodape ("Ver dossie · X%" +
+// linha da trilha). Mesma interface/props da versao anterior (lista plana).
 
 "use client"
 
-import * as React from "react"
 import Link from "next/link"
 import {
   RiArticleLine,
-  RiCheckboxCircleFill,
-  RiErrorWarningLine,
+  RiCheckLine,
+  RiErrorWarningFill,
   RiFileUploadLine,
   RiHistoryLine,
   RiLockLine,
-  RiSparkling2Line,
+  RiSparkling2Fill,
   RiTimeLine,
-  RiUserFollowLine,
 } from "@remixicon/react"
 
 import { Button } from "@/components/tremor/Button"
@@ -65,36 +64,112 @@ export type StationsSidebarProps = {
   className?: string
 }
 
-function StationIcon({ state }: { state: StationState }) {
+// ─── Cores da espinha (proveniência/estado) ──────────────────────────────────
+const C_DONE = "#059669" // verde — percorrido
+const C_PRESENT = provenanceTokens.agente.color // indigo #6366F1 — presente
+const C_FUTURE = "#E5E7EB" // gray-200 — futuro
+const C_RING_ACTIVE = "#C7D2FE" // indigo-200 — borda do card ativo
+const C_AMBER = "#F59E0B"
+
+const _DONE = new Set<StationState>(["fechada", "fechada_com_ressalva"])
+const _PRESENT = new Set<StationState>(["homologar", "sua_vez", "rodando"])
+
+/** Cor do SEGMENTO de linha que SAI deste nó (para o nó de baixo). */
+function segColor(state: StationState): string {
+  if (_DONE.has(state)) return C_DONE
+  if (_PRESENT.has(state)) return C_PRESENT
+  return C_FUTURE
+}
+
+/** O nó (círculo 18px) — dupla codificação cor + ícone por estado. */
+function StationNode({ state }: { state: StationState }) {
+  const base =
+    "relative z-10 flex size-[18px] shrink-0 items-center justify-center rounded-full"
   switch (state) {
     case "fechada":
-      return <RiCheckboxCircleFill className="size-4 shrink-0" style={{ color: "#059669" }} aria-hidden />
-    case "fechada_com_ressalva":
-      return <RiCheckboxCircleFill className="size-4 shrink-0 text-amber-600" aria-hidden />
-    case "sua_vez":
-      return <RiUserFollowLine className="size-4 shrink-0 text-blue-600" aria-hidden />
-    case "homologar":
       return (
-        <RiSparkling2Line
-          className="size-4 shrink-0"
-          style={{ color: provenanceTokens.agente.color }}
-          aria-hidden
-        />
+        <span className={base} style={{ background: C_DONE }}>
+          <RiCheckLine className="size-3 text-white" aria-hidden />
+        </span>
+      )
+    case "fechada_com_ressalva":
+      return (
+        <span
+          className={base}
+          style={{ background: C_DONE, boxShadow: `0 0 0 1.5px ${C_AMBER}` }}
+        >
+          <RiCheckLine className="size-3 text-white" aria-hidden />
+        </span>
+      )
+    case "homologar":
+    case "sua_vez":
+      return (
+        <span
+          className={cx(base, "bg-white dark:bg-gray-950")}
+          style={{ boxShadow: `0 0 0 2px ${C_PRESENT}` }}
+        >
+          <RiSparkling2Fill
+            className="size-[11px]"
+            style={{ color: C_PRESENT }}
+            aria-hidden
+          />
+        </span>
       )
     case "rodando":
       return (
-        <span className="flex size-4 shrink-0 items-center justify-center">
-          <AgentPulseDot size={8} />
+        <span
+          className={cx(base, "bg-white dark:bg-gray-950")}
+          style={{ boxShadow: `0 0 0 2px ${C_PRESENT}` }}
+        >
+          <AgentPulseDot size={7} />
         </span>
       )
     case "aguardando_documento":
-      return <RiFileUploadLine className="size-4 shrink-0 text-gray-500 dark:text-gray-400" aria-hidden />
+      return (
+        <span
+          className={cx(
+            base,
+            "border-[1.5px] border-dashed border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-950",
+          )}
+        >
+          <RiFileUploadLine className="size-[10px] text-gray-400" aria-hidden />
+        </span>
+      )
     case "em_espera":
-      return <RiTimeLine className="size-4 shrink-0 text-amber-600" aria-hidden />
+      return (
+        <span
+          className={cx(
+            base,
+            "border-[1.5px] border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-950",
+          )}
+        >
+          <RiTimeLine className="size-[10px] text-gray-400" aria-hidden />
+        </span>
+      )
     case "falhou":
-      return <RiErrorWarningLine className="size-4 shrink-0 text-amber-600" aria-hidden />
+      return (
+        <span
+          className={cx(base, "bg-white dark:bg-gray-950")}
+          style={{ boxShadow: `0 0 0 2px ${C_AMBER}` }}
+        >
+          <RiErrorWarningFill
+            className="size-[12px]"
+            style={{ color: C_AMBER }}
+            aria-hidden
+          />
+        </span>
+      )
     case "bloqueada":
-      return <RiLockLine className="size-4 shrink-0 text-gray-400 dark:text-gray-600" aria-hidden />
+      return (
+        <span
+          className={cx(
+            base,
+            "border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-900",
+          )}
+        >
+          <RiLockLine className="size-[10px] text-gray-400 dark:text-gray-600" aria-hidden />
+        </span>
+      )
   }
 }
 
@@ -142,6 +217,7 @@ export function StationsSidebar({
   trailLabel,
   className,
 }: StationsSidebarProps) {
+  const n = stations.length
   return (
     <aside
       aria-label="Estações da análise"
@@ -183,15 +259,14 @@ export function StationsSidebar({
         </div>
       </div>
 
-      {/* Lista de estações */}
-      <nav className="flex-1 overflow-y-auto px-2.5 py-3.5">
-        <p className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400 dark:text-gray-600">
-          Estações
-        </p>
-        <div className="flex flex-col gap-[3px]">
-          {stations.map((st) => {
+      {/* Espinha de estações (A2) */}
+      <nav className="flex-1 overflow-y-auto px-[18px] py-4">
+        <div className="flex flex-col">
+          {stations.map((st, i) => {
             const isActive = !dossierActive && st.id === activeId
             const isBlocked = st.state === "bloqueada"
+            const topColor = i > 0 ? segColor(stations[i - 1].state) : undefined
+            const botColor = i < n - 1 ? segColor(st.state) : undefined
             return (
               <button
                 key={st.id}
@@ -199,38 +274,72 @@ export function StationsSidebar({
                 onClick={() => !isBlocked && onSelect(st.id)}
                 disabled={isBlocked}
                 className={cx(
-                  "relative flex items-start gap-2.5 rounded-md px-2 py-[9px] text-left transition-colors duration-100",
-                  isActive
-                    ? "border border-gray-200 bg-white shadow-xs dark:border-gray-800 dark:bg-gray-950"
-                    : "border border-transparent",
-                  !isActive && !isBlocked && "hover:bg-gray-100 dark:hover:bg-gray-900",
-                  isBlocked && "cursor-default opacity-55",
+                  "group relative flex gap-3 pb-4 text-left last:pb-0",
+                  isBlocked && "cursor-default",
                 )}
               >
-                {isActive && (
-                  <span
-                    className="absolute -left-2.5 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-blue-500"
-                    aria-hidden
-                  />
-                )}
-                <span className="mt-px">
-                  <StationIcon state={st.state} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
+                {/* Rail: linha + nó */}
+                <span className="relative flex w-[18px] shrink-0 justify-center">
+                  {topColor && (
                     <span
-                      className={cx(
-                        "truncate text-[13px] text-gray-700 dark:text-gray-300",
-                        isActive && "font-semibold text-gray-900 dark:text-gray-50",
-                      )}
-                    >
-                      {st.label}
-                    </span>
-                    <StationBadge state={st.state} />
+                      className="absolute left-1/2 top-0 h-[13px] w-0.5 -translate-x-1/2"
+                      style={{ background: topColor }}
+                      aria-hidden
+                    />
+                  )}
+                  {botColor && (
+                    <span
+                      className="absolute left-1/2 bottom-0 top-[13px] w-0.5 -translate-x-1/2"
+                      style={{ background: botColor }}
+                      aria-hidden
+                    />
+                  )}
+                  <span className={cx("mt-1", isBlocked && "opacity-60")}>
+                    <StationNode state={st.state} />
                   </span>
-                  {st.sublabel && (
-                    <span className="mt-0.5 block truncate text-[11px] text-gray-400 dark:text-gray-500">
-                      {st.sublabel}
+                </span>
+
+                {/* Conteúdo */}
+                <span className={cx("min-w-0 flex-1", isBlocked && "opacity-55")}>
+                  {isActive ? (
+                    <span
+                      className="block rounded-md border bg-white px-3 py-2 shadow-xs dark:bg-gray-950"
+                      style={{ borderColor: C_RING_ACTIVE }}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="truncate text-[13px] font-semibold text-gray-900 dark:text-gray-50">
+                          {st.label}
+                        </span>
+                        <StationBadge state={st.state} />
+                      </span>
+                      <span
+                        className="mt-1 block text-[11px] font-medium"
+                        style={{ color: C_PRESENT }}
+                      >
+                        ▸ você está aqui
+                        {st.sublabel ? ` · ${st.sublabel}` : ""}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="block pt-px">
+                      <span className="flex items-center gap-2">
+                        <span
+                          className={cx(
+                            "truncate text-[13px]",
+                            st.state === "bloqueada"
+                              ? "text-gray-400 dark:text-gray-600"
+                              : "text-gray-700 group-hover:text-gray-900 dark:text-gray-300 dark:group-hover:text-gray-100",
+                          )}
+                        >
+                          {st.label}
+                        </span>
+                        <StationBadge state={st.state} />
+                      </span>
+                      {st.sublabel && (
+                        <span className="mt-0.5 block truncate text-[11px] text-gray-400 dark:text-gray-500">
+                          {st.sublabel}
+                        </span>
+                      )}
                     </span>
                   )}
                 </span>
