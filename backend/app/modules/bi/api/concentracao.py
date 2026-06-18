@@ -5,9 +5,10 @@ total do fundo (Realinvest), + serie historica diaria. CLAUDE.md §10
 (escopo de tenant) + §13.2.1 (silver-only).
 """
 
+from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -27,8 +28,17 @@ _Guard = Depends(require_module(Module.BI, Permission.READ))
 async def concentracao(
     db: Annotated[AsyncSession, Depends(get_db)],
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    data: Annotated[
+        date | None,
+        Query(description="Data da posicao (YYYY-MM-DD). Vazio = ultima disponivel."),
+    ] = None,
+    janela: Annotated[
+        str, Query(description="Janela do historico: 6m|12m|24m|tudo.")
+    ] = "12m",
 ) -> BIResponse[ConcentracaoData]:
     """Concentracao da carteira FIDC (Realinvest): Top-10 cedentes/sacados por
     valor presente sobre o PL total do fundo + historico diario."""
-    data, prov = await svc.get_concentracao(db, tenant_id=principal.tenant_id)
-    return BIResponse(data=data, provenance=prov)
+    data_out, prov = await svc.get_concentracao(
+        db, tenant_id=principal.tenant_id, data=data, janela=janela
+    )
+    return BIResponse(data=data_out, provenance=prov)

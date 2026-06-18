@@ -1407,6 +1407,7 @@ export type ConcentracaoHistoricoPonto = {
 export type ConcentracaoData = {
   data_posicao: string
   pl_total: number
+  datas_disponiveis: string[]
   cedentes: ConcentracaoTabela
   sacados: ConcentracaoTabela
   historico_cedentes: ConcentracaoHistoricoPonto[]
@@ -1414,8 +1415,15 @@ export type ConcentracaoData = {
 }
 
 export const biConcentracao = {
-  get: () =>
-    apiClient.get<BIResponse<ConcentracaoData>>("/bi/concentracao"),
+  get: (data: string | null, janela: string) => {
+    const p = new URLSearchParams()
+    if (data) p.set("data", data)
+    if (janela) p.set("janela", janela)
+    const qs = p.toString()
+    return apiClient.get<BIResponse<ConcentracaoData>>(
+      `/bi/concentracao${qs ? `?${qs}` : ""}`,
+    )
+  },
 }
 
 // ───────────────────────────────────────────────────────────────────────────

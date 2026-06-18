@@ -50,6 +50,8 @@ class ConcentracaoData(BaseModel):
 
     data_posicao: date
     pl_total: float
+    # Datas de carteira disponiveis (recentes, desc) — popula o filtro Posicao.
+    datas_disponiveis: list[date]
     cedentes: ConcentracaoTabela
     sacados: ConcentracaoTabela
     historico_cedentes: list[HistoricoPonto]
