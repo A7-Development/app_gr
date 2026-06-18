@@ -146,7 +146,7 @@ export const MODULES: ModuleDefinition[] = [
       { name: "Carteira", href: "/bi/carteira", enabled: false, icon: RiWallet3Line },
       { name: "Liquidações", href: "/bi/liquidacoes", enabled: false, icon: RiHandCoinLine },
       { name: "Inadimplência", href: "/bi/inadimplencia", enabled: false, icon: RiPulseLine },
-      { name: "Concentração", href: "/bi/concentracao", enabled: false, icon: RiBarChartGroupedLine },
+      { name: "Concentração", href: "/bi/concentracao", enabled: true, icon: RiBarChartGroupedLine },
       { name: "Rentabilidade", href: "/bi/rentabilidade", enabled: false, icon: RiLineChartLine },
       // Benchmark — dados publicos CVM FIDC via postgres_fdw.
       // Ver docs/integracao-cvm-fidc.md e CLAUDE.md §13.1.
