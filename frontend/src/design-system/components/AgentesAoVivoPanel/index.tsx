@@ -138,7 +138,7 @@ export function AgentesAoVivoPanel({
     <aside
       aria-label="Agentes ao vivo"
       className={cx(
-        "flex h-screen w-[308px] shrink-0 flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
+        "flex h-full w-[308px] shrink-0 flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
         className,
       )}
     >

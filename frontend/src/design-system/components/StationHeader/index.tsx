@@ -87,6 +87,14 @@ function PhaseGlyph({ s, number }: { s: StationSubstep; number: number }) {
   )
 }
 
+export type StationHeaderPrimaryAction = {
+  label: React.ReactNode
+  icon?: RemixiconComponentType
+  onClick: () => void
+  loading?: boolean
+  disabled?: boolean
+}
+
 export type StationHeaderProps = {
   /** Título completo (ex.: "Estação 2 · Faturamento"). */
   title: string
@@ -99,6 +107,10 @@ export type StationHeaderProps = {
   onSubstepClick?: (index: number) => void
   onOpenTrail?: () => void
   trailDisabled?: boolean
+  /** Ação primária de fechamento NO HEADER (handoff F1.3 — sem barra inferior). */
+  primaryAction?: StationHeaderPrimaryAction
+  /** Microcópia sob o botão primário ("aprova a leitura · grava §Seção"). */
+  actionHint?: React.ReactNode
   /** Slot do menu "···" (DropdownMenu). Omitido = sem botão. */
   moreMenu?: React.ReactNode
   className?: string
@@ -112,9 +124,12 @@ export function StationHeader({
   onSubstepClick,
   onOpenTrail,
   trailDisabled,
+  primaryAction,
+  actionHint,
   moreMenu,
   className,
 }: StationHeaderProps) {
+  const PrimaryIcon = primaryAction?.icon
   return (
     <header
       className={cx(
@@ -128,22 +143,40 @@ export function StationHeader({
             {title}
           </h1>
           {chip}
-          <div className="ml-auto flex items-center gap-1.5">
-            {onOpenTrail && (
-              <Button
-                variant="ghost"
-                className="h-8"
-                onClick={onOpenTrail}
-                disabled={trailDisabled}
-              >
-                <RiHistoryLine className="mr-1.5 size-4" aria-hidden />
-                Trilha da estação
-              </Button>
-            )}
-            {moreMenu ?? (
-              <Button variant="ghost" className="size-8 p-0" aria-label="Mais ações" disabled>
-                <RiMoreLine className="size-4" aria-hidden />
-              </Button>
+          <div className="ml-auto flex flex-col items-end gap-1">
+            <div className="flex items-center gap-1.5">
+              {primaryAction && (
+                <Button
+                  className="h-9"
+                  onClick={primaryAction.onClick}
+                  isLoading={primaryAction.loading}
+                  disabled={primaryAction.disabled}
+                >
+                  {PrimaryIcon && <PrimaryIcon className="mr-1.5 size-4" aria-hidden />}
+                  {primaryAction.label}
+                </Button>
+              )}
+              {onOpenTrail && (
+                <Button
+                  variant="ghost"
+                  className="h-9"
+                  onClick={onOpenTrail}
+                  disabled={trailDisabled}
+                >
+                  <RiHistoryLine className="mr-1.5 size-4" aria-hidden />
+                  Trilha
+                </Button>
+              )}
+              {moreMenu ?? (
+                <Button variant="ghost" className="size-9 p-0" aria-label="Mais ações" disabled>
+                  <RiMoreLine className="size-4" aria-hidden />
+                </Button>
+              )}
+            </div>
+            {primaryAction && actionHint && (
+              <p className="max-w-[300px] text-right text-[11px] leading-snug text-gray-400 dark:text-gray-500">
+                {actionHint}
+              </p>
             )}
           </div>
         </div>

@@ -222,7 +222,7 @@ export function StationsSidebar({
     <aside
       aria-label="Estações da análise"
       className={cx(
-        "flex h-screen w-[292px] shrink-0 flex-col border-r border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-925",
+        "flex h-full w-[292px] shrink-0 flex-col border-r border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-925",
         "motion-safe:animate-slide-right-and-fade",
         className,
       )}
