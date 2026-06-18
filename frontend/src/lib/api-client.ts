@@ -1412,6 +1412,8 @@ export type ConcentracaoData = {
   suportado: boolean
   data_posicao: string
   pl_total: number
+  pl_data: string | null
+  pl_origem: string
   datas_disponiveis: string[]
   cedentes: ConcentracaoTabela
   sacados: ConcentracaoTabela

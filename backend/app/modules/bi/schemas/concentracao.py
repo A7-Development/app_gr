@@ -62,6 +62,10 @@ class ConcentracaoData(BaseModel):
     suportado: bool
     data_posicao: date
     pl_total: float
+    # Proveniencia do PL usado como denominador: data efetiva (MEC pode usar
+    # fallback <= data_posicao) + origem.
+    pl_data: date | None
+    pl_origem: str
     # Datas de carteira disponiveis (recentes, desc) — popula o filtro Posicao.
     datas_disponiveis: list[date]
     cedentes: ConcentracaoTabela
