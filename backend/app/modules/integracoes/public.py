@@ -71,6 +71,10 @@ from app.modules.integracoes.services.pj_dossie_query import (
     DossieResult,
     fetch_bdc_dossie_pj,
 )
+from app.modules.integracoes.services.pj_processos_query import (
+    ProcessosResult,
+    fetch_bdc_processos_pj,
+)
 from app.modules.integracoes.services.serasa_pj_query import (
     execute_pj_query as execute_serasa_pj_query,
 )
@@ -152,6 +156,7 @@ __all__ = [
     "JuntaDownloadResult",
     "JuntaFichaResult",
     "JuntaListaDocsResult",
+    "ProcessosResult",
     "ReportCategory",
     "ReportSpec",
     "classify_serasa_negative_summary_message",
@@ -159,6 +164,7 @@ __all__ = [
     "endpoint_catalog",
     "execute_serasa_pj_query",
     "fetch_bdc_dossie_pj",
+    "fetch_bdc_processos_pj",
     "fetch_cadastral_pj",
     "fetch_junta_documento",
     "fetch_junta_ficha",
