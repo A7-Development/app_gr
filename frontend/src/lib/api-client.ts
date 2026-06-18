@@ -1378,6 +1378,44 @@ export const biPanorama = {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// BI · Concentracao — espelha backend bi/{schemas,services,api}/concentracao.py
+// ───────────────────────────────────────────────────────────────────────────
+
+export type ConcentracaoItem = {
+  rank: number
+  nome: string
+  documento: string
+  financeiro: number
+  pct_pl: number
+}
+
+export type ConcentracaoTabela = {
+  itens: ConcentracaoItem[]
+  total_financeiro: number
+  total_pct_pl: number
+}
+
+export type ConcentracaoHistoricoPonto = {
+  data: string
+  maior_pct: number
+  top10_pct: number
+}
+
+export type ConcentracaoData = {
+  data_posicao: string
+  pl_total: number
+  cedentes: ConcentracaoTabela
+  sacados: ConcentracaoTabela
+  historico_cedentes: ConcentracaoHistoricoPonto[]
+  historico_sacados: ConcentracaoHistoricoPonto[]
+}
+
+export const biConcentracao = {
+  get: () =>
+    apiClient.get<BIResponse<ConcentracaoData>>("/bi/concentracao"),
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // BI · Operacoes2 (refatoracao 2026-05-03 — KPI Strip + 4 abas)
 // ───────────────────────────────────────────────────────────────────────────
 

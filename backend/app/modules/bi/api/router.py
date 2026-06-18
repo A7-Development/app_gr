@@ -6,6 +6,7 @@ from app.modules.bi.api import (
     benchmark,
     benchmark2,
     benchmark_indicadores,
+    concentracao,
     metadata,
     operacoes2,
     operacoes4,
@@ -46,6 +47,10 @@ router.include_router(benchmark_indicadores.router)
 # L2 Panorama (Observatorio FIDC — analise ampla do segmento CVM via
 # postgres_fdw, CLAUDE.md 13.1). Fase 1: aba Visao Geral.
 router.include_router(panorama.router)
+
+# L2 Concentracao — Top-10 cedentes/sacados por valor presente / PL total
+# (Realinvest). Carteira QiTech (wh_estoque_recebivel) + PL MEC.
+router.include_router(concentracao.router)
 
 # Endpoints de taxonomia/metadata usados pelos filtros do frontend.
 router.include_router(metadata.router)
