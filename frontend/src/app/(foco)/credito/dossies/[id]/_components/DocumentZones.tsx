@@ -26,6 +26,8 @@ import {
   RiEditLine,
   RiEyeLine,
   RiFileTextLine,
+  RiFolderOpenLine,
+  RiInformationLine,
   RiLoader4Line,
   RiQuillPenLine,
   RiRestartLine,
@@ -55,6 +57,35 @@ export const DOC_LABEL: Record<string, string> = {
   income_tax_pf: "IR Sócio",
   cnh: "CNH",
   rg: "RG",
+}
+
+// Frase de arraste + dica por tipo de documento (handoff §6.1: copy ESPECÍFICA
+// do documento esperado, derivada do dado — nunca hardcode "Faturamento"). Tipo
+// novo cai no fallback genérico; promover ao mapa é trivial.
+export const DOC_DROP_NOUN: Record<string, string> = {
+  revenue_report: "a declaração de faturamento",
+  social_contract: "o contrato social",
+  dre: "a DRE",
+  balance_sheet: "o balanço patrimonial",
+  scr: "o relatório de SCR",
+  indebtedness: "o demonstrativo de endividamento",
+  abc_curve: "a curva ABC",
+  income_tax_pf: "a declaração de IR do sócio",
+  cnh: "a CNH",
+  rg: "o RG",
+}
+
+export const DOC_DROP_HINT: Record<string, string> = {
+  revenue_report: "PDF · últimos 12 meses de receita bruta",
+  social_contract: "PDF · contrato social ou última alteração consolidada",
+  dre: "PDF · demonstração de resultado do exercício",
+  balance_sheet: "PDF · balanço patrimonial",
+  scr: "PDF · relatório SCR do Banco Central",
+  indebtedness: "PDF · posição de dívidas e parcelas",
+  abc_curve: "PDF ou planilha · curva ABC de clientes/fornecedores",
+  income_tax_pf: "PDF · imposto de renda do sócio",
+  cnh: "PDF ou imagem · CNH do sócio",
+  rg: "PDF ou imagem · RG do sócio",
 }
 
 export const FIELD_LABELS: Record<string, string> = {
@@ -201,52 +232,63 @@ export function DocumentSourceZone({
     })
   }
 
+  const onDropFile = (file: File) => {
+    replaceRef.current = null
+    uploadMut.mutate({ file, docType: defaultType })
+  }
+
+  const triggerJunta = () => {
+    if (
+      window.confirm(
+        "Buscar na JUCESP consulta a ficha oficial (QSA + arquivamentos) e baixa o documento societário mais recente arquivado. Leva ~1-2 min e tem custo por consulta. Continuar?",
+      )
+    ) {
+      juntaMut.mutate()
+    }
+  }
+
   return (
     <section className="rounded border border-gray-200 bg-white shadow-xs dark:border-gray-800 dark:bg-gray-950">
       <header className="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-900">
         <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">
           Documento-fonte
         </span>
-        <span className="flex items-center gap-3">
-          {juntaFetch && canUpload && (
-            <button
-              type="button"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "Buscar na JUCESP consulta a ficha oficial (QSA + arquivamentos) e baixa o documento societário mais recente arquivado. Leva ~1-2 min e tem custo por consulta. Continuar?",
-                  )
-                ) {
-                  juntaMut.mutate()
-                }
-              }}
-              disabled={juntaMut.isPending}
-              className="inline-flex items-center gap-1 text-xs font-medium disabled:opacity-60"
-              style={{ color: provenanceTokens.fonte.chipText }}
-              title="Baixa o contrato/alteração mais recente direto da Junta Comercial de SP"
-            >
-              {juntaMut.isPending ? (
-                <RiLoader4Line className="size-3.5 animate-spin" aria-hidden />
-              ) : (
-                <RiBankLine className="size-3.5" aria-hidden />
-              )}
-              {juntaMut.isPending ? "Buscando na JUCESP…" : "Buscar na JUCESP"}
-            </button>
-          )}
-          {canUpload && (
-            <button
-              type="button"
-              onClick={() => {
-                replaceRef.current = null
-                setShowUpload((v) => !v)
-              }}
-              className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
-            >
-              <RiAddLine className="size-3.5" aria-hidden />
-              Adicionar documento
-            </button>
-          )}
-        </span>
+        {/* Estado vazio = zona rica embaixo já traz os caminhos; header fica
+            limpo. Ações só quando há documento (adicionar outro / fonte oficial). */}
+        {docs.length > 0 && (
+          <span className="flex items-center gap-3">
+            {juntaFetch && canUpload && (
+              <button
+                type="button"
+                onClick={triggerJunta}
+                disabled={juntaMut.isPending}
+                className="inline-flex items-center gap-1 text-xs font-medium disabled:opacity-60"
+                style={{ color: provenanceTokens.fonte.chipText }}
+                title="Baixa o contrato/alteração mais recente direto da Junta Comercial de SP"
+              >
+                {juntaMut.isPending ? (
+                  <RiLoader4Line className="size-3.5 animate-spin" aria-hidden />
+                ) : (
+                  <RiBankLine className="size-3.5" aria-hidden />
+                )}
+                {juntaMut.isPending ? "Buscando na JUCESP…" : "Buscar na JUCESP"}
+              </button>
+            )}
+            {canUpload && (
+              <button
+                type="button"
+                onClick={() => {
+                  replaceRef.current = null
+                  setShowUpload((v) => !v)
+                }}
+                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+              >
+                <RiAddLine className="size-3.5" aria-hidden />
+                Adicionar documento
+              </button>
+            )}
+          </span>
+        )}
       </header>
 
       {juntaMut.isPending && (
@@ -302,37 +344,122 @@ export function DocumentSourceZone({
         ))}
 
         {docs.length === 0 || (showUpload && canUpload) ? (
-          <button
-            type="button"
-            onClick={() => {
+          <UploadDropZone
+            canUpload={canUpload}
+            uploadPending={uploadMut.isPending}
+            juntaPending={juntaMut.isPending}
+            showJunta={juntaFetch}
+            docType={defaultType}
+            onPick={() => {
               replaceRef.current = null
               fileInputRef.current?.click()
             }}
-            disabled={uploadMut.isPending}
-            className="flex flex-col items-center gap-2 rounded bg-gray-50 px-6 py-11 text-center transition-colors duration-100 hover:bg-gray-100 dark:bg-gray-925 dark:hover:bg-gray-900"
-            style={{ border: "1.5px dashed #D1D5DB" }}
-          >
-            {uploadMut.isPending ? (
-              <RiLoader4Line className="size-7 animate-spin text-gray-400" aria-hidden />
-            ) : (
-              <RiUploadCloud2Line className="size-7 text-gray-400" aria-hidden />
-            )}
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Arraste o documento aqui ou{" "}
-              <span className="font-semibold text-blue-600 dark:text-blue-400">
-                procure no computador
-              </span>
-            </span>
-            <span className="text-xs text-gray-400">
-              PDF ou imagem · a extração dispara sozinha ao receber
-              {requiredDocTypes.length > 0 && (
-                <> · esperado: {requiredDocTypes.map((t) => DOC_LABEL[t] ?? t).join(", ")}</>
-              )}
-            </span>
-          </button>
+            onDropFile={onDropFile}
+            onJunta={triggerJunta}
+          />
         ) : null}
       </div>
     </section>
+  )
+}
+
+// ─── Zona de coleta (estado vazio / adicionar) ──────────────────────────────
+// Handoff §6.1: copy do documento esperado + DOIS caminhos (upload manual ·
+// fonte oficial) + linha do agente aguardando. Drag-and-drop real (a copy
+// "Arraste" agora é verdade). Tudo derivado do dado — sem hardcode de estação.
+
+function UploadDropZone({
+  canUpload,
+  uploadPending,
+  juntaPending,
+  showJunta,
+  docType,
+  onPick,
+  onDropFile,
+  onJunta,
+}: {
+  canUpload: boolean
+  uploadPending: boolean
+  juntaPending: boolean
+  showJunta: boolean
+  docType: string
+  onPick: () => void
+  onDropFile: (file: File) => void
+  onJunta: () => void
+}) {
+  const [dragging, setDragging] = React.useState(false)
+  const blue = "#3B82F6"
+  const noun = DOC_DROP_NOUN[docType] ?? "o documento"
+  const hint = DOC_DROP_HINT[docType] ?? "PDF ou imagem"
+  const busy = uploadPending || juntaPending
+
+  return (
+    <div>
+      <div
+        onDragOver={(e) => {
+          if (!canUpload) return
+          e.preventDefault()
+          setDragging(true)
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragging(false)
+          if (!canUpload) return
+          const file = e.dataTransfer.files?.[0]
+          if (file) onDropFile(file)
+        }}
+        className={cx(
+          "flex flex-col items-center gap-4 rounded-lg px-6 py-10 text-center transition-colors duration-100",
+          dragging ? "bg-blue-50 dark:bg-blue-500/10" : "bg-gray-50/60 dark:bg-gray-925",
+        )}
+        style={{ border: `1.5px dashed ${dragging ? blue : "#D1D5DB"}` }}
+      >
+        <span
+          className="flex size-12 items-center justify-center rounded-full"
+          style={{ background: "rgba(59,130,246,0.10)" }}
+        >
+          {busy ? (
+            <RiLoader4Line className="size-6 animate-spin" style={{ color: blue }} aria-hidden />
+          ) : (
+            <RiUploadCloud2Line className="size-6" style={{ color: blue }} aria-hidden />
+          )}
+        </span>
+
+        <div className="space-y-1">
+          <p className="text-[15px] font-semibold text-gray-900 dark:text-gray-50">
+            Arraste {noun}
+          </p>
+          <p className="text-[12.5px] text-gray-500 dark:text-gray-400">{hint}</p>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Button onClick={onPick} isLoading={uploadPending} disabled={!canUpload || juntaPending}>
+            <RiFolderOpenLine className="mr-1.5 size-4" aria-hidden />
+            Selecionar arquivo
+          </Button>
+          {showJunta && (
+            <Button
+              variant="secondary"
+              onClick={onJunta}
+              isLoading={juntaPending}
+              disabled={!canUpload || uploadPending}
+            >
+              <RiBankLine className="mr-1.5 size-4" aria-hidden />
+              Buscar na JUCESP
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <p className="mt-3 flex items-start gap-1.5 text-[12px] leading-relaxed text-gray-400 dark:text-gray-500">
+        <RiInformationLine className="mt-px size-3.5 shrink-0" aria-hidden />
+        <span>
+          O agente fica aguardando o documento para começar — nada roda até a fonte
+          chegar. Você pode avançar em outra estação enquanto isso.
+        </span>
+      </p>
+    </div>
   )
 }
 
