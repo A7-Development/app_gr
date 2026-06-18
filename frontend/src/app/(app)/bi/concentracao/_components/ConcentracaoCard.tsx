@@ -48,7 +48,7 @@ export function ConcentracaoCard({
       },
       {
         accessorKey: "financeiro",
-        header: () => <div className="text-right">Financeiro</div>,
+        header: () => <div className="text-right">Valor Presente</div>,
         cell: ({ row }) => (
           <div className={cx(tableTokens.cellNumber, "text-right")}>
             {fmtNum.format(row.original.financeiro)}
