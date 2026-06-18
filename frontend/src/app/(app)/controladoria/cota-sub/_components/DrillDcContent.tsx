@@ -39,6 +39,7 @@ import { tableTokens } from "@/design-system/tokens/table"
 import type {
   DrillDcMutacaoPapel,
   DrillDcLiquidacaoParcialPapel,
+  DrillDcAbatimentoPapel,
   DrillDcMigracaoWopPapel,
 } from "@/lib/api-client"
 import {
@@ -101,8 +102,18 @@ function TextTrunc({ value, title }: { value: string; title?: string }) {
   return <span className={cx("block truncate", tableTokens.cellText)} title={title}>{value}</span>
 }
 
-function MonoTrunc({ value, title }: { value: string; title?: string }) {
-  return <span className={cx("block truncate font-mono", tableTokens.cellSecondary)} title={title}>{value}</span>
+// Celula de identificacao do recebivel: numero do DOCUMENTO (duplicata/NF) +
+// vencimento como desambiguador de parcela. NUNCA expoe `seu_numero` (referencia
+// de admin opaca, ex.: codigo do originador) — nem em tooltip.
+function DocCell({ doc, venc }: { doc: string; venc: string | null }) {
+  return (
+    <div className="flex items-baseline gap-1.5 truncate">
+      <span className={cx("truncate font-mono", tableTokens.cellSecondary)}>{doc || "—"}</span>
+      {venc ? (
+        <span className="shrink-0 text-[10px] tabular-nums text-gray-400 dark:text-gray-600">{fmtDateBR(venc)}</span>
+      ) : null}
+    </div>
+  )
 }
 
 // Linha de total no rodape (renderFooter) — borda superior destacada.
@@ -184,9 +195,9 @@ const MUTACAO_COLUMNS: ColumnDef<DrillDcMutacaoPapel, unknown>[] = [
     id: "sacado", header: "Sacado", size: 160,
     cell: (info) => <TextTrunc value={info.getValue<string>()} title={info.row.original.sacado_doc} />,
   }) as ColumnDef<DrillDcMutacaoPapel, unknown>,
-  mutCol.accessor("seu_numero", {
-    id: "titulo", header: "Título", size: 100,
-    cell: (info) => <MonoTrunc value={info.getValue<string>()} title={info.row.original.numero_documento} />,
+  mutCol.accessor("numero_documento", {
+    id: "titulo", header: "Documento", size: 150,
+    cell: (info) => <DocCell doc={info.getValue<string>()} venc={info.row.original.venc_d0} />,
   }) as ColumnDef<DrillDcMutacaoPapel, unknown>,
   mutCol.accessor("vp_d1", {
     id: "vp_d1", header: "VP D-1", size: 120, meta: { align: "right" },
@@ -223,9 +234,9 @@ const LIQ_PARCIAL_COLUMNS: ColumnDef<DrillDcLiquidacaoParcialPapel, unknown>[] =
     id: "cedente", header: "Cedente", size: 150,
     cell: (info) => <TextTrunc value={info.getValue<string>()} title={info.row.original.cedente_doc} />,
   }) as ColumnDef<DrillDcLiquidacaoParcialPapel, unknown>,
-  lpCol.accessor("seu_numero", {
-    id: "titulo", header: "Título", size: 100,
-    cell: (info) => <MonoTrunc value={info.getValue<string>()} title={info.row.original.numero_documento} />,
+  lpCol.accessor("numero_documento", {
+    id: "titulo", header: "Documento", size: 150,
+    cell: (info) => <DocCell doc={info.getValue<string>()} venc={info.row.original.data_vencimento} />,
   }) as ColumnDef<DrillDcLiquidacaoParcialPapel, unknown>,
   lpCol.accessor("tipo_movimento", {
     id: "tipo_movimento", header: "Evento", size: 220,
@@ -245,6 +256,37 @@ const LIQ_PARCIAL_COLUMNS: ColumnDef<DrillDcLiquidacaoParcialPapel, unknown>[] =
   }) as ColumnDef<DrillDcLiquidacaoParcialPapel, unknown>,
 ]
 
+// ── Colunas: Abatimento concedido (perda de credito sem caixa) ───────────────
+
+const abCol = createColumnHelper<DrillDcAbatimentoPapel>()
+
+const ABATIMENTO_COLUMNS: ColumnDef<DrillDcAbatimentoPapel, unknown>[] = [
+  abCol.accessor("cedente_nome", {
+    id: "cedente", header: "Cedente", size: 150,
+    cell: (info) => <TextTrunc value={info.getValue<string>()} title={info.row.original.cedente_doc} />,
+  }) as ColumnDef<DrillDcAbatimentoPapel, unknown>,
+  abCol.accessor("numero_documento", {
+    id: "titulo", header: "Documento", size: 150,
+    cell: (info) => <DocCell doc={info.getValue<string>()} venc={info.row.original.data_vencimento} />,
+  }) as ColumnDef<DrillDcAbatimentoPapel, unknown>,
+  abCol.accessor("tipo_movimento", {
+    id: "tipo_movimento", header: "Evento", size: 190,
+    cell: (info) => <TextTrunc value={info.getValue<string>()} title={info.getValue<string>()} />,
+  }) as ColumnDef<DrillDcAbatimentoPapel, unknown>,
+  abCol.accessor("vp_d1", {
+    id: "vp_d1", header: "VP D-1", size: 120, meta: { align: "right" },
+    cell: (info) => <NumCell value={info.getValue<number>()} secondary />,
+  }) as ColumnDef<DrillDcAbatimentoPapel, unknown>,
+  abCol.accessor("delta_vp", {
+    id: "delta_vp", header: "Δ VP (cota)", size: 120, meta: { align: "right" },
+    cell: (info) => <ToneCell value={info.getValue<number>()} />,
+  }) as ColumnDef<DrillDcAbatimentoPapel, unknown>,
+  abCol.accessor("nominal_abatido", {
+    id: "nominal_abatido", header: "Nominal abatido", size: 130, meta: { align: "right" },
+    cell: (info) => <NumCell value={info.getValue<number>()} secondary />,
+  }) as ColumnDef<DrillDcAbatimentoPapel, unknown>,
+]
+
 // ── Colunas: Migracao WOP ─────────────────────────────────────────────────────
 
 const wopCol = createColumnHelper<DrillDcMigracaoWopPapel>()
@@ -258,9 +300,9 @@ const WOP_COLUMNS: ColumnDef<DrillDcMigracaoWopPapel, unknown>[] = [
     id: "sacado", header: "Sacado", size: 170,
     cell: (info) => <TextTrunc value={info.getValue<string>()} title={info.row.original.sacado_doc} />,
   }) as ColumnDef<DrillDcMigracaoWopPapel, unknown>,
-  wopCol.accessor("seu_numero", {
-    id: "titulo", header: "Título", size: 100,
-    cell: (info) => <MonoTrunc value={info.getValue<string>()} title={info.row.original.numero_documento} />,
+  wopCol.accessor("numero_documento", {
+    id: "titulo", header: "Documento", size: 150,
+    cell: (info) => <DocCell doc={info.getValue<string>()} venc={info.row.original.data_vencimento} />,
   }) as ColumnDef<DrillDcMigracaoWopPapel, unknown>,
   wopCol.accessor("faixa_pdd_d1", {
     id: "faixa", header: "Faixa D-1", size: 90, meta: { align: "center" },
@@ -326,6 +368,9 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
   const lpPagoTotal = d.liquidacao_parcial_papeis.reduce((s, p) => s + p.valor_pago_evento, 0)
   const wopVpD1Total = d.migracao_wop_papeis.reduce((s, p) => s + p.vp_d1, 0)
   const wopPddD1Total = d.migracao_wop_papeis.reduce((s, p) => s + p.valor_pdd_d1, 0)
+  const abVpD1Total = d.abatimentos_papeis.reduce((s, p) => s + p.vp_d1, 0)
+  const abDeltaTotal = d.abatimentos_papeis.reduce((s, p) => s + p.delta_vp, 0)
+  const abNominalTotal = d.abatimentos_papeis.reduce((s, p) => s + p.nominal_abatido, 0)
 
   const compRows: CompRow[] = [
     { id: "d1", kind: "anchor", label: "Estoque (D-1)", detalhe: "", value: dec.saldo_d1 },
@@ -341,8 +386,13 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
     },
     {
       id: "liquidacao_parcial", kind: "bucket", label: "− Liquidação parcial", sign: "−",
-      detalhe: `${dec.liquidacao_parcial_n} título${dec.liquidacao_parcial_n === 1 ? "" : "s"} com parcela paga (casa com evento)`,
+      detalhe: `${dec.liquidacao_parcial_n} título${dec.liquidacao_parcial_n === 1 ? "" : "s"} com parcela paga em caixa (casa com evento)`,
       value: dec.liquidacao_parcial_total, muted: dec.liquidacao_parcial_n === 0,
+    },
+    {
+      id: "abatimentos", kind: "bucket", label: "− Abatimento concedido", sign: "−",
+      detalhe: `${dec.abatimentos_n} título${dec.abatimentos_n === 1 ? "" : "s"} com perda perdoada (sem entrada de caixa)`,
+      value: dec.abatimentos_total, muted: dec.abatimentos_n === 0, alert: dec.abatimentos_n > 0,
     },
     {
       id: "wop", kind: "bucket", label: "− Migração WOP", sign: "−",
@@ -380,7 +430,7 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
         const r = d.resultado_do_dia
         const resultado =
           r.carrego_apropriacao + r.apropriacao_antecipada + r.juros_mora
-          - r.desconto_concedido + r.mutacao_total
+          - r.desconto_concedido + r.mutacao_total + r.abatimentos_total
         const temCaixa =
           r.apropriacao_antecipada > 0 || r.juros_mora > 0 || r.desconto_concedido > 0
         const line = (label: string, tag: string, v: number, opts?: { alert?: boolean }) => (
@@ -404,6 +454,7 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
               {r.apropriacao_antecipada > 0 && line("Carrego antecipado", "caixa", r.apropriacao_antecipada)}
               {r.juros_mora > 0 && line("Mora", "caixa", r.juros_mora)}
               {r.desconto_concedido > 0 && line("Desconto", "caixa", -r.desconto_concedido)}
+              {Math.abs(r.abatimentos_total) >= 1 && line("Abatimento concedido", "carteira", r.abatimentos_total, { alert: r.abatimentos_total < 0 })}
               {Math.abs(r.mutacao_total) >= 1 && line("Mutação", "estoque", r.mutacao_total, { alert: r.mutacao_total < 0 })}
             </div>
             {temCaixa && (
@@ -519,10 +570,11 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
             counter={`${d.liquidacao_parcial_papeis.length} papel${d.liquidacao_parcial_papeis.length === 1 ? "" : "is"}`}
           />
           <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-            Títulos que ficaram na carteira mas tiveram parcela paga no dia
-            (liquidação/recompra parcial, abatimento). A queda de VP casa com o
-            evento em liquidações — é giro carteira → caixa, <strong>não</strong> mutação
-            silenciosa. A perna de caixa entra na Tesouraria/Disponibilidades.
+            Títulos que ficaram na carteira mas tiveram parcela paga em caixa no
+            dia (liquidação/recompra parcial). A queda de VP casa com o evento em
+            liquidações — é giro carteira → caixa, <strong>não</strong> resultado.
+            A perna de caixa entra na Tesouraria/Disponibilidades. (Abatimentos
+            concedidos — perda sem caixa — têm seção própria abaixo.)
           </p>
           <div className="mt-2">
             <DataTable<DrillDcLiquidacaoParcialPapel>
@@ -535,6 +587,40 @@ export function DrillDcContent({ fundoId, data, dataAnterior }: DrillDcContentPr
                   <td className="px-3"><div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(lpVpD1Total)}</div></td>
                   <td className="px-3"><div className={cx("text-right text-xs font-semibold tabular-nums", toneClass(lpDeltaTotal))}>{fmtBRLSigned(lpDeltaTotal)}</div></td>
                   <td className="px-3"><div className={cx("text-right font-semibold", tableTokens.cellNumber)}>{fmtBRL.format(lpPagoTotal)}</div></td>
+                </tr>
+              )}
+            />
+          </div>
+        </section>
+      )}
+
+      {/* ── 2c. Detalhe Abatimentos concedidos (so se houver) ── */}
+      {d.abatimentos_papeis.length > 0 && (
+        <section>
+          <DrillSectionTitle
+            icon={RiAlertLine}
+            label="Abatimentos concedidos na carteira"
+            counter={`${d.abatimentos_papeis.length} papel${d.abatimentos_papeis.length === 1 ? "" : "is"}`}
+            tone="alert"
+          />
+          <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+            Títulos que ficaram na carteira mas tiveram <strong>abatimento concedido</strong> ao
+            sacado — valor perdoado, <strong>sem entrada de caixa</strong>. A queda de VP é
+            perda de crédito que bate na cota (resultado do DC), não giro. O
+            <strong> Δ VP</strong> é o impacto na cota; o <strong>nominal abatido</strong> é a face perdoada
+            (contexto).
+          </p>
+          <div className="mt-2">
+            <DataTable<DrillDcAbatimentoPapel>
+              {...DT_PROPS}
+              data={d.abatimentos_papeis}
+              columns={ABATIMENTO_COLUMNS}
+              renderFooter={() => (
+                <tr className={FOOT_ROW}>
+                  <td colSpan={3} className="px-3"><span className={tableTokens.cellStrong}>Total · {d.abatimentos_papeis.length} papel(eis)</span></td>
+                  <td className="px-3"><div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(abVpD1Total)}</div></td>
+                  <td className="px-3"><div className={cx("text-right text-xs font-semibold tabular-nums", toneClass(abDeltaTotal))}>{fmtBRLSigned(abDeltaTotal)}</div></td>
+                  <td className="px-3"><div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(abNominalTotal)}</div></td>
                 </tr>
               )}
             />

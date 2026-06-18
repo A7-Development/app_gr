@@ -129,6 +129,7 @@ async def compute_variacao_resumo(
         dc_impacto = (
             res.carrego_apropriacao + res.apropriacao_antecipada
             + res.juros_mora - res.desconto_concedido + res.mutacao_total
+            + res.abatimentos_total
         )
         # Separa carrego NORMAL do ANTECIPADO (liquidacao adiantada) e expoe mora/
         # desconto — sao as alavancas extraordinarias do DC (carrego normal e rotina;
@@ -140,12 +141,18 @@ async def compute_variacao_resumo(
             dc_resumo += f" · mora {_fmt(res.juros_mora)}"
         if abs(res.desconto_concedido) >= _TOL:
             dc_resumo += f" · desconto -{_fmt(res.desconto_concedido)}"
+        if abs(res.abatimentos_total) >= _TOL:
+            dc_resumo += f" · abatimento {_fmt(res.abatimentos_total)}"
         if abs(res.mutacao_total) >= _TOL:
             dc_resumo += f" · mutação {_fmt(res.mutacao_total)}"
     else:  # fallback retrocompat: usa o delta bruto do balanco (com giro)
         dc_impacto = _imp("dc_bruto")
         dc_resumo = "resultado do dia"
-    dc_severidade = "atencao" if (res is not None and res.mutacao_total <= -_TOL) else "rotina"
+    dc_severidade = (
+        "atencao"
+        if (res is not None and (res.mutacao_total <= -_TOL or res.abatimentos_total <= -_TOL))
+        else "rotina"
+    )
 
     # ── 2. (-) PDD & WOP — contra-ativo (ja giro-limpo no balanco) ──────────
     pdd_impacto = _imp("pdd")
@@ -313,6 +320,19 @@ async def compute_variacao_resumo(
             desc = f"Mutação silenciosa · {papel.cedente_nome[:20]}→{papel.sacado_nome[:16]}: {causa}"
         atencoes.append(AtencaoResumo(
             tipo="mutacao", descricao=desc, valor=res.mutacao_total,
+            grupo_key="direitos_creditorios", grupo_label=_GRUPO_LABEL["direitos_creditorios"],
+            drill_key="dc", investigavel=True,
+        ))
+    if res is not None and res.abatimentos_total <= -_TOL:
+        papeis = dc.abatimentos_papeis
+        n_ab = len(papeis)
+        desc = "Abatimento concedido na carteira"
+        if papeis:
+            cedente = papeis[0].cedente_nome[:24]
+            sufixo = f" e +{n_ab - 1}" if n_ab > 1 else ""
+            desc = f"Abatimento concedido · {cedente}{sufixo} ({n_ab} título(s)) — perda de crédito sem entrada de caixa"
+        atencoes.append(AtencaoResumo(
+            tipo="abatimento", descricao=desc, valor=res.abatimentos_total,
             grupo_key="direitos_creditorios", grupo_label=_GRUPO_LABEL["direitos_creditorios"],
             drill_key="dc", investigavel=True,
         ))

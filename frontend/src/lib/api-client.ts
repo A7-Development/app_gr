@@ -4241,6 +4241,8 @@ type DrillDcDecomposicaoDTO = {
   apropriacao_total:              number | string
   liquidacao_parcial_n:           number
   liquidacao_parcial_total:       number | string
+  abatimentos_n:                  number
+  abatimentos_total:              number | string
   mutacao_n:                      number
   mutacao_total:                  number | string
   residuo:                        number | string
@@ -4263,6 +4265,8 @@ export type DrillDcDecomposicao = {
   apropriacao_total:              number
   liquidacao_parcial_n:           number
   liquidacao_parcial_total:       number
+  abatimentos_n:                  number
+  abatimentos_total:              number
   mutacao_n:                      number
   mutacao_total:                  number
   residuo:                        number
@@ -4314,6 +4318,7 @@ type DrillDcLiquidacaoParcialPapelDTO = {
   seu_numero:         string
   numero_documento:   string
   tipo_recebivel:     string
+  data_vencimento:    string | null
   vp_d1:              number | string
   vp_d0:              number | string
   delta_vp:           number | string
@@ -4335,6 +4340,38 @@ export type DrillDcLiquidacaoParcialPapel = Omit<
   valor_pago_evento: number
 }
 
+type DrillDcAbatimentoPapelDTO = {
+  cedente_doc:        string
+  cedente_nome:       string
+  sacado_doc:         string
+  sacado_nome:        string
+  seu_numero:         string
+  numero_documento:   string
+  tipo_recebivel:     string
+  tipo_movimento:     string
+  data_vencimento:    string | null
+  vp_d1:              number | string
+  vp_d0:              number | string
+  delta_vp:           number | string
+  vn_d1:              number | string
+  vn_d0:              number | string
+  nominal_abatido:    number | string
+  valor_aquisicao:    number | string
+  abaixo_do_custo:    boolean
+}
+export type DrillDcAbatimentoPapel = Omit<
+  DrillDcAbatimentoPapelDTO,
+  "vp_d1" | "vp_d0" | "delta_vp" | "vn_d1" | "vn_d0" | "nominal_abatido" | "valor_aquisicao"
+> & {
+  vp_d1:           number
+  vp_d0:           number
+  delta_vp:        number
+  vn_d1:           number
+  vn_d0:           number
+  nominal_abatido: number
+  valor_aquisicao: number
+}
+
 type DrillDcMigracaoWopPapelDTO = {
   cedente_doc:        string
   cedente_nome:       string
@@ -4343,6 +4380,7 @@ type DrillDcMigracaoWopPapelDTO = {
   seu_numero:         string
   numero_documento:   string
   tipo_recebivel:     string
+  data_vencimento:    string | null
   faixa_pdd_d1:       string
   vp_d1:              number | string
   valor_pdd_d1:       number | string
@@ -4366,11 +4404,12 @@ export type DrillDcResultadoDoDia = {
   desconto_concedido:       number
   ajuste_liquido_resultado: number
   mutacao_total:            number
+  abatimentos_total:        number
   migracao_wop_total:       number
   giro_aquisicoes:          number
   giro_liquidacoes:         number
   giro_liquidacao_parcial:  number
-  motor_dominante:          "carrego" | "mora" | "desconto" | "mutacao" | "write_off" | "misto"
+  motor_dominante:          "carrego" | "mora" | "desconto" | "abatimento" | "mutacao" | "write_off" | "misto"
   resultado_outlier:        boolean
 }
 
@@ -4393,6 +4432,7 @@ type DrillDcResponseDTO = {
   resultado_do_dia:       DrillDcResultadoDoDiaDTO
   mutacao_papeis:         DrillDcMutacaoPapelDTO[]
   liquidacao_parcial_papeis: DrillDcLiquidacaoParcialPapelDTO[]
+  abatimentos_papeis:     DrillDcAbatimentoPapelDTO[]
   migracao_wop_papeis:    DrillDcMigracaoWopPapelDTO[]
 }
 export type DrillDcResponse = {
@@ -4412,6 +4452,7 @@ export type DrillDcResponse = {
   resultado_do_dia:       DrillDcResultadoDoDia
   mutacao_papeis:         DrillDcMutacaoPapel[]
   liquidacao_parcial_papeis: DrillDcLiquidacaoParcialPapel[]
+  abatimentos_papeis:     DrillDcAbatimentoPapel[]
   migracao_wop_papeis:    DrillDcMigracaoWopPapel[]
 }
 
@@ -4463,6 +4504,8 @@ function _coerceDrillDcDecomposicao(d: DrillDcDecomposicaoDTO): DrillDcDecomposi
     apropriacao_total:              Number(d.apropriacao_total),
     liquidacao_parcial_n:           d.liquidacao_parcial_n,
     liquidacao_parcial_total:       Number(d.liquidacao_parcial_total),
+    abatimentos_n:                  d.abatimentos_n,
+    abatimentos_total:              Number(d.abatimentos_total),
     mutacao_n:                      d.mutacao_n,
     mutacao_total:                  Number(d.mutacao_total),
     residuo:                        Number(d.residuo),
@@ -4495,6 +4538,19 @@ function _coerceDrillDcLiquidacaoParcialPapel(p: DrillDcLiquidacaoParcialPapelDT
     vn_d1:             Number(p.vn_d1),
     vn_d0:             Number(p.vn_d0),
     valor_pago_evento: Number(p.valor_pago_evento),
+  }
+}
+
+function _coerceDrillDcAbatimentoPapel(p: DrillDcAbatimentoPapelDTO): DrillDcAbatimentoPapel {
+  return {
+    ...p,
+    vp_d1:           Number(p.vp_d1),
+    vp_d0:           Number(p.vp_d0),
+    delta_vp:        Number(p.delta_vp),
+    vn_d1:           Number(p.vn_d1),
+    vn_d0:           Number(p.vn_d0),
+    nominal_abatido: Number(p.nominal_abatido),
+    valor_aquisicao: Number(p.valor_aquisicao),
   }
 }
 
@@ -4536,6 +4592,7 @@ function _coerceDrillDc(r: DrillDcResponseDTO): DrillDcResponse {
       desconto_concedido:       Number(r.resultado_do_dia.desconto_concedido),
       ajuste_liquido_resultado: Number(r.resultado_do_dia.ajuste_liquido_resultado),
       mutacao_total:            Number(r.resultado_do_dia.mutacao_total),
+      abatimentos_total:        Number(r.resultado_do_dia.abatimentos_total),
       migracao_wop_total:       Number(r.resultado_do_dia.migracao_wop_total),
       giro_aquisicoes:          Number(r.resultado_do_dia.giro_aquisicoes),
       giro_liquidacoes:         Number(r.resultado_do_dia.giro_liquidacoes),
@@ -4545,6 +4602,7 @@ function _coerceDrillDc(r: DrillDcResponseDTO): DrillDcResponse {
     },
     mutacao_papeis:      r.mutacao_papeis.map(_coerceDrillDcMutacaoPapel),
     liquidacao_parcial_papeis: r.liquidacao_parcial_papeis.map(_coerceDrillDcLiquidacaoParcialPapel),
+    abatimentos_papeis:  (r.abatimentos_papeis ?? []).map(_coerceDrillDcAbatimentoPapel),
     migracao_wop_papeis: r.migracao_wop_papeis.map(_coerceDrillDcMigracaoWopPapel),
   }
 }
