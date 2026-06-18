@@ -71,21 +71,40 @@ export function ConcentracaoCard({
   const renderFooter = React.useCallback(() => {
     if (!tabela) return null
     return (
-      <tr className="border-t border-t-gray-200 dark:border-t-gray-800">
-        <td className="px-3 py-2.5">
-          <span className={tableTokens.cellStrong}>10 maiores</span>
-        </td>
-        <td className="px-3 py-2.5 text-right">
-          <span className={cx(tableTokens.cellStrong, "tabular-nums")}>
-            {fmtNum.format(tabela.total_financeiro)}
-          </span>
-        </td>
-        <td className="px-3 py-2.5 text-right">
-          <span className={cx(tableTokens.cellStrong, "tabular-nums")}>
-            {fmtPct.format(tabela.total_pct_pl)}
-          </span>
-        </td>
-      </tr>
+      <>
+        <tr className="border-t border-t-gray-200 dark:border-t-gray-800">
+          <td className="px-3 py-2.5">
+            <span className={tableTokens.cellStrong}>10 maiores</span>
+          </td>
+          <td className="px-3 py-2.5 text-right">
+            <span className={cx(tableTokens.cellStrong, "tabular-nums")}>
+              {fmtNum.format(tabela.total_financeiro)}
+            </span>
+          </td>
+          <td className="px-3 py-2.5 text-right">
+            <span className={cx(tableTokens.cellStrong, "tabular-nums")}>
+              {fmtPct.format(tabela.total_pct_pl)}
+            </span>
+          </td>
+        </tr>
+        <tr>
+          <td className="px-3 py-2">
+            <span className={tableTokens.cellSecondary}>
+              Outros ({fmtNum.format(tabela.outros_qtd)})
+            </span>
+          </td>
+          <td className="px-3 py-2 text-right">
+            <span className={cx(tableTokens.cellNumberSecondary)}>
+              {fmtNum.format(tabela.outros_financeiro)}
+            </span>
+          </td>
+          <td className="px-3 py-2 text-right">
+            <span className={cx(tableTokens.cellNumberSecondary)}>
+              {fmtPct.format(tabela.outros_pct_pl)}
+            </span>
+          </td>
+        </tr>
+      </>
     )
   }, [tabela])
 

@@ -24,11 +24,17 @@ class ConcentracaoItem(BaseModel):
 
 
 class ConcentracaoTabela(BaseModel):
-    """Top-10 + linha '10 maiores' (total que reconcilia §14.6)."""
+    """Top-10 + '10 maiores' (subtotal) + 'Outros' (cauda) — reconcilia §14.6.
+
+    top-10 + outros = carteira inteira (nenhum titulo escondido)."""
 
     itens: list[ConcentracaoItem]
     total_financeiro: float
     total_pct_pl: float
+    # Cauda: tudo que nao esta no top-10.
+    outros_qtd: int
+    outros_financeiro: float
+    outros_pct_pl: float
 
 
 class HistoricoPonto(BaseModel):

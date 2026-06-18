@@ -122,10 +122,31 @@ async def _top_tabela(
                 pct_pl=(vp / pl_total * 100) if pl_total > 0 else 0.0,
             )
         )
+
+    # Carteira inteira (todos os titulos) + nº de chaves distintas, pra
+    # derivar a cauda "Outros" = total - top10 (reconcilia §14.6).
+    tot = (
+        await db.execute(
+            text(
+                "SELECT COALESCE(SUM(valor_presente), 0) AS vp, "
+                f"COUNT(DISTINCT {chave_col}) AS n "
+                "FROM wh_estoque_recebivel "
+                "WHERE tenant_id = :t AND fundo_doc = :f AND data_referencia = :d"
+            ).bindparams(t=tenant_id, f=fundo_doc, d=data_referencia)
+        )
+    ).one()
+    carteira_total = float(tot.vp or 0)
+    n_chaves = int(tot.n or 0)
+    outros_financeiro = max(carteira_total - total, 0.0)
+    outros_qtd = max(n_chaves - len(itens), 0)
+
     return ConcentracaoTabela(
         itens=itens,
         total_financeiro=total,
         total_pct_pl=(total / pl_total * 100) if pl_total > 0 else 0.0,
+        outros_qtd=outros_qtd,
+        outros_financeiro=outros_financeiro,
+        outros_pct_pl=(outros_financeiro / pl_total * 100) if pl_total > 0 else 0.0,
     )
 
 
@@ -190,7 +211,14 @@ async def _historico(
 
 
 def _empty(data_posicao: date | None) -> tuple[ConcentracaoData, Provenance]:
-    vazio = ConcentracaoTabela(itens=[], total_financeiro=0.0, total_pct_pl=0.0)
+    vazio = ConcentracaoTabela(
+        itens=[],
+        total_financeiro=0.0,
+        total_pct_pl=0.0,
+        outros_qtd=0,
+        outros_financeiro=0.0,
+        outros_pct_pl=0.0,
+    )
     data = ConcentracaoData(
         data_posicao=data_posicao or date.today(),
         pl_total=0.0,
