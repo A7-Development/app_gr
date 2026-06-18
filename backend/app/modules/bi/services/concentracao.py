@@ -93,8 +93,12 @@ async def _datas_disponiveis(
 
 async def _pl_total(
     db: AsyncSession, *, tenant_id: UUID, ua_id: UUID, data_posicao: date
-) -> float:
-    """PL total do fundo (soma das classes MEC) na data — fallback p/ <= data."""
+) -> tuple[float, date | None]:
+    """PL total (soma das classes MEC) + a data MEC efetiva usada.
+
+    Tenta a data exata; se nao houver, faz fallback pra ultima posicao MEC
+    <= data. Retorna (pl, data_do_pl) — data_do_pl pode diferir de data_posicao.
+    """
     row = (
         await db.execute(
             text(
@@ -106,19 +110,22 @@ async def _pl_total(
         )
     ).one()
     if row.pl and float(row.pl) > 0:
-        return float(row.pl)
+        return float(row.pl), data_posicao
     # Fallback: ultima posicao MEC <= data (MEC pode nao ter a mesma data exata).
     row2 = (
         await db.execute(
             text(
-                "SELECT SUM(patrimonio) AS pl FROM wh_mec_evolucao_cotas "
+                "SELECT data_posicao AS d, SUM(patrimonio) AS pl "
+                "FROM wh_mec_evolucao_cotas "
                 "WHERE tenant_id = :t AND unidade_administrativa_id = :ua "
                 "  AND data_posicao <= :d "
                 "GROUP BY data_posicao ORDER BY data_posicao DESC LIMIT 1"
             ).bindparams(t=tenant_id, ua=ua_id, d=data_posicao)
         )
     ).first()
-    return float(row2.pl) if row2 and row2.pl else 0.0
+    if row2 and row2.pl:
+        return float(row2.pl), row2.d
+    return 0.0, None
 
 
 async def _top_tabela(
@@ -274,6 +281,8 @@ def _empty(
         suportado=suportado,
         data_posicao=data_posicao or date.today(),
         pl_total=0.0,
+        pl_data=None,
+        pl_origem="MEC",
         datas_disponiveis=datas_disponiveis or [],
         cedentes=vazio,
         sacados=vazio,
@@ -328,7 +337,7 @@ async def get_concentracao(
     # Posicao escolhida (valida) ou a ultima disponivel (datas[0] = max).
     data_posicao = data if (data is not None and data <= datas[0]) else datas[0]
 
-    pl_total = await _pl_total(
+    pl_total, pl_data = await _pl_total(
         db, tenant_id=tenant_id, ua_id=_REALINVEST_UA_ID, data_posicao=data_posicao
     )
 
@@ -369,6 +378,8 @@ async def get_concentracao(
         suportado=True,
         data_posicao=data_posicao,
         pl_total=pl_total,
+        pl_data=pl_data,
+        pl_origem="MEC",
         datas_disponiveis=datas,
         cedentes=cedentes,
         sacados=sacados,

@@ -93,6 +93,17 @@ function fmtMi(v: number): string {
   })} mi`
 }
 
+// Data curta DD/MM/YY (toolbar/PL de referência).
+function fmtDataYY(iso: string | undefined): string {
+  if (!iso) return "—"
+  return new Date(iso).toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    timeZone: "UTC",
+  })
+}
+
 function fmtData(iso: string | undefined, long = false): string {
   if (!iso) return "—"
   const d = new Date(iso)
@@ -269,6 +280,14 @@ export default function ConcentracaoPage() {
                   <span className="font-medium tabular-nums text-gray-700 dark:text-gray-300">
                     {fmtMi(data!.pl_total)}
                   </span>
+                  {data?.pl_data && (
+                    <span className="tabular-nums">
+                      {" · "}
+                      {fmtDataYY(data.pl_data)}
+                    </span>
+                  )}
+                  {" · "}
+                  {data?.pl_origem ?? "MEC"}
                 </span>
               )}
               <span className="text-[11px] text-gray-400 dark:text-gray-500">
