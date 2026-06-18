@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.bi.schemas.common import Provenance
 from app.modules.bi.schemas.panorama import (
     AdminRankingItem,
+    CompletudeInfo,
     CondominioItem,
     FundoComparativoData,
     FundoMetricaComparada,
@@ -43,6 +44,11 @@ from app.modules.bi.schemas.panorama import (
 # Proveniencia — fonte publica federada (CLAUDE.md 13.1).
 _SOURCE_TYPE = "public:cvm_fidc"
 _ADAPTER_VERSION = "etl-cvm"
+
+# Limiar de completude: abaixo disso a competencia e tratada como "preliminar"
+# (a CVM ainda esta recebendo informes). 97% da uma janela de ~algumas semanas
+# de aviso ate a competencia fechar.
+_COMPLETUDE_THRESHOLD_PCT = 97.0
 
 # Numerador do indice de liquidez AMPLA: caixa + aplicacoes financeiras sem
 # risco de credito. Exclui DC, valores mobiliarios e cotas de FIDC (exposicao).
@@ -165,6 +171,38 @@ async def _resolve_competencia(db: AsyncSession, comp_str: str | None) -> date:
     return row.scalar_one()
 
 
+async def _get_completude(db: AsyncSession, comp: date) -> CompletudeInfo:
+    """Completude da competencia alvo vs a anterior (GLOBAL, sem filtros).
+
+    Sinaliza publicacao incremental da CVM: a competencia corrente fica parcial
+    por semanas. Compara a contagem de fundos (PL>0) da competencia alvo com a
+    do mes anterior (baseline ja praticamente fechado). Duas contagens sobre
+    tab_iv sozinha — agregam no remoto, baratas (~80ms).
+    """
+    prev = _prev_month(comp)
+    row = (
+        await db.execute(
+            text(
+                "SELECT "
+                "  count(*) FILTER (WHERE competencia = :comp) AS n_atual, "
+                "  count(*) FILTER (WHERE competencia = :prev) AS n_prev "
+                "FROM cvm_remote.tab_iv "
+                "WHERE competencia IN (:comp, :prev) AND tab_iv_a_vl_pl > 0"
+            ),
+            {"comp": comp, "prev": prev},
+        )
+    ).mappings().one()
+    n_atual = int(row["n_atual"])
+    n_ref = int(row["n_prev"])
+    pct = round(100.0 * n_atual / n_ref, 1) if n_ref else 100.0
+    return CompletudeInfo(
+        n_reportado=n_atual,
+        n_referencia=n_ref,
+        pct_reportado=pct,
+        preliminar=bool(n_ref and pct < _COMPLETUDE_THRESHOLD_PCT),
+    )
+
+
 def _build_provenance(competencia: date, row_count: int) -> Provenance:
     return Provenance(
         source_type=_SOURCE_TYPE,
@@ -210,6 +248,9 @@ async def get_visao_geral(
         )
     ).scalar_one()
     delta_fundos = n_fidc - int(prev_n)
+
+    # 2b. Completude da competencia (sinal de publicacao incremental da CVM).
+    completude = await _get_completude(db, comp)
 
     # 3. Evolucao do PL — serie mensal (janela aberta, filtros aplicados por mes).
     # Sem filtro de tab_i: tab_iv sozinha (agrega remoto, ~80ms). Com filtro de
@@ -293,6 +334,7 @@ async def get_visao_geral(
             delta_fundos=delta_fundos,
             liquidez_pct=round(liquidez_pct, 2),
         ),
+        completude=completude,
         evolucao_pl=evolucao_pl,
         por_condominio=por_condominio,
         distribuicao_tamanho=distribuicao_tamanho,

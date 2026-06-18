@@ -21,7 +21,12 @@
 
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
-import { RiCheckLine, RiRefreshLine, RiStackLine } from "@remixicon/react"
+import {
+  RiCheckLine,
+  RiRefreshLine,
+  RiStackLine,
+  RiTimeLine,
+} from "@remixicon/react"
 import { toast } from "sonner"
 import type { EChartsOption } from "echarts"
 
@@ -34,6 +39,7 @@ import {
   TabNavigationLink,
 } from "@/components/tremor/TabNavigation"
 import { PageHeader } from "@/design-system/components/PageHeader"
+import { InfoTooltip } from "@/design-system/components/InfoTooltip"
 import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
 import { FilterChip } from "@/design-system/components/FilterBar"
 import { KpiStrip, KpiCard } from "@/design-system/components/KpiStrip"
@@ -51,6 +57,7 @@ import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 import { useAIChat, useAIInsights, useAIQuota } from "@/lib/hooks/ai"
 import { biPanorama } from "@/lib/api-client"
 import type {
+  PanoramaCompletude,
   PanoramaCondom,
   PanoramaFaixaPl,
   PanoramaFilters,
@@ -178,6 +185,12 @@ export default function BiPanoramaPage() {
               </div>
             }
           />
+          {data?.completude?.preliminar && (
+            <PreliminarBadge
+              completude={data.completude}
+              competencia={data.competencia}
+            />
+          )}
         </div>
 
         {/* Tabs L3 (Z2) */}
@@ -318,21 +331,62 @@ export default function BiPanoramaPage() {
   )
 }
 
+// ─── Badge de competencia preliminar (publicacao incremental da CVM) ───────
+//
+// A CVM publica o Informe Mensal de FIDC de forma incremental: os fundos
+// entregam ao longo de semanas apos o fechamento do mes. Enquanto a competencia
+// mais recente nao "fecha", o PL agregado parece cair — quando na verdade so
+// faltam fundos reportar. Este aviso evita a leitura de queda real (§14.6).
+
+function PreliminarBadge({
+  completude,
+  competencia,
+}: {
+  completude: PanoramaCompletude
+  competencia: string
+}) {
+  const pct = Math.round(completude.pct_reportado)
+  const comp = formatCompetencia(competencia)
+  const nRep = fmtInt.format(completude.n_reportado)
+  const nRef = fmtInt.format(completude.n_referencia)
+  return (
+    <div
+      role="status"
+      className="mt-1.5 inline-flex w-fit items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
+    >
+      <RiTimeLine className="size-3.5 shrink-0" aria-hidden="true" />
+      <span>
+        Competência {comp} preliminar · {nRep} de ~{nRef} fundos reportaram (
+        {pct}%)
+      </span>
+      <InfoTooltip
+        content={`A CVM publica o Informe Mensal de FIDC de forma incremental — os fundos entregam ao longo de semanas após o fechamento do mês. Em ${comp}, ${nRep} de ~${nRef} fundos (${pct}%) já reportaram. Os agregados (PL, nº de fundos) tendem a subir nas próximas semanas conforme as entregas chegam — isto NÃO reflete queda real do segmento.`}
+      />
+    </div>
+  )
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // Aba Visao Geral
 // ════════════════════════════════════════════════════════════════════════
 
 function VisaoGeral({ data }: { data: PanoramaVisaoGeralData }) {
-  const { kpis, evolucao_pl, por_condominio, distribuicao_tamanho } = data
+  const { kpis, completude, evolucao_pl, por_condominio, distribuicao_tamanho } =
+    data
+  const preliminar = completude.preliminar
 
   // Delta MoM do PL a partir da serie (ultimo vs penultimo ponto).
   const plDeltaPct = React.useMemo(() => {
+    // Competencia preliminar: comparar um mes parcial (CVM ainda recebendo
+    // informes) com um fechado produz um delta artificial — a "queda" e so
+    // fundos que ainda nao reportaram, nao movimento real. Omite o delta.
+    if (preliminar) return null
     if (evolucao_pl.length < 2) return null
     const ult = evolucao_pl[evolucao_pl.length - 1].pl
     const ant = evolucao_pl[evolucao_pl.length - 2].pl
     if (!ant) return null
     return (100 * (ult - ant)) / ant
-  }, [evolucao_pl])
+  }, [evolucao_pl, preliminar])
 
   const sparkPl = React.useMemo(
     () => evolucao_pl.map((p) => p.pl),
@@ -368,8 +422,8 @@ function VisaoGeral({ data }: { data: PanoramaVisaoGeralData }) {
         />
         <KpiCard
           label="Variação de fundos"
-          value={signedInt(kpis.delta_fundos)}
-          sub="vs competência anterior"
+          value={preliminar ? "—" : signedInt(kpis.delta_fundos)}
+          sub={preliminar ? "competência preliminar" : "vs competência anterior"}
         />
         <KpiCard
           label="Liquidez / PL"

@@ -1268,9 +1268,18 @@ export type PanoramaTamanhoBucket = {
   pl: number
 }
 
+/** Completude da publicacao incremental da CVM na competencia mais recente. */
+export type PanoramaCompletude = {
+  n_reportado: number
+  n_referencia: number
+  pct_reportado: number
+  preliminar: boolean
+}
+
 export type PanoramaVisaoGeralData = {
   competencia: string // 'YYYY-MM' resolvida
   kpis: PanoramaKpis
+  completude: PanoramaCompletude
   evolucao_pl: PanoramaPlPonto[]
   por_condominio: PanoramaCondominioItem[]
   distribuicao_tamanho: PanoramaTamanhoBucket[]

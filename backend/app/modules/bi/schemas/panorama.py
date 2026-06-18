@@ -67,11 +67,30 @@ class TamanhoBucket(BaseModel):
     pl: float
 
 
+class CompletudeInfo(BaseModel):
+    """Completude da publicacao da competencia mais recente.
+
+    A CVM publica o Informe Mensal de FIDC de forma INCREMENTAL: os fundos
+    entregam ao longo de semanas apos o fechamento do mes. A competencia
+    corrente fica parcial por ~30-45 dias, fazendo o PL agregado parecer
+    "cair" — quando na verdade so faltam fundos reportar. Este bloco sinaliza
+    isso ao usuario (badge "preliminar") para nao confundir com queda real.
+
+    Metrica GLOBAL (sem filtros): e propriedade da competencia, nao do recorte.
+    """
+
+    n_reportado: int = Field(description="Fundos (PL>0) na competencia alvo")
+    n_referencia: int = Field(description="Fundos (PL>0) na competencia anterior (baseline)")
+    pct_reportado: float = Field(description="100 * n_reportado / n_referencia")
+    preliminar: bool = Field(description="True se pct_reportado < limiar (competencia parcial)")
+
+
 class VisaoGeralData(BaseModel):
     """Payload da aba Visao Geral."""
 
     competencia: str  # 'YYYY-MM' resolvida
     kpis: PanoramaKpis
+    completude: CompletudeInfo
     evolucao_pl: list[PlPonto]
     por_condominio: list[CondominioItem]
     distribuicao_tamanho: list[TamanhoBucket]
