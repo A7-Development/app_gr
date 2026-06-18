@@ -325,6 +325,44 @@ function TextoBlockView({ block, mode }: { block: TextoBlock; mode: RenderMode }
     )
   }
 
+  // Trecho VERBATIM do documento (assinatura documento, verde tracejada). Voz do
+  // doc, não do agente — distingue cláusula transcrita de leitura da IA. Co-autoria
+  // C1: a borda esquerda tracejada verde marca a origem na própria prosa.
+  if (block.provenance?.origin === "documento") {
+    const verde = provenanceTokens.documento
+    return (
+      <div
+        className="rounded-md bg-emerald-50/40 py-2 pl-3 pr-3 dark:bg-emerald-500/5"
+        style={{ borderLeft: `3px dashed ${verde.color}` }}
+      >
+        <div className="mb-1 flex flex-wrap items-center gap-1.5">
+          <RiFileTextLine
+            className="size-3.5 shrink-0"
+            style={{ color: verde.color }}
+            aria-hidden
+          />
+          <span
+            className="text-[11px] font-semibold uppercase tracking-[0.06em]"
+            style={{ color: verde.chipText }}
+          >
+            {block.titulo ?? "Trecho do documento"}
+          </span>
+          <span
+            className={cx(
+              tableTokens.badge,
+              "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
+            )}
+          >
+            transcrito · não interpretado
+          </span>
+        </div>
+        <div className="prose prose-sm max-w-none text-sm leading-relaxed text-gray-800 dark:prose-invert dark:text-gray-200">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.markdown}</ReactMarkdown>
+        </div>
+      </div>
+    )
+  }
+
   // READ (dossiê): prosa de documento, sem a caixa azul de destaque do workbench.
   if (mode === "read") {
     return (
