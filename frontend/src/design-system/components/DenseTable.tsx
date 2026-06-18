@@ -83,7 +83,11 @@ function formatValue(value: DenseValue, format?: DenseFormat): string {
     case "brl":
       return _brl.format(value)
     case "pct":
-      return `${value.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`
+      // Sempre 1 casa decimal (alinha com o modo Series; ex.: "8,0%").
+      return `${value.toLocaleString("pt-BR", {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      })}%`
     case "numero":
       return value.toLocaleString("pt-BR")
     default:
