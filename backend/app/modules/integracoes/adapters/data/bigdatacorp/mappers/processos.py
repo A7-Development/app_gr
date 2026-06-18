@@ -258,11 +258,13 @@ def map_processos(payload: dict, *, cnpj: str, dataset: str = "processes") -> Pr
     valor_total = Decimal("0")
     valor_visto = False
     credores: dict[str, dict[str, str | None]] = {}
+    seen_num: set[str] = set()  # BDC repete numeros entre paginas/instancias
 
     for lw in raw_list:
         numero = (lw.get("Number") or "").strip()
-        if not numero:
+        if not numero or numero in seen_num:
             continue
+        seen_num.add(numero)
         tipo = lw.get("Type")
         assunto = lw.get("MainSubject")
         status = lw.get("Status")
@@ -324,7 +326,7 @@ def map_processos(payload: dict, *, cnpj: str, dataset: str = "processes") -> Pr
                     )
 
     resumo = ProcessoResumoFields(
-        qtd_total=len(raw_list), qtd_ativos=qtd_ativos, qtd_encerrados=qtd_encerrados,
+        qtd_total=len(processos), qtd_ativos=qtd_ativos, qtd_encerrados=qtd_encerrados,
         por_area=por_area, qtd_como_reu=qtd_reu, qtd_como_autor=qtd_autor,
         qtd_execucoes_contra=qtd_exec_contra,
         credores_executando=list(credores.values()),
