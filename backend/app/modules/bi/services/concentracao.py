@@ -26,6 +26,7 @@ from app.modules.bi.schemas.concentracao import (
     ConcentracaoData,
     ConcentracaoItem,
     ConcentracaoTabela,
+    ConcentracaoUA,
     HistoricoPonto,
 )
 
@@ -57,6 +58,21 @@ async def _resolve_fundo_doc(
         )
     ).first()
     return row.cnpj if row else None
+
+
+async def _uas_do_tenant(
+    db: AsyncSession, *, tenant_id: UUID
+) -> list[ConcentracaoUA]:
+    """Todas as UAs (fundos) do tenant — popula o filtro UA."""
+    rows = (
+        await db.execute(
+            text(
+                "SELECT id, nome FROM cadastros_unidade_administrativa "
+                "WHERE tenant_id = :t ORDER BY nome"
+            ).bindparams(t=tenant_id)
+        )
+    ).all()
+    return [ConcentracaoUA(id=str(r.id), nome=r.nome) for r in rows]
 
 
 async def _datas_disponiveis(
@@ -239,6 +255,10 @@ async def _historico(
 def _empty(
     data_posicao: date | None,
     datas_disponiveis: list[date] | None = None,
+    *,
+    ua: ConcentracaoUA | None = None,
+    uas: list[ConcentracaoUA] | None = None,
+    suportado: bool = True,
 ) -> tuple[ConcentracaoData, Provenance]:
     vazio = ConcentracaoTabela(
         itens=[],
@@ -249,6 +269,9 @@ def _empty(
         outros_pct_pl=0.0,
     )
     data = ConcentracaoData(
+        ua=ua,
+        uas=uas or [],
+        suportado=suportado,
         data_posicao=data_posicao or date.today(),
         pl_total=0.0,
         datas_disponiveis=datas_disponiveis or [],
@@ -270,26 +293,37 @@ async def get_concentracao(
     db: AsyncSession,
     *,
     tenant_id: UUID,
+    ua_id: UUID | None = None,
     data: date | None = None,
     janela: str = "12m",
 ) -> tuple[ConcentracaoData, Provenance]:
-    """Bundle de concentracao da Realinvest (snapshot + historico diario).
+    """Bundle de concentracao (snapshot + historico diario).
 
-    `data` = posicao escolhida (default = ultima disponivel). `janela` =
-    intervalo do historico ("6m"|"12m"|"24m"|"tudo"). Ambos aplicam a TODOS
-    os agregados (tabelas no dia, historico ate o dia) — §7.2.
+    `ua_id` = fundo (default Realinvest, o unico suportado por enquanto; outras
+    UAs retornam `suportado=False` — A7 Credit tera logica propria). `data` =
+    posicao (default = ultima). `janela` = intervalo do historico. Filtros
+    aplicam a TODOS os agregados (§7.2).
     """
+    uas = await _uas_do_tenant(db, tenant_id=tenant_id)
+    target_ua = ua_id or _REALINVEST_UA_ID
+    ua_atual = next((u for u in uas if u.id == str(target_ua)), None)
+
+    # So Realinvest tem logica de concentracao por ora. Outras UAs -> vazio +
+    # suportado=False (frontend mostra nota), evita numero errado (§14).
+    if target_ua != _REALINVEST_UA_ID:
+        return _empty(None, uas=uas, ua=ua_atual, suportado=False)
+
     fundo_doc = await _resolve_fundo_doc(
         db, tenant_id=tenant_id, ua_id=_REALINVEST_UA_ID
     )
     if not fundo_doc:
-        return _empty(None)
+        return _empty(None, uas=uas, ua=ua_atual)
 
     datas = await _datas_disponiveis(
         db, tenant_id=tenant_id, fundo_doc=fundo_doc, limit=_DATAS_LIMIT
     )
     if not datas:
-        return _empty(None)
+        return _empty(None, uas=uas, ua=ua_atual)
 
     # Posicao escolhida (valida) ou a ultima disponivel (datas[0] = max).
     data_posicao = data if (data is not None and data <= datas[0]) else datas[0]
@@ -330,6 +364,9 @@ async def get_concentracao(
     )
 
     data_out = ConcentracaoData(
+        ua=ua_atual,
+        uas=uas,
+        suportado=True,
         data_posicao=data_posicao,
         pl_total=pl_total,
         datas_disponiveis=datas,
