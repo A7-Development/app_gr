@@ -17,6 +17,7 @@ import {
   RiErrorWarningLine,
   RiFileTextLine,
   RiInformationLine,
+  RiQuillPenLine,
 } from "@remixicon/react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -24,6 +25,7 @@ import remarkGfm from "remark-gfm"
 import { KpiChartCard } from "@/design-system/components/KpiChartCard"
 import { AgentConclusion } from "@/design-system/components/AgentConclusion"
 import { DenseTable, type DenseColumn, type DenseRow } from "@/design-system/components/DenseTable"
+import { ProvenanceValue } from "@/design-system/components/Provenance"
 import { provenanceTokens, type ProvenanceRef } from "@/design-system/tokens/provenance"
 import { tableTokens } from "@/design-system/tokens/table"
 import type {
@@ -103,7 +105,18 @@ function FichaBlockView({ block }: { block: FichaBlock }) {
           <div key={i} className="flex flex-col gap-0.5">
             <span className={tableTokens.header}>{c.label}</span>
             <span className="text-sm text-gray-900 dark:text-gray-100">
-              {c.valor}
+              {/* C1 co-autoria: o valor carrega a assinatura na propria prosa
+                  (sublinha por origem) + sup de lastro quando ha citacao. */}
+              {c.provenance ? (
+                <ProvenanceValue
+                  origin={c.provenance.origin}
+                  homologado={c.provenance.homologado}
+                >
+                  {c.valor}
+                </ProvenanceValue>
+              ) : (
+                c.valor
+              )}
               <ProvenanceSup provenance={c.provenance} />
               {c.badge && (
                 <span className={cx(tableTokens.badge, BADGE_TONE[c.badge.tom], "ml-1.5")}>
@@ -271,6 +284,47 @@ function ApontamentosBlockView({ block, mode }: { block: ApontamentosBlock; mode
 }
 
 function TextoBlockView({ block, mode }: { block: TextoBlock; mode: RenderMode }) {
+  // "Sua análise" (analista, complementar): voz humana de 1ª classe, ao lado da
+  // leitura da IA, nunca a substitui. Assinatura grafite (borda esquerda dupla).
+  // Co-autoria C1. O texto editável (autosave) é a versão interativa — wiring na
+  // estação; aqui rende a contribuição (work header + read "Análise do analista").
+  if (block.provenance?.origin === "analista") {
+    const grafite = provenanceTokens.analista
+    return (
+      <div
+        className="rounded-md bg-gray-50/70 py-2 pl-3 pr-3 dark:bg-gray-900/40"
+        style={{ borderLeft: `3px double ${grafite.color}` }}
+      >
+        <div className="mb-1 flex flex-wrap items-center gap-1.5">
+          <RiQuillPenLine
+            className="size-3.5 shrink-0"
+            style={{ color: grafite.color }}
+            aria-hidden
+          />
+          <span
+            className="text-[11px] font-semibold uppercase tracking-[0.06em]"
+            style={{ color: grafite.chipText }}
+          >
+            {mode === "read" ? "Análise do analista" : "Sua análise — complementar"}
+          </span>
+          {mode === "work" && (
+            <span
+              className={cx(
+                tableTokens.badge,
+                "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
+              )}
+            >
+              soma à da IA · não a substitui
+            </span>
+          )}
+        </div>
+        <div className="prose prose-sm max-w-none text-sm leading-relaxed text-gray-800 dark:prose-invert dark:text-gray-200">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.markdown}</ReactMarkdown>
+        </div>
+      </div>
+    )
+  }
+
   // READ (dossiê): prosa de documento, sem a caixa azul de destaque do workbench.
   if (mode === "read") {
     return (
