@@ -43,7 +43,7 @@ import { Textarea } from "@/components/tremor/Textarea"
 import { DynamicForm } from "@/design-system/components/DynamicForm"
 import { type WizardMultiStepStep } from "@/design-system/patterns/WizardMultiStep"
 import { DescriptorParityPanel } from "./_components/DescriptorParityPanel"
-import { DocumentSourceZone, FichaConferenceZone } from "./_components/DocumentZones"
+import { DocumentSourceZone, DOC_LABEL, FichaConferenceZone } from "./_components/DocumentZones"
 import {
   JucespDocSelector,
   type JucespDocOption,
@@ -64,7 +64,7 @@ import { TrailSheet, type TrailEvent } from "./_components/TrailSheet"
 import { CadastralAnalysisView } from "./_components/CadastralAnalysisView"
 import { CadastralCard } from "./_components/CadastralCard"
 import {
-  AgentesAoVivoPanel,
+  ContextPanel,
   AgentLiveStatus,
   AgentOutputRenderer,
   AgentPulseDot,
@@ -75,6 +75,9 @@ import {
   StationStateChip,
   StationsSidebar,
   type ClosureBarState,
+  type ContextApontamento,
+  type ContextAuditEvent,
+  type ContextDoc,
   type GlassAlsoRunning,
   type GlassStep,
   type IndebtednessAnalysis,
@@ -964,6 +967,71 @@ export default function DossierFocusPage() {
         stream: last?.tool_name
           ? [{ origin: "agente" as const, text: last.tool_name, typing: true }]
           : undefined,
+      }
+    })
+
+  // ── Painel de contexto (abas) — dados REAIS, sem fabricar ─────────────────
+  const agentBusy = runningEstacoes.length > 0
+
+  const openDocFile = async (docId: string) => {
+    try {
+      const url = await credito.documents.fileObjectUrl(dossierId, docId)
+      window.open(url, "_blank", "noopener,noreferrer")
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch {
+      /* silencioso — o cofre é leitura */
+    }
+  }
+
+  // Apontamentos: radar agregado (red_flags dos agentes + flags dos checks).
+  const apontamentos: ContextApontamento[] = (state.red_flags ?? []).map((f) => ({
+    id: f.id,
+    titulo: f.title,
+    detail: f.description || undefined,
+    station: f.check_type ?? f.raised_by_agent ?? f.section ?? undefined,
+    sev:
+      f.severity === "critical" ? "critico" : f.severity === "important" ? "atencao" : "info",
+  }))
+
+  // Documentos: cofre de evidências (documentos reais do dossiê).
+  const documentos: ContextDoc[] = (docsQuery.data ?? []).map((d) => {
+    const processed = d.extraction_status === "success" || d.extraction_status === "validated"
+    const conf =
+      d.extraction_confidence != null && processed
+        ? `confiança ${Number(d.extraction_confidence).toLocaleString("pt-BR", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}`
+        : null
+    return {
+      id: d.id,
+      name: d.original_filename,
+      kind: DOC_LABEL[d.doc_type.toLowerCase()] ?? d.doc_type,
+      meta: conf ?? undefined,
+      tone: "documento",
+      action: "view",
+      onOpen: () => openDocFile(d.id),
+    }
+  })
+
+  // Auditoria: trilha de eventos a partir dos node runs executados.
+  const auditoria: ContextAuditEvent[] = state.node_runs
+    .filter((nr) => nr.status !== "pending")
+    .map((nr) => {
+      const meta = AUDIT_NODE_META[nr.node_type] ?? {
+        label: nr.node_type,
+        actor: "Sistema",
+        kind: "sistema" as const,
+      }
+      const ts = nr.completed_at ?? nr.started_at
+      const suffix =
+        nr.status === "running" ? " · em curso" : nr.status === "failed" ? " · falhou" : ""
+      return {
+        id: nr.id,
+        titulo: meta.label + suffix,
+        actor: meta.actor,
+        when: ts ? relTime(ts) : "—",
+        actorKind: meta.kind,
       }
     })
 
@@ -1867,12 +1935,15 @@ export default function DossierFocusPage() {
       )}
 
       {!viewDossie && focused && (
-        <AgentesAoVivoPanel
+        <ContextPanel
           activeStationLabel={focused.label}
           activeStationStatus={glassActiveStatus}
           steps={glassSteps}
           alsoRunning={glassAlsoRunning}
-          activeCount={runningEstacoes.length}
+          agentBusy={agentBusy}
+          apontamentos={apontamentos}
+          documentos={documentos}
+          auditoria={auditoria}
         />
       )}
       </div>
@@ -1886,6 +1957,37 @@ function fmtTime(iso: string): string {
   } catch {
     return iso
   }
+}
+
+// Tempo relativo p/ a trilha de auditoria ("agora" · "há N min" · "há N h").
+function relTime(iso: string): string {
+  try {
+    const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+    if (min < 1) return "agora"
+    if (min < 60) return `há ${min} min`
+    const h = Math.floor(min / 60)
+    if (h < 24) return `há ${h} h`
+    return `há ${Math.floor(h / 24)} d`
+  } catch {
+    return iso
+  }
+}
+
+// Node type → evento de auditoria (rótulo + ator + cor do ator). Espelha o
+// vocabulário do decision_log: quem fez o quê.
+const AUDIT_NODE_META: Record<
+  string,
+  { label: string; actor: string; kind: "voce" | "agente" | "sistema" }
+> = {
+  trigger: { label: "Análise aberta", actor: "Você", kind: "voce" },
+  official_document_fetch: { label: "Consulta à fonte oficial", actor: "Agente", kind: "agente" },
+  document_request: { label: "Documento solicitado", actor: "Você", kind: "voce" },
+  document_extractor: { label: "Extração concluída", actor: "Agente", kind: "agente" },
+  deterministic_check: { label: "Checks determinísticos", actor: "Sistema", kind: "sistema" },
+  specialist_agent: { label: "Interpretação do agente", actor: "Agente", kind: "agente" },
+  human_review: { label: "Homologação", actor: "Você", kind: "voce" },
+  human_input: { label: "Entrada do analista", actor: "Você", kind: "voce" },
+  output_generator: { label: "Seção gravada no dossiê", actor: "Sistema", kind: "sistema" },
 }
 
 // ─── Chip do header por estado ──────────────────────────────────────────────

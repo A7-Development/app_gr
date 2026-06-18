@@ -261,11 +261,23 @@ export { DiffRemoved, DiffInserted, PreviousValue } from "./DiffText"
 export { AgentLiveChip, AgentPulseDot, type AgentLiveChipProps } from "./AgentLiveChip"
 export {
   AgentesAoVivoPanel,
+  AgentesAoVivoBody,
   type AgentesAoVivoPanelProps,
   type GlassStep,
   type GlassAlsoRunning,
   type GlassStreamLine,
 } from "./AgentesAoVivoPanel"
+export {
+  ContextPanel,
+  type ContextPanelProps,
+  type ContextApontamento,
+  type ContextApontamentoSev,
+  type ContextDoc,
+  type ContextDocTone,
+  type ContextAuditEvent,
+  type ContextAuditActor,
+  type ContextTabKey,
+} from "./ContextPanel"
 export {
   StationStateChip,
   type StationStateChipProps,
