@@ -125,6 +125,159 @@ function ConfidenceChip({ level }: { level: "alta" | "media" | "baixa" }) {
   )
 }
 
+// Corpo da caixa de vidro — reusável como conteúdo da aba "Atividade" do
+// <ContextPanel> (handoff playbook JUCESP: a barra direita virou painel de
+// contexto com abas; esta é a aba viva).
+export function AgentesAoVivoBody({
+  activeStationLabel,
+  activeStationStatus,
+  confidence,
+  steps,
+  alsoRunning = [],
+}: {
+  activeStationLabel: string
+  activeStationStatus?: string
+  confidence?: "alta" | "media" | "baixa" | null
+  steps: GlassStep[]
+  alsoRunning?: GlassAlsoRunning[]
+}) {
+  return (
+    <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
+      {/* Esta estação */}
+      <section>
+        <p className={EYEBROW}>Esta estação</p>
+        <div className="mt-1.5 flex items-center justify-between gap-2">
+          <span className="truncate text-[13px] text-gray-700 dark:text-gray-300">
+            {activeStationLabel}
+            {activeStationStatus ? ` · ${activeStationStatus}` : ""}
+          </span>
+          {confidence && <ConfidenceChip level={confidence} />}
+        </div>
+
+        {steps.length > 0 ? (
+          <ol className="mt-2.5 space-y-2.5">
+            {steps.map((s) => (
+              <li key={s.id} className="flex items-start gap-2">
+                <StepIcon status={s.status} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[13px] text-gray-900 dark:text-gray-100">
+                      {s.label}
+                    </span>
+                    {s.source && (
+                      <ProvenanceChip origin={s.source}>
+                        {s.sourceLabel ?? s.source}
+                      </ProvenanceChip>
+                    )}
+                  </div>
+                  {s.detail && (
+                    <p className="mt-0.5 text-[11px] text-gray-400 dark:text-gray-500">
+                      {s.detail}
+                      {s.onEvidence && (
+                        <>
+                          {" · "}
+                          <button
+                            type="button"
+                            onClick={s.onEvidence}
+                            className="font-medium text-blue-600 hover:underline dark:text-blue-400"
+                          >
+                            ver evidência
+                          </button>
+                        </>
+                      )}
+                    </p>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : alsoRunning.length === 0 ? (
+          // Empty state (estação ociosa / abertura) — handoff: "Nenhum agente ativo".
+          <div className="flex flex-col items-center gap-1.5 py-10 text-center">
+            <span className="text-base font-semibold text-gray-300 dark:text-gray-600">
+              z<span className="text-xs">z</span>
+            </span>
+            <p className="text-[12px] font-medium text-gray-400 dark:text-gray-500">
+              Nenhum agente ativo agora.
+            </p>
+            <p className="max-w-[220px] text-[11px] leading-snug text-gray-400 dark:text-gray-600">
+              A atividade ao vivo aparece aqui quando um agente trabalha.
+            </p>
+          </div>
+        ) : null}
+      </section>
+
+      {/* Também em andamento */}
+      {alsoRunning.length > 0 && (
+        <section>
+          <p className={EYEBROW}>Também em andamento</p>
+          <div className="mt-2 space-y-3">
+            {alsoRunning.map((a) => (
+              <div key={a.id}>
+                <button
+                  type="button"
+                  onClick={a.onOpen}
+                  disabled={!a.onOpen}
+                  className="flex w-full items-center gap-2 text-left disabled:cursor-default"
+                >
+                  <AgentPulseDot size={7} />
+                  <span className="truncate text-[13px] font-medium text-gray-800 dark:text-gray-200">
+                    {a.label}
+                  </span>
+                  {a.hint && (
+                    <span className="ml-auto shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                      {a.hint}
+                    </span>
+                  )}
+                </button>
+                {a.stream && a.stream.length > 0 && (
+                  <div
+                    className="mt-1.5 space-y-0.5 rounded border-l-2 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed"
+                    style={{
+                      background: agentContainerTokens.bg,
+                      borderColor: agentContainerTokens.divider,
+                    }}
+                  >
+                    {a.stream.map((line, i) => (
+                      <p
+                        key={i}
+                        className="text-gray-600 dark:text-gray-300"
+                        style={
+                          line.origin
+                            ? { color: provenanceTokens[line.origin].chipText }
+                            : undefined
+                        }
+                      >
+                        {line.origin && (
+                          <span
+                            className="mr-1 font-semibold"
+                            style={{ color: provenanceTokens[line.origin].color }}
+                          >
+                            {provenanceTokens[line.origin].supPrefix}
+                          </span>
+                        )}
+                        <span className="text-gray-700 dark:text-gray-300">
+                          {line.text}
+                        </span>
+                        {line.typing && (
+                          <span
+                            className="ml-px inline-block h-3 w-1.5 translate-y-px bg-current motion-safe:animate-pulse"
+                            aria-hidden
+                          />
+                        )}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  )
+}
+
 export function AgentesAoVivoPanel({
   activeStationLabel,
   activeStationStatus,
@@ -167,130 +320,13 @@ export function AgentesAoVivoPanel({
       </div>
 
       {/* Corpo */}
-      <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
-        {/* Esta estação */}
-        <section>
-          <p className={EYEBROW}>Esta estação</p>
-          <div className="mt-1.5 flex items-center justify-between gap-2">
-            <span className="truncate text-[13px] text-gray-700 dark:text-gray-300">
-              {activeStationLabel}
-              {activeStationStatus ? ` · ${activeStationStatus}` : ""}
-            </span>
-            {confidence && <ConfidenceChip level={confidence} />}
-          </div>
-
-          {steps.length > 0 ? (
-            <ol className="mt-2.5 space-y-2.5">
-              {steps.map((s) => (
-                <li key={s.id} className="flex items-start gap-2">
-                  <StepIcon status={s.status} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-[13px] text-gray-900 dark:text-gray-100">
-                        {s.label}
-                      </span>
-                      {s.source && (
-                        <ProvenanceChip origin={s.source}>
-                          {s.sourceLabel ?? s.source}
-                        </ProvenanceChip>
-                      )}
-                    </div>
-                    {s.detail && (
-                      <p className="mt-0.5 text-[11px] text-gray-400 dark:text-gray-500">
-                        {s.detail}
-                        {s.onEvidence && (
-                          <>
-                            {" · "}
-                            <button
-                              type="button"
-                              onClick={s.onEvidence}
-                              className="font-medium text-blue-600 hover:underline dark:text-blue-400"
-                            >
-                              ver evidência
-                            </button>
-                          </>
-                        )}
-                      </p>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-500">
-              Sem passos registrados ainda.
-            </p>
-          )}
-        </section>
-
-        {/* Também em andamento */}
-        {alsoRunning.length > 0 && (
-          <section>
-            <p className={EYEBROW}>Também em andamento</p>
-            <div className="mt-2 space-y-3">
-              {alsoRunning.map((a) => (
-                <div key={a.id}>
-                  <button
-                    type="button"
-                    onClick={a.onOpen}
-                    disabled={!a.onOpen}
-                    className="flex w-full items-center gap-2 text-left disabled:cursor-default"
-                  >
-                    <AgentPulseDot size={7} />
-                    <span className="truncate text-[13px] font-medium text-gray-800 dark:text-gray-200">
-                      {a.label}
-                    </span>
-                    {a.hint && (
-                      <span className="ml-auto shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
-                        {a.hint}
-                      </span>
-                    )}
-                  </button>
-                  {a.stream && a.stream.length > 0 && (
-                    <div
-                      className="mt-1.5 space-y-0.5 rounded border-l-2 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed"
-                      style={{
-                        background: agentContainerTokens.bg,
-                        borderColor: agentContainerTokens.divider,
-                      }}
-                    >
-                      {a.stream.map((line, i) => (
-                        <p
-                          key={i}
-                          className="text-gray-600 dark:text-gray-300"
-                          style={
-                            line.origin
-                              ? { color: provenanceTokens[line.origin].chipText }
-                              : undefined
-                          }
-                        >
-                          {line.origin && (
-                            <span
-                              className="mr-1 font-semibold"
-                              style={{ color: provenanceTokens[line.origin].color }}
-                            >
-                              {provenanceTokens[line.origin].supPrefix}
-                            </span>
-                          )}
-                          <span className="text-gray-700 dark:text-gray-300">
-                            {line.text}
-                          </span>
-                          {line.typing && (
-                            <span
-                              className="ml-px inline-block h-3 w-1.5 translate-y-px bg-current motion-safe:animate-pulse"
-                              aria-hidden
-                            />
-                          )}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-      </div>
+      <AgentesAoVivoBody
+        activeStationLabel={activeStationLabel}
+        activeStationStatus={activeStationStatus}
+        confidence={confidence}
+        steps={steps}
+        alsoRunning={alsoRunning}
+      />
 
       {/* Rodapé */}
       <div className="mt-auto shrink-0 border-t border-gray-200 px-4 py-2.5 dark:border-gray-800">
