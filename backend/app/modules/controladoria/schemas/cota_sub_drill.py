@@ -195,6 +195,7 @@ class DrillDcLiquidacaoParcialPapel(BaseModel):
     seu_numero:         str
     numero_documento:   str
     tipo_recebivel:     str
+    data_vencimento:    date | None = Field(default=None, description="Vencimento ajustado — desambigua parcelas que compartilham numero_documento.")
     vp_d1:              Decimal
     vp_d0:              Decimal
     delta_vp:           Decimal = Field(description="vp_d0 - vp_d1 (perna da carteira, < 0)")
@@ -203,6 +204,48 @@ class DrillDcLiquidacaoParcialPapel(BaseModel):
     tipo_movimento:     str = Field(description="tipo_movimento do evento casado (ex.: RECOMPRA PARCIAL SEM ADIANTAMENTO)")
     valor_pago_evento:  Decimal = Field(description="Σ valor_pago do(s) evento(s) casado(s) no D0 (perna de caixa)")
     reconcilia:         bool = Field(description="ΔVN do estoque casa com -Σvalor_pago do evento (R$ 1)? Se False, ha mudanca de parametro adicional alem da liquidacao.")
+
+
+class DrillDcAbatimentoPapel(BaseModel):
+    """Papel que FICOU na carteira mas teve ABATIMENTO CONCEDIDO no dia.
+
+    Sub-caso de liquidacao parcial cujo evento casado e PERDA, nao caixa
+    (`classify_liquidacao_nature == "credit_loss"`). A queda de VP NAO tem
+    contrapartida de caixa na Tesouraria — e perda de credito que bate no PL
+    Sub (value-mover do DC), nao giro.
+
+    Bug de origem (17/06/2026): 3 papeis do cedente TING (DID110568/9/70)
+    com ABATIMENTO CONCEDIDO eram roteados pra `liquidacao_parcial` (giro). A
+    perda de -R$ 14.334 vazava pro plug de Disponibilidades disfarcada de
+    "rendimento de caixa". Agora vem aqui, no DC, com o cedente nomeado.
+
+    Tres bases de leitura (decisao 2026-06-18):
+      - `delta_vp`        = impacto NA COTA (o que move o PL Sub). E o numero
+                            do waterfall — sempre o que conta no resultado.
+      - `nominal_abatido` = face perdoada ao sacado (contexto; > |delta_vp|
+                            porque inclui juros futuros nao apropriados).
+      - `abaixo_do_custo` = flag de risco: o VP cruzou pra baixo do
+                            `valor_aquisicao` (fundo carrega o papel abaixo do
+                            que pagou). Otica de resultado-vs-custo.
+    """
+
+    cedente_doc:        str
+    cedente_nome:       str
+    sacado_doc:         str
+    sacado_nome:        str
+    seu_numero:         str = Field(description="Referencia da linha na fonte (campo `seuNumero` da QiTech; valor varia por originador). Chave interna opaca — NAO exibir ao usuario; use `numero_documento` + `data_vencimento`.")
+    numero_documento:   str = Field(description="Numero do documento (duplicata/NF) que o usuario reconhece. Identificador a EXIBIR (desambiguado por vencimento quando parcelado).")
+    tipo_recebivel:     str
+    tipo_movimento:     str = Field(description="tipo_movimento do evento (ex.: ABATIMENTO CONCEDIDO)")
+    data_vencimento:    date | None = Field(default=None, description="Vencimento ajustado — desambigua parcelas que compartilham numero_documento.")
+    vp_d1:              Decimal = Field(description="Valor presente em D-1 (base antes do abatimento)")
+    vp_d0:              Decimal
+    delta_vp:           Decimal = Field(description="vp_d0 - vp_d1 (< 0). IMPACTO na cota — perda de credito do DC.")
+    vn_d1:              Decimal
+    vn_d0:              Decimal
+    nominal_abatido:    Decimal = Field(description="|ΔVN| = face perdoada ao sacado (= valor_pago do evento). Contexto, NAO o impacto na cota.")
+    valor_aquisicao:    Decimal = Field(description="Custo de aquisicao do papel (congelado).")
+    abaixo_do_custo:    bool = Field(description="VP em D0 ficou abaixo do valor_aquisicao? Flag de risco de credito.")
 
 
 class DrillDcMigracaoWopPapel(BaseModel):
@@ -221,6 +264,7 @@ class DrillDcMigracaoWopPapel(BaseModel):
     seu_numero:         str
     numero_documento:   str
     tipo_recebivel:     str
+    data_vencimento:    date | None = Field(default=None, description="Vencimento ajustado — desambigua parcelas que compartilham numero_documento.")
     faixa_pdd_d1:       str = Field(description="Faixa de origem (A-H, exceto WOP)")
     vp_d1:              Decimal = Field(description="VP em D-1 (sai do estoque)")
     valor_pdd_d1:       Decimal = Field(description="PDD em D-1 (sai junto)")
@@ -236,7 +280,8 @@ class DrillDcDecomposicao(BaseModel):
                  - liquidacoes_total     (saidas: papeis ausentes em D0, pelo VP_d1)
                  - migracao_wop_total    (papeis que viraram WOP, saem do estoque)
                  + apropriacao_total     (juros do dia, populacao constante sem mudanca)
-                 - liquidacao_parcial_total (papeis que ficaram mas tiveram parcela paga; casa com evento)
+                 - liquidacao_parcial_total (papeis que ficaram mas tiveram parcela paga; casa com evento de CAIXA)
+                 + abatimentos_total     (papeis que ficaram mas tiveram ABATIMENTO; perda sem caixa)
                  + mutacao_total         (delta VP de papeis com mudanca de parametro SEM evento casado)
                  + residuo               (deve ser ~0; se != 0 alerta de pipeline)
 
@@ -246,6 +291,13 @@ class DrillDcDecomposicao(BaseModel):
     e vai para `liquidacao_parcial_total` (GIRO carteira->caixa). `mutacao_total`
     passa a ser RESIDUAL: so papel com mudanca de parametro SEM evento casado
     (re-statement genuino, ex.: DID99746).
+
+    Reclassificacao 2026-06-18: dentro dos eventos casados, o ABATIMENTO
+    CONCEDIDO (perda perdoada, SEM entrada de caixa) sai de `liquidacao_parcial`
+    (giro) para `abatimentos_total`. Ambos sao ΔVP de papeis que ficaram e
+    somam igual na identidade (resíduo inalterado), mas `abatimentos_total` e
+    PERDA (value-mover do DC), enquanto `liquidacao_parcial_total` continua
+    GIRO (a perna de caixa compensa). Ver `liquidacao_natureza.py`.
 
     Cross-check informativo com `wh_aquisicao_recebivel` e
     `wh_liquidacao_recebivel`: a diferenca entre o granular (calculado
@@ -270,8 +322,11 @@ class DrillDcDecomposicao(BaseModel):
     apropriacao_n:                  int
     apropriacao_total:              Decimal = Field(description="Σ ΔVP da populacao constante sem mudanca de parametro (= juros + valorizacao MtM)")
 
-    liquidacao_parcial_n:           int = Field(default=0, description="Papeis que ficaram mas tiveram parcela paga (casam com evento de liquidacao no D0)")
+    liquidacao_parcial_n:           int = Field(default=0, description="Papeis que ficaram mas tiveram parcela paga em CAIXA (casam com evento de liquidacao no D0)")
     liquidacao_parcial_total:       Decimal = Field(default=Decimal("0"), description="Σ ΔVP dos papeis com liquidacao parcial casada (< 0; GIRO carteira->caixa, NAO mutacao)")
+
+    abatimentos_n:                  int = Field(default=0, description="Papeis que ficaram mas tiveram ABATIMENTO CONCEDIDO (perda sem caixa) no D0")
+    abatimentos_total:              Decimal = Field(default=Decimal("0"), description="Σ ΔVP dos papeis com abatimento concedido (< 0; PERDA de credito, value-mover do DC — NAO giro)")
 
     mutacao_n:                      int
     mutacao_total:                  Decimal = Field(description="Σ ΔVP da populacao constante COM mudanca de parametro SEM evento de liquidacao casado (mutacao silenciosa RESIDUAL). Liquidacao parcial saiu daqui para liquidacao_parcial_total.")
@@ -348,6 +403,13 @@ class DrillDcResultadoDoDia(BaseModel):
         description="= decomposicao.mutacao_total. ΔVP de papeis que mudaram "
                     "parametro sem evento (mutacao silenciosa). Pode ser perda.",
     )
+    abatimentos_total:        Decimal = Field(
+        default=Decimal("0"),
+        description="= decomposicao.abatimentos_total. ΔVP de papeis com ABATIMENTO "
+                    "CONCEDIDO (perda perdoada SEM entrada de caixa). <= 0. PERDA de "
+                    "credito que MOVE a cota — entra no impacto do DC (NAO e giro). "
+                    "Use como driver de um dia fraco com abatimento; nomeie o cedente.",
+    )
     migracao_wop_total:       Decimal = Field(
         description="= decomposicao.migracao_wop_total. VP que virou WOP no dia. "
                     "~Neutro no PL Sub (sai DC e sai PDD juntos), mas relevante narrar.",
@@ -366,9 +428,10 @@ class DrillDcResultadoDoDia(BaseModel):
 
     # ── Heuristica de leitura (descritores de dominio, nao enums do agente) ──
     motor_dominante:          Literal[
-        "carrego", "mora", "desconto", "mutacao", "write_off", "misto"
+        "carrego", "mora", "desconto", "abatimento", "mutacao", "write_off", "misto"
     ] = Field(description="Qual motor tem maior magnitude de impacto no dia. "
-                          "'carrego' inclui a apropriacao antecipada (mesma natureza).")
+                          "'carrego' inclui a apropriacao antecipada (mesma natureza); "
+                          "'abatimento' = perda de credito concedida na carteira.")
     resultado_outlier:        bool = Field(
         description="True quando o evento liquido (mora - desconto) ou |mutacao_total| "
                     "supera a apropriacao contratada do dia (carrego + antecipada) — "
@@ -412,7 +475,11 @@ class DrillDcResponse(BaseModel):
     )
     liquidacao_parcial_papeis: list[DrillDcLiquidacaoParcialPapel] = Field(
         default_factory=list,
-        description="Detalhe dos papeis com liquidacao parcial casada (ex-mutacao)",
+        description="Detalhe dos papeis com liquidacao parcial casada em CAIXA (ex-mutacao)",
+    )
+    abatimentos_papeis: list[DrillDcAbatimentoPapel] = Field(
+        default_factory=list,
+        description="Detalhe dos papeis com ABATIMENTO CONCEDIDO (perda sem caixa, value-mover do DC)",
     )
     migracao_wop_papeis: list[DrillDcMigracaoWopPapel] = Field(
         default_factory=list,

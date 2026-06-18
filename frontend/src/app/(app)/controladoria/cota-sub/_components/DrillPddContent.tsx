@@ -341,8 +341,8 @@ function WopTable({ papeis }: { papeis: DrillPddPapel[] }) {
                   <div className="truncate max-w-[160px] font-medium text-gray-900 dark:text-gray-50">{p.cedente_nome}</div>
                   <div className="truncate max-w-[160px] text-[10px] text-gray-500 dark:text-gray-400">→ {p.sacado_nome}</div>
                 </td>
-                <td className="px-3 py-1.5 font-mono text-[11px] text-gray-500 dark:text-gray-400" title={`DID ${p.seu_numero}`}>
-                  <span className="block truncate">{p.numero_documento || p.seu_numero}</span>
+                <td className="px-3 py-1.5 font-mono text-[11px] text-gray-500 dark:text-gray-400">
+                  <span className="block truncate">{p.numero_documento || "—"}</span>
                 </td>
                 <td className="px-3 py-1.5 text-right text-gray-900 dark:text-gray-50">{fmtPct.format(pct)}</td>
                 <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(p.valor_nominal)}</td>
@@ -415,8 +415,8 @@ function PapeisTable({
                   <div className="truncate max-w-[160px] font-medium text-gray-900 dark:text-gray-50">{p.cedente_nome}</div>
                   <div className="truncate max-w-[160px] text-[10px] text-gray-500 dark:text-gray-400">→ {p.sacado_nome}</div>
                 </td>
-                <td className="px-3 py-1.5 font-mono text-[11px] text-gray-500 dark:text-gray-400" title={`DID ${p.seu_numero}`}>
-                  <span className="block truncate">{p.numero_documento || p.seu_numero}</span>
+                <td className="px-3 py-1.5 font-mono text-[11px] text-gray-500 dark:text-gray-400">
+                  <span className="block truncate">{p.numero_documento || "—"}</span>
                 </td>
                 <td className="px-3 py-1.5 text-center">
                   <span className="inline-flex items-center gap-1 text-[10px]">
