@@ -64,7 +64,8 @@ export const CLASSE_SHORT: Record<LaminaClasse, string> = {
 export const COL = {
   cdiLine: "#9CA3AF", // gray-400
   subLine: "#2563EB", // blue-600
-  alert: "#DC2626", // red-600 (razao garantia / PDD)
+  alert: "#DC2626", // red-600 (PDD)
+  garantia: "#E9D400", // amarelo da lamina (faixa do topo / wordmark) -- razao de garantia
   vencido: "#D97706", // amber-600
   caixa: "#D1D5DB", // gray-300
   grid: "#F3F4F6", // gray-100
