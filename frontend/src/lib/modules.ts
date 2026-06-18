@@ -197,13 +197,13 @@ export const MODULES: ModuleDefinition[] = [
   },
   {
     id: "credito",
-    name: "StrataFlow",
-    initials: "SF",
+    name: "Crédito",
+    initials: "Cr",
     icon: RiHandCoinLine,
     color: "indigo",
     // Modulo de credito (id mantido como "credito" pra preservar URLs e
-    // enums backend). Renomeado pra StrataFlow no display em 2026-05-02 —
-    // marca propria do produto de credito do Strata, com fluxos visuais.
+    // enums backend). Display "Crédito" (2026-06-18, Ricardo) — antes
+    // "StrataFlow" (marca propria); voltou ao nome do dominio.
     enabled: true,
     permission: "admin",
     basePath: "/credito",
