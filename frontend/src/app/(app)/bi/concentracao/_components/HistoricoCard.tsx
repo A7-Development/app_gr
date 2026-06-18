@@ -12,6 +12,11 @@ import type { EChartsOption } from "echarts"
 import { EChartsCard } from "@/design-system/components/EChartsCard"
 import type { ConcentracaoHistoricoPonto } from "@/lib/api-client"
 
+const fmtPct = new Intl.NumberFormat("pt-BR", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+})
+
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 
 function monthLabel(iso: string): string {
@@ -28,11 +33,15 @@ export function HistoricoCard({
   titulo,
   labelMaior,
   pontos,
+  kpiTop10,
+  kpiMaior,
   loading,
 }: {
   titulo: string
   labelMaior: string
   pontos: ConcentracaoHistoricoPonto[]
+  kpiTop10: number
+  kpiMaior: number
   loading: boolean
 }) {
   const option = React.useMemo<EChartsOption>(() => {
@@ -124,6 +133,15 @@ export function HistoricoCard({
   }, [pontos, labelMaior])
 
   return (
-    <EChartsCard title={titulo} option={option} height={260} loading={loading} />
+    <EChartsCard
+      title={titulo}
+      headerKpi={{
+        value: `${fmtPct.format(kpiTop10)}%`,
+        deltaSub: `10 maiores hoje · maior ${fmtPct.format(kpiMaior)}%`,
+      }}
+      option={option}
+      height={260}
+      loading={loading}
+    />
   )
 }

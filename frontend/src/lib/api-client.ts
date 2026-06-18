@@ -1393,6 +1393,9 @@ export type ConcentracaoTabela = {
   itens: ConcentracaoItem[]
   total_financeiro: number
   total_pct_pl: number
+  outros_qtd: number
+  outros_financeiro: number
+  outros_pct_pl: number
 }
 
 export type ConcentracaoHistoricoPonto = {
