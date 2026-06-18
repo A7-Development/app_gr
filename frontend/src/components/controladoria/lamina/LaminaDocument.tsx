@@ -285,7 +285,7 @@ export function LaminaDocument({ data }: { data: LaminaResponse }) {
             </span>
             <span style={{ fontSize: 11, fontWeight: 600, color: "#1B2B4B" }}>{p1(d.kpi.razao)}% atual</span>
           </div>
-          <Legend items={[...classes.map((c) => [`% PL ${CLASSE_SHORT[c.classe]}`, CLASSE_COLOR[c.classe], false] as [string, string, boolean]), ["Razão de garantia (Sub+Mez)", COL.alert, true]]} />
+          <Legend items={[...classes.map((c) => [`% PL ${CLASSE_SHORT[c.classe]}`, CLASSE_COLOR[c.classe], false] as [string, string, boolean]), ["Razão de garantia (Sub+Mez)", COL.garantia, true]]} />
           <GarantiaChart meses={meses} classes={classes} totals={d.totals} razao={d.razaoMensal} />
           <div style={{ marginTop: 10 }}>
             <table>

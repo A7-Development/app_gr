@@ -150,9 +150,9 @@ export function GarantiaChart({
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="xMidYMid meet" style={{ display: "block" }}>
       {gridLines(P, W, RP, ys, grid, (v) => `${v}%`)}
       {bars}
-      <polyline points={pts(razao.map((v, k) => [xs(k) + bw / 2, ys(v)]))} fill="none" stroke={COL.alert} strokeWidth={2} strokeLinejoin="round" />
-      {razao.map((v, k) => <circle key={k} cx={xs(k) + bw / 2} cy={ys(v)} r={2} fill={COL.alert} />)}
-      <text x={xs(n - 1) + bw / 2} y={ys(razao[n - 1]) - 7} fill={COL.alert} fontSize={9} fontWeight={700} textAnchor="end">{`${p1(razao[n - 1])}%`}</text>
+      <polyline points={pts(razao.map((v, k) => [xs(k) + bw / 2, ys(v)]))} fill="none" stroke={COL.garantia} strokeWidth={2} strokeLinejoin="round" />
+      {razao.map((v, k) => <circle key={k} cx={xs(k) + bw / 2} cy={ys(v)} r={2} fill={COL.garantia} />)}
+      <text x={xs(n - 1) + bw / 2} y={ys(razao[n - 1]) - 7} fill={COL.garantia} fontSize={9} fontWeight={700} textAnchor="end">{`${p1(razao[n - 1])}%`}</text>
     </svg>
   )
 }
