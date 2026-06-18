@@ -53,8 +53,13 @@ export type DenseTableProps = {
   rows: DenseRow[]
   /** Linha de rodapé (reconciliação §14.6) — soma que bate o headline. */
   footer?: DenseRow
+  /** 2a linha de rodapé, em estilo muted — ex.: cauda "Outros (N)" abaixo do
+   *  subtotal. Reconcilia §14.6 (footer + footerSecondary = total). */
+  footerSecondary?: DenseRow
   /** Eyebrow acima da tabela. */
   caption?: string
+  /** Container com borda + cantos. Desligue (false) quando já dentro de Card. */
+  bordered?: boolean
   className?: string
 }
 
@@ -91,25 +96,46 @@ function alignClass(col: DenseColumn): string {
   return a === "right" ? "text-right" : a === "center" ? "text-center" : "text-left"
 }
 
-export function DenseTable({ columns, rows, footer, caption, className }: DenseTableProps) {
-  const renderRow = (row: DenseRow, strong = false) =>
-    columns.map((col) => (
-      <td key={col.key} className={cx("px-3 py-0.5", alignClass(col))}>
-        <span
-          className={cx(
-            isNumericFormat(col.format) ? tableTokens.cellNumber : tableTokens.cellText,
-            strong && "font-semibold",
-          )}
-        >
-          {formatValue(row[col.key] ?? null, col.format)}
-        </span>
-      </td>
-    ))
+export function DenseTable({
+  columns,
+  rows,
+  footer,
+  footerSecondary,
+  caption,
+  bordered = true,
+  className,
+}: DenseTableProps) {
+  const renderRow = (
+    row: DenseRow,
+    { strong = false, muted = false }: { strong?: boolean; muted?: boolean } = {},
+  ) =>
+    columns.map((col) => {
+      const numeric = isNumericFormat(col.format)
+      const base = muted
+        ? numeric
+          ? tableTokens.cellNumberSecondary
+          : tableTokens.cellSecondary
+        : numeric
+          ? tableTokens.cellNumber
+          : tableTokens.cellText
+      return (
+        <td key={col.key} className={cx("px-3 py-0.5", alignClass(col))}>
+          <span className={cx(base, strong && "font-semibold")}>
+            {formatValue(row[col.key] ?? null, col.format)}
+          </span>
+        </td>
+      )
+    })
 
   return (
     <div className={cx("space-y-1.5", className)}>
       {caption && <p className={cx(tableTokens.header, "mb-1")}>{caption}</p>}
-      <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+      <div
+        className={cx(
+          "overflow-hidden",
+          bordered && "rounded-md border border-gray-200 dark:border-gray-800",
+        )}
+      >
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50/60 dark:border-gray-900 dark:bg-gray-900/40">
@@ -128,7 +154,17 @@ export function DenseTable({ columns, rows, footer, caption, className }: DenseT
             ))}
             {footer && (
               <tr className="border-t border-t-gray-200 bg-gray-50/60 dark:border-t-gray-800 dark:bg-gray-900/40">
-                {renderRow(footer, true)}
+                {renderRow(footer, { strong: true })}
+              </tr>
+            )}
+            {footerSecondary && (
+              <tr
+                className={cx(
+                  "bg-gray-50/40 dark:bg-gray-900/20",
+                  !footer && "border-t border-t-gray-200 dark:border-t-gray-800",
+                )}
+              >
+                {renderRow(footerSecondary, { muted: true })}
               </tr>
             )}
           </tbody>
