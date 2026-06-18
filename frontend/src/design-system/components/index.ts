@@ -260,6 +260,13 @@ export { AgentConclusion, type AgentConclusionProps } from "./AgentConclusion"
 export { DiffRemoved, DiffInserted, PreviousValue } from "./DiffText"
 export { AgentLiveChip, AgentPulseDot, type AgentLiveChipProps } from "./AgentLiveChip"
 export {
+  AgentesAoVivoPanel,
+  type AgentesAoVivoPanelProps,
+  type GlassStep,
+  type GlassAlsoRunning,
+  type GlassStreamLine,
+} from "./AgentesAoVivoPanel"
+export {
   StationStateChip,
   type StationStateChipProps,
   type StationStateChipVariant,

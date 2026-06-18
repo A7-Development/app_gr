@@ -62,6 +62,7 @@ import { TrailSheet, type TrailEvent } from "./_components/TrailSheet"
 import { CadastralAnalysisView } from "./_components/CadastralAnalysisView"
 import { CadastralCard } from "./_components/CadastralCard"
 import {
+  AgentesAoVivoPanel,
   AgentLiveStatus,
   AgentOutputRenderer,
   ClosureBar,
@@ -71,13 +72,15 @@ import {
   StationStateChip,
   StationsSidebar,
   type ClosureBarState,
+  type GlassAlsoRunning,
+  type GlassStep,
   type IndebtednessAnalysis,
   type OpinionDraft,
   type StationItem,
   type StationState,
   type StationSubstep,
 } from "@/design-system/components"
-import { provenanceTokens } from "@/design-system/tokens/provenance"
+import { provenanceTokens, type ProvenanceOrigin } from "@/design-system/tokens/provenance"
 import {
   credito,
   type CadastralAnalysis,
@@ -174,6 +177,16 @@ function requiredDocTypes(step: WizardMultiStepStep): string[] {
 // formas de obter a mesma fonte → uma estação só. Espelha RECIPES do backend.
 const OFFICIAL_FETCH_DOC_TYPE: Record<string, string> = {
   social_contract_jucesp: "social_contract",
+}
+
+// Caixa de vidro: tipo do nó → assinatura de proveniência do passo (chip).
+const GLASS_SOURCE_BY_NODE: Record<string, ProvenanceOrigin> = {
+  document_request: "documento",
+  document_extractor: "documento",
+  official_document_fetch: "documento",
+  bureau_query: "fonte",
+  cadastral_enrichment: "fonte",
+  specialist_agent: "agente",
 }
 
 function officialFetchDocType(step: WizardMultiStepStep): string | null {
@@ -877,6 +890,53 @@ export default function DossierFocusPage() {
   }))
 
   const focusedIndex = focused ? estacoes.indexOf(focused) : -1
+
+  // ── Caixa de vidro (Agentes ao vivo) — dados da estação ativa + globais ────
+  const glassSteps: GlassStep[] = (focused?.members ?? [])
+    .filter((m) => m.nodeType !== "human_input")
+    .map((m) => ({
+      id: m.id,
+      status:
+        m.state === "completed" || m.state === "skipped"
+          ? "ok"
+          : m.state === "running"
+            ? "rodando"
+            : m.state === "failed"
+              ? "erro"
+              : "atencao",
+      label: m.label,
+      source: GLASS_SOURCE_BY_NODE[m.nodeType],
+    }))
+  const glassActiveStatus = !focused
+    ? ""
+    : focused.state === "fechada" || focused.state === "fechada_com_ressalva"
+      ? "concluído"
+      : focused.state === "rodando"
+        ? "em curso"
+        : focused.state === "sua_vez" || focused.state === "homologar"
+          ? "aguardando você"
+          : focused.state === "aguardando_documento"
+            ? "aguardando documento"
+            : "em espera"
+  const runningEstacoes = estacoes.filter((e) => e.state === "rodando")
+  const glassAlsoRunning: GlassAlsoRunning[] = runningEstacoes
+    .filter((e) => e.id !== focused?.id)
+    .map((e) => {
+      const agentM = e.members.find((m) => m.nodeType === "specialist_agent")
+      const log = (
+        agentM?.input as { tools_log?: Array<{ tool_name?: string }> } | undefined
+      )?.tools_log
+      const last = log?.[log.length - 1]
+      return {
+        id: e.id,
+        label: e.label,
+        hint: "2º plano",
+        onOpen: () => onSelect(e.id),
+        stream: last?.tool_name
+          ? [{ origin: "agente" as const, text: last.tool_name, typing: true }]
+          : undefined,
+      }
+    })
 
   // ── Header da estação ───────────────────────────────────────────────────
   const chip = focused ? stationChip(focused.state) : null
@@ -1688,6 +1748,16 @@ export default function DossierFocusPage() {
           </div>
         )}
       </div>
+      )}
+
+      {!viewDossie && focused && (
+        <AgentesAoVivoPanel
+          activeStationLabel={focused.label}
+          activeStationStatus={glassActiveStatus}
+          steps={glassSteps}
+          alsoRunning={glassAlsoRunning}
+          activeCount={runningEstacoes.length}
+        />
       )}
     </div>
   )
