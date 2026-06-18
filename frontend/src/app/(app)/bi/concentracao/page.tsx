@@ -11,10 +11,13 @@
 
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
+import { parseAsString, useQueryState } from "nuqs"
 import { toast } from "sonner"
+import { RiCalendarLine, RiCheckLine, RiHistoryLine } from "@remixicon/react"
 
 import { PageHeader } from "@/design-system/components/PageHeader"
 import { DashboardHeaderActions } from "@/design-system/components/DashboardHeaderActions"
+import { FilterChip } from "@/design-system/components/FilterBar"
 import {
   AIPanel,
   useAIPanel,
@@ -28,6 +31,56 @@ import { cx } from "@/lib/utils"
 import { ConcentracaoCard } from "./_components/ConcentracaoCard"
 import { HistoricoCard } from "./_components/HistoricoCard"
 
+const JANELA_OPTS = [
+  { value: "6m", label: "6 meses" },
+  { value: "12m", label: "12 meses" },
+  { value: "24m", label: "24 meses" },
+  { value: "tudo", label: "Tudo" },
+] as const
+
+const JANELA_LABEL: Record<string, string> = Object.fromEntries(
+  JANELA_OPTS.map((o) => [o.value, o.label]),
+)
+
+// Lista de opcoes (single-select) dentro de um FilterChip — padrao das paginas
+// BI (panorama/operacoes). `nullLabel` opcional renderiza a opcao "limpar".
+function OptList({
+  options,
+  selected,
+  onSelect,
+  nullLabel,
+}: {
+  options: ReadonlyArray<{ value: string; label: string }>
+  selected: string | null
+  onSelect: (value: string | null) => void
+  nullLabel?: string
+}) {
+  const item = (value: string | null, label: string) => (
+    <button
+      key={value ?? "__null__"}
+      type="button"
+      onClick={() => onSelect(value)}
+      className={cx(
+        "flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors",
+        selected === value
+          ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
+          : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800",
+      )}
+    >
+      <span className="flex-1 text-left">{label}</span>
+      {selected === value && (
+        <RiCheckLine className="size-3.5 shrink-0 text-blue-500" />
+      )}
+    </button>
+  )
+  return (
+    <div className="max-h-72 overflow-y-auto py-1">
+      {nullLabel !== undefined && item(null, nullLabel)}
+      {options.map((o) => item(o.value, o.label))}
+    </div>
+  )
+}
+
 function fmtData(iso: string | undefined, long = false): string {
   if (!iso) return "—"
   const d = new Date(iso)
@@ -40,14 +93,45 @@ function fmtData(iso: string | undefined, long = false): string {
 }
 
 export default function ConcentracaoPage() {
+  // Filtros globais (§7.2) — deep-linkaveis via URL (nuqs).
+  const [dataParam, setDataParam] = useQueryState("data")
+  const [janela, setJanela] = useQueryState(
+    "janela",
+    parseAsString.withDefault("12m"),
+  )
+
   const q = useQuery({
-    queryKey: ["bi", "concentracao"],
-    queryFn: () => biConcentracao.get(),
+    queryKey: ["bi", "concentracao", dataParam, janela],
+    queryFn: () => biConcentracao.get(dataParam, janela),
   })
 
   const data = q.data?.data
   const loading = q.isLoading
   const posicao = fmtData(data?.data_posicao)
+
+  // Toolbar shadow ao rolar.
+  const scrollRef = React.useRef<HTMLDivElement>(null)
+  const [scrolled, setScrolled] = React.useState(false)
+  React.useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const onScroll = () => setScrolled(el.scrollTop > 0)
+    el.addEventListener("scroll", onScroll, { passive: true })
+    return () => el.removeEventListener("scroll", onScroll)
+  }, [])
+
+  // Opcoes do chip Posicao (datas disponiveis, mais recentes primeiro).
+  const dateOpts = React.useMemo(
+    () =>
+      (data?.datas_disponiveis ?? []).map((iso) => ({
+        value: iso.slice(0, 10),
+        label: fmtData(iso, true),
+      })),
+    [data?.datas_disponiveis],
+  )
+  const posicaoChipValue = dataParam
+    ? fmtData(dataParam, true)
+    : `Última (${fmtData(data?.data_posicao, true)})`
 
   // ── IA (shell canônico) ──────────────────────────────────────────────
   const quotaQ = useAIQuota()
@@ -113,8 +197,47 @@ export default function ConcentracaoPage() {
           />
         </div>
 
+        {/* Toolbar de filtros (Z3) — Posição + Histórico (§7.1/§7.2) */}
+        <div
+          className={cx(
+            "shrink-0 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
+            scrolled && "scroll-shadow",
+          )}
+        >
+          <div className="flex h-[52px] items-center gap-2 px-6">
+            <FilterChip
+              label="Posição"
+              value={posicaoChipValue}
+              active={dataParam !== null}
+              icon={RiCalendarLine}
+            >
+              <OptList
+                options={dateOpts}
+                selected={dataParam}
+                onSelect={(v) => setDataParam(v)}
+                nullLabel="Última disponível"
+              />
+            </FilterChip>
+            <FilterChip
+              label="Histórico"
+              value={JANELA_LABEL[janela] ?? "12 meses"}
+              active={janela !== "12m"}
+              icon={RiHistoryLine}
+            >
+              <OptList
+                options={JANELA_OPTS}
+                selected={janela}
+                onSelect={(v) => setJanela(v ?? "12m")}
+              />
+            </FilterChip>
+            <span className="ml-auto shrink-0 text-[11px] text-gray-500 dark:text-gray-400">
+              {q.isFetching ? "Atualizando…" : "Atualizado"}
+            </span>
+          </div>
+        </div>
+
         {/* Conteúdo */}
-        <div className="flex-1 overflow-auto">
+        <div ref={scrollRef} className="flex-1 overflow-auto">
           <div className="flex flex-col gap-6 px-6 pt-4 pb-8">
             {/* Tabelas — Cedentes | Sacados */}
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">

@@ -33,9 +33,15 @@ from app.modules.bi.schemas.concentracao import (
 _REALINVEST_UA_ID = UUID("6170ce55-b566-42ba-a3e7-5ea8dde56b64")
 _TOP_N = 10
 # Janela movel do historico (granularidade diaria, ~13 meses) — o estoque tem
-# dado ate 2022 mas a lamina olha o ano corrente +/-. Trailing a partir da
-# ultima data de carteira.
-_HIST_DIAS = 400
+# Janela do historico (filtro). Trailing a partir da data de posicao.
+_JANELA_DIAS: dict[str, int] = {
+    "6m": 185,
+    "12m": 370,
+    "24m": 740,
+    "tudo": 100_000,
+}
+# Quantas datas recentes oferecer no filtro Posicao (lista do chip).
+_DATAS_LIMIT = 90
 
 
 async def _resolve_fundo_doc(
@@ -51,6 +57,22 @@ async def _resolve_fundo_doc(
         )
     ).first()
     return row.cnpj if row else None
+
+
+async def _datas_disponiveis(
+    db: AsyncSession, *, tenant_id: UUID, fundo_doc: str, limit: int
+) -> list[date]:
+    """Datas de carteira disponiveis (mais recentes primeiro)."""
+    rows = (
+        await db.execute(
+            text(
+                "SELECT DISTINCT data_referencia AS d FROM wh_estoque_recebivel "
+                "WHERE tenant_id = :t AND fundo_doc = :f "
+                "ORDER BY data_referencia DESC LIMIT :lim"
+            ).bindparams(t=tenant_id, f=fundo_doc, lim=limit)
+        )
+    ).all()
+    return [r.d for r in rows]
 
 
 async def _pl_total(
@@ -158,12 +180,13 @@ async def _historico(
     ua_id: UUID,
     chave_col: str,
     since: date,
+    ate: date,
 ) -> list[HistoricoPonto]:
     """Serie diaria: % do maior e % dos 10 maiores sobre o PL, por data.
 
-    Uma window query cobre todas as datas (>= `since`): agrupa por (data,
-    chave), ranqueia desc por VP, e soma rn=1 (maior) e rn<=10 (top10). Junta
-    com o PL diario do MEC (so datas com PL > 0 entram).
+    Uma window query cobre o intervalo [since, ate]: agrupa por (data, chave),
+    ranqueia desc por VP, e soma rn=1 (maior) e rn<=10 (top10). Junta com o PL
+    diario do MEC (so datas com PL > 0 entram).
     """
     rows = (
         await db.execute(
@@ -177,6 +200,7 @@ async def _historico(
                 "  FROM wh_estoque_recebivel "
                 "  WHERE tenant_id = :t AND fundo_doc = :f "
                 "    AND data_referencia >= :since "
+                "    AND data_referencia <= :ate "
                 f"  GROUP BY data_referencia, {chave_col} "
                 "), "
                 "agg AS ( "
@@ -197,7 +221,9 @@ async def _historico(
                 "FROM agg JOIN pl ON pl.d = agg.d "
                 "WHERE pl.pl > 0 "
                 "ORDER BY agg.d"
-            ).bindparams(t=tenant_id, f=fundo_doc, ua=ua_id, n=_TOP_N, since=since)
+            ).bindparams(
+                t=tenant_id, f=fundo_doc, ua=ua_id, n=_TOP_N, since=since, ate=ate
+            )
         )
     ).all()
     return [
@@ -210,7 +236,10 @@ async def _historico(
     ]
 
 
-def _empty(data_posicao: date | None) -> tuple[ConcentracaoData, Provenance]:
+def _empty(
+    data_posicao: date | None,
+    datas_disponiveis: list[date] | None = None,
+) -> tuple[ConcentracaoData, Provenance]:
     vazio = ConcentracaoTabela(
         itens=[],
         total_financeiro=0.0,
@@ -222,6 +251,7 @@ def _empty(data_posicao: date | None) -> tuple[ConcentracaoData, Provenance]:
     data = ConcentracaoData(
         data_posicao=data_posicao or date.today(),
         pl_total=0.0,
+        datas_disponiveis=datas_disponiveis or [],
         cedentes=vazio,
         sacados=vazio,
         historico_cedentes=[],
@@ -237,26 +267,32 @@ def _empty(data_posicao: date | None) -> tuple[ConcentracaoData, Provenance]:
 
 
 async def get_concentracao(
-    db: AsyncSession, *, tenant_id: UUID
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    data: date | None = None,
+    janela: str = "12m",
 ) -> tuple[ConcentracaoData, Provenance]:
-    """Bundle de concentracao da Realinvest (snapshot + historico diario)."""
+    """Bundle de concentracao da Realinvest (snapshot + historico diario).
+
+    `data` = posicao escolhida (default = ultima disponivel). `janela` =
+    intervalo do historico ("6m"|"12m"|"24m"|"tudo"). Ambos aplicam a TODOS
+    os agregados (tabelas no dia, historico ate o dia) — §7.2.
+    """
     fundo_doc = await _resolve_fundo_doc(
         db, tenant_id=tenant_id, ua_id=_REALINVEST_UA_ID
     )
     if not fundo_doc:
         return _empty(None)
 
-    # Ultima data de carteira disponivel no escopo.
-    data_posicao = (
-        await db.execute(
-            text(
-                "SELECT MAX(data_referencia) AS d FROM wh_estoque_recebivel "
-                "WHERE tenant_id = :t AND fundo_doc = :f"
-            ).bindparams(t=tenant_id, f=fundo_doc)
-        )
-    ).scalar()
-    if data_posicao is None:
+    datas = await _datas_disponiveis(
+        db, tenant_id=tenant_id, fundo_doc=fundo_doc, limit=_DATAS_LIMIT
+    )
+    if not datas:
         return _empty(None)
+
+    # Posicao escolhida (valida) ou a ultima disponivel (datas[0] = max).
+    data_posicao = data if (data is not None and data <= datas[0]) else datas[0]
 
     pl_total = await _pl_total(
         db, tenant_id=tenant_id, ua_id=_REALINVEST_UA_ID, data_posicao=data_posicao
@@ -280,19 +316,23 @@ async def get_concentracao(
         nome_col="sacado_nome",
         pl_total=pl_total,
     )
-    since = data_posicao - timedelta(days=_HIST_DIAS)
+    janela_dias = _JANELA_DIAS.get(janela, _JANELA_DIAS["12m"])
+    since = data_posicao - timedelta(days=janela_dias)
     historico_cedentes = await _historico(
         db, tenant_id=tenant_id, fundo_doc=fundo_doc,
-        ua_id=_REALINVEST_UA_ID, chave_col="cedente_doc", since=since,
+        ua_id=_REALINVEST_UA_ID, chave_col="cedente_doc",
+        since=since, ate=data_posicao,
     )
     historico_sacados = await _historico(
         db, tenant_id=tenant_id, fundo_doc=fundo_doc,
-        ua_id=_REALINVEST_UA_ID, chave_col="sacado_doc", since=since,
+        ua_id=_REALINVEST_UA_ID, chave_col="sacado_doc",
+        since=since, ate=data_posicao,
     )
 
-    data = ConcentracaoData(
+    data_out = ConcentracaoData(
         data_posicao=data_posicao,
         pl_total=pl_total,
+        datas_disponiveis=datas,
         cedentes=cedentes,
         sacados=sacados,
         historico_cedentes=historico_cedentes,
@@ -305,4 +345,4 @@ async def get_concentracao(
         trust_level="high",
         row_count=len(cedentes.itens) + len(sacados.itens),
     )
-    return data, prov
+    return data_out, prov
