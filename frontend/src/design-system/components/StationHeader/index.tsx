@@ -13,14 +13,78 @@
 "use client"
 
 import * as React from "react"
-import { RiCheckboxCircleFill, RiHistoryLine, RiMoreLine } from "@remixicon/react"
+import {
+  RiArrowRightSLine,
+  RiCheckboxCircleFill,
+  RiCheckDoubleLine,
+  RiFileTextLine,
+  RiHistoryLine,
+  RiMoreLine,
+  RiQuillPenLine,
+  RiSparkling2Line,
+  type RemixiconComponentType,
+} from "@remixicon/react"
 
 import { Button } from "@/components/tremor/Button"
 import { cx } from "@/lib/utils"
 
+// Fases canônicas da estação (handoff: Documento → Conferência → Leitura →
+// Homologação). `kind` escolhe o ícone; sem `kind`, cai no círculo numerado
+// (back-compat com chamadores que ainda passam sub-passos genéricos).
+export type StationPhaseKind = "documento" | "conferencia" | "leitura" | "homologacao"
+
 export type StationSubstep = {
   label: string
   state: "done" | "active" | "future"
+  kind?: StationPhaseKind
+  /** Detalhe inline (ex.: "soma confere"). */
+  detail?: string
+}
+
+const PHASE_ICON: Record<StationPhaseKind, RemixiconComponentType> = {
+  documento: RiFileTextLine,
+  conferencia: RiCheckDoubleLine,
+  leitura: RiSparkling2Line,
+  homologacao: RiQuillPenLine,
+}
+
+const C_ACTIVE = "#6366F1" // indigo — fase presente
+const C_DONE = "#059669" // verde — fase percorrida
+
+function PhaseGlyph({ s, number }: { s: StationSubstep; number: number }) {
+  if (s.state === "done") {
+    return (
+      <RiCheckboxCircleFill
+        className="size-4 shrink-0"
+        style={{ color: C_DONE }}
+        aria-hidden
+      />
+    )
+  }
+  const Icon = s.kind ? PHASE_ICON[s.kind] : null
+  if (Icon) {
+    return (
+      <Icon
+        className="size-4 shrink-0"
+        style={{ color: s.state === "active" ? C_ACTIVE : undefined }}
+        aria-hidden
+      />
+    )
+  }
+  // Fallback: círculo numerado (sub-passos sem kind).
+  return (
+    <span
+      className={cx(
+        "flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none",
+        s.state === "active"
+          ? "font-bold text-white"
+          : "border-[1.5px] border-gray-300 font-semibold text-gray-500 dark:border-gray-700 dark:text-gray-400",
+      )}
+      style={s.state === "active" ? { background: C_ACTIVE } : undefined}
+    >
+      {number}
+    </span>
+  )
 }
 
 export type StationHeaderProps = {
@@ -89,43 +153,48 @@ export function StationHeader({
           </p>
         )}
         {substeps && (
-          <div className="mt-2 flex flex-wrap">
-            {substeps.map((s, i) => {
-              const number = i + 1
-              return (
+          <div className="mt-2 flex flex-wrap items-center gap-0.5">
+            {substeps.map((s, i) => (
+              <React.Fragment key={`${s.label}-${i}`}>
+                {i > 0 && (
+                  <RiArrowRightSLine
+                    className="size-4 shrink-0 text-gray-300 dark:text-gray-700"
+                    aria-hidden
+                  />
+                )}
                 <button
-                  key={`${s.label}-${i}`}
                   type="button"
                   onClick={onSubstepClick ? () => onSubstepClick(i) : undefined}
                   className={cx(
-                    "flex items-center gap-1.5 border-b-2 px-4 py-[9px] text-[12.5px] transition-colors duration-100",
-                    s.state === "active"
-                      ? "border-blue-500 font-semibold text-blue-600"
-                      : "border-transparent",
+                    "flex items-center gap-1.5 rounded-md px-2.5 py-[7px] text-[12.5px] transition-colors duration-100",
+                    s.state === "active" && "font-semibold",
                     s.state === "done" && "font-medium",
-                    s.state === "future" && "font-medium text-gray-500 dark:text-gray-400",
-                    !onSubstepClick && "cursor-default",
+                    s.state === "future" && "font-medium text-gray-400 dark:text-gray-500",
+                    onSubstepClick && s.state !== "future"
+                      ? "hover:bg-gray-50 dark:hover:bg-gray-900"
+                      : "cursor-default",
                   )}
-                  style={s.state === "done" ? { color: "#059669" } : undefined}
+                  style={
+                    s.state === "done"
+                      ? { color: C_DONE }
+                      : s.state === "active"
+                        ? { color: C_ACTIVE }
+                        : undefined
+                  }
                 >
-                  {s.state === "done" ? (
-                    <RiCheckboxCircleFill className="size-3.5 shrink-0" aria-hidden />
-                  ) : (
-                    <span
-                      className={cx(
-                        "flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none",
-                        s.state === "active"
-                          ? "bg-blue-500 font-bold text-white"
-                          : "border-[1.5px] border-gray-300 font-semibold text-gray-500 dark:border-gray-700 dark:text-gray-400",
-                      )}
-                    >
-                      {number}
-                    </span>
-                  )}
-                  {s.label}
+                  <PhaseGlyph s={s} number={i + 1} />
+                  <span>
+                    {s.label}
+                    {s.detail && (
+                      <span className="font-normal text-gray-400 dark:text-gray-500">
+                        {" · "}
+                        {s.detail}
+                      </span>
+                    )}
+                  </span>
                 </button>
-              )
-            })}
+              </React.Fragment>
+            ))}
           </div>
         )}
       </div>

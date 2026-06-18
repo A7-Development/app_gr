@@ -364,26 +364,52 @@ const STATION_SUBLABEL: Record<StationState, string> = {
   falhou: "precisa de atenção",
 }
 
-function substepLabel(m: WizardMultiStepStep): string {
-  switch (m.nodeType) {
-    case "document_request":
-      return "Documento"
-    case "document_extractor":
-      return "Extração"
-    case "bureau_query":
-    case "cadastral_enrichment":
-      return "Fontes"
-    case "specialist_agent":
-      return "Conclusão da IA"
-    case "deterministic_check":
-      return "Cruzamentos"
-    case "human_review":
-      return "Homologação"
-    case "human_input":
-      return "Dados"
-    default:
-      return m.label
+// Fases canônicas da estação (handoff): Documento → Conferência → Leitura →
+// Homologação. Derivadas dos MEMBROS do nó (sem hardcode por estação); a estação
+// PULA a fase que não tem. Estado de cada fase vem dos membros relevantes.
+function buildFases(e: Estacao): StationSubstep[] | undefined {
+  const closed = e.state === "fechada" || e.state === "fechada_com_ressalva"
+  if (e.members.length <= 1 && !closed) return undefined
+
+  const docM = e.members.find((m) =>
+    ["document_request", "document_extractor", "official_document_fetch"].includes(
+      m.nodeType,
+    ),
+  )
+  const agentM = e.members.find((m) => m.nodeType === "specialist_agent")
+  const gateM = e.members.find((m) => m.nodeType === "human_review")
+
+  const st = (m: WizardMultiStepStep | undefined): StationSubstep["state"] => {
+    if (!m) return "future"
+    if (m.state === "completed" || m.state === "skipped") return "done"
+    if (m.state === "running" || m.state === "waiting_input" || m.state === "failed")
+      return "active"
+    return "future"
   }
+
+  const fases: StationSubstep[] = []
+  if (docM) {
+    fases.push({ kind: "documento", label: "Documento", state: st(docM) })
+    // Conferência existe quando há documento; done quando o doc foi confirmado.
+    fases.push({
+      kind: "conferencia",
+      label: "Conferência",
+      state: st(docM) === "done" ? "done" : "future",
+    })
+  }
+  if (agentM) fases.push({ kind: "leitura", label: "Leitura", state: st(agentM) })
+  fases.push({
+    kind: "homologacao",
+    label: "Homologação",
+    state: closed ? "done" : st(gateM),
+  })
+
+  // Estação aberta sem nenhuma fase ativa → a 1ª futura vira a presente.
+  if (!closed && !fases.some((f) => f.state === "active")) {
+    const next = fases.find((f) => f.state === "future")
+    if (next) next.state = "active"
+  }
+  return fases
 }
 
 function formatBRLCompact(raw: string | null): string | null {
@@ -965,10 +991,9 @@ export default function DossierFocusPage() {
       .filter(Boolean)
       .join(" ")
 
+  // Trilho de fases — derivado dos blocos, igual em toda estação (handoff F1.2).
   const substeps: StationSubstep[] | undefined = focused
-    ? isFaturamento && fatuPhase
-      ? fatuSubsteps(fatuPhase, fatuReadiness.processedOk)
-      : buildSubsteps(focused)
+    ? buildFases(focused)
     : undefined
 
   // ── Barra de fechamento ─────────────────────────────────────────────────
@@ -1828,58 +1853,6 @@ function needsYouLabel(e: Estacao): string | null {
 }
 
 /** Sub-passos canônicos da Estação Faturamento (D1). */
-function fatuSubsteps(phase: FaturamentoPhase, processedOk: boolean): StationSubstep[] {
-  const done = (b: boolean): StationSubstep["state"] => (b ? "done" : "future")
-  if (phase === "documento") {
-    return [
-      { label: "Documento", state: processedOk ? "done" : "active" },
-      { label: "Conferência", state: processedOk ? "active" : "future" },
-      { label: "Conclusão da IA", state: "future" },
-      { label: "Fechamento", state: "future" },
-    ]
-  }
-  if (phase === "fila" || phase === "rodando" || phase === "homologar") {
-    return [
-      { label: "Documento", state: "done" },
-      { label: "Conferência", state: "done" },
-      { label: "Conclusão da IA", state: "active" },
-      { label: "Fechamento", state: "future" },
-    ]
-  }
-  return [
-    { label: "Documento", state: done(true) },
-    { label: "Conferência", state: done(true) },
-    { label: "Conclusão da IA", state: done(true) },
-    { label: "Fechamento", state: done(true) },
-  ]
-}
-
-function buildSubsteps(e: Estacao): StationSubstep[] | undefined {
-  if (e.members.length <= 1 && e.state !== "fechada") return undefined
-  const seen = new Set<string>()
-  const tabs: StationSubstep[] = []
-  for (const m of e.members) {
-    const label = substepLabel(m)
-    if (seen.has(label)) continue
-    seen.add(label)
-    tabs.push({
-      label,
-      state:
-        m.state === "completed" || m.state === "skipped"
-          ? "done"
-          : m.state === "waiting_input" || m.state === "running" || m.state === "failed"
-            ? "active"
-            : "future",
-    })
-  }
-  tabs.push({
-    label: "Fechamento",
-    state:
-      e.state === "fechada" || e.state === "fechada_com_ressalva" ? "done" : "future",
-  })
-  return tabs
-}
-
 // ─── Barra de fechamento (estado calculado) ─────────────────────────────────
 
 type ClosureConfig = {
