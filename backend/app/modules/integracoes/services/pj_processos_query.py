@@ -10,6 +10,7 @@ Exposto via `integracoes/public.py` para node/tool consumirem.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import logging
@@ -47,6 +48,40 @@ from app.warehouse.bdc_raw_consulta import BdcRawConsulta
 logger = logging.getLogger("gr.integracoes.bdc_processos")
 
 _PUBLIC_CODE = "PROCESSOS-PJ"
+# Teto de paginas (BDC pagina ~100 processos/pagina via NextPageId; CADA pagina
+# e uma chamada PAGA). 10 paginas = ~1000 processos cobre a quase totalidade;
+# acima disso `truncado=True` DISCLOSA o corte (§14.6), nao esconde.
+_MAX_PAGINAS = 10
+
+
+def _lawsuits_block(payload: dict) -> dict | None:
+    res = payload.get("Result") or []
+    if not res:
+        return None
+    block = res[0].get("Lawsuits")
+    return block if isinstance(block, dict) else None
+
+
+def _merge_pages(payloads: list[dict]) -> dict | None:
+    """Concatena os processos de todas as paginas num payload combinado.
+
+    Mantem os agregados de entidade da 1a pagina (Last30/365, datas, totais —
+    iguais em toda pagina); junta as listas `Lawsuits` -> map roda 1x sobre o
+    conjunto completo (resumo correto).
+    """
+    if not payloads:
+        return None
+    base = copy.deepcopy(payloads[0])
+    block = _lawsuits_block(base)
+    if block is None:
+        return base
+    all_lw: list = []
+    for pl in payloads:
+        b = _lawsuits_block(pl)
+        all_lw.extend((b or {}).get("Lawsuits") or [])
+    block["Lawsuits"] = all_lw
+    block.pop("NextPageId", None)
+    return base
 
 
 @dataclass(frozen=True)
@@ -61,6 +96,8 @@ class ProcessosResult:
     qtd_andamentos_novos: int
     qtd_ativos: int
     qtd_execucoes_contra: int
+    paginas: int
+    truncado: bool
     adapter_version: str
     errors: list[str]
 
@@ -87,7 +124,8 @@ async def fetch_bdc_processos_pj(
         return ProcessosResult(
             ok=False, found=False, cnpj=cnpj_digits, raw_id=None, query_id=None,
             qtd_processos=0, qtd_partes=0, qtd_andamentos_novos=0, qtd_ativos=0,
-            qtd_execucoes_contra=0, adapter_version=ADAPTER_VERSION, errors=errors,
+            qtd_execucoes_contra=0, paginas=0, truncado=False,
+            adapter_version=ADAPTER_VERSION, errors=errors,
         )
 
     # ─── Resolve dataset + provider + credencial ──────────────────────────
@@ -129,41 +167,67 @@ async def fetch_bdc_processos_pj(
         except Exception as e:
             return _fail(f"falha ao decifrar credencial: {type(e).__name__}: {e}")
 
-    # ─── Chamada de rede (PAGA) ───────────────────────────────────────────
-    try:
-        result = await query_entity(
-            config=config, base_url=base_url, doc=cnpj_digits,
-            datasets=query_name, limit=1,
+    # ─── Rede PAGINADA (cada pagina = chamada PAGA; .next(<id>) no Datasets) ─
+    pages: list = []
+    next_id: str | None = None
+    truncado = False
+    for _ in range(_MAX_PAGINAS):
+        ds = query_name if not next_id else f"{query_name}.next({next_id})"
+        try:
+            result = await query_entity(
+                config=config, base_url=base_url, doc=cnpj_digits,
+                datasets=ds, limit=1,
+            )
+        except BigDataCorpAdapterError as e:
+            if not pages:
+                return _fail(f"consulta BDC: {type(e).__name__}: {e}")
+            errors.append(f"paginacao parou: {type(e).__name__}: {e}")
+            break
+        pages.append(result)
+        block = _lawsuits_block(result.payload)
+        next_id = (block or {}).get("NextPageId") or None
+        if not next_id or not (block or {}).get("Lawsuits"):
+            next_id = None
+            break
+    else:
+        truncado = bool(next_id)  # saiu por _MAX_PAGINAS e ainda havia next
+    if truncado:
+        # Nao e erro (ok segue True) — `truncado` e a disclosure §14.6.
+        logger.warning(
+            "BDC processos: paginacao capada em %d paginas (cnpj=%s) — ha mais",
+            _MAX_PAGINAS, cnpj_digits,
         )
-    except BigDataCorpAdapterError as e:
-        return _fail(f"consulta BDC: {type(e).__name__}: {e}")
 
-    payload = result.payload
-    query_id = payload.get("QueryId")
-    hash_origem = _sha256(payload)
+    query_id = pages[0].payload.get("QueryId") if pages else None
 
-    # ─── Bronze (tx isolada) ──────────────────────────────────────────────
+    # ─── Bronze: 1 row por pagina (raw fiel ao vendor) ────────────────────
     raw_id: UUID | None = None
     try:
         async with AsyncSessionLocal() as db:
-            raw = BdcRawConsulta(
-                tenant_id=tenant_id, cnpj=cnpj_digits, public_code=_PUBLIC_CODE,
-                provider_api=provider_api, datasets=query_name, query_id=query_id,
-                found=bool(payload.get("Result") or []),
-                status_code=result.status_code, dataset_status_code=None,
-                payload=payload, payload_sha256=hash_origem,
-                latency_ms=result.latency_ms, triggered_by=triggered_by,
-                fetched_by_version=ADAPTER_VERSION,
-            )
-            db.add(raw)
-            await db.flush()
-            raw_id = raw.id
+            for result in pages:
+                pl = result.payload
+                raw = BdcRawConsulta(
+                    tenant_id=tenant_id, cnpj=cnpj_digits, public_code=_PUBLIC_CODE,
+                    provider_api=provider_api, datasets=query_name,
+                    query_id=pl.get("QueryId"),
+                    found=bool(pl.get("Result") or []),
+                    status_code=result.status_code, dataset_status_code=None,
+                    payload=pl, payload_sha256=_sha256(pl),
+                    latency_ms=result.latency_ms, triggered_by=triggered_by,
+                    fetched_by_version=ADAPTER_VERSION,
+                )
+                db.add(raw)
+                await db.flush()
+                if raw_id is None:
+                    raw_id = raw.id  # linka silver a 1a pagina (representativo)
             await db.commit()
     except Exception as e:
         logger.exception("BDC processos: bronze falhou (cnpj=%s)", cnpj_digits)
         errors.append(f"bronze: {type(e).__name__}: {e}")
 
-    # ─── Map + Silver (tx isolada) ────────────────────────────────────────
+    # ─── Merge das paginas -> 1 payload -> map 1x (resumo sobre o todo) ────
+    combined = _merge_pages([r.payload for r in pages])
+    hash_origem = _sha256(combined) if combined else None
     qtd_proc = qtd_partes = qtd_novos = qtd_ativos = qtd_exec = 0
     common: dict[str, Any] = {
         "raw_id": raw_id,
@@ -171,7 +235,7 @@ async def fetch_bdc_processos_pj(
         "ingested_by_version": ADAPTER_VERSION,
         "unidade_administrativa_id": unidade_administrativa_id,
     }
-    mapped = map_processos(payload, cnpj=cnpj_digits, dataset=query_name)
+    mapped = map_processos(combined or {}, cnpj=cnpj_digits, dataset=query_name)
     try:
         async with AsyncSessionLocal() as db:
             if mapped.processos:
@@ -195,6 +259,6 @@ async def fetch_bdc_processos_pj(
         ok=not errors, found=mapped.found, cnpj=cnpj_digits, raw_id=raw_id,
         query_id=query_id, qtd_processos=qtd_proc, qtd_partes=qtd_partes,
         qtd_andamentos_novos=qtd_novos, qtd_ativos=qtd_ativos,
-        qtd_execucoes_contra=qtd_exec, adapter_version=ADAPTER_VERSION,
-        errors=errors,
+        qtd_execucoes_contra=qtd_exec, paginas=len(pages), truncado=truncado,
+        adapter_version=ADAPTER_VERSION, errors=errors,
     )
