@@ -29,6 +29,8 @@ import {
   RiCheckLine,
   RiErrorWarningLine,
   RiFileUploadLine,
+  RiFullscreenLine,
+  RiHandCoinLine,
   RiLoopLeftLine,
   RiRestartLine,
   RiSparkling2Line,
@@ -65,6 +67,7 @@ import {
   AgentesAoVivoPanel,
   AgentLiveStatus,
   AgentOutputRenderer,
+  AgentPulseDot,
   ClosureBar,
   DeterministicCheckView,
   OpinionView,
@@ -1632,9 +1635,80 @@ export default function DossierFocusPage() {
     )
   }
 
+  // ── Topbar (modo foco) ────────────────────────────────────────────────────
+  const totalCostBrl = state.node_runs.reduce(
+    (acc, nr) => acc + Number(nr.cost_brl ?? 0),
+    0,
+  )
+  const startedTs = state.run?.started_at ? Date.parse(state.run.started_at) : null
+  const elapsedMin =
+    startedTs != null && !Number.isNaN(startedTs)
+      ? Math.max(0, Math.floor((Date.now() - startedTs) / 60000))
+      : null
+  const toggleFullscreen = () => {
+    if (typeof document === "undefined") return
+    if (document.fullscreenElement) void document.exitFullscreen?.()
+    else void document.documentElement.requestFullscreen?.()
+  }
+
   // ── Render ──────────────────────────────────────────────────────────────
   return (
-    <div className="flex min-w-0 flex-1">
+    <div className="flex h-screen min-w-0 flex-1 flex-col">
+      {/* Topbar — logo · breadcrumb · agentes ativos · cronômetro+custo · tela cheia */}
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 dark:border-gray-800 dark:bg-gray-950">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded bg-gray-900 dark:bg-gray-100">
+          <RiHandCoinLine className="size-4 text-white dark:text-gray-900" aria-hidden />
+        </span>
+        <nav className="flex min-w-0 items-center gap-1.5 text-[13px]">
+          <button
+            type="button"
+            onClick={() => router.push("/credito/dossies")}
+            className="shrink-0 text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+          >
+            Crédito
+          </button>
+          <span className="shrink-0 text-gray-300 dark:text-gray-600">/</span>
+          <button
+            type="button"
+            onClick={() => router.push("/credito/dossies")}
+            className="shrink-0 text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+          >
+            Análises
+          </button>
+          <span className="shrink-0 text-gray-300 dark:text-gray-600">/</span>
+          <span className="truncate font-medium text-gray-900 dark:text-gray-50">
+            {titleLabel}
+          </span>
+        </nav>
+        {runningEstacoes.length > 0 && (
+          <span
+            className="ml-1 inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+            style={{
+              background: provenanceTokens.agente.chipBg,
+              color: provenanceTokens.agente.chipText,
+            }}
+          >
+            <AgentPulseDot size={7} />
+            {runningEstacoes.length} agente
+            {runningEstacoes.length > 1 ? "s ativos" : " ativo"}
+          </span>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-3">
+          {(elapsedMin != null || totalCostBrl > 0) && (
+            <span className="text-[12px] tabular-nums text-gray-500 dark:text-gray-400">
+              {elapsedMin != null ? `${elapsedMin} min` : ""}
+              {elapsedMin != null && totalCostBrl > 0 ? " · " : ""}
+              {totalCostBrl > 0 ? `R$ ${totalCostBrl.toFixed(2)}` : ""}
+            </span>
+          )}
+          <Button variant="secondary" className="h-8" onClick={toggleFullscreen}>
+            <RiFullscreenLine className="mr-1.5 size-4" aria-hidden />
+            Tela cheia
+          </Button>
+        </div>
+      </header>
+
+      <div className="flex min-h-0 flex-1">
       <StationsSidebar
         backHref="/credito/dossies"
         title={titleLabel}
@@ -1681,7 +1755,7 @@ export default function DossierFocusPage() {
           descriptorStations={descriptorDebug ? descriptorQ.data?.stations : undefined}
         />
       ) : (
-      <div className="flex h-screen min-w-0 flex-1 flex-col">
+      <div className="flex h-full min-w-0 flex-1 flex-col">
         {focused ? (
           <>
             <StationHeader
@@ -1690,6 +1764,24 @@ export default function DossierFocusPage() {
               subtitle={subtitle || undefined}
               substeps={substeps}
               onOpenTrail={() => setTrailOpen(true)}
+              primaryAction={
+                closure?.onPrimary
+                  ? {
+                      label: closure.primaryLabel ?? "Homologar e fechar",
+                      icon: closure.primaryIcon,
+                      onClick: closure.onPrimary,
+                      loading: closure.primaryLoading,
+                      disabled: closure.state !== "armed",
+                    }
+                  : undefined
+              }
+              actionHint={
+                closure
+                  ? closure.state === "pending"
+                    ? (closure.pendingText ?? closure.statusText)
+                    : closure.statusText
+                  : undefined
+              }
             />
             {/* block + space-y (não flex): zona com overflow-hidden teria
                 min-height 0 como flex item e seria esmagada pelo scroll. */}
@@ -1763,7 +1855,6 @@ export default function DossierFocusPage() {
                 focused.members.map(renderMemberZone)
               )}
             </div>
-            {closure && <ClosureBar {...closure} />}
           </>
         ) : (
           <div className="flex flex-1 items-center justify-center bg-gray-50 dark:bg-gray-925">
@@ -1784,6 +1875,7 @@ export default function DossierFocusPage() {
           activeCount={runningEstacoes.length}
         />
       )}
+      </div>
     </div>
   )
 }
