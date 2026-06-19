@@ -298,6 +298,7 @@ export {
   type StationsSidebarProps,
 } from "./StationsSidebar"
 export { SectionRenderer, type SectionRendererProps } from "./SectionRenderer"
+export { DevZoneLabel } from "./DevZoneLabel"
 export {
   DenseTable,
   type DenseTableProps,

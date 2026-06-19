@@ -29,6 +29,7 @@ import {
 
 import { Button } from "@/components/tremor/Button"
 import { AgentPulseDot } from "@/design-system/components/AgentLiveChip"
+import { DevZoneLabel } from "@/design-system/components/DevZoneLabel"
 import { provenanceTokens } from "@/design-system/tokens/provenance"
 import type { StationState } from "@/design-system/types/section"
 import { cx } from "@/lib/utils"
@@ -76,6 +77,8 @@ export type StationsSidebarProps = {
   dossierActive?: boolean
   /** Linha da trilha ("Trilha: 23 eventos · último há 4 min"). */
   trailLabel?: string
+  /** Rótulo de andaime (toggle "Zonas") — nomeia esta área na tela. */
+  devLabel?: string
   className?: string
 }
 
@@ -250,6 +253,7 @@ export function StationsSidebar({
   onOpenDossier,
   dossierActive,
   trailLabel,
+  devLabel,
   className,
 }: StationsSidebarProps) {
   const n = stations.length
@@ -257,11 +261,12 @@ export function StationsSidebar({
     <aside
       aria-label="Estações da análise"
       className={cx(
-        "flex h-full w-[292px] shrink-0 flex-col border-r border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-925",
+        "relative flex h-full w-[292px] shrink-0 flex-col border-r border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-925",
         "motion-safe:animate-slide-right-and-fade",
         className,
       )}
     >
+      {devLabel && <DevZoneLabel corner="tr">{devLabel}</DevZoneLabel>}
       {/* Header */}
       <div className="shrink-0 border-b border-gray-200 px-[18px] pb-4 pt-[18px] dark:border-gray-800">
         <Link
