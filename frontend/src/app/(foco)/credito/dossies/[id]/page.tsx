@@ -90,6 +90,7 @@ import {
 } from "@/design-system/components"
 import { provenanceTokens, type ProvenanceOrigin } from "@/design-system/tokens/provenance"
 import { apiClient } from "@/lib/api-client"
+import { toggleZonas, useZonas } from "@/lib/zonasOverlay"
 import {
   credito,
   type CadastralAnalysis,
@@ -496,28 +497,10 @@ export default function DossierFocusPage() {
   const descriptorDebug = sp.get("descriptor") === "1"
   const queryClient = useQueryClient()
   const [trailOpen, setTrailOpen] = React.useState(false)
-  // Andaime "Zonas": rótulos pequenos+faded que nomeiam cada área da tela
-  // (toggle na topbar, estado no localStorage). Ajuda a identificar a estrutura
-  // e pedir ajustes referenciando o nome certo. Off por padrão.
-  const [zonasOn, setZonasOn] = React.useState(false)
-  React.useEffect(() => {
-    try {
-      setZonasOn(window.localStorage.getItem("gr.zonas") === "1")
-    } catch {
-      /* localStorage indisponível — segue off */
-    }
-  }, [])
-  const toggleZonas = React.useCallback(() => {
-    setZonasOn((v) => {
-      const next = !v
-      try {
-        window.localStorage.setItem("gr.zonas", next ? "1" : "0")
-      } catch {
-        /* ignore */
-      }
-      return next
-    })
-  }, [])
+  // Andaime "Zonas": rótulos que nomeiam áreas/estações/nodes/blocos da tela
+  // (toggle na topbar). Store compartilhado (lib/zonasOverlay) pra topbar e
+  // blocos ficarem em sync ao vivo. Off por padrão.
+  const zonasOn = useZonas()
   // Gate JUCESP (opção B): node cuja escolha o analista acabou de confirmar →
   // a fase de download está rodando (muda o texto do feedback ao vivo).
   const [downloadingNode, setDownloadingNode] = React.useState<string | null>(null)

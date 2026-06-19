@@ -24,6 +24,7 @@ import remarkGfm from "remark-gfm"
 
 import { KpiChartCard } from "@/design-system/components/KpiChartCard"
 import { AgentConclusion } from "@/design-system/components/AgentConclusion"
+import { DevZoneLabel } from "@/design-system/components/DevZoneLabel"
 import { DenseTable, type DenseColumn, type DenseRow } from "@/design-system/components/DenseTable"
 import { ProvenanceValue } from "@/design-system/components/Provenance"
 import { provenanceTokens, type ProvenanceRef } from "@/design-system/tokens/provenance"
@@ -44,6 +45,7 @@ import type {
   TextoBlock,
 } from "@/design-system/types/section"
 import { cx } from "@/lib/utils"
+import { useZonas } from "@/lib/zonasOverlay"
 
 // ─── Tons (reaproveita a paleta semântica das views migradas) ────────────────
 
@@ -506,11 +508,22 @@ export type SectionRendererProps = {
 }
 
 export function SectionRenderer({ section, mode = "work", className }: SectionRendererProps) {
+  // Overlay "Zonas": rotula cada BLOCO com seu tipo (muted) pra orientar
+  // edições visuais — qual bloco é qual, em qualquer seção. Sincronizado com o
+  // toggle da topbar via store compartilhado.
+  const zonas = useZonas()
   return (
     <div className={cx("space-y-4", className)}>
-      {section.blocks.map((block) => (
-        <BlockView key={block.id} block={block} mode={mode} />
-      ))}
+      {section.blocks.map((block) =>
+        zonas ? (
+          <div key={block.id} className="relative">
+            <DevZoneLabel corner="tr">bloco · {block.type}</DevZoneLabel>
+            <BlockView block={block} mode={mode} />
+          </div>
+        ) : (
+          <BlockView key={block.id} block={block} mode={mode} />
+        ),
+      )}
     </div>
   )
 }
