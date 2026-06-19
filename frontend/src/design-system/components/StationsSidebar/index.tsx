@@ -14,8 +14,11 @@
 
 import Link from "next/link"
 import {
+  RiArrowRightCircleFill,
   RiArticleLine,
+  RiCheckboxCircleFill,
   RiCheckLine,
+  RiCircleLine,
   RiErrorWarningFill,
   RiFileUploadLine,
   RiHistoryLine,
@@ -33,11 +36,20 @@ import { cx } from "@/lib/utils"
 // Vocabulário canônico de estados mora em types/section (dono do contrato, Fase 1).
 export type { StationState }
 
+/** Fase interna da estação (handoff playbook JUCESP: as fases vivem no card
+ *  da estação ativa na trilha, não como trilho horizontal no header). */
+export type StationPhase = {
+  label: string
+  state: "done" | "active" | "future"
+}
+
 export type StationItem = {
   id: string
   label: string
   sublabel?: string
   state: StationState
+  /** Fases da estação — renderizadas só quando ela é a ativa (card destacado). */
+  phases?: StationPhase[]
 }
 
 export type StationsSidebarProps = {
@@ -200,6 +212,26 @@ function StationBadge({ state }: { state: StationState }) {
   return null
 }
 
+/** Uma fase dentro do card da estação ativa (done ✓ / active → / future ○). */
+function PhaseRow({ phase }: { phase: StationPhase }) {
+  const done = phase.state === "done"
+  const active = phase.state === "active"
+  const Icon = done ? RiCheckboxCircleFill : active ? RiArrowRightCircleFill : RiCircleLine
+  const iconColor = done ? C_DONE : active ? "#3B82F6" : "#D1D5DB"
+  const textColor = done ? "#6B7280" : active ? "#111827" : "#9CA3AF"
+  return (
+    <span className="flex items-center gap-1.5">
+      <Icon className="size-[15px] shrink-0" style={{ color: iconColor }} aria-hidden />
+      <span
+        className="truncate text-[12px]"
+        style={{ color: textColor, fontWeight: active ? 600 : 400 }}
+      >
+        {phase.label}
+      </span>
+    </span>
+  )
+}
+
 export function StationsSidebar({
   backHref,
   backLabel = "Fila de análises",
@@ -312,13 +344,21 @@ export function StationsSidebar({
                         </span>
                         <StationBadge state={st.state} />
                       </span>
-                      <span
-                        className="mt-1 block text-[11px] font-medium"
-                        style={{ color: C_PRESENT }}
-                      >
-                        ▸ você está aqui
-                        {st.sublabel ? ` · ${st.sublabel}` : ""}
-                      </span>
+                      {st.phases && st.phases.length > 0 ? (
+                        <span className="mt-2 flex flex-col gap-1.5">
+                          {st.phases.map((ph, pi) => (
+                            <PhaseRow key={`${ph.label}-${pi}`} phase={ph} />
+                          ))}
+                        </span>
+                      ) : (
+                        <span
+                          className="mt-1 block text-[11px] font-medium"
+                          style={{ color: C_PRESENT }}
+                        >
+                          ▸ você está aqui
+                          {st.sublabel ? ` · ${st.sublabel}` : ""}
+                        </span>
+                      )}
                     </span>
                   ) : (
                     <span className="block pt-px">

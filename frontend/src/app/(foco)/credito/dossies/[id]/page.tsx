@@ -377,11 +377,14 @@ function buildFases(e: Estacao): StationSubstep[] | undefined {
   const closed = e.state === "fechada" || e.state === "fechada_com_ressalva"
   if (e.members.length <= 1 && !closed) return undefined
 
-  const docM = e.members.find((m) =>
-    ["document_request", "document_extractor", "official_document_fetch"].includes(
-      m.nodeType,
-    ),
+  // official_document_fetch = gate de SELEÇÃO numa fonte oficial (hoje só a
+  // JUCESP, p/ contrato social) — distinto do upload manual (document_request).
+  const fetchM = e.members.find((m) => m.nodeType === "official_document_fetch")
+  const reqM = e.members.find((m) =>
+    ["document_request", "document_extractor"].includes(m.nodeType),
   )
+  const docM = fetchM ?? reqM
+  const checkM = e.members.find((m) => m.nodeType === "deterministic_check")
   const agentM = e.members.find((m) => m.nodeType === "specialist_agent")
   const gateM = e.members.find((m) => m.nodeType === "human_review")
 
@@ -395,15 +398,29 @@ function buildFases(e: Estacao): StationSubstep[] | undefined {
 
   const fases: StationSubstep[] = []
   if (docM) {
-    fases.push({ kind: "documento", label: "Documento", state: st(docM) })
-    // Conferência existe quando há documento; done quando o doc foi confirmado.
+    fases.push({
+      kind: "documento",
+      label: fetchM ? "Seleção JUCESP" : "Documento",
+      state: st(docM),
+    })
+    // Conferência da extração: done quando o agente já leu; active quando o
+    // documento chegou mas ainda falta homologar a conferência.
     fases.push({
       kind: "conferencia",
       label: "Conferência",
-      state: st(docM) === "done" ? "done" : "future",
+      state:
+        agentM && st(agentM) !== "future"
+          ? "done"
+          : st(docM) === "done"
+            ? "active"
+            : "future",
     })
   }
-  if (agentM) fases.push({ kind: "leitura", label: "Leitura", state: st(agentM) })
+  // Verificações determinísticas (checks puros, sem IA) — fase própria.
+  if (checkM) {
+    fases.push({ label: "Verificações", state: st(checkM) })
+  }
+  if (agentM) fases.push({ kind: "leitura", label: "Leitura (IA)", state: st(agentM) })
   fases.push({
     kind: "homologacao",
     label: "Homologação",
@@ -914,11 +931,17 @@ export default function DossierFocusPage() {
     ? Math.round((fechadas / estacoes.length) * 100)
     : 0
 
+  // Fases vivem no card da estação ATIVA na trilha (handoff playbook JUCESP) —
+  // por isso só a focada carrega `phases`; as demais ficam como nó simples.
   const sidebarItems: StationItem[] = estacoes.map((e, i) => ({
     id: e.id,
     label: `${i + 1} · ${e.label}`,
     sublabel: STATION_SUBLABEL[e.state],
     state: e.state,
+    phases:
+      e.id === focused?.id
+        ? buildFases(e)?.map((f) => ({ label: f.label, state: f.state }))
+        : undefined,
   }))
 
   const focusedIndex = focused ? estacoes.indexOf(focused) : -1
@@ -1061,11 +1084,6 @@ export default function DossierFocusPage() {
     ]
       .filter(Boolean)
       .join(" ")
-
-  // Trilho de fases — derivado dos blocos, igual em toda estação (handoff F1.2).
-  const substeps: StationSubstep[] | undefined = focused
-    ? buildFases(focused)
-    : undefined
 
   // ── Barra de fechamento ─────────────────────────────────────────────────
   const fatuClosure: React.ComponentProps<typeof ClosureBar> | null =
@@ -1830,7 +1848,6 @@ export default function DossierFocusPage() {
               title={`Estação ${focusedIndex + 1} · ${focused.label}`}
               chip={chip}
               subtitle={subtitle || undefined}
-              substeps={substeps}
               onOpenTrail={() => setTrailOpen(true)}
               primaryAction={
                 closure?.onPrimary
