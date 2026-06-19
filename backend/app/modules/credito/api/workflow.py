@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agentic.playbooks.models.definition import (
@@ -90,6 +90,26 @@ async def get_workflow(
     return PlaybookDefinitionRead.model_validate(row)
 
 
+async def _next_version(db: AsyncSession, tenant_id: UUID | None, name: str) -> int:
+    """Next free version for ``(tenant_id, name)`` per the unique constraint.
+
+    Both create and update insert a NEW ``workflow_definition`` row; computing
+    ``max(version) + 1`` (instead of a fixed ``1`` or ``base.version + 1``) keeps
+    the insert collision-free even when the user re-saves a name that already
+    exists, or edits an older version while a newer one is present. Returns 1
+    when the name is brand new for this tenant.
+    """
+    current_max = (
+        await db.execute(
+            select(func.max(PlaybookDefinition.version)).where(
+                PlaybookDefinition.tenant_id == tenant_id,
+                PlaybookDefinition.name == name,
+            )
+        )
+    ).scalar_one_or_none()
+    return (current_max or 0) + 1
+
+
 @router.post(
     "/workflows",
     response_model=PlaybookDefinitionRead,
@@ -143,7 +163,7 @@ async def create_workflow(
     row = PlaybookDefinition(
         tenant_id=principal.tenant_id,
         name=payload.name,
-        version=1,
+        version=await _next_version(db, principal.tenant_id, payload.name),
         description=payload.description,
         category=category,
         graph=graph_dict,
@@ -179,7 +199,7 @@ async def update_workflow(
     new_row = PlaybookDefinition(
         tenant_id=base.tenant_id,
         name=base.name,
-        version=base.version + 1,
+        version=await _next_version(db, base.tenant_id, base.name),
         description=payload.description if payload.description is not None else base.description,
         category=base.category,
         graph=payload.graph.model_dump(),
