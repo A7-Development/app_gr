@@ -1,10 +1,13 @@
 """FastAPI app entrypoint."""
 
+import logging
 import os
+import re
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.api.v1.router import api_router
@@ -64,6 +67,44 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_logger = logging.getLogger(__name__)
+# Espelha o allow_origin_regex do CORSMiddleware acima (localhost qualquer porta).
+_LOCALHOST_ORIGIN_RE = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$")
+
+
+def _cors_origin_for(origin: str | None) -> str | None:
+    """Origin a ecoar no header de CORS, com a MESMA politica do middleware
+    (match exato na allowlist OU regex localhost). None = nao permitido."""
+    if not origin:
+        return None
+    if origin in _settings.cors_origins_list or _LOCALHOST_ORIGIN_RE.match(origin):
+        return origin
+    return None
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Resposta 500 que CARREGA header de CORS.
+
+    Sem isto, uma excecao nao-tratada sobe ate o ServerErrorMiddleware do
+    Starlette — que fica FORA do CORSMiddleware — e o 500 sai sem
+    Access-Control-Allow-Origin. O browser entao mascara o erro real como
+    "No 'Access-Control-Allow-Origin' header", escondendo a causa (ja aconteceu
+    com a colisao de versao de workflow). Aqui logamos o traceback (igual ao
+    comportamento padrao) e injetamos o CORS manualmente.
+
+    HTTPException (404/401/409/...) NAO cai aqui — tem handler proprio e ja passa
+    pelo CORSMiddleware normalmente.
+    """
+    _logger.exception("Erro nao tratado em %s %s", request.method, request.url.path)
+    resp = JSONResponse(status_code=500, content={"detail": "Erro interno do servidor."})
+    origin = _cors_origin_for(request.headers.get("origin"))
+    if origin is not None:
+        resp.headers["Access-Control-Allow-Origin"] = origin
+        resp.headers["Access-Control-Allow-Credentials"] = "true"
+        resp.headers["Vary"] = "Origin"
+    return resp
 
 
 @app.get("/health", response_model=HealthResponse, tags=["health"])
