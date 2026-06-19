@@ -50,6 +50,22 @@ _CREDIT_LOSS_KEYWORDS: tuple[str, ...] = (
     "ABATIMENTO",   # ABATIMENTO CONCEDIDO — valor perdoado ao sacado, sem caixa.
 )
 
+# Vocabulario CONHECIDO de tipo_movimento de CAIXA. Rastreamento de TODO o
+# historico wh_liquidacao_recebivel (REALINVEST, abr-jun/2026, 2026-06-18): dos
+# 8 tipos existentes, ABATIMENTO CONCEDIDO e o UNICO perda-sem-caixa (ajuste=0 +
+# pago<<vencimento). Os 7 abaixo sao caixa (saida total OU parcial com pagamento
+# real). `is_known_liquidacao_tipo` permite FAIL-LOUD se a QiTech trouxer um 9o
+# tipo — para nao absorver uma perda nova silenciosamente em giro.
+_KNOWN_CASH_TIPOS: frozenset[str] = frozenset({
+    "LIQUIDACAO NORMAL",
+    "LIQUIDACAO PARCIAL",
+    "LIQUIDACAO EM CARTORIO",
+    "BAIXA POR DEPOSITO SACADO",
+    "BAIXA POR DEPOSITO CEDENTE",
+    "BAIXA POR RECOMPRA",
+    "RECOMPRA PARCIAL SEM ADIANTAMENTO",
+})
+
 
 def classify_liquidacao_nature(tipo_movimento: str | None) -> LiquidacaoNature:
     """Classifica o evento de liquidacao parcial casado: perda vs giro.
@@ -69,3 +85,19 @@ def classify_liquidacao_nature(tipo_movimento: str | None) -> LiquidacaoNature:
 def is_credit_loss(tipo_movimento: str | None) -> bool:
     """Conveniencia: o evento e perda de credito (abatimento)?"""
     return classify_liquidacao_nature(tipo_movimento) == "credit_loss"
+
+
+def is_known_liquidacao_tipo(tipo_movimento: str | None) -> bool:
+    """O `tipo_movimento` esta no vocabulario conhecido (caixa OU perda)?
+
+    Falso => tipo NOVO que a QiTech introduziu e ainda nao foi classificado.
+    Quem consome eventos de liquidacao parcial pode usar isto para SINALIZAR
+    (atencao/log) em vez de absorver em giro por default — a perda de um tipo
+    novo nao deve vazar silenciosa (mesmo espirito do bug do ABATIMENTO).
+    """
+    t = _norm(tipo_movimento)
+    if not t:
+        return False
+    if any(kw in t for kw in _CREDIT_LOSS_KEYWORDS):
+        return True
+    return t in _KNOWN_CASH_TIPOS

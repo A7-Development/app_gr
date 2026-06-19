@@ -80,6 +80,82 @@ def _parse_scope_inputs(scope: ScopedContext) -> tuple[UUID, date]:
     return ua_id, data_d0
 
 
+async def _resolve_seu_numero(
+    scope: ScopedContext, fundo_doc: str, data_d0: date, args: dict[str, Any],
+) -> tuple[str | None, dict[str, Any] | None]:
+    """Resolve o papel por `seu_numero` OU `numero_documento` (+ `data_vencimento`).
+
+    `seu_numero` (campo seuNumero da QiTech) e a chave INTERNA opaca — o usuario
+    fala em `numero_documento` (duplicata/NF). Como um documento parcelado tem
+    varias linhas com o MESMO numero_documento (parcela vive no vencimento),
+    `data_vencimento` desambigua.
+
+    Retorna `(seu_numero, None)` quando resolve a 1 papel; `(None, payload)`
+    quando falta input, nao acha, ou ha ambiguidade (payload ja serializavel
+    com os candidatos por vencimento — NUNCA expoe o seu_numero ao usuario).
+    """
+    seu = str(args.get("seu_numero") or "").strip()
+    if seu:
+        return seu, None
+
+    doc = str(args.get("numero_documento") or "").strip()
+    if not doc:
+        return None, {"erro": "Informe 'seu_numero' OU 'numero_documento'."}
+
+    from app.warehouse.estoque_recebivel import EstoqueRecebivel
+
+    stmt = (
+        select(
+            EstoqueRecebivel.seu_numero,
+            EstoqueRecebivel.data_vencimento_ajustada,
+            EstoqueRecebivel.cedente_doc,
+            EstoqueRecebivel.cedente_nome,
+        )
+        .where(EstoqueRecebivel.tenant_id == scope.tenant_id)
+        .where(EstoqueRecebivel.fundo_doc == fundo_doc)
+        .where(EstoqueRecebivel.numero_documento == doc)
+        .where(EstoqueRecebivel.data_referencia <= data_d0)
+        .order_by(EstoqueRecebivel.data_referencia.desc())
+    )
+    venc_raw = str(args.get("data_vencimento") or "").strip()
+    if venc_raw:
+        try:
+            venc = date.fromisoformat(venc_raw)
+        except ValueError:
+            return None, {"erro": f"data_vencimento invalida: {venc_raw!r} (use YYYY-MM-DD)."}
+        stmt = stmt.where(EstoqueRecebivel.data_vencimento_ajustada == venc)
+    ced = str(args.get("cedente_doc") or "").strip()
+    if ced:
+        stmt = stmt.where(EstoqueRecebivel.cedente_doc == ced)
+
+    rows = (await scope.db.execute(stmt.limit(3000))).all()
+    by_seu: dict[str, Any] = {}
+    for r in rows:  # ja ordenado desc -> setdefault mantem o registro mais recente
+        by_seu.setdefault(r.seu_numero, r)
+
+    if not by_seu:
+        return None, {"erro": f"Documento {doc!r} nao encontrado no estoque ate {data_d0.isoformat()}."}
+    if len(by_seu) == 1:
+        return next(iter(by_seu)), None
+
+    candidatos = [
+        {
+            "numero_documento": doc,
+            "data_vencimento": r.data_vencimento_ajustada,
+            "cedente_nome": r.cedente_nome,
+            "cedente_doc": r.cedente_doc,
+        }
+        for r in by_seu.values()
+    ]
+    return None, {
+        "ambiguo": True,
+        "numero_documento": doc,
+        "n_parcelas": len(candidatos),
+        "candidatos": candidatos,
+        "dica": "Documento parcelado: informe 'data_vencimento' (YYYY-MM-DD) para escolher a parcela.",
+    }
+
+
 # ─── Tools 1-4: wrappers diretos dos services F1+F2 ──────────────────────
 
 
@@ -654,9 +730,17 @@ def _sugestao_decomposicao_classes(r: dict[str, Any]) -> dict[str, Any]:
     input_schema={
         "type": "object",
         "properties": {
+            "numero_documento": {
+                "type": "string",
+                "description": "Numero do documento (duplicata/NF) que o usuario reconhece. Forma PREFERIDA de identificar o papel. Se for parcelado, combine com data_vencimento.",
+            },
+            "data_vencimento": {
+                "type": "string",
+                "description": "Vencimento (YYYY-MM-DD) — desambigua parcelas que compartilham o mesmo numero_documento.",
+            },
             "seu_numero": {
                 "type": "string",
-                "description": "Identificador do papel (ex.: 'DID94816').",
+                "description": "Chave interna da linha (campo seuNumero da QiTech, opaco). Alternativa a numero_documento — use quando ja tiver o valor exato vindo de um retorno anterior.",
             },
             "janela_dias": {
                 "type": "integer",
@@ -665,7 +749,7 @@ def _sugestao_decomposicao_classes(r: dict[str, Any]) -> dict[str, Any]:
                 "description": "Janela [D-N, D+N] em torno de data_d0. Default 5.",
             },
         },
-        "required": ["seu_numero"],
+        "required": [],
         "additionalProperties": False,
     },
     module=Module.CONTROLADORIA,
@@ -680,7 +764,6 @@ async def get_eventos_liquidacao_adjacentes(
     from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel
 
     ua_id, data_d0 = _parse_scope_inputs(scope)
-    seu_numero = args["seu_numero"]
     janela = int(args.get("janela_dias", 5))
 
     ua = (
@@ -692,6 +775,10 @@ async def get_eventos_liquidacao_adjacentes(
     ).scalar_one_or_none()
     if ua is None or not ua.cnpj:
         return _to_json({"erro": f"UA {ua_id} nao encontrada ou sem CNPJ"})
+
+    seu_numero, problema = await _resolve_seu_numero(scope, ua.cnpj, data_d0, args)
+    if problema is not None:
+        return _to_json(problema)
 
     rows = (
         await scope.db.execute(
@@ -712,6 +799,7 @@ async def get_eventos_liquidacao_adjacentes(
     eventos = [
         {
             "data_posicao": r.data_posicao,
+            "numero_documento": r.documento,
             "tipo_movimento": r.tipo_movimento,
             "valor_pago": r.valor_pago,
             "valor_aquisicao": r.valor_aquisicao,
@@ -723,6 +811,7 @@ async def get_eventos_liquidacao_adjacentes(
         for r in rows
     ]
     return _to_json({
+        "numero_documento": rows[0].documento if rows else None,
         "seu_numero": seu_numero,
         "janela": [
             (data_d0 - timedelta(days=janela)).isoformat(),
@@ -748,9 +837,17 @@ async def get_eventos_liquidacao_adjacentes(
     input_schema={
         "type": "object",
         "properties": {
+            "numero_documento": {
+                "type": "string",
+                "description": "Numero do documento (duplicata/NF) que o usuario reconhece. Forma PREFERIDA de identificar o papel. Se for parcelado, combine com data_vencimento.",
+            },
+            "data_vencimento": {
+                "type": "string",
+                "description": "Vencimento (YYYY-MM-DD) — desambigua parcelas que compartilham o mesmo numero_documento.",
+            },
             "seu_numero": {
                 "type": "string",
-                "description": "Identificador do papel.",
+                "description": "Chave interna da linha (campo seuNumero da QiTech, opaco). Alternativa a numero_documento — use quando ja tiver o valor exato vindo de um retorno anterior.",
             },
             "dias": {
                 "type": "integer",
@@ -759,7 +856,7 @@ async def get_eventos_liquidacao_adjacentes(
                 "description": "Janela retroativa em dias corridos. Default 30.",
             },
         },
-        "required": ["seu_numero"],
+        "required": [],
         "additionalProperties": False,
     },
     module=Module.CONTROLADORIA,
@@ -774,7 +871,6 @@ async def get_historico_estoque_papel(
     from app.warehouse.estoque_recebivel import EstoqueRecebivel
 
     ua_id, data_d0 = _parse_scope_inputs(scope)
-    seu_numero = args["seu_numero"]
     dias = int(args.get("dias", 30))
 
     ua = (
@@ -786,6 +882,10 @@ async def get_historico_estoque_papel(
     ).scalar_one_or_none()
     if ua is None or not ua.cnpj:
         return _to_json({"erro": f"UA {ua_id} nao encontrada ou sem CNPJ"})
+
+    seu_numero, problema = await _resolve_seu_numero(scope, ua.cnpj, data_d0, args)
+    if problema is not None:
+        return _to_json(problema)
 
     rows = (
         await scope.db.execute(
@@ -824,6 +924,7 @@ async def get_historico_estoque_papel(
         for r in rows
     ]
     return _to_json({
+        "numero_documento": first.numero_documento,
         "seu_numero": seu_numero,
         "cedente_doc": first.cedente_doc,
         "cedente_nome": first.cedente_nome,
