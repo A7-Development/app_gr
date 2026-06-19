@@ -73,6 +73,9 @@ export function DossierReadingView({
   onOpenTrail,
   onGoToStation,
   descriptorStations,
+  playbookName,
+  playbookVersion,
+  analystName,
 }: {
   coverage?: CoverageItem[]
   /** Quando presente (flag ?descriptor=1), o §miolo vem do /descriptor (read-mode). */
@@ -91,6 +94,11 @@ export function DossierReadingView({
   trailCount: number
   onOpenTrail: () => void
   onGoToStation?: (id: string) => void
+  /** Cabeçalho de auditoria (handoff playbook, snapshot 07): playbook de
+   *  origem + versão + analista responsável. A conclusão vem de finalized_at. */
+  playbookName?: string | null
+  playbookVersion?: number | null
+  analystName?: string | null
 }) {
   const titleLabel =
     dossier.target_name ??
@@ -208,6 +216,43 @@ export function DossierReadingView({
             </div>
             <StrataIcon height={36} />
           </header>
+
+          {/* Cabeçalho de auditoria — playbook de origem + analista + conclusão
+              (handoff playbook JUCESP, snapshot 07). Requisito de auditoria:
+              quem decidiu, com base em qual playbook/versão, e quando fechou. */}
+          <section className="grid grid-cols-3 gap-6 border-b border-gray-100 py-5 dark:border-gray-900">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-400 dark:text-gray-500">
+                Playbook
+              </p>
+              <p className="mt-1 text-[13px] font-medium leading-snug text-gray-900 dark:text-gray-100">
+                {playbookName ?? "—"}
+              </p>
+              {playbookVersion != null && (
+                <p className="mt-0.5 text-[11px] text-gray-400 tabular-nums dark:text-gray-500">
+                  v{playbookVersion}
+                </p>
+              )}
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-400 dark:text-gray-500">
+                Analista
+              </p>
+              <p className="mt-1 text-[13px] font-medium text-gray-900 dark:text-gray-100">
+                {analystName ?? "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-400 dark:text-gray-500">
+                Conclusão
+              </p>
+              <p className="mt-1 text-[13px] font-medium text-gray-900 tabular-nums dark:text-gray-100">
+                {dossier.status === "finalized" && dossier.finalized_at
+                  ? fmtDate(dossier.finalized_at)
+                  : "Em andamento"}
+              </p>
+            </div>
+          </section>
 
           {/* Resumo da decisão */}
           {opinionOutput && recoMeta ? (

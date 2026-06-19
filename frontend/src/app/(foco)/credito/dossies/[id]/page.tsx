@@ -87,6 +87,7 @@ import {
   type StationSubstep,
 } from "@/design-system/components"
 import { provenanceTokens, type ProvenanceOrigin } from "@/design-system/tokens/provenance"
+import { apiClient } from "@/lib/api-client"
 import {
   credito,
   type CadastralAnalysis,
@@ -510,6 +511,14 @@ export default function DossierFocusPage() {
     queryKey: ["credito", "workflow-def", state?.dossier?.workflow_definition_id],
     queryFn: () => credito.workflows.get(state!.dossier.workflow_definition_id),
     enabled: Boolean(state?.dossier?.workflow_definition_id),
+  })
+
+  // Analista responsável p/ o cabeçalho de auditoria do dossiê (G5). O usuário
+  // logado é quem conduz a análise; cacheado (mesma /auth/me do AuthGuard).
+  const { data: me } = useQuery({
+    queryKey: ["auth", "me"],
+    queryFn: () => apiClient.get<{ user?: { name?: string } }>("/auth/me"),
+    staleTime: 5 * 60_000,
   })
 
   const steps: WizardMultiStepStep[] = React.useMemo(() => {
@@ -1839,6 +1848,9 @@ export default function DossierFocusPage() {
           onOpenTrail={() => setTrailOpen(true)}
           onGoToStation={onSelect}
           descriptorStations={descriptorDebug ? descriptorQ.data?.stations : undefined}
+          playbookName={workflow?.name}
+          playbookVersion={workflow?.version}
+          analystName={me?.user?.name}
         />
       ) : (
       <div className="flex h-full min-w-0 flex-1 flex-col">
