@@ -713,8 +713,13 @@ async def rerun_node(
         )
     ).scalar_one_or_none()
     if run is not None:
-        run.status = PlaybookRunStatus.RUNNING
+        # PAUSED (nao RUNNING): `resume_run` -> `prepare_resume` exige PAUSED e
+        # so entao marca RUNNING. Setar RUNNING aqui fazia o prepare_resume
+        # recusar ("Cannot resume run ... in status running"). Tambem cobre o
+        # caso de re-rodar a partir de um run FAILED (reprocessamento).
+        run.status = PlaybookRunStatus.PAUSED
         run.completed_at = None
+        run.paused_at = datetime.now(UTC)
         await db.flush()
 
     await workflow_engine.resume_run(
