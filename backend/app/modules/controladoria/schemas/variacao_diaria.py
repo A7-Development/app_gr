@@ -17,9 +17,11 @@ class VariacaoDiariaSeriePonto(BaseModel):
     data: date
     """Dia (ISO YYYY-MM-DD)."""
     variacao_cota: Decimal | None
-    """Δ R$ do PL Sub MEC no dia (vs dia util anterior). None = sem apuracao."""
+    """Rentabilidade do dia em R$ = Δ(PL Sub MEC) - capital do Sub (aporte/resgate
+    do cotista subordinado, segregado por ser neutro na valorizacao). None = sem
+    apuracao."""
     variacao_pct: Decimal | None
-    """Δ% sobre o PL Sub MEC do dia util anterior. None quando nao ha D-1."""
+    """Rentabilidade % sobre o PL Sub MEC do dia util anterior. None quando nao ha D-1."""
     eh_dia_util: bool
     """False em sab/dom (label dim no eixo X)."""
     eh_futuro: bool
