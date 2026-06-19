@@ -520,3 +520,94 @@ async def enrich_target_cadastral(
         applied=applied,
         errors=[],
     )
+
+
+async def enrich_target_from_pj_silver(
+    db: AsyncSession, *, tenant_id: UUID, dossier_id: UUID
+) -> bool:
+    """Enriquece a empresa-alvo a partir do silver `wh_pj_cadastro` JA materializado
+    pelo node `bureau_query` (BDC multi-dataset) — SEM nova consulta paga.
+
+    Existem dois pipelines cadastrais: `cadastral_enrichment` faz um fetch CAD-PJ e
+    grava em `credit_dossier_company` (que o card + a read-tool do agente leem);
+    `bureau_query` faz UMA consulta multi-dataset e grava o cadastral no silver
+    (`wh_pj_cadastro` + raw), mas NAO toca em `credit_dossier_company`. Um playbook
+    que usa `bureau_query` (sem o node `cadastral_enrichment`) ficava com a tela e o
+    agente vendo nulo. Esta ponte aplica o MESMO mapeamento de
+    `enrich_target_cadastral` reusando `map_basic_data` sobre o raw que ja existe,
+    de modo que a unica consulta do `bureau_query` alimente tambem a leitura.
+
+    Best-effort: o caller (bureau_query) NAO deve falhar se isto nao aplicar — a
+    consulta em si ja foi bem-sucedida. Returns True quando aplicou.
+    """
+    from app.modules.integracoes.adapters.data.bigdatacorp.mappers.cadastral import (
+        map_basic_data,
+    )
+    from app.warehouse.bdc_raw_consulta import BdcRawConsulta
+    from app.warehouse.pj_cadastro import PjCadastro
+
+    target = (
+        await db.execute(
+            select(CreditDossierCompany).where(
+                CreditDossierCompany.tenant_id == tenant_id,
+                CreditDossierCompany.dossier_id == dossier_id,
+                CreditDossierCompany.role == CompanyRole.TARGET,
+            )
+        )
+    ).scalar_one_or_none()
+    if target is None:
+        return False
+
+    cnpj_digits = "".join(ch for ch in (target.cnpj or "") if ch.isdigit())
+    if len(cnpj_digits) != 14:
+        return False
+
+    cad = (
+        (
+            await db.execute(
+                select(PjCadastro)
+                .where(
+                    PjCadastro.tenant_id == tenant_id,
+                    PjCadastro.cnpj == cnpj_digits,
+                )
+                .order_by(PjCadastro.ingested_at.desc())
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if cad is None or cad.raw_id is None:
+        return False
+
+    raw = (
+        await db.execute(
+            select(BdcRawConsulta).where(BdcRawConsulta.id == cad.raw_id)
+        )
+    ).scalar_one_or_none()
+    if raw is None or not isinstance(raw.payload, dict):
+        return False
+
+    result = map_basic_data(raw.payload)
+    if not result.found or result.fields is None:
+        return False
+
+    fields = result.fields
+    target.tax_status = fields.tax_status
+    target.cnaes = fields.cnaes
+    target.capital_social = fields.capital_social
+    # founding_date só sobrescreve quando NULL — preserva o auto-declarado para o
+    # cross-check declarado x oficial (espelha enrich_target_cadastral).
+    if target.founding_date is None and fields.founding_date is not None:
+        target.founding_date = fields.founding_date
+    target.receita_data = {
+        "_raw_id": str(cad.raw_id),
+        "_public_code": raw.public_code,
+        "basic_data": fields.basic_data,
+    }
+    await db.flush()
+    logger.info(
+        "Enriquecimento cadastral via silver BDC aplicado (dossie=%s, cnpj=%s)",
+        dossier_id,
+        cnpj_digits,
+    )
+    return True
