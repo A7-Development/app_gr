@@ -43,6 +43,7 @@ import {
   type GlassAlsoRunning,
   type GlassStep,
 } from "@/design-system/components/AgentesAoVivoPanel"
+import { DevZoneLabel } from "@/design-system/components/DevZoneLabel"
 import { cx } from "@/lib/utils"
 
 // ─── Tipos de dado das abas ──────────────────────────────────────────────────
@@ -97,6 +98,8 @@ export type ContextPanelProps = {
   apontamentos: ContextApontamento[]
   documentos: ContextDoc[]
   auditoria: ContextAuditEvent[]
+  /** Rótulo de andaime (toggle "Zonas") — nomeia esta área na tela. */
+  devLabel?: string
   className?: string
 }
 
@@ -331,6 +334,7 @@ export function ContextPanel({
   apontamentos,
   documentos,
   auditoria,
+  devLabel,
   className,
 }: ContextPanelProps) {
   const [tab, setTab] = React.useState<ContextTabKey>("atividade")
@@ -351,10 +355,11 @@ export function ContextPanel({
     <aside
       aria-label="Painel de contexto"
       className={cx(
-        "flex h-full w-[308px] shrink-0 flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
+        "relative flex h-full w-[308px] shrink-0 flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
         className,
       )}
     >
+      {devLabel && <DevZoneLabel corner="bl">{devLabel}</DevZoneLabel>}
       {/* Barra de abas */}
       <div
         role="tablist"

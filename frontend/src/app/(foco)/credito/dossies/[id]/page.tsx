@@ -31,6 +31,7 @@ import {
   RiFileUploadLine,
   RiFullscreenLine,
   RiHandCoinLine,
+  RiLayoutGridLine,
   RiLoopLeftLine,
   RiRestartLine,
   RiSparkling2Line,
@@ -65,6 +66,7 @@ import { CadastralAnalysisView } from "./_components/CadastralAnalysisView"
 import { CadastralCard } from "./_components/CadastralCard"
 import {
   ContextPanel,
+  DevZoneLabel,
   AgentLiveStatus,
   AgentOutputRenderer,
   AgentPulseDot,
@@ -494,6 +496,28 @@ export default function DossierFocusPage() {
   const descriptorDebug = sp.get("descriptor") === "1"
   const queryClient = useQueryClient()
   const [trailOpen, setTrailOpen] = React.useState(false)
+  // Andaime "Zonas": rótulos pequenos+faded que nomeiam cada área da tela
+  // (toggle na topbar, estado no localStorage). Ajuda a identificar a estrutura
+  // e pedir ajustes referenciando o nome certo. Off por padrão.
+  const [zonasOn, setZonasOn] = React.useState(false)
+  React.useEffect(() => {
+    try {
+      setZonasOn(window.localStorage.getItem("gr.zonas") === "1")
+    } catch {
+      /* localStorage indisponível — segue off */
+    }
+  }, [])
+  const toggleZonas = React.useCallback(() => {
+    setZonasOn((v) => {
+      const next = !v
+      try {
+        window.localStorage.setItem("gr.zonas", next ? "1" : "0")
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }, [])
   // Gate JUCESP (opção B): node cuja escolha o analista acabou de confirmar →
   // a fase de download está rodando (muda o texto do feedback ao vivo).
   const [downloadingNode, setDownloadingNode] = React.useState<string | null>(null)
@@ -1772,7 +1796,8 @@ export default function DossierFocusPage() {
   return (
     <div className="flex h-screen min-w-0 flex-1 flex-col">
       {/* Topbar — logo · breadcrumb · agentes ativos · cronômetro+custo · tela cheia */}
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 dark:border-gray-800 dark:bg-gray-950">
+      <header className="relative flex h-12 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 dark:border-gray-800 dark:bg-gray-950">
+        {zonasOn && <DevZoneLabel corner="bl">Topbar</DevZoneLabel>}
         <span className="flex size-6 shrink-0 items-center justify-center rounded bg-gray-900 dark:bg-gray-100">
           <RiHandCoinLine className="size-4 text-white dark:text-gray-900" aria-hidden />
         </span>
@@ -1818,6 +1843,15 @@ export default function DossierFocusPage() {
               {totalCostBrl > 0 ? `R$ ${totalCostBrl.toFixed(2)}` : ""}
             </span>
           )}
+          <Button
+            variant={zonasOn ? "primary" : "ghost"}
+            className="size-8 p-0"
+            onClick={toggleZonas}
+            aria-label="Mostrar nomes das áreas (zonas)"
+            title="Mostrar/ocultar os nomes das áreas da tela"
+          >
+            <RiLayoutGridLine className="size-4" aria-hidden />
+          </Button>
           <Button variant="secondary" className="h-8" onClick={toggleFullscreen}>
             <RiFullscreenLine className="mr-1.5 size-4" aria-hidden />
             Tela cheia
@@ -1839,6 +1873,7 @@ export default function DossierFocusPage() {
         onOpenDossier={onOpenDossier}
         dossierActive={viewDossie}
         trailLabel={`Trilha: ${trailEvents.length} eventos`}
+        devLabel={zonasOn ? "Trilha · StationsSidebar" : undefined}
       />
 
       <TrailSheet
@@ -1875,7 +1910,8 @@ export default function DossierFocusPage() {
           analystName={me?.user?.name}
         />
       ) : (
-      <div className="flex h-full min-w-0 flex-1 flex-col">
+      <div className="relative flex h-full min-w-0 flex-1 flex-col">
+        {zonasOn && <DevZoneLabel corner="br">Bancada (área de trabalho)</DevZoneLabel>}
         {focused ? (
           <>
             <StationHeader
@@ -1901,6 +1937,7 @@ export default function DossierFocusPage() {
                     : closure.statusText
                   : undefined
               }
+              devLabel={zonasOn ? "Cabeçalho da estação · StationHeader" : undefined}
             />
             {/* block + space-y (não flex): zona com overflow-hidden teria
                 min-height 0 como flex item e seria esmagada pelo scroll. */}
@@ -1995,6 +2032,7 @@ export default function DossierFocusPage() {
           apontamentos={apontamentos}
           documentos={documentos}
           auditoria={auditoria}
+          devLabel={zonasOn ? "Painel de contexto · ContextPanel" : undefined}
         />
       )}
       </div>

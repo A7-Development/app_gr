@@ -26,6 +26,7 @@ import {
 } from "@remixicon/react"
 
 import { Button } from "@/components/tremor/Button"
+import { DevZoneLabel } from "@/design-system/components/DevZoneLabel"
 import { cx } from "@/lib/utils"
 
 // Fases canônicas da estação (handoff: Documento → Conferência → Leitura →
@@ -113,6 +114,8 @@ export type StationHeaderProps = {
   actionHint?: React.ReactNode
   /** Slot do menu "···" (DropdownMenu). Omitido = sem botão. */
   moreMenu?: React.ReactNode
+  /** Rótulo de andaime (toggle "Zonas") — nomeia esta área na tela. */
+  devLabel?: string
   className?: string
 }
 
@@ -127,16 +130,18 @@ export function StationHeader({
   primaryAction,
   actionHint,
   moreMenu,
+  devLabel,
   className,
 }: StationHeaderProps) {
   const PrimaryIcon = primaryAction?.icon
   return (
     <header
       className={cx(
-        "shrink-0 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
+        "relative shrink-0 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
         className,
       )}
     >
+      {devLabel && <DevZoneLabel corner="bl">{devLabel}</DevZoneLabel>}
       <div className={cx("px-8 pt-[18px]", !substeps && "pb-4")}>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-[19px] font-semibold tracking-[-0.01em] text-gray-900 dark:text-gray-50">
