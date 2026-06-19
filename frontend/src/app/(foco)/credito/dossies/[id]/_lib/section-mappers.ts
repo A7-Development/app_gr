@@ -18,6 +18,8 @@ import type {
 } from "@/design-system/types/section"
 import type {
   CadastralAnalysis,
+  CadastralCampo,
+  CadastralCard as CadastralCardData,
   RevenueAnalysis,
   SocialContractAnalysis,
 } from "@/lib/credito-client"
@@ -310,5 +312,117 @@ export function socialContractToSection(output: SocialContractAnalysis): Section
     titulo: "Contrato social",
     blocks,
     generatesDossierSection: true,
+  }
+}
+
+// ─── Card cadastral coletado (produtor consulta/silver) → blocos ──────────────
+// Migração do hand-built `CadastralCard` pro padrão de blocos: cada CATEGORIA do
+// contrato (identidade/situação/atividade/capital/histórico) vira uma `ficha`.
+// Dado da fonte oficial → assinatura `fonte`. Campos `novo` ganham badge.
+
+function _fmtCardDate(s: string | null): string {
+  if (!s) return "—"
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : s
+}
+
+function _fmtCardBRL(n: number | null): string {
+  if (typeof n !== "number" || !Number.isFinite(n)) return "—"
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+}
+
+function _fmtCardValor(v: CadastralCampo["valor"]): string {
+  const scalar = (x: string | number | boolean) =>
+    typeof x === "boolean" ? (x ? "Sim" : "Não") : String(x)
+  if (v === null || v === "") return "—"
+  if (Array.isArray(v)) return v.map(scalar).join(", ") || "—"
+  return scalar(v)
+}
+
+export function cadastralCardToSection(data: CadastralCardData): SectionDescriptor {
+  const blocks: Block[] = []
+
+  // Resumo da empresa (identidade + chaves validadas no silver).
+  blocks.push({
+    id: "cadcard-empresa",
+    type: "ficha",
+    titulo: "Empresa",
+    campos: [
+      { label: "Razão social", valor: data.razao_social ?? "—", provenance: P_FONTE },
+      { label: "CNPJ", valor: data.cnpj, provenance: P_FONTE },
+      {
+        label: "Situação cadastral",
+        valor: data.situacao_cadastral ?? "—",
+        badge: data.situacao_cadastral
+          ? {
+              texto: data.situacao_cadastral,
+              tom: data.situacao_cadastral.toLowerCase() === "ativa" ? "ok" : "neutro",
+            }
+          : undefined,
+        provenance: P_FONTE,
+      },
+      { label: "Data de fundação", valor: _fmtCardDate(data.data_fundacao), provenance: P_FONTE },
+      { label: "Capital social", valor: _fmtCardBRL(data.capital_social), provenance: P_FONTE },
+      ...(data.enriquecido
+        ? []
+        : [
+            {
+              label: "Enriquecimento",
+              valor: "não enriquecido",
+              badge: { texto: "pendente", tom: "atencao" as const },
+            },
+          ]),
+    ],
+  })
+
+  // Banner "campos novos não classificados no contrato" → apontamento info.
+  if (data.campos_novos_count > 0) {
+    blocks.push({
+      id: "cadcard-novos",
+      type: "apontamentos",
+      itens: [
+        {
+          severidade: "info",
+          titulo: `${data.campos_novos_count} campo(s) novo(s) ainda não classificado(s) no contrato.`,
+        },
+      ],
+    })
+  }
+
+  // Campos do contrato agrupados por categoria → uma `ficha` por categoria.
+  const grupos = new Map<string, CadastralCampo[]>()
+  for (const c of data.campos ?? []) {
+    const arr = grupos.get(c.categoria) ?? []
+    arr.push(c)
+    grupos.set(c.categoria, arr)
+  }
+  const ordenados = Array.from(grupos.entries())
+    .map(([cat, campos]) => ({
+      cat,
+      campos: [...campos].sort((a, b) => a.ordem - b.ordem),
+      minOrdem: Math.min(...campos.map((c) => c.ordem)),
+    }))
+    .sort((a, b) => a.minOrdem - b.minOrdem)
+
+  for (const { cat, campos } of ordenados) {
+    blocks.push({
+      id: `cadcard-${cat}`,
+      type: "ficha",
+      titulo: cat,
+      campos: campos.map((c) => ({
+        label: c.label,
+        valor: _fmtCardValor(c.valor),
+        badge: c.novo ? { texto: "novo", tom: "atencao" as const } : undefined,
+        provenance: P_FONTE,
+      })),
+    })
+  }
+
+  return {
+    id: "section-cadastral-card",
+    stationId: "cadastral",
+    titulo: "Dados cadastrais coletados",
+    blocks,
+    generatesDossierSection: false,
   }
 }
