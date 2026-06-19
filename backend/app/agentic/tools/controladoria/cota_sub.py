@@ -59,8 +59,31 @@ def _to_json(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, default=default)
 
 
-def _parse_scope_inputs(scope: ScopedContext) -> tuple[UUID, date]:
-    """Extrai (ua_id, data_d0) do scope.extras com validacao."""
+# Propriedade `data` reutilizavel no input_schema das tools (2026-06-19): por
+# padrao a analise roda no dia SELECIONADO na tela (a ancora "hoje" do usuario,
+# em scope.extras['data_d0']). O agente pode investigar OUTRO dia passando `data`
+# quando a pergunta pedir comparacao/serie (ex.: "variou mais hoje que ontem?").
+_DATA_ARG: dict[str, Any] = {
+    "type": "string",
+    "description": (
+        "Dia a analisar no formato YYYY-MM-DD. OPCIONAL — o default e o dia "
+        "SELECIONADO na tela (o 'hoje'/'no dia' do usuario). Passe outra data SO "
+        "para comparar/investigar um dia diferente do selecionado (ex.: o dia "
+        "anterior, a semana passada)."
+    ),
+}
+
+
+def _parse_scope_inputs(
+    scope: ScopedContext, args: dict[str, Any] | None = None
+) -> tuple[UUID, date]:
+    """Extrai (ua_id, dia_efetivo) do scope.extras com validacao.
+
+    O dia da analise vem de `scope.extras['data_d0']` (o dia SELECIONADO na tela,
+    preenchido pelo invocador — a ancora 'hoje' do usuario). Se `args` trouxer um
+    `data` (YYYY-MM-DD), ele OVERRIDE o dia so para aquela chamada — permite o
+    agente investigar outro dia sem trocar a ancora do scope.
+    """
     ua_id_raw = scope.extras.get("ua_id")
     data_raw = scope.extras.get("data_d0")
     if ua_id_raw is None or data_raw is None:
@@ -69,6 +92,18 @@ def _parse_scope_inputs(scope: ScopedContext) -> tuple[UUID, date]:
             "Invocador (orquestrador do agente) deve preencher antes."
         )
     ua_id = UUID(str(ua_id_raw)) if not isinstance(ua_id_raw, UUID) else ua_id_raw
+
+    # Override opcional do dia via args['data'] (o scope continua sendo a ancora).
+    if args is not None:
+        data_override = str(args.get("data") or "").strip()
+        if data_override:
+            try:
+                return ua_id, date.fromisoformat(data_override)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Parametro 'data' invalido: {data_override!r} (use YYYY-MM-DD)."
+                ) from exc
+
     if isinstance(data_raw, str):
         data_d0 = date.fromisoformat(data_raw)
     elif isinstance(data_raw, datetime):
@@ -178,7 +213,7 @@ async def _resolve_seu_numero(
     ),
     input_schema={
         "type": "object",
-        "properties": {},
+        "properties": {"data": _DATA_ARG},
         "additionalProperties": False,
     },
     module=Module.CONTROLADORIA,
@@ -198,7 +233,7 @@ async def get_balanco_patrimonial(scope: ScopedContext, args: dict[str, Any]) ->
         compute_balanco_estrutural,
     )
 
-    ua_id, data_d0 = _parse_scope_inputs(scope)
+    ua_id, data_d0 = _parse_scope_inputs(scope, args)
     r = await compute_balanco_estrutural(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
@@ -231,7 +266,7 @@ async def get_balanco_patrimonial(scope: ScopedContext, args: dict[str, Any]) ->
     ),
     input_schema={
         "type": "object",
-        "properties": {},
+        "properties": {"data": _DATA_ARG},
         "additionalProperties": False,
     },
     module=Module.CONTROLADORIA,
@@ -254,7 +289,7 @@ async def get_variacao_carteira(scope: ScopedContext, args: dict[str, Any]) -> s
     """
     from app.modules.controladoria.services.cota_sub_drill_dc import compute_drill_dc
 
-    ua_id, data_d0 = _parse_scope_inputs(scope)
+    ua_id, data_d0 = _parse_scope_inputs(scope, args)
     r = await compute_drill_dc(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
@@ -370,7 +405,7 @@ def _sugestao_drill_dc(r: Any) -> dict[str, Any]:
     ),
     input_schema={
         "type": "object",
-        "properties": {},
+        "properties": {"data": _DATA_ARG},
         "additionalProperties": False,
     },
     module=Module.CONTROLADORIA,
@@ -387,7 +422,7 @@ async def get_drill_pdd(scope: ScopedContext, args: dict[str, Any]) -> str:
     """
     from app.modules.controladoria.services.cota_sub_drill_pdd import compute_drill_pdd
 
-    ua_id, data_d0 = _parse_scope_inputs(scope)
+    ua_id, data_d0 = _parse_scope_inputs(scope, args)
     r = await compute_drill_pdd(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
@@ -490,7 +525,7 @@ def _sugestao_drill_pdd(r: Any) -> dict[str, Any]:
     ),
     input_schema={
         "type": "object",
-        "properties": {},
+        "properties": {"data": _DATA_ARG},
         "additionalProperties": False,
     },
     module=Module.CONTROLADORIA,
@@ -509,7 +544,7 @@ async def get_drill_cpr(scope: ScopedContext, args: dict[str, Any]) -> str:
     """
     from app.modules.controladoria.services.cota_sub_drill_cpr import compute_drill_cpr
 
-    ua_id, data_d0 = _parse_scope_inputs(scope)
+    ua_id, data_d0 = _parse_scope_inputs(scope, args)
     receber = await compute_drill_cpr(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0, side="receber",
     )
@@ -600,7 +635,7 @@ def _sugestao_drill_cpr(receber: Any, pagar: Any) -> dict[str, Any]:
     ),
     input_schema={
         "type": "object",
-        "properties": {},
+        "properties": {"data": _DATA_ARG},
         "additionalProperties": False,
     },
     module=Module.CONTROLADORIA,
@@ -620,7 +655,7 @@ async def get_decomposicao_classes(scope: ScopedContext, args: dict[str, Any]) -
         compute_decomposicao_classes_mec,
     )
 
-    ua_id, data_d0 = _parse_scope_inputs(scope)
+    ua_id, data_d0 = _parse_scope_inputs(scope, args)
     r = await compute_decomposicao_classes_mec(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
@@ -763,7 +798,7 @@ async def get_eventos_liquidacao_adjacentes(
     from app.modules.cadastros.public import UnidadeAdministrativa
     from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel
 
-    ua_id, data_d0 = _parse_scope_inputs(scope)
+    ua_id, data_d0 = _parse_scope_inputs(scope, args)
     janela = int(args.get("janela_dias", 5))
 
     ua = (
@@ -870,7 +905,7 @@ async def get_historico_estoque_papel(
     from app.modules.cadastros.public import UnidadeAdministrativa
     from app.warehouse.estoque_recebivel import EstoqueRecebivel
 
-    ua_id, data_d0 = _parse_scope_inputs(scope)
+    ua_id, data_d0 = _parse_scope_inputs(scope, args)
     dias = int(args.get("dias", 30))
 
     ua = (
@@ -986,7 +1021,7 @@ async def get_papeis_mesmo_cedente_sacado(
     from app.modules.cadastros.public import UnidadeAdministrativa
     from app.warehouse.estoque_recebivel import EstoqueRecebivel
 
-    ua_id, data_d0 = _parse_scope_inputs(scope)
+    ua_id, data_d0 = _parse_scope_inputs(scope, args)
     cedente_doc = args["cedente_doc"]
     sacado_doc = args.get("sacado_doc")
     janela = int(args.get("janela_dias", 30))
@@ -1099,7 +1134,7 @@ async def check_identidade_contabil(
         compute_balanco_estrutural,
     )
 
-    ua_id, data_d0 = _parse_scope_inputs(scope)
+    ua_id, data_d0 = _parse_scope_inputs(scope, args)
     tolerancia = Decimal(str(args.get("tolerancia_brl", 1.0)))
 
     r = await compute_balanco_estrutural(
@@ -1204,7 +1239,7 @@ async def check_identidade_contabil(
     ),
     input_schema={
         "type": "object",
-        "properties": {},
+        "properties": {"data": _DATA_ARG},
         "additionalProperties": False,
     },
     module=Module.CONTROLADORIA,
@@ -1218,7 +1253,7 @@ async def get_conferencia_cessao(scope: ScopedContext, args: dict[str, Any]) -> 
         compute_conferencia_cessao,
     )
 
-    ua_id, data_d0 = _parse_scope_inputs(scope)
+    ua_id, data_d0 = _parse_scope_inputs(scope, args)
     r = await compute_conferencia_cessao(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
@@ -1252,7 +1287,7 @@ async def get_conferencia_cessao(scope: ScopedContext, args: dict[str, Any]) -> 
     ),
     input_schema={
         "type": "object",
-        "properties": {},
+        "properties": {"data": _DATA_ARG},
         "additionalProperties": False,
     },
     module=Module.CONTROLADORIA,
@@ -1266,7 +1301,7 @@ async def get_conferencia_liquidacao(scope: ScopedContext, args: dict[str, Any])
         compute_conferencia_liquidacao,
     )
 
-    ua_id, data_d0 = _parse_scope_inputs(scope)
+    ua_id, data_d0 = _parse_scope_inputs(scope, args)
     r = await compute_conferencia_liquidacao(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
@@ -1293,7 +1328,7 @@ async def get_conferencia_liquidacao(scope: ScopedContext, args: dict[str, Any])
     ),
     input_schema={
         "type": "object",
-        "properties": {},
+        "properties": {"data": _DATA_ARG},
         "additionalProperties": False,
     },
     module=Module.CONTROLADORIA,
@@ -1307,7 +1342,7 @@ async def get_movimento_nota_comercial(scope: ScopedContext, args: dict[str, Any
         compute_conferencia_nota_comercial,
     )
 
-    ua_id, data_d0 = _parse_scope_inputs(scope)
+    ua_id, data_d0 = _parse_scope_inputs(scope, args)
     r = await compute_conferencia_nota_comercial(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
@@ -1334,7 +1369,7 @@ async def get_movimento_nota_comercial(scope: ScopedContext, args: dict[str, Any
     ),
     input_schema={
         "type": "object",
-        "properties": {},
+        "properties": {"data": _DATA_ARG},
         "additionalProperties": False,
     },
     module=Module.CONTROLADORIA,
@@ -1348,7 +1383,7 @@ async def get_movimento_aplicacoes(scope: ScopedContext, args: dict[str, Any]) -
         compute_movimento_aplicacoes,
     )
 
-    ua_id, data_d0 = _parse_scope_inputs(scope)
+    ua_id, data_d0 = _parse_scope_inputs(scope, args)
     r = await compute_movimento_aplicacoes(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
@@ -1380,7 +1415,7 @@ async def get_movimento_aplicacoes(scope: ScopedContext, args: dict[str, Any]) -
     ),
     input_schema={
         "type": "object",
-        "properties": {},
+        "properties": {"data": _DATA_ARG},
         "additionalProperties": False,
     },
     module=Module.CONTROLADORIA,
@@ -1394,7 +1429,7 @@ async def get_movimento_contas_a_pagar(scope: ScopedContext, args: dict[str, Any
         compute_movimento_contas_a_pagar,
     )
 
-    ua_id, data_d0 = _parse_scope_inputs(scope)
+    ua_id, data_d0 = _parse_scope_inputs(scope, args)
     r = await compute_movimento_contas_a_pagar(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )
@@ -1426,7 +1461,7 @@ async def get_movimento_contas_a_pagar(scope: ScopedContext, args: dict[str, Any
     ),
     input_schema={
         "type": "object",
-        "properties": {},
+        "properties": {"data": _DATA_ARG},
         "additionalProperties": False,
     },
     module=Module.CONTROLADORIA,
@@ -1440,7 +1475,7 @@ async def get_movimento_cotas(scope: ScopedContext, args: dict[str, Any]) -> str
         compute_movimento_cotas,
     )
 
-    ua_id, data_d0 = _parse_scope_inputs(scope)
+    ua_id, data_d0 = _parse_scope_inputs(scope, args)
     r = await compute_movimento_cotas(
         scope.db, tenant_id=scope.tenant_id, ua_id=ua_id, data_d0=data_d0,
     )

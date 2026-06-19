@@ -294,6 +294,11 @@ async def variacao_chat(
         user_context={
             "fundo_nome": resumo.fundo_nome,
             "data_d0": data.isoformat(),
+            # Data de calendario real (referencia secundaria): permite o agente
+            # distinguir "o dia selecionado na tela" (data_d0 = o 'hoje' do usuario
+            # ao olhar a pagina) de "hoje de verdade", se o controller se referir
+            # literalmente ao dia corrente.
+            "hoje_real": date.today().isoformat(),
             "contexto": contexto,
             "historico": historico,
             "pergunta": body.pergunta,
