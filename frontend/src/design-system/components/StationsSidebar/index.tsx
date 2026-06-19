@@ -50,6 +50,9 @@ export type StationItem = {
   state: StationState
   /** Fases da estação — renderizadas só quando ela é a ativa (card destacado). */
   phases?: StationPhase[]
+  /** Marcador não-interativo da trilha (Abertura/Encerramento) — só visual,
+   *  não dispara `onSelect` nem vira foco. */
+  decorative?: boolean
 }
 
 export type StationsSidebarProps = {
@@ -297,17 +300,18 @@ export function StationsSidebar({
           {stations.map((st, i) => {
             const isActive = !dossierActive && st.id === activeId
             const isBlocked = st.state === "bloqueada"
+            const locked = isBlocked || Boolean(st.decorative)
             const topColor = i > 0 ? segColor(stations[i - 1].state) : undefined
             const botColor = i < n - 1 ? segColor(st.state) : undefined
             return (
               <button
                 key={st.id}
                 type="button"
-                onClick={() => !isBlocked && onSelect(st.id)}
-                disabled={isBlocked}
+                onClick={() => !locked && onSelect(st.id)}
+                disabled={locked}
                 className={cx(
                   "group relative flex gap-3 pb-4 text-left last:pb-0",
-                  isBlocked && "cursor-default",
+                  locked && "cursor-default",
                 )}
               >
                 {/* Rail: linha + nó */}

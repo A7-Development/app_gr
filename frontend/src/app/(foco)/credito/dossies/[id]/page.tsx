@@ -953,6 +953,28 @@ export default function DossierFocusPage() {
         : undefined,
   }))
 
+  // Marcadores não-interativos da trilha (handoff playbook): Abertura (node
+  // trigger — "análise aberta") e Encerramento (output — "abre ao fechar"). São
+  // só visuais; a coleta de identidade segue schema-driven nas estações reais.
+  const dossieFinalizado = dossier.status === "finalized"
+  const trilhaStations: StationItem[] = [
+    {
+      id: "__abertura__",
+      label: "Abertura",
+      sublabel: "análise aberta",
+      state: "fechada",
+      decorative: true,
+    },
+    ...sidebarItems,
+    {
+      id: "__encerramento__",
+      label: "Encerramento",
+      sublabel: dossieFinalizado ? "dossiê gerado" : "abre ao fechar as estações",
+      state: dossieFinalizado ? "fechada" : "bloqueada",
+      decorative: true,
+    },
+  ]
+
   const focusedIndex = focused ? estacoes.indexOf(focused) : -1
 
   // ── Caixa de vidro (Agentes ao vivo) — dados da estação ativa + globais ────
@@ -1810,7 +1832,7 @@ export default function DossierFocusPage() {
         meta={sidebarMeta || undefined}
         progressPct={progressPct}
         progressLabel={`${fechadas} de ${estacoes.length}`}
-        stations={sidebarItems}
+        stations={trilhaStations}
         activeId={focused?.id ?? null}
         onSelect={onSelect}
         dossierLabel={`Ver dossiê · ${progressPct}% montado`}
