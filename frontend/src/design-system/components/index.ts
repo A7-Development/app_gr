@@ -293,6 +293,7 @@ export { FocusRail, type FocusRailItem, type FocusRailProps } from "./FocusRail"
 export {
   StationsSidebar,
   type StationItem,
+  type StationPhase,
   type StationState,
   type StationsSidebarProps,
 } from "./StationsSidebar"
