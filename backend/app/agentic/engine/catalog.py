@@ -671,18 +671,20 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
             "achar a causa de uma mutacao, etc.). Tem o toolset completo da cota-sub."
         ),
         prompt_name="agent.controladoria.investigador_cota",
-        # Toolset enxuto (2026-06-06): cobre os grupos do waterfall + 1 tool de
-        # aprofundamento de papel. O resumo estruturado ja vem no contexto — as
-        # tools sao so pra investigar quando o estruturado nao basta.
+        # Toolset (2026-06-06, ampliado 2026-06-19): cobre os grupos do waterfall
+        # + aprofundamento de papel/cedente. O resumo estruturado ja vem no
+        # contexto — as tools sao so pra investigar quando o estruturado nao basta.
         tools=(
-            "get_variacao_carteira",        # DC
-            "get_drill_pdd",                # PDD & WOP
-            "get_movimento_cotas",          # Cotas prioritarias + obrigacoes
-            "get_movimento_contas_a_pagar", # despesa
-            "get_movimento_aplicacoes",     # aplicacoes (Fundos DI etc.)
-            "get_conferencia_liquidacao",   # caixa — entrada
-            "get_conferencia_cessao",       # caixa — saida
-            "get_historico_estoque_papel",  # aprofundar 1 papel
+            "get_variacao_carteira",            # DC
+            "get_drill_pdd",                    # PDD & WOP
+            "get_movimento_cotas",              # Cotas prioritarias + obrigacoes
+            "get_movimento_contas_a_pagar",     # despesa
+            "get_movimento_aplicacoes",         # aplicacoes (Fundos DI etc.)
+            "get_conferencia_liquidacao",       # caixa — entrada
+            "get_conferencia_cessao",           # caixa — saida
+            "get_historico_estoque_papel",      # aprofundar 1 papel (trajetoria VN/VP/PDD)
+            "get_eventos_liquidacao_adjacentes",  # eventos de liquidacao por papel (incl. ABATIMENTO CONCEDIDO)
+            "get_papeis_mesmo_cedente_sacado",    # exposicao/concentracao do par cedente-sacado
         ),
         output_schema=ChatVariacaoResponse,
         preferred_model="claude-opus-4-7",
