@@ -73,7 +73,7 @@ async def compute_movimento_cotas(
     )
 
     classes: list[ClasseCotaMovimento] = []
-    custo_prior = cap_prior = ZERO
+    custo_prior = cap_prior = cap_sub = result_sub = ZERO
     for c in dec["classes"]:
         classe = c["classe"]
         ec = Decimal(c["efeito_capital"])
@@ -83,12 +83,20 @@ async def compute_movimento_cotas(
         # Prioritaria e passivo, MAS o capital (aporte/resgate) entra/sai do caixa
         # na mesma medida -> NEUTRO no PL Sub em R$ (so dilui/concentra o % de
         # subordinacao, nao o valor). So o CARREGO (valorizacao) que a Sub paga
-        # impacta. O capital fica na coluna propria (efeito_capital). A propria
-        # Sub Jr: impacto = delta_pl (e o PL que estamos explicando).
-        impacto = -ev if is_prior else delta_pl
+        # impacta. O capital fica na coluna propria (efeito_capital).
+        #
+        # A propria Sub Jr: o `impacto` (e o cota_delta) e a RENTABILIDADE
+        # (efeito_valorizacao), NAO o delta_pl. O aporte/resgate do cotista
+        # subordinado (efeito_capital) e neutro no valor da cota — entra caixa e
+        # cota juntos — entao NAO e resultado. Antes usava delta_pl e o aporte
+        # vazava pro plug de Disponibilidades como se fosse resultado (bug 18/06).
+        impacto = -ev if is_prior else ev
         if is_prior:
             custo_prior += ev
             cap_prior += ec
+        else:
+            cap_sub += ec
+            result_sub += ev
         classes.append(
             ClasseCotaMovimento(
                 classe=classe, label=c["label"],
@@ -157,6 +165,8 @@ async def compute_movimento_cotas(
         classes=classes,
         custo_prioritarias_valorizacao=custo_prior,
         capital_liquido_prioritarias=cap_prior,
+        capital_liquido_sub=cap_sub,
+        resultado_sub=result_sub,
         obrigacoes=obrigacoes,
         obrigacoes_saldo_d0=obrig_d0,
         obrigacoes_delta=obrig_d0 - obrig_d1,

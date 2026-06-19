@@ -94,6 +94,18 @@ class ConferenciaCotasResponse(BaseModel):
         description="Σ efeito_capital das prioritarias (Sr+Mez). >0 = aporte (NEUTRO no "
                     "PL Sub em R$; muda so o % de subordinacao)."
     )
+    capital_liquido_sub: Decimal = Field(
+        default=Decimal("0"),
+        description="efeito_capital da PROPRIA cota Sub (aporte/resgate do cotista subordinado). "
+                    ">0 = aporte. NEUTRO na RENTABILIDADE (valor da cota) — entra caixa e cota "
+                    "juntos —, mas AUMENTA o PL Sub em R$. NAO e resultado: deve ser segregado "
+                    "do cota_delta (senao vaza pro plug de Disponibilidades)."
+    )
+    resultado_sub: Decimal = Field(
+        default=Decimal("0"),
+        description="efeito_valorizacao da cota Sub = rentabilidade do dia em R$ (= delta_pl - "
+                    "capital_liquido_sub). E o resultado real que o waterfall explica."
+    )
 
     # ── Obrigacoes com Cotistas (CPR capital_cotista) ───────────────────────
     obrigacoes:          list[ObrigacaoCotista] = Field(default_factory=list)

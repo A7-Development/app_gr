@@ -70,7 +70,11 @@ async def compute_variacao_headline(
     cap = await compute_movimento_contas_a_pagar(db, tenant_id=tenant_id, ua_id=ua_id, data_d0=data_d0, data_d1=d1)
 
     res = dc.resultado_do_dia
-    cota_delta = bal.pl_sub_d0 - bal.pl_sub_d1
+    # cota_delta = RESULTADO (rentabilidade), nao ΔPL bruto: segrega o aporte/
+    # resgate do COTISTA SUBORDINADO (neutro no valor da cota; entra caixa e cota
+    # juntos). Senao vazaria pro driver "Giro / reclassificacao" como se fosse
+    # resultado (mesmo bug do plug de Disponibilidades no resumo — 18/06).
+    cota_delta = bal.pl_sub_d0 - bal.pl_sub_d1 - cot.capital_liquido_sub
 
     drivers: list[HeadlineDriver] = []
 
@@ -133,6 +137,16 @@ async def compute_variacao_headline(
             impacto_pl_sub=ZERO,
             detalhe=f"aporte/resgate {_fmt(cot.capital_liquido_prioritarias)} "
                     "(neutro no PL Sub; dilui/concentra a subordinacao)",
+            drill_key=None, severidade="atencao",
+        ))
+    # Capital da PROPRIA cota Sub — aumenta o PL Sub em R$ mas e NEUTRO na
+    # rentabilidade (segregado do cota_delta acima). Evento de contexto, impacto 0.
+    if abs(cot.capital_liquido_sub) >= _TOL_MATERIAL:
+        drivers.append(HeadlineDriver(
+            key="capital_sub", label="Capital na cota Sub",
+            impacto_pl_sub=ZERO,
+            detalhe=f"aporte/resgate {_fmt(cot.capital_liquido_sub)} "
+                    "(entrou/saiu PL; neutro na rentabilidade — nao e resultado)",
             drill_key=None, severidade="atencao",
         ))
 
