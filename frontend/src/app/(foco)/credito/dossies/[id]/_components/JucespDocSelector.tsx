@@ -156,7 +156,7 @@ export function JucespDocSelector({
           disabled={!chosen}
         >
           <RiDownloadLine className="mr-1.5 size-4" aria-hidden />
-          Usar este documento
+          Baixar e extrair selecionado
         </Button>
         <Button
           variant="secondary"
@@ -169,7 +169,7 @@ export function JucespDocSelector({
         </Button>
         <span className="ml-auto hidden items-center gap-1 text-[11.5px] text-gray-400 sm:inline-flex">
           <RiInformationLine className="size-3.5" aria-hidden />
-          baixa direto da fonte oficial e lê com IA
+          baixar consome 1 download na JUCESP · a re-execução não reconsulta
         </span>
       </footer>
     </section>
