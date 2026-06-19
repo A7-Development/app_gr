@@ -29,7 +29,9 @@ o `workflow_node_run` como FAILED. Operador pode reprocessar ou pular.
 
 from __future__ import annotations
 
+import logging
 import re
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,6 +47,8 @@ from app.modules.integracoes.public import (
     execute_serasa_pj_query,
     fetch_bdc_dossie_pj,
 )
+
+logger = logging.getLogger(__name__)
 
 _SUPPORTED_ADAPTERS = {"serasa_pj", "serasa_pf", "bigdatacorp", "infosimples"}
 _WIRED_ADAPTERS = {"serasa_pj", "bigdatacorp"}  # demais caem no placeholder
@@ -228,6 +232,31 @@ class BureauQueryNode(BaseNode):
                 "bureau_query[bigdatacorp]: consulta nao concluiu — "
                 + "; ".join(result.errors)
             )
+
+        # Ponte cadastral: a consulta ja materializou o silver (wh_pj_cadastro),
+        # mas o card + a read-tool do agente leem `credit_dossier_company`. Sem o
+        # node `cadastral_enrichment` no grafo, a empresa-alvo ficava vazia e a
+        # analise cadastral via nulo. Enriquece a partir do silver/raw JA buscado
+        # (sem nova consulta paga). Best-effort: nao falha a consulta se nao aplicar.
+        dossier_id_raw = ctx.trigger_data.get("dossier_id")
+        if result.found and result.cadastral_found and dossier_id_raw:
+            try:
+                from app.modules.credito.services.cadastral import (
+                    enrich_target_from_pj_silver,
+                )
+
+                await enrich_target_from_pj_silver(
+                    db,
+                    tenant_id=ctx.tenant_id,
+                    dossier_id=UUID(str(dossier_id_raw)),
+                )
+            except Exception:
+                logger.warning(
+                    "bureau_query[bigdatacorp]: enrich_target_from_pj_silver falhou "
+                    "(consulta OK, segue sem bloquear)",
+                    exc_info=True,
+                )
+
         return NodeOutput(
             data={
                 "adapter": "bigdatacorp",
