@@ -2008,7 +2008,19 @@ export default function DossierFocusPage() {
                   rerunning={rerunMutation.isPending}
                 />
               ) : (
-                focused.members.map(renderMemberZone)
+                focused.members.map((m) => {
+                  const zone = renderMemberZone(m)
+                  if (zone == null) return null
+                  if (!zonasOn) return <React.Fragment key={m.id}>{zone}</React.Fragment>
+                  // Cada sub-área da bancada vem de um node — rotula com
+                  // nome · tipo · node_id (liga a tela ao editor de playbook).
+                  return (
+                    <div key={m.id} className="relative">
+                      <DevZoneLabel corner="tr">{zoneNodeLabel(m)}</DevZoneLabel>
+                      {zone}
+                    </div>
+                  )
+                })
               )}
             </div>
           </>
@@ -2077,6 +2089,26 @@ const AUDIT_NODE_META: Record<
   human_review: { label: "Homologação", actor: "Você", kind: "voce" },
   human_input: { label: "Entrada do analista", actor: "Você", kind: "voce" },
   output_generator: { label: "Seção gravada no dossiê", actor: "Sistema", kind: "sistema" },
+}
+
+// Nome amigável da SUB-ÁREA da bancada por tipo de node (overlay "Zonas").
+// Cada zona da bancada vem de um node do grafo — isto liga a tela ao editor.
+const ZONE_FRIENDLY_BY_NODETYPE: Record<string, string> = {
+  document_request: "Documento-fonte",
+  official_document_fetch: "Documento-fonte (fonte oficial)",
+  document_extractor: "Conferência da extração",
+  specialist_agent: "Leitura do agente",
+  deterministic_check: "Verificação",
+  human_input: "Coleta de dados",
+  human_review: "Homologação",
+  bureau_query: "Consulta a bureau",
+  cadastral_enrichment: "Enriquecimento cadastral",
+}
+
+// Rótulo "nome amigável · tipo · node_id" (o node_id é o que aparece no editor).
+function zoneNodeLabel(m: WizardMultiStepStep): string {
+  const friendly = ZONE_FRIENDLY_BY_NODETYPE[m.nodeType ?? ""] ?? (m.label || "Zona")
+  return `${friendly} · ${m.nodeType ?? "?"} · ${m.id}`
 }
 
 // ─── Chip do header por estado ──────────────────────────────────────────────
