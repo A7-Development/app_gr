@@ -121,7 +121,13 @@ async def compute_variacao_resumo(
     def _imp(*keys: str) -> Decimal:
         return sum((imp.get(k, ZERO) for k in keys), ZERO)
 
-    cota_delta = bal.pl_sub_d0 - bal.pl_sub_d1
+    # cota_delta = RESULTADO do dia (rentabilidade), nao o ΔPL bruto. O aporte/
+    # resgate do COTISTA SUBORDINADO (capital_liquido_sub) aumenta o PL Sub em R$
+    # mas e NEUTRO no valor da cota — entra caixa e cota juntos. Segregamos do
+    # cota_delta (vai pra "Giro e capital"); senao vazaria pro plug de
+    # Disponibilidades como se fosse resultado (bug 18/06: aporte de R$ 329k no
+    # Sub inflava Disponibilidades de ~R$ 6k pra +R$ 335k).
+    cota_delta = bal.pl_sub_d0 - bal.pl_sub_d1 - cot.capital_liquido_sub
 
     # ── 1. Direitos Creditorios — resultado giro-limpo ──────────────────────
     res = dc.resultado_do_dia
@@ -258,6 +264,12 @@ async def compute_variacao_resumo(
             tipo="giro_carteira", label="Compra/liquidação de carteira", valor=giro_carteira,
             nota=f"comprou {_fmt(res.giro_aquisicoes)} · liquidou {_fmt(res.giro_liquidacoes)}",
         ))
+    if abs(cot.capital_liquido_sub) >= _TOL:
+        giro_capital.append(GiroCapitalItem(
+            tipo="capital_cotista", label="Aporte/resgate na cota Sub",
+            valor=cot.capital_liquido_sub,
+            nota="capital próprio do subordinado — entra caixa e cota juntos; neutro na rentabilidade (NÃO é resultado)",
+        ))
     if abs(cot.capital_liquido_prioritarias) >= _TOL:
         giro_capital.append(GiroCapitalItem(
             tipo="capital_cotista", label="Aporte/resgate em cota prioritária",
@@ -294,10 +306,16 @@ async def compute_variacao_resumo(
     giro_total = sum((abs(g.valor) for g in giro_capital), ZERO)
 
     # ── Reconciliacao MEC ───────────────────────────────────────────────────
+    # Reconcilia RESULTADO-vs-RESULTADO: o aporte do Sub (capital_liquido_sub)
+    # esta no ΔPL bruto do MEC (pl_fonte_delta) tambem, entao subtrai dos DOIS
+    # lados pra comparar rentabilidade com rentabilidade. O residuo nao muda
+    # (mesmo termo dos dois lados). A "Variacao MEC oficial" passa a mostrar a
+    # rentabilidade (~+R$ 33k / 0,2665% em 18/06), nao o ΔPL bruto (+R$ 362k que
+    # inclui o aporte).
     r = bal.reconciliacao
     reconciliacao = ReconciliacaoResumo(
         variacao_apresentada=cota_delta,
-        variacao_mec=r.pl_fonte_delta,
+        variacao_mec=r.pl_fonte_delta - cot.capital_liquido_sub,
         residuo=r.residuo_delta,
         fecha=abs(r.residuo_delta) < Decimal("1"),
         residuo_saldo_d0=r.residuo_d0,
@@ -351,6 +369,14 @@ async def compute_variacao_resumo(
             valor=pdd.papeis_wop_total_pdd_d1,
             grupo_key="pdd_wop", grupo_label=_GRUPO_LABEL["pdd_wop"],
             drill_key="pdd", investigavel=True,
+        ))
+    if abs(cot.capital_liquido_sub) >= _TOL:
+        atencoes.append(AtencaoResumo(
+            tipo="capital",
+            descricao="Aporte/resgate de capital na cota Sub — entrou/saiu PL, NÃO é resultado (segregado do waterfall)",
+            valor=cot.capital_liquido_sub,
+            grupo_key="cotas_prioritarias", grupo_label=_GRUPO_LABEL["cotas_prioritarias"],
+            drill_key="senior", investigavel=True,
         ))
     if abs(cot.capital_liquido_prioritarias) >= _TOL:
         atencoes.append(AtencaoResumo(
