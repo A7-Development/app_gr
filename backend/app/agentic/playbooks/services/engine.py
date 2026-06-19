@@ -3,14 +3,18 @@
 Responsibilities:
 1. Start a run from a definition + trigger payload.
 2. Walk the graph topologically, executing nodes in dependency order.
-3. Handle parallel branches (siblings of a node execute concurrently).
+3. Handle parallel branches (siblings of a node are grouped in the same
+   topological level and executed one after another — see Concurrency).
 4. Persist state at every step (`workflow_run`, `workflow_node_run`).
 5. Pause when a node returns `should_pause=True` (human_input / human_review /
    document_request).
 6. Resume on demand: re-execute the paused node with submitted input.
 
 Concurrency model (MVP):
-- Sequential execution of independent paths via `asyncio.gather`.
+- Nodes within a topological level run SEQUENTIALLY on the shared `db`. A single
+  AsyncSession is not safe for concurrent use (asyncio.gather over the same
+  session raised "Session is already flushing" and failed any level with 2+
+  nodes). Independent results are identical; only wall-clock differs.
 - Single Postgres connection per run (caller provides via `db`).
 - Long-running nodes (specialist agents) await Anthropic streaming inside
   the same task — fine for MVP volumes, will move to APScheduler queue later.
@@ -23,7 +27,6 @@ State recovery:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -432,19 +435,32 @@ async def _execute_run(
             settled_ids.add(nid)
             skipped_ids.add(nid)
 
-        # Execute the rest in parallel.
+        # Execute the level's nodes SEQUENTIALLY on the shared `db`.
+        #
+        # They are independent (same topological level), but a single
+        # AsyncSession is NOT safe for concurrent use: running them via
+        # asyncio.gather made two coroutines flush/commit the SAME session at
+        # once -> "Session is already flushing", which FAILED the whole run the
+        # moment a level had 2+ nodes (e.g. a bureau_query alongside a
+        # document_request). Sequential execution yields identical results
+        # (order within a level doesn't matter) and keeps suspend correct; the
+        # only cost is wall-clock when a level has multiple slow nodes. True
+        # concurrency would require a session-per-node (separate workstream).
         to_execute = [nid for nid in pending_in_level if nid not in skip_set]
         if not to_execute:
             await db.flush()
             continue
 
-        results = await asyncio.gather(
-            *[
-                _execute_node(db, run, graph, _node_by_id(graph, nid), session=session)
-                for nid in to_execute
-            ],
-            return_exceptions=True,
-        )
+        results: list[NodeOutput | Exception] = []
+        for nid in to_execute:
+            try:
+                results.append(
+                    await _execute_node(
+                        db, run, graph, _node_by_id(graph, nid), session=session
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001 — espelha gather(return_exceptions=True)
+                results.append(exc)
 
         for nid, result in zip(to_execute, results, strict=True):
             if isinstance(result, Exception):
