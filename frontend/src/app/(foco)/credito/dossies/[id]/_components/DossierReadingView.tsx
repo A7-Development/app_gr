@@ -20,11 +20,9 @@ import {
 
 import { Button } from "@/components/tremor/Button"
 import {
-  KpiChartCard,
   ProvenanceSup,
   SectionRenderer,
   StrataIcon,
-  type KpiChartDatum,
 } from "@/design-system/components"
 import type { StationDescriptor } from "@/design-system/types/section"
 import type { WizardMultiStepStep } from "@/design-system/patterns/WizardMultiStep"
@@ -363,20 +361,34 @@ export function DossierReadingView({
                 </SectionBlock>
               )}
 
-              {/* §Faturamento */}
+              {/* §Faturamento — série mensal via bloco canônico `serie_temporal`. */}
               {monthly.length > 0 && (
                 <SectionBlock title="Faturamento">
-                  <KpiChartCard
-                    eyebrow={`Faturamento mensal · ${monthly.length} meses`}
-                    value={fmtBRLCompact(avg)}
-                    context={`média mensal · total ${fmtBRLCompact(sum)}`}
-                    data={monthly.map(
-                      (r): KpiChartDatum => ({
-                        label: fmtMonth(r.month),
-                        value: r.value,
-                      }),
-                    )}
-                    height={210}
+                  <SectionRenderer
+                    mode="read"
+                    section={{
+                      id: "dossie-faturamento-serie",
+                      stationId: "faturamento",
+                      titulo: "Faturamento",
+                      generatesDossierSection: false,
+                      blocks: [
+                        {
+                          id: "fat-serie",
+                          type: "serie_temporal",
+                          titulo: "Faturamento mensal",
+                          kpi: {
+                            eyebrow: `Faturamento mensal · ${monthly.length} meses`,
+                            valor: fmtBRLCompact(avg) ?? "—",
+                            contexto: `média mensal · total ${fmtBRLCompact(sum) ?? "—"}`,
+                          },
+                          pontos: monthly.map((r) => ({
+                            periodo: fmtMonth(r.month),
+                            valor: r.value,
+                          })),
+                          formato: "brl",
+                        },
+                      ],
+                    }}
                   />
                   <SourceNote>
                     Fonte: {primaryDoc?.original_filename ?? "documento homologado"}

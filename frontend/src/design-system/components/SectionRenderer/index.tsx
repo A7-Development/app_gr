@@ -40,6 +40,7 @@ import type {
   GraficoBlock,
   RenderMode,
   SectionDescriptor,
+  SerieTemporalBlock,
   SubDossieBlock,
   TabelaBlock,
   TextoBlock,
@@ -171,6 +172,33 @@ function GraficoBlockView({ block }: { block: GraficoBlock }) {
       context={block.kpi?.contexto}
       data={data}
     />
+  )
+}
+
+function SerieTemporalBlockView({ block }: { block: SerieTemporalBlock }) {
+  // Série periódica canônica: KPI headline + gráfico de barras + tabela compacta
+  // dos períodos. `formato` controla só a formatação dos valores na tabela.
+  const fmt: DenseColumn["format"] =
+    block.formato === "numero" ? "numero" : block.formato === "pct" ? "pct" : "brl"
+  return (
+    <div className="space-y-2">
+      <KpiChartCard
+        eyebrow={block.kpi?.eyebrow ?? block.titulo ?? "Série"}
+        value={block.kpi?.valor ?? ""}
+        delta={block.kpi?.delta}
+        context={block.kpi?.contexto}
+        data={block.pontos.map((p) => ({ label: p.periodo, value: p.valor }))}
+      />
+      {block.pontos.length > 0 && (
+        <DenseTable
+          columns={[
+            { key: "periodo", label: "Período" },
+            { key: "valor", label: "Valor", align: "right", format: fmt },
+          ]}
+          rows={block.pontos.map((p) => ({ periodo: p.periodo, valor: p.valor }))}
+        />
+      )}
+    </div>
   )
 }
 
@@ -476,6 +504,8 @@ function BlockView({ block, mode }: { block: Block; mode: RenderMode }) {
       return <TabelaBlockView block={block} />
     case "grafico":
       return <GraficoBlockView block={block} />
+    case "serie_temporal":
+      return <SerieTemporalBlockView block={block} />
     case "conclusao_agente":
       return <ConclusaoAgenteBlockView block={block} mode={mode} />
     case "apontamentos":

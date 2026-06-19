@@ -25,6 +25,7 @@ export type BlockType =
   | "ficha"
   | "tabela"
   | "grafico"
+  | "serie_temporal"
   | "conclusao_agente"
   | "apontamentos"
   | "texto"
@@ -98,6 +99,25 @@ export type GraficoBlock = BlockBase & {
   /** Headline KPI opcional (L1 eyebrow / L2 valor / L3 contexto). */
   kpi?: { eyebrow?: string; valor: string; delta?: string; contexto?: string }
   series: GraficoSerie[]
+}
+
+/** Um ponto da série periódica (mês/competência + valor). */
+export type SerieTemporalPonto = { periodo: string; valor: number }
+
+/**
+ * Série temporal/periódica — conceito recorrente de FIDC (faturamento mensal,
+ * PL mês a mês, rentabilidade…). Renderiza KPI headline + gráfico de barras +
+ * tabela compacta dos períodos. É a forma CANÔNICA de exibir uma série; o que
+ * varia é só o `formato` dos valores. (A conferência editável da série é
+ * interativa e vive na camada de trabalho, não como bloco.)
+ */
+export type SerieTemporalBlock = BlockBase & {
+  type: "serie_temporal"
+  titulo?: string
+  kpi?: { eyebrow?: string; valor: string; delta?: string; contexto?: string }
+  pontos: SerieTemporalPonto[]
+  /** Formato dos valores na tabela (default "brl"). */
+  formato?: "brl" | "numero" | "pct"
 }
 
 /** Conclusão de agente — o julgamento (resumo + recomendação + estado de homologação). */
@@ -183,6 +203,7 @@ export type Block =
   | FichaBlock
   | TabelaBlock
   | GraficoBlock
+  | SerieTemporalBlock
   | ConclusaoAgenteBlock
   | ApontamentosBlock
   | TextoBlock
