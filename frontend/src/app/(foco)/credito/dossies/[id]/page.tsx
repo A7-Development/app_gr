@@ -1873,7 +1873,7 @@ export default function DossierFocusPage() {
         onOpenDossier={onOpenDossier}
         dossierActive={viewDossie}
         trailLabel={`Trilha: ${trailEvents.length} eventos`}
-        devLabel={zonasOn ? "Trilha · StationsSidebar" : undefined}
+        devLabel={zonasOn ? "Trilha" : undefined}
       />
 
       <TrailSheet
@@ -1911,7 +1911,7 @@ export default function DossierFocusPage() {
         />
       ) : (
       <div className="relative flex h-full min-w-0 flex-1 flex-col">
-        {zonasOn && <DevZoneLabel corner="br">Bancada (área de trabalho)</DevZoneLabel>}
+        {zonasOn && <DevZoneLabel corner="br">Bancada</DevZoneLabel>}
         {focused ? (
           <>
             <StationHeader
@@ -1937,7 +1937,7 @@ export default function DossierFocusPage() {
                     : closure.statusText
                   : undefined
               }
-              devLabel={zonasOn ? "Cabeçalho da estação · StationHeader" : undefined}
+              devLabel={zonasOn ? "Cabeçalho" : undefined}
             />
             {/* block + space-y (não flex): zona com overflow-hidden teria
                 min-height 0 como flex item e seria esmagada pelo scroll. */}
@@ -2044,7 +2044,7 @@ export default function DossierFocusPage() {
           apontamentos={apontamentos}
           documentos={documentos}
           auditoria={auditoria}
-          devLabel={zonasOn ? "Painel de contexto · ContextPanel" : undefined}
+          devLabel={zonasOn ? "Painel de Contexto" : undefined}
         />
       )}
       </div>
@@ -2091,24 +2091,10 @@ const AUDIT_NODE_META: Record<
   output_generator: { label: "Seção gravada no dossiê", actor: "Sistema", kind: "sistema" },
 }
 
-// Nome amigável da SUB-ÁREA da bancada por tipo de node (overlay "Zonas").
-// Cada zona da bancada vem de um node do grafo — isto liga a tela ao editor.
-const ZONE_FRIENDLY_BY_NODETYPE: Record<string, string> = {
-  document_request: "Documento-fonte",
-  official_document_fetch: "Documento-fonte (fonte oficial)",
-  document_extractor: "Conferência da extração",
-  specialist_agent: "Leitura do agente",
-  deterministic_check: "Verificação",
-  human_input: "Coleta de dados",
-  human_review: "Homologação",
-  bureau_query: "Consulta a bureau",
-  cadastral_enrichment: "Enriquecimento cadastral",
-}
-
-// Rótulo "nome amigável · tipo · node_id" (o node_id é o que aparece no editor).
+// Rótulo do NODE na bancada (overlay "Zonas"): nome do node (label do editor)
+// + id do node — o id é o que aparece no editor de playbook.
 function zoneNodeLabel(m: WizardMultiStepStep): string {
-  const friendly = ZONE_FRIENDLY_BY_NODETYPE[m.nodeType ?? ""] ?? (m.label || "Zona")
-  return `${friendly} · ${m.nodeType ?? "?"} · ${m.id}`
+  return `${m.label || m.nodeType || "node"} · ${m.id}`
 }
 
 // ─── Chip do header por estado ──────────────────────────────────────────────
