@@ -106,11 +106,13 @@ export function VariacaoDiariaCard({
   return (
     <EvolucaoDiariaCard
       title="VARIAÇÃO DIÁRIA DA COTA"
-      // Origem explicita: Δ patrimonio da classe Sub, fonte MEC oficial (QiTech).
+      // Origem explicita: RENTABILIDADE da classe Sub (= Δ patrimonio - capital do
+      // cotista subordinado), fonte MEC oficial (QiTech). O aporte/resgate do Sub e
+      // segregado pra serie nao mostrar pico de capital como valorizacao (fix 18/06).
       // NAO e o calculado (metodo gestor) — esse vive no waterfall ao lado, que
       // reconcilia calc × MEC. Badge OriginDot canonico fica como follow-up
       // (precisa do ingested_at/versao reais vindos do endpoint).
-      presetLabel={`${competencia} · Δ patrimônio (R$/dia) · MEC oficial · clique num dia`}
+      presetLabel={`${competencia} · rentabilidade da cota (R$/dia) · MEC oficial · clique num dia`}
       data={data}
       headerKpi={headerKpi}
       valueFormatter={(v) => fmtBRLFull.format(v)}
