@@ -75,12 +75,16 @@ export function ConcentracaoCard({
   posicao,
   tabela,
   plTotal,
+  top10DeltaPp,
   loading,
 }: {
   titulo: string
   posicao: string
   tabela: ConcentracaoTabela | undefined
   plTotal: number | undefined
+  /** Variacao em pontos percentuais do Top 10 vs ponto anterior do historico
+   *  (derivado, real). Mostra "↑/↓ X,X pp" no KPI Top 10. undefined = sem delta. */
+  top10DeltaPp?: number
   loading: boolean
 }) {
   const singular = titulo.endsWith("s") ? titulo.slice(0, -1) : titulo
@@ -183,22 +187,50 @@ export function ConcentracaoCard({
     acm: tabela.total_pct_pl + tabela.outros_pct_pl,
   }
 
-  const kpis = [
+  // Delta do Top 10 (>= 0,05pp pra evitar ruido). ↑ verde / ↓ vermelho (handoff).
+  const top10Delta =
+    top10DeltaPp != null && Math.abs(top10DeltaPp) >= 0.05
+      ? {
+          up: top10DeltaPp >= 0,
+          text: `${Math.abs(top10DeltaPp).toLocaleString("pt-BR", {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1,
+          })} pp`,
+        }
+      : undefined
+
+  const kpis: Array<{ label: string; value: string; delta?: { up: boolean; text: string } }> = [
     { label: "Top 1", value: pct1(top1) },
     { label: "Top 5", value: pct1(top5) },
-    { label: "Top 10", value: pct1(top10) },
+    { label: "Top 10", value: pct1(top10), delta: top10Delta },
   ]
 
   return (
     <Card className="flex flex-col gap-3 p-4">
-      {/* Cabecalho: eyebrow + trio de KPIs (Top 1/5/10) + contexto */}
+      {/* Header 2 niveis (handoff Resumo·analise) */}
       <div>
-        <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">
-          Concentração de {titulo.toLowerCase()} — em R$
-        </p>
+        {/* Linha 1: eyebrow (esq) + PL/Carteira (dir), mesma baseline */}
+        <div className="flex items-baseline justify-between gap-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">
+            Concentração de {titulo.toLowerCase()} — em R$
+          </p>
+          <p className="shrink-0 whitespace-nowrap text-[12px] text-gray-500 dark:text-gray-400">
+            {plTotal != null && plTotal > 0 && (
+              <>
+                PL{" "}
+                <span className="font-semibold text-gray-900 dark:text-gray-100">
+                  {fmtMi(plTotal)}
+                </span>{" "}
+                ·{" "}
+              </>
+            )}
+            Carteira{" "}
+            <span className="font-semibold text-gray-700 dark:text-gray-300">{posicao}</span>
+          </p>
+        </div>
 
-        {/* Trio de KPIs — divisoria inteira gray-200 (spec §4b). */}
-        <div className="flex items-stretch">
+        {/* Linha 2: trio de KPIs — divisoria inteira gray-200 */}
+        <div className="mt-2.5 flex items-stretch">
           {kpis.map((k, idx) => (
             <div
               key={k.label}
@@ -212,17 +244,26 @@ export function ConcentracaoCard({
               <p className="text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400 dark:text-gray-500">
                 {k.label}
               </p>
-              <span className="mt-[3px] text-[20px] font-bold leading-none tabular-nums text-gray-900 dark:text-gray-50">
-                {k.value}
+              <span className="mt-[3px] flex items-baseline gap-1.5">
+                <span className="text-[20px] font-bold leading-none tabular-nums text-gray-900 dark:text-gray-50">
+                  {k.value}
+                </span>
+                {k.delta && (
+                  <span
+                    className={cx(
+                      "text-[12px] font-semibold tabular-nums",
+                      k.delta.up
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-red-600 dark:text-red-400",
+                    )}
+                  >
+                    {k.delta.up ? "↑" : "↓"} {k.delta.text}
+                  </span>
+                )}
               </span>
             </div>
           ))}
         </div>
-
-        <p className="mt-2.5 text-[12px] text-gray-500 dark:text-gray-400">
-          {plTotal != null && plTotal > 0 ? `PL ${fmtMi(plTotal)} · ` : ""}
-          Carteira {posicao}
-        </p>
       </div>
 
       {loading ? (
@@ -242,6 +283,14 @@ export function ConcentracaoCard({
           rowClassName={rowClassName}
         />
       )}
+
+      {/* Proveniencia — sangra ate as bordas (-mx-4), dot laranja (§14.5). */}
+      <div className="-mx-4 -mb-4 flex items-center gap-1.5 border-t border-gray-100 px-4 py-2 dark:border-gray-900">
+        <span className="size-[5px] shrink-0 rounded-full bg-[#F05A28]" aria-hidden />
+        <span className="text-[10px] text-gray-400 dark:text-gray-500">
+          Fonte: posição da carteira · {posicao}
+        </span>
+      </div>
     </Card>
   )
 }
