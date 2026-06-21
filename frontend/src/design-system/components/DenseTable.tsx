@@ -28,6 +28,7 @@ import {
   TableRow,
 } from "@/components/tremor/Table"
 import { tableTokens } from "@/design-system/tokens/table"
+import { rowHeightClass, type DensityMode } from "@/design-system/tokens/spacing"
 import { cx } from "@/lib/utils"
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -72,6 +73,9 @@ export type DenseTableProps = {
    *  texto truncam (com `truncate` no render) em vez de quebrar a linha.
    *  Default `auto` (comportamento original — nao afeta tabelas existentes). */
   tableLayout?: "auto" | "fixed"
+  /** Altura de linha de DADOS. Default "compact" (32px). Use "ultra" (28px)
+   *  p/ a densidade do handoff §4b (modo analise). Header segue 28px. */
+  density?: DensityMode
   /** Classe extra por linha de DADOS (recebe row + index). Use p/ trilho/realce
    *  condicional (ex.: barra azul nas linhas-marco 1/5/10 do modo analise). */
   rowClassName?: (row: DenseRow, index: number) => string
@@ -123,9 +127,11 @@ export function DenseTable({
   caption,
   bordered = true,
   tableLayout = "auto",
+  density = "compact",
   rowClassName,
   className,
 }: DenseTableProps) {
+  const rowH = rowHeightClass(density)
   const renderRow = (
     row: DenseRow,
     { strong = false, muted = false }: { strong?: boolean; muted?: boolean } = {},
@@ -174,12 +180,13 @@ export function DenseTable({
             </tr>
           </thead>
           <tbody>
-            {/* Linha 32px (h-8) — grade unica da familia (handoff v2). */}
+            {/* Linha = density (default 32px/h-8; "ultra"=28px/h-7). */}
             {rows.map((row, i) => (
               <tr
                 key={i}
                 className={cx(
-                  "h-8 border-b border-gray-100 last:border-0 dark:border-gray-900",
+                  rowH,
+                  "border-b border-gray-100 last:border-0 dark:border-gray-900",
                   rowClassName?.(row, i),
                 )}
               >
@@ -187,14 +194,15 @@ export function DenseTable({
               </tr>
             ))}
             {footer && (
-              <tr className="h-8 border-t border-t-gray-200 bg-gray-50/60 dark:border-t-gray-800 dark:bg-gray-900/40">
+              <tr className={cx(rowH, "border-t border-t-gray-200 bg-gray-50/60 dark:border-t-gray-800 dark:bg-gray-900/40")}>
                 {renderRow(footer, { strong: true })}
               </tr>
             )}
             {footerSecondary && (
               <tr
                 className={cx(
-                  "h-8 bg-gray-50/40 dark:bg-gray-900/20",
+                  rowH,
+                  "bg-gray-50/40 dark:bg-gray-900/20",
                   !footer && "border-t border-t-gray-200 dark:border-t-gray-800",
                 )}
               >
