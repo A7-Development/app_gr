@@ -16,10 +16,12 @@ import { useSearchParams } from "next/navigation"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { RiArrowLeftLine, RiSaveLine, RiSparkling2Line, RiStackLine } from "@remixicon/react"
+import type { ColumnDef } from "@tanstack/react-table"
 
 import { Button } from "@/components/tremor/Button"
 import { Checkbox } from "@/components/tremor/Checkbox"
 import { Input } from "@/components/tremor/Input"
+import { DataTable } from "@/design-system/components/DataTable"
 import { tableTokens } from "@/design-system/tokens/table"
 import {
   dataContracts,
@@ -151,6 +153,87 @@ function ContratosInner() {
 
   const detail = detailQ.data
 
+  const columns = React.useMemo<ColumnDef<DataContractField, unknown>[]>(
+    () => [
+      {
+        id: "campo",
+        header: "Campo",
+        cell: ({ row }) => {
+          const c = row.original
+          return (
+            <span>
+              <span className={tableTokens.cellTextMono}>{c.field_path}</span>
+              {c.novo && (
+                <span
+                  className={cx(
+                    tableTokens.badge,
+                    "ml-1.5 bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
+                  )}
+                >
+                  novo
+                </span>
+              )}
+            </span>
+          )
+        },
+      },
+      {
+        id: "rotulo",
+        header: "Rótulo (pt-BR)",
+        cell: ({ row }) => (
+          <Input
+            value={row.original.public_label ?? ""}
+            onChange={(e) =>
+              update(row.index, { public_label: e.target.value })
+            }
+            className="h-7"
+          />
+        ),
+      },
+      {
+        id: "categoria",
+        header: "Categoria",
+        cell: ({ row }) => (
+          <Input
+            value={row.original.categoria_ui ?? ""}
+            onChange={(e) =>
+              update(row.index, { categoria_ui: e.target.value })
+            }
+            className="h-7 w-32"
+          />
+        ),
+      },
+      {
+        id: "exemplo",
+        header: "Exemplo",
+        cell: ({ row }) => (
+          <span
+            className={cx(tableTokens.cellSecondary, "block max-w-[220px] truncate")}
+          >
+            {row.original.valor_exemplo ?? "—"}
+          </span>
+        ),
+      },
+      ...TOGGLES.map<ColumnDef<DataContractField, unknown>>((t) => ({
+        id: t.key,
+        header: t.label,
+        meta: { align: "center" },
+        cell: ({ row }) => (
+          <div className="flex justify-center">
+            <Checkbox
+              checked={row.original[t.key]}
+              onCheckedChange={(v) => onToggle(row.index, t.key, v === true)}
+            />
+          </div>
+        ),
+      })),
+    ],
+    // update/onToggle sao estaveis o suficiente (definidas no corpo); draft muda
+    // por re-render e o DataTable recebe data nova, entao as cells refletem o estado.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
+
   return (
     <div className="px-6 py-6">
       {deepLink && (
@@ -226,69 +309,7 @@ function ContratosInner() {
             </div>
           )}
 
-          <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
-            <table className="w-full min-w-[1000px]">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/60 dark:border-gray-900 dark:bg-gray-900/40">
-                  <th className={cx(tableTokens.header, "px-3 py-2 text-left")}>Campo</th>
-                  <th className={cx(tableTokens.header, "px-3 py-2 text-left")}>Rótulo (pt-BR)</th>
-                  <th className={cx(tableTokens.header, "px-3 py-2 text-left")}>Categoria</th>
-                  <th className={cx(tableTokens.header, "px-3 py-2 text-left")}>Exemplo</th>
-                  {TOGGLES.map((t) => (
-                    <th key={t.key} className={cx(tableTokens.header, "px-2 py-2 text-center")}>
-                      {t.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {draft.map((c, i) => (
-                  <tr
-                    key={c.field_path}
-                    className="border-b border-gray-50 last:border-0 dark:border-gray-900/60"
-                  >
-                    <td className="px-3 py-1.5">
-                      <span className={tableTokens.cellTextMono}>{c.field_path}</span>
-                      {c.novo && (
-                        <span className={cx(tableTokens.badge, "ml-1.5 bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300")}>
-                          novo
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-1.5">
-                      <Input
-                        value={c.public_label ?? ""}
-                        onChange={(e) => update(i, { public_label: e.target.value })}
-                        className="h-7"
-                      />
-                    </td>
-                    <td className="px-3 py-1.5">
-                      <Input
-                        value={c.categoria_ui ?? ""}
-                        onChange={(e) => update(i, { categoria_ui: e.target.value })}
-                        className="h-7 w-32"
-                      />
-                    </td>
-                    <td className="px-3 py-1.5">
-                      <span className={cx(tableTokens.cellSecondary, "block max-w-[220px] truncate")}>
-                        {c.valor_exemplo ?? "—"}
-                      </span>
-                    </td>
-                    {TOGGLES.map((t) => (
-                      <td key={t.key} className="px-2 py-1.5 text-center">
-                        <div className="flex justify-center">
-                          <Checkbox
-                            checked={c[t.key]}
-                            onCheckedChange={(v) => onToggle(i, t.key, v === true)}
-                          />
-                        </div>
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable<DataContractField> data={draft} columns={columns} />
 
           <p className={cx(tableTokens.cellSecondary, "mt-2")}>
             Regra: marcar <b>Check</b> liga <b>Silver</b> automaticamente (check ⇒ silver). Salvar cria uma nova versão e a ativa.

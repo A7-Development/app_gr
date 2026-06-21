@@ -24,6 +24,7 @@ import {
   RiPriceTag3Line,
   RiSparkling2Line,
 } from "@remixicon/react"
+import type { ColumnDef } from "@tanstack/react-table"
 
 import { Badge } from "@/components/tremor/Badge"
 import { Button } from "@/components/tremor/Button"
@@ -31,7 +32,7 @@ import { Checkbox } from "@/components/tremor/Checkbox"
 import { Input } from "@/components/tremor/Input"
 import { Label } from "@/components/tremor/Label"
 import { Switch } from "@/components/tremor/Switch"
-import { DrillDownSheet, PageHeader } from "@/design-system/components"
+import { DataTable, DrillDownSheet, PageHeader } from "@/design-system/components"
 import { tableTokens } from "@/design-system/tokens/table"
 import {
   dataCatalog,
@@ -235,85 +236,13 @@ export default function CatalogoPage() {
                 </button>
 
                 {isOpen && (
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-y border-gray-100 dark:border-gray-900">
-                        <th className={cx(tableTokens.header, "px-3 py-1.5 text-left")}>Dataset (vendor)</th>
-                        <th className={cx(tableTokens.header, "px-3 py-1.5 text-left")}>Nome · public_code</th>
-                        <th className={cx(tableTokens.header, "px-3 py-1.5 text-center")}>Ativo</th>
-                        <th className={cx(tableTokens.header, "px-3 py-1.5 text-left")}>Contrato</th>
-                        <th className={cx(tableTokens.header, "px-3 py-1.5 text-right")}>Custo</th>
-                        <th className={cx(tableTokens.header, "px-3 py-1.5")}></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {a.datasets.map((d) => (
-                        <tr
-                          key={d.dataset_id}
-                          className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 dark:border-gray-900/60 dark:hover:bg-gray-900/30"
-                        >
-                          <td className="px-3 py-1.5">
-                            <span className={tableTokens.cellTextMono}>{d.provider_dataset_code}</span>
-                            {d.provider_query_name && (
-                              <span className={cx(tableTokens.cellSecondary, "ml-1.5")}>
-                                ({d.provider_query_name})
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-3 py-1.5">
-                            {d.public_code ? (
-                              <span className={tableTokens.cellText}>
-                                {d.display_name_pt_br ?? "—"}{" "}
-                                <span className="font-medium text-blue-700 dark:text-blue-300">
-                                  · {d.public_code}
-                                </span>
-                              </span>
-                            ) : (
-                              <span className={cx(tableTokens.cellMuted, "italic")}>
-                                — sugerir: {d.suggested_public_code}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-3 py-1.5 text-center">
-                            <div className="flex justify-center">
-                              <Switch
-                                checked={d.enabled_for_sale}
-                                disabled={
-                                  enableMut.isPending &&
-                                  enableMut.variables?.row.dataset_id === d.dataset_id
-                                }
-                                onCheckedChange={(v) =>
-                                  enableMut.mutate({ row: d, enabled: v })
-                                }
-                              />
-                            </div>
-                          </td>
-                          <td className="px-3 py-1.5">
-                            {d.contract.status === "active" ? (
-                              <Badge variant="success">
-                                <RiCheckboxCircleFill className="size-3" aria-hidden />
-                                v{d.contract.version} · {d.contract.n_campos} campos
-                              </Badge>
-                            ) : (
-                              <span className={tableTokens.cellMuted}>—</span>
-                            )}
-                          </td>
-                          <td className={cx("px-3 py-1.5 text-right", tableTokens.cellNumberSecondary)}>
-                            {d.mode === "marketplace" ? brl(d.current_cost_brl) : "—"}
-                          </td>
-                          <td className="px-3 py-1.5 text-right">
-                            <Button
-                              variant="light"
-                              className="h-7 px-2 text-xs"
-                              onClick={() => setEditing(d)}
-                            >
-                              Gerenciar
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div className="border-t border-gray-100 dark:border-gray-900">
+                    <DatasetTable
+                      datasets={a.datasets}
+                      enableMut={enableMut}
+                      onManage={setEditing}
+                    />
+                  </div>
                 )}
               </div>
             )
@@ -336,6 +265,138 @@ export default function CatalogoPage() {
       />
     </div>
   )
+}
+
+// ─── Tabela de datasets de uma API (DataTable canonica) ──────────────────────
+
+type EnableMutation = ReturnType<
+  typeof useMutation<
+    unknown,
+    Error,
+    { row: CatalogDatasetRow; enabled: boolean }
+  >
+>
+
+function DatasetTable({
+  datasets,
+  enableMut,
+  onManage,
+}: {
+  datasets: CatalogDatasetRow[]
+  enableMut: EnableMutation
+  onManage: (row: CatalogDatasetRow) => void
+}) {
+  const columns = React.useMemo<ColumnDef<CatalogDatasetRow, unknown>[]>(
+    () => [
+      {
+        id: "dataset",
+        header: "Dataset (vendor)",
+        cell: ({ row }) => {
+          const d = row.original
+          return (
+            <span>
+              <span className={tableTokens.cellTextMono}>
+                {d.provider_dataset_code}
+              </span>
+              {d.provider_query_name && (
+                <span className={cx(tableTokens.cellSecondary, "ml-1.5")}>
+                  ({d.provider_query_name})
+                </span>
+              )}
+            </span>
+          )
+        },
+      },
+      {
+        id: "nome",
+        header: "Nome · public_code",
+        cell: ({ row }) => {
+          const d = row.original
+          return d.public_code ? (
+            <span className={tableTokens.cellText}>
+              {d.display_name_pt_br ?? "—"}{" "}
+              <span className="font-medium text-blue-700 dark:text-blue-300">
+                · {d.public_code}
+              </span>
+            </span>
+          ) : (
+            <span className={cx(tableTokens.cellMuted, "italic")}>
+              — sugerir: {d.suggested_public_code}
+            </span>
+          )
+        },
+      },
+      {
+        id: "ativo",
+        header: "Ativo",
+        meta: { align: "center" },
+        cell: ({ row }) => {
+          const d = row.original
+          return (
+            <div className="flex justify-center">
+              <Switch
+                checked={d.enabled_for_sale}
+                disabled={
+                  enableMut.isPending &&
+                  enableMut.variables?.row.dataset_id === d.dataset_id
+                }
+                onCheckedChange={(v) =>
+                  enableMut.mutate({ row: d, enabled: v })
+                }
+              />
+            </div>
+          )
+        },
+      },
+      {
+        id: "contrato",
+        header: "Contrato",
+        cell: ({ row }) => {
+          const d = row.original
+          return d.contract.status === "active" ? (
+            <Badge variant="success">
+              <RiCheckboxCircleFill className="size-3" aria-hidden />
+              v{d.contract.version} · {d.contract.n_campos} campos
+            </Badge>
+          ) : (
+            <span className={tableTokens.cellMuted}>—</span>
+          )
+        },
+      },
+      {
+        id: "custo",
+        header: "Custo",
+        meta: { align: "right" },
+        cell: ({ row }) => {
+          const d = row.original
+          return (
+            <span className={cx(tableTokens.cellNumberSecondary, "block text-right")}>
+              {d.mode === "marketplace" ? brl(d.current_cost_brl) : "—"}
+            </span>
+          )
+        },
+      },
+      {
+        id: "acoes",
+        header: "",
+        meta: { align: "right" },
+        cell: ({ row }) => (
+          <div className="flex justify-end">
+            <Button
+              variant="light"
+              className="h-7 px-2 text-xs"
+              onClick={() => onManage(row.original)}
+            >
+              Gerenciar
+            </Button>
+          </div>
+        ),
+      },
+    ],
+    [enableMut, onManage],
+  )
+
+  return <DataTable<CatalogDatasetRow> data={datasets} columns={columns} />
 }
 
 // ─── Drawer de curadoria do dataset ──────────────────────────────────────────

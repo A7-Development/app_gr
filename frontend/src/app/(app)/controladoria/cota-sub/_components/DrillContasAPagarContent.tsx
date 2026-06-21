@@ -9,8 +9,13 @@
  *   1. Provisoes (CPR<0) — apropriacao (accrual) vs baixa (paga/estornada).
  *   2. Pagamentos do caixa — por codigo do extrato, com flag de provisionado.
  *   3. Fora de escopo — capital de cotista que nao e despesa (sinalizado).
+ *
+ * 2026-05-29: a tabela "Pagamentos do caixa" migrou do `<table>` artesanal para
+ * a DataTable canonica `density="ultra"` (h-7/28px) — regra dura de consistencia
+ * dos drills da Cota Sub. Sem corte (lista TODOS os pagamentos do dia).
  */
 
+import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 import { RiAlertLine, RiBankCardLine, RiErrorWarningLine, RiFileList3Line } from "@remixicon/react"
 
 import { cx } from "@/lib/utils"
@@ -18,11 +23,10 @@ import { useDrillContasAPagar } from "@/lib/hooks/controladoria"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 import { Button } from "@/components/tremor/Button"
+import { DataTable } from "@/design-system/components/DataTable"
+import { tableTokens } from "@/design-system/tokens/table"
 import {
   DrillSectionTitle,
-  drillRowBorder,
-  drillTableWrap,
-  drillThead,
   fmtBRL,
 } from "./drillKit"
 import { DrillImpactoTable, makeImpactoColumns } from "./DrillImpactoTable"
@@ -37,6 +41,66 @@ const PROVISOES_COLS = makeImpactoColumns({ nome: "Rubrica", d1: "D-1", d0: "D0"
 const CANAL: Record<string, string> = {
   codigo_proprio: "Débito direto", tarifa_ted: "Tarifa de TED", ted_fornecedor: "TED a fornecedor",
 }
+
+// Props compartilhadas das DataTables do drill — ultra, sem toolbar, container
+// bordado (espelha o antigo drillTableWrap).
+const DT_PROPS = {
+  density:           "ultra",
+  virtualize:        false,
+  showColumnManager: false,
+  showDensityToggle: false,
+  showExport:        false,
+  className:         "rounded border border-gray-200 dark:border-gray-800",
+} as const
+
+const FOOT_ROW = "border-t-2 border-t-gray-300 dark:border-t-gray-700"
+
+// Linha de pagamento de caixa (linha-a-linha do extrato classificada por canal).
+type PagamentoRow = {
+  label:         string
+  contrapartida: string | null
+  canal:         string
+  valor:         number
+  provisionado:  boolean
+  historico:     string
+}
+
+const pagCol = createColumnHelper<PagamentoRow>()
+
+const PAGAMENTOS_COLUMNS: ColumnDef<PagamentoRow, unknown>[] = [
+  pagCol.accessor("label", {
+    id: "label", header: "Despesa / fornecedor", size: 220,
+    cell: (info) => (
+      <span className={cx("block max-w-[200px] truncate", tableTokens.cellText)} title={info.row.original.contrapartida ?? info.getValue<string>()}>
+        {info.getValue<string>()}
+      </span>
+    ),
+  }) as ColumnDef<PagamentoRow, unknown>,
+  pagCol.accessor("canal", {
+    id: "canal", header: "Canal", size: 150,
+    cell: (info) => (
+      <span className={cx("block truncate", tableTokens.cellSecondary)}>{CANAL[info.getValue<string>()] ?? info.getValue<string>()}</span>
+    ),
+  }) as ColumnDef<PagamentoRow, unknown>,
+  pagCol.accessor("valor", {
+    id: "valor", header: "Valor", size: 120, meta: { align: "right" },
+    cell: (info) => <div className={cx("text-right", tableTokens.cellNumber)}>{fmtBRL.format(info.getValue<number>())}</div>,
+  }) as ColumnDef<PagamentoRow, unknown>,
+  pagCol.accessor("provisionado", {
+    id: "provisionado", header: "Provisionado?", size: 120, meta: { align: "center" },
+    cell: (info) => (
+      <div className="text-center">
+        {info.getValue<boolean>() ? (
+          <span className="text-[11px] text-emerald-600 dark:text-emerald-400">sim</span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+            <RiErrorWarningLine className="size-3.5" aria-hidden /> não
+          </span>
+        )}
+      </div>
+    ),
+  }) as ColumnDef<PagamentoRow, unknown>,
+]
 
 type Props = { fundoId: string; data: string; dataAnterior?: string | null }
 
@@ -61,6 +125,14 @@ export function DrillContasAPagarContent({ fundoId, data, dataAnterior }: Props)
   }
   const d = q.data
   const temImpacto = d.impacto_resultado_nao_provisionado >= 1
+  const pagamentos: PagamentoRow[] = d.pagamentos.map((p) => ({
+    label:         p.label,
+    contrapartida: p.contrapartida ?? null,
+    canal:         p.canal,
+    valor:         p.valor,
+    provisionado:  p.provisionado,
+    historico:     p.historico,
+  }))
 
   return (
     <div className="flex flex-col gap-5">
@@ -114,38 +186,23 @@ export function DrillContasAPagarContent({ fundoId, data, dataAnterior }: Props)
           help="Debitos de despesa do extrato classificados por codigo. provisionado=False -> saiu sem provisao."
           tone={d.total_nao_provisionado >= 1 ? "alert" : "neutral"}
         />
-        {d.pagamentos.length === 0 ? (
+        {pagamentos.length === 0 ? (
           <p className="mt-2 text-[12px] text-gray-500 dark:text-gray-400">Nenhum pagamento de despesa no caixa do dia.</p>
         ) : (
-          <div className={cx("mt-2", drillTableWrap)}>
-            <table className="w-full whitespace-nowrap text-[12px] tabular-nums">
-              <thead className={drillThead}>
-                <tr>
-                  <th className="px-3 py-1.5 text-left font-medium">Despesa / fornecedor</th>
-                  <th className="px-3 py-1.5 text-left font-medium">Canal</th>
-                  <th className="px-3 py-1.5 text-right font-medium">Valor</th>
-                  <th className="px-3 py-1.5 text-center font-medium">Provisionado?</th>
+          <div className="mt-2">
+            <DataTable<PagamentoRow>
+              {...DT_PROPS}
+              data={pagamentos}
+              columns={PAGAMENTOS_COLUMNS}
+              rowClassName={(r) => cx(!r.provisionado && "bg-amber-50/40 dark:bg-amber-950/10")}
+              renderFooter={() => (
+                <tr className={FOOT_ROW}>
+                  <td colSpan={2} className="px-3"><span className={tableTokens.cellStrong}>Σ pago · {pagamentos.length} pagamento(s)</span></td>
+                  <td className="px-3"><div className={cx("text-right", tableTokens.cellStrong)}>{fmtBRL.format(d.total_pago)}</div></td>
+                  <td className="px-3" />
                 </tr>
-              </thead>
-              <tbody>
-                {d.pagamentos.map((p, i) => (
-                  <tr key={`${p.historico}-${i}`} className={cx(drillRowBorder, !p.provisionado && "bg-amber-50/40 dark:bg-amber-950/10")}>
-                    <td className="max-w-[200px] truncate px-3 py-1.5 text-left text-gray-900 dark:text-gray-100" title={p.contrapartida ?? p.label}>{p.label}</td>
-                    <td className="px-3 py-1.5 text-left text-gray-500 dark:text-gray-400">{CANAL[p.canal] ?? p.canal}</td>
-                    <td className="px-3 py-1.5 text-right text-gray-900 dark:text-gray-100">{fmtBRL.format(p.valor)}</td>
-                    <td className="px-3 py-1.5 text-center">
-                      {p.provisionado ? (
-                        <span className="text-[11px] text-emerald-600 dark:text-emerald-400">sim</span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">
-                          <RiErrorWarningLine className="size-3.5" aria-hidden /> não
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              )}
+            />
           </div>
         )}
       </section>

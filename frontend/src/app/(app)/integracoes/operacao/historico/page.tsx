@@ -29,8 +29,6 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import {
-  RiArrowDownSLine,
-  RiArrowRightSLine,
   RiCheckLine,
   RiExternalLinkLine,
   RiFilterLine,
@@ -49,17 +47,12 @@ import {
 } from "@/design-system/components/FilterBar"
 import { JsonPreview } from "@/design-system/components/JsonPreview"
 import { SegmentSwitch } from "@/design-system/components/SegmentSwitch"
+import {
+  ExpandableTable,
+  type ExpandableColumn,
+} from "@/design-system/components/ExpandableTable"
 import { Badge } from "@/components/tremor/Badge"
 import { Button } from "@/components/tremor/Button"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRoot,
-  TableRow,
-} from "@/components/tremor/Table"
 import { tableTokens } from "@/design-system/tokens/table"
 import { cx, focusRing } from "@/lib/utils"
 import {
@@ -101,6 +94,24 @@ const STATUS_SEGMENTS: { value: StatusKey; label: string }[] = [
   { value: "ok", label: "OK" },
   { value: "error", label: "Erro" },
 ]
+
+/** Painel de detalhe da run (explicacao + JSON de output). */
+function runDetail(run: CrossSourceRunEntry) {
+  return (
+    <div className="flex flex-col gap-3">
+      {run.explanation && (
+        <div className="flex flex-col gap-1">
+          <span className={tableTokens.header}>Explicação</span>
+          <p className="text-sm text-gray-700 dark:text-gray-300">{run.explanation}</p>
+        </div>
+      )}
+      <div className="flex flex-col gap-1">
+        <span className={tableTokens.header}>Output</span>
+        <JsonPreview value={run.output ?? {}} maxHeight={400} />
+      </div>
+    </div>
+  )
+}
 
 export default function HistoricoCrossSourcePage() {
   const sp = useSearchParams()
@@ -159,6 +170,91 @@ export default function HistoricoCrossSourcePage() {
     for (const s of sourcesUnique) m.set(s.source_type, s.label)
     return m
   }, [sourcesUnique])
+
+  // Colunas do modo master-detail (ExpandableTable).
+  const columns = React.useMemo<ExpandableColumn<CrossSourceRunEntry>[]>(
+    () => [
+      {
+        id: "quando",
+        header: "Quando",
+        cell: (run) => (
+          <span className={tableTokens.cellText}>
+            {format(new Date(run.occurred_at), "dd/MM/yyyy HH:mm:ss", { locale: ptBR })}
+          </span>
+        ),
+      },
+      {
+        id: "fonte",
+        header: "Fonte",
+        cell: (run) => (
+          <div className="flex flex-col">
+            <span className={tableTokens.cellStrong}>
+              {labelBySourceType.get(run.source_type) ?? run.source_type}
+            </span>
+            <span className={tableTokens.cellSecondary}>{run.source_type}</span>
+          </div>
+        ),
+      },
+      {
+        id: "triggered_by",
+        header: "Disparado por",
+        cell: (run) => <span className={tableTokens.cellTextMono}>{run.triggered_by}</span>,
+      },
+      {
+        id: "adapter",
+        header: "Adapter",
+        cell: (run) => (
+          <div className="flex flex-col">
+            <span className={tableTokens.cellText}>{run.rule_or_model}</span>
+            {run.rule_or_model_version && (
+              <span className={tableTokens.cellSecondary}>{run.rule_or_model_version}</span>
+            )}
+          </div>
+        ),
+      },
+      {
+        id: "resumo",
+        header: "Resumo",
+        cell: (run) => {
+          const output = run.output ?? {}
+          const errors = (output.errors ?? []) as unknown[]
+          const elapsed = output.elapsed_seconds as number | undefined
+          const hasErrors = errors.length > 0
+          return (
+            <div className="flex items-center gap-2">
+              <Badge variant={hasErrors ? "warning" : "success"}>
+                {hasErrors ? `${errors.length} erro(s)` : "OK"}
+              </Badge>
+              {elapsed !== undefined && (
+                <span className={tableTokens.cellSecondary}>{elapsed.toFixed(1)}s</span>
+              )}
+            </div>
+          )
+        },
+      },
+      {
+        id: "acao",
+        header: "",
+        align: "right",
+        widthClass: "w-10",
+        cell: (run) => (
+          <Link
+            href={`/integracoes/fontes/${encodeURIComponent(run.source_type)}?tab=diagnostico&view=historico`}
+            onClick={(e) => e.stopPropagation()}
+            className={cx(
+              "inline-flex size-7 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200",
+              focusRing,
+            )}
+            aria-label={`Abrir historico da fonte ${labelBySourceType.get(run.source_type) ?? run.source_type}`}
+            title="Abrir detalhe da fonte"
+          >
+            <RiExternalLinkLine className="size-3.5" aria-hidden />
+          </Link>
+        ),
+      },
+    ],
+    [labelBySourceType],
+  )
 
   const sourceChipValue =
     selectedSources.length === 0
@@ -349,164 +445,17 @@ export default function HistoricoCrossSourcePage() {
 
       {!isError && (data === undefined || data.length > 0) && (
         <div className="rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
-          <TableRoot>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableHeaderCell className="w-8" />
-                  <TableHeaderCell>Quando</TableHeaderCell>
-                  <TableHeaderCell>Fonte</TableHeaderCell>
-                  <TableHeaderCell>Disparado por</TableHeaderCell>
-                  <TableHeaderCell>Adapter</TableHeaderCell>
-                  <TableHeaderCell>Resumo</TableHeaderCell>
-                  <TableHeaderCell className="w-10" />
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {isLoading &&
-                  Array.from({ length: 6 }).map((_, i) => (
-                    <TableRow key={`skeleton-${i}`}>
-                      <TableCell colSpan={7}>
-                        <div className="h-6 w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                {!isLoading &&
-                  data?.map((run) => (
-                    <RunRow
-                      key={run.id}
-                      run={run}
-                      sourceLabel={
-                        labelBySourceType.get(run.source_type) ?? run.source_type
-                      }
-                    />
-                  ))}
-              </TableBody>
-            </Table>
-          </TableRoot>
+          <ExpandableTable<CrossSourceRunEntry>
+            data={data ?? []}
+            columns={columns}
+            renderRowDetail={runDetail}
+            getRowId={(run) => run.id}
+            loading={isLoading}
+            skeletonRows={6}
+            emptyText="Nenhuma execução registrada."
+          />
         </div>
       )}
     </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// RunRow — toggle inline. Mesmo padrao do HistoricoTab por fonte.
-// ─────────────────────────────────────────────────────────────────────────────
-
-function RunRow({
-  run,
-  sourceLabel,
-}: {
-  run: CrossSourceRunEntry
-  sourceLabel: string
-}) {
-  const [expanded, setExpanded] = React.useState(false)
-  const output = run.output ?? {}
-  const errors = (output.errors ?? []) as unknown[]
-  const elapsed = output.elapsed_seconds as number | undefined
-  const hasErrors = errors.length > 0
-
-  const detailHref = `/integracoes/fontes/${encodeURIComponent(
-    run.source_type,
-  )}?tab=diagnostico&view=historico`
-
-  return (
-    <>
-      <TableRow
-        className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900"
-        onClick={() => setExpanded((v) => !v)}
-      >
-        <TableCell>
-          {expanded ? (
-            <RiArrowDownSLine
-              className="size-4 text-gray-500"
-              aria-hidden
-            />
-          ) : (
-            <RiArrowRightSLine
-              className="size-4 text-gray-500"
-              aria-hidden
-            />
-          )}
-        </TableCell>
-        <TableCell>
-          <span className="text-gray-900 dark:text-gray-50">
-            {format(new Date(run.occurred_at), "dd/MM/yyyy HH:mm:ss", {
-              locale: ptBR,
-            })}
-          </span>
-        </TableCell>
-        <TableCell>
-          <div className="flex flex-col">
-            <span className={tableTokens.cellStrong}>{sourceLabel}</span>
-            <span className={cx(tableTokens.cellTextMono, tableTokens.cellSecondary)}>
-              {run.source_type}
-            </span>
-          </div>
-        </TableCell>
-        <TableCell className="font-mono text-xs">{run.triggered_by}</TableCell>
-        <TableCell>
-          <div className="flex flex-col">
-            <span className="text-gray-900 dark:text-gray-50">
-              {run.rule_or_model}
-            </span>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              {run.rule_or_model_version ?? ""}
-            </span>
-          </div>
-        </TableCell>
-        <TableCell>
-          <div className="flex items-center gap-2">
-            <Badge variant={hasErrors ? "warning" : "success"}>
-              {hasErrors ? `${errors.length} erro(s)` : "OK"}
-            </Badge>
-            {elapsed !== undefined && (
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                {elapsed.toFixed(1)}s
-              </span>
-            )}
-          </div>
-        </TableCell>
-        <TableCell>
-          <Link
-            href={detailHref}
-            onClick={(e) => e.stopPropagation()}
-            className={cx(
-              "inline-flex size-7 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200",
-              focusRing,
-            )}
-            aria-label={`Abrir historico da fonte ${sourceLabel}`}
-            title="Abrir detalhe da fonte"
-          >
-            <RiExternalLinkLine className="size-3.5" aria-hidden />
-          </Link>
-        </TableCell>
-      </TableRow>
-      {expanded && (
-        <TableRow>
-          <TableCell colSpan={7} className="bg-gray-50 dark:bg-gray-900/50">
-            <div className="flex flex-col gap-3 py-2">
-              {run.explanation && (
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
-                    Explicacao
-                  </span>
-                  <p className="text-sm text-gray-700 dark:text-gray-300">
-                    {run.explanation}
-                  </p>
-                </div>
-              )}
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
-                  Output
-                </span>
-                <JsonPreview value={run.output ?? {}} maxHeight={400} />
-              </div>
-            </div>
-          </TableCell>
-        </TableRow>
-      )}
-    </>
   )
 }

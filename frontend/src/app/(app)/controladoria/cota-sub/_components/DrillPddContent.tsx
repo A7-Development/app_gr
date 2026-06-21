@@ -14,6 +14,12 @@
  *
  * Matriz de migracao A/B/C/D/E/F/G/H ↔ WOP/NOVO removida em 2026-05-24
  * (densa demais pro slot direito).
+ *
+ * 2026-05-29: WopTable + PapeisTable migraram do `<table>` artesanal para a
+ * DataTable canonica `density="ultra"` (h-7/28px) — regra dura de consistencia
+ * dos drills da Cota Sub. Totais via `renderFooter`; sem corte (lista TODOS os
+ * papeis — backend usa defaults 0/1000). A Reconciliacao continua em tabela
+ * inline (3 linhas fixas, nao e uma lista de dados).
  */
 
 import {
@@ -23,6 +29,7 @@ import {
   RiInboxLine,
   RiScales3Line,
 } from "@remixicon/react"
+import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 
 import { cx } from "@/lib/utils"
 import { useDrillPdd } from "@/lib/hooks/controladoria"
@@ -30,13 +37,14 @@ import type { DrillPddPapel, DrillPddResponse, PddFaixaKey } from "@/lib/api-cli
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 import { Button } from "@/components/tremor/Button"
+import { DataTable } from "@/design-system/components/DataTable"
+import { tableTokens } from "@/design-system/tokens/table"
 import {
   DrillClosureBadge,
   DrillSectionTitle,
   drillRowBorder,
   drillTableWrap,
   drillTfootRow,
-  drillThead,
   fmtBRL,
   fmtBRLSigned,
   toneClass,
@@ -83,6 +91,36 @@ const MOTIVO_TONE = {
   liquidado: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-400",
   reversao:  "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-400",
 } as const
+
+// Props compartilhadas das DataTables do drill — ultra, sem toolbar, container
+// bordado (espelha o antigo drillTableWrap).
+const DT_PROPS = {
+  density:           "ultra",
+  virtualize:        false,
+  showColumnManager: false,
+  showDensityToggle: false,
+  showExport:        false,
+  className:         "rounded border border-gray-200 dark:border-gray-800",
+} as const
+
+const FOOT_ROW = "border-t-2 border-t-gray-300 dark:border-t-gray-700"
+
+// ── Celulas compartilhadas (cedente/sacado empilhados; titulo mono) ──────────
+
+function CedenteSacadoCell({ p }: { p: DrillPddPapel }) {
+  return (
+    <div title={`${p.cedente_doc} / ${p.sacado_doc}`}>
+      <div className={cx("max-w-[160px] truncate font-medium", tableTokens.cellText)}>{p.cedente_nome}</div>
+      <div className="max-w-[160px] truncate text-[10px] text-gray-500 dark:text-gray-400">→ {p.sacado_nome}</div>
+    </div>
+  )
+}
+
+function TituloCell({ p }: { p: DrillPddPapel }) {
+  return (
+    <span className={cx("block truncate font-mono text-[11px]", tableTokens.cellSecondary)}>{p.numero_documento || "—"}</span>
+  )
+}
 
 export type DrillPddContentProps = {
   fundoId:       string
@@ -235,6 +273,9 @@ export function DrillPddContent({ fundoId, data, dataAnterior }: DrillPddContent
  * ex-WOP) + `papeis_wop_total_pdd_d1` (o que saiu p/ WOP). A reversao genuina
  * = resumo.reversao_total + saida_wop, porque o backend inclui a saida
  * WOP dentro de reversao_total (o papel sai do PDD ativo).
+ *
+ * Mantida como tabela inline (3 linhas fixas + total — nao e lista de dados
+ * que justifique DataTable canonica).
  */
 function ReconcileBlock({ d }: { d: DrillPddResponse }) {
   const resumo = d.resumo!
@@ -316,65 +357,77 @@ function ReconcileBlock({ d }: { d: DrillPddResponse }) {
 function WopTable({ papeis }: { papeis: DrillPddPapel[] }) {
   const totPddD1 = papeis.reduce((s, p) => s + p.valor_pdd_d1, 0)
   const totImpacto = papeis.reduce((s, p) => s + (p.valor_pdd_d1 - p.valor_pdd_d0), 0)
+
+  const col = createColumnHelper<DrillPddPapel>()
+  const columns: ColumnDef<DrillPddPapel, unknown>[] = [
+    col.accessor((p) => p.cedente_nome, {
+      id: "cedente_sacado", header: "Cedente / Sacado", size: 180,
+      cell: (info) => <CedenteSacadoCell p={info.row.original} />,
+    }) as ColumnDef<DrillPddPapel, unknown>,
+    col.accessor("numero_documento", {
+      id: "titulo", header: "Título", size: 150,
+      cell: (info) => <TituloCell p={info.row.original} />,
+    }) as ColumnDef<DrillPddPapel, unknown>,
+    col.accessor((p) => p, {
+      id: "pct", header: "% prov. D-1", size: 110, meta: { align: "right" },
+      cell: (info) => {
+        const p = info.row.original
+        const base = p.valor_pdd_d0 || p.valor_nominal
+        const pct = base > 0 ? p.valor_pdd_d1 / base : 0
+        return <div className={cx("text-right", tableTokens.cellNumber)}>{fmtPct.format(pct)}</div>
+      },
+    }) as ColumnDef<DrillPddPapel, unknown>,
+    col.accessor("valor_nominal", {
+      id: "nominal", header: "Nominal", size: 120, meta: { align: "right" },
+      cell: (info) => <div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(info.getValue<number>())}</div>,
+    }) as ColumnDef<DrillPddPapel, unknown>,
+    col.accessor("valor_pdd_d1", {
+      id: "pdd_d1", header: "PDD D-1", size: 120, meta: { align: "right" },
+      cell: (info) => <div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(info.getValue<number>())}</div>,
+    }) as ColumnDef<DrillPddPapel, unknown>,
+    col.accessor((p) => p.valor_pdd_d1 - p.valor_pdd_d0, {
+      id: "impacto", header: "Impacto na cota", size: 130, meta: { align: "right" },
+      cell: (info) => {
+        const impacto = info.getValue<number>()  // <= 0; 0 = neutro
+        const neutro = Math.abs(impacto) < 0.01
+        return (
+          <div className="text-right">
+            {neutro ? (
+              <span className="inline-flex items-center gap-1 text-[11px] text-gray-400 dark:text-gray-500">
+                <span className="inline-block size-1.5 rounded-full bg-gray-400" aria-hidden />
+                neutro
+              </span>
+            ) : (
+              <span className="text-xs font-semibold tabular-nums text-red-600 dark:text-red-400">{fmtBRLSigned(impacto)}</span>
+            )}
+          </div>
+        )
+      },
+    }) as ColumnDef<DrillPddPapel, unknown>,
+  ]
+
   return (
-    <div className={cx("mt-2", drillTableWrap)}>
-      <table className="w-full whitespace-nowrap text-[12px] tabular-nums">
-        <thead className={drillThead}>
-          <tr>
-            <th className="px-3 py-1.5 text-left">Cedente / Sacado</th>
-            <th className="px-3 py-1.5 text-left">Título</th>
-            <th className="px-3 py-1.5 text-right">% prov. D-1</th>
-            <th className="px-3 py-1.5 text-right">Nominal</th>
-            <th className="px-3 py-1.5 text-right">PDD D-1</th>
-            <th className="px-3 py-1.5 text-right">Impacto na cota</th>
-          </tr>
-        </thead>
-        <tbody>
-          {papeis.map((p, idx) => {
-            const base = p.valor_pdd_d0 || p.valor_nominal
-            const pct = base > 0 ? p.valor_pdd_d1 / base : 0
-            const impacto = p.valor_pdd_d1 - p.valor_pdd_d0  // <= 0; 0 = neutro
-            const neutro = Math.abs(impacto) < 0.01
-            return (
-              <tr key={`${p.cedente_doc}-${p.seu_numero}-${p.numero_documento}-${idx}`} className={drillRowBorder}>
-                <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200" title={`${p.cedente_doc} / ${p.sacado_doc}`}>
-                  <div className="truncate max-w-[160px] font-medium text-gray-900 dark:text-gray-50">{p.cedente_nome}</div>
-                  <div className="truncate max-w-[160px] text-[10px] text-gray-500 dark:text-gray-400">→ {p.sacado_nome}</div>
-                </td>
-                <td className="px-3 py-1.5 font-mono text-[11px] text-gray-500 dark:text-gray-400">
-                  <span className="block truncate">{p.numero_documento || "—"}</span>
-                </td>
-                <td className="px-3 py-1.5 text-right text-gray-900 dark:text-gray-50">{fmtPct.format(pct)}</td>
-                <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(p.valor_nominal)}</td>
-                <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(p.valor_pdd_d1)}</td>
-                <td className="px-3 py-1.5 text-right">
-                  {neutro ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] text-gray-400 dark:text-gray-500">
-                      <span className="inline-block size-1.5 rounded-full bg-gray-400" aria-hidden />
-                      neutro
-                    </span>
-                  ) : (
-                    <span className="font-semibold text-red-600 dark:text-red-400">{fmtBRLSigned(impacto)}</span>
-                  )}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-        <tfoot>
-          <tr className={drillTfootRow}>
-            <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200" colSpan={4}>Total · {papeis.length} papel(eis)</td>
-            <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(totPddD1)}</td>
-            <td className="px-3 py-1.5 text-right">
-              {Math.abs(totImpacto) < 0.01 ? (
-                <span className="text-[11px] text-gray-400 dark:text-gray-500">neutro</span>
-              ) : (
-                <span className="font-semibold text-red-600 dark:text-red-400">{fmtBRLSigned(totImpacto)}</span>
-              )}
+    <div className="mt-2">
+      <DataTable<DrillPddPapel>
+        {...DT_PROPS}
+        data={papeis}
+        columns={columns}
+        renderFooter={() => (
+          <tr className={FOOT_ROW}>
+            <td colSpan={4} className="px-3"><span className={tableTokens.cellStrong}>Total · {papeis.length} papel(eis)</span></td>
+            <td className="px-3"><div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(totPddD1)}</div></td>
+            <td className="px-3">
+              <div className="text-right">
+                {Math.abs(totImpacto) < 0.01 ? (
+                  <span className="text-[11px] text-gray-400 dark:text-gray-500">neutro</span>
+                ) : (
+                  <span className="text-xs font-semibold tabular-nums text-red-600 dark:text-red-400">{fmtBRLSigned(totImpacto)}</span>
+                )}
+              </div>
             </td>
           </tr>
-        </tfoot>
-      </table>
+        )}
+      />
     </div>
   )
 }
@@ -391,82 +444,100 @@ function PapeisTable({
   const totPddD0 = papeis.reduce((s, p) => s + p.valor_pdd_d0, 0)
   const totDelta = papeis.reduce((s, p) => s + p.delta_valor_pdd, 0)
   const showMotivo = motivoOf != null
+
+  const col = createColumnHelper<DrillPddPapel>()
+  const columns: ColumnDef<DrillPddPapel, unknown>[] = [
+    col.accessor((p) => p.cedente_nome, {
+      id: "cedente_sacado", header: "Cedente / Sacado", size: 180,
+      cell: (info) => <CedenteSacadoCell p={info.row.original} />,
+    }) as ColumnDef<DrillPddPapel, unknown>,
+    col.accessor("numero_documento", {
+      id: "titulo", header: "Título", size: 150,
+      cell: (info) => <TituloCell p={info.row.original} />,
+    }) as ColumnDef<DrillPddPapel, unknown>,
+    col.accessor((p) => p, {
+      id: "faixa", header: "Faixa", size: 130, meta: { align: "center" },
+      cell: (info) => {
+        const p = info.row.original
+        return (
+          <div className="text-center">
+            <span className="inline-flex items-center gap-1 text-[10px]">
+              <span className={cx("inline-block size-1.5 rounded-full", FAIXA_DOT[p.faixa_pdd_d1 ?? "NOVO"])} aria-hidden />
+              <span className="text-gray-500">{FAIXA_LABEL[p.faixa_pdd_d1 ?? "NOVO"]}</span>
+              <span className="text-gray-400">→</span>
+              <span className={cx("inline-block size-1.5 rounded-full", FAIXA_DOT[p.faixa_pdd_d0 ?? "WOP"])} aria-hidden />
+              <span className={cx(
+                p.faixa_pdd_d0 === "LIQUIDADO"
+                  ? "font-medium text-emerald-700 dark:text-emerald-400"
+                  : "text-gray-900 dark:text-gray-50",
+              )}>{FAIXA_LABEL[p.faixa_pdd_d0 ?? "WOP"]}</span>
+            </span>
+          </div>
+        )
+      },
+    }) as ColumnDef<DrillPddPapel, unknown>,
+  ]
+  if (showMotivo) {
+    columns.push(
+      col.accessor((p) => p, {
+        id: "motivo", header: "Motivo", size: 150,
+        cell: (info) => {
+          const motivo = motivoOf?.(info.row.original)
+          return motivo ? (
+            <span
+              className={cx("inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[10px] font-medium", motivo.cls)}
+              title={motivo.title}
+            >
+              {motivo.label}
+            </span>
+          ) : null
+        },
+      }) as ColumnDef<DrillPddPapel, unknown>,
+    )
+  }
+  columns.push(
+    col.accessor("valor_nominal", {
+      id: "nominal", header: "Nominal", size: 120, meta: { align: "right" },
+      cell: (info) => <div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(info.getValue<number>())}</div>,
+    }) as ColumnDef<DrillPddPapel, unknown>,
+    col.accessor("valor_pdd_d1", {
+      id: "pdd_d1", header: "PDD D-1", size: 120, meta: { align: "right" },
+      cell: (info) => <div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(info.getValue<number>())}</div>,
+    }) as ColumnDef<DrillPddPapel, unknown>,
+    col.accessor("valor_pdd_d0", {
+      id: "pdd_d0", header: "PDD D0", size: 120, meta: { align: "right" },
+      cell: (info) => <div className={cx("text-right", tableTokens.cellNumber)}>{fmtBRL.format(info.getValue<number>())}</div>,
+    }) as ColumnDef<DrillPddPapel, unknown>,
+    col.accessor("delta_valor_pdd", {
+      id: "delta", header: "Δ", size: 120, meta: { align: "right" },
+      cell: (info) => (
+        <div className={cx(
+          "text-right tabular-nums text-xs",
+          highlightDelta && "font-semibold",
+          toneClass(info.getValue<number>(), false),
+        )}>
+          {fmtBRLSigned(info.getValue<number>())}
+        </div>
+      ),
+    }) as ColumnDef<DrillPddPapel, unknown>,
+  )
+
   return (
-    <div className={cx("mt-2", drillTableWrap)}>
-      <table className="w-full whitespace-nowrap text-[12px] tabular-nums">
-        <thead className={drillThead}>
-          <tr>
-            <th className="px-3 py-1.5 text-left">Cedente / Sacado</th>
-            <th className="px-3 py-1.5 text-left">Título</th>
-            <th className="px-3 py-1.5 text-center">Faixa</th>
-            {showMotivo && <th className="px-3 py-1.5 text-left">Motivo</th>}
-            <th className="px-3 py-1.5 text-right">Nominal</th>
-            <th className="px-3 py-1.5 text-right">PDD D-1</th>
-            <th className="px-3 py-1.5 text-right">PDD D0</th>
-            <th className="px-3 py-1.5 text-right">Δ</th>
+    <div className="mt-2">
+      <DataTable<DrillPddPapel>
+        {...DT_PROPS}
+        data={papeis}
+        columns={columns}
+        renderFooter={() => (
+          <tr className={FOOT_ROW}>
+            <td colSpan={showMotivo ? 4 : 3} className="px-3"><span className={tableTokens.cellStrong}>Total · {papeis.length} papel(eis)</span></td>
+            <td className="px-3"><div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(totNominal)}</div></td>
+            <td className="px-3"><div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(totPddD1)}</div></td>
+            <td className="px-3"><div className={cx("text-right", tableTokens.cellNumber)}>{fmtBRL.format(totPddD0)}</div></td>
+            <td className="px-3"><div className={cx("text-right text-xs font-semibold tabular-nums", toneClass(totDelta, false))}>{fmtBRLSigned(totDelta)}</div></td>
           </tr>
-        </thead>
-        <tbody>
-          {papeis.map((p, idx) => {
-            const motivo = motivoOf?.(p)
-            return (
-              <tr key={`${p.cedente_doc}-${p.seu_numero}-${p.numero_documento}-${idx}`} className={drillRowBorder}>
-                <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200" title={`${p.cedente_doc} / ${p.sacado_doc}`}>
-                  <div className="truncate max-w-[160px] font-medium text-gray-900 dark:text-gray-50">{p.cedente_nome}</div>
-                  <div className="truncate max-w-[160px] text-[10px] text-gray-500 dark:text-gray-400">→ {p.sacado_nome}</div>
-                </td>
-                <td className="px-3 py-1.5 font-mono text-[11px] text-gray-500 dark:text-gray-400">
-                  <span className="block truncate">{p.numero_documento || "—"}</span>
-                </td>
-                <td className="px-3 py-1.5 text-center">
-                  <span className="inline-flex items-center gap-1 text-[10px]">
-                    <span className={cx("inline-block size-1.5 rounded-full", FAIXA_DOT[p.faixa_pdd_d1 ?? "NOVO"])} aria-hidden />
-                    <span className="text-gray-500">{FAIXA_LABEL[p.faixa_pdd_d1 ?? "NOVO"]}</span>
-                    <span className="text-gray-400">→</span>
-                    <span className={cx("inline-block size-1.5 rounded-full", FAIXA_DOT[p.faixa_pdd_d0 ?? "WOP"])} aria-hidden />
-                    <span className={cx(
-                      p.faixa_pdd_d0 === "LIQUIDADO"
-                        ? "font-medium text-emerald-700 dark:text-emerald-400"
-                        : "text-gray-900 dark:text-gray-50",
-                    )}>{FAIXA_LABEL[p.faixa_pdd_d0 ?? "WOP"]}</span>
-                  </span>
-                </td>
-                {showMotivo && (
-                  <td className="px-3 py-1.5">
-                    {motivo && (
-                      <span
-                        className={cx("inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[10px] font-medium", motivo.cls)}
-                        title={motivo.title}
-                      >
-                        {motivo.label}
-                      </span>
-                    )}
-                  </td>
-                )}
-                <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(p.valor_nominal)}</td>
-                <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(p.valor_pdd_d1)}</td>
-                <td className="px-3 py-1.5 text-right text-gray-900 dark:text-gray-50">{fmtBRL.format(p.valor_pdd_d0)}</td>
-                <td className={cx(
-                  "px-3 py-1.5 text-right",
-                  highlightDelta && "font-semibold",
-                  toneClass(p.delta_valor_pdd, false),
-                )}>
-                  {fmtBRLSigned(p.delta_valor_pdd)}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-        <tfoot>
-          <tr className={drillTfootRow}>
-            <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200" colSpan={showMotivo ? 4 : 3}>Total · {papeis.length} papel(eis)</td>
-            <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(totNominal)}</td>
-            <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(totPddD1)}</td>
-            <td className="px-3 py-1.5 text-right text-gray-900 dark:text-gray-50">{fmtBRL.format(totPddD0)}</td>
-            <td className={cx("px-3 py-1.5 text-right", toneClass(totDelta, false))}>{fmtBRLSigned(totDelta)}</td>
-          </tr>
-        </tfoot>
-      </table>
+        )}
+      />
     </div>
   )
 }

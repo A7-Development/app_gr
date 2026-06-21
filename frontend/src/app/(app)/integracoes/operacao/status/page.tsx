@@ -7,14 +7,20 @@
 // endpoints (cadencia individual, ultima sync, botao "Sync agora"). O detalhe
 // completo continua em /fontes/[source_type].
 //
+// Modo master-detail canonico: <ExpandableTable> (handoff "Tabela canonica").
+// A linha do source e o ponto de entrada; expandir abre o painel de endpoints
+// daquela fonte (so fontes com catalogo expandem — ver SOURCES_WITH_ENDPOINT_
+// CATALOG + canExpand). Substitui o <TableRoot> cru com expand inline (era
+// Tremor Table cru em pagina, proibido — CLAUDE.md §6).
+//
 // Hierarquia (CLAUDE.md 11.6):
 //   L1 Integracoes > L2 Operacao > Status
 //
 // Filtros (PR 2 — 2026-05-21): Todas / Configuradas / Habilitadas viraram
-// SegmentSwitch numa FilterBar canonica (CLAUDE.md §7.1 — Card branco em faixa
-// cinza-50). Antes eram TabNavigation, mas filtros de listagem fingindo ser
-// tabs e anti-pattern: tab L3 e "perspectiva diferente do mesmo dado", filtro
-// e "subset filtrado". URL param `?tab=` preservado por retrocompat.
+// SegmentSwitch numa FilterBar canonica. Antes eram TabNavigation, mas filtros
+// de listagem fingindo ser tabs e anti-pattern: tab L3 e "perspectiva diferente
+// do mesmo dado", filtro e "subset filtrado". URL param `?tab=` preservado por
+// retrocompat.
 //
 // Granularidade fina (CLAUDE.md §13 — refactor 2026-05-05): a linha do source
 // e o ponto de entrada; a expansion mostra os endpoints daquela fonte com
@@ -27,9 +33,7 @@ import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import {
-  RiArrowDownSLine,
   RiArrowRightLine,
-  RiArrowRightSLine,
   RiLoader4Line,
   RiPlayLine,
   RiRefreshLine,
@@ -43,6 +47,10 @@ import {
 } from "@/design-system/components/AdapterStatusBadge"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
+import {
+  ExpandableTable,
+  type ExpandableColumn,
+} from "@/design-system/components/ExpandableTable"
 import { FilterBar } from "@/design-system/components/FilterBar"
 import { LastSyncCell } from "@/design-system/components/LastSyncCell"
 import { SegmentSwitch } from "@/design-system/components/SegmentSwitch"
@@ -55,15 +63,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/tremor/Select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRoot,
-  TableRow,
-} from "@/components/tremor/Table"
 import { tableTokens } from "@/design-system/tokens/table"
 import { cx } from "@/lib/utils"
 import { integracoes } from "@/lib/api-client"
@@ -105,6 +104,10 @@ function filterBySegment(rows: SourceListItem[], seg: SegmentKey): SourceListIte
   return rows
 }
 
+function rowKey(row: SourceListItem): string {
+  return `${row.source_type}-${row.unidade_administrativa_id ?? "noua"}`
+}
+
 export default function SyncPage() {
   const sp = useSearchParams()
   const router = useRouter()
@@ -114,16 +117,6 @@ export default function SyncPage() {
     (SEGMENTS.find((s) => s.value === sp.get("tab"))?.value ?? "todas") as SegmentKey
 
   const { data, isLoading, isError, refetch } = useSources(environment)
-  const [expanded, setExpanded] = React.useState<Set<string>>(new Set())
-
-  function toggleExpanded(sourceType: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev)
-      if (next.has(sourceType)) next.delete(sourceType)
-      else next.add(sourceType)
-      return next
-    })
-  }
 
   function setSearch(next: Record<string, string | null>) {
     const qs = new URLSearchParams(sp?.toString() ?? "")
@@ -147,6 +140,73 @@ export default function SyncPage() {
   }, [data])
 
   const filtered = data ? filterBySegment(data, activeSegment) : []
+
+  // Colunas da tabela canonica. O chevron de expansao e renderizado pelo
+  // proprio ExpandableTable (coluna implicita) — aqui ficam apenas as colunas
+  // de conteudo. A coluna "acoes" carrega seu estado proprio via <ActionsCell>.
+  const columns: ExpandableColumn<SourceListItem>[] = React.useMemo(
+    () => [
+      {
+        id: "fonte",
+        header: "Fonte",
+        cell: (row) => (
+          <div className="flex flex-col">
+            <span className={tableTokens.cellStrong}>{row.label}</span>
+            <span className={cx(tableTokens.cellSecondary, "font-mono")}>
+              {row.source_type}
+            </span>
+          </div>
+        ),
+      },
+      {
+        id: "categoria",
+        header: "Categoria",
+        cell: (row) => (
+          <span className={cx(tableTokens.cellText, "capitalize")}>
+            {row.category}
+          </span>
+        ),
+      },
+      {
+        id: "status",
+        header: "Status",
+        cell: (row) => (
+          <AdapterStatusBadge status={statusFrom(row.configured, row.enabled)} />
+        ),
+      },
+      {
+        id: "endpoints",
+        header: "Endpoints",
+        cell: (row) =>
+          SOURCES_WITH_ENDPOINT_CATALOG.has(row.source_type) ? (
+            <span className={tableTokens.cellSecondary}>
+              Cadencia por endpoint
+            </span>
+          ) : (
+            <span className={tableTokens.cellMuted}>Sob demanda</span>
+          ),
+      },
+      {
+        id: "ultimo_sync",
+        header: "Ultimo sync",
+        cell: (row) => <LastSyncCell iso={row.last_sync_at} />,
+      },
+      {
+        id: "acoes",
+        header: "Acoes",
+        align: "right",
+        widthClass: "w-48",
+        cell: (row) => (
+          <ActionsCell
+            row={row}
+            environment={environment}
+            onRefresh={() => refetch()}
+          />
+        ),
+      },
+    ],
+    [environment, refetch],
+  )
 
   return (
     <div className="flex flex-col gap-6 px-12 py-6 pb-28">
@@ -227,60 +287,24 @@ export default function SyncPage() {
 
           {(isLoading || filtered.length > 0) && (
             <div className="rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
-              <TableRoot>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableHeaderCell className="w-10" />
-                      <TableHeaderCell>Fonte</TableHeaderCell>
-                      <TableHeaderCell>Categoria</TableHeaderCell>
-                      <TableHeaderCell>Status</TableHeaderCell>
-                      <TableHeaderCell>Endpoints</TableHeaderCell>
-                      <TableHeaderCell>Ultimo sync</TableHeaderCell>
-                      <TableHeaderCell className="w-48 text-right">
-                        Acoes
-                      </TableHeaderCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {isLoading &&
-                      Array.from({ length: 3 }).map((_, i) => (
-                        <TableRow key={`skeleton-${i}`}>
-                          <TableCell colSpan={7}>
-                            <div className="h-6 w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    {!isLoading &&
-                      filtered.map((row) => (
-                        <React.Fragment key={`${row.source_type}-${row.unidade_administrativa_id ?? "noua"}`}>
-                          <SyncRow
-                            row={row}
-                            environment={environment}
-                            expanded={expanded.has(row.source_type)}
-                            canExpand={SOURCES_WITH_ENDPOINT_CATALOG.has(
-                              row.source_type,
-                            )}
-                            onToggleExpand={() =>
-                              toggleExpanded(row.source_type)
-                            }
-                            onRefresh={() => refetch()}
-                          />
-                          {expanded.has(row.source_type) &&
-                            SOURCES_WITH_ENDPOINT_CATALOG.has(
-                              row.source_type,
-                            ) && (
-                              <EndpointsExpansion
-                                sourceType={row.source_type}
-                                environment={environment}
-                                uaId={row.unidade_administrativa_id}
-                              />
-                            )}
-                        </React.Fragment>
-                      ))}
-                  </TableBody>
-                </Table>
-              </TableRoot>
+              <ExpandableTable<SourceListItem>
+                data={filtered}
+                columns={columns}
+                getRowId={rowKey}
+                canExpand={(row) =>
+                  SOURCES_WITH_ENDPOINT_CATALOG.has(row.source_type)
+                }
+                renderRowDetail={(row) => (
+                  <EndpointsExpansion
+                    sourceType={row.source_type}
+                    environment={environment}
+                    uaId={row.unidade_administrativa_id}
+                  />
+                )}
+                loading={isLoading}
+                skeletonRows={3}
+                emptyText="Nenhuma fonte nesta visao."
+              />
             </div>
           )}
         </>
@@ -289,22 +313,23 @@ export default function SyncPage() {
   )
 }
 
-function SyncRow({
+// ─────────────────────────────────────────────────────────────────────────────
+// ActionsCell — celula de acoes da linha de source. Carrega o estado proprio
+// do "Sync agora" (spinner `running`). stopPropagation nos controles para nao
+// disparar o expand da linha.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ActionsCell({
   row,
   environment,
-  expanded,
-  canExpand,
-  onToggleExpand,
   onRefresh,
 }: {
   row: SourceListItem
   environment: Environment
-  expanded: boolean
-  canExpand: boolean
-  onToggleExpand: () => void
   onRefresh: () => void
 }) {
   const [running, setRunning] = React.useState(false)
+  const canExpand = SOURCES_WITH_ENDPOINT_CATALOG.has(row.source_type)
 
   async function handleSyncNow() {
     setRunning(true)
@@ -334,80 +359,97 @@ function SyncRow({
   }`
 
   return (
-    <TableRow>
-      <TableCell className="w-10">
-        {canExpand ? (
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={onToggleExpand}
-            aria-label={expanded ? "Recolher endpoints" : "Expandir endpoints"}
-            aria-expanded={expanded}
-          >
-            {expanded ? (
-              <RiArrowDownSLine className="size-4" aria-hidden />
-            ) : (
-              <RiArrowRightSLine className="size-4" aria-hidden />
-            )}
-          </Button>
-        ) : null}
-      </TableCell>
-      <TableCell className="font-medium text-gray-900 dark:text-gray-50">
-        <div className="flex flex-col">
-          <span>{row.label}</span>
-          <span className="font-mono text-xs text-gray-500 dark:text-gray-400">
-            {row.source_type}
-          </span>
-        </div>
-      </TableCell>
-      <TableCell className="capitalize">{row.category}</TableCell>
-      <TableCell>
-        <AdapterStatusBadge status={statusFrom(row.configured, row.enabled)} />
-      </TableCell>
-      <TableCell>
-        {canExpand ? (
-          <span className={tableTokens.cellSecondary}>
-            Cadencia por endpoint
-          </span>
+    <div className="flex items-center justify-end gap-2">
+      <Button
+        type="button"
+        variant="secondary"
+        disabled={!row.configured || running}
+        onClick={(e) => {
+          e.stopPropagation()
+          void handleSyncNow()
+        }}
+      >
+        {running ? (
+          <RiLoader4Line className="mr-1.5 size-4 animate-spin" aria-hidden />
         ) : (
-          <span className={tableTokens.cellMuted}>Sob demanda</span>
+          <RiRefreshLine className="mr-1.5 size-4" aria-hidden />
         )}
-      </TableCell>
-      <TableCell>
-        <LastSyncCell iso={row.last_sync_at} />
-      </TableCell>
-      <TableCell className="text-right">
-        <div className="flex items-center justify-end gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={!row.configured || running}
-            onClick={handleSyncNow}
-          >
-            {running ? (
-              <RiLoader4Line
-                className="mr-1.5 size-4 animate-spin"
-                aria-hidden
-              />
-            ) : (
-              <RiRefreshLine className="mr-1.5 size-4" aria-hidden />
-            )}
-            Sync agora
-          </Button>
-          <Button variant="ghost" asChild>
-            <Link href={detailHref} aria-label={`Abrir ${row.label}`}>
-              <RiArrowRightLine className="size-4" aria-hidden />
-            </Link>
-          </Button>
-        </div>
-      </TableCell>
-    </TableRow>
+        Sync agora
+      </Button>
+      <Button variant="ghost" asChild>
+        <Link
+          href={detailHref}
+          aria-label={`Abrir ${row.label}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <RiArrowRightLine className="size-4" aria-hidden />
+        </Link>
+      </Button>
+    </div>
   )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// EndpointsExpansion
+// EndpointsExpansion — painel de detalhe (renderRowDetail) de uma fonte.
+// Lista os endpoints do catalogo, cada um com cadencia + estado + ultimo sync
+// + botao "Sincronizar agora". Renderizado dentro do painel expandido — usa
+// um ExpandableTable aninhado (canExpand=false) so pelo chrome canonico de
+// tabela; os endpoints nao tem sub-detalhe proprio.
 // ─────────────────────────────────────────────────────────────────────────────
+
+const ENDPOINT_COLUMNS: ExpandableColumn<EndpointDetail>[] = [
+  {
+    id: "endpoint",
+    header: "Endpoint",
+    cell: (ep) => (
+      <div className="flex flex-col gap-0.5">
+        <span className={tableTokens.cellStrong}>{ep.label}</span>
+        <span className={cx(tableTokens.cellSecondary, "font-mono")}>
+          {ep.name}
+        </span>
+      </div>
+    ),
+  },
+  {
+    id: "cadencia",
+    header: "Cadencia",
+    cell: (ep) => <KindBadge kind={ep.schedule_kind ?? ep.default_schedule_kind} />,
+  },
+  {
+    id: "estado",
+    header: "Estado",
+    cell: (ep) => (
+      <EndpointStateBadge
+        enabled={ep.enabled ?? true}
+        status={ep.last_sync_status}
+      />
+    ),
+  },
+  {
+    id: "agenda",
+    header: "Agenda",
+    cell: (ep) => (
+      <span className={tableTokens.cellNumber}>
+        {formatScheduleSummary(
+          ep.schedule_kind ?? ep.default_schedule_kind,
+          ep.schedule_value ?? ep.default_schedule_value,
+        )}
+      </span>
+    ),
+  },
+  {
+    id: "ultimo_sync",
+    header: "Ultimo sync",
+    cell: (ep) => (
+      <LastSyncCell
+        startedAt={ep.last_sync_started_at}
+        finishedAt={ep.last_sync_finished_at}
+        status={ep.last_sync_status}
+        errorMessage={ep.last_sync_error}
+      />
+    ),
+  },
+]
 
 function EndpointsExpansion({
   sourceType,
@@ -424,56 +466,55 @@ function EndpointsExpansion({
     uaId,
   )
 
-  if (isLoading) {
-    return (
-      <TableRow className="bg-gray-50 dark:bg-gray-900/40">
-        <TableCell colSpan={7}>
-          <div className="h-6 w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
-        </TableCell>
-      </TableRow>
-    )
-  }
-
   if (isError) {
     return (
-      <TableRow className="bg-gray-50 dark:bg-gray-900/40">
-        <TableCell colSpan={7}>
-          <span className={tableTokens.cellSecondary}>
-            Falha ao carregar endpoints.
-          </span>
-        </TableCell>
-      </TableRow>
+      <span className={tableTokens.cellSecondary}>
+        Falha ao carregar endpoints.
+      </span>
     )
   }
 
-  if (!data || data.length === 0) {
+  if (!isLoading && (!data || data.length === 0)) {
     return (
-      <TableRow className="bg-gray-50 dark:bg-gray-900/40">
-        <TableCell colSpan={7}>
-          <span className={tableTokens.cellSecondary}>
-            Sem endpoints no catalogo desta fonte.
-          </span>
-        </TableCell>
-      </TableRow>
+      <span className={tableTokens.cellSecondary}>
+        Sem endpoints no catalogo desta fonte.
+      </span>
     )
   }
 
-  return (
-    <>
-      {data.map((ep) => (
-        <EndpointSubRow
-          key={ep.name}
+  const columns: ExpandableColumn<EndpointDetail>[] = [
+    ...ENDPOINT_COLUMNS,
+    {
+      id: "acoes",
+      header: "Acoes",
+      align: "right",
+      widthClass: "w-16",
+      cell: (ep) => (
+        <EndpointSyncButton
           endpoint={ep}
           sourceType={sourceType}
           environment={environment}
           uaId={uaId}
         />
-      ))}
-    </>
+      ),
+    },
+  ]
+
+  return (
+    <ExpandableTable<EndpointDetail>
+      data={data ?? []}
+      columns={columns}
+      getRowId={(ep) => ep.name}
+      canExpand={() => false}
+      renderRowDetail={() => null}
+      loading={isLoading}
+      skeletonRows={2}
+      emptyText="Sem endpoints no catalogo desta fonte."
+    />
   )
 }
 
-function EndpointSubRow({
+function EndpointSyncButton({
   endpoint,
   sourceType,
   environment,
@@ -507,56 +548,24 @@ function EndpointSubRow({
     }
   }
 
-  const kind = endpoint.schedule_kind ?? endpoint.default_schedule_kind
-  const value = endpoint.schedule_value ?? endpoint.default_schedule_value
-  const enabled = endpoint.enabled ?? true
-
   return (
-    <TableRow className="bg-gray-50 dark:bg-gray-900/40">
-      <TableCell className="w-10" />
-      <TableCell>
-        <div className="flex flex-col gap-0.5 pl-4">
-          <span className={tableTokens.cellStrong}>{endpoint.label}</span>
-          <span className={cx(tableTokens.cellSecondary, "font-mono")}>
-            {endpoint.name}
-          </span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <KindBadge kind={kind} />
-      </TableCell>
-      <TableCell>
-        <EndpointStateBadge
-          enabled={enabled}
-          status={endpoint.last_sync_status}
-        />
-      </TableCell>
-      <TableCell>
-        <span className={tableTokens.cellNumber}>
-          {formatScheduleSummary(kind, value)}
-        </span>
-      </TableCell>
-      <TableCell>
-        <LastSyncCell
-          startedAt={endpoint.last_sync_started_at}
-          finishedAt={endpoint.last_sync_finished_at}
-          status={endpoint.last_sync_status}
-          errorMessage={endpoint.last_sync_error}
-        />
-      </TableCell>
-      <TableCell className="text-right">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={handleSyncNow}
-          disabled={syncMut.isPending}
-          title="Sincronizar agora"
-          aria-label={`Sincronizar ${endpoint.label} agora`}
-        >
-          <RiPlayLine className="size-4" aria-hidden />
-        </Button>
-      </TableCell>
-    </TableRow>
+    <Button
+      type="button"
+      variant="ghost"
+      onClick={(e) => {
+        e.stopPropagation()
+        void handleSyncNow()
+      }}
+      disabled={syncMut.isPending}
+      title="Sincronizar agora"
+      aria-label={`Sincronizar ${endpoint.label} agora`}
+    >
+      {syncMut.isPending ? (
+        <RiLoader4Line className="size-4 animate-spin" aria-hidden />
+      ) : (
+        <RiPlayLine className="size-4" aria-hidden />
+      )}
+    </Button>
   )
 }
 
