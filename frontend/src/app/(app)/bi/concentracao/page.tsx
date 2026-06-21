@@ -329,8 +329,6 @@ export default function ConcentracaoPage() {
               <HistoricoCard
                 titulo="Histórico de concentração — cedentes"
                 pontos={data?.historico_cedentes ?? []}
-                kpiTop10={data?.cedentes.total_pct_pl ?? 0}
-                kpiMaior={data?.cedentes.itens[0]?.pct_pl ?? 0}
                 loading={loading}
               />
             </div>
@@ -349,8 +347,6 @@ export default function ConcentracaoPage() {
               <HistoricoCard
                 titulo="Histórico de concentração — sacados"
                 pontos={data?.historico_sacados ?? []}
-                kpiTop10={data?.sacados.total_pct_pl ?? 0}
-                kpiMaior={data?.sacados.itens[0]?.pct_pl ?? 0}
                 loading={loading}
               />
             </div>
