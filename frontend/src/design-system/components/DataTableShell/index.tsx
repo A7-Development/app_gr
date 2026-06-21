@@ -59,6 +59,23 @@ export type ShellSegmentsConfig<T> = {
   ariaLabel?: string
 }
 
+/** Uma opcao de filtro-pill (modo Triagem/`queue`). O `label` ja inclui a
+ *  contagem quando aplicavel (ex.: "Esperando por mim · 1"). */
+export type ShellPillOption = { value: string; label: string }
+
+/**
+ * Filtros pill do modo **Triagem** (preset `queue`). Substituem os `segments`
+ * na toolbar — usados em filas de triagem de workflow (ex.: esteira de credito).
+ * A FILTRAGEM e do caller: passe `data` ja filtrado; o Shell so renderiza os
+ * pills e dispara `onChange`.
+ */
+export type ShellPillFiltersConfig = {
+  options: ShellPillOption[]
+  value: string
+  onChange: (next: string) => void
+  ariaLabel?: string
+}
+
 export type ShellEmptyState = {
   icon: RemixiconComponentType
   title: string
@@ -84,6 +101,9 @@ export type DataTableShellProps<T> = {
   // ── Filtros (opcionais — Shell renderiza condicionalmente) ──────────
   search?: ShellSearchConfig
   segments?: ShellSegmentsConfig<T>
+  /** Modo Triagem (`queue`): filtros pill no lugar dos segments. Filtragem
+   *  e do caller — passe `data` ja filtrado. */
+  pillFilters?: ShellPillFiltersConfig
 
   /** Substantivo do item para o counter "X de Y {plural}". */
   itemNoun?: { singular: string; plural: string }
@@ -128,6 +148,7 @@ export function DataTableShell<T>({
   onRetry,
   search,
   segments,
+  pillFilters,
   itemNoun,
   density = "compact",
   onRowClick,
@@ -202,7 +223,10 @@ export function DataTableShell<T>({
   }
 
   // ── Empty state externo (data totalmente vazio) ──────────────────────
-  if (!loading && data.length === 0 && emptyState) {
+  // No modo Triagem (pillFilters) NAO fazemos early-return: a toolbar de pills
+  // precisa continuar visivel mesmo com 0 linhas (senao o usuario fica preso
+  // no filtro). Nesse caso o empty e renderizado inline dentro do Card.
+  if (!loading && data.length === 0 && emptyState && !pillFilters) {
     return (
       <EmptyState
         icon={emptyState.icon}
@@ -213,7 +237,7 @@ export function DataTableShell<T>({
     )
   }
 
-  const hasFilterBar = !!search || !!segments || !!itemNoun
+  const hasFilterBar = !!search || !!segments || !!pillFilters || !!itemNoun
 
   // Counter label (X de Y, ou X cedentes/credenciais/etc).
   const counterLabel = itemNoun
@@ -242,6 +266,35 @@ export function DataTableShell<T>({
               ariaLabel={segments.ariaLabel}
             />
           )}
+          {/* Modo Triagem (queue): filtros pill. Filtragem e do caller. */}
+          {pillFilters && (
+            <div
+              className="flex flex-wrap items-center gap-2"
+              role="tablist"
+              aria-label={pillFilters.ariaLabel}
+            >
+              {pillFilters.options.map((opt) => {
+                const active = pillFilters.value === opt.value
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => pillFilters.onChange(opt.value)}
+                    className={cx(
+                      "inline-flex h-[26px] items-center rounded-full border px-2.5 text-xs font-medium tabular-nums transition-colors duration-100",
+                      active
+                        ? "border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-500 dark:bg-blue-500/10 dark:text-blue-300"
+                        : "border-gray-200 text-gray-500 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-900",
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                )
+              })}
+            </div>
+          )}
           {counterLabel && (
             <span className={tableTokens.countLabel} aria-live="polite">
               {counterLabel}
@@ -250,39 +303,57 @@ export function DataTableShell<T>({
         </div>
       )}
 
-      <DataTable
-        data={segmentFiltered}
-        columns={columns}
-        loading={loading}
-        density={density}
-        virtualize={virtualize ?? false}
-        showColumnManager={false}
-        showDensityToggle={false}
-        showExport={false}
-        globalFilter={search?.value ?? ""}
-        onRowClick={onRowClick}
-        enableExpanding={enableExpanding}
-        getSubRows={getSubRows}
-        expandedColumnId={expandedColumnId}
-        rowClassName={rowClassName}
-        initialColumnVisibility={initialColumnVisibility}
-        renderEmpty={(hasFilters) =>
-          hasFilters ? (
-            <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                {filteredEmptyText ?? "Nenhum resultado para esses filtros"}
-              </p>
-              <Button variant="ghost" onClick={handleResetFilters}>
-                Limpar filtros
-              </Button>
-            </div>
-          ) : (
-            <div className="py-12 text-center text-sm text-gray-500 dark:text-gray-400">
-              Sem registros disponiveis.
-            </div>
-          )
-        }
-      />
+      {pillFilters && !loading && data.length === 0 ? (
+        // Modo Triagem: empty inline (toolbar de pills permanece acima).
+        // O caller controla a mensagem via `emptyState` (sabe se e fila vazia
+        // de verdade ou so o filtro atual sem itens).
+        <div className="flex flex-col items-center gap-3 py-12 text-center">
+          {emptyState?.icon && (
+            <emptyState.icon
+              className="size-7 text-gray-300 dark:text-gray-700"
+              aria-hidden
+            />
+          )}
+          <p className="text-[13px] text-gray-500 dark:text-gray-400">
+            {emptyState?.title ?? "Nada aqui."}
+          </p>
+          {emptyState?.action}
+        </div>
+      ) : (
+        <DataTable
+          data={segmentFiltered}
+          columns={columns}
+          loading={loading}
+          density={density}
+          virtualize={virtualize ?? false}
+          showColumnManager={false}
+          showDensityToggle={false}
+          showExport={false}
+          globalFilter={search?.value ?? ""}
+          onRowClick={onRowClick}
+          enableExpanding={enableExpanding}
+          getSubRows={getSubRows}
+          expandedColumnId={expandedColumnId}
+          rowClassName={rowClassName}
+          initialColumnVisibility={initialColumnVisibility}
+          renderEmpty={(hasFilters) =>
+            hasFilters ? (
+              <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {filteredEmptyText ?? "Nenhum resultado para esses filtros"}
+                </p>
+                <Button variant="ghost" onClick={handleResetFilters}>
+                  Limpar filtros
+                </Button>
+              </div>
+            ) : (
+              <div className="py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                Sem registros disponiveis.
+              </div>
+            )
+          }
+        />
+      )}
 
       {/* Proveniencia (CLAUDE.md §14.1) — dot pinned no rodape direito do Card.
           Mock (provenance undefined) = nada renderiza. */}
