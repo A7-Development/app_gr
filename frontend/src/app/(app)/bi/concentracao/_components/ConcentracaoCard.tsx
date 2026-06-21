@@ -96,6 +96,7 @@ export function ConcentracaoCard({
         key: "rank",
         label: "#",
         format: "numero",
+        widthClass: "w-9",
         render: (row) => {
           const mark = MARKERS.has(Number(row.rank))
           return (
@@ -110,13 +111,25 @@ export function ConcentracaoCard({
           )
         },
       },
-      { key: "nome", label: singular, format: "texto" },
-      { key: "financeiro", label: "Valor pres.", format: "numero" },
-      { key: "pct_pl", label: "% PL", format: "pct" },
+      {
+        // Coluna larga (resto do espaco em table-fixed) que TRUNCA — nome longo
+        // de cedente nao quebra a linha; nome completo no title (hover).
+        key: "nome",
+        label: singular,
+        format: "texto",
+        render: (row) => (
+          <span className={cx("block truncate", tableTokens.cellText)} title={String(row.nome ?? "")}>
+            {row.nome}
+          </span>
+        ),
+      },
+      { key: "financeiro", label: "Valor pres.", format: "numero", widthClass: "w-[92px]" },
+      { key: "pct_pl", label: "% PL", format: "pct", widthClass: "w-[60px]" },
       {
         key: "acm",
         label: "% PL ACM",
         format: "pct",
+        widthClass: "w-[72px]",
         render: (row) => {
           const mark = MARKERS.has(Number(row.rank))
           // Escada: marco = negrito gray-900; intermediaria = muted gray-400.
@@ -214,6 +227,7 @@ export function ConcentracaoCard({
         <div className="px-3 pb-3">
           <DenseTable
             bordered={false}
+            tableLayout="fixed"
             columns={columns}
             rows={rows}
             footer={footer}

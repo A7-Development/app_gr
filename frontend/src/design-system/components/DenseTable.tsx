@@ -48,6 +48,9 @@ export type DenseColumn = {
    *  (ex.: "escada" do %PL ACM no modo analise Top 1/5/10). Quando presente,
    *  substitui o formatValue/token padrao. */
   render?: (row: DenseRow, index: number) => React.ReactNode
+  /** Classe de largura Tailwind aplicada ao th+td (ex.: "w-9", "w-[88px]").
+   *  So tem efeito pratico com `tableLayout="fixed"`. */
+  widthClass?: string
 }
 
 export type DenseValue = string | number | null
@@ -65,6 +68,10 @@ export type DenseTableProps = {
   caption?: string
   /** Container com borda + cantos. Desligue (false) quando já dentro de Card. */
   bordered?: boolean
+  /** `fixed` aplica table-fixed: colunas respeitam `widthClass` e celulas de
+   *  texto truncam (com `truncate` no render) em vez de quebrar a linha.
+   *  Default `auto` (comportamento original — nao afeta tabelas existentes). */
+  tableLayout?: "auto" | "fixed"
   /** Classe extra por linha de DADOS (recebe row + index). Use p/ trilho/realce
    *  condicional (ex.: barra azul nas linhas-marco 1/5/10 do modo analise). */
   rowClassName?: (row: DenseRow, index: number) => string
@@ -115,6 +122,7 @@ export function DenseTable({
   footerSecondary,
   caption,
   bordered = true,
+  tableLayout = "auto",
   rowClassName,
   className,
 }: DenseTableProps) {
@@ -133,7 +141,7 @@ export function DenseTable({
           ? tableTokens.cellNumber
           : tableTokens.cellText
       return (
-        <td key={col.key} className={cx("px-3 py-0.5", alignClass(col))}>
+        <td key={col.key} className={cx("px-3 py-0.5", alignClass(col), col.widthClass)}>
           {col.render && index !== undefined ? (
             col.render(row, index)
           ) : (
@@ -154,12 +162,12 @@ export function DenseTable({
           bordered && "rounded-md border border-gray-200 dark:border-gray-800",
         )}
       >
-        <table className="w-full">
+        <table className={cx("w-full", tableLayout === "fixed" && "table-fixed")}>
           <thead>
             {/* Header hairline (handoff v2): so border-b gray-200, sem faixa cinza; 28px. */}
             <tr className="border-b border-gray-200 dark:border-gray-800">
               {columns.map((col) => (
-                <th key={col.key} className={cx(tableTokens.header, "h-7 px-3 align-middle text-gray-500 dark:text-gray-400", alignClass(col))}>
+                <th key={col.key} className={cx(tableTokens.header, "h-7 px-3 align-middle text-gray-500 dark:text-gray-400", alignClass(col), col.widthClass)}>
                   {col.label}
                 </th>
               ))}
