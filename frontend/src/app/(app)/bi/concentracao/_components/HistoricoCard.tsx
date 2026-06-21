@@ -88,13 +88,24 @@ export function HistoricoCard({
       lineStyle: { width: 1.5, color },
       itemStyle: { color },
       areaStyle: { color: gradient(color) },
+      // Rotulo na PONTA da linha (legenda na propria serie).
+      endLabel: {
+        show: true,
+        formatter: () => name,
+        color,
+        fontSize: 11,
+        fontWeight: 600,
+        fontFamily: "Inter, sans-serif",
+        offset: [4, 0],
+      },
     })
 
     return {
       // Legenda OFF (show:false p/ sobrescrever o default do tema) — o trio de
       // KPIs no header ja rotula as 3 linhas.
       legend: { show: false },
-      grid: { left: 38, right: 12, top: 12, bottom: 22 },
+      // right maior p/ caber o endLabel ("Top 10") na ponta das linhas.
+      grid: { left: 38, right: 56, top: 12, bottom: 22 },
       tooltip: { trigger: "axis", valueFormatter: (v) => `${Number(v).toFixed(1)}%` },
       xAxis: {
         type: "category",
