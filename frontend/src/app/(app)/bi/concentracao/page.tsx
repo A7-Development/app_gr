@@ -307,8 +307,9 @@ export default function ConcentracaoPage() {
                 UA está em construção. Por enquanto, apenas Realinvest.
               </div>
             )}
-            {/* Cedentes — tabela ranking (40%) + histórico (60%) na mesma linha */}
-            <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[2fr_3fr]">
+            {/* Cedentes — tabela ranking (40%) + histórico (60%) na mesma linha.
+                items-stretch: o gráfico estica até a altura da tabela (simetria). */}
+            <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-[2fr_3fr]">
               <ConcentracaoCard
                 titulo="Cedentes"
                 posicao={posicao}
@@ -318,7 +319,6 @@ export default function ConcentracaoPage() {
               />
               <HistoricoCard
                 titulo="Histórico de concentração — cedentes"
-                labelMaior="Maior cedente"
                 pontos={data?.historico_cedentes ?? []}
                 kpiTop10={data?.cedentes.total_pct_pl ?? 0}
                 kpiMaior={data?.cedentes.itens[0]?.pct_pl ?? 0}
@@ -327,7 +327,7 @@ export default function ConcentracaoPage() {
             </div>
 
             {/* Sacados — tabela ranking (40%) + histórico (60%) na mesma linha */}
-            <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[2fr_3fr]">
+            <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-[2fr_3fr]">
               <ConcentracaoCard
                 titulo="Sacados"
                 posicao={posicao}
@@ -337,7 +337,6 @@ export default function ConcentracaoPage() {
               />
               <HistoricoCard
                 titulo="Histórico de concentração — sacados"
-                labelMaior="Maior sacado"
                 pontos={data?.historico_sacados ?? []}
                 kpiTop10={data?.sacados.total_pct_pl ?? 0}
                 kpiMaior={data?.sacados.itens[0]?.pct_pl ?? 0}

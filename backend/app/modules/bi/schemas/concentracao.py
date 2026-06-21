@@ -42,6 +42,7 @@ class HistoricoPonto(BaseModel):
 
     data: date
     maior_pct: float = Field(description="% do PL do maior (1o) cedente/sacado")
+    top5_pct: float = Field(description="% do PL dos 5 maiores")
     top10_pct: float = Field(description="% do PL dos 10 maiores")
 
 

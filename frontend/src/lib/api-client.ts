@@ -1410,6 +1410,7 @@ export type ConcentracaoTabela = {
 export type ConcentracaoHistoricoPonto = {
   data: string
   maior_pct: number
+  top5_pct: number
   top10_pct: number
 }
 

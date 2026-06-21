@@ -173,7 +173,7 @@ export function DenseTable({
             {/* Header hairline (handoff v2): so border-b gray-200, sem faixa cinza; 28px. */}
             <tr className="border-b border-gray-200 dark:border-gray-800">
               {columns.map((col) => (
-                <th key={col.key} className={cx(tableTokens.header, "h-7 px-3 align-middle text-gray-500 dark:text-gray-400", alignClass(col), col.widthClass)}>
+                <th key={col.key} className={cx(tableTokens.header, "h-7 whitespace-nowrap px-3 align-middle text-gray-500 dark:text-gray-400", alignClass(col), col.widthClass)}>
                   {col.label}
                 </th>
               ))}
