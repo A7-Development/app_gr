@@ -22,10 +22,32 @@ import {
 } from "@/design-system/components/DenseTable"
 import { tableTokens } from "@/design-system/tokens/table"
 import { cx } from "@/lib/utils"
-import type { ConcentracaoTabela } from "@/lib/api-client"
+import type { ConcentracaoTabela, Provenance } from "@/lib/api-client"
 
 /** Ranks que marcam as faixas Top 1 / 5 / 10. */
 const MARKERS = new Set([1, 5, 10])
+
+/** source_id (vendor:relatorio) -> rotulo amigavel da fonte. */
+const SOURCE_LABELS: Record<string, string> = {
+  "qitech:fidc-estoque": "QiTech · estoque de recebíveis",
+  "admin:mec": "MEC · PL do fundo",
+}
+function sourceLabel(id: string): string {
+  return SOURCE_LABELS[id] ?? id
+}
+
+/** ISO -> "há X min/h/d" (sync relativa). */
+function sinceLabel(iso: string | null): string | null {
+  if (!iso) return null
+  const ts = Date.parse(iso)
+  if (Number.isNaN(ts)) return null
+  const min = Math.max(0, Math.round((Date.now() - ts) / 60_000))
+  if (min < 1) return "agora"
+  if (min < 60) return `há ${min} min`
+  const h = Math.round(min / 60)
+  if (h < 24) return `há ${h} h`
+  return `há ${Math.round(h / 24)} d`
+}
 
 /** Conectores que ficam minusculos no meio da razao social. */
 const CONNECTORS = new Set(["de", "do", "da", "dos", "das", "e"])
@@ -76,6 +98,7 @@ export function ConcentracaoCard({
   tabela,
   plTotal,
   top10DeltaPp,
+  provenance,
   loading,
 }: {
   titulo: string
@@ -85,6 +108,8 @@ export function ConcentracaoCard({
   /** Variacao em pontos percentuais do Top 10 vs ponto anterior do historico
    *  (derivado, real). Mostra "↑/↓ X,X pp" no KPI Top 10. undefined = sem delta. */
   top10DeltaPp?: number
+  /** Proveniencia real do bundle (BIResponse.provenance) — fontes + sync. */
+  provenance?: Provenance | null
   loading: boolean
 }) {
   const singular = titulo.endsWith("s") ? titulo.slice(0, -1) : titulo
@@ -284,11 +309,15 @@ export function ConcentracaoCard({
         />
       )}
 
-      {/* Proveniencia — sangra ate as bordas (-mx-4), dot laranja (§14.5). */}
+      {/* Proveniencia — fontes REAIS do bundle (sangra ate as bordas, dot laranja §14.5). */}
       <div className="-mx-4 -mb-4 flex items-center gap-1.5 border-t border-gray-100 px-4 py-2 dark:border-gray-900">
         <span className="size-[5px] shrink-0 rounded-full bg-[#F05A28]" aria-hidden />
-        <span className="text-[10px] text-gray-400 dark:text-gray-500">
-          Fonte: posição da carteira · {posicao}
+        <span className="truncate text-[10px] text-gray-400 dark:text-gray-500">
+          {provenance && provenance.source_ids.length > 0
+            ? `Fonte: ${provenance.source_ids.map(sourceLabel).join(" · ")}${
+                provenance.source_type === "derived" ? " · derivado" : ""
+              }${sinceLabel(provenance.last_sync_at) ? ` · sync ${sinceLabel(provenance.last_sync_at)}` : ""}`
+            : `Fonte: posição da carteira · ${posicao}`}
         </span>
       </div>
     </Card>
