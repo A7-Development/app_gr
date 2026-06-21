@@ -311,16 +311,16 @@ export default function ConcentracaoPage() {
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
               <ConcentracaoCard
                 titulo="Cedentes"
-                eyebrow="Cedentes"
                 posicao={posicao}
                 tabela={data?.cedentes}
+                plTotal={data?.pl_total}
                 loading={loading}
               />
               <ConcentracaoCard
                 titulo="Sacados"
-                eyebrow="Sacados"
                 posicao={posicao}
                 tabela={data?.sacados}
+                plTotal={data?.pl_total}
                 loading={loading}
               />
             </div>

@@ -43,6 +43,11 @@ export type DenseColumn = {
   align?: DenseAlign
   /** Como formatar o valor cru. numero/brl/pct usam tabular-nums + alinham à direita por default. */
   format?: DenseFormat
+  /** Override de renderizacao da celula (linhas de DADOS apenas — nao footer).
+   *  Recebe a row + o indice. Use p/ destaque condicional por posicao
+   *  (ex.: "escada" do %PL ACM no modo analise Top 1/5/10). Quando presente,
+   *  substitui o formatValue/token padrao. */
+  render?: (row: DenseRow, index: number) => React.ReactNode
 }
 
 export type DenseValue = string | number | null
@@ -60,6 +65,9 @@ export type DenseTableProps = {
   caption?: string
   /** Container com borda + cantos. Desligue (false) quando já dentro de Card. */
   bordered?: boolean
+  /** Classe extra por linha de DADOS (recebe row + index). Use p/ trilho/realce
+   *  condicional (ex.: barra azul nas linhas-marco 1/5/10 do modo analise). */
+  rowClassName?: (row: DenseRow, index: number) => string
   className?: string
 }
 
@@ -107,11 +115,13 @@ export function DenseTable({
   footerSecondary,
   caption,
   bordered = true,
+  rowClassName,
   className,
 }: DenseTableProps) {
   const renderRow = (
     row: DenseRow,
     { strong = false, muted = false }: { strong?: boolean; muted?: boolean } = {},
+    index?: number,
   ) =>
     columns.map((col) => {
       const numeric = isNumericFormat(col.format)
@@ -124,9 +134,13 @@ export function DenseTable({
           : tableTokens.cellText
       return (
         <td key={col.key} className={cx("px-3 py-0.5", alignClass(col))}>
-          <span className={cx(base, strong && "font-semibold")}>
-            {formatValue(row[col.key] ?? null, col.format)}
-          </span>
+          {col.render && index !== undefined ? (
+            col.render(row, index)
+          ) : (
+            <span className={cx(base, strong && "font-semibold")}>
+              {formatValue(row[col.key] ?? null, col.format)}
+            </span>
+          )}
         </td>
       )
     })
@@ -154,8 +168,14 @@ export function DenseTable({
           <tbody>
             {/* Linha 32px (h-8) — grade unica da familia (handoff v2). */}
             {rows.map((row, i) => (
-              <tr key={i} className="h-8 border-b border-gray-100 last:border-0 dark:border-gray-900">
-                {renderRow(row)}
+              <tr
+                key={i}
+                className={cx(
+                  "h-8 border-b border-gray-100 last:border-0 dark:border-gray-900",
+                  rowClassName?.(row, i),
+                )}
+              >
+                {renderRow(row, {}, i)}
               </tr>
             ))}
             {footer && (
