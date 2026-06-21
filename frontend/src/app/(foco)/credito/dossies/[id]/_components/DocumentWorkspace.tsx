@@ -1,5 +1,12 @@
 // DocumentWorkspace — painel do step `document_request` no cockpit.
 //
+// MOTIVO (tabela canonica): as tabelas internas (objetos extraidos de colunas
+// DINAMICAS por documento + "Receita mensal" EDITAVEL com add/remove de linha)
+// permanecem <table> enxuto + tableTokens — nao cabem nos componentes canonicos
+// (DataTable nao faz add/remove de linha; colunas dinamicas por payload). Header
+// ja alinhado ao hairline da familia. Candidato a um futuro composite
+// "EditableTable" — fora do escopo do chrome-swap atual.
+//
 // Ciclo dirigido pelo analista (IA propoe, humano homologa — esteira §14):
 // sobe arquivo + escolhe o TIPO -> "Processar" (IA le via Vision) -> revisa a
 // extracao formatada -> ajusta se precisar -> Aprovar -> Continuar. Depois de
@@ -635,7 +642,7 @@ function GenericListTable({ fieldKey, rows }: { fieldKey: string; rows: unknown[
       <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-100 bg-gray-50/60 dark:border-gray-900 dark:bg-gray-900/40">
+            <tr className="border-b border-gray-200 dark:border-gray-800">
               {columns.map((c) => (
                 <th key={c} className={cx(tableTokens.header, "px-3 py-1.5 text-left")}>
                   {FIELD_LABELS[c] ?? humanize(c)}
@@ -687,7 +694,7 @@ function MonthlyTable({
       <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-100 bg-gray-50/60 dark:border-gray-900 dark:bg-gray-900/40">
+            <tr className="border-b border-gray-200 dark:border-gray-800">
               <th className={cx(tableTokens.header, "px-3 py-1.5 text-left")}>
                 Mês
               </th>

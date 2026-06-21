@@ -1,3 +1,8 @@
+// MOTIVO (tabela canonica): tabela interna de extracao com colunas DINAMICAS
+// por documento permanece <table> enxuto + tableTokens (header ja no hairline
+// da familia) — colunas dinamicas por payload nao cabem no DataTable/DenseTable.
+// Candidato a futuro composite "EditableTable". Fora do escopo do chrome-swap.
+//
 // DocumentZones — zonas D1 COMPARTILHADAS das estações de documento
 // (handoff Conceito D, frame D1, generalizado a partir do FaturamentoStation):
 //
@@ -979,7 +984,7 @@ function FichaListBlock({ fieldKey, rows }: { fieldKey: string; rows: unknown[] 
       <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-100 bg-gray-50/60 dark:border-gray-900 dark:bg-gray-900/40">
+            <tr className="border-b border-gray-200 dark:border-gray-800">
               {columns.map((c) => (
                 <th
                   key={c}
