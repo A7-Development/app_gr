@@ -335,8 +335,8 @@ export function ConcentracaoCard({
         <span className="truncate text-[10px] text-gray-400 dark:text-gray-500">
           {provenance && provenance.source_ids.length > 0
             ? `Fonte: ${sourcesText(provenance.source_ids)}${
-                provenance.source_type === "derived" ? " · derivado" : ""
-              }${sinceLabel(provenance.last_sync_at) ? ` · sync ${sinceLabel(provenance.last_sync_at)}` : ""}`
+                sinceLabel(provenance.last_sync_at) ? ` · sync ${sinceLabel(provenance.last_sync_at)}` : ""
+              }`
             : `Fonte: posição da carteira · ${posicao}`}
         </span>
       </div>
