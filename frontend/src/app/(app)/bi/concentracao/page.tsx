@@ -115,6 +115,12 @@ function fmtData(iso: string | undefined, long = false): string {
   })
 }
 
+/** Variacao (pp) do Top 10 vs ponto anterior do historico (ultimo - penultimo). */
+function deltaTop10Pp(pontos: { top10_pct: number }[] | undefined): number | undefined {
+  if (!pontos || pontos.length < 2) return undefined
+  return pontos[pontos.length - 1].top10_pct - pontos[pontos.length - 2].top10_pct
+}
+
 export default function ConcentracaoPage() {
   // Filtros globais (§7.2) — deep-linkaveis via URL (nuqs).
   const [uaParam, setUaParam] = useQueryState("ua")
@@ -315,6 +321,7 @@ export default function ConcentracaoPage() {
                 posicao={posicao}
                 tabela={data?.cedentes}
                 plTotal={data?.pl_total}
+                top10DeltaPp={deltaTop10Pp(data?.historico_cedentes)}
                 loading={loading}
               />
               <HistoricoCard
@@ -333,6 +340,7 @@ export default function ConcentracaoPage() {
                 posicao={posicao}
                 tabela={data?.sacados}
                 plTotal={data?.pl_total}
+                top10DeltaPp={deltaTop10Pp(data?.historico_sacados)}
                 loading={loading}
               />
               <HistoricoCard
