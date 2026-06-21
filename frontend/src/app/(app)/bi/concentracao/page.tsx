@@ -136,6 +136,7 @@ export default function ConcentracaoPage() {
   })
 
   const data = q.data?.data
+  const prov = q.data?.provenance
   const loading = q.isLoading
   const posicao = fmtData(data?.data_posicao)
   const suportado = data?.suportado ?? true
@@ -322,6 +323,7 @@ export default function ConcentracaoPage() {
                 tabela={data?.cedentes}
                 plTotal={data?.pl_total}
                 top10DeltaPp={deltaTop10Pp(data?.historico_cedentes)}
+                provenance={prov}
                 loading={loading}
               />
               <HistoricoCard
@@ -341,6 +343,7 @@ export default function ConcentracaoPage() {
                 tabela={data?.sacados}
                 plTotal={data?.pl_total}
                 top10DeltaPp={deltaTop10Pp(data?.historico_sacados)}
+                provenance={prov}
                 loading={loading}
               />
               <HistoricoCard
