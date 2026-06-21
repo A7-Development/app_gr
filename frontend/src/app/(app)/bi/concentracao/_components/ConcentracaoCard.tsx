@@ -26,7 +26,6 @@ import {
   type DenseColumn,
   type DenseRow,
 } from "@/design-system/components/DenseTable"
-import { cardTokens } from "@/design-system/tokens/card"
 import { tableTokens } from "@/design-system/tokens/table"
 import { cx } from "@/lib/utils"
 import type { ConcentracaoTabela } from "@/lib/api-client"
@@ -166,8 +165,9 @@ export function ConcentracaoCard({
 
   return (
     <Card className="p-0">
-      {/* Cabecalho: eyebrow + trio de KPIs (Top 1/5/10) + contexto */}
-      <div className={cardTokens.header}>
+      {/* Cabecalho: eyebrow + trio de KPIs (Top 1/5/10) + contexto.
+          SEM border-b (a tabela flui direto sob o contexto — handoff §4b). */}
+      <div className="px-4 pb-1 pt-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">
           Concentração de {titulo.toLowerCase()} — em R$
         </p>
