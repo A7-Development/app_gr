@@ -5,17 +5,21 @@
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 import type { EChartsOption } from "echarts"
+import type { ColumnDef } from "@tanstack/react-table"
 
 import { cx } from "@/lib/utils"
 import { Card } from "@/components/tremor/Card"
+import { DataTable } from "@/design-system/components/DataTable"
 import { EChartsCard } from "@/design-system/components/EChartsCard"
 import { tableTokens } from "@/design-system/tokens/table"
 import { cardTokens } from "@/design-system/tokens/card"
 import { biPanorama } from "@/lib/api-client"
-import type { PanoramaFilters } from "@/lib/api-client"
+import type { PanoramaAdminRankingItem, PanoramaFilters } from "@/lib/api-client"
 
 import { fmtBRLCompact, fmtInt, fmtPct } from "./format"
 import { TabSkeleton, TabError } from "./_state"
+
+type PlayerRow = PanoramaAdminRankingItem & { rank: number }
 
 export function PlayersTab({ filters }: { filters: PanoramaFilters }) {
   const q = useQuery({
@@ -27,6 +31,7 @@ export function PlayersTab({ filters }: { filters: PanoramaFilters }) {
   if (q.isError || !q.data) return <TabError onRetry={() => q.refetch()} />
 
   const { ranking } = q.data.data
+  const rows: PlayerRow[] = ranking.map((r, i) => ({ ...r, rank: i + 1 }))
 
   // Scatter: nº de fundos (x) × PL médio em R$ mi (y), bolha = PL total.
   const scatterOption: EChartsOption = {
@@ -74,42 +79,114 @@ export function PlayersTab({ filters }: { filters: PanoramaFilters }) {
       />
 
       <Card className={cx(cardTokens.body, "overflow-x-auto")}>
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="border-b border-gray-200 dark:border-gray-800">
-              <th className={cx(tableTokens.header, "py-2 pr-2 text-left text-gray-500 dark:text-gray-400")}>#</th>
-              <th className={cx(tableTokens.header, "py-2 pr-3 text-left text-gray-500 dark:text-gray-400")}>Administradora</th>
-              <th className={cx(tableTokens.header, "py-2 px-2 text-right text-gray-500 dark:text-gray-400")}>Qtd</th>
-              <th className={cx(tableTokens.header, "py-2 px-2 text-right text-gray-500 dark:text-gray-400")}>% qtd</th>
-              <th className={cx(tableTokens.header, "py-2 px-2 text-right text-gray-500 dark:text-gray-400")}>PL</th>
-              <th className={cx(tableTokens.header, "py-2 px-2 text-right text-gray-500 dark:text-gray-400")}>% PL</th>
-              <th className={cx(tableTokens.header, "py-2 px-2 text-right text-gray-500 dark:text-gray-400")}>PL médio</th>
-              <th className={cx(tableTokens.header, "py-2 px-2 text-right text-gray-500 dark:text-gray-400")}>PL mediano</th>
-              <th className={cx(tableTokens.header, "py-2 pl-2 text-right text-gray-500 dark:text-gray-400")}>Liquidez</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ranking.map((r, i) => (
-              <tr
-                key={r.cnpj_admin}
-                className="border-b border-gray-100 dark:border-gray-900 hover:bg-gray-50 dark:hover:bg-gray-900/40"
-              >
-                <td className={cx(tableTokens.cellNumberSecondary, "py-1.5 pr-2")}>{i + 1}</td>
-                <td className={cx(tableTokens.cellText, "py-1.5 pr-3 max-w-[280px] truncate")} title={r.admin}>
-                  {r.admin}
-                </td>
-                <td className={cx(tableTokens.cellNumber, "py-1.5 px-2 text-right")}>{fmtInt.format(r.qtd)}</td>
-                <td className={cx(tableTokens.cellNumberSecondary, "py-1.5 px-2 text-right")}>{fmtPct(r.pct_qtd, 1)}</td>
-                <td className={cx(tableTokens.cellNumber, "py-1.5 px-2 text-right")}>{fmtBRLCompact(r.pl)}</td>
-                <td className={cx(tableTokens.cellNumberSecondary, "py-1.5 px-2 text-right")}>{fmtPct(r.pct_pl, 1)}</td>
-                <td className={cx(tableTokens.cellNumber, "py-1.5 px-2 text-right")}>{fmtBRLCompact(r.pl_medio)}</td>
-                <td className={cx(tableTokens.cellNumber, "py-1.5 px-2 text-right")}>{fmtBRLCompact(r.pl_mediano)}</td>
-                <td className={cx(tableTokens.cellNumber, "py-1.5 pl-2 text-right")}>{fmtPct(r.liquidez_pct, 1)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          data={rows}
+          columns={PLAYER_COLUMNS}
+          showDensityToggle={false}
+          showColumnManager={false}
+        />
       </Card>
     </>
   )
 }
+
+const PLAYER_COLUMNS: ColumnDef<PlayerRow, unknown>[] = [
+  {
+    id: "rank",
+    header: "#",
+    accessorFn: (r) => r.rank,
+    cell: ({ row }) => (
+      <span className={tableTokens.cellNumberSecondary}>{row.original.rank}</span>
+    ),
+  },
+  {
+    id: "admin",
+    header: "Administradora",
+    accessorFn: (r) => r.admin,
+    cell: ({ row }) => (
+      <span
+        className={cx(tableTokens.cellText, "block max-w-[280px] truncate")}
+        title={row.original.admin}
+      >
+        {row.original.admin}
+      </span>
+    ),
+  },
+  {
+    id: "qtd",
+    header: "Qtd",
+    accessorFn: (r) => r.qtd,
+    meta: { align: "right" },
+    cell: ({ row }) => (
+      <span className={cx(tableTokens.cellNumber, "block text-right")}>
+        {fmtInt.format(row.original.qtd)}
+      </span>
+    ),
+  },
+  {
+    id: "pct_qtd",
+    header: "% qtd",
+    accessorFn: (r) => r.pct_qtd,
+    meta: { align: "right" },
+    cell: ({ row }) => (
+      <span className={cx(tableTokens.cellNumberSecondary, "block text-right")}>
+        {fmtPct(row.original.pct_qtd, 1)}
+      </span>
+    ),
+  },
+  {
+    id: "pl",
+    header: "PL",
+    accessorFn: (r) => r.pl,
+    meta: { align: "right" },
+    cell: ({ row }) => (
+      <span className={cx(tableTokens.cellNumber, "block text-right")}>
+        {fmtBRLCompact(row.original.pl)}
+      </span>
+    ),
+  },
+  {
+    id: "pct_pl",
+    header: "% PL",
+    accessorFn: (r) => r.pct_pl,
+    meta: { align: "right" },
+    cell: ({ row }) => (
+      <span className={cx(tableTokens.cellNumberSecondary, "block text-right")}>
+        {fmtPct(row.original.pct_pl, 1)}
+      </span>
+    ),
+  },
+  {
+    id: "pl_medio",
+    header: "PL médio",
+    accessorFn: (r) => r.pl_medio,
+    meta: { align: "right" },
+    cell: ({ row }) => (
+      <span className={cx(tableTokens.cellNumber, "block text-right")}>
+        {fmtBRLCompact(row.original.pl_medio)}
+      </span>
+    ),
+  },
+  {
+    id: "pl_mediano",
+    header: "PL mediano",
+    accessorFn: (r) => r.pl_mediano,
+    meta: { align: "right" },
+    cell: ({ row }) => (
+      <span className={cx(tableTokens.cellNumber, "block text-right")}>
+        {fmtBRLCompact(row.original.pl_mediano)}
+      </span>
+    ),
+  },
+  {
+    id: "liquidez",
+    header: "Liquidez",
+    accessorFn: (r) => r.liquidez_pct,
+    meta: { align: "right" },
+    cell: ({ row }) => (
+      <span className={cx(tableTokens.cellNumber, "block text-right")}>
+        {fmtPct(row.original.liquidez_pct, 1)}
+      </span>
+    ),
+  },
+]

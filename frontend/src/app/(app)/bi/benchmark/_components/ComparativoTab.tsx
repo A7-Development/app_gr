@@ -20,15 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/tremor/Select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRoot,
-  TableRow,
-} from "@/components/tremor/Table"
+import { tableTokens } from "@/design-system/tokens/table"
 import { BarChart } from "@/components/charts/BarChart"
 import { BarList } from "@/components/charts/BarList"
 import { DonutChart } from "@/components/charts/DonutChart"
@@ -219,63 +211,78 @@ function RankingTable({ data }: { data: ComparativoResponse }) {
       title="Ranking sintetico"
       info="Cada linha destaca o melhor fundo no indicador. ↑ = maior e melhor, ↓ = menor e melhor."
     >
-      <TableRoot>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell className="w-[240px]">Indicador</TableHeaderCell>
+      {/* MOTIVO: matriz bespoke (indicadores x fundos dinamicos, secoes
+          agrupadas via colSpan, highlight "melhor" por celula + check, coluna
+          mediana). DataTable (lista homogenea sortavel) e DenseTable (cells
+          de formatValue fixo) nao expressam o highlight/grupos sem perda.
+          Montada em <table> nativa com tableTokens. */}
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="border-b border-gray-200 dark:border-gray-800">
+              <th className={cx(tableTokens.header, "w-[240px] py-2 px-3 text-left text-gray-500 dark:text-gray-400")}>
+                Indicador
+              </th>
               {data.fundos.map((f) => (
-                <TableHeaderCell key={f.cnpj} className="text-right">
+                <th key={f.cnpj} className={cx(tableTokens.header, "py-2 px-3 text-right text-gray-500 dark:text-gray-400")}>
                   <FundoHeaderCell fundo={f} />
-                </TableHeaderCell>
+                </th>
               ))}
-              <TableHeaderCell className="text-right text-gray-500">
+              <th className={cx(tableTokens.header, "py-2 px-3 text-right text-gray-500 dark:text-gray-400")}>
                 Mediana mercado
-              </TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
             {GRUPOS.flatMap((g) => {
               const linhas = g.keys
                 .map((k) => porKey[k])
                 .filter((l): l is RankingLinha => Boolean(l))
               if (linhas.length === 0) return []
               return [
-                <TableRow key={`group-${g.titulo}`}>
-                  <TableCell
+                <tr key={`group-${g.titulo}`}>
+                  <td
                     colSpan={data.fundos.length + 2}
-                    className="bg-gray-50 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:bg-gray-900 dark:text-gray-400"
+                    className={cx(tableTokens.header, "bg-gray-50 px-3 py-2 text-left text-gray-500 dark:bg-gray-900 dark:text-gray-400")}
                   >
                     {g.titulo}
-                  </TableCell>
-                </TableRow>,
+                  </td>
+                </tr>,
                 ...linhas.map((linha) => {
                   const melhor = melhorCnpj(linha)
                   return (
-                    <TableRow key={linha.key}>
-                      <TableCell>
+                    <tr key={linha.key} className="border-b border-gray-100 last:border-0 dark:border-gray-900">
+                      <td className="px-3 py-1.5">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium text-gray-900 dark:text-gray-50">
+                          <span className={tableTokens.cellStrong}>
                             {linha.label}
                           </span>
                           <span className="text-[11px] text-gray-400">
                             {linha.direction === "desc" ? "↑ melhor" : "↓ melhor"}
                           </span>
                         </div>
-                      </TableCell>
+                      </td>
                       {data.fundos.map((f) => {
                         const v = linha.valores.find((x) => x.cnpj === f.cnpj)
                         const isMelhor = melhor === f.cnpj
                         return (
-                          <TableCell
+                          <td
                             key={f.cnpj}
                             className={cx(
-                              "text-right tabular-nums text-xs",
-                              isMelhor &&
-                                "bg-blue-50 font-semibold text-blue-900 dark:bg-blue-500/10 dark:text-blue-200",
+                              "px-3 py-1.5 text-right",
+                              isMelhor
+                                ? "bg-blue-50 dark:bg-blue-500/10"
+                                : undefined,
                             )}
                           >
-                            <span className="inline-flex items-center justify-end gap-1">
+                            <span
+                              className={cx(
+                                "inline-flex items-center justify-end gap-1",
+                                isMelhor
+                                  ? "tabular-nums text-xs font-semibold text-blue-900 dark:text-blue-200"
+                                  : tableTokens.cellNumber,
+                              )}
+                            >
                               {isMelhor && (
                                 <RiCheckLine
                                   className="size-3 text-blue-600 dark:text-blue-400"
@@ -284,20 +291,20 @@ function RankingTable({ data }: { data: ComparativoResponse }) {
                               )}
                               {formatValor(v?.valor ?? null, linha.unidade)}
                             </span>
-                          </TableCell>
+                          </td>
                         )
                       })}
-                      <TableCell className="text-right tabular-nums text-xs text-gray-500">
+                      <td className={cx(tableTokens.cellNumberSecondary, "px-3 py-1.5 text-right")}>
                         {formatValor(linha.mediana_mercado, linha.unidade)}
-                      </TableCell>
-                    </TableRow>
+                      </td>
+                    </tr>
                   )
                 }),
               ]
             })}
-          </TableBody>
-        </Table>
-      </TableRoot>
+          </tbody>
+        </table>
+      </div>
     </ChartCard>
   )
 }

@@ -29,15 +29,19 @@ import {
 } from "@remixicon/react"
 import { toast } from "sonner"
 
+import type { ColumnDef } from "@tanstack/react-table"
+
 import { Button } from "@/components/tremor/Button"
 import { Textarea } from "@/components/tremor/Textarea"
 import {
   AgentConclusion,
   AgentLiveStatus,
   AgentOutputRenderer,
+  DataTable,
   KpiChartCard,
   type KpiChartDatum,
 } from "@/design-system/components"
+import { tableTokens } from "@/design-system/tokens/table"
 import { credito, type CreditDocumentRead, type RevenueAnalysis } from "@/lib/credito-client"
 import {
   DocumentSourceZone,
@@ -272,6 +276,17 @@ function ConferenceZone({
   onConfirm: (month: string) => void
   saving: boolean
 }) {
+  const confRows: ConfRow[] = rows.map((r, i) => ({
+    idx: i,
+    row: r,
+    ai: aiRows?.[i] ?? null,
+    state: rowStates[i],
+    editable,
+    onSelect: () => onSelect(i),
+    onChangeValue: (v: number) => onChangeValue(i, v),
+    onConfirm: () => onConfirm(r.month),
+  }))
+
   return (
     <section className="overflow-hidden rounded border border-gray-200 bg-white shadow-xs dark:border-gray-800 dark:bg-gray-950">
       <header className="flex flex-wrap items-center gap-3 border-b border-gray-100 px-5 py-3 dark:border-gray-900">
@@ -301,40 +316,27 @@ function ConferenceZone({
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px]">
-        {/* Tabela */}
+        {/* Tabela — DataTable canônica (ações por linha + edição inline) */}
         <div className="border-gray-100 px-5 py-3.5 lg:border-r dark:border-gray-900">
-          <div className="grid grid-cols-[64px_1fr_1fr_96px] gap-3 border-b border-gray-200 pb-[7px] dark:border-gray-800">
-            {["Mês", "IA propôs", "No dossiê", "Estado"].map((h, i) => (
-              <span
-                key={h}
-                className={cx(
-                  "text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400 dark:text-gray-500",
-                  i === 3 && "text-right",
-                )}
-              >
-                {h}
-              </span>
-            ))}
-          </div>
-
-          {rows.map((r, i) => {
-            const st = rowStates[i]
-            const ai = aiRows?.[i]
-            const isSelected = selected === i
-            return (
-              <ConferenceRow
-                key={`${r.month}-${i}`}
-                row={r}
-                ai={ai ?? null}
-                state={st}
-                selected={isSelected}
-                editable={editable}
-                onSelect={() => onSelect(i)}
-                onChangeValue={(v) => onChangeValue(i, v)}
-                onConfirm={() => onConfirm(r.month)}
-              />
-            )
-          })}
+          <DataTable<ConfRow>
+            data={confRows}
+            columns={conferenceColumns}
+            density="compact"
+            showDensityToggle={false}
+            showColumnManager={false}
+            onRowClick={(r) => onSelect(r.idx)}
+            rowClassName={(r) => {
+              // Realce controlado pelo PARENT (sincroniza com a barra do chart),
+              // espelhando o comportamento original: linha != ok recebe fundo
+              // cinza; pendente ganha trilho âmbar; linha ok selecionada fica azul.
+              const isSel = selected === r.idx
+              if (r.state === "pendente")
+                return "bg-gray-50 dark:bg-gray-925 border-l-amber-600"
+              if (r.state === "ajustado") return "bg-gray-50 dark:bg-gray-925"
+              if (isSel) return "bg-blue-50 dark:bg-blue-500/10 border-l-blue-500"
+              return ""
+            }}
+          />
 
           <p className="pt-2.5 text-[11px] italic text-gray-400 dark:text-gray-500">
             a coluna &quot;IA propôs&quot; nunca é editada — ajustes preservam o valor
@@ -353,30 +355,112 @@ function ConferenceZone({
   )
 }
 
-function ConferenceRow({
-  row,
-  ai,
-  state,
-  selected,
-  editable,
-  onSelect,
-  onChangeValue,
-  onConfirm,
-}: {
+// Linha da conferência montada para a DataTable. Carrega o estado por linha
+// (ok / ajustado / pendente) + os callbacks de edição/confirmação.
+type ConfRow = {
+  idx: number
   row: MonthRow
   ai: MonthRow | null
   state: RowState
-  selected: boolean
   editable: boolean
   onSelect: () => void
   onChangeValue: (v: number) => void
   onConfirm: () => void
-}) {
+}
+
+const conferenceColumns: ColumnDef<ConfRow, unknown>[] = [
+  {
+    id: "mes",
+    header: "Mês",
+    cell: ({ row }) => (
+      <span className={tableTokens.cellSecondary}>{fmtMonth(row.original.row.month)}</span>
+    ),
+  },
+  {
+    id: "ia",
+    header: "IA propôs",
+    // "IA propôs" nunca é editada — preserva o valor original na trilha.
+    cell: ({ row }) => {
+      const { ai, state } = row.original
+      if (!ai) return <span className={tableTokens.cellMuted}>—</span>
+      if (state === "ajustado")
+        return (
+          <span className={cx(tableTokens.cellNumberSecondary, "line-through")}>
+            {fmtBRL(ai.value)}
+          </span>
+        )
+      return (
+        <span className={tableTokens.cellNumber}>
+          {fmtBRL(ai.value)}
+          {state === "pendente" && (
+            <span
+              className="ml-1.5 inline-flex h-4 items-center rounded-full px-[5px] text-[9.5px] font-medium leading-none"
+              style={{ background: "#FEFCE8", color: "#713F12" }}
+              title="Confiança baixa nesta leitura — confira no documento ao lado."
+            >
+              confira
+            </span>
+          )}
+        </span>
+      )
+    },
+  },
+  {
+    id: "no_dossie",
+    header: "No dossiê",
+    cell: ({ row }) => <NoDossieCell {...row.original} />,
+  },
+  {
+    id: "estado",
+    header: "Estado",
+    meta: { align: "right" },
+    cell: ({ row }) => {
+      const { state, onConfirm } = row.original
+      if (state === "ok")
+        return (
+          <span
+            className="flex items-center justify-end gap-1 text-[11px] font-medium"
+            style={{ color: "#059669" }}
+          >
+            <RiCheckLine className="size-3" aria-hidden />
+            ok
+          </span>
+        )
+      if (state === "ajustado")
+        return (
+          <span className="flex items-center justify-end gap-1 text-[11px] font-medium text-gray-700 dark:text-gray-300">
+            <RiEditLine className="size-3" aria-hidden />
+            ajustado
+          </span>
+        )
+      // pendente
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onConfirm()
+          }}
+          className="flex w-full items-center justify-end gap-1 text-[11px] font-medium text-amber-600 hover:text-amber-700"
+          title="Confirmar este valor como está"
+        >
+          <RiCursorLine className="size-3" aria-hidden />
+          confira →
+        </button>
+      )
+    },
+  },
+]
+
+// Célula "No dossiê" — único campo editável (edição inline com autosave via
+// debounce no parent). Mantém estado local de edição (texto + flag).
+function NoDossieCell({ row, state, editable, onSelect, onChangeValue }: ConfRow) {
   const [editing, setEditing] = React.useState(false)
   const [text, setText] = React.useState("")
 
   const beginEdit = () => {
     if (!editable) return
+    onSelect()
     setText(String(row.value).replace(".", ","))
     setEditing(true)
   }
@@ -386,113 +470,42 @@ function ConferenceRow({
     if (Number.isFinite(v) && Math.abs(v - row.value) > 0.004) onChangeValue(v)
   }
 
-  const fullBleed = state !== "ok"
+  if (editing)
+    return (
+      <input
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit()
+          if (e.key === "Escape") setEditing(false)
+        }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-[140px] rounded border border-blue-500 bg-white px-2 py-[3px] text-[12.5px] font-semibold tabular-nums outline-none dark:bg-gray-950"
+        style={{ boxShadow: "0 0 0 2px rgba(59,130,246,0.3)" }}
+      />
+    )
+
   return (
-    <div
-      onClick={onSelect}
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        beginEdit()
+      }}
       className={cx(
-        "grid cursor-pointer grid-cols-[64px_1fr_1fr_96px] items-center gap-3 border-b border-gray-100 py-[6.5px] text-[12.5px] dark:border-gray-900",
-        fullBleed && "-mx-5 bg-gray-50 px-5 dark:bg-gray-925",
-        selected && !fullBleed && "-mx-5 bg-blue-500/5 px-5",
+        tableTokens.cellNumber,
+        "inline-flex items-center gap-1.5 rounded px-1 -mx-1 text-left font-semibold",
+        editable && "hover:bg-gray-100 dark:hover:bg-gray-900",
       )}
-      style={state === "pendente" ? { boxShadow: "inset 2px 0 0 #D97706" } : undefined}
+      disabled={!editable}
     >
-      <span className="text-gray-500 dark:text-gray-400">{fmtMonth(row.month)}</span>
-
-      {/* IA propôs — nunca editável */}
-      <span className="font-medium text-gray-900 tabular-nums dark:text-gray-100">
-        {ai ? (
-          state === "ajustado" ? (
-            <span className="text-gray-400 line-through dark:text-gray-600">
-              {fmtBRL(ai.value)}
-            </span>
-          ) : (
-            <>
-              {fmtBRL(ai.value)}
-              {state === "pendente" && (
-                <span
-                  className="ml-1.5 inline-flex h-4 items-center rounded-full px-[5px] text-[9.5px] font-medium leading-none"
-                  style={{ background: "#FEFCE8", color: "#713F12" }}
-                  title="Confiança baixa nesta leitura — confira no documento ao lado."
-                >
-                  confira
-                </span>
-              )}
-            </>
-          )
-        ) : (
-          <span className="text-gray-400">—</span>
-        )}
-      </span>
-
-      {/* No dossiê — editável */}
-      <span className="font-semibold text-gray-900 tabular-nums dark:text-gray-50">
-        {editing ? (
-          <input
-            autoFocus
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onBlur={commit}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commit()
-              if (e.key === "Escape") setEditing(false)
-            }}
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-[140px] rounded border border-blue-500 bg-white px-2 py-[3px] text-[12.5px] font-semibold tabular-nums outline-none dark:bg-gray-950"
-            style={{ boxShadow: "0 0 0 2px rgba(59,130,246,0.3)" }}
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onSelect()
-              beginEdit()
-            }}
-            className={cx(
-              "inline-flex items-center gap-1.5 rounded px-1 -mx-1 text-left",
-              editable && "hover:bg-gray-100 dark:hover:bg-gray-900",
-            )}
-            disabled={!editable}
-          >
-            {fmtBRL(row.value)}
-            {state === "ajustado" && (
-              <RiQuillPenLine className="size-3 text-gray-800 dark:text-gray-200" aria-hidden />
-            )}
-          </button>
-        )}
-      </span>
-
-      {/* Estado */}
-      <span className="flex items-center justify-end gap-1 text-right text-[11px] font-medium">
-        {state === "ok" && (
-          <span className="inline-flex items-center gap-1" style={{ color: "#059669" }}>
-            <RiCheckLine className="size-3" aria-hidden />
-            ok
-          </span>
-        )}
-        {state === "ajustado" && (
-          <span className="inline-flex items-center gap-1 text-gray-700 dark:text-gray-300">
-            <RiEditLine className="size-3" aria-hidden />
-            ajustado
-          </span>
-        )}
-        {state === "pendente" && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onConfirm()
-            }}
-            className="inline-flex items-center gap-1 text-amber-600 hover:text-amber-700"
-            title="Confirmar este valor como está"
-          >
-            <RiCursorLine className="size-3" aria-hidden />
-            confira →
-          </button>
-        )}
-      </span>
-    </div>
+      {fmtBRL(row.value)}
+      {state === "ajustado" && (
+        <RiQuillPenLine className="size-3 text-gray-800 dark:text-gray-200" aria-hidden />
+      )}
+    </button>
   )
 }
 

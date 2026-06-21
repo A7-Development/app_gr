@@ -9,13 +9,59 @@
 
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
-import { RiCheckLine, RiCloseLine, RiLoader4Line } from "@remixicon/react"
+import { RiLoader4Line } from "@remixicon/react"
 
+import {
+  DenseTable,
+  type DenseColumn,
+  type DenseRow,
+} from "@/design-system/components/DenseTable"
 import { tableTokens } from "@/design-system/tokens/table"
 import { credito } from "@/lib/credito-client"
 import { cx } from "@/lib/utils"
 
 type ClientStation = { id: string; label: string; state: string }
+
+type ServerStation = {
+  id: string
+  label: string
+  state: string
+  sections: unknown[]
+  isRecommendedNext?: boolean
+}
+
+type ParityRow = {
+  id: string
+  c: ClientStation | undefined
+  s: ServerStation | undefined
+  ok: boolean
+  labelOk: boolean
+  stateOk: boolean
+  present: boolean
+}
+
+// Painel de QA (dev-only) -> DenseTable. O ícone "=" (check/cross) vira texto
+// "igual"/"difere"; a divergência no lado server, antes destacada em âmbar, fica
+// indicada pelo resultado da coluna "=" (DenseTable só renderiza texto/número).
+const PARITY_COLUMNS: DenseColumn[] = [
+  { key: "id", label: "node id", format: "texto" },
+  { key: "client", label: "client (label · state)", format: "texto" },
+  { key: "server", label: "server (label · state)", format: "texto" },
+  { key: "extra", label: "server extra", format: "texto" },
+  { key: "eq", label: "=", format: "texto", align: "center" },
+]
+
+function parityRows(rows: ParityRow[]): DenseRow[] {
+  return rows.map((r) => ({
+    id: r.id,
+    client: r.c ? `${r.c.label} · ${r.c.state}` : "—",
+    server: r.s ? `${r.s.label} · ${r.s.state}` : "—",
+    extra: r.s
+      ? `${r.s.sections.length} seção(ões)${r.s.isRecommendedNext ? " · ★ próxima" : ""}`
+      : "—",
+    eq: r.ok ? "igual" : "difere",
+  }))
+}
 
 export function DescriptorParityPanel({
   dossierId,
@@ -78,48 +124,7 @@ export function DescriptorParityPanel({
       </div>
 
       {!isLoading && !error && (
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/60 dark:border-gray-900 dark:bg-gray-900/40">
-                <th className={cx(tableTokens.header, "px-3 py-1 text-left")}>node id</th>
-                <th className={cx(tableTokens.header, "px-3 py-1 text-left")}>client (label · state)</th>
-                <th className={cx(tableTokens.header, "px-3 py-1 text-left")}>server (label · state)</th>
-                <th className={cx(tableTokens.header, "px-3 py-1 text-left")}>server extra</th>
-                <th className={cx(tableTokens.header, "px-3 py-1 text-center")}>=</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className="border-b border-gray-50 last:border-0 dark:border-gray-900/60">
-                  <td className={cx(tableTokens.cellTextMono, "px-3 py-0.5")}>{r.id}</td>
-                  <td className="px-3 py-0.5">
-                    <span className={tableTokens.cellText}>
-                      {r.c ? `${r.c.label} · ${r.c.state}` : "—"}
-                    </span>
-                  </td>
-                  <td className="px-3 py-0.5">
-                    <span className={cx(tableTokens.cellText, !r.labelOk || !r.stateOk ? "text-amber-700 dark:text-amber-300" : "")}>
-                      {r.s ? `${r.s.label} · ${r.s.state}` : "—"}
-                    </span>
-                  </td>
-                  <td className={cx(tableTokens.cellSecondary, "px-3 py-0.5")}>
-                    {r.s
-                      ? `${r.s.sections.length} seção(ões)${r.s.isRecommendedNext ? " · ★ próxima" : ""}`
-                      : "—"}
-                  </td>
-                  <td className="px-3 py-0.5 text-center">
-                    {r.ok ? (
-                      <RiCheckLine className="inline size-3.5 text-emerald-600" aria-hidden />
-                    ) : (
-                      <RiCloseLine className="inline size-3.5 text-amber-600" aria-hidden />
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DenseTable columns={PARITY_COLUMNS} rows={parityRows(rows)} />
       )}
     </div>
   )
