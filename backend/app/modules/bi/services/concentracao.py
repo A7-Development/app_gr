@@ -294,7 +294,7 @@ def _empty(
     )
     prov = Provenance(
         source_type="derived",
-        source_ids=["qitech:fidc-estoque", "admin:mec"],
+        source_ids=["qitech:fidc-estoque", "qitech:mec"],
         ingested_by_version="bi_concentracao_v1",
         row_count=0,
     )
@@ -391,7 +391,7 @@ async def get_concentracao(
     )
     prov = Provenance(
         source_type="derived",
-        source_ids=["qitech:fidc-estoque", "admin:mec"],
+        source_ids=["qitech:fidc-estoque", "qitech:mec"],
         ingested_by_version="bi_concentracao_v1",
         trust_level="high",
         row_count=len(cedentes.itens) + len(sacados.itens),

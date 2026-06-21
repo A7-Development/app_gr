@@ -27,13 +27,33 @@ import type { ConcentracaoTabela, Provenance } from "@/lib/api-client"
 /** Ranks que marcam as faixas Top 1 / 5 / 10. */
 const MARKERS = new Set([1, 5, 10])
 
-/** source_id (vendor:relatorio) -> rotulo amigavel da fonte. */
-const SOURCE_LABELS: Record<string, string> = {
-  "qitech:fidc-estoque": "QiTech · estoque de recebíveis",
-  "admin:mec": "MEC · PL do fundo",
+// Proveniencia: source_id = "vendor:relatorio". Agrupa por VENDOR (um fornecedor
+// pode trazer varios relatorios — ex.: QiTech traz estoque + MEC).
+const VENDOR_LABELS: Record<string, string> = {
+  qitech: "QiTech",
+  admin: "Administrador",
+  bitfin: "Bitfin",
+  cvm: "CVM",
 }
-function sourceLabel(id: string): string {
-  return SOURCE_LABELS[id] ?? id
+const REPORT_LABELS: Record<string, string> = {
+  "fidc-estoque": "estoque de recebíveis",
+  mec: "MEC (PL)",
+}
+
+/** "qitech:fidc-estoque" + "qitech:mec" -> "QiTech · estoque de recebíveis + MEC (PL)". */
+function sourcesText(sourceIds: string[]): string {
+  const byVendor = new Map<string, string[]>()
+  for (const id of sourceIds) {
+    const [vendor, ...rest] = id.split(":")
+    const v = VENDOR_LABELS[vendor] ?? vendor
+    const r = REPORT_LABELS[rest.join(":")] ?? rest.join(":")
+    const list = byVendor.get(v) ?? []
+    list.push(r)
+    byVendor.set(v, list)
+  }
+  return Array.from(byVendor.entries())
+    .map(([v, reports]) => `${v} · ${reports.join(" + ")}`)
+    .join(" · ")
 }
 
 /** ISO -> "há X min/h/d" (sync relativa). */
@@ -314,7 +334,7 @@ export function ConcentracaoCard({
         <span className="size-[5px] shrink-0 rounded-full bg-[#F05A28]" aria-hidden />
         <span className="truncate text-[10px] text-gray-400 dark:text-gray-500">
           {provenance && provenance.source_ids.length > 0
-            ? `Fonte: ${provenance.source_ids.map(sourceLabel).join(" · ")}${
+            ? `Fonte: ${sourcesText(provenance.source_ids)}${
                 provenance.source_type === "derived" ? " · derivado" : ""
               }${sinceLabel(provenance.last_sync_at) ? ` · sync ${sinceLabel(provenance.last_sync_at)}` : ""}`
             : `Fonte: posição da carteira · ${posicao}`}
