@@ -1,9 +1,10 @@
 "use client"
 
 //
-// HistoricoCard — serie diaria de concentracao (% do maior e % dos 10 maiores
-// sobre o PL). Linha/area no estilo /bi/operacoes4. Hex inline permitido em
-// EChartsOption (§4 — Tailwind nao alcanca o canvas).
+// HistoricoCard — serie diaria de concentracao: evolutivo do TOP 1, TOP 5 e
+// TOP 10 sobre o PL (3 linhas). Estilo /bi/operacoes4. Hex inline permitido em
+// EChartsOption (§4 — Tailwind nao alcanca o canvas). Altura pareada com a
+// tabela de concentracao ao lado (simetria).
 //
 
 import * as React from "react"
@@ -24,21 +25,20 @@ function monthLabel(iso: string): string {
   return `${MESES[d.getUTCMonth()]}/${String(d.getUTCFullYear()).slice(2)}`
 }
 
-// Cor escura (maior) + azul claro (10 maiores) — familia slate/sky da paleta
-// de dados; reproduz o contraste do handoff.
-const COR_MAIOR = "#1E293B"
-const COR_TOP10 = "#60A5FA"
+// Gradiente de concentracao: TOP 1 mais escuro -> TOP 10 mais claro
+// (familia slate/blue da paleta de dados).
+const COR_TOP1 = "#1E293B"
+const COR_TOP5 = "#2563EB"
+const COR_TOP10 = "#93C5FD"
 
 export function HistoricoCard({
   titulo,
-  labelMaior,
   pontos,
   kpiTop10,
   kpiMaior,
   loading,
 }: {
   titulo: string
-  labelMaior: string
   pontos: ConcentracaoHistoricoPonto[]
   kpiTop10: number
   kpiMaior: number
@@ -46,7 +46,8 @@ export function HistoricoCard({
 }) {
   const option = React.useMemo<EChartsOption>(() => {
     const datas = pontos.map((p) => p.data)
-    const maior = pontos.map((p) => Number(p.maior_pct.toFixed(2)))
+    const top1 = pontos.map((p) => Number(p.maior_pct.toFixed(2)))
+    const top5 = pontos.map((p) => Number(p.top5_pct.toFixed(2)))
     const top10 = pontos.map((p) => Number(p.top10_pct.toFixed(2)))
 
     // Mostra label so na 1a data de cada mes (serie diaria -> ticks mensais).
@@ -68,14 +69,25 @@ export function HistoricoCard({
       x2: 0,
       y2: 1,
       colorStops: [
-        { offset: 0, color: `${hex}40` },
+        { offset: 0, color: `${hex}33` },
         { offset: 1, color: `${hex}00` },
       ],
     })
 
+    const line = (name: string, data: number[], color: string) => ({
+      name,
+      type: "line" as const,
+      data,
+      showSymbol: false,
+      smooth: false,
+      lineStyle: { width: 1.5, color },
+      itemStyle: { color },
+      areaStyle: { color: gradient(color) },
+    })
+
     return {
       legend: {
-        data: [labelMaior, "10 maiores"],
+        data: ["TOP 1", "TOP 5", "TOP 10"],
         top: 0,
         left: 0,
         icon: "roundRect",
@@ -108,39 +120,22 @@ export function HistoricoCard({
         splitLine: { lineStyle: { color: "#F3F4F6" } },
       },
       series: [
-        {
-          name: labelMaior,
-          type: "line",
-          data: maior,
-          showSymbol: false,
-          smooth: false,
-          lineStyle: { width: 1.5, color: COR_MAIOR },
-          itemStyle: { color: COR_MAIOR },
-          areaStyle: { color: gradient(COR_MAIOR) },
-        },
-        {
-          name: "10 maiores",
-          type: "line",
-          data: top10,
-          showSymbol: false,
-          smooth: false,
-          lineStyle: { width: 1.5, color: COR_TOP10 },
-          itemStyle: { color: COR_TOP10 },
-          areaStyle: { color: gradient(COR_TOP10) },
-        },
+        line("TOP 1", top1, COR_TOP1),
+        line("TOP 5", top5, COR_TOP5),
+        line("TOP 10", top10, COR_TOP10),
       ],
     }
-  }, [pontos, labelMaior])
+  }, [pontos])
 
   return (
     <EChartsCard
       title={titulo}
       headerKpi={{
         value: `${fmtPct.format(kpiTop10)}%`,
-        deltaSub: `10 maiores hoje · maior ${fmtPct.format(kpiMaior)}%`,
+        deltaSub: `Top 10 hoje · Top 1 ${fmtPct.format(kpiMaior)}%`,
       }}
       option={option}
-      height={260}
+      height={372}
       loading={loading}
     />
   )

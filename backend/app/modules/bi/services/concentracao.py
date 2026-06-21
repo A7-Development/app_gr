@@ -229,6 +229,7 @@ async def _historico(
                 "agg AS ( "
                 "  SELECT data_referencia AS d, "
                 "         SUM(vp) FILTER (WHERE rn = 1) AS maior, "
+                "         SUM(vp) FILTER (WHERE rn <= 5) AS top5, "
                 "         SUM(vp) FILTER (WHERE rn <= :n) AS top10 "
                 "  FROM per_chave GROUP BY data_referencia "
                 "), "
@@ -240,6 +241,7 @@ async def _historico(
                 ") "
                 "SELECT agg.d AS d, "
                 "       agg.maior / NULLIF(pl.pl, 0) * 100 AS maior_pct, "
+                "       agg.top5 / NULLIF(pl.pl, 0) * 100 AS top5_pct, "
                 "       agg.top10 / NULLIF(pl.pl, 0) * 100 AS top10_pct "
                 "FROM agg JOIN pl ON pl.d = agg.d "
                 "WHERE pl.pl > 0 "
@@ -253,6 +255,7 @@ async def _historico(
         HistoricoPonto(
             data=r.d,
             maior_pct=float(r.maior_pct or 0),
+            top5_pct=float(r.top5_pct or 0),
             top10_pct=float(r.top10_pct or 0),
         )
         for r in rows

@@ -139,8 +139,7 @@ export function ConcentracaoCard({
           </span>
         ),
       },
-      { key: "financeiro", label: "Valor pres.", format: "numero", widthClass: "w-[82px]" },
-      { key: "pct_pl", label: "% PL", format: "pct", widthClass: "w-[72px]" },
+      { key: "financeiro", label: "Valor pres.", format: "numero", widthClass: "w-[96px]" },
       {
         key: "acm",
         label: "% PL ACM",
@@ -181,7 +180,6 @@ export function ConcentracaoCard({
   const footerSecondary: DenseRow | undefined = tabela && {
     nome: `Outros (${tabela.outros_qtd})`,
     financeiro: Math.round(tabela.outros_financeiro),
-    pct_pl: tabela.outros_pct_pl,
     acm: tabela.total_pct_pl + tabela.outros_pct_pl,
   }
 
