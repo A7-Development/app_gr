@@ -14,6 +14,7 @@ import * as React from "react"
 
 import { Card } from "@/components/tremor/Card"
 import { cardTokens } from "@/design-system/tokens/card"
+import { tableTokens } from "@/design-system/tokens/table"
 import { cx } from "@/lib/utils"
 import { tokens } from "@/design-system/tokens"
 import type {
@@ -226,18 +227,21 @@ export function DrillMovimentoContent({
         </p>
       ) : (
         <Card className={cx(cardTokens.body)}>
-          <table className="w-full text-left text-[12px] tabular-nums">
+          {/* MOTIVO: delta de paridade colorido por sinal (emerald/red/gray) por
+              celula — DenseTable/DataTable nao aplicam cor condicional na cell.
+              Montada em <table> nativa com tableTokens. */}
+          <table className="w-full text-left">
             <thead>
-              <tr className="border-b border-gray-200 text-[10.5px] uppercase tracking-wider text-gray-500 dark:border-gray-800 dark:text-gray-400">
-                <th className="py-1.5 pr-2 font-medium">Cedente</th>
-                <th className="py-1.5 pr-2 text-right font-medium">
+              <tr className="border-b border-gray-200 dark:border-gray-800">
+                <th className={cx(tableTokens.header, "py-1.5 pr-2 text-left text-gray-500 dark:text-gray-400")}>Cedente</th>
+                <th className={cx(tableTokens.header, "py-1.5 pr-2 text-right text-gray-500 dark:text-gray-400")}>
                   Volume MTD
                 </th>
-                <th className="py-1.5 pr-2 text-right font-medium">
+                <th className={cx(tableTokens.header, "py-1.5 pr-2 text-right text-gray-500 dark:text-gray-400")}>
                   Δ paridade
                 </th>
-                <th className="py-1.5 pr-2 text-right font-medium">N ops</th>
-                <th className="py-1.5 text-right font-medium">Taxa</th>
+                <th className={cx(tableTokens.header, "py-1.5 pr-2 text-right text-gray-500 dark:text-gray-400")}>N ops</th>
+                <th className={cx(tableTokens.header, "py-1.5 text-right text-gray-500 dark:text-gray-400")}>Taxa</th>
               </tr>
             </thead>
             <tbody>
@@ -246,28 +250,28 @@ export function DrillMovimentoContent({
                   key={c.cedente_nome}
                   className="border-b border-gray-100 last:border-b-0 dark:border-gray-900"
                 >
-                  <td className="py-1.5 pr-2 text-gray-900 dark:text-gray-100">
+                  <td className={cx(tableTokens.cellText, "py-1.5 pr-2")}>
                     {c.cedente_nome}
                   </td>
-                  <td className="py-1.5 pr-2 text-right text-gray-900 dark:text-gray-100">
+                  <td className={cx(tableTokens.cellNumber, "py-1.5 pr-2 text-right")}>
                     {c.volume_mtd !== null ? fmtBRL.format(c.volume_mtd) : "—"}
                   </td>
                   <td
                     className={cx(
                       "py-1.5 pr-2 text-right",
                       c.delta_vs_mes_ant_pct === null
-                        ? "text-gray-400 dark:text-gray-600"
+                        ? tableTokens.cellMuted
                         : c.delta_vs_mes_ant_pct >= 0
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-red-600 dark:text-red-400",
+                          ? tableTokens.cellNumberPositive
+                          : tableTokens.cellNumberNegative,
                     )}
                   >
                     {fmtPctSigned(c.delta_vs_mes_ant_pct)}
                   </td>
-                  <td className="py-1.5 pr-2 text-right text-gray-500 dark:text-gray-400">
+                  <td className={cx(tableTokens.cellNumberSecondary, "py-1.5 pr-2 text-right")}>
                     {c.n_op ?? "—"}
                   </td>
-                  <td className="py-1.5 text-right text-gray-500 dark:text-gray-400">
+                  <td className={cx(tableTokens.cellNumberSecondary, "py-1.5 text-right")}>
                     {c.taxa_media !== null
                       ? `${c.taxa_media.toFixed(2).replace(".", ",")}%`
                       : "—"}

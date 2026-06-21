@@ -15,6 +15,11 @@ import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { SectionRenderer } from "@/design-system/components/SectionRenderer"
+import {
+  DenseTable,
+  type DenseColumn,
+  type DenseRow,
+} from "@/design-system/components/DenseTable"
 import { tableTokens } from "@/design-system/tokens/table"
 import {
   credito,
@@ -40,7 +45,13 @@ function fmtMonth(s: string): string {
   return months[idx] ? `${months[idx]}/${m[1].slice(2)}` : s
 }
 
-const OUTLIER_TONE = "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+// Série mensal de receita (DenseTable). Os meses são LINHAS, então DenseTable
+// simples (não .Series). O marcador de outlier é preservado como sufixo textual
+// "· outlier" no rótulo do mês (DenseTable só renderiza valores textuais/numéricos).
+const SERIE_COLUMNS: DenseColumn[] = [
+  { key: "mes", label: "Mês", format: "texto" },
+  { key: "receita", label: "Receita", format: "brl" },
+]
 
 export function RevenueAnalysisView({
   dossierId,
@@ -91,34 +102,16 @@ function DeterministicPanel({ data }: { data: FaturamentoAnalyticsOk }) {
       </div>
 
       {serie.length > 0 && (
-        <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/60 dark:border-gray-900 dark:bg-gray-900/40">
-                <th className={cx(tableTokens.header, "px-3 py-1 text-left")}>Mês</th>
-                <th className={cx(tableTokens.header, "px-3 py-1 text-right")}>Receita</th>
-              </tr>
-            </thead>
-            <tbody>
-              {serie.map((r) => {
-                const isOut = analytics.outliers.some((o) => o.mes === r.mes)
-                return (
-                  <tr key={r.mes} className="border-b border-gray-50 last:border-0 dark:border-gray-900/60">
-                    <td className="px-3 py-0.5">
-                      <span className={tableTokens.cellText}>{fmtMonth(r.mes)}</span>
-                      {isOut && (
-                        <span className={cx(tableTokens.badge, OUTLIER_TONE, "ml-1.5")}>outlier</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-0.5 text-right">
-                      <span className={tableTokens.cellNumber}>{fmtBRL(r.receita_bruta)}</span>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DenseTable
+          columns={SERIE_COLUMNS}
+          rows={serie.map<DenseRow>((r) => {
+            const isOut = analytics.outliers.some((o) => o.mes === r.mes)
+            return {
+              mes: `${fmtMonth(r.mes)}${isOut ? " · outlier" : ""}`,
+              receita: r.receita_bruta,
+            }
+          })}
+        />
       )}
 
       {/* Sinais de atestação (determinísticos) */}

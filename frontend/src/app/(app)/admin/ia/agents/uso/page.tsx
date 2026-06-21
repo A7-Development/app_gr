@@ -12,14 +12,17 @@
 import * as React from "react"
 import Link from "next/link"
 import { RiArrowLeftLine, RiLoader4Line } from "@remixicon/react"
+import type { ColumnDef } from "@tanstack/react-table"
 import { formatDistanceToNow, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
 
-import { PageHeader } from "@/design-system/components"
+import { DataTable, PageHeader } from "@/design-system/components"
+import { tableTokens } from "@/design-system/tokens/table"
 import {
   useAgentDefinitions,
   useAgentUsageOverview,
 } from "@/lib/hooks/admin-ai"
+import type { AIAgentUsageOverviewRow } from "@/lib/api-client"
 import { cx } from "@/lib/utils"
 
 import { ModuleBadge } from "../_components/AgentBadges"
@@ -84,6 +87,118 @@ export default function AgentUsageOverviewPage() {
 
   const loading = overviewQuery.isLoading || defsQuery.isLoading
 
+  const rankingColumns = React.useMemo<
+    ColumnDef<AIAgentUsageOverviewRow, unknown>[]
+  >(
+    () => [
+      {
+        id: "rank",
+        header: "#",
+        cell: ({ row }) => (
+          <span className={tableTokens.cellNumberSecondary}>{row.index + 1}</span>
+        ),
+      },
+      {
+        id: "agente",
+        header: "Agente",
+        cell: ({ row }) => {
+          const u = row.original
+          const ref = byName.get(u.agent_name)
+          return ref ? (
+            <Link
+              href={`${LIST_HREF}/${ref.id}`}
+              className="font-mono text-[12px] font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+            >
+              {u.agent_name}
+            </Link>
+          ) : (
+            <span
+              className={tableTokens.cellTextMono}
+              title="Sem versao ativa no catalogo"
+            >
+              {u.agent_name}
+            </span>
+          )
+        },
+      },
+      {
+        id: "modulo",
+        header: "Modulo",
+        cell: ({ row }) => {
+          const ref = byName.get(row.original.agent_name)
+          return ref ? <ModuleBadge module={ref.module} /> : "—"
+        },
+      },
+      {
+        id: "runs",
+        header: "Runs (30d / total)",
+        meta: { align: "right" },
+        cell: ({ row }) => {
+          const u = row.original
+          return (
+            <span className={cx(tableTokens.cellNumber, "block text-right")}>
+              {num.format(u.window_runs)}{" "}
+              <span className={tableTokens.cellNumberSecondary}>
+                / {num.format(u.total_runs)}
+              </span>
+            </span>
+          )
+        },
+      },
+      {
+        id: "custo",
+        header: "Custo (30d / total)",
+        meta: { align: "right" },
+        cell: ({ row }) => {
+          const u = row.original
+          return (
+            <span className={cx(tableTokens.cellNumber, "block text-right")}>
+              {brl.format(u.cost_brl_window)}{" "}
+              <span className={tableTokens.cellNumberSecondary}>
+                / {brl.format(u.cost_brl_total)}
+              </span>
+            </span>
+          )
+        },
+      },
+      {
+        id: "erros",
+        header: "Erros",
+        meta: { align: "right" },
+        cell: ({ row }) => {
+          const u = row.original
+          return (
+            <span
+              className={cx(
+                "block text-right",
+                u.runs_error > 0
+                  ? tableTokens.cellNumberNegative
+                  : tableTokens.cellNumberSecondary,
+              )}
+            >
+              {num.format(u.runs_error)}
+            </span>
+          )
+        },
+      },
+      {
+        id: "ultima",
+        header: "Ultima",
+        cell: ({ row }) => (
+          <span className={cx(tableTokens.cellSecondary, "whitespace-nowrap")}>
+            {row.original.last_run_at
+              ? formatDistanceToNow(parseISO(row.original.last_run_at), {
+                  addSuffix: true,
+                  locale: ptBR,
+                })
+              : "—"}
+          </span>
+        ),
+      },
+    ],
+    [byName],
+  )
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-6 pt-5 pb-10">
       <Link
@@ -139,91 +254,17 @@ export default function AgentUsageOverviewPage() {
               <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                 Ranking por uso
               </h3>
-              <div className="overflow-x-auto rounded-md border border-gray-200 dark:border-gray-800">
-                <table className="w-full text-[13px]">
-                  <thead className="bg-gray-50 text-left text-[11px] uppercase tracking-wide text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-                    <tr>
-                      <th className="px-3 py-2 font-medium">#</th>
-                      <th className="px-3 py-2 font-medium">Agente</th>
-                      <th className="px-3 py-2 font-medium">Modulo</th>
-                      <th className="px-3 py-2 text-right font-medium">Runs (30d / total)</th>
-                      <th className="px-3 py-2 text-right font-medium">Custo (30d / total)</th>
-                      <th className="px-3 py-2 text-right font-medium">Erros</th>
-                      <th className="px-3 py-2 font-medium">Ultima</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usage.map((u, i) => {
-                      const ref = byName.get(u.agent_name)
-                      const isPowerLaw = i < powerLawCut
-                      return (
-                        <tr
-                          key={u.agent_name}
-                          className={cx(
-                            "border-t border-gray-100 dark:border-gray-800",
-                            isPowerLaw &&
-                              "border-l-2 border-l-blue-500 bg-blue-50/40 dark:bg-blue-500/5",
-                          )}
-                        >
-                          <td className="px-3 py-2 tabular-nums text-gray-500">
-                            {i + 1}
-                          </td>
-                          <td className="px-3 py-2">
-                            {ref ? (
-                              <Link
-                                href={`${LIST_HREF}/${ref.id}`}
-                                className="font-mono text-[12px] font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
-                              >
-                                {u.agent_name}
-                              </Link>
-                            ) : (
-                              <span
-                                className="font-mono text-[12px] text-gray-500"
-                                title="Sem versao ativa no catalogo"
-                              >
-                                {u.agent_name}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            {ref ? <ModuleBadge module={ref.module} /> : "—"}
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums">
-                            {num.format(u.window_runs)}{" "}
-                            <span className="text-gray-400">
-                              / {num.format(u.total_runs)}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums">
-                            {brl.format(u.cost_brl_window)}{" "}
-                            <span className="text-gray-400">
-                              / {brl.format(u.cost_brl_total)}
-                            </span>
-                          </td>
-                          <td
-                            className={cx(
-                              "px-3 py-2 text-right tabular-nums",
-                              u.runs_error > 0
-                                ? "text-red-600 dark:text-red-400"
-                                : "text-gray-400",
-                            )}
-                          >
-                            {num.format(u.runs_error)}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-gray-500 dark:text-gray-400">
-                            {u.last_run_at
-                              ? formatDistanceToNow(parseISO(u.last_run_at), {
-                                  addSuffix: true,
-                                  locale: ptBR,
-                                })
-                              : "—"}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable<AIAgentUsageOverviewRow>
+                data={usage}
+                columns={rankingColumns}
+                rowClassName={(u) => {
+                  // Limiar power-law: posicao no ranking ja ordenado por uso.
+                  const i = usage.indexOf(u)
+                  return i < powerLawCut
+                    ? "border-l-2 border-l-blue-500 bg-blue-50/40 dark:bg-blue-500/5"
+                    : ""
+                }}
+              />
               <p className="mt-1.5 text-[11px] text-gray-400 dark:text-gray-500">
                 Linhas destacadas = top decil (em quem dobrar a aposta).
               </p>

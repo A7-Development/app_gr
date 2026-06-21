@@ -11,15 +11,20 @@
 // qualitativo, nao computavel) nem limites por agente (nao existem no DB).
 //
 
+import * as React from "react"
 import {
   RiCheckLine,
   RiCloseLine,
   RiErrorWarningLine,
   RiLoader4Line,
 } from "@remixicon/react"
+import type { ColumnDef } from "@tanstack/react-table"
 import { formatDistanceToNow, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
 
+import { DataTable } from "@/design-system/components/DataTable"
+import { DenseTable } from "@/design-system/components/DenseTable"
+import { tableTokens } from "@/design-system/tokens/table"
 import { useAgentDefinitionStats } from "@/lib/hooks/admin-ai"
 import type { AIAgentRunRecent } from "@/lib/api-client"
 import { cx } from "@/lib/utils"
@@ -92,6 +97,69 @@ function StatusPill({ status }: { status: string }) {
     </span>
   )
 }
+
+const recentRunsColumns: ColumnDef<AIAgentRunRecent, unknown>[] = [
+  {
+    id: "quando",
+    header: "Quando",
+    cell: ({ row }) => (
+      <span className={cx(tableTokens.cellText, "whitespace-nowrap")}>
+        {fmtDateTime(row.original.triggered_at)}
+      </span>
+    ),
+  },
+  {
+    id: "versao",
+    header: "Versao",
+    cell: ({ row }) => (
+      <span className={tableTokens.cellNumber}>v{row.original.version}</span>
+    ),
+  },
+  {
+    id: "modelo",
+    header: "Modelo",
+    cell: ({ row }) => (
+      <span className={tableTokens.cellTextMono}>{row.original.model_used}</span>
+    ),
+  },
+  {
+    id: "status",
+    header: "Status",
+    cell: ({ row }) => <StatusPill status={row.original.status} />,
+  },
+  {
+    id: "tokens",
+    header: "Tokens (in/out)",
+    meta: { align: "right" },
+    cell: ({ row }) => (
+      <span className={cx(tableTokens.cellNumber, "block text-right")}>
+        {fmtInt(row.original.tokens_input)} / {fmtInt(row.original.tokens_output)}
+      </span>
+    ),
+  },
+  {
+    id: "custo",
+    header: "Custo",
+    meta: { align: "right" },
+    cell: ({ row }) => (
+      <span className={cx(tableTokens.cellNumber, "block text-right")}>
+        {row.original.cost_brl != null ? fmtBRL(row.original.cost_brl) : "—"}
+      </span>
+    ),
+  },
+  {
+    id: "duracao",
+    header: "Duracao",
+    meta: { align: "right" },
+    cell: ({ row }) => (
+      <span className={cx(tableTokens.cellNumberSecondary, "block text-right")}>
+        {row.original.duration_ms != null
+          ? `${fmtInt(row.original.duration_ms)} ms`
+          : "—"}
+      </span>
+    ),
+  },
+]
 
 export function AgentStatsPanel({ agentId }: { agentId: string }) {
   const q = useAgentDefinitionStats(agentId)
@@ -177,94 +245,36 @@ export function AgentStatsPanel({ agentId }: { agentId: string }) {
         </div>
       )}
 
-      {/* Por modelo */}
+      {/* Por modelo — leitura estatica, sem sort/acoes -> DenseTable */}
       <section>
         <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
           Por modelo
         </h3>
-        <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
-          <table className="w-full text-[13px]">
-            <thead className="bg-gray-50 text-left text-[11px] uppercase tracking-wide text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-              <tr>
-                <th className="px-3 py-2 font-medium">Modelo</th>
-                <th className="px-3 py-2 text-right font-medium">Execucoes</th>
-                <th className="px-3 py-2 text-right font-medium">Tokens</th>
-                <th className="px-3 py-2 text-right font-medium">Custo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {s.by_model.map((m) => (
-                <tr
-                  key={m.model}
-                  className="border-t border-gray-100 dark:border-gray-800"
-                >
-                  <td className="px-3 py-2 font-mono text-[12px] text-gray-900 dark:text-gray-100">
-                    {m.model}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {fmtInt(m.runs)}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {fmtInt(m.tokens_total)}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {fmtBRL(m.cost_brl)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DenseTable
+          columns={[
+            { key: "model", label: "Modelo" },
+            { key: "runs", label: "Execucoes", format: "numero" },
+            { key: "tokens", label: "Tokens", format: "numero" },
+            { key: "custo", label: "Custo", format: "brl" },
+          ]}
+          rows={s.by_model.map((m) => ({
+            model: m.model,
+            runs: m.runs,
+            tokens: m.tokens_total,
+            custo: m.cost_brl,
+          }))}
+        />
       </section>
 
-      {/* Execucoes recentes */}
+      {/* Execucoes recentes — listagem read-only -> DataTable (Exploracao) */}
       <section>
         <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
           Execucoes recentes
         </h3>
-        <div className="overflow-x-auto rounded-md border border-gray-200 dark:border-gray-800">
-          <table className="w-full text-[13px]">
-            <thead className="bg-gray-50 text-left text-[11px] uppercase tracking-wide text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-              <tr>
-                <th className="px-3 py-2 font-medium">Quando</th>
-                <th className="px-3 py-2 font-medium">Versao</th>
-                <th className="px-3 py-2 font-medium">Modelo</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 text-right font-medium">Tokens (in/out)</th>
-                <th className="px-3 py-2 text-right font-medium">Custo</th>
-                <th className="px-3 py-2 text-right font-medium">Duracao</th>
-              </tr>
-            </thead>
-            <tbody>
-              {s.recent_runs.map((r: AIAgentRunRecent, i) => (
-                <tr
-                  key={`${r.triggered_at}-${i}`}
-                  className="border-t border-gray-100 dark:border-gray-800"
-                >
-                  <td className="whitespace-nowrap px-3 py-2 text-gray-700 dark:text-gray-300">
-                    {fmtDateTime(r.triggered_at)}
-                  </td>
-                  <td className="px-3 py-2 tabular-nums">v{r.version}</td>
-                  <td className="px-3 py-2 font-mono text-[12px] text-gray-700 dark:text-gray-300">
-                    {r.model_used}
-                  </td>
-                  <td className="px-3 py-2">
-                    <StatusPill status={r.status} />
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">
-                    {fmtInt(r.tokens_input)} / {fmtInt(r.tokens_output)}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {r.cost_brl != null ? fmtBRL(r.cost_brl) : "—"}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-500">
-                    {r.duration_ms != null ? `${fmtInt(r.duration_ms)} ms` : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable<AIAgentRunRecent>
+          data={s.recent_runs}
+          columns={recentRunsColumns}
+        />
       </section>
 
       <p className={cx("text-[11px] text-gray-400 dark:text-gray-500")}>

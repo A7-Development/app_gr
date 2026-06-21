@@ -7,6 +7,12 @@
  *   1. Totais D-1 / D0 / Δ
  *   2. Aportes engaiolados detectados (badge destacado se houver)
  *   3. Agrupamento por natureza com top lines de cada grupo
+ *
+ * 2026-05-29: as tabelas "Por natureza" migraram do `<table>` artesanal para a
+ * DataTable canonica `density="ultra"` (h-7/28px) — regra dura de consistencia
+ * dos drills da Cota Sub. Cada natureza e uma DataTable com Total no
+ * `renderFooter` somando suas linhas (o backend ja entrega top_linhas completas
+ * por natureza; sem corte). O orient (`o`) do lado pagar/receber e preservado.
  */
 
 import * as React from "react"
@@ -16,18 +22,19 @@ import {
   RiInformationLine,
   RiInboxLine,
 } from "@remixicon/react"
+import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 
 import { cx } from "@/lib/utils"
 import { useDrillCpr } from "@/lib/hooks/controladoria"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 import { Button } from "@/components/tremor/Button"
+import { DataTable } from "@/design-system/components/DataTable"
+import { tableTokens } from "@/design-system/tokens/table"
 import {
   DrillClosureBadge,
   DrillSectionTitle,
-  drillRowBorder,
   drillTableWrap,
-  drillTfootRow,
   fmtBRL,
   fmtBRLSigned,
   toneClass,
@@ -38,6 +45,52 @@ const ESTADO_LABEL: Record<"entrou" | "devolvido" | "persiste", { label: string;
   devolvido: { label: "Devolvido em D0", tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" },
   persiste:  { label: "Persiste",        tone: "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300" },
 }
+
+// Props compartilhadas das DataTables do drill — ultra, sem toolbar.
+const DT_PROPS = {
+  density:           "ultra",
+  virtualize:        false,
+  showColumnManager: false,
+  showDensityToggle: false,
+  showExport:        false,
+} as const
+
+const FOOT_ROW = "border-t-2 border-t-gray-300 dark:border-t-gray-700"
+
+// Linha de rubrica dentro de uma natureza. `o` (orient) ja aplicado a cada
+// valor no momento da construcao das rows — celulas exibem a magnitude correta.
+type RubricaRow = {
+  descricao:           string
+  historico_traduzido: string | null
+  valor_d1:            number
+  valor_d0:            number
+  delta_valor:         number
+}
+
+const rubCol = createColumnHelper<RubricaRow>()
+
+const RUBRICA_COLUMNS: ColumnDef<RubricaRow, unknown>[] = [
+  rubCol.accessor((r) => r.historico_traduzido || r.descricao, {
+    id: "rubrica", header: "Rubrica", size: 340,
+    cell: (info) => (
+      <span className={cx("block max-w-[320px] truncate", tableTokens.cellText)} title={info.row.original.descricao}>
+        {info.getValue<string>()}
+      </span>
+    ),
+  }) as ColumnDef<RubricaRow, unknown>,
+  rubCol.accessor("valor_d1", {
+    id: "valor_d1", header: "D-1", size: 120, meta: { align: "right" },
+    cell: (info) => <div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(info.getValue<number>())}</div>,
+  }) as ColumnDef<RubricaRow, unknown>,
+  rubCol.accessor("valor_d0", {
+    id: "valor_d0", header: "D0", size: 120, meta: { align: "right" },
+    cell: (info) => <div className={cx("text-right", tableTokens.cellNumber)}>{fmtBRL.format(info.getValue<number>())}</div>,
+  }) as ColumnDef<RubricaRow, unknown>,
+  rubCol.accessor("delta_valor", {
+    id: "delta", header: "Δ", size: 120, meta: { align: "right" },
+    cell: (info) => <div className={cx("text-right text-xs font-medium tabular-nums", toneClass(info.getValue<number>()))}>{fmtBRLSigned(info.getValue<number>())}</div>,
+  }) as ColumnDef<RubricaRow, unknown>,
+]
 
 export type DrillCprContentProps = {
   fundoId:       string
@@ -196,53 +249,37 @@ export function DrillCprContent({ fundoId, data, dataAnterior, side }: DrillCprC
           />
         ) : (
           <div className="mt-2 flex flex-col gap-3">
-            {d.naturezas.map((n) => (
-              <div key={n.natureza} className={drillTableWrap}>
-                <div className="border-b border-gray-100 px-3 py-1.5 dark:border-gray-900">
-                  <span className="text-[12px] font-medium text-gray-900 dark:text-gray-50">{n.label}</span>
-                  <span className="ml-1.5 text-[10px] text-gray-500 dark:text-gray-400">· {n.qtd_linhas} linha(s)</span>
-                </div>
-                <table className="w-full table-fixed text-[12px] tabular-nums">
-                  <colgroup>
-                    <col />
-                    <col className="w-[22%]" />
-                    <col className="w-[22%]" />
-                    <col className="w-[22%]" />
-                  </colgroup>
-                  <thead className="text-[10px] uppercase tracking-[0.04em] text-gray-400 dark:text-gray-600">
-                    <tr>
-                      <th className="px-3 py-1.5 text-left">Rubrica</th>
-                      <th className="px-3 py-1.5 text-right">D-1</th>
-                      <th className="px-3 py-1.5 text-right">D0</th>
-                      <th className="px-3 py-1.5 text-right">Δ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {n.top_linhas.map((ln, idx) => (
-                      <tr key={`${n.natureza}-${idx}-${ln.descricao}`} className={drillRowBorder}>
-                        <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200" title={ln.descricao}>
-                          <span className="block truncate max-w-[320px]">{ln.historico_traduzido || ln.descricao}</span>
-                        </td>
-                        <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(o(ln.valor_d1))}</td>
-                        <td className="px-3 py-1.5 text-right text-gray-900 dark:text-gray-50">{fmtBRL.format(o(ln.valor_d0))}</td>
-                        <td className={cx(
-                          "px-3 py-1.5 text-right font-medium",
-                          toneClass(o(ln.delta_valor)),
-                        )}>{fmtBRLSigned(o(ln.delta_valor))}</td>
+            {d.naturezas.map((n) => {
+              // `o` ja aplicado em cada valor — a tabela exibe a magnitude correta.
+              const rows: RubricaRow[] = n.top_linhas.map((ln) => ({
+                descricao:           ln.descricao,
+                historico_traduzido: ln.historico_traduzido,
+                valor_d1:            o(ln.valor_d1),
+                valor_d0:            o(ln.valor_d0),
+                delta_valor:         o(ln.delta_valor),
+              }))
+              return (
+                <div key={n.natureza} className={drillTableWrap}>
+                  <div className="border-b border-gray-100 px-3 py-1.5 dark:border-gray-900">
+                    <span className="text-[12px] font-medium text-gray-900 dark:text-gray-50">{n.label}</span>
+                    <span className="ml-1.5 text-[10px] text-gray-500 dark:text-gray-400">· {n.qtd_linhas} linha(s)</span>
+                  </div>
+                  <DataTable<RubricaRow>
+                    {...DT_PROPS}
+                    data={rows}
+                    columns={RUBRICA_COLUMNS}
+                    renderFooter={() => (
+                      <tr className={FOOT_ROW}>
+                        <td className="px-3"><span className={tableTokens.cellStrong}>Total</span></td>
+                        <td className="px-3"><div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(o(n.sum_valor_d1))}</div></td>
+                        <td className="px-3"><div className={cx("text-right", tableTokens.cellStrong)}>{fmtBRL.format(o(n.sum_valor_d0))}</div></td>
+                        <td className="px-3"><div className={cx("text-right text-xs font-semibold tabular-nums", toneClass(o(n.sum_delta)))}>{fmtBRLSigned(o(n.sum_delta))}</div></td>
                       </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className={drillTfootRow}>
-                      <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200">Total</td>
-                      <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(o(n.sum_valor_d1))}</td>
-                      <td className="px-3 py-1.5 text-right text-gray-900 dark:text-gray-50">{fmtBRL.format(o(n.sum_valor_d0))}</td>
-                      <td className={cx("px-3 py-1.5 text-right", toneClass(o(n.sum_delta)))}>{fmtBRLSigned(o(n.sum_delta))}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            ))}
+                    )}
+                  />
+                </div>
+              )
+            })}
           </div>
         )}
       </section>

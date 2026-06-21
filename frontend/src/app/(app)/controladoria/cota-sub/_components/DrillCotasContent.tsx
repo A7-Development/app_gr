@@ -11,8 +11,13 @@
  *
  * Reusa a mesma tool do agente `controladoria.auditor_cotas`
  * (compute_movimento_cotas) via /drill/cotas.
+ *
+ * 2026-05-29: a tabela "Obrigações com cotistas" migrou do `<table>` artesanal
+ * para a DataTable canonica `density="ultra"` (h-7/28px) — regra dura de
+ * consistencia dos drills da Cota Sub. Sem corte (lista TODAS as obrigacoes).
  */
 
+import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 import { RiGroupLine, RiHandCoinLine, RiInboxLine } from "@remixicon/react"
 
 import { cx } from "@/lib/utils"
@@ -20,11 +25,10 @@ import { useDrillCotas } from "@/lib/hooks/controladoria"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
 import { Button } from "@/components/tremor/Button"
+import { DataTable } from "@/design-system/components/DataTable"
+import { tableTokens } from "@/design-system/tokens/table"
 import {
   DrillSectionTitle,
-  drillRowBorder,
-  drillTableWrap,
-  drillThead,
   fmtBRL,
   fmtBRLSigned,
   toneClass,
@@ -43,6 +47,55 @@ const ORDEM: Record<string, number> = { senior: 0, mezanino: 1, sub_jr: 2 }
 const COTAS_COLS = makeImpactoColumns({
   nome: "Classe", d1: "Patrim. D-1", d0: "Patrim. D0", impacto: "Impacto Sub",
 })
+
+// Props compartilhadas das DataTables do drill — ultra, sem toolbar, container
+// bordado (espelha o antigo drillTableWrap).
+const DT_PROPS = {
+  density:           "ultra",
+  virtualize:        false,
+  showColumnManager: false,
+  showDensityToggle: false,
+  showExport:        false,
+  className:         "rounded border border-gray-200 dark:border-gray-800",
+} as const
+
+const FOOT_ROW = "border-t-2 border-t-gray-300 dark:border-t-gray-700"
+
+// Linha de obrigacao com cotista (Cotas a Resgatar / Aporte / Resgate no CPR).
+type ObrigacaoRow = {
+  descricao: string
+  saldo_d1:  number
+  saldo_d0:  number
+  delta:     number
+  tipo:      string
+}
+
+const obrCol = createColumnHelper<ObrigacaoRow>()
+
+const OBRIGACOES_COLUMNS: ColumnDef<ObrigacaoRow, unknown>[] = [
+  obrCol.accessor("descricao", {
+    id: "descricao", header: "Obrigação", size: 220,
+    cell: (info) => (
+      <span className={cx("block truncate", tableTokens.cellText)} title={info.getValue<string>()}>{info.getValue<string>()}</span>
+    ),
+  }) as ColumnDef<ObrigacaoRow, unknown>,
+  obrCol.accessor("saldo_d1", {
+    id: "saldo_d1", header: "Saldo D-1", size: 120, meta: { align: "right" },
+    cell: (info) => <div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(info.getValue<number>())}</div>,
+  }) as ColumnDef<ObrigacaoRow, unknown>,
+  obrCol.accessor("saldo_d0", {
+    id: "saldo_d0", header: "Saldo D0", size: 120, meta: { align: "right" },
+    cell: (info) => <div className={cx("text-right", tableTokens.cellNumber)}>{fmtBRL.format(info.getValue<number>())}</div>,
+  }) as ColumnDef<ObrigacaoRow, unknown>,
+  obrCol.accessor("delta", {
+    id: "delta", header: "Δ", size: 110, meta: { align: "right" },
+    cell: (info) => <div className={cx("text-right text-xs font-semibold tabular-nums", toneClass(info.getValue<number>()))}>{fmtBRLSigned(info.getValue<number>())}</div>,
+  }) as ColumnDef<ObrigacaoRow, unknown>,
+  obrCol.accessor("tipo", {
+    id: "tipo", header: "Tipo", size: 110,
+    cell: (info) => <span className={cx("block truncate", tableTokens.cellSecondary)}>{TIPO[info.getValue<string>()] ?? info.getValue<string>()}</span>,
+  }) as ColumnDef<ObrigacaoRow, unknown>,
+]
 
 type Props = { fundoId: string; data: string; dataAnterior?: string | null }
 
@@ -72,6 +125,14 @@ export function DrillCotasContent({ fundoId, data, dataAnterior }: Props) {
   const classes = [...d.classes]
     .filter((c) => c.classe !== "sub_jr")
     .sort((a, b) => (ORDEM[a.classe] ?? 9) - (ORDEM[b.classe] ?? 9))
+
+  const obrigacoes: ObrigacaoRow[] = d.obrigacoes.map((o) => ({
+    descricao: o.descricao,
+    saldo_d1:  o.saldo_d1,
+    saldo_d0:  o.saldo_d0,
+    delta:     o.delta,
+    tipo:      o.tipo,
+  }))
 
   return (
     <div className="flex flex-col gap-5">
@@ -119,7 +180,7 @@ export function DrillCotasContent({ fundoId, data, dataAnterior }: Props) {
           counter={`saldo ${fmtBRL.format(d.obrigacoes_saldo_d0)}`}
           help="Cotas a Resgatar, Aporte e Resgate — capital de cotista no CPR (não é despesa)."
         />
-        {d.obrigacoes.length === 0 ? (
+        {obrigacoes.length === 0 ? (
           <EmptyState
             className="mt-2"
             icon={RiInboxLine}
@@ -127,29 +188,25 @@ export function DrillCotasContent({ fundoId, data, dataAnterior }: Props) {
             description="Nenhuma Cota a Resgatar, Aporte ou Resgate no dia."
           />
         ) : (
-          <div className={cx("mt-2", drillTableWrap)}>
-            <table className="w-full whitespace-nowrap text-[12px] tabular-nums">
-              <thead className={drillThead}>
-                <tr>
-                  <th className="px-3 py-1.5 text-left font-medium">Obrigação</th>
-                  <th className="px-3 py-1.5 text-right font-medium">Saldo D-1</th>
-                  <th className="px-3 py-1.5 text-right font-medium">Saldo D0</th>
-                  <th className="px-3 py-1.5 text-right font-medium">Δ</th>
-                  <th className="px-3 py-1.5 text-left font-medium">Tipo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {d.obrigacoes.map((o, i) => (
-                  <tr key={`${o.descricao}-${i}`} className={drillRowBorder}>
-                    <td className="px-3 py-1.5 text-left text-gray-900 dark:text-gray-100">{o.descricao}</td>
-                    <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">{fmtBRL.format(o.saldo_d1)}</td>
-                    <td className="px-3 py-1.5 text-right text-gray-600 dark:text-gray-300">{fmtBRL.format(o.saldo_d0)}</td>
-                    <td className={cx("px-3 py-1.5 text-right", toneClass(o.delta))}>{fmtBRLSigned(o.delta)}</td>
-                    <td className="px-3 py-1.5 text-left text-gray-500 dark:text-gray-400">{TIPO[o.tipo] ?? o.tipo}</td>
+          <div className="mt-2">
+            <DataTable<ObrigacaoRow>
+              {...DT_PROPS}
+              data={obrigacoes}
+              columns={OBRIGACOES_COLUMNS}
+              renderFooter={() => {
+                const s1 = obrigacoes.reduce((a, x) => a + x.saldo_d1, 0)
+                const sd = obrigacoes.reduce((a, x) => a + x.delta, 0)
+                return (
+                  <tr className={FOOT_ROW}>
+                    <td className="px-3"><span className={tableTokens.cellStrong}>Total · {obrigacoes.length} obrigação(ões)</span></td>
+                    <td className="px-3"><div className={cx("text-right", tableTokens.cellNumberSecondary)}>{fmtBRL.format(s1)}</div></td>
+                    <td className="px-3"><div className={cx("text-right", tableTokens.cellStrong)}>{fmtBRL.format(d.obrigacoes_saldo_d0)}</div></td>
+                    <td className="px-3"><div className={cx("text-right text-xs font-semibold tabular-nums", toneClass(sd))}>{fmtBRLSigned(sd)}</div></td>
+                    <td className="px-3" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                )
+              }}
+            />
           </div>
         )}
       </section>

@@ -20,6 +20,7 @@ import {
   RiExternalLinkLine,
   RiLoader4Line,
 } from "@remixicon/react"
+import type { ColumnDef } from "@tanstack/react-table"
 import { formatDistanceToNow, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
 
@@ -32,6 +33,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/tremor/Dialog"
+import { DataTable } from "@/design-system/components/DataTable"
+import { tableTokens } from "@/design-system/tokens/table"
 import type { AIAgentDefinitionVersionInfo } from "@/lib/api-client"
 import {
   useActivateAgentDefinitionVersion,
@@ -93,6 +96,147 @@ export function AgentVersionsPanel({
     }
   }
 
+  const columns = React.useMemo<
+    ColumnDef<AIAgentDefinitionVersionInfo, unknown>[]
+  >(
+    () => [
+      {
+        id: "versao",
+        header: "Versao",
+        cell: ({ row }) => {
+          const v = row.original
+          const isCurrent = v.id === currentId
+          return (
+            <span className={cx(tableTokens.cellTextMono, "whitespace-nowrap")}>
+              v{v.version}
+              {isCurrent && (
+                <span className="ml-1.5 font-sans text-[10px] text-blue-600 dark:text-blue-400">
+                  (aberta)
+                </span>
+              )}
+            </span>
+          )
+        },
+      },
+      {
+        id: "status",
+        header: "Status",
+        cell: ({ row }) => (
+          <StatusBadge
+            active={row.original.is_active}
+            archived={row.original.archived_at !== null}
+          />
+        ),
+      },
+      {
+        id: "persona",
+        header: "Persona",
+        cell: ({ row }) => (
+          <span className={tableTokens.cellText}>
+            {row.original.persona_name ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "prompt",
+        header: "Prompt",
+        cell: ({ row }) => (
+          <span className={tableTokens.cellTextMono}>
+            {row.original.prompt_name}
+          </span>
+        ),
+      },
+      {
+        id: "modelo",
+        header: "Modelo",
+        cell: ({ row }) => (
+          <span className={tableTokens.cellTextMono}>
+            {row.original.model ?? "default"}
+          </span>
+        ),
+      },
+      {
+        id: "criada",
+        header: "Criada",
+        cell: ({ row }) => (
+          <span className={cx(tableTokens.cellSecondary, "whitespace-nowrap")}>
+            {formatDistanceToNow(parseISO(row.original.created_at), {
+              addSuffix: true,
+              locale: ptBR,
+            })}
+          </span>
+        ),
+      },
+      {
+        id: "acoes",
+        header: "Acoes",
+        meta: { align: "right" },
+        cell: ({ row }) => {
+          const v = row.original
+          const isCurrent = v.id === currentId
+          const isArchived = v.archived_at !== null
+          return (
+            <div className="flex items-center justify-end gap-1.5">
+              {!isCurrent && (
+                <Button
+                  variant="ghost"
+                  className="h-7 px-2 text-[12px]"
+                  onClick={() => router.push(`${BASE_HREF}/${v.id}`)}
+                >
+                  <RiExternalLinkLine className="mr-1 size-3.5" />
+                  Abrir
+                </Button>
+              )}
+              {!v.is_active && !isArchived && (
+                <Button
+                  variant="secondary"
+                  className="h-7 px-2 text-[12px]"
+                  onClick={() => handleActivate(v)}
+                  disabled={activateMut.isPending}
+                >
+                  <RiCheckLine className="mr-1 size-3.5" />
+                  Ativar
+                </Button>
+              )}
+              {!v.is_active && !isArchived && (
+                <Button
+                  variant="ghost"
+                  className="h-7 px-2 text-[12px]"
+                  onClick={() => handleArchive(v)}
+                  disabled={archiveMut.isPending}
+                >
+                  Arquivar
+                </Button>
+              )}
+              {!v.is_active && (
+                <Button
+                  variant="ghost"
+                  className="h-7 px-2 text-[12px] text-red-600 dark:text-red-500"
+                  onClick={() => setDeleting(v)}
+                  disabled={deleteMut.isPending}
+                  aria-label="Excluir versao"
+                >
+                  <RiDeleteBin6Line className="size-3.5" />
+                </Button>
+              )}
+            </div>
+          )
+        },
+      },
+    ],
+    // handleActivate/handleArchive sao closures sobre mutateAsync (estavel);
+    // re-criar a memo a cada render anularia o ganho — deps cobrem os flags
+    // que mudam o disabled dos botoes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      currentId,
+      router,
+      activateMut.isPending,
+      archiveMut.isPending,
+      deleteMut.isPending,
+    ],
+  )
+
   if (q.isLoading) {
     return (
       <div className="flex items-center gap-2 py-10 text-[13px] text-gray-500">
@@ -109,109 +253,13 @@ export function AgentVersionsPanel({
         Ativar troca a versao em producao em 1 clique (rollback sem deploy).
       </p>
 
-      <div className="overflow-x-auto rounded-md border border-gray-200 dark:border-gray-800">
-        <table className="w-full text-[13px]">
-          <thead className="bg-gray-50 text-left text-[11px] uppercase tracking-wide text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-            <tr>
-              <th className="px-3 py-2 font-medium">Versao</th>
-              <th className="px-3 py-2 font-medium">Status</th>
-              <th className="px-3 py-2 font-medium">Persona</th>
-              <th className="px-3 py-2 font-medium">Prompt</th>
-              <th className="px-3 py-2 font-medium">Modelo</th>
-              <th className="px-3 py-2 font-medium">Criada</th>
-              <th className="px-3 py-2 text-right font-medium">Acoes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {versions.map((v) => {
-              const isCurrent = v.id === currentId
-              const isArchived = v.archived_at !== null
-              return (
-                <tr
-                  key={v.id}
-                  className={cx(
-                    "border-t border-gray-100 dark:border-gray-800",
-                    isCurrent && "bg-blue-50/50 dark:bg-blue-500/5",
-                  )}
-                >
-                  <td className="whitespace-nowrap px-3 py-2 font-mono tabular-nums text-gray-900 dark:text-gray-100">
-                    v{v.version}
-                    {isCurrent && (
-                      <span className="ml-1.5 text-[10px] font-sans text-blue-600 dark:text-blue-400">
-                        (aberta)
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <StatusBadge active={v.is_active} archived={isArchived} />
-                  </td>
-                  <td className="px-3 py-2 text-gray-700 dark:text-gray-300">
-                    {v.persona_name ?? "—"}
-                  </td>
-                  <td className="px-3 py-2 font-mono text-[12px] text-gray-700 dark:text-gray-300">
-                    {v.prompt_name}
-                  </td>
-                  <td className="px-3 py-2 font-mono text-[12px] text-gray-700 dark:text-gray-300">
-                    {v.model ?? "default"}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-gray-500 dark:text-gray-400">
-                    {formatDistanceToNow(parseISO(v.created_at), {
-                      addSuffix: true,
-                      locale: ptBR,
-                    })}
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center justify-end gap-1.5">
-                      {!isCurrent && (
-                        <Button
-                          variant="ghost"
-                          className="h-7 px-2 text-[12px]"
-                          onClick={() => router.push(`${BASE_HREF}/${v.id}`)}
-                        >
-                          <RiExternalLinkLine className="mr-1 size-3.5" />
-                          Abrir
-                        </Button>
-                      )}
-                      {!v.is_active && !isArchived && (
-                        <Button
-                          variant="secondary"
-                          className="h-7 px-2 text-[12px]"
-                          onClick={() => handleActivate(v)}
-                          disabled={activateMut.isPending}
-                        >
-                          <RiCheckLine className="mr-1 size-3.5" />
-                          Ativar
-                        </Button>
-                      )}
-                      {!v.is_active && !isArchived && (
-                        <Button
-                          variant="ghost"
-                          className="h-7 px-2 text-[12px]"
-                          onClick={() => handleArchive(v)}
-                          disabled={archiveMut.isPending}
-                        >
-                          Arquivar
-                        </Button>
-                      )}
-                      {!v.is_active && (
-                        <Button
-                          variant="ghost"
-                          className="h-7 px-2 text-[12px] text-red-600 dark:text-red-500"
-                          onClick={() => setDeleting(v)}
-                          disabled={deleteMut.isPending}
-                          aria-label="Excluir versao"
-                        >
-                          <RiDeleteBin6Line className="size-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      <DataTable<AIAgentDefinitionVersionInfo>
+        data={versions}
+        columns={columns}
+        rowClassName={(v) =>
+          v.id === currentId ? "bg-blue-50/50 dark:bg-blue-500/5" : ""
+        }
+      />
 
       {/* Excluir versao (hard-delete) */}
       <Dialog

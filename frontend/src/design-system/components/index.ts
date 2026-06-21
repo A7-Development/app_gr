@@ -50,8 +50,16 @@ export {
   type ShellSearchConfig,
   type ShellSegmentOption,
   type ShellSegmentsConfig,
+  type ShellPillOption,
+  type ShellPillFiltersConfig,
   type ShellEmptyState,
 } from "./DataTableShell"
+export {
+  ExpandableTable,
+  type ExpandableTableProps,
+  type ExpandableColumn,
+  type ExpandableAlign,
+} from "./ExpandableTable"
 export {
   AppSidebar, useSidebarCollapsed, setSidebarCollapsed, toggleSidebarCollapsed,
   SidebarTrigger, BrandCard, UserProfileDropdown,

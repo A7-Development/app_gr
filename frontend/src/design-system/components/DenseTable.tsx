@@ -142,29 +142,31 @@ export function DenseTable({
       >
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-100 bg-gray-50/60 dark:border-gray-900 dark:bg-gray-900/40">
+            {/* Header hairline (handoff v2): so border-b gray-200, sem faixa cinza; 28px. */}
+            <tr className="border-b border-gray-200 dark:border-gray-800">
               {columns.map((col) => (
-                <th key={col.key} className={cx(tableTokens.header, "px-3 py-1", alignClass(col))}>
+                <th key={col.key} className={cx(tableTokens.header, "h-7 px-3 align-middle text-gray-500 dark:text-gray-400", alignClass(col))}>
                   {col.label}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
+            {/* Linha 32px (h-8) — grade unica da familia (handoff v2). */}
             {rows.map((row, i) => (
-              <tr key={i} className="border-b border-gray-50 last:border-0 dark:border-gray-900/60">
+              <tr key={i} className="h-8 border-b border-gray-100 last:border-0 dark:border-gray-900">
                 {renderRow(row)}
               </tr>
             ))}
             {footer && (
-              <tr className="border-t border-t-gray-200 bg-gray-50/60 dark:border-t-gray-800 dark:bg-gray-900/40">
+              <tr className="h-8 border-t border-t-gray-200 bg-gray-50/60 dark:border-t-gray-800 dark:bg-gray-900/40">
                 {renderRow(footer, { strong: true })}
               </tr>
             )}
             {footerSecondary && (
               <tr
                 className={cx(
-                  "bg-gray-50/40 dark:bg-gray-900/20",
+                  "h-8 bg-gray-50/40 dark:bg-gray-900/20",
                   !footer && "border-t border-t-gray-200 dark:border-t-gray-800",
                 )}
               >

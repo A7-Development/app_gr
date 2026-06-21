@@ -6,19 +6,13 @@ import * as React from "react"
 
 import {
   DenseTable,
+  type DenseColumn,
+  type DenseRow,
   type DenseSeriesRow,
 } from "@/design-system/components/DenseTable"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { Badge } from "@/components/tremor/Badge"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRoot,
-  TableRow,
-} from "@/components/tremor/Table"
+import { tableTokens } from "@/design-system/tokens/table"
 import { ProvenanceFooter } from "@/components/bi/ProvenanceFooter"
 import {
   biBenchmark,
@@ -740,32 +734,21 @@ function PrazoMedioTable({
       </ChartCard>
     )
   }
+  const columns: DenseColumn[] = [
+    { key: "competencia", label: "Competencia", format: "texto" },
+    { key: "dias", label: "Dias (aprox.)", align: "right" },
+  ]
+  const rows: DenseRow[] = serie.map((p) => ({
+    competencia: labelCompetencia(p.competencia),
+    dias: `${numero.format(Math.round(p.dias_aprox))} d`,
+  }))
   return (
     <ChartCard
       title="Prazo medio ponderado (dias)"
       info="Media ponderada pelos pontos medios dos buckets a vencer (tab_v_a1..a10). Austin publica em dias uteis; aqui usamos calendario."
       className={cx("w-fit max-w-full", className)}
     >
-      <TableRoot className="text-xs">
-        <Table className="text-xs">
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>Competencia</TableHeaderCell>
-              <TableHeaderCell className="text-right">Dias (aprox.)</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {serie.map((p) => (
-              <TableRow key={p.competencia}>
-                <TableCell>{labelCompetencia(p.competencia)}</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {numero.format(Math.round(p.dias_aprox))} d
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableRoot>
+      <DenseTable bordered={false} columns={columns} rows={rows} />
     </ChartCard>
   )
 }
@@ -1125,30 +1108,30 @@ export function CedentesSnapshot({ ficha }: { ficha: FichaFundo }) {
       info="CVM so publica os 9 maiores cedentes. Sacados nao sao publicados."
       className="w-fit max-w-full"
     >
-      <TableRoot className="text-xs">
-        <Table className="text-xs">
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>#</TableHeaderCell>
-              <TableHeaderCell>CPF/CNPJ</TableHeaderCell>
-              <TableHeaderCell className="text-right">% carteira</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {ficha.cedentes.map((c) => (
-              <TableRow key={c.rank}>
-                <TableCell className="tabular-nums">{c.rank}</TableCell>
-                <TableCell className="font-mono">
-                  {c.cpf_cnpj ? formatCNPJ(c.cpf_cnpj) : "n/d"}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {percent1(c.pct)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableRoot>
+      {/* MOTIVO: coluna CPF/CNPJ em mono (tableTokens.cellTextMono) — DenseTable
+          nao oferece formato mono por coluna. Montada em <table> nativa. */}
+      <table className="w-full border-collapse">
+        <thead>
+          <tr className="border-b border-gray-200 dark:border-gray-800">
+            <th className={cx(tableTokens.header, "h-7 px-3 text-left align-middle text-gray-500 dark:text-gray-400")}>#</th>
+            <th className={cx(tableTokens.header, "h-7 px-3 text-left align-middle text-gray-500 dark:text-gray-400")}>CPF/CNPJ</th>
+            <th className={cx(tableTokens.header, "h-7 px-3 text-right align-middle text-gray-500 dark:text-gray-400")}>% carteira</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ficha.cedentes.map((c) => (
+            <tr key={c.rank} className="h-8 border-b border-gray-100 last:border-0 dark:border-gray-900">
+              <td className={cx(tableTokens.cellNumber, "px-3 py-0.5")}>{c.rank}</td>
+              <td className={cx(tableTokens.cellTextMono, "px-3 py-0.5")}>
+                {c.cpf_cnpj ? formatCNPJ(c.cpf_cnpj) : "n/d"}
+              </td>
+              <td className={cx(tableTokens.cellNumber, "px-3 py-0.5 text-right")}>
+                {percent1(c.pct)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </ChartCard>
   )
 }
@@ -1165,36 +1148,23 @@ export function SetoresSnapshot({ ficha }: { ficha: FichaFundo }) {
       </ChartCard>
     )
   }
+  const columns: DenseColumn[] = [
+    { key: "setor", label: "Setor", format: "texto" },
+    { key: "valor", label: "Valor (R$ mil)", align: "right" },
+    { key: "pct", label: "%", align: "right" },
+  ]
+  const rows: DenseRow[] = ficha.setores.map((s) => ({
+    setor: s.setor,
+    valor: milharesBRL(s.valor),
+    pct: percent1(s.pct),
+  }))
   return (
     <ChartCard
       title="Composicao setorial — snapshot"
       info="Substitui parcialmente a 'natureza DC' da Austin (CVM so agrega por setor)."
       className="w-fit max-w-full"
     >
-      <TableRoot className="text-xs">
-        <Table className="text-xs">
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>Setor</TableHeaderCell>
-              <TableHeaderCell className="text-right">Valor (R$ mil)</TableHeaderCell>
-              <TableHeaderCell className="text-right">%</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {ficha.setores.map((s) => (
-              <TableRow key={s.setor}>
-                <TableCell>{s.setor}</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {milharesBRL(s.valor)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {percent1(s.pct)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableRoot>
+      <DenseTable bordered={false} columns={columns} rows={rows} />
     </ChartCard>
   )
 }
@@ -1217,30 +1187,30 @@ function ScrSnapshot({ ficha }: { ficha: FichaFundo }) {
       info="Rating regulatorio dos devedores reportado a CVM (tab_x)."
       className="w-fit max-w-full"
     >
-      <TableRoot className="text-xs">
-        <Table className="text-xs">
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>Rating</TableHeaderCell>
-              <TableHeaderCell className="text-right">Valor (R$ mil)</TableHeaderCell>
-              <TableHeaderCell className="text-right">%</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {ficha.scr_distribuicao.map((r) => (
-              <TableRow key={r.rating}>
-                <TableCell className="font-medium">{r.rating}</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {milharesBRL(r.valor)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {percent1(r.pct)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableRoot>
+      {/* MOTIVO: coluna Rating em font-medium — DenseTable aplica peso normal
+          nas leaf cells. Montada em <table> nativa com tableTokens. */}
+      <table className="w-full border-collapse">
+        <thead>
+          <tr className="border-b border-gray-200 dark:border-gray-800">
+            <th className={cx(tableTokens.header, "h-7 px-3 text-left align-middle text-gray-500 dark:text-gray-400")}>Rating</th>
+            <th className={cx(tableTokens.header, "h-7 px-3 text-right align-middle text-gray-500 dark:text-gray-400")}>Valor (R$ mil)</th>
+            <th className={cx(tableTokens.header, "h-7 px-3 text-right align-middle text-gray-500 dark:text-gray-400")}>%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ficha.scr_distribuicao.map((r) => (
+            <tr key={r.rating} className="h-8 border-b border-gray-100 last:border-0 dark:border-gray-900">
+              <td className={cx(tableTokens.cellText, "px-3 py-0.5 font-medium")}>{r.rating}</td>
+              <td className={cx(tableTokens.cellNumber, "px-3 py-0.5 text-right")}>
+                {milharesBRL(r.valor)}
+              </td>
+              <td className={cx(tableTokens.cellNumber, "px-3 py-0.5 text-right")}>
+                {percent1(r.pct)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </ChartCard>
   )
 }

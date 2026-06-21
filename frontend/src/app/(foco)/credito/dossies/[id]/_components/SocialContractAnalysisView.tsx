@@ -17,6 +17,11 @@ import { useQuery } from "@tanstack/react-query"
 import { RiCheckLine, RiCloseLine, RiErrorWarningLine } from "@remixicon/react"
 
 import { SectionRenderer } from "@/design-system/components/SectionRenderer"
+import {
+  DenseTable,
+  type DenseColumn,
+  type DenseRow,
+} from "@/design-system/components/DenseTable"
 import { tableTokens } from "@/design-system/tokens/table"
 import {
   credito,
@@ -37,6 +42,25 @@ const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" 
 function fmtBRL(v: unknown): string {
   const n = Number(v)
   return Number.isFinite(n) ? brl.format(n) : "—"
+}
+
+// Quadro societário (DenseTable). CPF permanece REDACTADO — só os 2 últimos
+// dígitos, formato `***.***.***-NN`, nunca o valor cru. Participação mantém o
+// formato original (número cru + "%"), por isso renderiza como texto.
+const SOCIOS_COLUMNS: DenseColumn[] = [
+  { key: "nome", label: "Sócio", format: "texto" },
+  { key: "cpf", label: "CPF", format: "texto" },
+  { key: "participacao", label: "Participação", format: "texto", align: "right" },
+]
+
+function sociosRows(
+  socios: { nome: string; cpf_ultimos4: string | null; participacao_pct: number | null }[],
+): DenseRow[] {
+  return socios.map((s) => ({
+    nome: s.nome,
+    cpf: s.cpf_ultimos4 ? `***.***.***-${s.cpf_ultimos4.slice(-2)}` : "—",
+    participacao: s.participacao_pct != null ? `${s.participacao_pct}%` : "—",
+  }))
 }
 
 // ─── Camada 1 — fatos determinísticos ───────────────────────────────────────
@@ -76,30 +100,7 @@ function DeterministicPanel({ data }: { data: SocietarioPayload }) {
 
       {/* Quadro societário */}
       {c?.socios && c.socios.length > 0 && (
-        <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/60 dark:border-gray-900 dark:bg-gray-900/40">
-                <th className={cx(tableTokens.header, "px-3 py-1.5 text-left")}>Sócio</th>
-                <th className={cx(tableTokens.header, "px-3 py-1.5 text-left")}>CPF</th>
-                <th className={cx(tableTokens.header, "px-3 py-1.5 text-right")}>Participação</th>
-              </tr>
-            </thead>
-            <tbody>
-              {c.socios.map((s, i) => (
-                <tr key={i} className="border-b border-gray-50 last:border-0 dark:border-gray-900/60">
-                  <td className={cx(tableTokens.cellText, "px-3 py-1")}>{s.nome}</td>
-                  <td className={cx(tableTokens.cellTextMono, "px-3 py-1")}>
-                    {s.cpf_ultimos4 ? `***.***.***-${s.cpf_ultimos4.slice(-2)}` : "—"}
-                  </td>
-                  <td className={cx(tableTokens.cellNumber, "px-3 py-1 text-right")}>
-                    {s.participacao_pct != null ? `${s.participacao_pct}%` : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DenseTable columns={SOCIOS_COLUMNS} rows={sociosRows(c.socios)} />
       )}
 
       {e && (

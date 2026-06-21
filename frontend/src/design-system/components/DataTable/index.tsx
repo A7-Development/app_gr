@@ -101,6 +101,16 @@ export interface DataTableProps<TData> {
 }
 
 const DENSITY_ICONS: Record<DensityMode, React.ReactNode> = {
+  ultracompact: (
+    <svg viewBox="0 0 14 14" className="size-3.5" fill="none">
+      <line x1="2" y1="1.6"  x2="12" y2="1.6"  stroke="currentColor" strokeWidth="1.1"/>
+      <line x1="2" y1="3.65" x2="12" y2="3.65" stroke="currentColor" strokeWidth="1.1"/>
+      <line x1="2" y1="5.7"  x2="12" y2="5.7"  stroke="currentColor" strokeWidth="1.1"/>
+      <line x1="2" y1="7.75" x2="12" y2="7.75" stroke="currentColor" strokeWidth="1.1"/>
+      <line x1="2" y1="9.8"  x2="12" y2="9.8"  stroke="currentColor" strokeWidth="1.1"/>
+      <line x1="2" y1="11.85" x2="12" y2="11.85" stroke="currentColor" strokeWidth="1.1"/>
+    </svg>
+  ),
   ultra: (
     <svg viewBox="0 0 14 14" className="size-3.5" fill="none">
       <line x1="2" y1="2"    x2="12" y2="2"    stroke="currentColor" strokeWidth="1.25"/>
@@ -136,7 +146,9 @@ const DENSITY_ICONS: Record<DensityMode, React.ReactNode> = {
 function SortIcon({ direction }: { direction: "asc" | "desc" | false }) {
   if (direction === "asc")  return <RiArrowUpLine    className="ml-1 size-3 shrink-0 text-blue-500" />
   if (direction === "desc") return <RiArrowDownLine  className="ml-1 size-3 shrink-0 text-blue-500" />
-  return <RiArrowUpDownLine className="ml-1 size-3 shrink-0 text-gray-300 dark:text-gray-600" />
+  // Caret em repouso: apagado, aparece no hover da coluna (group/th). Coluna
+  // ativa (asc/desc acima) fica azul e sempre visivel.
+  return <RiArrowUpDownLine className="ml-1 size-3 shrink-0 text-gray-300 opacity-0 transition-opacity group-hover/th:opacity-100 dark:text-gray-600" />
 }
 
 function ColumnManager<TData>({
@@ -309,7 +321,7 @@ function ErrorState({ message, onRetry }: { message: string; onRetry?: () => voi
 export function DataTable<TData>({
   data,
   columns,
-  density:           densityProp = "default",
+  density:           densityProp = "compact",
   selectable        = false,
   onRowClick,
   renderBulkActions,
@@ -378,7 +390,7 @@ export function DataTable<TData>({
   const rowVirtualizer = useVirtualizer({
     count: shouldVirtualize ? rows.length : 0,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => (density === "ultra" ? 28 : density === "compact" ? 32 : density === "comfortable" ? 48 : 40),
+    estimateSize: () => (density === "ultracompact" ? 24 : density === "ultra" ? 28 : density === "compact" ? 32 : density === "comfortable" ? 48 : 40),
     overscan: 12,
   })
 
@@ -435,7 +447,7 @@ export function DataTable<TData>({
       ) : (
         <div ref={parentRef} className="flex-1 overflow-auto">
           <table className="w-full border-collapse text-[13px]">
-            <thead className="sticky top-0 z-[1] bg-gray-50 dark:bg-gray-900/60">
+            <thead className="sticky top-0 z-[1] bg-white dark:bg-gray-950">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
                   {hg.headers.map((header) => {
@@ -449,9 +461,9 @@ export function DataTable<TData>({
                         colSpan={header.colSpan}
                         style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}
                         className={cx(
-                          "h-7 border-b border-gray-200 dark:border-gray-800 px-4",
+                          "group/th h-7 border-b border-gray-200 dark:border-gray-800 px-4",
                           "text-[10px] font-semibold uppercase tracking-[0.05em]",
-                          "text-gray-400 dark:text-gray-500 whitespace-nowrap select-none",
+                          "text-gray-500 dark:text-gray-400 whitespace-nowrap select-none",
                           align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left",
                           header.column.getCanSort() && "cursor-pointer hover:text-gray-700 dark:hover:text-gray-300",
                         )}

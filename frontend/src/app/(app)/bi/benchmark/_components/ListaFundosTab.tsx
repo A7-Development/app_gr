@@ -4,20 +4,16 @@ import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import * as React from "react"
 import { RiEyeLine } from "@remixicon/react"
+import type { ColumnDef } from "@tanstack/react-table"
 
 import { Input } from "@/components/tremor/Input"
 import { Button } from "@/components/tremor/Button"
 import { Checkbox } from "@/components/tremor/Checkbox"
 import { Badge } from "@/components/tremor/Badge"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRoot,
-  TableRow,
-} from "@/components/tremor/Table"
+import { DataTable } from "@/design-system/components/DataTable"
+import { tableTokens } from "@/design-system/tokens/table"
+import { cx } from "@/lib/utils"
+import type { FundoRow } from "@/lib/api-client"
 
 import { formatCNPJ, moedaCompacta, numero, percent1 } from "./formatters"
 import { useSelectedFundos } from "../_hooks/useBenchmarkUrl"
@@ -57,12 +53,127 @@ export function ListaFundosTab() {
 
   const { fundos, total, competencia, loading, error } = useFundosBusca(qParam)
 
-  const fichaHref = (cnpjDigitsValue: string) => {
-    const n = new URLSearchParams(sp.toString())
-    n.set("tab", "ficha")
-    n.set("cnpj", cnpjDigitsValue)
-    return `${pathname}?${n.toString()}`
-  }
+  const fichaHref = React.useCallback(
+    (cnpjDigitsValue: string) => {
+      const n = new URLSearchParams(sp.toString())
+      n.set("tab", "ficha")
+      n.set("cnpj", cnpjDigitsValue)
+      return `${pathname}?${n.toString()}`
+    },
+    [sp, pathname],
+  )
+
+  const columns = React.useMemo<ColumnDef<FundoRow, unknown>[]>(
+    () => [
+      {
+        id: "select",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const cnpjKey = cnpjDigits(row.original.cnpj_fundo)
+          const isSel = selected.includes(cnpjKey)
+          const disabled = !isSel && isFull
+          return (
+            <Checkbox
+              checked={isSel}
+              disabled={disabled}
+              onCheckedChange={() => toggle(cnpjKey)}
+              aria-label={`Selecionar ${
+                row.original.denominacao_social ?? cnpjKey
+              }`}
+            />
+          )
+        },
+      },
+      {
+        id: "fundo",
+        header: "Fundo",
+        accessorFn: (r) => r.denominacao_social ?? "(sem denominacao)",
+        cell: ({ row }) => (
+          <span className={cx(tableTokens.cellText, "font-medium")}>
+            {row.original.denominacao_social ?? "(sem denominacao)"}
+          </span>
+        ),
+      },
+      {
+        id: "cnpj",
+        header: "CNPJ",
+        accessorFn: (r) => cnpjDigits(r.cnpj_fundo),
+        cell: ({ row }) => (
+          <span className={tableTokens.cellTextMono}>
+            {formatCNPJ(cnpjDigits(row.original.cnpj_fundo))}
+          </span>
+        ),
+      },
+      {
+        id: "classe",
+        header: "Classe",
+        accessorFn: (r) => r.classe_anbima ?? "-",
+        cell: ({ row }) => (
+          <span className={tableTokens.cellText}>
+            {row.original.classe_anbima ?? "-"}
+          </span>
+        ),
+      },
+      {
+        id: "pl",
+        header: "PL",
+        accessorFn: (r) => r.patrimonio_liquido,
+        meta: { align: "right" },
+        cell: ({ row }) => (
+          <span className={cx(tableTokens.cellNumber, "block text-right")}>
+            {moedaCompacta.format(row.original.patrimonio_liquido)}
+          </span>
+        ),
+      },
+      {
+        id: "inad_total",
+        header: "% Inad. total",
+        accessorFn: (r) => r.percentual_pdd,
+        meta: { align: "right" },
+        cell: ({ row }) => (
+          <span className={cx(tableTokens.cellNumber, "block text-right")}>
+            {row.original.percentual_pdd != null
+              ? percent1(row.original.percentual_pdd)
+              : "-"}
+          </span>
+        ),
+      },
+      {
+        id: "inad_longo",
+        header: "% Inad. >120d",
+        accessorFn: (r) => r.indice_inadimplencia,
+        meta: { align: "right" },
+        cell: ({ row }) => (
+          <span className={cx(tableTokens.cellNumber, "block text-right")}>
+            {row.original.indice_inadimplencia != null
+              ? percent1(row.original.indice_inadimplencia)
+              : "-"}
+          </span>
+        ),
+      },
+      {
+        id: "acao",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const cnpjKey = cnpjDigits(row.original.cnpj_fundo)
+          return (
+            <Button variant="ghost" asChild>
+              <Link
+                href={fichaHref(cnpjKey)}
+                className="inline-flex items-center gap-1"
+              >
+                <RiEyeLine className="size-3.5" aria-hidden="true" />
+                Ver ficha
+              </Link>
+            </Button>
+          )
+        },
+      },
+    ],
+    [selected, isFull, toggle, fichaHref],
+  )
 
   return (
     <div className="flex flex-col gap-3">
@@ -90,101 +201,23 @@ export function ListaFundosTab() {
             }. Marque ate ${max} fundos para habilitar o comparativo.`}
       </div>
 
-      <TableRoot className="rounded border border-gray-200 dark:border-gray-800">
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell className="w-10"></TableHeaderCell>
-              <TableHeaderCell>Fundo</TableHeaderCell>
-              <TableHeaderCell>CNPJ</TableHeaderCell>
-              <TableHeaderCell>Classe</TableHeaderCell>
-              <TableHeaderCell className="text-right">PL</TableHeaderCell>
-              <TableHeaderCell className="text-right">
-                % Inad. total
-              </TableHeaderCell>
-              <TableHeaderCell className="text-right">
-                % Inad. &gt;120d
-              </TableHeaderCell>
-              <TableHeaderCell className="w-24"></TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {error ? (
-              <TableRow>
-                <TableCell
-                  colSpan={8}
-                  className="py-8 text-center text-sm text-red-600"
-                >
-                  Erro ao carregar fundos. Verifique sua sessao e tente
-                  novamente.
-                </TableCell>
-              </TableRow>
-            ) : fundos.length === 0 && !loading ? (
-              <TableRow>
-                <TableCell
-                  colSpan={8}
-                  className="py-8 text-center text-sm text-gray-500"
-                >
-                  {qParam.trim()
-                    ? `Nenhum fundo encontrado para "${qParam.trim()}".`
-                    : "Nenhum fundo disponivel na competencia atual."}
-                </TableCell>
-              </TableRow>
-            ) : (
-              fundos.map((f) => {
-                const cnpjKey = cnpjDigits(f.cnpj_fundo)
-                const isSel = selected.includes(cnpjKey)
-                const disabled = !isSel && isFull
-                return (
-                  <TableRow key={cnpjKey}>
-                    <TableCell>
-                      <Checkbox
-                        checked={isSel}
-                        disabled={disabled}
-                        onCheckedChange={() => toggle(cnpjKey)}
-                        aria-label={`Selecionar ${
-                          f.denominacao_social ?? cnpjKey
-                        }`}
-                      />
-                    </TableCell>
-                    <TableCell className="font-medium text-gray-900 dark:text-gray-50">
-                      {f.denominacao_social ?? "(sem denominacao)"}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {formatCNPJ(cnpjKey)}
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {f.classe_anbima ?? "-"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {moedaCompacta.format(f.patrimonio_liquido)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {f.percentual_pdd != null ? percent1(f.percentual_pdd) : "-"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {f.indice_inadimplencia != null
-                        ? percent1(f.indice_inadimplencia)
-                        : "-"}
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" asChild>
-                        <Link
-                          href={fichaHref(cnpjKey)}
-                          className="inline-flex items-center gap-1"
-                        >
-                          <RiEyeLine className="size-3.5" aria-hidden="true" />
-                          Ver ficha
-                        </Link>
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
-      </TableRoot>
+      <div className="rounded border border-gray-200 dark:border-gray-800">
+        <DataTable
+          data={fundos}
+          columns={columns}
+          loading={loading && fundos.length === 0}
+          error={error ? "Erro ao carregar fundos. Verifique sua sessao e tente novamente." : null}
+          showDensityToggle={false}
+          showColumnManager={false}
+          renderEmpty={() => (
+            <span className="text-sm text-gray-500">
+              {qParam.trim()
+                ? `Nenhum fundo encontrado para "${qParam.trim()}".`
+                : "Nenhum fundo disponivel na competencia atual."}
+            </span>
+          )}
+        />
+      </div>
     </div>
   )
 }
