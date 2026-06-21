@@ -1,21 +1,15 @@
 "use client"
 
 //
-// ConcentracaoCard — modo ANALISE Top 1/5/10 (handoff "Tabela canonica" v2, §4b).
-// "A tabela como grafico": uma DenseTable ranqueada por %PL serve as tres
-// leituras de risco numa estrutura so, vestindo a anatomia de card de grafico:
+// ConcentracaoCard — modo ANALISE Top 1/5/10 (handoff "Tabela canonica" §4b).
+// Casado 1:1 com o specimen .dc.html: card padding 16px / gap 12px; eyebrow
+// 11px gray-500; trio de KPIs 20px/700 com divisoria inteira gray-200 e label
+// 10px gray-400; contexto 12px; tabela table-fixed, linha 28px (ultra), header
+// 28px; coluna Cedente trunca (Title Case, siglas preservadas); rodape so
+// "Outros (N)" com %PL ACM acumulado (reconcilia §14.6 junto das 10 linhas).
 //
-//   eyebrow "Concentracao de cedentes — em R$"
-//   trio de KPIs (Top 1 / Top 5 / Top 10 = %PL ACM nos ranks 1/5/10),
-//     padrao KpiBand (colunas com divisoria parcial, valor neutro 22px)
-//   contexto "PL R$ X · Carteira DD/MM"
-//   DenseTable: linhas-marco (1,5,10) com TRILHO azul + # e %PL ACM em
-//     negrito gray-900; demais com %PL ACM muted (gray-400) -> "escada".
-//   rodape "10 maiores" + "Outros (N)" reconcilia a carteira (§14.6).
-//
-// NOTA (delta): o handoff cita "Top 10 com delta tintado". O snapshot `tabela`
-// nao traz base de comparacao (vs D-1 / vs limite), entao o delta foi OMITIDO
-// em vez de fabricado (§14 auditabilidade). Ligar ao historico e follow-up.
+// NOTA: delta "↑ x pp" do Top 10 OMITIDO por decisao do Ricardo (snapshot sem
+// base de comparacao). O specimen mostra o delta; aqui fica sem.
 //
 
 import * as React from "react"
@@ -32,6 +26,31 @@ import type { ConcentracaoTabela } from "@/lib/api-client"
 
 /** Ranks que marcam as faixas Top 1 / 5 / 10. */
 const MARKERS = new Set([1, 5, 10])
+
+/** Conectores que ficam minusculos no meio da razao social. */
+const CONNECTORS = new Set(["de", "do", "da", "dos", "das", "e"])
+
+/** Palavras curtas em CAIXA ALTA que NAO sao sigla (a heuristica <=3 letras
+ *  preservaria como sigla por engano). Forma correta -> aqui. */
+const FORCE_WORD: Record<string, string> = { SAO: "São" }
+
+/**
+ * Normaliza razao social de CAIXA ALTA (dado cru) para Title Case legivel
+ * (handoff: nome em caixa normal). Preserva SIGLAS curtas (<=3 letras todas
+ * maiusculas: MFL, BLB, SA, ME, EPP) e deixa conectores minusculos.
+ */
+function formatRazaoSocial(raw: string): string {
+  const words = raw.trim().split(/\s+/)
+  return words
+    .map((w, i) => {
+      const lower = w.toLowerCase()
+      if (FORCE_WORD[w]) return FORCE_WORD[w]
+      if (i > 0 && CONNECTORS.has(lower)) return lower
+      if (w.length <= 3 && /^[A-ZÀ-Ý]+$/.test(w)) return w // sigla -> preserva
+      return lower.charAt(0).toUpperCase() + lower.slice(1)
+    })
+    .join(" ")
+}
 
 function pct1(v: number | null | undefined): string {
   if (v == null) return "—"
@@ -64,7 +83,6 @@ export function ConcentracaoCard({
   plTotal: number | undefined
   loading: boolean
 }) {
-  // "Cedentes" -> "Cedente" (label da coluna de nome).
   const singular = titulo.endsWith("s") ? titulo.slice(0, -1) : titulo
 
   const { rows, top1, top5, top10 } = React.useMemo(() => {
@@ -74,14 +92,13 @@ export function ConcentracaoCard({
       acc += i.pct_pl
       return {
         rank: i.rank,
-        nome: i.nome,
+        nome: formatRazaoSocial(i.nome),
         financeiro: Math.round(i.financeiro),
         pct_pl: i.pct_pl,
         acm: acc,
       }
     })
-    const acmAt = (r: number) =>
-      (rows.find((x) => x.rank === r)?.acm as number | undefined) ?? undefined
+    const acmAt = (r: number) => rows.find((x) => x.rank === r)?.acm as number | undefined
     return {
       rows,
       top1: acmAt(1),
@@ -96,7 +113,7 @@ export function ConcentracaoCard({
         key: "rank",
         label: "#",
         format: "numero",
-        widthClass: "w-9",
+        widthClass: "w-[30px]",
         render: (row) => {
           const mark = MARKERS.has(Number(row.rank))
           return (
@@ -112,8 +129,7 @@ export function ConcentracaoCard({
         },
       },
       {
-        // Coluna larga (resto do espaco em table-fixed) que TRUNCA — nome longo
-        // de cedente nao quebra a linha; nome completo no title (hover).
+        // Resto do espaco (table-fixed) e TRUNCA — nome completo no title (hover).
         key: "nome",
         label: singular,
         format: "texto",
@@ -123,13 +139,13 @@ export function ConcentracaoCard({
           </span>
         ),
       },
-      { key: "financeiro", label: "Valor pres.", format: "numero", widthClass: "w-[92px]" },
-      { key: "pct_pl", label: "% PL", format: "pct", widthClass: "w-[60px]" },
+      { key: "financeiro", label: "Valor pres.", format: "numero", widthClass: "w-[82px]" },
+      { key: "pct_pl", label: "% PL", format: "pct", widthClass: "w-[72px]" },
       {
         key: "acm",
         label: "% PL ACM",
         format: "pct",
-        widthClass: "w-[72px]",
+        widthClass: "w-[82px]",
         render: (row) => {
           const mark = MARKERS.has(Number(row.rank))
           // Escada: marco = negrito gray-900; intermediaria = muted gray-400.
@@ -159,15 +175,14 @@ export function ConcentracaoCard({
     [],
   )
 
-  const footer: DenseRow | undefined = tabela && {
-    nome: "10 maiores",
-    financeiro: Math.round(tabela.total_financeiro),
-    pct_pl: tabela.total_pct_pl,
-  }
+  // Rodape: SO "Outros (N)" (sem "10 maiores"), com %PL ACM acumulado total —
+  // as 10 linhas visiveis + Outros reconciliam a carteira (§14.6); o total das
+  // 10 e o proprio KPI Top 10.
   const footerSecondary: DenseRow | undefined = tabela && {
     nome: `Outros (${tabela.outros_qtd})`,
     financeiro: Math.round(tabela.outros_financeiro),
     pct_pl: tabela.outros_pct_pl,
+    acm: tabela.total_pct_pl + tabela.outros_pct_pl,
   }
 
   const kpis = [
@@ -177,64 +192,57 @@ export function ConcentracaoCard({
   ]
 
   return (
-    <Card className="p-0">
-      {/* Cabecalho: eyebrow + trio de KPIs (Top 1/5/10) + contexto.
-          SEM border-b (a tabela flui direto sob o contexto — handoff §4b). */}
-      <div className="px-4 pb-1 pt-4">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">
+    <Card className="flex flex-col gap-3 p-4">
+      {/* Cabecalho: eyebrow + trio de KPIs (Top 1/5/10) + contexto */}
+      <div>
+        <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">
           Concentração de {titulo.toLowerCase()} — em R$
         </p>
 
-        {/* Trio de KPIs — anatomia KpiBand (colunas + divisoria parcial; valor neutro). */}
-        <div className="mt-2 flex">
+        {/* Trio de KPIs — divisoria inteira gray-200 (spec §4b). */}
+        <div className="flex items-stretch">
           {kpis.map((k, idx) => (
             <div
               key={k.label}
-              className={cx("relative flex-1", idx > 0 && "pl-5")}
-            >
-              {idx > 0 && (
-                <span
-                  aria-hidden
-                  className="absolute bottom-1 left-0 top-1 w-px bg-gray-100 dark:bg-gray-800"
-                />
+              className={cx(
+                "flex flex-col justify-start",
+                idx === 0
+                  ? "pr-[18px]"
+                  : "border-l border-gray-200 px-[18px] dark:border-gray-800",
               )}
-              <p className="text-[10px] font-medium uppercase tracking-[0.05em] text-gray-500 dark:text-gray-400">
-                {k.label} · acum.
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400 dark:text-gray-500">
+                {k.label}
               </p>
-              <span className="mt-0.5 block text-[22px] font-semibold leading-tight tracking-tight tabular-nums text-gray-900 dark:text-gray-50">
+              <span className="mt-[3px] text-[20px] font-bold leading-none tabular-nums text-gray-900 dark:text-gray-50">
                 {k.value}
               </span>
             </div>
           ))}
         </div>
 
-        <p className="mt-2 text-[13px] text-gray-500 dark:text-gray-400">
+        <p className="mt-2.5 text-[12px] text-gray-500 dark:text-gray-400">
           {plTotal != null && plTotal > 0 ? `PL ${fmtMi(plTotal)} · ` : ""}
           Carteira {posicao}
         </p>
       </div>
 
       {loading ? (
-        <div className="space-y-1.5 px-3 pb-3">
+        <div className="space-y-1.5">
           {Array.from({ length: 10 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-5 animate-pulse rounded bg-gray-100 dark:bg-gray-800"
-            />
+            <div key={i} className="h-5 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
           ))}
         </div>
       ) : (
-        <div className="px-3 pb-3">
-          <DenseTable
-            bordered={false}
-            tableLayout="fixed"
-            columns={columns}
-            rows={rows}
-            footer={footer}
-            footerSecondary={footerSecondary}
-            rowClassName={rowClassName}
-          />
-        </div>
+        <DenseTable
+          bordered={false}
+          tableLayout="fixed"
+          density="ultra"
+          columns={columns}
+          rows={rows}
+          footerSecondary={footerSecondary}
+          rowClassName={rowClassName}
+        />
       )}
     </Card>
   )
