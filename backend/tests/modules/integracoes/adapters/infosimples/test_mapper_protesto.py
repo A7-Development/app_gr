@@ -63,9 +63,7 @@ _NACIONAL = {
 
 
 def test_detalhe_sp_extrai_credor():
-    f = map_protesto(
-        _SP_DETALHE, ctx={"cartorio": "1 Tabeliao", "cidade": "São Paulo", "uf": "SP"}
-    )
+    f = map_protesto(_SP_DETALHE)
     assert f.constam_protestos is True
     assert f.qtd_total == 1
     assert f.com_credor is True
@@ -77,9 +75,11 @@ def test_detalhe_sp_extrai_credor():
     assert t.data_protesto == date(2018, 4, 12)
     # cpf_cnpj e o SACADO (devedor), NAO o documento do credor.
     assert t.documento_credor is None
-    # Contexto de cartorio herdado (o response do detalhe nao repete).
-    assert t.cartorio == "1 Tabeliao"
-    assert t.uf == "SP"
+    # O response do detalhe-sp NAO repete cartorio/cidade/uf por titulo — esse
+    # contexto e carregado no nivel do ProtestoParte (service _fetch_ieptb, a
+    # partir do SpDetailRequest), nao injetado por titulo no mapper.
+    assert t.cartorio is None
+    assert t.uf is None
     # apresentante preservado no detalhe (subset escalar).
     assert t.detalhe.get("nome_apresentante") == "BANCO EXEMPLO S.A."
 
