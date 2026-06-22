@@ -894,6 +894,49 @@ export type SocialContractAnalysis = {
   }>
 }
 
+// ─── Consultas avulsas (Crédito › Consultas) ─────────────────────────────────
+
+export type ProtestoTituloView = {
+  cartorio: string | null
+  cidade: string | null
+  uf: string | null
+  data_protesto: string | null
+  data_vencimento: string | null
+  valor: number | null
+  /** Credor (cedente/apresentante). Null = fonte NÃO identificou (Provimento
+   *  CNJ 225/2026 — credor só vem no detalhe de cartórios de SP), ≠ "sem credor". */
+  credor: string | null
+  documento_credor: string | null
+  especie: string | null
+}
+
+export type ProtestoView =
+  | {
+      encontrado: false
+      documento?: string
+      mensagem?: string
+      message?: string
+      transitorio?: boolean
+    }
+  | {
+      encontrado: true
+      documento: string
+      consultado_em: string
+      constam_protestos: boolean
+      qtd_total: number
+      valor_total: number | null
+      observacoes: string | null
+      cartorios_sp_detalhados: number
+      titulos_com_credor: number
+      titulos: ProtestoTituloView[]
+      nota: string
+    }
+
+export type ConsultaProtestoPayload = {
+  documento: string
+  incluir_detalhe_sp?: boolean
+}
+
 export const credito = {
   dossies: {
     list: (params?: { status?: DossierStatus; limit?: number; offset?: number }) => {
@@ -1142,5 +1185,16 @@ export const credito = {
     remove: (id: string) => apiClient.delete<void>(`/credito/templates/${id}`),
     clone: (id: string) =>
       apiClient.post<DocumentTemplateRead>(`/credito/templates/${id}/clone`),
+  },
+  consultas: {
+    /** Dispara a consulta de protestos (CENPROT/IEPTB) de um CNPJ/CPF avulso.
+     *  Demora ~até 1 min (nacional + detalhe dos cartórios de SP). */
+    protesto: (payload: ConsultaProtestoPayload) =>
+      apiClient.post<ProtestoView>("/credito/consultas/protesto", payload),
+    /** Última consulta de protesto já gravada (silver) — sem novo round-trip. */
+    protestoHistorico: (documento: string) =>
+      apiClient.get<ProtestoView>(
+        `/credito/consultas/protesto?documento=${encodeURIComponent(documento)}`,
+      ),
   },
 }

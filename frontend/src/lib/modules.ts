@@ -15,6 +15,7 @@ import {
   RiDatabase2Line,
   RiExchangeFundsLine,
   RiFileChartLine,
+  RiFileSearchLine,
   RiFileTextLine,
   RiFlaskLine,
   RiFlowChart,
@@ -221,6 +222,22 @@ export const MODULES: ModuleDefinition[] = [
         enabled: true,
         icon: RiHandCoinLine,
         groupLabel: "Execucao",
+      },
+      // Consultas avulsas a fontes externas (bureau/cartório/junta). Parent
+      // expand-only (§11.6); cada consulta vira um submenu. Protestos é a 1ª.
+      {
+        name: "Consultas",
+        href: "#consultas",
+        enabled: true,
+        icon: RiFileSearchLine,
+        groupLabel: "Execucao",
+        children: [
+          {
+            name: "Protestos",
+            href: "/credito/consultas/protestos",
+            enabled: true,
+          },
+        ],
       },
       {
         name: "Playbooks",

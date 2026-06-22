@@ -141,6 +141,9 @@ class SourceType(enum.StrEnum):
     # False (VARCHAR) -> adicionar valor nao exige migration.
     COBRANCA_BMP = "cobranca:bmp"
     COBRANCA_VORTX = "cobranca:vortx"
+    # Infosimples -- consultas governamentais (CENPROT/IEPTB protestos, etc.).
+    # native_enum=False (VARCHAR) -> adicionar valor nao exige migration de tipo.
+    DATA_INFOSIMPLES_PROTESTO = "data:infosimples_protesto"
     SELF_DECLARED = "self_declared"
     PEER_DECLARED = "peer_declared"
     INTERNAL_NOTE = "internal_note"

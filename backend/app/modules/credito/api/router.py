@@ -10,6 +10,7 @@ from app.modules.credito.api import (
     document,
     dossier,
     evidence,
+    protesto,
     template,
     workflow,
 )
@@ -22,3 +23,4 @@ router.include_router(evidence.router)
 router.include_router(workflow.router)
 router.include_router(checklist.router)
 router.include_router(template.router)
+router.include_router(protesto.router)

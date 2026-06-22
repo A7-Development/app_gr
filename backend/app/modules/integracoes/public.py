@@ -67,6 +67,11 @@ from app.modules.integracoes.services.infosimples_junta import (
     fetch_junta_ficha,
     fetch_junta_lista_documentos,
 )
+from app.modules.integracoes.services.infosimples_protesto import (
+    ProtestoConsultaResult,
+    ProtestoParte,
+    fetch_protestos,
+)
 from app.modules.integracoes.services.pj_dossie_query import (
     DossieResult,
     fetch_bdc_dossie_pj,
@@ -157,6 +162,8 @@ __all__ = [
     "JuntaFichaResult",
     "JuntaListaDocsResult",
     "ProcessosResult",
+    "ProtestoConsultaResult",
+    "ProtestoParte",
     "ReportCategory",
     "ReportSpec",
     "classify_serasa_negative_summary_message",
@@ -169,6 +176,7 @@ __all__ = [
     "fetch_junta_documento",
     "fetch_junta_ficha",
     "fetch_junta_lista_documentos",
+    "fetch_protestos",
     "get_report_spec",
     "is_source_enabled",
     "list_due_endpoints",
