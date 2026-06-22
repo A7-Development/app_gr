@@ -22,14 +22,15 @@ from app.core.enums import Module, Permission
     description=(
         "Retorna a ultima consulta de PROTESTOS (cartorio) da empresa-alvo do "
         "dossie: se constam protestos, quantidade, valor total e a lista de "
-        "titulos protestados (cartorio, cidade, UF, data, valor) com o CREDOR "
-        "(cedente/apresentante) quando identificado. ATENCAO: por forca do "
-        "Provimento CNJ 225/2026, a consulta nacional NAO traz o credor — ele so "
-        "aparece no detalhe de cartorios de SP. Logo credor=null significa "
-        "'fonte nao identificou', NAO 'sem credor'. Protesto e divida levada a "
-        "cartorio por falta de pagamento: e sinal forte de risco do sacado/"
-        "cedente. Use como fato e PESE na analise — varios protestos recentes ou "
-        "de valor alto indicam distress."
+        "titulos protestados (cartorio, cidade, UF, valor). A fonte padrao "
+        "(CENPROT-SP) tambem traz, por titulo, o status de cancelamento/quitacao "
+        "(valor_quitacao>0 = pago; valor_cancelamento>0 = cancelado) — protesto "
+        "ainda ABERTO pesa mais que um ja quitado. `completo`=false: a fonte so "
+        "devolveu a 1a pagina (lista parcial). O CREDOR (cedente/apresentante) so "
+        "vem na fonte IEPTB (detalhe SP); credor=null = fonte nao identificou, "
+        "NAO 'sem credor'. Protesto e divida levada a cartorio por falta de "
+        "pagamento: sinal forte de risco. Use como fato e PESE — varios protestos "
+        "abertos ou de valor alto indicam distress."
     ),
     input_schema={
         "type": "object",

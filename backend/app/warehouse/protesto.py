@@ -107,6 +107,12 @@ class WhProtestoConsulta(Auditable, Base):
     valor_total: Mapped[Decimal | None] = mapped_column(
         Numeric(18, 2), nullable=True
     )
+    # False quando a fonte so devolveu a 1a pagina (cenprot-sp:
+    # retornou_todos_os_protestos_do_site=false) -> os titulos sao parciais vs
+    # qtd_total. A view avisa (§14.6). Default true (IEPTB nao pagina).
+    completo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
     # True quando ao menos 1 titulo desta consulta veio com credor identificado.
     com_credor: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
@@ -164,6 +170,14 @@ class WhProtestoTitulo(Auditable, Base):
     data_protesto: Mapped[date | None] = mapped_column(Date, nullable=True)
     data_vencimento: Mapped[date | None] = mapped_column(Date, nullable=True)
     valor: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    # Cancelamento/quitacao por titulo (cenprot-sp). Nulos no IEPTB. valor_
+    # quitacao>0 = protesto pago; valor_cancelamento>0 = cancelado.
+    valor_cancelamento: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 2), nullable=True
+    )
+    valor_quitacao: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 2), nullable=True
+    )
 
     # Credor / cedente / apresentante / portador do titulo. Nulo quando a fonte
     # nao identifica (regra do Provimento 225 na consulta publica nacional).

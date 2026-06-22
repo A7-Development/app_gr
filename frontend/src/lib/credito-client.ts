@@ -896,15 +896,23 @@ export type SocialContractAnalysis = {
 
 // ─── Consultas avulsas (Crédito › Consultas) ─────────────────────────────────
 
+/** Fonte da consulta de protesto.
+ *  - cenprot_sp: robusta (sem login), traz cancelamento/quitação, sem credor, só SP.
+ *  - ieptb_credor: traz o credor (cedente/apresentante), via login gov.br (gated). */
+export type ProtestoFonte = "cenprot_sp" | "ieptb_credor"
+
 export type ProtestoTituloView = {
   cartorio: string | null
   cidade: string | null
   uf: string | null
   data_protesto: string | null
-  data_vencimento: string | null
   valor: number | null
-  /** Credor (cedente/apresentante). Null = fonte NÃO identificou (Provimento
-   *  CNJ 225/2026 — credor só vem no detalhe de cartórios de SP), ≠ "sem credor". */
+  /** Cancelamento/quitação (fonte cenprot_sp). valor_quitacao>0 = pago;
+   *  valor_cancelamento>0 = cancelado. Nulos no IEPTB. */
+  valor_cancelamento: number | null
+  valor_quitacao: number | null
+  /** Credor (cedente/apresentante) — só na fonte ieptb_credor. Null = fonte não
+   *  identificou, ≠ "sem credor". */
   credor: string | null
   documento_credor: string | null
   especie: string | null
@@ -914,6 +922,7 @@ export type ProtestoView =
   | {
       encontrado: false
       documento?: string
+      fonte?: ProtestoFonte
       mensagem?: string
       message?: string
       transitorio?: boolean
@@ -921,12 +930,14 @@ export type ProtestoView =
   | {
       encontrado: true
       documento: string
+      fonte: ProtestoFonte
       consultado_em: string
       constam_protestos: boolean
       qtd_total: number
       valor_total: number | null
+      /** False = a fonte só devolveu a 1ª página (lista parcial vs qtd_total). */
+      completo: boolean
       observacoes: string | null
-      cartorios_sp_detalhados: number
       titulos_com_credor: number
       titulos: ProtestoTituloView[]
       nota: string
@@ -934,7 +945,7 @@ export type ProtestoView =
 
 export type ConsultaProtestoPayload = {
   documento: string
-  incluir_detalhe_sp?: boolean
+  fonte?: ProtestoFonte
 }
 
 export const credito = {
@@ -1192,9 +1203,9 @@ export const credito = {
     protesto: (payload: ConsultaProtestoPayload) =>
       apiClient.post<ProtestoView>("/credito/consultas/protesto", payload),
     /** Última consulta de protesto já gravada (silver) — sem novo round-trip. */
-    protestoHistorico: (documento: string) =>
+    protestoHistorico: (documento: string, fonte: ProtestoFonte = "cenprot_sp") =>
       apiClient.get<ProtestoView>(
-        `/credito/consultas/protesto?documento=${encodeURIComponent(documento)}`,
+        `/credito/consultas/protesto?documento=${encodeURIComponent(documento)}&fonte=${fonte}`,
       ),
   },
 }
