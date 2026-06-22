@@ -68,6 +68,13 @@ from app.modules.integracoes.services.infosimples_junta import (
     fetch_junta_lista_documentos,
 )
 from app.modules.integracoes.services.infosimples_protesto import (
+    ESCOPO_CENPROT_SP,
+    ESCOPO_IEPTB_DETALHE,
+    ESCOPO_IEPTB_NACIONAL,
+    ESCOPOS_POR_FONTE,
+    FONTE_CENPROT_SP,
+    FONTE_IEPTB_CREDOR,
+    FONTES_VALIDAS,
     ProtestoConsultaResult,
     ProtestoParte,
     fetch_protestos,
@@ -154,6 +161,13 @@ def get_report_spec(slug: str) -> ReportSpec | None:
 
 
 __all__ = [
+    "ESCOPOS_POR_FONTE",
+    "ESCOPO_CENPROT_SP",
+    "ESCOPO_IEPTB_DETALHE",
+    "ESCOPO_IEPTB_NACIONAL",
+    "FONTES_VALIDAS",
+    "FONTE_CENPROT_SP",
+    "FONTE_IEPTB_CREDOR",
     "SERASA_LIMINAR_RULE_VERSION",
     "CadastralFields",
     "CadastralQueryResult",

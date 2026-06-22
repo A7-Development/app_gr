@@ -237,6 +237,11 @@ export const MODULES: ModuleDefinition[] = [
             href: "/credito/consultas/protestos",
             enabled: true,
           },
+          {
+            name: "Protestos · Credor (SP)",
+            href: "/credito/consultas/protestos-credor",
+            enabled: true,
+          },
         ],
       },
       {

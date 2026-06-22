@@ -1,16 +1,13 @@
-"""Protestos no dossie -- consulta Infosimples (CENPROT) + silver + view do agente.
+"""Protestos -- consulta Infosimples + silver + views (avulso, dossie, agente).
 
-Orquestra (consumindo `integracoes/public.py`, §11.3):
-  1. fetch_protestos (nacional + detalhe SP) do CNPJ/CPF da empresa-alvo
-  2. materializa o canonico em `wh_protesto_consulta` + `wh_protesto_titulo`
-     (silver, idempotente por source_id = str(raw_id))
-  3. expoe `build_protesto_agent_view` -> a read-tool `get_protestos` le daqui
+Duas fontes (ver integracoes/infosimples_protesto):
+  - cenprot_sp   (default): robusta, sem login, traz cancelamento/quitacao, sem credor.
+  - ieptb_credor (gated):   com credor (cedente/apresentante), via login gov.br.
 
-Silver-first (§13.2.1): a tool/UI le SEMPRE do silver, nunca do raw. Re-mapear e
-barato (raw imutavel) -> bug no mapper se corrige sem novo round-trip pago.
-
-Provimento CNJ 225/2026: a consulta nacional NAO traz credor; o detalhe SP traz
-(`nome_cedente`/`nome_apresentante`). A view sinaliza `com_credor` por titulo.
+Materializa o canonico em `wh_protesto_consulta` + `wh_protesto_titulo` (silver,
+idempotente por source_id = str(raw_id)). Silver-first (§13.2.1): tool/UI leem do
+silver. Reconciliacao §14.6: a soma dos titulos exibidos bate com o headline; a
+flag `completo` avisa quando a fonte so devolveu a 1a pagina.
 """
 
 from __future__ import annotations
@@ -26,11 +23,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.enums import CompanyRole, SourceType, TrustLevel
 from app.modules.credito.models.company import CreditDossierCompany
 from app.modules.integracoes.public import (
+    ESCOPO_CENPROT_SP,
+    ESCOPO_IEPTB_DETALHE,
+    ESCOPO_IEPTB_NACIONAL,
+    ESCOPOS_POR_FONTE,
+    FONTE_CENPROT_SP,
     ProtestoConsultaResult,
     ProtestoParte,
     fetch_protestos,
 )
 from app.warehouse import WhProtestoConsulta, WhProtestoTitulo
+
+# Escopos cujo header carrega os totais "headline" (vs os detalhe-SP, que so
+# trazem os titulos com credor).
+_PRIMARY_ESCOPOS = (ESCOPO_CENPROT_SP, ESCOPO_IEPTB_NACIONAL)
+
+_NOTA_POR_FONTE = {
+    "cenprot_sp": (
+        "Protesto via CENPROT-SP (protestosp.com.br). Traz cartório, valor e o "
+        "status de cancelamento/quitação por título (valor_quitacao>0 = pago; "
+        "valor_cancelamento>0 = cancelado). NÃO identifica o credor e retorna só "
+        "os protestos da 1ª página do site — quando `completo`=false, a lista é "
+        "parcial vs o total. Só cobre SP. Protesto é dívida levada a cartório: "
+        "pesa na análise do sacado/cedente."
+    ),
+    "ieptb_credor": (
+        "Protesto via IEPTB/CENPROT (gov.br). O detalhe de cartórios de SP traz o "
+        "CREDOR (cedente/apresentante). titulos[].credor nulo = fonte não "
+        "identificou, NÃO 'sem credor'. Cobertura nacional para existência."
+    ),
+}
 
 
 def _jsonable(v: Any) -> Any:
@@ -68,17 +90,12 @@ async def _persist_parte(
     documento_tipo: str,
     consultado_em: datetime,
     adapter_version: str,
-) -> WhProtestoConsulta | None:
-    """Materializa uma 'perna' (nacional ou detalhe SP) no silver.
-
-    Idempotente: source_id = str(raw_id). Re-persistir o mesmo raw apaga o
-    header anterior (cascade nas filhas) e reescreve.
-    """
+) -> None:
+    """Materializa uma 'perna' no silver. Idempotente por source_id=str(raw_id):
+    re-persistir o mesmo raw apaga o header anterior (cascade nas filhas)."""
     if part.fields is None or part.raw_id is None:
-        return None
+        return
     source_id = str(part.raw_id)
-
-    # Re-map idempotente: limpa o header anterior deste raw (cascade nos titulos).
     await db.execute(
         delete(WhProtestoConsulta).where(
             WhProtestoConsulta.tenant_id == tenant_id,
@@ -98,6 +115,7 @@ async def _persist_parte(
         constam_protestos=f.constam_protestos,
         qtd_total=f.qtd_total,
         valor_total=f.valor_total,
+        completo=f.completo,
         com_credor=f.com_credor,
         observacoes=f.observacoes,
         source_type=SourceType.DATA_INFOSIMPLES_PROTESTO,
@@ -107,20 +125,24 @@ async def _persist_parte(
         trust_level=TrustLevel.HIGH,
     )
     db.add(header)
-    await db.flush()  # header.id
+    await db.flush()
 
     for idx, t in enumerate(f.titulos):
         db.add(
             WhProtestoTitulo(
                 tenant_id=tenant_id,
                 consulta_id=header.id,
-                cartorio=t.cartorio,
+                # No detalhe-SP do IEPTB o response nao repete o cartorio — herda
+                # do contexto da perna (part.cartorio/cidade/uf).
+                cartorio=t.cartorio or part.cartorio,
                 cartorio_numero=t.cartorio_numero,
-                cidade=t.cidade,
-                uf=t.uf,
+                cidade=t.cidade or part.cidade,
+                uf=t.uf or part.uf,
                 data_protesto=t.data_protesto,
                 data_vencimento=t.data_vencimento,
                 valor=t.valor,
+                valor_cancelamento=t.valor_cancelamento,
+                valor_quitacao=t.valor_quitacao,
                 credor=t.credor,
                 documento_credor=t.documento_credor,
                 especie=t.especie,
@@ -133,106 +155,47 @@ async def _persist_parte(
             )
         )
     await db.flush()
-    return header
 
 
 async def _persist_result(
     db: AsyncSession, *, tenant_id: UUID, result: ProtestoConsultaResult
 ) -> datetime:
-    """Materializa todas as pernas (nacional + SP) no silver. Retorna o
-    `consultado_em` compartilhado (agrupa o 'run' das pernas)."""
+    """Materializa todas as pernas no silver. Retorna o consultado_em
+    compartilhado (agrupa o 'run')."""
     consultado_em = datetime.now(UTC)
-    for part in (result.nacional, *result.detalhes_sp):
-        if part is not None:
-            await _persist_parte(
-                db,
-                tenant_id=tenant_id,
-                part=part,
-                documento=result.documento,
-                documento_tipo=result.documento_tipo,
-                consultado_em=consultado_em,
-                adapter_version=result.adapter_version,
-            )
+    for part in result.partes:
+        await _persist_parte(
+            db,
+            tenant_id=tenant_id,
+            part=part,
+            documento=result.documento,
+            documento_tipo=result.documento_tipo,
+            consultado_em=consultado_em,
+            adapter_version=result.adapter_version,
+        )
     return consultado_em
 
 
-async def consultar_e_persistir_protestos(
-    db: AsyncSession,
-    *,
-    tenant_id: UUID,
-    dossier_id: UUID,
-    initiated_by: UUID | None = None,
-    incluir_detalhe_sp: bool = True,
-) -> dict[str, Any]:
-    """Consulta protestos da empresa-alvo e materializa o silver. Caller commita.
-
-    Returns: resumo (encontrado, documento, qtd_total, valor_total, com_credor,
-    cartorios_sp_detalhados, message).
-    """
-    cnpj = await _target_cnpj(db, tenant_id=tenant_id, dossier_id=dossier_id)
-    if cnpj is None:
-        return {
-            "encontrado": False,
-            "message": (
-                "O dossiê não tem CNPJ/CPF da empresa-alvo — preencha a "
-                "identificação antes de consultar protestos."
-            ),
-        }
-
-    result = await fetch_protestos(
-        db,
-        tenant_id=tenant_id,
-        documento=cnpj,
-        documento_tipo="cpf" if len(cnpj) == 11 else "cnpj",
-        incluir_detalhe_sp=incluir_detalhe_sp,
-        triggered_by=f"dossie:{dossier_id}",
-    )
-
-    if not result.found:
-        return {
-            "encontrado": False,
-            "documento": cnpj,
-            "transitorio": result.transient,
-            "message": result.message or "Consulta não completou.",
-        }
-
-    consultado_em = await _persist_result(db, tenant_id=tenant_id, result=result)
-    partes = [result.nacional, *result.detalhes_sp]
-
-    nac = result.nacional.fields if result.nacional else None
-    com_credor = any(
-        p.fields and p.fields.com_credor for p in partes if p is not None
-    )
-    return {
-        "encontrado": True,
-        "documento": result.documento,
-        "consultado_em": consultado_em.isoformat(),
-        "constam_protestos": bool(nac and nac.constam_protestos),
-        "qtd_total": (nac.qtd_total if nac else 0),
-        "valor_total": _jsonable(nac.valor_total) if nac else None,
-        "com_credor": com_credor,
-        "cartorios_sp_detalhados": len(result.detalhes_sp),
-        "message": None,
-    }
-
-
 async def build_protesto_view_by_documento(
-    db: AsyncSession, *, tenant_id: UUID, documento: str
+    db: AsyncSession, *, tenant_id: UUID, documento: str, fonte: str | None = None
 ) -> dict[str, Any]:
-    """Visão de protestos de um CNPJ/CPF (silver, último 'run')."""
-    cnpj = documento
+    """Visão de protestos de um CNPJ/CPF (silver, último 'run' da `fonte`).
 
-    # Último 'run' = consultado_em mais recente do documento (nacional + SP
-    # compartilham o mesmo timestamp por consulta).
+    `fonte=None` = qualquer fonte (último run de qualquer escopo). Quando uma
+    fonte é dada, filtra pelos escopos dela.
+    """
+    cnpj = documento
+    escopos = ESCOPOS_POR_FONTE.get(fonte) if fonte else None
+
+    base = select(WhProtestoConsulta.consultado_em).where(
+        WhProtestoConsulta.tenant_id == tenant_id,
+        WhProtestoConsulta.documento == cnpj,
+    )
+    if escopos:
+        base = base.where(WhProtestoConsulta.escopo.in_(escopos))
     ultimo = (
         await db.execute(
-            select(WhProtestoConsulta.consultado_em)
-            .where(
-                WhProtestoConsulta.tenant_id == tenant_id,
-                WhProtestoConsulta.documento == cnpj,
-            )
-            .order_by(WhProtestoConsulta.consultado_em.desc())
-            .limit(1)
+            base.order_by(WhProtestoConsulta.consultado_em.desc()).limit(1)
         )
     ).scalar_one_or_none()
 
@@ -240,87 +203,78 @@ async def build_protesto_view_by_documento(
         return {
             "encontrado": False,
             "documento": cnpj,
-            "mensagem": (
-                "Sem consulta de protesto para esta empresa. Rode a consulta "
-                "antes (botão Consultar protestos / endpoint)."
-            ),
+            "fonte": fonte,
+            "mensagem": "Sem consulta de protesto para este documento nesta fonte.",
         }
 
-    headers = (
-        (
-            await db.execute(
-                select(WhProtestoConsulta).where(
-                    WhProtestoConsulta.tenant_id == tenant_id,
-                    WhProtestoConsulta.documento == cnpj,
-                    WhProtestoConsulta.consultado_em == ultimo,
-                )
-            )
-        )
-        .scalars()
-        .all()
+    hq = select(WhProtestoConsulta).where(
+        WhProtestoConsulta.tenant_id == tenant_id,
+        WhProtestoConsulta.documento == cnpj,
+        WhProtestoConsulta.consultado_em == ultimo,
     )
-    consulta_ids = [h.id for h in headers]
+    if escopos:
+        hq = hq.where(WhProtestoConsulta.escopo.in_(escopos))
+    headers = (await db.execute(hq)).scalars().all()
+
+    # Header headline = o primario (cenprot_sp ou ieptb_nacional); fallback 1o.
+    primary = next((h for h in headers if h.escopo in _PRIMARY_ESCOPOS), headers[0])
+    fonte_efetiva = (
+        FONTE_CENPROT_SP if primary.escopo == ESCOPO_CENPROT_SP else "ieptb_credor"
+    )
+
+    # Titulos exibidos: os do detalhe-SP (com credor) quando houver; senao os do
+    # header primario. Evita dupla contagem nacional+detalhe (§14.6).
+    detalhe_ids = [h.id for h in headers if h.escopo == ESCOPO_IEPTB_DETALHE]
+    title_header_ids = detalhe_ids or [primary.id]
+
     titulos_rows = (
         (
             await db.execute(
                 select(WhProtestoTitulo)
                 .where(
                     WhProtestoTitulo.tenant_id == tenant_id,
-                    WhProtestoTitulo.consulta_id.in_(consulta_ids),
+                    WhProtestoTitulo.consulta_id.in_(title_header_ids),
                 )
-                .order_by(
-                    WhProtestoTitulo.data_protesto.desc().nullslast(),
-                )
+                .order_by(WhProtestoTitulo.valor.desc().nullslast())
             )
         )
         .scalars()
         .all()
     )
 
-    nac = next((h for h in headers if h.escopo == "nacional"), None)
     titulos = [
         {
             "cartorio": t.cartorio,
             "cidade": t.cidade,
             "uf": t.uf,
             "data_protesto": _jsonable(t.data_protesto),
-            "data_vencimento": _jsonable(t.data_vencimento),
             "valor": _jsonable(t.valor),
+            "valor_cancelamento": _jsonable(t.valor_cancelamento),
+            "valor_quitacao": _jsonable(t.valor_quitacao),
             "credor": t.credor,
             "documento_credor": t.documento_credor,
             "especie": t.especie,
         }
         for t in titulos_rows
     ]
-    # Reconciliacao (§14.6): a soma dos titulos exibidos bate com o headline
-    # quando a fonte deu detalhe por titulo. Quando so veio agregado nacional,
-    # `titulos` vem vazio e o headline carrega qtd/valor (sem tabela conflitante).
-    com_credor = sum(1 for t in titulos if t["credor"])
     return {
         "encontrado": True,
         "documento": cnpj,
+        "fonte": fonte_efetiva,
         "consultado_em": _jsonable(ultimo),
-        "constam_protestos": bool(nac and nac.constam_protestos),
-        "qtd_total": (nac.qtd_total if nac else len(titulos)),
-        "valor_total": _jsonable(nac.valor_total) if nac else None,
-        "observacoes": (nac.observacoes if nac else None),
-        "cartorios_sp_detalhados": sum(
-            1 for h in headers if h.escopo == "sp_detalhe"
-        ),
-        "titulos_com_credor": com_credor,
+        "constam_protestos": primary.constam_protestos,
+        "qtd_total": primary.qtd_total,
+        "valor_total": _jsonable(primary.valor_total),
+        "completo": primary.completo,
+        "observacoes": primary.observacoes,
+        "titulos_com_credor": sum(1 for t in titulos if t["credor"]),
         "titulos": titulos,
-        "nota": (
-            "Protesto via CENPROT/IEPTB. A consulta NACIONAL não identifica o "
-            "credor (Provimento CNJ 225/2026); o credor (cedente/apresentante) "
-            "só aparece no detalhe de cartórios de SP. titulos[].credor nulo = "
-            "fonte não identificou, NÃO 'sem credor'. Protesto é dívida não "
-            "paga levada a cartório: pesa na análise do sacado/cedente."
-        ),
+        "nota": _NOTA_POR_FONTE.get(fonte_efetiva, ""),
     }
 
 
 async def build_protesto_agent_view(
-    db: AsyncSession, *, tenant_id: UUID, dossier_id: UUID
+    db: AsyncSession, *, tenant_id: UUID, dossier_id: UUID, fonte: str | None = None
 ) -> dict[str, Any] | None:
     """Visão de protestos da empresa-alvo do dossiê (silver). None se não há
     empresa-alvo. Thin wrapper sobre `build_protesto_view_by_documento`."""
@@ -328,7 +282,7 @@ async def build_protesto_agent_view(
     if cnpj is None:
         return None
     return await build_protesto_view_by_documento(
-        db, tenant_id=tenant_id, documento=cnpj
+        db, tenant_id=tenant_id, documento=cnpj, fonte=fonte
     )
 
 
@@ -337,18 +291,17 @@ async def consultar_protesto_avulso(
     *,
     tenant_id: UUID,
     documento: str,
+    fonte: str = FONTE_CENPROT_SP,
     initiated_by: UUID | None = None,
-    incluir_detalhe_sp: bool = True,
 ) -> dict[str, Any]:
-    """Consulta protestos de um CNPJ/CPF AVULSO (sem dossiê) + materializa silver
-    + devolve a view completa. Base da página `/credito/consultas/protestos`.
-    Caller commita.
-    """
+    """Consulta protestos de um CNPJ/CPF AVULSO (sem dossiê) na `fonte` + silver +
+    view. Base das páginas `/credito/consultas/protestos*`. Caller commita."""
     doc = "".join(ch for ch in (documento or "") if ch.isdigit())
     if len(doc) not in (11, 14):
         return {
             "encontrado": False,
             "documento": doc,
+            "fonte": fonte,
             "message": "Informe um CNPJ (14 dígitos) ou CPF (11 dígitos) válido.",
         }
 
@@ -356,19 +309,44 @@ async def consultar_protesto_avulso(
         db,
         tenant_id=tenant_id,
         documento=doc,
-        documento_tipo="cpf" if len(doc) == 11 else "cnpj",
-        incluir_detalhe_sp=incluir_detalhe_sp,
+        fonte=fonte,
         triggered_by=f"consulta_avulsa:{initiated_by or '-'}",
     )
     if not result.found:
         return {
             "encontrado": False,
             "documento": doc,
+            "fonte": fonte,
             "transitorio": result.transient,
             "message": result.message or "Consulta não completou.",
         }
 
     await _persist_result(db, tenant_id=tenant_id, result=result)
     return await build_protesto_view_by_documento(
-        db, tenant_id=tenant_id, documento=result.documento
+        db, tenant_id=tenant_id, documento=result.documento, fonte=fonte
+    )
+
+
+async def consultar_e_persistir_protestos(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    dossier_id: UUID,
+    fonte: str = FONTE_CENPROT_SP,
+    initiated_by: UUID | None = None,
+) -> dict[str, Any]:
+    """Consulta protestos da empresa-alvo do dossiê e materializa o silver +
+    devolve a view. Caller commita."""
+    cnpj = await _target_cnpj(db, tenant_id=tenant_id, dossier_id=dossier_id)
+    if cnpj is None:
+        return {
+            "encontrado": False,
+            "fonte": fonte,
+            "message": (
+                "O dossiê não tem CNPJ/CPF da empresa-alvo — preencha a "
+                "identificação antes de consultar protestos."
+            ),
+        }
+    return await consultar_protesto_avulso(
+        db, tenant_id=tenant_id, documento=cnpj, fonte=fonte, initiated_by=initiated_by
     )

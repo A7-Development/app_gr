@@ -20,6 +20,7 @@ from app.core.database import get_db
 from app.core.enums import Module, Permission
 from app.core.module_guard import require_module
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
+from app.modules.integracoes.public import FONTE_CENPROT_SP, FONTES_VALIDAS
 
 router = APIRouter()
 
@@ -28,10 +29,18 @@ class ConsultaProtestoIn(BaseModel):
     """Corpo da consulta avulsa de protesto (página Consultas)."""
 
     documento: str = Field(..., description="CNPJ (14) ou CPF (11) — com ou sem máscara.")
-    incluir_detalhe_sp: bool = Field(
-        default=True,
-        description="Buscar o detalhe por cartório de SP (onde aparece o credor).",
-    )
+    # 'cenprot_sp' (robusta, sem login, com cancelamento/quitacao, sem credor) |
+    # 'ieptb_credor' (com credor, via login gov.br — gated).
+    fonte: str = Field(default=FONTE_CENPROT_SP)
+
+
+def _valida_fonte(fonte: str) -> str:
+    if fonte not in FONTES_VALIDAS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"fonte inválida: {fonte!r}. Use uma de {list(FONTES_VALIDAS)}.",
+        )
+    return fonte
 
 
 @router.post("/dossies/{dossier_id}/protestos/consultar")
@@ -39,13 +48,11 @@ async def consultar_protestos(
     dossier_id: UUID,
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    fonte: Annotated[str, Query(description="cenprot_sp | ieptb_credor")] = FONTE_CENPROT_SP,
     _: None = Depends(require_module(Module.CREDITO, Permission.WRITE)),
 ) -> dict[str, Any]:
-    """Consulta protestos da empresa-alvo (nacional + detalhe SP) e materializa
-    o silver. O credor (cedente/apresentante) entra onde a fonte identificar
-    (detalhe de cartorios de SP). Bronze de cada chamada em
-    wh_infosimples_raw_consulta.
-    """
+    """Consulta protestos da empresa-alvo na `fonte` e materializa o silver.
+    Bronze de cada chamada em wh_infosimples_raw_consulta."""
     from app.modules.credito.services.protesto_dossie import (
         consultar_e_persistir_protestos,
     )
@@ -58,6 +65,7 @@ async def consultar_protestos(
             db,
             tenant_id=principal.tenant_id,
             dossier_id=dossier_id,
+            fonte=_valida_fonte(fonte),
             initiated_by=principal.user_id,
         )
     except InfosimplesAdapterError as e:
@@ -93,9 +101,6 @@ async def listar_protestos(
     return view
 
 
-# ─── Consulta AVULSA (pagina Credito > Consultas > Protestos) ────────────────
-
-
 @router.post("/consultas/protesto")
 async def consultar_protesto_avulso_endpoint(
     body: ConsultaProtestoIn,
@@ -103,9 +108,8 @@ async def consultar_protesto_avulso_endpoint(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: None = Depends(require_module(Module.CREDITO, Permission.WRITE)),
 ) -> dict[str, Any]:
-    """Consulta protestos de um CNPJ/CPF avulso (sem dossiê) e devolve a view
-    completa. Materializa silver + bronze (auditável). O credor só vem no
-    detalhe de cartórios de SP (Provimento CNJ 225/2026)."""
+    """Consulta protestos de um CNPJ/CPF avulso (sem dossiê) na `fonte` e devolve
+    a view. Materializa silver + bronze (auditável)."""
     from app.modules.credito.services.protesto_dossie import (
         consultar_protesto_avulso,
     )
@@ -118,8 +122,8 @@ async def consultar_protesto_avulso_endpoint(
             db,
             tenant_id=principal.tenant_id,
             documento=body.documento,
+            fonte=_valida_fonte(body.fonte),
             initiated_by=principal.user_id,
-            incluir_detalhe_sp=body.incluir_detalhe_sp,
         )
     except InfosimplesAdapterError as e:
         await db.commit()  # bronze (se houve) persiste para auditoria
@@ -133,10 +137,11 @@ async def historico_protesto_avulso(
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
     documento: Annotated[str, Query(description="CNPJ/CPF")],
+    fonte: Annotated[str, Query(description="cenprot_sp | ieptb_credor")] = FONTE_CENPROT_SP,
     _: None = Depends(require_module(Module.CREDITO, Permission.READ)),
 ) -> dict[str, Any]:
-    """Última consulta de protesto de um CNPJ/CPF (silver). Vazio = nunca
-    consultado."""
+    """Última consulta de protesto de um CNPJ/CPF na `fonte` (silver). Vazio =
+    nunca consultado."""
     from app.modules.credito.services.protesto_dossie import (
         build_protesto_view_by_documento,
     )
@@ -145,5 +150,5 @@ async def historico_protesto_avulso(
     if len(doc) not in (11, 14):
         return {"encontrado": False, "documento": doc, "mensagem": "Documento inválido."}
     return await build_protesto_view_by_documento(
-        db, tenant_id=principal.tenant_id, documento=doc
+        db, tenant_id=principal.tenant_id, documento=doc, fonte=_valida_fonte(fonte)
     )
