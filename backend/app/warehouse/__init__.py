@@ -72,6 +72,7 @@ from app.warehouse.posicao_papel import (
     WhPosicaoSacadoCedente,
 )
 from app.warehouse.posicao_renda_fixa import PosicaoRendaFixa
+from app.warehouse.protesto import WhProtestoConsulta, WhProtestoTitulo
 from app.warehouse.qitech_raw_relatorio import QiTechRawRelatorio
 from app.warehouse.receita_acruo_dia import ReceitaAcruoDia
 from app.warehouse.receita_caixa import ReceitaCaixa
@@ -186,4 +187,6 @@ __all__ = [
     "WhPosicaoCedenteProduto",
     "WhPosicaoSacado",
     "WhPosicaoSacadoCedente",
+    "WhProtestoConsulta",
+    "WhProtestoTitulo",
 ]
