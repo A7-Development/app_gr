@@ -43,14 +43,6 @@ function fmtData(s: string | null): string {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : s
 }
 
-function SituacaoBadge({ t }: { t: ProtestoTituloView }) {
-  if ((t.valor_quitacao ?? 0) > 0)
-    return <Badge variant="success">Quitado</Badge>
-  if ((t.valor_cancelamento ?? 0) > 0)
-    return <Badge variant="neutral">Cancelado</Badge>
-  return <Badge variant="warning">Aberto</Badge>
-}
-
 const COL_CARTORIO: ColumnDef<ProtestoTituloView, unknown> = {
   id: "cartorio",
   header: "Cartório",
@@ -103,11 +95,6 @@ const COLS_CENPROT: ColumnDef<ProtestoTituloView, unknown>[] = [
         {fmtBRL(row.original.valor_quitacao)}
       </span>
     ),
-  },
-  {
-    id: "situacao",
-    header: "Situação",
-    cell: ({ row }) => <SituacaoBadge t={row.original} />,
   },
 ]
 

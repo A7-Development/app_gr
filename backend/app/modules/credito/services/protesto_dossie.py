@@ -40,12 +40,13 @@ _PRIMARY_ESCOPOS = (ESCOPO_CENPROT_SP, ESCOPO_IEPTB_NACIONAL)
 
 _NOTA_POR_FONTE = {
     "cenprot_sp": (
-        "Protesto via CENPROT-SP (protestosp.com.br). Traz cartório, valor e o "
-        "status de cancelamento/quitação por título (valor_quitacao>0 = pago; "
-        "valor_cancelamento>0 = cancelado). NÃO identifica o credor e retorna só "
-        "os protestos da 1ª página do site — quando `completo`=false, a lista é "
-        "parcial vs o total. Só cobre SP. Protesto é dívida levada a cartório: "
-        "pesa na análise do sacado/cedente."
+        "Protesto via CENPROT-SP (protestosp.com.br). Traz cartório, valor "
+        "protestado e os valores de cancelamento e quitação por título "
+        "(tipicamente o custo para cancelar/quitar o protesto) — NÃO são status: "
+        "o protesto pode estar ABERTO mesmo com esses valores preenchidos. NÃO "
+        "identifica o credor e retorna só os protestos da 1ª página do site — "
+        "quando `completo`=false, a lista é parcial vs o total. Só cobre SP. "
+        "Protesto é dívida levada a cartório: pesa na análise do sacado/cedente."
     ),
     "ieptb_credor": (
         "Protesto via IEPTB/CENPROT (gov.br). O detalhe de cartórios de SP traz o "
