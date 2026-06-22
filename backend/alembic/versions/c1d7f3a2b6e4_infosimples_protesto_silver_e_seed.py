@@ -65,9 +65,12 @@ _DATASETS = [
 
 def _auditable_columns() -> list[sa.Column]:
     # native_enum=False no modelo -> colunas VARCHAR (sem PG enum / sem CHECK).
+    # Sem index=True aqui: os indices de source_type/source_id sao criados
+    # EXPLICITAMENTE em upgrade() (op.create_index) — index=True duplicaria o
+    # nome ix_<tabela>_source_type e quebraria com DuplicateTable.
     return [
-        sa.Column("source_type", sa.String(64), nullable=False, index=True),
-        sa.Column("source_id", sa.String(255), nullable=False, index=True),
+        sa.Column("source_type", sa.String(64), nullable=False),
+        sa.Column("source_id", sa.String(255), nullable=False),
         sa.Column(
             "source_updated_at", sa.DateTime(timezone=True), nullable=True
         ),
