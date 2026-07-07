@@ -127,6 +127,8 @@ class SourceType(enum.StrEnum):
     # adicionar valor nao exige migration de tipo.
     BUREAU_BDC = "bureau:bdc"
     DOCUMENT_NFE = "document:nfe"
+    # CT-e (conhecimento de transporte) coletado via landing zone fiscal.
+    DOCUMENT_CTE = "document:cte"
     # Cobranca (boletos / CNAB). COBRANCA (generico) e a fonte de TRANSPORTE:
     # a "inbox" de arquivos de retorno -- uma pasta com retornos de varios
     # bancos misturados (config de tenant_source_config). Os COBRANCA_<BANCO>

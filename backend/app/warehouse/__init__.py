@@ -42,6 +42,8 @@ from app.warehouse.entidade import (
     WhGrupoEconomicoMembro,
 )
 from app.warehouse.estoque_recebivel import EstoqueRecebivel
+from app.warehouse.fiscal_cte import Cte, CteNfe, CteRawDocumento
+from app.warehouse.fiscal_nfe import Nfe, NfeDuplicata, NfeRawDocumento
 from app.warehouse.infosimples_raw_consulta import InfosimplesRawConsulta
 from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel
 from app.warehouse.mec_evolucao_cotas import MecEvolucaoCotas
@@ -120,6 +122,9 @@ __all__ = [
     "CnabRawOcorrencia",
     "CobrancaSyncRun",
     "CprMovimento",
+    "Cte",
+    "CteNfe",
+    "CteRawDocumento",
     "DiaUtilQitech",
     "DimDiaUtil",
     "DimMes",
@@ -129,6 +134,9 @@ __all__ = [
     "MecEvolucaoCotas",
     "MovimentoAberto",
     "MovimentoCaixa",
+    "Nfe",
+    "NfeDuplicata",
+    "NfeRawDocumento",
     "Operacao",
     "OperacaoItem",
     "OperacaoRemessa",
