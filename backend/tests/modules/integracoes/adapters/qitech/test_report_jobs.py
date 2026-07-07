@@ -103,13 +103,26 @@ def test_verify_token_valido():
         assert verify_callback_token(ref="job-x", token="errado") is False
 
 
-def test_verify_token_sem_secret_aceita_qualquer():
-    """Sem secret -> validacao desligada. Em prod isso e configuration error."""
+def test_verify_token_sem_secret_aceita_em_dev():
+    """Sem secret em DEV -> validacao desligada (callback local funciona)."""
     with patch(
         "app.modules.integracoes.adapters.admin.qitech.report_jobs.get_settings"
     ) as gs:
         gs.return_value.QITECH_WEBHOOK_SECRET = ""
+        gs.return_value.APP_ENV = "development"
         assert verify_callback_token(ref="job-x", token="qualquer") is True
+
+
+def test_verify_token_sem_secret_rejeita_em_producao():
+    """Sem secret em PRODUCAO -> fail-closed. O receiver e publico via
+    gateway; aceitar sem validar permitiria callback forjado."""
+    with patch(
+        "app.modules.integracoes.adapters.admin.qitech.report_jobs.get_settings"
+    ) as gs:
+        gs.return_value.QITECH_WEBHOOK_SECRET = ""
+        gs.return_value.APP_ENV = "production"
+        assert verify_callback_token(ref="job-x", token="qualquer") is False
+        assert verify_callback_token(ref="job-x", token="") is False
 
 
 def test_extract_s3_expiry_real_sample():
@@ -461,7 +474,8 @@ async def test_process_callback_csv_vazio_marca_empty(tenant_a: Tenant):
 
     assert result["ok"] is False
     assert result["rows_canonical"] == 0
-    assert "vazio" in result["error"].lower()
+    # Mensagem atual: "QiTech ainda nao disponibilizou o relatorio ... (arquivo de 0 bytes)"
+    assert "0 bytes" in result["error"].lower()
 
     async with AsyncSessionLocal() as db:
         job_updated = await db.get(QitechReportJob, job_id)

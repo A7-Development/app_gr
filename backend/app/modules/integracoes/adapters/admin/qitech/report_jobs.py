@@ -93,8 +93,10 @@ def verify_callback_token(*, ref: str, token: str) -> bool:
     """Valida token vindo do query string contra o esperado para `ref`."""
     expected = compute_callback_token(ref=ref)
     if not expected:
-        # Sem secret -> sem validacao. Em prod isso DEVE ser configurado.
-        return True
+        # Sem secret configurado: fail-closed em producao (o receiver e
+        # publico via gateway — aceitar sem validar permitiria callback
+        # forjado). Em dev/test o callback local segue funcionando sem secret.
+        return get_settings().APP_ENV != "production"
     return hmac.compare_digest(expected, token or "")
 
 

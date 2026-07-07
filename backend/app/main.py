@@ -49,11 +49,19 @@ async def lifespan(_: FastAPI):
         shutdown_scheduler()
 
 
+# A API e publica atras do gateway (callback.strataai.com.br) — o schema
+# OpenAPI completo e mapa de reconhecimento pra atacante. Em producao,
+# Swagger/ReDoc/openapi.json ficam desligados; em dev/test continuam ativos.
+_IS_PRODUCTION = _settings.APP_ENV == "production"
+
 app = FastAPI(
     title="GR API",
     description="Plataforma de inteligencia de dados para FIDCs",
     version=__version__,
     lifespan=lifespan,
+    docs_url=None if _IS_PRODUCTION else "/docs",
+    redoc_url=None if _IS_PRODUCTION else "/redoc",
+    openapi_url=None if _IS_PRODUCTION else "/openapi.json",
 )
 
 app.add_middleware(
