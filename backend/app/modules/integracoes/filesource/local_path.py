@@ -22,6 +22,9 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.integracoes.filesource._base import FileSource, RawFile
 from app.warehouse.cnab_raw_arquivo import FILE_SOURCE_LOCAL_PATH
@@ -30,7 +33,13 @@ from app.warehouse.cnab_raw_arquivo import FILE_SOURCE_LOCAL_PATH
 class LocalPathFileSource(FileSource):
     mode = FILE_SOURCE_LOCAL_PATH
 
-    async def fetch(self, config: dict) -> list[RawFile]:
+    async def fetch(
+        self,
+        config: dict,
+        *,
+        db: AsyncSession | None = None,  # ignorado (fonte pura)
+        tenant_id: UUID | None = None,  # ignorado (fonte pura)
+    ) -> list[RawFile]:
         roots = self._roots(config)
         return await asyncio.to_thread(self._read_roots, roots)
 

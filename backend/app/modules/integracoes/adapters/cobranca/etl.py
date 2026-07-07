@@ -53,6 +53,7 @@ from app.modules.integracoes.adapters.cobranca.project_vigente import (
 )
 from app.modules.integracoes.adapters.cobranca.version import ADAPTER_VERSION
 from app.modules.integracoes.filesource import get_file_source
+from app.modules.integracoes.models.file_landing import FileLanding
 from app.warehouse.cnab_raw_arquivo import (
     BANCO_DESCONHECIDO,
     TIPO_ARQUIVO_REMESSA,
@@ -130,10 +131,14 @@ async def sync_cobranca(
     """
     fs_cfg = config["file_source"]
     fs = get_file_source(fs_cfg["mode"])
-    raws = await fs.fetch(fs_cfg)
+    raws = await fs.fetch(fs_cfg, db=db, tenant_id=tenant_id)
 
     result = CobrancaSyncResult(arquivos_vistos=len(raws))
     fetched_at = datetime.now(UTC)
+    # Registros da landing zone a marcar como consumidos ao fim do ciclo.
+    # Duplicado tambem consome: o conteudo JA esta no bronze (ex.: ingerido
+    # antes pelo mount legado) — pendencia resolvida do mesmo jeito.
+    consumed_landing_ids: set[UUID] = set()
 
     for raw in raws:
         tipo = _classificar_tipo(raw.conteudo)
@@ -169,6 +174,8 @@ async def sync_cobranca(
             raw=raw,
             fetched_at=fetched_at,
         )
+        if raw.landing_id is not None:
+            consumed_landing_ids.add(raw.landing_id)
         if created and data_ref is not None:
             arquivo.data_ref = data_ref
 
@@ -213,6 +220,17 @@ async def sync_cobranca(
         )
         result.ocorrencias_ignoradas += ignorados
         result.boletos_upsertados += await upsert_boletos(db, values)
+
+    if consumed_landing_ids:
+        await db.execute(
+            update(FileLanding)
+            .where(
+                FileLanding.tenant_id == tenant_id,
+                FileLanding.id.in_(consumed_landing_ids),
+                FileLanding.consumed_at.is_(None),
+            )
+            .values(consumed_at=fetched_at)
+        )
 
     if commit:
         await db.commit()

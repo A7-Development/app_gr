@@ -29,6 +29,7 @@ from app.core.enums import Environment, SourceType
 from app.modules.integracoes.services.source_config import upsert_config
 from app.shared.identity.tenant import Tenant
 from app.warehouse.cnab_raw_arquivo import (
+    FILE_SOURCE_LANDING,
     FILE_SOURCE_LOCAL_PATH,
     FILE_SOURCE_UPLOAD,
 )
@@ -49,7 +50,7 @@ async def main() -> None:
     ap.add_argument(
         "--mode",
         default=FILE_SOURCE_LOCAL_PATH,
-        choices=[FILE_SOURCE_LOCAL_PATH, FILE_SOURCE_UPLOAD],
+        choices=[FILE_SOURCE_LOCAL_PATH, FILE_SOURCE_UPLOAD, FILE_SOURCE_LANDING],
     )
     ap.add_argument("--path", help="diretorio de RETORNO (mode local_path)")
     ap.add_argument(
@@ -58,6 +59,12 @@ async def main() -> None:
         "multi-root [retorno, remessa] e o sync coleta os dois.",
     )
     ap.add_argument("--staging-path", help="diretorio de upload (mode upload)")
+    ap.add_argument(
+        "--source-labels",
+        default="cobranca_cnab,cobranca_cnab_remessa",
+        help="mode landing: labels da landing zone a drenar, separados por "
+        "virgula (default: cobranca_cnab,cobranca_cnab_remessa)",
+    )
     ap.add_argument("--glob", default="*", help="padrao de arquivo (default *)")
     ap.add_argument("--disabled", action="store_true", help="cria a fonte desabilitada")
     args = ap.parse_args()
@@ -77,7 +84,7 @@ async def main() -> None:
             }
         else:
             file_source = {"mode": args.mode, "path": args.path, "glob": args.glob}
-    else:  # upload
+    elif args.mode == FILE_SOURCE_UPLOAD:
         if not args.staging_path:
             raise SystemExit("--staging-path e obrigatorio no mode upload")
         file_source = {
@@ -85,6 +92,11 @@ async def main() -> None:
             "staging_path": args.staging_path,
             "glob": args.glob,
         }
+    else:  # landing (Strata Collector -> file_landing + storage)
+        labels = [s.strip() for s in args.source_labels.split(",") if s.strip()]
+        if not labels:
+            raise SystemExit("--source-labels vazio no mode landing")
+        file_source = {"mode": args.mode, "source_labels": labels}
 
     # Sem `layout`: o banco/layout sao detectados por arquivo (header CNAB).
     # `api` aceito como cadastro mas inerte: bloco preparado.

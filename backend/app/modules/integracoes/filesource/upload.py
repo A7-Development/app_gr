@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.integracoes.filesource._base import FileSource, RawFile
 from app.warehouse.cnab_raw_arquivo import FILE_SOURCE_UPLOAD
@@ -28,7 +31,13 @@ from app.warehouse.cnab_raw_arquivo import FILE_SOURCE_UPLOAD
 class UploadFileSource(FileSource):
     mode = FILE_SOURCE_UPLOAD
 
-    async def fetch(self, config: dict) -> list[RawFile]:
+    async def fetch(
+        self,
+        config: dict,
+        *,
+        db: AsyncSession | None = None,  # ignorado (fonte pura)
+        tenant_id: UUID | None = None,  # ignorado (fonte pura)
+    ) -> list[RawFile]:
         staging = config.get("staging_path")
         glob = config.get("glob", "*")
         if not staging:
