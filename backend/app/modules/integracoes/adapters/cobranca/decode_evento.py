@@ -59,15 +59,32 @@ from app.warehouse.dim import DimUnidadeAdministrativa
 _CHUNK = 1000
 _LINE_WIDTH = 400
 
-# Campos atualizados no conflito (decode pode mudar; bronze nao).
+# Campos atualizados no conflito (decode pode mudar; bronze nao). Os campos de
+# praca (banco_pagador/agencia_pagadora/data_credito) entram aqui porque nascem
+# de re-parse do bronze (payload novo) -- re-decode os propaga ao silver.
 _UPDATE_COLS = (
     "ua_id",
     "ua_nome",
     "tipo_evento",
     "efeito_estado",
+    "banco_pagador",
+    "agencia_pagadora",
+    "data_credito",
     "decoded_at",
     "decoded_by_version",
 )
+
+
+def _praca_field(raw: str | None) -> str | None:
+    """Normaliza banco/agencia do CNAB: vazio ou so-zeros -> None.
+
+    Zeros a esquerda sao PRESERVADOS quando ha valor ("07723") -- o codigo da
+    agencia e um identificador, nao um numero.
+    """
+    v = (raw or "").strip()
+    if not v or v.strip("0") == "":
+        return None
+    return v
 
 
 def _records(conteudo: str) -> list[str]:
@@ -216,6 +233,9 @@ async def decode_tenant_eventos(
                     "valor_titulo": _parse_centavos(p.get("valor_titulo")),
                     "valor_pago": _parse_centavos(p.get("valor_pago")),
                     "data_pagamento": parse_ddmmaa(p.get("data_pagamento")),
+                    "banco_pagador": _praca_field(p.get("banco_pagador")),
+                    "agencia_pagadora": _praca_field(p.get("agencia_pagadora")),
+                    "data_credito": parse_ddmmaa(p.get("data_credito")),
                     "origem": origem,
                     "arquivo_id": arq.id,
                     "ocorrencia_id": o.id,

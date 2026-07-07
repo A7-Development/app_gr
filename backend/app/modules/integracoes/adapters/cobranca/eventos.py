@@ -24,7 +24,10 @@ from app.warehouse.cnab_raw_arquivo import BANCO_BMP, BANCO_BRADESCO, BANCO_VORT
 # Versao da taxonomia do decoder. Bumpar ao mudar o mapeamento codigo->evento
 # (re-decode atualiza wh_boleto_evento.decoded_by_version). Rastreabilidade §14.
 # v1.2.0: decode da REMESSA (comando 01=registro -> EFEITO_ENVIA).
-DECODER_VERSION = "cobranca_evento_decoder_v1.2.0"
+# v1.3.0: praca de liquidacao (banco_pagador/agencia_pagadora/data_credito) --
+#         fonte primaria antifraude (Sentinela CNAB). Requer re-parse do bronze
+#         (scripts/reparse_cnab_ocorrencias.py) antes do re-decode.
+DECODER_VERSION = "cobranca_evento_decoder_v1.3.0"
 
 # ── Tipos de evento canonicos ───────────────────────────────────────────────
 TIPO_ENTRADA = "entrada"  # boleto registrado/confirmado no banco
