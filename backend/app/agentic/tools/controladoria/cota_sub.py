@@ -33,7 +33,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.agentic._scope import ScopedContext
 from app.agentic.tools._base import register_tool
@@ -116,7 +116,7 @@ def _parse_scope_inputs(
 
 
 async def _resolve_seu_numero(
-    scope: ScopedContext, fundo_doc: str, data_d0: date, args: dict[str, Any],
+    scope: ScopedContext, fundo_doc: str, ceiling: date | None, args: dict[str, Any],
 ) -> tuple[str | None, dict[str, Any] | None]:
     """Resolve o papel por `seu_numero` OU `numero_documento` (+ `data_vencimento`).
 
@@ -124,6 +124,12 @@ async def _resolve_seu_numero(
     fala em `numero_documento` (duplicata/NF). Como um documento parcelado tem
     varias linhas com o MESMO numero_documento (parcela vive no vencimento),
     `data_vencimento` desambigua.
+
+    `ceiling` limita a busca a `data_referencia <= ceiling` (usado por tools
+    ancoradas no dia da tela). Passe `None` para resolver sobre TODO o historico
+    do papel — necessario em tools agnosticas a data selecionada (ex.: trajetoria
+    por range explicito), senao um papel que so aparece DEPOIS do dia da tela
+    seria "nao encontrado".
 
     Retorna `(seu_numero, None)` quando resolve a 1 papel; `(None, payload)`
     quando falta input, nao acha, ou ha ambiguidade (payload ja serializavel
@@ -149,9 +155,10 @@ async def _resolve_seu_numero(
         .where(EstoqueRecebivel.tenant_id == scope.tenant_id)
         .where(EstoqueRecebivel.fundo_doc == fundo_doc)
         .where(EstoqueRecebivel.numero_documento == doc)
-        .where(EstoqueRecebivel.data_referencia <= data_d0)
         .order_by(EstoqueRecebivel.data_referencia.desc())
     )
+    if ceiling is not None:
+        stmt = stmt.where(EstoqueRecebivel.data_referencia <= ceiling)
     venc_raw = str(args.get("data_vencimento") or "").strip()
     if venc_raw:
         try:
@@ -169,7 +176,8 @@ async def _resolve_seu_numero(
         by_seu.setdefault(r.seu_numero, r)
 
     if not by_seu:
-        return None, {"erro": f"Documento {doc!r} nao encontrado no estoque ate {data_d0.isoformat()}."}
+        ate = f" ate {ceiling.isoformat()}" if ceiling is not None else ""
+        return None, {"erro": f"Documento {doc!r} nao encontrado no estoque{ate}."}
     if len(by_seu) == 1:
         return next(iter(by_seu)), None
 
@@ -863,11 +871,19 @@ async def get_eventos_liquidacao_adjacentes(
 @register_tool(
     name="get_historico_estoque_papel",
     description=(
-        "Trajetoria diaria de um papel em wh_estoque_recebivel nos ultimos "
-        "N dias: valor_nominal, valor_presente, valor_pdd, faixa_pdd, "
-        "situacao_recebivel. Use pra entender se uma mutacao foi um evento "
-        "isolado ou parte de tendencia (ex.: VN caindo gradualmente vs "
-        "salto unico)."
+        "Trajetoria diaria de um papel em wh_estoque_recebivel: valor_nominal, "
+        "valor_presente, valor_pdd, faixa_pdd, situacao_recebivel. Use pra "
+        "entender se uma mutacao foi evento isolado ou tendencia (ex.: VN caindo "
+        "gradual vs salto unico).\n"
+        "AGNOSTICO AO DIA DA TELA: o range vem do que VOCE pede, nao do dia "
+        "selecionado. Passe `data_inicio`/`data_fim` conforme a conversa. Se "
+        "omitir `data_fim`, o teto e a ULTIMA data que o warehouse tem (nao o dia "
+        "da tela, nao 'hoje') — entao 'de 20/06 ate a ultima data disponivel' = "
+        "so `data_inicio=2026-06-20`. O retorno traz `data_max_warehouse` (ultima "
+        "data que o warehouse tem, qualquer papel) e `data_max_papel` (ultima data "
+        "em que ESTE papel aparece): se o papel some antes do warehouse, ele saiu "
+        "do estoque (liquidado/recomprado) — NUNCA conclua 'nao sincronizado' a "
+        "partir do fim da trajetoria; compare com data_max_warehouse."
     ),
     input_schema={
         "type": "object",
@@ -884,11 +900,19 @@ async def get_eventos_liquidacao_adjacentes(
                 "type": "string",
                 "description": "Chave interna da linha (campo seuNumero da QiTech, opaco). Alternativa a numero_documento — use quando ja tiver o valor exato vindo de um retorno anterior.",
             },
+            "data_inicio": {
+                "type": "string",
+                "description": "Inicio do range (YYYY-MM-DD), inclusive. Default = data_fim - `dias`.",
+            },
+            "data_fim": {
+                "type": "string",
+                "description": "Fim do range (YYYY-MM-DD), inclusive. Default = ULTIMA data disponivel no warehouse (NAO o dia da tela).",
+            },
             "dias": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 90,
-                "description": "Janela retroativa em dias corridos. Default 30.",
+                "maximum": 365,
+                "description": "So usado quando `data_inicio` for omitido: quantos dias corridos antes de data_fim. Default 30.",
             },
         },
         "required": [],
@@ -905,8 +929,26 @@ async def get_historico_estoque_papel(
     from app.modules.cadastros.public import UnidadeAdministrativa
     from app.warehouse.estoque_recebivel import EstoqueRecebivel
 
-    ua_id, data_d0 = _parse_scope_inputs(scope, args)
+    # data_d0 do scope e ignorado aqui de proposito: trajetoria e agnostica ao
+    # dia da tela — o range vem de data_inicio/data_fim (args), nao da ancora.
+    ua_id, _screen_d0 = _parse_scope_inputs(scope, args)
     dias = int(args.get("dias", 30))
+
+    def _parse_opt_date(key: str) -> tuple[date | None, dict[str, Any] | None]:
+        raw = str(args.get(key) or "").strip()
+        if not raw:
+            return None, None
+        try:
+            return date.fromisoformat(raw), None
+        except ValueError:
+            return None, {"erro": f"{key} invalido: {raw!r} (use YYYY-MM-DD)."}
+
+    data_inicio_arg, err = _parse_opt_date("data_inicio")
+    if err is not None:
+        return _to_json(err)
+    data_fim_arg, err = _parse_opt_date("data_fim")
+    if err is not None:
+        return _to_json(err)
 
     ua = (
         await scope.db.execute(
@@ -918,7 +960,29 @@ async def get_historico_estoque_papel(
     if ua is None or not ua.cnpj:
         return _to_json({"erro": f"UA {ua_id} nao encontrada ou sem CNPJ"})
 
-    seu_numero, problema = await _resolve_seu_numero(scope, ua.cnpj, data_d0, args)
+    # Teto real do warehouse pra ESTE fundo (agnostico a tela/relogio). E o
+    # default de data_fim e o farol que impede o agente de alucinar "nao
+    # sincronizado" a partir do fim da trajetoria de um papel.
+    data_max_warehouse = (
+        await scope.db.execute(
+            select(func.max(EstoqueRecebivel.data_referencia))
+            .where(EstoqueRecebivel.tenant_id == scope.tenant_id)
+            .where(EstoqueRecebivel.fundo_doc == ua.cnpj)
+        )
+    ).scalar_one_or_none()
+    if data_max_warehouse is None:
+        return _to_json({
+            "n": 0,
+            "obs": f"Sem estoque para o fundo {ua.cnpj} no warehouse.",
+        })
+
+    data_fim = data_fim_arg or data_max_warehouse
+    data_inicio = data_inicio_arg or (data_fim - timedelta(days=dias))
+
+    # Resolve o papel sobre TODO o historico ate data_fim (ceiling=data_fim),
+    # nunca ancorado no dia da tela — papel que so aparece depois do D0 da tela
+    # ainda e encontrado.
+    seu_numero, problema = await _resolve_seu_numero(scope, ua.cnpj, data_fim, args)
     if problema is not None:
         return _to_json(problema)
 
@@ -929,20 +993,36 @@ async def get_historico_estoque_papel(
             .where(EstoqueRecebivel.fundo_doc == ua.cnpj)
             .where(EstoqueRecebivel.seu_numero == seu_numero)
             .where(
-                EstoqueRecebivel.data_referencia.between(
-                    data_d0 - timedelta(days=dias),
-                    data_d0,
-                )
+                EstoqueRecebivel.data_referencia.between(data_inicio, data_fim)
             )
             .order_by(EstoqueRecebivel.data_referencia)
         )
     ).scalars().all()
 
+    # data_max_papel: ultima data em que o papel aparece no estoque INTEIRO
+    # (independente do range pedido). Se < data_max_warehouse, o papel saiu do
+    # estoque — o agente usa isso pra NAO confundir com falta de sync.
+    data_max_papel = (
+        await scope.db.execute(
+            select(func.max(EstoqueRecebivel.data_referencia))
+            .where(EstoqueRecebivel.tenant_id == scope.tenant_id)
+            .where(EstoqueRecebivel.fundo_doc == ua.cnpj)
+            .where(EstoqueRecebivel.seu_numero == seu_numero)
+        )
+    ).scalar_one_or_none()
+
     if not rows:
         return _to_json({
             "seu_numero": seu_numero,
             "n": 0,
-            "obs": "Papel nao encontrado no estoque nos ultimos N dias.",
+            "range": [data_inicio.isoformat(), data_fim.isoformat()],
+            "data_max_warehouse": data_max_warehouse,
+            "data_max_papel": data_max_papel,
+            "obs": (
+                "Papel nao aparece no estoque dentro do range pedido. "
+                "Veja data_max_papel (ate quando ele existiu) e "
+                "data_max_warehouse (ate quando ha dado)."
+            ),
         })
 
     first = rows[0]
@@ -969,6 +1049,9 @@ async def get_historico_estoque_papel(
         "taxa_recebivel": first.taxa_recebivel,
         "data_emissao": first.data_emissao,
         "data_vencimento_original": first.data_vencimento_original,
+        "range": [data_inicio.isoformat(), data_fim.isoformat()],
+        "data_max_warehouse": data_max_warehouse,
+        "data_max_papel": data_max_papel,
         "historico": historico,
         "n": len(historico),
     })
