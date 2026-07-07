@@ -71,8 +71,8 @@ export function DossierReadingView({
   onOpenTrail,
   onGoToStation,
   descriptorStations,
-  playbookName,
-  playbookVersion,
+  workflowName,
+  workflowVersion,
   analystName,
 }: {
   coverage?: CoverageItem[]
@@ -92,10 +92,10 @@ export function DossierReadingView({
   trailCount: number
   onOpenTrail: () => void
   onGoToStation?: (id: string) => void
-  /** Cabeçalho de auditoria (handoff playbook, snapshot 07): playbook de
+  /** Cabeçalho de auditoria (handoff workflow, snapshot 07): workflow de
    *  origem + versão + analista responsável. A conclusão vem de finalized_at. */
-  playbookName?: string | null
-  playbookVersion?: number | null
+  workflowName?: string | null
+  workflowVersion?: number | null
   analystName?: string | null
 }) {
   const titleLabel =
@@ -215,20 +215,20 @@ export function DossierReadingView({
             <StrataIcon height={36} />
           </header>
 
-          {/* Cabeçalho de auditoria — playbook de origem + analista + conclusão
-              (handoff playbook JUCESP, snapshot 07). Requisito de auditoria:
-              quem decidiu, com base em qual playbook/versão, e quando fechou. */}
+          {/* Cabeçalho de auditoria — workflow de origem + analista + conclusão
+              (handoff workflow JUCESP, snapshot 07). Requisito de auditoria:
+              quem decidiu, com base em qual workflow/versão, e quando fechou. */}
           <section className="grid grid-cols-3 gap-6 border-b border-gray-100 py-5 dark:border-gray-900">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-400 dark:text-gray-500">
-                Playbook
+                Workflow
               </p>
               <p className="mt-1 text-[13px] font-medium leading-snug text-gray-900 dark:text-gray-100">
-                {playbookName ?? "—"}
+                {workflowName ?? "—"}
               </p>
-              {playbookVersion != null && (
+              {workflowVersion != null && (
                 <p className="mt-0.5 text-[11px] text-gray-400 tabular-nums dark:text-gray-500">
-                  v{playbookVersion}
+                  v{workflowVersion}
                 </p>
               )}
             </div>

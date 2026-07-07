@@ -391,7 +391,7 @@ async def enrich_target_cadastral(
     if target is None:
         # Fallback find-or-create: a empresa-alvo (TARGET) normalmente nasce em
         # absorb_graph_from_human_input no submit do cadastro. Mas o node de
-        # enriquecimento NAO pode depender dessa ordem/forma — playbook custom
+        # enriquecimento NAO pode depender dessa ordem/forma — workflow custom
         # pode nao ter um cadastro com as chaves de grafo, ou o node pode rodar
         # antes. Como o dossie ja conhece o alvo (target_cnpj/target_name
         # setados na criacao OU por absorb_identity), criamos a TARGET aqui.
@@ -531,7 +531,7 @@ async def enrich_target_from_pj_silver(
     Existem dois pipelines cadastrais: `cadastral_enrichment` faz um fetch CAD-PJ e
     grava em `credit_dossier_company` (que o card + a read-tool do agente leem);
     `bureau_query` faz UMA consulta multi-dataset e grava o cadastral no silver
-    (`wh_pj_cadastro` + raw), mas NAO toca em `credit_dossier_company`. Um playbook
+    (`wh_pj_cadastro` + raw), mas NAO toca em `credit_dossier_company`. Um workflow
     que usa `bureau_query` (sem o node `cadastral_enrichment`) ficava com a tela e o
     agente vendo nulo. Esta ponte aplica o MESMO mapeamento de
     `enrich_target_cadastral` reusando `map_basic_data` sobre o raw que ja existe,
@@ -540,9 +540,7 @@ async def enrich_target_from_pj_silver(
     Best-effort: o caller (bureau_query) NAO deve falhar se isto nao aplicar — a
     consulta em si ja foi bem-sucedida. Returns True quando aplicou.
     """
-    from app.modules.integracoes.adapters.data.bigdatacorp.mappers.cadastral import (
-        map_basic_data,
-    )
+    from app.modules.integracoes.public import map_basic_data
     from app.warehouse.bdc_raw_consulta import BdcRawConsulta
     from app.warehouse.pj_cadastro import PjCadastro
 

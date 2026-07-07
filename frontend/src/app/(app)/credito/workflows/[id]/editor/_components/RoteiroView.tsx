@@ -39,7 +39,7 @@ export function RoteiroView({
         <div className="mb-4 flex items-center gap-2">
           <RiFlowChart className="size-4 text-gray-400" aria-hidden />
           <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-            Roteiro do playbook
+            Roteiro do workflow
           </h2>
           <span className="text-xs text-gray-500 dark:text-gray-400">
             o fluxo em palavras — clique num passo pra editá-lo no canvas

@@ -14,7 +14,7 @@ from uuid import uuid4
 import pytest
 
 from app.agentic.memory import create_session
-from app.agentic.playbooks.nodes._base import NodeContext
+from app.agentic.workflows.nodes._base import NodeContext
 from app.core.enums import Module
 
 # runtime.py importa anthropic — skip se ausente.

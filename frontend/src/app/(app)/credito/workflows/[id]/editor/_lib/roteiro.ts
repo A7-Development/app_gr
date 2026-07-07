@@ -3,7 +3,7 @@
 // Modo Roteiro (F6, 2026-06-12): o MESMO fluxo como narrativa numerada em
 // português, lendo de cima pra baixo. Usuário padrão lê e valida no Roteiro;
 // power user constrói no canvas. Gerado do grafo — documentação viva do
-// playbook, sempre em dia.
+// workflow, sempre em dia.
 //
 // Funções puras — testáveis, sem React.
 

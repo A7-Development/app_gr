@@ -45,7 +45,7 @@ class AgentDefinition(Base):
 
     `name` segue convencao `<modulo>.<agente>` (ex.: `credito.analista_dossie`,
     `controladoria.variacao_cota`). `module` e tag (nao pasta) — determina
-    scope default de tools/playbooks + RBAC + billing + metricas.
+    scope default de tools/workflows + RBAC + billing + metricas.
 
     `expertise_ids` e array de UUIDs (sem FK constraint — Postgres ARRAY
     nao trigga FK; validacao na camada de aplicacao). Order-preserving:

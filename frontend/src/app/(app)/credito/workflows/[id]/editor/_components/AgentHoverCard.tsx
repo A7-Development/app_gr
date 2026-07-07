@@ -118,7 +118,7 @@ export function AgentHoverCard({
             </p>
             {isLegacy ? (
               <p className="mt-1 text-[11px] italic text-gray-500 dark:text-gray-400">
-                Contexto completo do playbook (caminho legacy — sera migrado).
+                Contexto completo do workflow (caminho legacy — sera migrado).
               </p>
             ) : (
               <ul className="mt-1 space-y-0.5">

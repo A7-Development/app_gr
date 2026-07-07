@@ -2,7 +2,7 @@
 
 Pure-function test do helper que vive em
 app/shared/workflow/services/engine.py. Nao precisa de DB nem
-asyncpg — passa um objeto duck-typed no lugar do `PlaybookRunStep`.
+asyncpg — passa um objeto duck-typed no lugar do `WorkflowRunStep`.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from app.agentic.memory import create_session
 from app.core.enums import Module
 
 # engine.py importa app.agentic.memory (que importamos OK) mas tambem
-# carrega PlaybookRunStep (SQLAlchemy). Quando anthropic/SQLAlchemy
+# carrega WorkflowRunStep (SQLAlchemy). Quando anthropic/SQLAlchemy
 # nao estao instalados, skip o modulo inteiro.
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("anthropic") is None,
@@ -28,7 +28,7 @@ pytestmark = pytest.mark.skipif(
 
 @dataclass
 class _FakeNodeRun:
-    """Duck do PlaybookRunStep, soh com o que _populate_tools_log toca."""
+    """Duck do WorkflowRunStep, soh com o que _populate_tools_log toca."""
 
     input_data: dict[str, Any] = field(default_factory=dict)
 
@@ -43,7 +43,7 @@ def _new_session():
 
 
 def test_populates_tools_log_from_slice() -> None:
-    from app.agentic.playbooks.services.engine import _populate_tools_log
+    from app.agentic.workflows.services.engine import _populate_tools_log
 
     s = _new_session()
     s.record_tool_use(
@@ -69,7 +69,7 @@ def test_populates_tools_log_from_slice() -> None:
 
 def test_slice_isolates_each_node_run() -> None:
     """Dois nodes consecutivos: cada um so ve seus proprios steps."""
-    from app.agentic.playbooks.services.engine import _populate_tools_log
+    from app.agentic.workflows.services.engine import _populate_tools_log
 
     s = _new_session()
 
@@ -104,7 +104,7 @@ def test_slice_isolates_each_node_run() -> None:
 
 
 def test_no_tools_log_key_when_node_did_not_emit_steps() -> None:
-    from app.agentic.playbooks.services.engine import _populate_tools_log
+    from app.agentic.workflows.services.engine import _populate_tools_log
 
     s = _new_session()
     # Nada gravado entre antes e depois.
@@ -118,7 +118,7 @@ def test_no_tools_log_key_when_node_did_not_emit_steps() -> None:
 
 def test_session_label_includes_run_id() -> None:
     """Smoke do context_label que o engine cria."""
-    from app.agentic.playbooks.services.engine import _execute_run  # noqa: F401
+    from app.agentic.workflows.services.engine import _execute_run  # noqa: F401
 
     # Soh confirma que a string montada e human-readable; nao executa nada.
     label = "workflow:def-id:run-id"

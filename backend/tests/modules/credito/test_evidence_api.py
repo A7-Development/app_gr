@@ -28,7 +28,7 @@ from app.modules.credito.models.dossier_step_note import DossierStepNote
 from app.shared.identity.tenant import Tenant
 from app.shared.identity.user import User
 from app.shared.identity.user_permission import UserModulePermission
-from app.agentic.playbooks.models.definition import PlaybookDefinition
+from app.agentic.workflows.models.definition import WorkflowDefinition
 
 API_BASE = "/api/v1/credito"
 
@@ -61,10 +61,10 @@ _DEMO_GRAPH = {
 }
 
 
-async def _create_workflow_definition(tenant_id) -> PlaybookDefinition:
-    """Cria uma PlaybookDefinition minima para amarrar dossies em testes."""
+async def _create_workflow_definition(tenant_id) -> WorkflowDefinition:
+    """Cria uma WorkflowDefinition minima para amarrar dossies em testes."""
     async with AsyncSessionLocal() as db:
-        wf = PlaybookDefinition(
+        wf = WorkflowDefinition(
             tenant_id=tenant_id,
             name=f"test.workflow.{uuid4().hex[:6]}",
             version=1,
@@ -643,7 +643,7 @@ async def test_dossier_list_returns_progress_fields(
     rows = r.json()
     found = next((row for row in rows if row["id"] == str(dossier.id)), None)
     assert found is not None, "Dossier criado deve aparecer na listagem"
-    # Sem PlaybookRun amarrado: 0 completed, total_steps vem do graph (3 nodes).
+    # Sem WorkflowRun amarrado: 0 completed, total_steps vem do graph (3 nodes).
     assert found["completed_steps"] == 0
     assert found["total_steps"] == 3
     # Sem run e status DRAFT — nao e human_input nem agent_running.

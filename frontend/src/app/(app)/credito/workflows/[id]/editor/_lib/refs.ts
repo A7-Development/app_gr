@@ -39,7 +39,7 @@ export type AvailableField = {
 export type AvailableSource = {
   /** "trigger" ou node.id. */
   sourceId: string
-  /** "Inicio do playbook" ou label da etapa. */
+  /** "Inicio do workflow" ou label da etapa. */
   sourceLabel: string
   /** Campos exposes no output. */
   fields: AvailableField[]
@@ -138,7 +138,7 @@ const AGENT_OUTPUT_FIELDS: Record<string, AvailableField[]> = {
 }
 
 /** Bureaus tem outputs comuns. Map por adapter. Espelha o output real
- *  retornado pelo BureauQueryNode (`backend/app/agentic/playbooks/nodes/
+ *  retornado pelo BureauQueryNode (`backend/app/agentic/workflows/nodes/
  *  bureau_query.py`). Os dados detalhados ficam no warehouse silver —
  *  etapas/agentes downstream leem via read-tools (get_serasa_pj /
  *  get_quadro_societario / get_kyc_pj). */
@@ -307,7 +307,7 @@ export function getAvailableSources(
   // Trigger sempre primeiro.
   sources.push({
     sourceId: "trigger",
-    sourceLabel: "Inicio do playbook",
+    sourceLabel: "Inicio do workflow",
     fields: TRIGGER_FIELDS,
   })
 

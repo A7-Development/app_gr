@@ -10,7 +10,7 @@ Por que estado materializado (e nao replay do decision_log): o detector
 roda a cada ingestao de consulta — precisa de lookup barato do estado
 anterior. O log de transicoes continua no decision_log (append-only);
 esta tabela e o snapshot corrente, mesmo padrao estado/trace do
-playbook_run.
+workflow_run.
 
 Estados:
     suspeita_ativa     ultima consulta veio com "NADA CONSTA"

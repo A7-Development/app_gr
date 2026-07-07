@@ -947,7 +947,7 @@ export default function DossierFocusPage() {
     ? Math.round((fechadas / estacoes.length) * 100)
     : 0
 
-  // Fases vivem no card da estação ATIVA na trilha (handoff playbook JUCESP) —
+  // Fases vivem no card da estação ATIVA na trilha (handoff workflow JUCESP) —
   // por isso só a focada carrega `phases`; as demais ficam como nó simples.
   const sidebarItems: StationItem[] = estacoes.map((e, i) => ({
     id: e.id,
@@ -960,7 +960,7 @@ export default function DossierFocusPage() {
         : undefined,
   }))
 
-  // Marcadores não-interativos da trilha (handoff playbook): Abertura (node
+  // Marcadores não-interativos da trilha (handoff workflow): Abertura (node
   // trigger — "análise aberta") e Encerramento (output — "abre ao fechar"). São
   // só visuais; a coleta de identidade segue schema-driven nas estações reais.
   const dossieFinalizado = dossier.status === "finalized"
@@ -1438,7 +1438,7 @@ export default function DossierFocusPage() {
                 A JUCESP cobre empresas registradas em <strong>São Paulo</strong>.
                 Se a empresa for de outro estado (ou o registro não estiver
                 digitalizado), solicite o contrato social ao cliente — adicione a
-                etapa &quot;Pedir documentos&quot; ao playbook para habilitar o
+                etapa &quot;Pedir documentos&quot; ao workflow para habilitar o
                 upload manual nesta estação.
               </p>
             </div>
@@ -1888,8 +1888,8 @@ export default function DossierFocusPage() {
           onOpenTrail={() => setTrailOpen(true)}
           onGoToStation={onSelect}
           descriptorStations={descriptorDebug ? descriptorQ.data?.stations : undefined}
-          playbookName={workflow?.name}
-          playbookVersion={workflow?.version}
+          workflowName={workflow?.name}
+          workflowVersion={workflow?.version}
           analystName={me?.user?.name}
         />
       ) : (
@@ -1996,7 +1996,7 @@ export default function DossierFocusPage() {
                   if (zone == null) return null
                   if (!zonasOn) return <React.Fragment key={m.id}>{zone}</React.Fragment>
                   // Cada sub-área da bancada vem de um node — rotula com
-                  // nome · tipo · node_id (liga a tela ao editor de playbook).
+                  // nome · tipo · node_id (liga a tela ao editor de workflow).
                   return (
                     <div key={m.id} className="relative">
                       <DevZoneLabel corner="tr">{zoneNodeLabel(m)}</DevZoneLabel>
@@ -2075,7 +2075,7 @@ const AUDIT_NODE_META: Record<
 }
 
 // Rótulo do NODE na bancada (overlay "Zonas"): nome do node (label do editor)
-// + id do node — o id é o que aparece no editor de playbook.
+// + id do node — o id é o que aparece no editor de workflow.
 function zoneNodeLabel(m: WizardMultiStepStep): string {
   return `${m.label || m.nodeType || "node"} · ${m.id}`
 }

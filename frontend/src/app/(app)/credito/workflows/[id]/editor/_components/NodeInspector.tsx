@@ -668,7 +668,7 @@ function ConditionalBranchInspector({
       <div>
         <p className={tableTokens.header}>Decisao</p>
         <p className={cx(tableTokens.cellSecondary, "mt-1")}>
-          Define uma condicao que avalia o caminho a seguir no playbook.
+          Define uma condicao que avalia o caminho a seguir no workflow.
         </p>
       </div>
       <ConditionBuilder

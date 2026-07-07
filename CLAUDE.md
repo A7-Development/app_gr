@@ -6,157 +6,55 @@
 
 ---
 
-## 🔓 STATUS — MODO ITERACAO DE DESIGN ATIVO (2026-04-27 → ?)
+## 🎨 POLITICA PERMANENTE DE ITERACAO VISUAL E EXPLORACAO (promovida 2026-07-06)
 
-> Sistema em alinhamento com handoffs Strata (bi-padrao, hero-split-auth, futuros). Durante este periodo as regras visuais abaixo estao **temporariamente suspensas** para liberar fidelidade pixel ao handoff sem brigar com tokens.
->
-> **Regras suspensas:**
->
-> 1. **Valores arbitrarios de Tailwind sao permitidos** em qualquer camada (`tremor/`, `charts/`, `design-system/*`, `app/<dominio>/*`, `surfaces/`):
->    - `text-[13px]`, `text-[18px]`, `p-[7px]`, `gap-[3px]`, `w-[180px]`, `h-[42px]`, etc.
->    - `rounded-[4px]`, `rounded-[2px]` fora da escala Tremor.
->    - Espacamentos e larguras especificas do handoff.
-> 2. **Hex literals e `rgba(...)` em componentes / surfaces sao permitidos** alem dos que ja vivem em `tokens/`. Cor solta em codigo de UI nao reprova PR neste periodo.
-> 3. **Inline styles `style={{...}}` sao permitidos** em qualquer camada quando o handoff exigir efeito que Tailwind nao resolve bem (gradientes complexos, positioning especifico, transformacoes pontuais).
-> 4. **Cores Tailwind fora das categorias da §4 sao permitidas** (`orange-*`, `purple-*`, `yellow-*`, `stone-*`, `zinc-*`, `neutral-*`) quando vierem do handoff. Continuam como cor de DADOS apenas em chart series.
->
-> **Liberdade explicita durante este modo (4 niveis de customizacao do Tremor):**
->
-> Para nao haver duvida, durante a janela de iteracao voce TEM liberdade total para:
->
-> 1. **Aplicar classes Tailwind ad-hoc na callsite** (qualquer pagina/componente):
->    valores arbitrarios (`h-[42px]`, `text-[13px]`, `p-[7px]`), hex literals
->    (`bg-[#0F1A2C]`), `style={{...}}`, e cores Tailwind fora da paleta canonica
->    (`orange-*`, `purple-*`, etc) — quando o handoff exigir. Coberto pelos
->    bullets 1-4 acima.
-> 2. **Editar tokens em `frontend/src/design-system/tokens/*.ts`** (`colors`,
->    `spacing`, `radius`, `motion`, `card`, `table`, `typography`, etc).
->    Mudancas propagam para tudo que consome o token. **Esta e a forma
->    preferida** de mudanca sistemica de "cards padrao", "altura de header",
->    "raio default", "tipografia de cell", "duration de animacao".
-> 3. **Editar `frontend/src/app/globals.css` `@theme`** para criar/alterar CSS
->    vars que viram utilities Tailwind v4 (`--color-brand-secondary`,
->    `--header-h`, novos keyframes, etc). Mudanca de paleta global e nova
->    utility nascem aqui.
-> 4. **Criar wrappers customizados em `frontend/src/design-system/components/`**
->    embrulhando primitivos `tremor/*` ou `charts/*` com defaults proprios
->    (ex.: `<HeroCard>` = `<Card>` + gradiente + padding diferente; `<DenseDataTable>`
->    = `<DataTable>` com row height menor por padrao). Esta e exatamente a
->    camada de composicao do design system — feita pra isso.
->
-> **O que continua bloqueado mesmo neste modo:**
->
-> Editar diretamente `frontend/src/components/tremor/*.tsx` ou
-> `frontend/src/components/charts/*.tsx` (camadas verbatim — fork do
-> primitivo). Para customizacao de primitivo, **componha um wrapper na camada
-> `design-system/components/`** (nivel 4 acima). Se voce ESTRITAMENTE precisa
-> mexer no primitivo, pare e discuta antes — fork muda a relacao com o
-> upstream Tremor (toda atualizacao Tremor passa a ser merge manual).
->
-> **Regras que CONTINUAM em vigor (nao sao suspensas):**
->
-> - §2 **stack obrigatoria** — sem novas libs sem autorizacao explicita do usuario.
-> - §3 **arquitetura em 6 camadas** — `tremor/` continua nao-editavel, `surfaces/` continua sem importar de `components/dashboard`, etc.
-> - §11.1 **enum de modulos fechado** — sem modulo novo sem autorizacao.
-> - §11.3 **bounded contexts (backend)** — cross-import entre modulos so via `public.py`.
-> - §11.6 **hierarquia 3 niveis** de navegacao (L1/L2/L3) — sidebar pode aninhar 1 nivel (L2 com children), nunca mais. Max 3 niveis logicos.
-> - §10 **multi-tenant absoluto** (backend) — toda tabela tem `tenant_id`, toda query escopada.
-> - §13 **adapter pattern** (backend).
-> - §14 **proveniencia + auditabilidade** (DNA do sistema).
-> - Idioma da UI em pt-BR, alias `@/*` nos imports, `cx()` em vez de `cn()`, icones Remix, fonte Inter.
->
-> **Quando este modo se desliga:**
->
-> Quando os handoffs principais (bi-padrao, listagens, formularios, surfaces de marca) tiverem suas implementacoes estabilizadas e visualmente aprovadas. No fim desta janela:
->
-> 1. Auditoria automatica varre o codigo coletando todos os valores arbitrarios usados (`text-[Npx]`, `rounded-[Npx]`, hex literals, espacamentos especificos).
-> 2. Valores recorrentes sao **promovidos a tokens nomeados** em `frontend/src/design-system/tokens/` + escala Tailwind config.
-> 3. Codigo e refatorado para usar os tokens.
-> 4. **Regras §4 e §5 voltam a vigorar com forca total**: zero magic numbers em codigo novo, zero hex solto fora de tokens.
-> 5. Este banner e removido. CLAUDE.md volta ao estado restritivo, mas agora com vocabulario expandido.
->
-> **Para Claude Code (qualquer sessao):** durante este modo, NAO bloqueie iteracao visual citando §4 ou §5. NAO sugira "promover a token agora" toda vez que vir uma classe arbitraria — isso vai ser feito em batch no fim. Foque em fidelidade ao handoff. As outras regras (especialmente §2, §3, §10-§14) continuam invioiaveis.
+> Ex-banners "MODO ITERACAO DE DESIGN" (2026-04-27) e "MODO DESIGN EXPLORATORIO" (2026-05-11). A auditoria de 2026-07-06 mostrou que o codigo consolidou esse estado (~1.100 valores arbitrarios em 180 arquivos; a propria §7.1 canoniza `h-[30px]`/`text-[13px]`) — o "temporario" virou politica oficial por decisao do Ricardo. O plano antigo de batch-refactor + promocao em massa a tokens foi aposentado.
 
----
+### Iteracao visual (fidelidade a handoff e polish)
 
-## 🎨 STATUS — MODO DESIGN EXPLORATORIO ATIVO (2026-05-11 → ?)
+1. **Valores arbitrarios de Tailwind sao permitidos em qualquer camada** (`text-[13px]`, `h-[42px]`, `p-[7px]`, `rounded-[4px]`, larguras/espacamentos especificos do design).
+2. **Hex literals, `rgba(...)` e inline styles `style={{...}}` sao permitidos** quando Tailwind nao resolve bem (gradientes complexos, `EChartsOption`, positioning pontual) — preferindo `tokens.*` quando existir equivalente.
+3. **Cores Tailwind fora das categorias da §4** (`orange-*`, `purple-*`, `yellow-*`, etc) sao permitidas quando vierem de handoff ou proposta aprovada. Em series de chart, continue via `chartUtils`; badge semantico de status usa `tableTokens.badge*` (§6).
+4. **Preferencia de mecanismo** (do mais sistemico ao mais pontual): (a) editar tokens em `design-system/tokens/*.ts` quando a mudanca e sistemica ("cards padrao", "raio default", "tipografia de cell"); (b) criar/alterar CSS vars no `@theme` do `globals.css`; (c) compor wrapper em `design-system/components/` (§3); (d) classe ad-hoc na callsite. **Promocao a token e OPORTUNISTA**: valor recorrente vira token quando a area for tocada — nao ha varredura em batch.
+5. **Continua bloqueado**: editar `components/tremor/*` e `components/charts/*` (camadas verbatim — fork muda a relacao com o upstream Tremor). Se ESTRITAMENTE precisar mexer no primitivo, pare e discuta antes.
 
-> Modo paralelo ao "MODO ITERACAO DE DESIGN" acima. O modo de iteracao trata de **polimento visual** (cores arbitrarias, magic numbers, inline styles para casar com handoff). Este trata de **inovacao estrutural** — vem como contrapeso a um efeito colateral percebido pelo Ricardo: o sistema de regras inteiro empurra Claude pra "buscar pattern existente" como reflexo primario, e isso castra propostas mais ousadas onde elas seriam bem-vindas.
->
-> **Licenca explicita durante este modo:**
->
-> 1. **Propor 2-3 alternativas de layout/UX/estrutura ANTES de aplicar pattern canonico.** Implementacao espera escolha do Ricardo. ASCII mock, bullets curtos com tradeoffs, referencias a produtos de mercado — tudo valido.
-> 2. **Propor libs fora da §2** (sem implementar — Ricardo aprova ou recusa). Reduz o reflexo de "se nao esta na tabela, nao existe". Pra implementar, continua precisando do OK; pra **propor**, esta liberado.
-> 3. **Propor componentes novos em `design-system/components/`** (nivel 4 da §1) sem precisar passar pela busca exaustiva em `tremor/`/upstream primeiro. Se for util, vira composite estavel; se nao, jogamos fora — mas a proposta nasce sem atrito.
-> 4. **Usar paleta tailwind completa em propostas** (`orange-*`, `purple-*`, `teal-*`, etc) e gradientes/efeitos visuais arrojados em surfaces e hero zones. Promocao a token nomeado acontece pos-aprovacao, junto com a varredura da §4 quando o MODO ITERACAO DE DESIGN se desligar.
->
-> ### Quando o modo esta ATIVO por default (Claude liga sozinho)
->
-> - **Greenfield estrutural:** primeira pagina de um modulo novo (Risco, Credito quando comecou, futuro Laboratorio). Nao tem shorthand do dominio ainda — brainstorm e o caminho.
-> - **Pattern canonico encaixa mal:** quando aplicar `ListagemComDrilldown` / `DashboardBiPadrao` forcaria 3+ comentarios `// MOTIVO:` ou esconderia a dimensao mais importante do dado.
-> - **Estrutura de dado incomum:** rede de relacionamentos, sequencia de estados com bifurcacao, matriz NxM, timeline ramificada, dados multi-dimensionais que tabela+chart canonico nao expressam bem.
-> - **Surfaces de marca:** login, splash, 404/500, onboarding, landing. "Voz" importa mais que consistencia transacional — e a §4.1/§4.2 ja libera paleta brand + tipografia hero ali.
-> - **Hero zones de dashboard:** os blocos topo (Z1/Z2 do `DashboardBiPadrao`) sao onde diferenciacao agrega mais. Linha de baixo (KPIs, tabelas, ProvenanceFooter) segue pattern.
-> - **Empty/error states ricos:** quando o vazio comunica algo de dominio (ex.: "fonte ainda nao configurada", "carteira ainda nao recebeu primeira sincronizacao") vs vazio mecanico ("sem resultados pra esse filtro").
->
-> ### Quando Ricardo ATIVA explicitamente
->
-> Palavras-trigger no chat: **"ousada"**, **"criativa"**, **"diferente"**, **"alternativa"**, **"outra forma"**, **"ta pobre"**, **"achatado"**, **"sem graca"**, **"me da 2-3 opcoes"**, **"modo exploratorio"**. Reclamacao sobre algo que Claude acabou de produzir tambem ativa ("isso ficou seco demais", "ta achatado").
->
-> ### Quando o modo NAO esta ativo (segue regras duras §1-§7 normalmente)
->
-> - Bug fix, refactor mecanico, rename, migration, edicao de copy/label/tooltip.
-> - CRUD admin que e clone visual de outro CRUD admin ja em prod.
-> - Sub-componente de pagina que ja segue pattern (ex.: nova tab dentro de pagina canonica como [`integracoes/catalogo/[source_type]`](frontend/src/app/(app)/integracoes/catalogo/[source_type]/page.tsx)).
-> - Ricardo disse explicitamente "**faz igual a tela Y**" ou "**copia o pattern X**".
->
-> ### Como Claude sinaliza ativacao
->
-> Primeira linha da resposta: `**[exploratorio ON]**` + 2-3 alternativas em ASCII mock ou bullets curtos com tradeoffs claros (o que ganha, o que perde, referencia a produto/exemplo de mercado). Espera escolha antes de codar.
->
-> ### Como Claude desliga
->
-> Apos escolha do Ricardo, modo OFF na mesma resposta — implementacao volta a respeitar §7 (pattern canonico) e demais regras estruturais. Se a estrutura escolhida ficou util pra outras telas, Claude propoe promover a `design-system/patterns/` como pattern novo.
->
-> ### O que continua INVIOLAVEL mesmo neste modo
->
-> - §7 **patterns canonicos** continuam sendo a referencia obrigatoria — mesmo quando proponho alternativa, ela e comparada contra o pattern mais proximo no tradeoff que apresento.
-> - §10 **multi-tenant absoluto** (backend) — toda tabela tem `tenant_id`, toda query escopada.
-> - §11.3 **bounded contexts (backend)** — cross-import entre modulos so via `public.py`.
-> - §13 **adapter pattern** (backend).
-> - §14 **proveniencia + auditabilidade** (DNA do sistema).
-> - Idioma da UI em pt-BR, alias `@/*` nos imports, `cx()` em vez de `cn()`, icones Remix, fonte Inter.
->
-> ### Hook `audit-page-consistency`
->
-> Enquanto este modo estiver ativo, o hook automatico `PostToolUse:Edit` que dispara a auditoria em todo edit em `(app)/` e `design-system/components/` esta **desligado**. A skill continua disponivel via invocacao manual (`/audit-page-consistency`) quando Ricardo quiser uma varredura.
->
-> ### Quando este modo se desliga
->
-> Quando o catalogo de patterns canonicos cobrir todos os tipos de pagina previstos no roadmap (BI, Controladoria, Risco, Credito, Laboratorio, Admin) e a busca por estrutura nova virar excecao rara. Ate la, **exploration e o default em situacoes greenfield**.
->
-> **Para Claude Code (qualquer sessao):** durante este modo, NAO se autocensure citando §1/§2/§3/§4 ao propor estrutura. NAO caia direto em "qual pattern aplica?" sem antes considerar se a feature pede brainstorm. As regras estruturais (§7, §10, §11.3, §13, §14) continuam vinculantes — esse modo abre a fase de **proposta**, nao a de implementacao.
+### Exploracao estrutural (propor antes de aplicar pattern)
+
+Proponha **2-3 alternativas de layout/UX/estrutura** (ASCII mock ou bullets curtos com tradeoffs, sempre comparadas ao pattern canonico mais proximo) e espere a escolha do Ricardo ANTES de codar, quando:
+
+- **Greenfield estrutural** (primeira pagina de modulo novo) · **dado incomum** (rede de relacionamentos, matriz NxM, timeline ramificada, sequencia com bifurcacao) · **surfaces de marca** (login, 404, onboarding) · **hero zones** de dashboard (Z1/Z2) · **empty/error states ricos** de dominio;
+- O pattern canonico encaixar mal (forcaria 3+ `// MOTIVO:` ou esconderia a dimensao mais importante do dado);
+- Ricardo sinalizar: "ousada", "criativa", "diferente", "alternativa", "me da 2-3 opcoes", "ta pobre", "achatado" — ou reclamar do que acabou de ser produzido.
+
+Sinalize com `**[exploratorio ON]**` na primeira linha e espere a escolha; depois implemente respeitando §7 e as regras estruturais. Se a estrutura escolhida servir a outras telas, proponha promove-la a `design-system/patterns/`. **Propor libs fora da §2 tambem e livre** — implementar continua exigindo autorizacao explicita. Fora desses casos (bug fix, refactor mecanico, rename, CRUD clone de outro CRUD, "faz igual a tela Y"), aplique o pattern canonico direto, sem brainstorm.
+
+### O que continua inviolavel
+
+§2 stack (instalar lib nova exige autorizacao) · §3 camadas e regras de import (`tremor/` e `charts/` verbatim) · §7 patterns canonicos como referencia · §10 multi-tenant absoluto · §11.1 enum fechado de 9 modulos · §11.3 bounded contexts · §11.6 navegacao 3 niveis · §13 adapter pattern · §14 proveniencia + auditabilidade · UI em pt-BR, alias `@/*`, `cx()`, icones Remix, fonte Inter.
+
+*(O hook `PostToolUse` `audit-design-system.cjs` fica desligado enquanto esta politica existir — gate le este titulo. A skill `/audit-page-consistency` continua disponivel manualmente.)*
 
 ---
 
 ## 1. Palavra de ordem: **padrao e consistencia visual**
 
-> ⚠️ **Modo Design Exploratorio ativo:** as regras desta secao valem na fase de **implementacao**. Na fase de **proposta** (greenfield, dado incomum, hero/surface, ou quando Ricardo sinalizar), Claude tem licenca pra propor 2-3 estruturas alternativas antes de cair na ordem de escolha abaixo. Ver banner no topo.
+> As regras desta secao valem na fase de **implementacao**. Na fase de **proposta** (greenfield, dado incomum, hero/surface, ou quando Ricardo sinalizar), aplica-se a exploracao estrutural da politica permanente do topo — 2-3 alternativas antes de cair na ordem de escolha abaixo.
 
 O sistema usa **Tremor Raw** como **ponto de partida** de design system. Ele cobre ~90% dos casos; quando cobrir, use verbatim.
 
-> **Nada que nao esteja em `frontend/src/components/tremor/`, `frontend/src/components/charts/` ou `frontend/src/design-system/` pode aparecer na UI.**
+> **Componente de UI mora em uma destas camadas: `components/tremor/`, `components/charts/`, `design-system/`, `components/<dominio>/` ou `_components/` colocalizado na propria rota.** Componente solto fora dessas camadas nao existe.
 
 Ordem de escolha quando for montar uma tela:
 
 1. Existe em `tremor/` ou `charts/`? Use direto.
 2. Existe no Tremor Raw upstream mas ainda nao foi copiado? Copie verbatim de https://tremor.so/docs e use.
 3. Existe em `src/design-system/components/`? Use direto via barrel `@/design-system/components`.
-4. Nao existe ainda? **Componha em `src/design-system/components/`** a partir de primitivos Tremor + Radix. Um componente novo e aceito se:
-   - **(a)** Usa apenas tokens desta secao §4 (cores, tipografia, spacing, radius). Zero valor arbitrario.
+4. E especifico DESTA pagina/rota? **Componha em `(app)/<rota>/_components/`** (colocalizado) a partir de DS + tremor. Regra de promocao: quando uma 2a pagina precisar do mesmo componente, suba-o para `design-system/components/` (reutilizavel neutro) ou `components/<dominio>/` (reutilizavel do dominio).
+5. E reutilizavel desde o nascimento? **Componha em `src/design-system/components/`** a partir de primitivos Tremor + Radix. Um componente novo e aceito se:
+   - **(a)** Prefere tokens da §4/§6 (cores, tipografia, spacing, radius); valores arbitrarios sao permitidos pela politica do topo, com promocao oportunista a token.
    - **(b)** Reutiliza Radix UI quando houver equivalente (Dialog, Popover, Dropdown, Tooltip, etc) — nunca reimplementar a mecanica de acessibilidade.
-   - **(c)** E documentado na rota `/design` (dev-only) com proposito + exemplo + quando usar/nao usar, antes de ir pra producao.
-4. Se a proposta quebrar uma das 3 regras acima OU introduzir uma primitiva que o Tremor ja oferece com outro nome, **pare e discuta antes de escrever codigo.**
+   - **(c)** E registrado no catalogo [`design-system/components/README.md`](frontend/src/design-system/components/README.md) (proposito + quando usar/nao usar). A rota `/design` e vitrine dev-only — adicionar demo la e desejavel, nao gate.
+6. Se a proposta quebrar uma das regras acima OU introduzir uma primitiva que o Tremor ja oferece com outro nome, **pare e discuta antes de escrever codigo.**
 
 Tremor Raw e referencia, nao cela. Quando "fazer como o Tremor faz" conflitar com "resolver melhor o problema do usuario", vence o segundo — desde que (a), (b) e (c) sejam respeitados. Design system e vivo.
 
@@ -164,7 +62,7 @@ Tremor Raw e referencia, nao cela. Quando "fazer como o Tremor faz" conflitar co
 
 ## 2. Stack obrigatoria (sem substituicoes)
 
-> ⚠️ **Modo Design Exploratorio ativo:** Claude pode **propor** libs fora desta tabela quando uma alternativa for genuinamente melhor pro caso de uso. Implementar continua exigindo autorizacao explicita do Ricardo. Ver banner no topo.
+> Claude pode **propor** libs fora desta tabela quando uma alternativa for genuinamente melhor pro caso de uso (politica permanente do topo). **Implementar** continua exigindo autorizacao explicita do Ricardo.
 
 | Area | Obrigatorio | Proibido |
 |---|---|---|
@@ -185,13 +83,17 @@ Tremor Raw e referencia, nao cela. Quando "fazer como o Tremor faz" conflitar co
 | Virtualizacao | `@tanstack/react-virtual` quando lista > ~100 itens | react-window, react-virtualized |
 | Command palette | `cmdk` | reimplementacao manual de command menu |
 | Primitivos Radix | `@radix-ui/react-avatar` e outros sem equivalente no Tremor | Radix cru para o que o Tremor ja cobre |
+| Toasts | `sonner` (via `Toaster` no root layout) | react-hot-toast, react-toastify, toast manual |
+| Tema (dark mode) | `next-themes` (`ThemeProvider` no root layout) | toggling manual de classe `dark`, prefers-color-scheme ad-hoc |
+| Table engine | `@tanstack/react-table` — **apenas por dentro de `DataTable`/`DataTableShell`/`DenseTable`** (nunca cru em pagina) | AG Grid, data grids externos, `useReactTable` direto em page.tsx |
+| Export planilha | `xlsx` (SheetJS) para exportar dados | exceljs, csv manual concatenado |
 | Markdown (output IA) | `react-markdown` + `remark-gfm` — uso restrito a `<AIPanel />` e telas de auditoria de IA | uso de markdown em tabelas/forms regulares; renderizacao manual ad-hoc de markdown |
 | LLM gateway (backend) | adapter proprio em `app/modules/integracoes/adapters/llm/<provider>/`; LiteLLM aceito por baixo se virar multi-provider real | chamadas diretas ao SDK do provider em codigo de dominio que NAO seja o adapter |
 | PII redaction (backend) | regex CPF/CNPJ com check digit (MVP) → `presidio-analyzer` + `presidio-anonymizer` na Fase 2 | enviar payload bruto a LLM externo |
 | Cache + rate limit (backend) | em-processo no MVP; Redis em Phase 2 (tenant token bucket multi-dim TPM/RPM/BRL/dia) | `threading.Timer`, sleeps, locks ad-hoc |
-| Specialist agents / motor agentico (backend) | `anthropic >= 0.71` (SDK oficial Anthropic Messages API com tool use + prompt caching nativos). Mora HOJE em `app/shared/agents/runtime.py`; migra para `app/agentic/engine/runtime.py` quando o refator de §19 acontecer. | reimplementar tool loop a mao com httpx; usar subprocess do Claude Code CLI (quebra em `SelectorEventLoop` no Windows) |
-| Playbook engine (backend) | Graph declarativo imutavel + variable bindings tipados — vive HOJE em `app/modules/credito/workflows/` (rebatizado de "workflow"), **promove a `app/agentic/playbooks/` como primitivo horizontal** (decisao 2026-05-20). Ver §19.10. | codigo imperativo passo-a-passo; reimplementar grafo a mao |
-| Workflow / playbook visual editor (frontend) | `@xyflow/react` (React Flow v12+) — autorizado 2026-04-30. Usado pelo editor de playbooks (renderiza `StrataNode`, `AgentInputBindingsField`, chips de `producedVars`). | reimplementar canvas drag-and-drop manualmente; libs alternativas (rete, dagre standalone) |
+| Specialist agents / motor agentico (backend) | `anthropic >= 0.71` (SDK oficial Anthropic Messages API com tool use + prompt caching nativos). Vive em `app/agentic/engine/runtime.py` (refator de §19 executado). | reimplementar tool loop a mao com httpx; usar subprocess do Claude Code CLI (quebra em `SelectorEventLoop` no Windows) |
+| Workflow engine (backend) | Graph declarativo imutavel + variable bindings tipados — vive em `app/agentic/workflows/` (primitivo horizontal). Ver §19.10. | codigo imperativo passo-a-passo; reimplementar grafo a mao |
+| Workflow visual editor (frontend) | `@xyflow/react` (React Flow v12+) — autorizado 2026-04-30. Usado pelo editor de workflows (renderiza `StrataNode`, `AgentInputBindingsField`, chips de `producedVars`). | reimplementar canvas drag-and-drop manualmente; libs alternativas (rete, dagre standalone) |
 
 Instalar qualquer biblioteca fora desta tabela exige autorizacao explicita do usuario no chat.
 
@@ -199,7 +101,7 @@ Instalar qualquer biblioteca fora desta tabela exige autorizacao explicita do us
 
 ## 3. Arquitetura em 6 camadas (Strata Design System)
 
-> ⚠️ **Modo Design Exploratorio ativo:** as camadas e regras de import permanecem vinculantes na **implementacao**. Na **fase de proposta**, Claude pode esbocar componentes novos em `design-system/components/` (nivel 4) sem precisar justificar com `// MOTIVO:` ou exaurir a busca em `tremor/`/upstream antes. Aprovacao final do Ricardo valida onde mora. Ver banner no topo.
+> As camadas e regras de import sao vinculantes na **implementacao**. Na **fase de proposta**, Claude pode esbocar componentes novos em `design-system/components/` sem exaurir a busca em `tremor/`/upstream antes (politica permanente do topo). Aprovacao final do Ricardo valida onde mora.
 
 ```
 src/components/tremor/             <- Primitivos Tremor Raw (verbatim da doc).
@@ -208,7 +110,8 @@ src/components/tremor/             <- Primitivos Tremor Raw (verbatim da doc).
 src/components/charts/             <- Charts do Tremor (verbatim). Mesma regra.
 
 src/design-system/tokens/          <- Tokens TS espelhando CSS vars do globals.css.
-                                       (colors, fonts, spacing, radius, motion, echarts-theme).
+                                       (spacing, motion, card, table, typography,
+                                       echarts-theme, provenance, node-category, ...).
                                        Inclui paleta de marca Strata (navy, navy-dark, orange)
                                        e escala tipografica hero — uso restrito a surfaces/.
 
@@ -225,8 +128,11 @@ src/design-system/components/      <- Componentes do Strata Design System (FIDC-
                                        USA apenas tremor/ + charts/ + tokens/, nunca Tailwind
                                        bruto de cor / Radix cru.
 
-src/design-system/patterns/        <- Composicoes copy-paste-edit (DashboardOperacional,
-                                       ListagemComDrilldown). Templates de pagina autenticada.
+src/design-system/patterns/        <- Composicoes copy-paste-edit (DashboardBiPadrao,
+                                       DashboardOperacional, ListagemComDrilldown,
+                                       ListagemCrudInline, ListagemCrudExpand,
+                                       ListagemCrudCards, WizardMultiStep).
+                                       Templates de pagina autenticada.
 
 src/design-system/surfaces/        <- Superficies de marca (NAO sao dashboards).
                                        Login, splash, 404/500, marketing/landing publica.
@@ -240,9 +146,15 @@ src/design-system/surfaces/        <- Superficies de marca (NAO sao dashboards).
 src/components/<dominio>/          <- Componentes amarrados a um dominio especifico
                                        (ex.: "bi", "contratos", "fornecedores").
                                        Compostos de design-system/ + tremor/ + charts/.
+
+src/app/(app)/**/_components/      <- Componentes COLOCALIZADOS de uma pagina/rota
+                                       especifica (camada legitima — decisao 2026-07-06).
+                                       Compostos de design-system/ + tremor/ + charts/.
+                                       Quando uma 2a pagina precisar, PROMOVA para
+                                       design-system/components/ ou components/<dominio>/.
 ```
 
-**Catalogo completo de componentes:** ver [`frontend/src/design-system/components/README.md`](frontend/src/design-system/components/README.md) — registro vivo dos 37 componentes (9 canonicos do handoff Strata + 28 A7 Credit composites como `PageHeader`, `ModuleSwitcher`, `AuthGuard`, `Breadcrumbs`, `OriginDot`, `FilterPill`, `CardMenu`, `DenseTable`, etc.). Antes de criar componente novo, consulte este catalogo — provavelmente ja existe.
+**Catalogo completo de componentes:** ver [`frontend/src/design-system/components/README.md`](frontend/src/design-system/components/README.md) — registro vivo dos ~90 componentes (canonicos do handoff Strata + A7 Credit composites como `PageHeader`, `ModuleSwitcher`, `AuthGuard`, `Breadcrumbs`, `OriginDot`, `FilterPill`, `CardMenu`, `DenseTable`, `AIPanel`, `AgentLiveStatus`, `FinancialTable`, etc.). Antes de criar componente novo, consulte este catalogo — provavelmente ja existe.
 
 **Imports permitidos por camada:**
 
@@ -252,8 +164,9 @@ src/components/<dominio>/          <- Componentes amarrados a um dominio especif
 - `design-system/primitives/` importa: `@/components/tremor/*` + nova `Sheet.tsx`.
 - `design-system/components/` importa: `@/components/tremor/*`, `@/components/charts/*`, `@/design-system/tokens/*`, `@/design-system/primitives/*`, `@/lib/*`, `@remixicon/react`, primitivos Radix **sem equivalente no Tremor** (ex.: `@radix-ui/react-avatar`, `@radix-ui/react-hover-card`), `cmdk`, `echarts-for-react`. **Proibido**: Radix para o que o Tremor ja cobre, Recharts direto, classes de cor Tailwind ad-hoc.
 - `design-system/patterns/` importa: `@/design-system/components/*` + `@/design-system/tokens/*` + `@/components/tremor/*`. **Sao templates copiaveis** — escopo: composicao + dados de exemplo.
-- `design-system/surfaces/` importa: `@/components/tremor/*` + `@/design-system/primitives/*` + `@/design-system/tokens/*` (incluindo `tokens.colors.brand` e `tokens.typography.hero`) + `@remixicon/react` + assets de marca (logo SVG). **Proibido**: importar de `@/design-system/components/*` (componentes de dashboard nao pertencem a superficie de marca), importar de `<dominio>/*`, hex literal solto fora de `tokens/`.
+- `design-system/surfaces/` importa: `@/components/tremor/*` + `@/design-system/primitives/*` + `@/design-system/tokens/*` (incluindo `tokens.colors.brand` e `tokens.typography.hero`) + `@remixicon/react` + assets de marca (logo SVG). **Proibido**: importar de `@/design-system/components/*` (componentes de dashboard nao pertencem a superficie de marca; excecao: `StrataIcon` — ver §4.1 regra 2), importar de `<dominio>/*`, hex literal solto fora de `tokens/`.
 - `<dominio>/` importa: `@/design-system/*`, `@/components/tremor/*`, `@/components/charts/*`, hooks de dominio, types de dominio. **Nunca importa de outro dominio.**
+- `(app)/**/_components/` (colocalizado) importa: o mesmo que `<dominio>/` + hooks/types da propria rota. **Nunca importa de `_components/` de OUTRA rota** — se precisou, e sinal de promocao pra camada compartilhada.
 
 **Barrel oficial:** `import { ... } from "@/design-system/components"` re-exporta tudo.
 
@@ -261,9 +174,7 @@ src/components/<dominio>/          <- Componentes amarrados a um dominio especif
 
 ## 4. Tokens e cores
 
-> ⚠️ **Modo Design Exploratorio ativo:** em propostas (especialmente hero zones, surfaces de marca, empty states ricos), Claude pode usar a paleta tailwind completa (`orange-*`, `purple-*`, `teal-*`, gradientes arrojados). Promocao a token nomeado acontece pos-aprovacao, em batch junto com a varredura do MODO ITERACAO DE DESIGN. Ver banner no topo.
->
-> Esta secao continua governando codigo de **listagens/dashboards transacionais** ja estabelecidos — onde mudar cor a esmo confunde o usuario.
+> Esta secao define o **vocabulario canonico de cor** — o default de qualquer tela. A politica permanente do topo libera cores fora destas categorias **quando vierem de handoff ou proposta aprovada** (hero zones, surfaces, empty states ricos), com promocao oportunista a token. Em **listagens/dashboards transacionais ja estabelecidos**, mudar cor a esmo confunde o usuario — fique na paleta abaixo.
 
 **Paleta Tremor — unicas cores brutas aceitas:**
 
@@ -274,19 +185,19 @@ src/components/<dominio>/          <- Componentes amarrados a um dominio especif
 | Destrutivo / erro | `red-*` (em qualquer escala + `dark:`) | ErrorState, Dialog destructive, Button destructive, validacao de form, toasts de erro |
 | **Dados (chart)** — paleta A7 Credit | cores de `chartColors` em `@/lib/chartUtils`, na ordem canonica: `slate` → `sky` → `teal` → `emerald` → `amber` → `rose` → `violet` → `indigo`. `blue`/`gray`/`cyan`/`pink`/`lime`/`fuchsia` existem no dicionario mas **nao iteram no default** — use por override explicito. | **apenas em `src/components/charts/`** ou quando a cor vier dinamicamente de `getColorClassName()`. `slate` (1a serie) escolhido por ser azul-acinzentado de baixa saturacao — nao cansa durante horas de analise. |
 
-**Proibido:**
-- Valores arbitrarios de cor em **classes Tailwind**: `text-[#123abc]`, `bg-[rgb(...)]`, `border-[hsl(...)]`.
+**Proibido (independente da politica do topo):**
 - **`slate-*` como cor de atencao/selecao** — use `blue-*`. `slate` e exclusivamente para dados de chart + neutros raros.
 - **`blue-*` como cor de serie default em chart** — a 1a cor iteravel da paleta A7 e `slate`, nao `blue`. `blue` so como override explicito `<Chart colors={["blue"]}>`.
-- Cores Tailwind fora das categorias acima: `orange-*`, `purple-*`, `yellow-*`, `stone-*`, `zinc-*`, `neutral-*`. (`teal`, `sky`, `rose`, `indigo`, `violet` estao liberadas **somente para series de chart**, via `chartUtils`.)
-- Usar cores de dados (`emerald`, `teal`, `rose`, etc) como cor semantica geral fora de charts (ex.: `bg-emerald-500` em badge de "ativo" — use `Badge variant="success"` do Tremor).
-- Gradientes manuais (`bg-gradient-to-*` com cores arbitrarias).
+- **Cor semantica de status improvisada**: badge de status em tabela/lista usa os tokens nomeados `tableTokens.badgeSuccess` / `badgeWarning` / `badgeDanger` / `badgeNeutral` (§6) — nao recrie a receita `bg-emerald-50 text-emerald-700 ...` inline (codigo novo usa token; legado converte quando tocar). Fora de tabela, `Badge variant` do Tremor continua valendo.
+- Gradientes manuais (`bg-gradient-to-*` com cores arbitrarias) em pagina autenticada — gradiente de marca so em `surfaces/` (§4.1).
+
+**Permitido com criterio (politica do topo):** valores arbitrarios de cor (`bg-[#...]`) e cores fora das categorias acima, quando vierem de handoff/proposta aprovada — prefira token quando existir equivalente.
 
 **Excecao explicita — ECharts option objects:** hex literals (`#3B82F6`, `#F59E0B`, `#10B981`, etc.) sao **permitidos** dentro de `EChartsOption` (em `series[].itemStyle.color`, `lineStyle.color`, `areaStyle.color.colorStops`, gradientes de eixo, etc.) porque Tailwind nao alcanca o renderer do canvas. Preferir, quando viavel, valores de `tokens.colors.chart` ou nomes Tremor mapeados — hex inline e aceitavel quando o tipo da `EChartsOption` exige string de cor.
 
 **Dark mode:** sempre suportar. Usar as mesmas classes que o Tremor usa (`dark:bg-gray-950`, `dark:text-gray-50`, `dark:border-gray-800`). O `<html>` ja tem `dark:bg-gray-950` em `layout.tsx`.
 
-**Espacamento, tipografia, radius:** herdar do Tremor. Sem classes magicas (`text-[13px]`, `p-[7px]`). Se precisar de um tamanho que o Tremor nao cobre, pare e discuta.
+**Espacamento, tipografia, radius:** herdar do Tremor como default. Valores arbitrarios (`text-[13px]`, `h-[30px]`, `p-[7px]`) sao permitidos pela politica do topo — os controles do FilterBar/header ja padronizam `h-[30px]`/`text-[13px]` (§7.1). Valor recorrente vira token quando a area for tocada.
 
 ### 4.1 Tokens de marca Strata (escopo restrito a `surfaces/`)
 
@@ -330,9 +241,9 @@ Uso de `hero.*` fora de `surfaces/` e bloqueador de PR. Pagina autenticada conti
 - **Idioma da UI:** sempre pt-BR. Strings voltadas para usuario em pt-BR. Mensagens de erro tecnicas (console/dev) podem ser em ingles.
 - **Imports:** usar sempre alias `@/*` (nunca `../../../`).
 - **Componentes:** `function Component() { return (...) }` exportado. Props tipadas com `type`, nao `interface`, a menos que precise de extends.
-- **`use client`** so quando necessario (interatividade, hooks de browser). Por padrao, Server Components.
+- **`use client`**: paginas de dados sao client components na pratica — consequencia direta do `react-query` exigido pela §2 (42/51 paginas hoje). A regra util: **nao vazar `use client` para componentes folha/presentacionais** que so recebem props — esses ficam server-compativeis por default.
 - **Nenhum `any`** em codigo de dominio. Em codigo verbatim do Tremor, preservar com `// eslint-disable-next-line @typescript-eslint/no-explicit-any`.
-- **Nada de inline styles** (`style={{...}}`) exceto quando:
+- **Inline styles** (`style={{...}}`): evitar como default; permitidos pela politica do topo quando Tailwind nao expressa bem o efeito. Casos consagrados:
   - O Tremor exige (ex.: `style={{ color }}` em cores dinamicas via paleta).
   - Codigo em `src/design-system/surfaces/*` precisa expressar efeito **nao representavel em Tailwind** (radial-gradient multi-stop, SVG pattern fills, layered backgrounds com positioning especifico). Mesmo nesse caso, **todo valor referencia tokens** — proibido hex literal solto. Ex.: `background: \`linear-gradient(135deg, ${tokens.colors.brand.navy}, ${tokens.colors.brand.navyDark})\``.
   - Cores, gradientes e tipografia dentro de `EChartsOption` (series, axis, tooltip). Tailwind nao chega no canvas do ECharts. Preferir `tokens.colors.chart`; hex inline aceitavel quando o tipo exige.
@@ -352,7 +263,7 @@ Uso de `hero.*` fora de `surfaces/` e bloqueador de PR. Pagina autenticada conti
 - **Transacionais grandes** (cessoes, cedentes, sacados — milhares de rows com filtros complexos) — usar `<DataTable>` direta em `src/design-system/components/DataTable/`. Virtualization automatica se rows > 100.
 - **Series temporais FIDC** (PL, cotas, rentabilidade mes a mes) — usar `<DenseTable.Series>` (modo transposto da DenseTable: periodos como colunas, Austin-style, density compact default; absorveu a antiga CompactSeriesTable).
 - **Tabelas hierarquicas** (BalanceTable, etc — multi-nivel com expand) — `<DataTable>` direta + `enableExpanding`/`getSubRows`/`expandedColumnId`. Nao cabe no `<DataTableShell>`.
-- **Tipografia + cores em CELL renderers**: SEMPRE via **`tableTokens.*`** de `@/design-system/tokens/table` — NUNCA `text-xs`, `text-sm`, `text-[Npx]`, `text-gray-XXX` literais inline. Excecao com `// MOTIVO:` no proprio cell. Tokens disponiveis: `cellText` (12px texto), `cellTextMono` (12px mono), `cellSecondary` (12px gray-500), `cellMuted` (12px placeholder), `cellStrong` (12px semibold), `cellNumber`/`cellNumberSecondary`/`cellNumberPositive`/`cellNumberNegative` (tabular-nums), `badge`/`badgeWithDot` (11px), `header` (10px eyebrow). Tudo 12px de base — cabe em row de density compact (h-8). **Texto principal em dark = `gray-100`, NAO `gray-50`.**
+- **Tipografia + cores em CELL renderers**: SEMPRE via **`tableTokens.*`** de `@/design-system/tokens/table` — NUNCA `text-xs`, `text-sm`, `text-[Npx]`, `text-gray-XXX` literais inline. Excecao com `// MOTIVO:` no proprio cell. Tokens disponiveis: `cellText` (12px texto), `cellTextMono` (12px mono), `cellSecondary` (12px gray-500), `cellMuted` (12px placeholder), `cellStrong` (12px semibold), `cellNumber`/`cellNumberSecondary`/`cellNumberPositive`/`cellNumberNegative` (tabular-nums), `badge`/`badgeWithDot` (11px), `badgeSuccess`/`badgeWarning`/`badgeDanger`/`badgeNeutral` (badge semantico de status — receita emerald/amber/red/gray canonica; codigo novo usa estes, nao a receita inline), `header` (10px eyebrow). Tudo 12px de base — cabe em row de density compact (h-8). **Texto principal em dark = `gray-100`, NAO `gray-50`.**
 - **Bordas em `rowClassName` da DataTable**: use sempre `border-t-{color}` / `border-b-{color}` / `border-y-{color}` (forma com lado explicito) — NUNCA o shorthand `border-{color}`. O shorthand seta `border-color` nos 4 lados, sobrescrevendo a `border-bottom-color: gray-100` default que a DataTable aplica em todo `<tr>`. Resultado visual: linhas com `border-t border-gray-200` ficam parecendo "boxed" (borda tambem embaixo, na cor errada). Mesma regra para `subtotal`, `total`, `section` em tabelas hierarquicas.
 - Nunca AG Grid, nunca data grid externo, nunca `Table` do Tremor cru em pagina (Tremor `Table` so como primitivo dentro de DataTable/DenseTable.Series).
 
@@ -362,11 +273,13 @@ Uso de `hero.*` fora de `surfaces/` e bloqueador de PR. Pagina autenticada conti
 
 Toda **pagina autenticada** (`src/app/(app)/*`) **deve preferir** comecar de um dos patterns canonicos em `src/design-system/patterns/`:
 
-- **DashboardBiPadrao** — Pagina canonica do BI (handoff bi-padrao 2026-04-26). 5 zonas: Z1 PageHeader (titulo + IA + acoes) · Z2 TabNavigation L3 · Z3 FilterBar sticky **(Card branco em faixa cinza-50 — anatomy igual `/credito/workflows`, ver §7.1)** · Z4 conteudo (InsightBar + KpiStrip 5 KPIs + grid 2/3+1/3 + grid 3-col + DataTable) · Z5 ProvenanceFooter. Lateral: AIPanel violeta in-layout + DrillDownSheet. Use para qualquer dashboard analitico (BI, Controladoria, Risco) que envolva KPIs + charts + tabela com drill-down.
-- **DashboardOperacional** — PageHeader + FilterBar + KpiStrip (4 KPIs) + Grid 2×2 EChartsCards + DataTable de atividade recente. Use para dashboards mais simples sem AI panel (`/bi/operacoes` legado, telas operacionais).
+- **DashboardBiPadrao** — Pagina canonica do BI (handoff bi-padrao 2026-04-26). 5 zonas: Z1 PageHeader (titulo + IA + acoes) · Z2 TabNavigation L3 · Z3 FilterBar sticky **(anatomy FLAT — linha branca com `border-b`, ver §7.1)** · Z4 conteudo (InsightBar + KpiStrip 5 KPIs + grid 2/3+1/3 + grid 3-col + DataTable) · Z5 ProvenanceFooter. Lateral: AIPanel violeta in-layout + DrillDownSheet. Use para qualquer dashboard analitico (BI, Controladoria, Risco) que envolva KPIs + charts + tabela com drill-down.
+- **DashboardOperacional** — PageHeader + FilterBar + KpiStrip (4 KPIs) + Grid 2×2 EChartsCards + DataTable de atividade recente. Use para dashboards mais simples sem AI panel (telas operacionais).
 - **ListagemComDrilldown** — PageHeader + FilterBar + DataTable + DrillDownSheet (URL-synced via `?selected=ID`). Use para listagem de **dados de dominio** (gerados pelo sistema): Cessoes, Cedentes, Sacados, Cobranca, Reconciliacao, Eventos. Drill-down abre painel rico (PropertyList + Tabs + Timeline + LinkedObjects).
 - **ListagemCrudInline** — PageHeader (com botao "+ Novo") + Card { `<FilterSearch>` + `<SegmentSwitch>` + contador `X de Y` + DataTable } + DrillDownSheet de criar (`?action=new`) + DrillDownSheet de editar (`?selected=<id>`) + Dialog destrutivo (state local). Use para **gestao administrativa** de cadastros pequenos a medios (~5-200 rows) onde **cada entidade tem identidade tabular** (compara linha-a-linha) e criar/editar/excluir acontecem inline: credenciais de provedor LLM, usuarios do tenant, etiquetas, templates de regra, fornecedores. Filtros sao **client-side** ate ~200 rows (busca via `globalFilter` do TanStack + segments locais); acima disso, copy-paste-edit + adicione `<FilterChip>` por coluna; acima de 2000 rows, migre para server-side (paginacao + busca debounced). Primeira instancia em producao: [`/admin/ia/providers`](frontend/src/app/(app)/admin/ia/providers/page.tsx).
 - **ListagemCrudCards** — PageHeader (`title` + `info` tooltip + `subtitle` eyebrow + botao "+ Novo") + Card { `<FilterSearch>` + `<SegmentSwitch>` + contador `X de Y` } + grid responsivo `1/2/3` colunas de `EntityCard` + DrillDownSheet de criar (`?action=new`) + (opcional) DrillDownSheet de editar (`?selected=<id>`, omita se edit redireciona pra outra rota) + Dialog destrutivo. Use para **gestao administrativa** onde **cada entidade tem identidade visual** (icone + titulo + descricao + metadata heterogeneo + badges + acoes) e cabe melhor em CARD do que em linha de tabela: workflows, agentes IA, dashboards salvos, conexoes externas, templates de extracao. Volume tipico < ~50 cards (~3 paginas de scroll); acima de 200 items considere migrar pra `ListagemCrudInline`. **EntityCard canonico**: `<Card>` com `<div className={cardTokens.body}>`, hover `border-blue-500`, layout em 3 linhas (avatar+badges+dropdown / titulo+descricao / metadata com `·`), DropdownMenu de acoes com `e.stopPropagation()` no trigger. Cor do avatar via tokens nomeados (ex.: `nodeCategoryTokens`) — proibido `bg-X-N` solto. Primeira instancia em producao: [`/credito/workflows`](frontend/src/app/(app)/credito/workflows/page.tsx).
+- **ListagemCrudExpand** — Variante hierarquica de `ListagemCrudInline`: mesma anatomia, mas DataTable com sub-rows expansiveis via chevron (`enableExpanding`/`getSubRows`). Use para cadastros pai-filho (plano de contas, categorias com sub-categorias). Filtro persiste o pai se algum descendente casa; excluir pai com filhos bloqueia.
+- **WizardMultiStep** — Wizard enterprise 3 colunas + top rail sticky (side steps colapsavel · workspace central com views waiting/running/completed/failed/blocked · evidence panel a direita). Use para processos multi-step dirigidos por workflow (esteira de credito/dossie). URL state `?step=<nodeId>&panel=...`; recebe DADOS via props (queries ficam no caller); `AgentLiveStatus` via `renderRunning`.
 
 Toda **pagina nao-autenticada / superficie de marca** (`src/app/(auth)/*`, `src/app/error.tsx`, `not-found.tsx`, futuras paginas publicas) nasce de um template em `src/design-system/surfaces/`:
 
@@ -390,7 +303,7 @@ Patterns e surfaces sao **copy-paste-edit** — nao componentes black-box. Copie
 
 Implementacao oficial em [`src/design-system/components/FilterBar/index.tsx`](frontend/src/design-system/components/FilterBar/index.tsx). Nenhuma pagina deve recriar essa estrutura inline — composer com `<FilterBar>` + filhos canonicos. (Tech-debt conhecido: `operacoes2/3/4` e `panorama` ainda usam uma toolbar inline equivalente em vez do componente — visual ja identico; unificar pro componente e follow-up.)
 
-**Altura canonica dos controles** = ~30px (alinhada com `HEADER_BTN_CLASS` do `DashboardHeaderActions`). Todos os controles do FilterBar (FilterChip, FilterSearch, RemovableChip, MoreFiltersButton, SavedViewsDropdown) usam `h-[30px] px-2.5 text-[13px]` explicito. Botoes do header tambem chegam em ~30px via `py-1 text-[13px]`. Esses dois valores (`h-[30px]`, `text-[13px]`) sao candidatos a token (`tokens.controls.height`/`text`) na varredura final do Modo Iteracao de Design — por enquanto continuam como arbitrary values padronizados.
+**Altura canonica dos controles** = ~30px (alinhada com `HEADER_BTN_CLASS` do `DashboardHeaderActions`). Todos os controles do FilterBar (FilterChip, FilterSearch, RemovableChip, MoreFiltersButton, SavedViewsDropdown) usam `h-[30px] px-2.5 text-[13px]` explicito. Botoes do header tambem chegam em ~30px via `py-1 text-[13px]`. Esses dois valores (`h-[30px]`, `text-[13px]`) sao candidatos a token (`tokens.controls.height`/`text`) via promocao oportunista — por enquanto continuam como arbitrary values padronizados.
 
 **Per-element coloring em controles compostos** (regra dura): em controles com multiplos elementos visuais (ícone + label + valor + chevron, etc), aplique cor **por elemento**, nunca via `text-X` no `<button>`/`<div>` raiz. Razao: cor no elemento raiz se propaga por inheritance e achata a hierarquia visual (label e valor ficam mesma cor). Padrao canonico do FilterChip:
 
@@ -400,7 +313,7 @@ Implementacao oficial em [`src/design-system/components/FilterBar/index.tsx`](fr
 
 Botoes que parecem chip (ex.: `MoreFiltersButton`, qualquer Popover trigger custom) tambem seguem essa anatomy — texto principal em `gray-900` (nao `gray-600`/`700`) para nao parecerem "menores" que os chips reais.
 
-**Antipattern: button cru duplicando MoreFiltersButton.** Quando uma pagina precisa de um trigger "Mais filtros" wrapped num Popover (lista de dimensoes para adicionar), e tentador escrever um `<button>` cru — o `MoreFiltersButton` canonico hoje nao aceita `asChild` para Popover wrapping. Se for inevitavel duplicar, **espelhe a anatomy completa** (mesmas classes, mesmas cores per-element). Followup: estender `MoreFiltersButton` com suporte a `asChild` para fechar essa porta.
+**Trigger "Mais filtros" custom:** `MoreFiltersButton` aceita `asChild` (Radix Slot) — use-o como trigger de Popover em vez de escrever `<button>` cru duplicando a anatomy.
 
 Antes de escrever uma `page.tsx` nova, pergunte:
 - E pagina autenticada? Qual **pattern** aplica?
@@ -408,7 +321,9 @@ Antes de escrever uma `page.tsx` nova, pergunte:
   - Dashboard simples sem IA → `DashboardOperacional`
   - Listagem de dados de dominio (drill-down de leitura) → `ListagemComDrilldown`
   - Gestao administrativa CRUD com identidade tabular (linha-a-linha) → `ListagemCrudInline`
+  - Gestao administrativa CRUD hierarquica (pai-filho, sub-rows) → `ListagemCrudExpand`
   - Gestao administrativa CRUD com identidade visual (icone + descricao rica) → `ListagemCrudCards`
+  - Processo multi-step dirigido por workflow → `WizardMultiStep`
 - E pagina nao-autenticada / pagina de erro / landing? Qual **surface** aplica?
 
 Se nenhum pattern atual couber, componha direto a partir de `design-system/components/` + `tremor/`. Se a estrutura for util a outras telas, **promova-a a pattern** (novo arquivo em `patterns/`) — patterns nascem de pages reais, nao de especulacao.
@@ -452,7 +367,7 @@ A rota `/design` (dev-only via `process.env.NODE_ENV !== "production"`) mostra t
 
 1. **Nenhum estado morto/ambiguo.** Qualquer operacao > ~400ms expõe um indicador de atividade: spinner no botao (`isLoading`/`isPending` dos primitivos Tremor), banner "trabalhando…", skeleton, ou barra de progresso. Botao que dispara trabalho **sempre** entra em `isLoading` (nunca fica clicavel e mudo). Operacao longa (segundos+) **sempre** tem texto do que esta acontecendo + expectativa de tempo ("Consultando a JUCESP — pode levar 1-2 min").
 
-2. **Trabalho de backend longo e VISIVEL ao vivo, nao so no fim.** Quando um processo roda em background/assincrono (resume de playbook, agente, sync, JUCESP, extracao), o estado intermediario tem que ser **observavel pelo frontend enquanto roda** — node `RUNNING` commitado e visivel ao polling, SSE de tool_use, ou status incremental. "Commita so no fim" (o usuario ve `running` generico sem detalhe por minutos) **e o bug recorrente** — nao repetir. Cada etapa/no de um processo multi-step mostra: pendente (dormante) → rodando (ativo, com o que faz) → concluido/falhou. As transicoes aparecem **conforme acontecem**.
+2. **Trabalho de backend longo e VISIVEL ao vivo, nao so no fim.** Quando um processo roda em background/assincrono (resume de workflow, agente, sync, JUCESP, extracao), o estado intermediario tem que ser **observavel pelo frontend enquanto roda** — node `RUNNING` commitado e visivel ao polling, SSE de tool_use, ou status incremental. "Commita so no fim" (o usuario ve `running` generico sem detalhe por minutos) **e o bug recorrente** — nao repetir. Cada etapa/no de um processo multi-step mostra: pendente (dormante) → rodando (ativo, com o que faz) → concluido/falhou. As transicoes aparecem **conforme acontecem**.
 
 3. **Desfecho sempre explicito.** Sucesso, vazio, erro e falha tem estado visivel e honesto (ver tambem §14.6 e o tratamento de erro transitorio vs definitivo). Nada de "parou e nao sei por que". Erro mostra o que houve + o que fazer; sucesso confirma; vazio explica.
 
@@ -497,7 +412,7 @@ Quando o usuario pedir "cria uma pagina de X" ou "audita a tela Y", prefira invo
 | Testes | pytest + pytest-asyncio + httpx | unittest manual |
 | Task scheduling | APScheduler (MVP); Celery/Temporal (futuro) | threading.Timer ad-hoc |
 | HTTP client | httpx (async) | requests |
-| Logging | `structlog` ou `logging` com JSON formatter | `print()` |
+| Logging | `logging` stdlib (logger nomeado por modulo) | `print()` em codigo de dominio; structlog (removido — era dep morta) |
 | Secrets | `.env` em dev, env vars no systemd em prod | hard-coded |
 | Deploy | systemd + uvicorn na VM (sem Docker) | Docker em prod |
 
@@ -514,7 +429,7 @@ O GR e **multi-tenant desde o dia 1**, mesmo rodando com 1 tenant real no MVP.
 1. **Toda tabela de dominio tem `tenant_id` NOT NULL.** Excecoes: tabelas globais como `tenant` e `source_catalog`. Essas sao claramente marcadas em comentario.
 2. **Nenhuma query sem escopo de tenant.** O escopo e aplicado via dependency/middleware (`get_current_tenant_id`), nao por dev lembrar de filtrar.
 3. **Middleware central** extrai `tenant_id` do JWT e injeta no contexto da request. Repository/service recebe o `tenant_id` explicitamente — nunca pega de session/thread-local global.
-4. **Testes de isolamento obrigatorios:** para cada modulo, testes que verificam que tenant A nao ve dado de tenant B.
+4. **Testes de isolamento — regra executavel por PR:** todo **endpoint novo** tem teste de 403 (user sem permissao de modulo); todo **service novo** que toca tabela multi-tenant tem teste de isolamento (tenant A nao ve dado de tenant B). Cobranca e incremental, no fluxo — nao ha exigencia retroativa de estoque por modulo.
 5. **Tenant_id em TODO indice composto** onde faz sentido. Queries lentas por "esqueci o indice com tenant_id" sao bug.
 
 **Modelo de multi-tenancy:** shared DB + `tenant_id` (opcao simples, suficiente ate N pequeno de tenants). Quando escala pedir, evoluimos para schema-per-tenant com zero refactor de codigo de dominio — o adapter de DB muda, o dominio nao.
@@ -541,7 +456,7 @@ O GR e **modular** em 4 dimensoes simultaneas (UI, codigo, permissao, licenciame
 
 Adicionar um decimo modulo exige **autorizacao explicita** + atualizacao deste documento + atualizacao do enum `Module` em `app/core/enums.py`.
 
-**Agentes nao sao um decimo modulo.** Vivem em `app/agentic/` como **camada horizontal estrutural** — ver §19. O enum `Module` continua fechado em 9. Cada `AgentDefinition` / `PlaybookDefinition` / tool carrega `module: Module` como **tag** (RBAC, scope, billing, metricas agrupam por isso), nunca como pasta de modulo.
+**Agentes nao sao um decimo modulo.** Vivem em `app/agentic/` como **camada horizontal estrutural** — ver §19. O enum `Module` continua fechado em 9. Cada `AgentDefinition` / `WorkflowDefinition` / tool carrega `module: Module` como **tag** (RBAC, scope, billing, metricas agrupam por isso), nunca como pasta de modulo.
 
 ### 11.2 Estrutura fisica (bounded contexts)
 
@@ -579,8 +494,8 @@ app/
 - Cada modulo expoe em `public.py` APENAS o que e contrato estavel. Mudar `public.py` e mudanca de API — exige reflexao.
 - Modulo nao deve depender de mais de 1-2 outros modulos. Se depender de 3+, provavelmente precisa de shared kernel ou event bus.
 - **BI** le do `warehouse` (dado canonico), nao importa de outros modulos.
-- **Integracoes** popula warehouse; outros modulos leem warehouse, nunca chamam integracoes.
-- **Tools de modulo X invocadas por agente de modulo Y** vao via `ToolRegistry.get_available(scope)`, **nunca via import direto**. Modulo X nao precisa expor tools no seu `public.py` — o registry filtra dinamicamente por `ScopedContext(tenant, empresa, user, module, permissions)`. Mesma regra vale para playbooks invocados cross-modulo (via `PlaybookRegistry`). Ver §19.
+- **Integracoes**: sync batch popula o warehouse — para dado historico/agregado, outros modulos leem o warehouse. **Consulta on-demand** (bureau, junta comercial, relatorio sob demanda durante um fluxo como a esteira de credito) e **permitida via `integracoes/public.py` ou node de workflow** — nunca importando internals dos adapters.
+- **Tools de modulo X invocadas por agente de modulo Y** vao via `ToolRegistry.get_available(scope)`, **nunca via import direto**. Modulo X nao precisa expor tools no seu `public.py` — o registry filtra dinamicamente por `ScopedContext(tenant, empresa, user, module, permissions)`. Mesma regra vale para workflows invocados cross-modulo (resolucao por nome via `workflow_definition_active`, nunca import direto). Ver §19.
 
 ### 11.4 Estrutura de rotas do frontend
 
@@ -592,19 +507,20 @@ src/app/
 ├── (app)/                    # route group AUTENTICADO — envolvido por <AuthGuard>
 │   ├── layout.tsx            # AuthGuard + SidebarProvider + AppSidebar + header sticky
 │   ├── page.tsx              # home global (atalhos por modulo)
-│   ├── bi/...                # rota /bi (operacoes, benchmark, ...)
+│   ├── bi/...                # rota /bi (operacoes2-5, panorama, benchmark, concentracao, ...)
 │   ├── cadastros/...         # rota /cadastros
-│   ├── operacoes/...         # rota /operacoes (futuro)
-│   ├── credito/...           # rota /credito (futuro)
-│   ├── controladoria/...     # rota /controladoria (futuro)
-│   ├── risco/...             # rota /risco (futuro)
-│   ├── integracoes/...       # rota /integracoes (catalogo, sync)
-│   ├── laboratorio/...       # rota /laboratorio (futuro)
-│   └── admin/...             # rota /admin (futuro)
+│   ├── credito/...           # rota /credito (dossies, workflows, checklist, templates, agentes)
+│   ├── controladoria/...     # rota /controladoria (cota-sub, lamina, receitas, conciliacao, ...)
+│   ├── integracoes/...       # rota /integracoes (fontes, operacao, catalogo)
+│   └── admin/...             # rota /admin (ia/*, dados, ...)
+│       # operacoes/, risco/ e laboratorio/ ainda NAO tem rota — modulos "Em breve"
 │
 ├── (auth)/                   # route group PUBLICO — sem AuthGuard
 │   ├── layout.tsx            # layout minimo (centra o card de login)
 │   └── login/page.tsx        # rota /login
+│
+├── (foco)/                   # route group AUTENTICADO em "modo foco" — FocusRail (rail 56px)
+│                             # no lugar da AppSidebar; usado por telas de trabalho imersivo
 │
 ├── design/                   # rota /design — Strata Design System ao vivo (dev-only via NODE_ENV)
 └── preview/                  # rota /preview/* — paginas de preview/QA (gated em layout)
@@ -641,26 +557,18 @@ Toda navegacao do sistema respeita **3 niveis, nunca 4**. Usa apenas primitivos 
 | **L2** | Secao/funcionalidade do modulo. Pode aninhar **1 nivel** de sub-itens (parent + children) — ver regra 2 abaixo. | Sidebar do modulo ativo | `SidebarLink` + parent expansivel custom |
 | **L3** | Abertura/drill-down/perspectiva | Tabs horizontais no topo da pagina | `TabNavigation` + `TabNavigationLink` |
 
-**Exemplo canonico — modulo BI (lista plana):**
+**A estrutura REAL da sidebar vive em [`src/lib/modules.ts`](frontend/src/lib/modules.ts) (`MODULES[]`) — em divergencia com qualquer exemplo em prosa, `modules.ts` vence.** Exemplo ilustrativo (retrato do modulo BI em 2026-07):
 
 ```
 L1 (dropdown no topo): [BI ▾]
-    L2 (sidebar): Operacoes   → /bi/operacoes      → L3 tabs: Visao geral | Por produto | ...
-                  Carteira    → /bi/carteira       → L3 tabs: Total | Por produto | Por cedente | Aging
-                  Fluxo caixa → /bi/fluxo-caixa    → L3 tabs: ...
-                  Benchmark   → /bi/benchmark      → L3 tabs: Visao geral | PDD | Evolucao | Fundos
-                                (dados publicos CVM FIDC — ver docs/integracao-cvm-fidc.md)
-```
-
-**Exemplo de L2 com aninhamento — modulo Controladoria:**
-
-```
-L1 (dropdown no topo): [Controladoria ▾]
-    L2 (sidebar): Cota Sub          → /controladoria/cota-sub
-                  Pagamento Diario  → /controladoria/pagamento-diario
-                  ▾ Relatorios      ← parent expansivel (clicar so abre/fecha, nao navega)
-                      Padronizados  → /controladoria/relatorios/padronizados  → L3 tabs: ...
-                      Espelho Adm   → /controladoria/relatorios/espelho       → L3 tabs: ...
+    L2 (sidebar): Visao geral     → /bi
+                  ▾ Originacao    ← parent expansivel (clicar so abre/fecha, nao navega)
+                      Drill por dimensao → /bi/operacoes5
+                      Mes corrente ...   → /bi/operacoes2..4
+                  Concentracao    → /bi/concentracao
+                  ▾ Benchmark     ← parent expansivel
+                      Panorama do mercado → /bi/panorama
+                      Benchmark           → /bi/benchmark   (dados publicos CVM — docs/integracao-cvm-fidc.md)
 ```
 
 Sub-itens **sao L2 logicamente** — a numeracao L1/L2/L3 reflete tipos de navegacao, nao profundidade de UI. Aninhamento e sintatico; conceitualmente "Padronizados" e "Espelho Adm" continuam sendo destinos L2 do modulo.
@@ -672,7 +580,7 @@ Sub-itens **sao L2 logicamente** — a numeracao L1/L2/L3 reflete tipos de naveg
    - **Parent expansivel = expand-only.** Clicar no parent **nao navega** (so abre/fecha). O `href` do parent serve apenas como prefixo de active-state propagation (auto-expand quando filho casa com pathname) — nunca como destino de URL real. Quando nao houver landing util pro parent, a rota correspondente deve 404 (ou nao existir).
    - **Auto-expand on deep link / navegacao:** quando user entra direto numa URL filha (refresh, link compartilhado, navegacao externa), o parent abre automaticamente via `useEffect` reagindo a mudanca de pathname.
    - **Collapse manual persiste:** depois do parent ja aberto, user pode recolher mesmo com filho ativo. Auto-expand so re-dispara em mudanca de pathname — nao briga com a vontade do usuario.
-   - **Modo collapsed (56px):** filhos nao aparecem. Parent vira link pro primeiro filho habilitado (fallback de discoverability), tooltip mostra o nome do parent. Esta e a unica situacao em que parent "navega" — divergencia consciente da regra expand-only justificada pela impossibilidade de mostrar filhos em 56px.
+   - **Colapso da AppSidebar e binario:** quando colapsada, a sidebar some inteira (o host renderiza o trigger de reabrir) — nao existe modo rail 56px na AppSidebar. O rail de 56px existe apenas no **modo foco** (route group `(foco)/`, componente `FocusRail`).
    - **Captions tipograficos sao permitidos:** se `ModuleSection.groupLabel` for definido, a sidebar renderiza o texto como separador visual antes do primeiro item do grupo (ex.: "OPERACAO", "FINANCEIRO"). Captions sao **apenas labels textuais nao clicaveis** — nao introduzem hierarquia, nao expandem/colapsam, nao alteram a contagem de niveis. Servem para densificar listas longas dentro de um modulo (ex.: BI agrupa "Visao geral / Operacao / Financeiro / Analise"). **Aninhamento e captions sao mecanicas complementares**, nao mutuamente exclusivas — escolha por intencao: caption para agrupar itens autonomos; nesting quando o parent representa um escopo natural (ex.: "Relatorios" engloba "Padronizados" e "Espelho Adm").
 3. **URL e a fonte unica da verdade.** Modulo, secao, tab e filtros sao todos deep-linkaveis (ex.: `/bi/carteira?tab=por-produto&periodo=30d`). O modulo ativo e inferido do pathname.
 4. **Troca entre modulos (L1) e SEMPRE pelo `ModuleSwitcher`** (dropdown no topo da sidebar). O switcher lista os modulos com subscription + permissao; demais ficam em "Em breve" (disabled). Sem icon rail, sem module picker separado do header, sem tabs de modulo.
@@ -762,21 +670,19 @@ async def receita(
 1. Verifica `tenant_module_subscription.enabled` → se `false`, HTTP 402 (Payment Required).
 2. Verifica `user_module_permission.permission >= Permission exigida` → se nao, HTTP 403.
 
-**Nenhum endpoint de modulo pode existir sem `require_module`.** Endpoints cross-cutting (auth, health, audit/ping) podem usar `require_authenticated` simples.
+**Nenhum endpoint de modulo pode existir sem `require_module`.** Endpoints cross-cutting (auth, health, audit/ping) podem usar apenas `Depends(get_current_principal)` (em `app/core/tenant_middleware.py`).
 
 ### 12.4 `/auth/me` e contrato com o frontend
 
-Retorna:
+Retorna (shape canonico em `MeResponse`, `backend/app/api/v1/schemas.py` — fonte de verdade):
 ```json
 {
   "user": { "id": "...", "email": "...", "name": "..." },
-  "tenant": { "id": "...", "slug": "...", "name": "..." },
+  "tenant": { "id": "...", "slug": "...", "name": "...", "status": "active", "is_system_maintainer": false },
   "enabled_modules": ["bi", "cadastros", "admin"],
-  "user_permissions": {
-    "bi": "admin",
-    "cadastros": "write",
-    "admin": "admin"
-  }
+  "user_permissions": { "bi": "admin", "cadastros": "write", "admin": "admin" },
+  "ai_enabled": false,
+  "ai_permission": "none"
 }
 ```
 
@@ -791,24 +697,27 @@ Fontes de dados externas (ERPs, admin APIs, bureaus, parsers de documento) **NUN
 **Camadas:**
 
 ```
-app/adapters/<tipo>/<nome>/
+app/modules/integracoes/adapters/<tipo>/<nome>/
     __init__.py
-    connection.py      # como abrir conexao / sessao
-    queries.py         # queries/requests especificos da fonte
-    mappers.py         # transforma dado da fonte para modelo canonico
-    etl.py             # orquestra extract + transform + load
+    connection.py / client.py    # como abrir conexao / sessao
+    queries/ ou queries.py       # queries/requests especificos da fonte
+    mappers/ ou mappers.py       # transforma dado da fonte para modelo canonico
+    etl.py                       # orquestra extract + transform + load
+    version.py                   # ADAPTER_VERSION
 ```
 
-**Exemplos (plano):**
-- `app/adapters/erp/bitfin/` — leitura SQL Server do Bitfin
-- `app/adapters/admin/qitech/` — API QiTech (pos-MVP)
-- `app/adapters/bureau/serasa_pj/` — Serasa PJ (Business Information Report — endpoint CNPJ)
-- `app/adapters/bureau/serasa_pf/` — Serasa PF (Person Information Report — endpoint CPF)
-- `app/adapters/document/nfe/` — parser XML de NFe (pos-MVP)
+**Exemplos (em producao):**
+- `adapters/erp/bitfin/` — leitura SQL Server do Bitfin
+- `adapters/admin/qitech/` — API QiTech (catalogo de relatorios/endpoints)
+- `adapters/bureau/serasa_pj/` — Serasa PJ (Relato/Business Information Report — CNPJ)
+- `adapters/data/bigdatacorp/` — BigDataCorp (N datasets: CAD-PJ, QSA-PJ, KYC-PJ, ...)
+- `adapters/data/infosimples/` — Infosimples (protestos, JUCESP)
+- `adapters/cobranca/` — retorno/remessa CNAB dos bancos cobradores (Bradesco, ...)
+- `adapters/llm/anthropic/` — cliente HTTP LLM (ver §19.3)
 
 **Regras do adapter:**
 
-1. **Um adapter por ENDPOINT/API, nao por provedor.** `serasa_pj` (Business Information Report, CNPJ) e `serasa_pf` (Person Information Report, CPF) sao adapters separados mesmo sendo ambos Serasa — endpoints distintos, schemas distintos.
+1. **Um adapter por PROVEDOR/familia de API, com catalogo de endpoints/datasets interno** (decisao 2026-07-06 — a pratica venceu o "um adapter por endpoint" original). Ex.: `qitech` e 1 adapter com `endpoint_catalog` de N relatorios; `bigdatacorp` e 1 adapter com N datasets (CAD-PJ, QSA-PJ, KYC-PJ...) e `mappers/` por dataset. Separe em 2 adapters apenas quando o provedor tem familias de API genuinamente distintas (auth, formato e billing diferentes — ex.: `serasa_pj` vs um futuro `serasa_pf`).
 2. **Versao embutida no adapter:** constante `ADAPTER_VERSION = "1.0.0"` registrada em toda linha ingerida (`ingested_by_version`).
 3. **Output sempre em modelo canonico.** Adapter conhece a fonte e conhece o canonico; dominio nao conhece fontes.
 4. **Config por tenant:** cada tenant tem seu registro de configuracao (connection string, credenciais, parametros) em tabela `tenant_source_config`. Adapter le config do tenant, nao ha hardcode.
@@ -912,7 +821,7 @@ Em mercado financeiro regulado (CVM/ANBIMA/Bacen), **explicabilidade + rastreabi
 
 ### 14.2 Tabela `decision_log` (append-only)
 
-Toda decisao/calculo/sync registrado aqui, particionado por tenant + data. **Append-only** — correcao e nova entrada que referencia a anterior. Campos completos: ver `docs/AUDITABILIDADE.md`.
+Toda decisao/calculo/sync registrado aqui, escopado por tenant. **Append-only** (sem UPDATE/DELETE; por convencao) — correcao e nova entrada que referencia a anterior via `supersedes`. Campos completos: ver `docs/AUDITABILIDADE.md` e `app/shared/audit_log/decision_log.py`.
 
 ### 14.3 Premissas, versionamento e explicabilidade
 
@@ -922,10 +831,11 @@ Toda decisao/calculo/sync registrado aqui, particionado por tenant + data. **App
 
 ### 14.5 Trust metadata visivel na UI
 
-Frontend exibe:
-- Badge `<DataOriginBadge />` ao lado de cada KPI/numero: tooltip/click abre proveniencia (source, timestamp, versao do adapter, trust level)
-- Botao `<ShowPremisesButton />` em qualquer visual que mostre calculo/projecao: abre modal com premissas usadas
-- Rodape de cada dashboard: "Dados sincronizados em XX/XX as HH:MM a partir de Bitfin"
+Componentes canonicos (existentes):
+- **`<ProvenanceFooter />`** — rodape de dashboard ("Dados sincronizados em XX/XX as HH:MM a partir de Bitfin"). Ja canonico, usado nas paginas BI/Controladoria.
+- **`<OriginDot />`** + tipo `Provenance` + prop de proveniencia em `KpiCard`/`EChartsCard`/`DataTableShell` — infra do DS pronta; integracao ponta-a-ponta (backend expor `source_type`/adapter no JSON e paginas propagarem) e follow-up em aberto.
+
+Roadmap (ainda NAO implementado — nao referencie como existente): badge de proveniencia por KPI com tooltip completo (source, timestamp, versao do adapter, trust level) e botao "ver premissas" abrindo o `premise_set` usado.
 
 ### 14.6 Zero ocultacao na apresentacao — reconciliacao obrigatoria (regra dura)
 
@@ -959,7 +869,7 @@ Frontend exibe:
 - **Type hints obrigatorios** em todas as funcoes publicas. `any` proibido.
 - **Async por padrao.** Qualquer I/O (DB, HTTP, filesystem) em async. Lib sync (pyodbc) roda em thread pool.
 - **Functions > classes.** Use classes para models ORM, Pydantic schemas, adapters. Logica de dominio preferencialmente em funcoes puras.
-- **Sem `print`.** Sempre logger estruturado.
+- **Sem `print`** em codigo de dominio (scripts CLI podem). Sempre `logging` stdlib com logger nomeado (`logging.getLogger(__name__)`).
 - **Zero dependencia de caminho absoluto.** Config via env var.
 - **Um endpoint = um responsability.** Nao ha endpoint "generico" que faz varias coisas.
 
@@ -967,13 +877,13 @@ Frontend exibe:
 
 ## 16. Backend -- Dev workflow e deploy
 
-Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: systemd + uvicorn em `/opt/app_gr/backend/`, database `gr_db`. Deploy: `git pull` + `pip install` + `alembic upgrade head` + `systemctl restart gr-api`. CI: GitHub Actions (lint + pytest). Ver `docs/DEV_WORKFLOW.md`.
+Local: `.venv` + `.env` + `uvicorn app.main:app --reload`. **Atencao: dev e prod compartilham o MESMO Postgres (VM 27)** — migration "em dev" e migration em prod; tratar tudo com cuidado de producao. Prod: systemd + uvicorn na VM 26 (`gr-api`, `gr-frontend`). Deploy: `ssh gr-vm26 'sudo -n gr-deploy -y'` (idempotente; **NUNCA roda alembic** — `alembic upgrade head` e passo manual separado). **Nao ha CI** (`.github/` nao existe) — os gates sao manuais: `npx tsc --noEmit` + `npm run build` (frontend), `ruff check` + `pytest` (backend), antes de todo commit. Ver `docs/DEV_WORKFLOW.md`.
 
 ---
 
 ## 17. Banco de dados -- arquitetura
 
-**Mesmo servidor Postgres da VM, databases separadas:**
+**Postgres dedicado na VM 27** (gr-api e gr-frontend rodam na VM 26), **databases separadas:**
 
 | Database | Proposito |
 |---|---|
@@ -992,19 +902,19 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 
 ### Frontend (pagina autenticada — `src/app/(app)/*`)
 
-- [ ] Usa apenas componentes de `tremor/`, `charts/`, `design-system/components/` ou do proprio dominio?
+- [ ] Usa apenas componentes de `tremor/`, `charts/`, `design-system/components/`, do proprio dominio ou de `_components/` colocalizado da propria rota?
 - [ ] Zero import de `@/design-system/surfaces/*` (surfaces sao para paginas nao-autenticadas)?
 - [ ] Zero import de `tokens.colors.brand` ou `tokens.typography.hero`?
 - [ ] Zero `import` de `lucide-react`, `shadcn`, `@mui`, etc?
 - [ ] `cx()` e nao `cn()`?
 - [ ] Icones sao `Ri*` de `@remixicon/react`?
-- [ ] Zero cor arbitraria (`text-[#...]`, `bg-red-500` fora da paleta Tremor)?
+- [ ] Cores seguem a §4: paleta canonica como default; cor fora da paleta so vindo de handoff/proposta aprovada (politica do topo); badge de status via `tableTokens.badgeSuccess/Warning/Danger/Neutral` (nao receita inline nova)?
 - [ ] Dark mode testado?
 - [ ] Strings de UI em pt-BR?
 - [ ] **Pagina respeita regra de 3 niveis (L1 sidebar grupo / L2 sidebar sub-item / L3 TabNavigation)?**
 - [ ] **Sidebar aninha no maximo 1 nivel (parent + children — sem filho-de-filho)? L3 vai pra TabNavigation na pagina, nunca como 2o nivel de nesting na sidebar?**
 - [ ] **Estado de navegacao (modulo/secao/tab/filtros) e deep-linkavel via URL?**
-- [ ] **Pagina nasce de um pattern canonico em `src/design-system/patterns/` (DashboardBiPadrao / DashboardOperacional / ListagemComDrilldown / ListagemCrudInline / ListagemCrudExpand / ListagemCrudCards) — divergencia tem `// MOTIVO:` no header do arquivo?**
+- [ ] **Pagina nasce de um pattern canonico em `src/design-system/patterns/` (DashboardBiPadrao / DashboardOperacional / ListagemComDrilldown / ListagemCrudInline / ListagemCrudExpand / ListagemCrudCards / WizardMultiStep) — divergencia tem `// MOTIVO:` no header do arquivo?**
 - [ ] **Listagem CRUD/admin tabular usa `<DataTableShell>` (nao monta `Card + FilterSearch + DataTable` manual)?**
 - [ ] **Listagem CRUD/admin visual (workflows, agentes, dashboards salvos) segue pattern `ListagemCrudCards` com `<EntityCard>` canonico (avatar via tokens nomeados, hover `border-blue-500`, DropdownMenu com `e.stopPropagation()`)?**
 - [ ] **PageHeader usa `info` (tooltip) + `subtitle` (eyebrow "Modulo · Categoria") + `actions` — nao so `title`?**
@@ -1062,7 +972,7 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 **Basico (todo endpoint de IA):**
 
 - [ ] Endpoint sob `/api/v1/ai/*` usa `require_ai(AICapability.X)` (NAO `require_module`)?
-- [ ] Endpoint admin global (gestao de keys, tier, prompts, agentes, playbooks) usa **`require_system_maintainer` + `require_module(Module.ADMIN, Permission.ADMIN)`** combinados?
+- [ ] Endpoint admin global (gestao de keys, tier, prompts, agentes, workflows) usa **`require_system_maintainer` + `require_module(Module.ADMIN, Permission.ADMIN)`** combinados?
 - [ ] Toda chamada de IA grava em `decision_log` (via `services/audit.py`) e `ai_usage_event` (via `services/metering.py`)?
 - [ ] Mensagem do usuario passa por `services/redaction.py` antes de subir ao LLM (CPF/CNPJ redactados)?
 - [ ] Adapter LLM usado tem `ADAPTER_VERSION` e suas credenciais sao lidas de `ai_provider_credential` (cifradas via envelope Fernet)?
@@ -1072,18 +982,17 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 
 **Camada agentica — vocabulario canonico (§19.0):**
 
-- [ ] **Vocabulario respeitado?** Codigo/tabela/endpoint/comentario usa `agents` / `tools` / `playbooks` / `memory` — NUNCA "skill" para playbook agentico (skill = comando Claude Code).
-- [ ] **Cada bloco no lugar certo?** Agente em `app/agentic/agents/catalog/<modulo>_<agente>.py` (tag de modulo, nao pasta de modulo). Tool em `app/agentic/tools/<modulo>/`. Playbook em `app/agentic/playbooks/catalog/`. Memoria em `app/agentic/memory/`.
+- [ ] **Vocabulario respeitado?** Usa `agents` / `tools` / `workflows` / `memory` — NUNCA "skill" (= comando Claude Code) nem "playbook" (termo aposentado 2026-07-06, ver §19.0). "Workflow" e o canonico em codigo, DB, rotas, doc e UI.
+- [ ] **Cada bloco no lugar certo?** Agente = row em `agent_definition` + `SpecialistAgentSpec` em `app/agentic/engine/catalog.py` (tag de modulo, nao pasta de modulo). Tool em `app/agentic/tools/<modulo>/`. Workflow = graph JSONB em `workflow_definition`. Memoria em `app/agentic/memory/`.
 
 **Agente novo (§19.12):**
 
-- [ ] `AgentDefinition` instanciada em `app/agentic/agents/catalog/` com `module: Module` como tag (nao pasta)?
+- [ ] Row em `agent_definition` com `module` como tag (nao pasta) + `SpecialistAgentSpec` registrado em `app/agentic/engine/catalog.py` quando ha `output_schema`?
 - [ ] Seed em `agent_definition` + ativacao em `agent_definition_active` via migration?
 - [ ] Persona reaproveitada de `agent_persona` (nao duplicar texto entre agentes do mesmo papel)?
 - [ ] Prompt task em `ai_prompt` versionado (nome `<modulo>.<agente>`)?
 - [ ] `allowed_tools` declarado (subset do registry filtrado por `module + shared`)?
 - [ ] `output_schema` Pydantic class definido quando aplicavel (specialist agents validados)?
-- [ ] `memory_scopes` declarado (`[SESSION, TENANT]` tipico; `GLOBAL` so com aprovacao juridica)?
 - [ ] `cross_module=true` apenas com justificativa explicita + auditoria reforcada?
 
 **Tool nova (§19.0):**
@@ -1094,28 +1003,27 @@ Local: `.venv` + `.env` + `gr_db_dev` + `uvicorn app.main:app --reload`. Prod: s
 - [ ] Filtragem por modulo + permissao + tenant acontece automaticamente via registry (nao codada na tool)?
 - [ ] Custom tool por tenant (futuro) registrada em `tenant_tool_registration` com `tenant_id NOT NULL`?
 
-**Playbook novo (§19.10):**
+**Workflow novo (§19.10):**
 
-- [ ] Declarativo (graph JSONB em `playbook_definition`), nao codigo imperativo?
-- [ ] Versionamento + active pointer (`playbook_definition_active`) espelha `ai_prompt`?
+- [ ] Declarativo (graph JSONB em `workflow_definition`), nao codigo imperativo?
+- [ ] Versionamento + active pointer (`workflow_definition_active`) espelha `ai_prompt`?
 - [ ] Tag `module: Module` no metadata (nao pasta)?
-- [ ] Endpoint que dispara usa `POST /api/v1/playbooks/{name}/run` generico (nao endpoint per-modulo ad-hoc)?
-- [ ] Dry-run testado via `POST /api/v1/playbooks/{id}/dry-run` antes de ativar versao nova?
-- [ ] Validacao semantica (`/_validate`) passa sem erros?
-- [ ] Cada execucao gera `playbook_run` + `playbook_run_step` + entrada em `decision_log`?
+- [ ] Dry-run testado via `POST /api/v1/credito/workflows/{id}/dry-run` antes de ativar versao nova?
+- [ ] Validacao semantica (`POST /api/v1/credito/workflows/_validate`) passa sem erros?
+- [ ] Cada execucao gera `workflow_run` + `workflow_node_run` + entrada em `decision_log`?
 
 **Memoria (§19.11):**
 
 - [ ] Invocacao de agente passa por `AnalysisSession` (working memory + step cache + step trace) — nunca single-shot fora de testes?
 - [ ] Leitura de session/tenant memory **filtra por `tenant_id`** antes de qualquer outra operacao?
 - [ ] Memoria de modulo X nao e visivel a agente de modulo Y sem `cross_module=true`?
-- [ ] Trace de tool_use vai por SSE em tempo real (chat) ou para `agent_session_step` / `playbook_run_step` (batch)?
+- [ ] Trace de tool_use vai por SSE em tempo real (chat) ou para `agent_session_step` / `workflow_node_run` (batch)?
 - [ ] Pgvector usado so com caso de uso concreto + tabela tem `embedding vector(1536)` declarado explicitamente?
 
 **Cross-module (§11.3):**
 
 - [ ] Tools de modulo X invocadas por agente de modulo Y vao via `ToolRegistry.get_available(scope)`, **nunca via import direto**?
-- [ ] Mesma regra para playbooks invocados cross-modulo (via `PlaybookRegistry`)?
+- [ ] Mesma regra para workflows invocados cross-modulo (resolucao por nome via `workflow_definition_active`, nunca import direto)?
 
 Se qualquer item reprovar, **nao corrija pontualmente** — pare e revise a mudanca inteira.
 
@@ -1123,28 +1031,28 @@ Se qualquer item reprovar, **nao corrija pontualmente** — pare e revise a muda
 
 ## 19. Camada agentica -- arquitetura horizontal estrutural
 
-> Strata e plataforma agentica. A camada agentica — **motor + tools + playbooks + memoria + agentes** — e horizontal e atravessa todos os 9 modulos. Os modulos sao "pacotes de dominio" que registram tools e playbooks proprios; o motor de agente e unico. Telas e relatorios sao interfaces sobre o nucleo, nao o nucleo. Implementacao que parecer "modulo X com chatbot dentro" esta errada — pare e revise.
+> Strata e plataforma agentica. A camada agentica — **motor + tools + workflows + memoria + agentes** — e horizontal e atravessa todos os 9 modulos. Os modulos sao "pacotes de dominio" que registram tools e workflows proprios; o motor de agente e unico. Telas e relatorios sao interfaces sobre o nucleo, nao o nucleo. Implementacao que parecer "modulo X com chatbot dentro" esta errada — pare e revise.
 >
-> Decisao 2026-04-30: IA tratada como capability transversal (nao decimo modulo) — mantem enum `Module` fechado (§11.1). Decisao 2026-05-20: a "capability IA" e reposicionada como **camada agentica estrutural** com vocabulario canonico (agents, tools, playbooks, memory) — ver §19.0.
+> Decisao 2026-04-30: IA tratada como capability transversal (nao decimo modulo) — mantem enum `Module` fechado (§11.1). Decisao 2026-05-20: a "capability IA" e reposicionada como **camada agentica estrutural**. Decisao 2026-07-06 (Ricardo): o termo canonico do primitivo de orquestracao e **"workflow"** — em codigo, DB, rotas, doc e UI; "playbook" (experimento de vocabulario 2026-05→07) foi aposentado.
 
 ### 19.0 Vocabulario canonico e blocos da camada agentica
 
-Quatro blocos. Use **exatamente** esses termos em codigo, tabela, endpoint, doc e comentario. Implementacao que invente nome novo (ex.: "skill" para playbook, "ferramenta" para tool, "habilidade" para playbook) deve ser refeita.
+Quatro blocos. Use **exatamente** esses termos em codigo, tabela, endpoint, doc e comentario. Implementacao que invente nome novo (ex.: "skill" ou "playbook" para workflow, "ferramenta" para tool) deve ser refeita.
 
 | Bloco | Definicao | Onde mora |
 |---|---|---|
-| **Agents** | Motor de raciocinio com persona + politica + escopo. Cada agente carrega `module: Module` como tag (nao como pasta). | `app/agentic/agents/catalog/` (codigo) + `agent_definition` + `agent_definition_active` (DB) |
+| **Agents** | Motor de raciocinio com persona + politica + escopo. Cada agente carrega `module: Module` como tag (nao como pasta). | DB-first: `agent_definition`/`_active` + `agent_persona`/`_active` + `agent_expertise`/`_active` (models em `app/shared/ai/models/`). Codigo: `app/agentic/engine/catalog.py` (`SpecialistAgentSpec` + output_schemas) + `app/agentic/agents/registry.py` |
 | **Tools** | Funcoes atomicas — queries SQL pre-produzidas, calculos, equacoes regulatorias, APIs externas (Serasa, Quod, BACEN), MCPs, geradores de relatorio | `app/agentic/tools/<modulo>/` com decorator `@register_tool(module=, min_permission=, cost_hint=)` |
-| **Playbooks** | Workflows declarativos versionados (graph JSONB imutavel + `playbook_definition_active` apontando versao). Substitui o termo "skill" do mercado. | `app/agentic/playbooks/catalog/` (codigo de templates) + `playbook_definition` + `playbook_definition_active` (DB) |
-| **Memory** | Tres camadas: **session** (curto prazo, durante 1 analise) + **tenant** (medio prazo, preferencias + padroes) + **global** anonimizada (longo prazo, **futuro** com parecer juridico) | `app/agentic/memory/` |
+| **Workflows** | Orquestracoes declarativas versionadas (graph JSONB imutavel + active pointer apontando versao). Equivale ao "skill/playbook" do mercado — aqui o termo e workflow. | `app/agentic/workflows/` (engine, nodes, schemas, services) + `workflow_definition`/`_active` (DB) |
+| **Memory** | Tres camadas: **session** (curto prazo, durante 1 analise — ENTREGUE) + **tenant** (medio prazo, preferencias + padroes — parcial) + **global** anonimizada (longo prazo, **futuro** com parecer juridico) | `app/agentic/memory/` |
 
 **Vocabulario duro:**
 
-- "**Skill**" no projeto = comando Claude Code (audit-page-consistency, create-list-page, etc — invocado via `Skill` tool). **NAO usar "skill" para playbook agentico** — sempre **"playbook"**.
+- "**Skill**" no projeto = comando Claude Code (audit-page-consistency, create-list-page, etc — invocado via `Skill` tool). **NAO usar "skill" para workflow agentico** — sempre **"workflow"**. "**Playbook**" e termo aposentado (2026-07-06) — nao reintroduzir em codigo, doc ou UI.
 - "**Persona**" = papel de negocio reutilizavel ("Controller Senior", "Analista de Credito FIDC"). Vive em `agent_persona` separada de `ai_prompt` para reuso entre agentes.
-- "**Tag de modulo**" em agente/playbook nao limita invocacao; define o **scope default** (RBAC + tools disponiveis + persona). Chamada cross-modulo e explicita (`cross_module=true` + auditoria).
+- "**Tag de modulo**" em agente/workflow nao limita invocacao; define o **scope default** (RBAC + tools disponiveis + persona). Chamada cross-modulo e explicita (`cross_module=true` + auditoria).
 
-**Principio chave:** o motor nao conhece os agentes nem as tools. Em runtime, recebe `AgentDefinition` + `ScopedContext(tenant, empresa, user, module, permissions, db)` + objetivo, executa. Adicionar agente/tool/playbook novo = arquivo + seed em DB. **Zero mudanca no engine.**
+**Principio chave:** o motor nao conhece os agentes nem as tools. Em runtime, recebe `AgentDefinition` + `ScopedContext(tenant, empresa, user, module, permissions, db)` + objetivo, executa. Adicionar agente/tool/workflow novo = arquivo + seed em DB. **Zero mudanca no engine.**
 
 ### 19.1 Estrutura paralela ao modulo
 
@@ -1161,12 +1069,12 @@ Coluna boolean com **partial unique index** garantindo no maximo 1 tenant marcad
 
 Provedores externos (Anthropic, OpenAI) sao adapters versionados em `app/modules/integracoes/adapters/llm/<provider>/`, cada um com seu `ADAPTER_VERSION`. **Credenciais sao globais** (tabela `ai_provider_credential`, sem `tenant_id`) e cifradas com envelope Fernet (`app.shared.crypto`). ZDR contratado e exigido em prod (coluna `zdr_enabled` bloqueia chamada quando false em ambiente de producao).
 
-> **Plano de migracao**: os adapters LLM migram de `app/modules/integracoes/adapters/llm/` para `app/agentic/engine/llm/` quando o refator do §19 acontecer (junto com `runtime.py` → `app/agentic/engine/`). LLM e infra estrutural do motor agentico — encaixa melhor sob `app/agentic/` que sob "integracoes" (que e dominio: ERPs, bureaus, ETL). Manter agnostico continua sendo principio nao-negociavel.
+> **Estado do refator §19**: `runtime.py` JA migrou para `app/agentic/engine/runtime.py` (feito). Os adapters LLM **continuam** em `app/modules/integracoes/adapters/llm/` — a migracao deles para `app/agentic/engine/llm/` segue como intencao futura, nao bloqueia nada. Manter agnostico continua sendo principio nao-negociavel.
 
 **Dois caminhos de invocacao Anthropic** (escolha por caso de uso):
 
 1. **Cliente HTTP custom** em `adapters/llm/anthropic/` (httpx + SSE puro). Usado em **chat simples** (`AIPanel`, insights) onde streaming linha-a-linha vai pro frontend via SSE proprio. Tem prompt caching via `cache_control` em system blocks.
-2. **SDK oficial `anthropic`** (`anthropic >= 0.71`) usado em `app/shared/agents/runtime.py` para **specialist agents** que precisam de tool use nativo + tool execution loop + prompt caching de system prompts compartilhados entre runs. Migracao decidida em 2026-05-02 — substituiu `claude-agent-sdk` (que era subprocess do Claude Code CLI e quebrava no Windows com `SelectorEventLoop`). Tools sao definidas como `AgentTool` (`app/shared/agents/tools/_base.py`) com JSON schema + handler async; runtime monta `tools=[...]` para o Messages API e roda o loop `tool_use → tool_result` ate `end_turn` (cap em `_MAX_TOOL_ITERATIONS=12`).
+2. **SDK oficial `anthropic`** (`anthropic >= 0.71`) usado em `app/agentic/engine/runtime.py` para **specialist agents** que precisam de tool use nativo + tool execution loop + prompt caching de system prompts compartilhados entre runs. (Substituiu `claude-agent-sdk`, que era subprocess do Claude Code CLI e quebrava no Windows com `SelectorEventLoop`.) Tools sao definidas como `AgentTool` (`app/agentic/tools/_base.py`) com JSON schema + handler async; runtime monta `tools=[...]` para o Messages API e roda o loop `tool_use → tool_result` ate `end_turn` (cap em `_MAX_TOOL_ITERATIONS=12`).
 
 Ambos os caminhos usam o **mesmo storage de credencial** (`get_active_anthropic_credential`) e gravam em `decision_log` + `ai_usage_event` com cache_read e cache_creation tokens separados.
 
@@ -1178,7 +1086,7 @@ Ambos os caminhos usam o **mesmo storage de credencial** (`get_active_anthropic_
 - **Imutabilidade**: `(name, version)` UNIQUE. Toda edicao **cria nova versao** copiando a base + patches. Versao base nunca muda — preserva audit trail.
 - **Versao ativa**: tabela `ai_prompt_active` (uma linha por nome) aponta para a versao em producao. Trocar = 1 UPDATE (rollback de 1 click sem deploy).
 - **Soft-delete**: `archived_at` marca versao como nao-ativavel. Versao ativa nao pode ser arquivada (constraint).
-- **Repository**: `app/shared/ai/prompts/repository.py::resolve(db, name, version="active")` retorna `Prompt` instanciado a partir da row. Servicos chamam APENAS via repository — nunca leem `ai_prompt` direto.
+- **Repository**: `app/agentic/engine/prompts/repository.py::resolve(db, name, version="active")` retorna `Prompt` instanciado a partir da row. Servicos chamam APENAS via repository — nunca leem `ai_prompt` direto.
 - **Edicao**: via `/admin/ia/prompts` (system maintainer only — `require_system_maintainer` + `require_module(ADMIN, ADMIN)`). Endpoints: GET (list), GET /{id}, POST (cria nova familia=v1), PUT /{id} (cria nova versao), PUT /{name}/active (ativa versao), POST /{id}/archive (soft-delete), POST /{id}/preview (render sem chamar LLM).
 - **Variaveis**: `user_context_template` e `assistant_prime` aceitam `{nome}` via Python `str.format`. Variaveis ausentes em `context` retornam erro 400 no preview.
 - **Auditoria**: a versao usada vai automaticamente em `decision_log.rule_or_model_version` (`<adapter_version>+<prompt.full_id>`) e em `ai_usage_event.prompt_template_version`.
@@ -1205,7 +1113,7 @@ Historico em `ai_conversation` + `ai_message` (com `text_redacted` + `text_encry
 - **Single entry point**: `<AIPanel />` em `design-system/components/AIPanel/` (drawer violeta in-layout, atalho Cmd/Ctrl+I, mantido pelo handoff bi-padrao). Markdown nas respostas via `react-markdown` + `remark-gfm`.
 - **Hooks**: `useAIChat`, `useAIInsights`, `useAIQuota`, `useAIConversations` em `src/lib/hooks/ai.ts`. SSE via `fetch` + `ReadableStream` (NAO `EventSource` -- nao passa Bearer token).
 - **Quota**: `<AIQuotaIndicator />` em `design-system/components/AIQuotaIndicator/` (variant `compact` no header da pagina, `strip` dentro do AIPanel). Cor amber em 75%, red em 90%.
-- **Admin**: rotas em `/admin/ia/{providers,subscriptions,prompts,usage,conversations}`. Visiveis somente quando `tenant.is_system_maintainer === true` (campo em `/auth/me`).
+- **Admin**: rotas em `/admin/ia/{agents,expertises,personas,prompts,providers,tools}`. Visiveis somente quando `tenant.is_system_maintainer === true` (campo em `/auth/me`).
 
 ### 19.8 Billing (creditos abstraidos)
 
@@ -1215,58 +1123,48 @@ UI nunca expoe token-count -- expoe **creditos**. 1 chat ~= `tokens_input/1000 +
 
 PII (CPF, CNPJ, conta-agencia, email) e redactada antes de subir ao LLM via `services/redaction.py` (regex + check digit no MVP, Microsoft Presidio na Fase 2). Mensagens armazenam `text_redacted` + `text_encrypted` (versao com PII original cifrada via envelope Fernet, acesso restrito a auditoria com trilha em `decision_log`).
 
-### 19.10 Playbooks (workflows declarativos)
+### 19.10 Workflows (orquestracao declarativa)
 
-**Decisao 2026-05-20:** o "workflow builder" que vive em `app/modules/credito/workflows/` e a implementacao atual do conceito **playbook** e sera promovida a **primitivo horizontal em `app/agentic/playbooks/`**. Cada modulo registra seus templates; o engine de playbook e unico.
+O engine de workflows vive em **`app/agentic/workflows/`** (primitivo horizontal; `app/modules/credito/workflows/` nao existe mais). Cada modulo registra seus templates; o engine e unico (`services/engine.py`).
 
-**Vocabulario:** "playbook" (NAO "skill" — ver §19.0). "Workflow" continua valido como sinonimo informal quando se discute editor visual (`@xyflow/react`), mas em codigo, tabela, endpoint, doc — **sempre playbook**.
+**Vocabulario (decisao 2026-07-06):** **"workflow" em TUDO** — classes Python (`WorkflowDefinition`, `WorkflowRun`, `WorkflowGraph`), tabelas DB (`workflow_*`), rotas (`/api/v1/credito/workflows/*`) e copy da UI ("Workflows"). "Playbook" foi aposentado; "skill" continua reservado a comandos Claude Code (§19.0).
 
-**Modelagem:**
+**Modelagem (tabelas reais):**
 
-- **`playbook_definition`** (rebatizada de `workflow_definition`): id, name, version, module, tenant_id NULL=global, graph JSONB (nodes + edges + variable bindings), created_by, created_at, archived_at. `(name, version)` UNIQUE. Imutavel — toda edicao cria nova versao.
-- **`playbook_definition_active`**: uma linha por `(tenant_id, name)`, FK para `playbook_definition_id`. Rollback de 1 click sem deploy (espelha `ai_prompt_active`).
-- **Tipos de node** ja existentes (a migrar): `specialist_agent`, `bureau_query`, `consolidator`, `join` (fan-in com `join_mode=all|any`), `conditional_branch`, `human_input`, `sub_playbook` (pendente, ex-`sub_workflow`).
+- **`workflow_definition`**: id, name, version, module, tenant_id NULL=global, graph JSONB (nodes + edges + variable bindings), created_by, created_at, archived_at. `(name, version)` UNIQUE. Imutavel — toda edicao cria nova versao.
+- **`workflow_definition_active`**: uma linha por `(tenant_id, name)`, FK para a definition. Rollback de 1 click sem deploy (espelha `ai_prompt_active`).
+- **Tipos de node**: `specialist_agent`, `bureau_query`, `consolidator`, `join` (fan-in com `join_mode=all|any`), `conditional_branch`, `human_input`, entre outros (catalogo real em `app/agentic/workflows/nodes/`); `sub_workflow` pendente.
 - **Edges** com `condition` opcional via template (`{{node.X.output.value}} >= 700`).
 - **Input bindings** tipados: `config.input_bindings = {slot_name: "node.X.output.Y"}` resolvidos via template resolver em `_render_context_for_prompt`.
 - **Imutabilidade + versionamento**: graph JSONB imutavel; modulo edita = nova versao. Active pointer troca em 1 UPDATE.
 
-**Engine:**
+**Engine (endpoints reais):**
 
-- Endpoint generico **`POST /api/v1/playbooks/{name}/run`** substitui endpoints per-modulo. Modulo informa via `module: Module` na URL ou body (ainda a definir).
-- Engine resolve `playbook_definition_active.{tenant, name}`, instancia nodes, invoca cada um com `NodeContext` (tenant_id, empresa_id, trigger_data, previous_outputs).
-- `specialist_agent` node chama `runtime.run_specialist_agent(spec, ctx, db)` (motor unico do §19.3).
-- Cada execucao gera `playbook_run` (estado) + `playbook_run_step` (trace per-node) + entrada em `decision_log` + serie de `ai_usage_event`.
+- CRUD, versionamento e ativacao em **`/api/v1/credito/workflows/*`** (`app/modules/credito/api/workflow.py`). Execucao e disparada via dossie de credito (`api/dossier.py` cria/resume o run). Um endpoint generico cross-modulo (`POST /api/v1/workflows/{name}/run`) ainda **nao existe** — e objetivo futuro, nao exija em review.
+- Engine resolve a definition ativa, instancia nodes, invoca cada um com `NodeContext` (tenant_id, empresa_id, trigger_data, previous_outputs).
+- `specialist_agent` node chama `runtime.run_specialist_agent(...)` (motor unico do §19.3).
+- Cada execucao gera `workflow_run` (estado) + `workflow_node_run` (trace per-node) + entrada em `decision_log` + serie de `ai_usage_event`.
+- **Engine e duravel** (suspend/resume em prod; `human_input` pausa o run). Nodes em nivel paralelo rodam **sequencialmente** (AsyncSession nao e concorrente — nao re-introduzir `gather`).
 
-**Dry-run:** **`POST /api/v1/playbooks/{id}/dry-run`** executa em sandbox com mocks (sem DB write, sem API paga). Usado pelo editor visual antes de ativar versao nova.
+**Dry-run:** **`POST /api/v1/credito/workflows/{id}/dry-run`** executa em sandbox com mocks (sem DB write, sem API paga). Usado pelo editor visual antes de ativar versao nova.
 
-**Validacao semantica:** **`POST /api/v1/playbooks/_validate`** retorna lista de erros + `produced_by_node` (variaveis que cada node publica). Frontend `StrataNode` consome para renderizar chips de `producedVars` e alimentar o picker do `AgentInputBindingsField`.
+**Validacao semantica:** **`POST /api/v1/credito/workflows/_validate`** retorna lista de erros + `produced_by_node` (variaveis que cada node publica). Frontend `StrataNode` consome para renderizar chips de `producedVars` e alimentar o picker do `AgentInputBindingsField`.
 
-**Custom playbooks por tenant:** linhas com `tenant_id NOT NULL` em `playbook_definition`. Globais = `tenant_id IS NULL`. Marketplace/upsell (§9 da filosofia agentica) nasce naturalmente desse modelo.
+**Custom workflows por tenant:** linhas com `tenant_id NOT NULL` em `workflow_definition`. Globais = `tenant_id IS NULL`. Marketplace/upsell nasce naturalmente desse modelo.
 
-**Quando NAO usar playbook:** chat conversacional simples (sem orquestracao) — usa motor de agente direto com `playbook=None`. Insight pontual (1 tool call + sintese) — mesma coisa. Playbook e para **orquestracao multi-step com grafo**, nao para qualquer chamada de IA.
+**Quando NAO usar workflow:** chat conversacional simples (sem orquestracao) — usa motor de agente direto, sem grafo. Insight pontual (1 tool call + sintese) — mesma coisa. Workflow e para **orquestracao multi-step com grafo**, nao para qualquer chamada de IA.
 
-### 19.11 Memoria de sessao (bloqueador atual)
+### 19.11 Memoria de sessao
 
-**Estado: a implementar.** Hoje cada `run_specialist_agent()` e **single-shot** — sem memoria entre invocacoes. Isso impede casos como "analisar exposicao top-5 cedentes" (cedente A precisa lembrar enquanto investiga B-E e cruzar tudo na sintese). **Sem memoria de sessao, agente multi-step e inviavel.**
-
-**Tres camadas (vocabulario canonico §19.0):**
+**Estado: camada session ENTREGUE.** `AnalysisSession` vive em `app/agentic/memory/_base.py` (+ `scratchpad.py`, `step_cache.py`, `tools.py`, `persistence.py`), e criada pelo engine a cada execucao de run, e persiste em `agent_session` + `agent_session_step`.
 
 | Camada | Escopo | Implementacao | Status |
 |---|---|---|---|
-| **Session** (curto prazo) | 1 analise / 1 dossie / 1 turn agentico | `AnalysisSession` in-process; persiste em DB so se durar > N segundos | A IMPLEMENTAR |
-| **Tenant** (medio prazo) | Preferencias do tenant + padroes aprendidos + limites internos | `tenant_memory` table + `ai_conversation_summary` ja existente | PARCIAL (skeleton) |
-| **Global** (longo prazo) | Padroes anonimizados aprendidos cross-tenant | A definir + **parecer juridico LGPD/BACEN obrigatorio antes** | DEFERIDO |
+| **Session** (curto prazo) | 1 analise / 1 dossie / 1 turn agentico | `AnalysisSession` (`memory/_base.py`): working memory + scratchpad + step cache (tool com mesmos parametros nao reexecuta) + step trace (alimenta `AgentLiveStatus`). Persistencia em `agent_session`/`agent_session_step` | ENTREGUE |
+| **Tenant** (medio prazo) | Preferencias do tenant + padroes aprendidos + limites internos | So `ai_conversation_summary` existe (sumarizacao de chat). Tabela `tenant_memory` dedicada nao existe | PARCIAL |
+| **Global** (longo prazo) | Padroes anonimizados cross-tenant | A definir + **parecer juridico LGPD/BACEN obrigatorio antes** | DEFERIDO |
 
-**`AnalysisSession` proposta** (a viver em `app/agentic/memory/session.py`):
-
-- **Working memory**: observacoes intermediarias do agente ("Cedente A: score 412, 2 protestos")
-- **Scratchpad**: textual, agent-writeable, sobrevive entre tools dentro da mesma session
-- **Step cache**: resultado de tool ja executada com mesmos parametros nao reexecuta (economia de tokens + custo de bureau)
-- **Step trace**: lista ordenada de tool_use + tool_result + duracao + tokens — alimenta `AgentLiveStatus` no frontend
-
-**SSE em tempo real:** durante o tool loop, motor emite frames `tool_use` / `tool_result` no stream. Frontend renderiza via `AgentLiveStatus` (componente ja existente, hoje so usado em dossie de credito). Quando chat virar agentico (usar tools), o mesmo componente cobre.
-
-**Persistencia:** session in-process por padrao. Se exceder N segundos OU se for **conversa multi-turn** (chat), persiste em DB em tabela `agent_session_step` (append-only, particionada por tenant + data, paralela ao `decision_log`).
+**SSE em tempo real:** durante o tool loop, motor emite frames `tool_use` / `tool_result` no stream. Frontend renderiza via `AgentLiveStatus`.
 
 **Isolamento (regra dura):**
 
@@ -1274,11 +1172,11 @@ PII (CPF, CNPJ, conta-agencia, email) e redactada antes de subir ao LLM via `ser
 - Memoria de modulo X nao e visivel a agente de modulo Y, exceto quando agente tem `cross_module=true`.
 - Expiracao: session expira ao fim da analise (default 1h). Tenant memory persiste indefinidamente mas auditavel.
 
-**Retrieval semantico:** quando virar prioridade, tabela ganha `embedding vector(1536)` (pgvector ja instalado, hoje nao usado em IA). Service `app/agentic/memory/semantic.py` faz busca por similaridade. **Nao implementar ate caso de uso concreto pedir.**
+**Retrieval semantico (futuro):** quando virar prioridade, tabela ganha `embedding vector(1536)` (pgvector instalado, hoje nao usado em IA). **Nao implementar ate caso de uso concreto pedir.**
 
 ### 19.12 Catalogo central de agentes
 
-Agentes sao **centralizados** em `app/agentic/agents/catalog/`, **nao espalhados por modulo**. Cada `AgentDefinition` carrega `module: Module` como **tag** no metadata — RBAC, tools disponiveis, persona, billing, metricas agrupam por essa tag.
+Agentes sao **centralizados** (catalogo unico DB-first, **nao espalhados por modulo**). Cada agente carrega `module` como **tag** no metadata — RBAC, tools disponiveis, persona, billing, metricas agrupam por essa tag.
 
 **Por que centralizar (decisao 2026-05-20):**
 
@@ -1288,62 +1186,36 @@ Agentes sao **centralizados** em `app/agentic/agents/catalog/`, **nao espalhados
 - Marketplace de custom agents por tenant exige catalogo central por natureza.
 - Reuso cross-modulo: agente pensado pra risco pode ser invocado por controladoria via `cross_module=true`.
 
-**Modelagem hibrida (estrutura em codigo + texto em DB):**
+**Modelagem hibrida (texto/config em DB + output_schema em codigo):**
 
-- **Em codigo** (`app/agentic/agents/catalog/<modulo>_<agente>.py`): `AgentDefinition` instance — name, module, allowed_tools pattern, allowed_playbooks pattern, modelo default, `output_schema` Python class quando ha (specialist agents validados via Pydantic).
-- **Em DB** (`agent_definition` + `agent_definition_active`): persona_id (FK pra `agent_persona`), prompt_id (FK pra `ai_prompt`), overrides de modelo/temperature/max_tokens (opcionais), memory_scopes, credit_hint, cross_module bool, tenant_id NULL=global, archived_at.
-- **Persona separada** (`agent_persona`): id, name (ex.: "Controller Senior"), description, role_block (bloco textual injetado no prompt), expertise_domains, versionamento espelhando `ai_prompt`. Reusavel — mesma persona serve N agentes do mesmo papel.
+- **Em DB** (`agent_definition` + `agent_definition_active`, models em `app/shared/ai/models/`): name, version, module (tag), persona_id (FK pra `agent_persona`), expertise_ids (FKs pra `agent_expertise`), prompt_name (aponta pra `ai_prompt`), allowed_tools (NULL=default do CATALOG / []=sem tools / [...]=override editavel pela UI sem deploy), overrides de model/fallback_model/temperature/max_tokens, cross_module bool, credit_hint, tenant_id NULL=global, archived_at.
+- **Em codigo** (`app/agentic/engine/catalog.py`): `SpecialistAgentSpec` por agente — prompt, tools default, `output_schema` Pydantic (fica em codigo porque o orquestrador faz parsing tipado), modelo preferido, thinking budget, timeout. Registrado no `CATALOG`.
+- **Persona separada** (`agent_persona`/`_active`): papel de negocio reutilizavel ("Controller Senior") com role_block injetado no prompt. **Expertise separada** (`agent_expertise`/`_active`): blocos de conhecimento componiveis. Ambas versionadas espelhando `ai_prompt`.
 
-**Layout fisico:**
+**Layout fisico (real):**
 
 ```
 app/agentic/
-├── engine/                          # runtime unico + LLM adapter + SSE streaming
-│   ├── runtime.py
-│   ├── llm/                         # ex-modules/integracoes/adapters/llm/
-│   └── streaming.py
-├── agents/
-│   ├── registry.py                  # AgentRegistry.get(name, scope)
-│   ├── _base.py                     # AgentDefinition, ScopedContext
-│   ├── personas/                    # personas reutilizaveis
-│   └── catalog/                     # flat, todos os agentes do produto
-│       ├── credito_analista_dossie.py        # module=CREDITO
-│       ├── credito_analista_financial.py     # module=CREDITO
-│       ├── risco_top_cedentes.py             # module=RISCO
-│       ├── controladoria_variacao_cota.py    # module=CONTROLADORIA
-│       └── bi_chat_fidc_geral.py             # module=BI
-├── playbooks/
-│   ├── engine.py                    # ex-modules/credito/workflows/engine.py
-│   ├── registry.py                  # PlaybookRegistry
-│   ├── _base.py                     # PlaybookDefinition
-│   └── catalog/                     # templates declarativos por modulo (flat)
-├── tools/
-│   ├── registry.py                  # ToolRegistry.get_available(scope)
-│   ├── _base.py                     # AgentTool, decorator @register_tool
-│   ├── credito/                     # tools de dominio do credito
-│   ├── risco/
-│   ├── controladoria/
-│   └── shared/                      # tools cross-modulo (calc, reference)
-└── memory/
-    ├── session.py                   # AnalysisSession
-    ├── tenant.py                    # TenantMemory
-    └── semantic.py                  # pgvector retrieval (futuro)
+├── _scope.py                # ScopedContext
+├── engine/                  # runtime unico: runtime.py (tool loop SDK anthropic),
+│   │                        #   catalog.py (CATALOG de SpecialistAgentSpec),
+│   │                        #   output_schemas.py, prompts/ (repository), model_resolver.py
+├── agents/                  # registry.py (AgentRegistry — resolve DB-first),
+│   │                        #   _base.py (ResolvedAgent), _compose.py
+├── workflows/               # engine de workflows: models/ (tabelas workflow_*),
+│   │                        #   nodes/, services/ (engine, dry_run, graph_validator),
+│   │                        #   schemas/, public.py
+├── tools/                   # registry.py (ToolRegistry.get_available(scope)),
+│   │                        #   _base.py (AgentTool + @register_tool),
+│   │                        #   credito/, controladoria/, shared/
+└── memory/                  # _base.py (AnalysisSession), scratchpad.py,
+                             #   step_cache.py, tools.py, persistence.py
 ```
 
-**Invocacao tipica:**
+(Models SQLAlchemy da familia agentica vivem em `app/shared/ai/models/`; adapters LLM em `app/modules/integracoes/adapters/llm/` — ver §19.3.)
 
-```python
-# Em qualquer endpoint/service que precisa rodar agente:
-agent = AgentRegistry.get(
-    name="credito.analista_dossie",
-    scope=ScopedContext(tenant, empresa, user, module, permissions, db),
-)
-result = await engine.run(agent, objective="...", context={"dossier_id": X})
-# Engine resolve persona + prompt + tools filtrados + session memory.
-# Trace de tool_use vai por SSE em tempo real para frontend.
-# Audit grava decision_log + ai_usage_event.
-```
+**Invocacao tipica:** `AgentRegistry.get(name, scope)` devolve um `ResolvedAgent` (row de `agent_definition` + persona + expertises + prompt + metadados do CATALOG), consumido por `runtime.run_specialist_agent(...)`. Trace de tool_use vai por SSE; audit grava `decision_log` + `ai_usage_event`.
 
-**`decision_log.rule_or_model_version`** vira `<agent.full_id>+<prompt.full_id>+<persona.full_id>` — uma string conta toda a historia da decisao.
+**`decision_log.rule_or_model_version`** e a string composta `agente@versao + persona@versao + expertises@versao + prompt@versao` (`ResolvedAgent.audit_version`) — uma chave conta toda a historia da decisao.
 
-**Tabela `tenant_agent_override`** (futuro, opcional): permite tenant ajustar modelo/temperature/max_tokens sem fork de codigo. So system maintainer ou tenant ADMIN pode editar.
+**Tabela `tenant_agent_override`** (futuro, opcional — nao existe hoje): permitiria tenant ajustar modelo/temperature/max_tokens sem fork de codigo. Parte do caso de uso ja e coberta por `agent_definition.tenant_id` (registry resolve tenant-especifico > global).

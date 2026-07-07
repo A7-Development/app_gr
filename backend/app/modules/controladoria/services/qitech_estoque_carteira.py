@@ -29,9 +29,7 @@ from uuid import UUID
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.cadastros.models.unidade_administrativa import (
-    UnidadeAdministrativa,
-)
+from app.modules.cadastros.public import UnidadeAdministrativa
 from app.modules.controladoria.services import reports as reports_service
 from app.modules.integracoes.public import get_report_spec
 from app.warehouse.estoque_recebivel import EstoqueRecebivel

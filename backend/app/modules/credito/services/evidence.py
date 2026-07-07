@@ -25,7 +25,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agentic.playbooks.models.run import PlaybookRunStep
+from app.agentic.workflows.models.run import WorkflowRunStep
 from app.core.config import get_settings
 from app.core.enums import NodeRunStatus
 from app.modules.credito.models.dossier import CreditDossier
@@ -462,10 +462,10 @@ async def save_node_draft(
 
     node_run = (
         await db.execute(
-            select(PlaybookRunStep).where(
-                PlaybookRunStep.run_id == dossier.workflow_run_id,
-                PlaybookRunStep.node_id == node_id,
-                PlaybookRunStep.status == NodeRunStatus.WAITING_INPUT,
+            select(WorkflowRunStep).where(
+                WorkflowRunStep.run_id == dossier.workflow_run_id,
+                WorkflowRunStep.node_id == node_id,
+                WorkflowRunStep.status == NodeRunStatus.WAITING_INPUT,
             )
         )
     ).scalar_one_or_none()

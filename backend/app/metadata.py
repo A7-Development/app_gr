@@ -7,12 +7,12 @@ can auto-detect them during migration generation.
 # Core base
 # Workflow engine (shared kernel — modulo credito o consome, futuros modulos
 # como Risco e Laboratorio tambem virao a usar).
-from app.agentic.playbooks.models import (  # noqa: F401
-    PlaybookDefinition,
-    PlaybookDefinitionActive,
-    PlaybookNotification,
-    PlaybookRun,
-    PlaybookRunStep,
+from app.agentic.workflows.models import (  # noqa: F401
+    WorkflowDefinition,
+    WorkflowDefinitionActive,
+    WorkflowNotification,
+    WorkflowRun,
+    WorkflowRunStep,
 )
 from app.core.database import Base
 from app.modules.bi.models.user_fund_favorite import UserFundFavorite  # noqa: F401

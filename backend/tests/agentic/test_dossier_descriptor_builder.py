@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.agentic.playbooks.schemas.dossier_descriptor_builder import (
+from app.agentic.workflows.schemas.dossier_descriptor_builder import (
     NodeStep,
     build_dossier_descriptor,
 )

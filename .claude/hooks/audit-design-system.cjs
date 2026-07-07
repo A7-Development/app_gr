@@ -11,11 +11,11 @@
  * Stays SILENT (no stdout, exit 0) for non-matching files so it doesn't
  * spam during normal operation.
  *
- * MODO DESIGN EXPLORATORIO gate (2026-05-11): hook fica desligado enquanto
- * o banner "MODO DESIGN EXPLORATORIO ATIVO" estiver presente em CLAUDE.md.
- * Source of truth e o proprio CLAUDE.md — remover o banner re-ativa o hook
- * automaticamente. Skill audit-page-consistency continua disponivel via
- * invocacao manual.
+ * Gate (atualizado 2026-07-06): hook fica desligado enquanto a secao
+ * "POLITICA PERMANENTE DE ITERACAO VISUAL" (ex-banner "MODO DESIGN
+ * EXPLORATORIO ATIVO", promovido a permanente) estiver presente em
+ * CLAUDE.md. Source of truth e o proprio CLAUDE.md. Skill
+ * audit-page-consistency continua disponivel via invocacao manual.
  *
  * Exit codes:
  *   0 — always (we never block; this hook is purely advisory)
@@ -27,7 +27,7 @@ const path = require("path");
 try {
   const claudeMdPath = path.resolve(__dirname, "..", "..", "CLAUDE.md");
   const claudeMd = fs.readFileSync(claudeMdPath, "utf8");
-  if (/MODO DESIGN EXPLORATORIO ATIVO/.test(claudeMd)) {
+  if (/MODO DESIGN EXPLORATORIO ATIVO|POLITICA PERMANENTE DE ITERACAO VISUAL/i.test(claudeMd)) {
     process.exit(0);
   }
 } catch {
