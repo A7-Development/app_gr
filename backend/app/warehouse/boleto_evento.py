@@ -119,6 +119,15 @@ class BoletoEvento(Base):
     valor_pago: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
     data_pagamento: Mapped[date | None] = mapped_column(Date, nullable=True)
 
+    # Onde o boleto foi pago (so em liquidacoes; None nos demais eventos).
+    # FONTE PRIMARIA da analise de praca/antifraude (Sentinela CNAB): vem das
+    # posicoes 166-168/169-173/296-301 do retorno CNAB400 -- independe do
+    # cadastro de agencias do ERP. banco = codigo Febraban ("756"); agencia =
+    # codigo sem digito, zeros a esquerda preservados ("07723").
+    banco_pagador: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    agencia_pagadora: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    data_credito: Mapped[date | None] = mapped_column(Date, nullable=True)
+
     # Fluxo CNAB de origem (ORIGEM_*).
     origem: Mapped[str] = mapped_column(String(12), nullable=False)
 

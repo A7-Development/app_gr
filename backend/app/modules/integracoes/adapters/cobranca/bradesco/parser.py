@@ -17,7 +17,16 @@ Posicoes (1-based, inclusivas) verificadas contra arquivo real em 2026-06-04
     detalhe numero_documento    117-126  <- chave de cruzamento com wh_titulo
     detalhe data_vencimento     147-152  DDMMAA
     detalhe valor_titulo        153-165  centavos (zero-padded)
+    detalhe banco_pagador       166-168  banco cobrador/recebedor da liquidacao
+    detalhe agencia_pagadora    169-173  agencia cobradora/recebedora
     detalhe valor_pago          254-266  centavos (zero-padded)
+    detalhe data_credito        296-301  DDMMAA (credito ao beneficiario)
+
+Banco/agencia pagadora e data de credito (verificados contra arquivos reais em
+2026-07-07, caso JCL/MFL): preenchidos nas liquidacoes (cod 06/15/17); nos
+demais codigos vem zerados/vazios -- a normalizacao (zero -> None) e do decode.
+Sao a FONTE PRIMARIA de "onde o boleto foi pago" (Sentinela CNAB): o ERP perde
+essa informacao quando a agencia nao existe no cadastro dele.
 
 O parser NAO converte tipos nem aplica vigencia -- isso e do mapper
 (`cobranca/mappers/boleto.py`), que le o bronze e monta `wh_boleto`.
@@ -117,7 +126,10 @@ def parse_retorno(texto: str) -> RetornoParsed:
                         "numero_documento": _slice(line, 117, 126),
                         "data_vencimento": _slice(line, 147, 152),
                         "valor_titulo": _slice(line, 153, 165),
+                        "banco_pagador": _slice(line, 166, 168),
+                        "agencia_pagadora": _slice(line, 169, 173),
                         "valor_pago": _slice(line, 254, 266),
+                        "data_credito": _slice(line, 296, 301),
                     },
                 )
             )
@@ -141,6 +153,14 @@ def parse_retorno(texto: str) -> RetornoParsed:
 #     detalhe numero_documento    111-120  <- chave de cruzamento com wh_titulo
 #     detalhe data_vencimento     121-126  DDMMAA
 #     detalhe valor_titulo        127-139  centavos (zero-padded)
+#     detalhe sacado_tipo_inscr   219-220  01=CPF, 02=CNPJ
+#     detalhe sacado_documento    221-234  CNPJ/CPF do SACADO (zero-padded)
+#     detalhe sacado_nome         235-274
+#
+# O sacado vem SO na remessa (o retorno identifica o titulo, nunca pessoas) --
+# posicoes validadas empiricamente em 2026-07-07 contra arquivos reais (JCL).
+# ATENCAO de semantica: e o sacado CONTRA QUEM o boleto foi emitido; o CNAB nao
+# identifica quem efetivamente pagou (so banco/agencia recebedora, no retorno).
 #
 # A remessa NAO tem data de ocorrencia por registro (nao houve evento no banco
 # ainda -- nos a estamos ENVIANDO). A data do evento "instrucao enviada" e a
@@ -177,6 +197,9 @@ def parse_remessa(texto: str) -> RemessaParsed:
                         "numero_documento": _slice(line, 111, 120),
                         "data_vencimento": _slice(line, 121, 126),
                         "valor_titulo": _slice(line, 127, 139),
+                        "sacado_tipo_inscricao": _slice(line, 219, 220),
+                        "sacado_documento": _slice(line, 221, 234),
+                        "sacado_nome": _slice(line, 235, 274),
                     },
                 )
             )
