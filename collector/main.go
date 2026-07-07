@@ -40,20 +40,49 @@ const Version = "0.1.0"
 const serviceName = "StrataCollector"
 
 type program struct {
-	runner *agent.Runner
+	logger *log.Logger
 	cancel context.CancelFunc
 	done   chan struct{}
 }
 
+// Start retorna IMEDIATAMENTE (handshake com o SCM tem timeout de ~30s);
+// a espera por config e o loop de coleta vivem na goroutine.
 func (p *program) Start(_ service.Service) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel
 	p.done = make(chan struct{})
 	go func() {
 		defer close(p.done)
-		p.runner.Run(ctx)
+		runner := waitForRunner(ctx, p.logger)
+		if runner == nil {
+			return // Stop chegou durante a espera
+		}
+		runner.Run(ctx)
 	}()
 	return nil
+}
+
+// waitForRunner monta o runner, esperando o config.json existir em vez de
+// morrer: servico sem config fica de pe, loga e re-tenta — matar o processo
+// esconde o problema (incidente do piloto A7: instalador iniciou o servico
+// antes de gravar a config e ele morreu em silencio).
+func waitForRunner(ctx context.Context, logger *log.Logger) *agent.Runner {
+	for attempt := 1; ; attempt++ {
+		cfg, path, err := agent.LoadConfig("")
+		if err == nil {
+			logger.Printf("strata-collector %s | config: %s | servidor: %s",
+				Version, path, cfg.ServerURL)
+			client := agent.NewClient(cfg, Version)
+			state := agent.LoadState(filepath.Join(agent.DataDir(), "state.json"))
+			return agent.NewRunner(cfg, client, state, logger)
+		}
+		logger.Printf("config indisponivel (tentativa %d, nova em 60s): %v", attempt, err)
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(60 * time.Second):
+		}
+	}
 }
 
 func (p *program) Stop(_ service.Service) error {
@@ -159,7 +188,7 @@ func serviceConfig() *service.Config {
 
 func runAsService() {
 	logger := log.New(newServiceLogWriter(), "", log.LstdFlags)
-	prg := &program{runner: buildRunner("", logger)}
+	prg := &program{logger: logger}
 	svc, err := service.New(prg, serviceConfig())
 	if err != nil {
 		logger.Fatalf("service: %v", err)
