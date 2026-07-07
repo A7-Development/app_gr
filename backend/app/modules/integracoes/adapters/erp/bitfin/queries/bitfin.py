@@ -688,3 +688,139 @@ LEFT JOIN dbo.ContaOperacional co
 LEFT JOIN dbo.Cliente cli
     ON cli.ClienteId = co.ClienteId
 """
+
+
+# ---------------------------------------------------------------------------
+# Liquidacao declarada (F3 antifraude) — endpoint `bitfin.liquidacoes`.
+# Desfecho DECLARADO por titulo: evento bancario (36/37), recompra (2
+# caminhos), baixa manual classificada por evidencia, baixa administrativa
+# e perda. Ver app/warehouse/liquidacao.py.
+# ---------------------------------------------------------------------------
+
+# Evento bancario: unicos codigos que carregam ValorPago (36 Liquidacao
+# Normal, 37 Liquidacao em Cartorio). Max 1 por titulo (validado no recon).
+SELECT_LIQUIDACAO_BANCARIA = """
+SELECT
+    t.TituloId AS titulo_id,
+    t.OperacaoId AS operacao_id,
+    t.UnidadeAdministrativaId AS unidade_administrativa_id,
+    t.Situacao AS situacao_titulo,
+    t.Valor AS valor_titulo,
+    o.Codigo AS meio_codigo,
+    o.Data AS data_evento,
+    o.DataDeCredito AS data_credito,
+    o.ValorPago AS valor_pago,
+    o.TotalDeJuros AS juros,
+    o.AgenciaId AS agencia_id,
+    o.LocalDoPagamento AS local_pagamento,
+    o.PagoForaDaPracaDoSacado AS pago_fora_praca_sacado,
+    o.PagoNaPracaDoCliente AS pago_na_praca_cliente,
+    o.PagoNaAgenciaDoCliente AS pago_na_agencia_cliente,
+    o.PagoNaAgenciaDoSacado AS pago_na_agencia_sacado,
+    o.PagoEmBancoDigital AS pago_em_banco_digital,
+    p.Registrado AS registrado,
+    p.CarteiraBancariaId AS carteira_bancaria_id
+FROM dbo.CobrancaAcoesOcorrencia o
+JOIN dbo.ProcedimentoDeCobranca p
+    ON p.ProcedimentoDeCobrancaId = o.ProcedimentoDeCobrancaId
+JOIN dbo.Titulo t
+    ON t.TituloId = p.TituloId
+WHERE o.Codigo IN ('36', '37')
+"""
+
+# Titulo liquidado no ERP (Situacao 1/2) SEM evento bancario de liquidacao —
+# baixa manual, classificada por evidencia no mapper:
+#   teve_baixa_confirmada=1 + registrado=1 -> baixa_confirmada (FORTE)
+#   sem procedimento OU registrado=0      -> sem_registro (deposito plausivel)
+#   registrado=1 sem ocorrencia            -> sem_ocorrencia (fraco)
+SELECT_LIQUIDACAO_SEM_TRILHO = """
+SELECT
+    t.TituloId AS titulo_id,
+    t.OperacaoId AS operacao_id,
+    t.UnidadeAdministrativaId AS unidade_administrativa_id,
+    t.Situacao AS situacao_titulo,
+    t.Valor AS valor_titulo,
+    t.ValorDoPagamento AS valor_pago,
+    t.DataDaSituacao AS data_evento,
+    p.Registrado AS registrado,
+    p.CarteiraBancariaId AS carteira_bancaria_id,
+    CASE WHEN EXISTS (
+        SELECT 1 FROM dbo.CobrancaAcoesOcorrencia bx
+        WHERE bx.ProcedimentoDeCobrancaId = p.ProcedimentoDeCobrancaId
+          AND bx.Codigo = '05'
+    ) THEN 1 ELSE 0 END AS teve_baixa_confirmada
+FROM dbo.Titulo t
+LEFT JOIN dbo.ProcedimentoDeCobranca p
+    ON p.TituloId = t.TituloId
+WHERE t.Situacao IN (1, 2)
+  AND NOT EXISTS (
+      SELECT 1
+      FROM dbo.ProcedimentoDeCobranca p2
+      JOIN dbo.CobrancaAcoesOcorrencia o
+          ON o.ProcedimentoDeCobrancaId = p2.ProcedimentoDeCobrancaId
+         AND o.Codigo IN ('36', '37')
+      WHERE p2.TituloId = t.TituloId
+  )
+"""
+
+# Recompra efetivada — caminho 1 (RecompraItem). Titulo pode aparecer em
+# multiplas recompras (94 casos no recon) -> business key inclui RecompraId.
+SELECT_LIQUIDACAO_RECOMPRA = """
+SELECT
+    ri.RecompraId AS recompra_id,
+    ri.TituloId AS titulo_id,
+    t.OperacaoId AS operacao_id,
+    t.UnidadeAdministrativaId AS unidade_administrativa_id,
+    t.Situacao AS situacao_titulo,
+    t.Valor AS valor_titulo,
+    r.DataDeEfetivacao AS data_evento,
+    ri.ValorRecomprado AS valor_pago,
+    ri.ValorDeJuros AS juros
+FROM dbo.RecompraItem ri
+JOIN dbo.Recompra r
+    ON r.RecompraId = ri.RecompraId
+   AND r.Efetivada = 1
+JOIN dbo.Titulo t
+    ON t.TituloId = ri.TituloId
+"""
+
+# Recompra efetivada — caminho 2 (transferencia de operacao). E o caminho
+# que a view de elegibilidade do Bitfin perde (638 titulos no recon).
+SELECT_LIQUIDACAO_TRANSFERENCIA = """
+SELECT
+    tt.TituloId AS titulo_id,
+    tt.OperacaoIdDeOrigem AS operacao_id,
+    tt.OperacaoIdDeDestino AS operacao_destino_id,
+    tt.DataDeEfetivacao AS data_evento,
+    t.UnidadeAdministrativaId AS unidade_administrativa_id,
+    t.Situacao AS situacao_titulo,
+    t.Valor AS valor_titulo
+FROM dbo.TituloTransferencia tt
+JOIN dbo.Titulo t
+    ON t.TituloId = tt.TituloId
+WHERE tt.Efetivada = 1
+  AND tt.Motivo = 'Recompra'
+"""
+
+# Saidas sem dinheiro: Situacao 3 (Baixado) sem transferencia-recompra =
+# baixa administrativa ("titulo saiu da carteira sem dinheiro entrar");
+# Situacao 9 = perda (write-off contabil).
+SELECT_LIQUIDACAO_BAIXA_ADMIN = """
+SELECT
+    t.TituloId AS titulo_id,
+    t.OperacaoId AS operacao_id,
+    t.UnidadeAdministrativaId AS unidade_administrativa_id,
+    t.Situacao AS situacao_titulo,
+    t.Valor AS valor_titulo,
+    t.ValorDoPagamento AS valor_pago,
+    t.DataDaSituacao AS data_evento
+FROM dbo.Titulo t
+WHERE (
+        t.Situacao = 3
+        AND NOT EXISTS (
+            SELECT 1 FROM dbo.TituloTransferencia tt
+            WHERE tt.TituloId = t.TituloId AND tt.Efetivada = 1
+        )
+      )
+   OR t.Situacao = 9
+"""

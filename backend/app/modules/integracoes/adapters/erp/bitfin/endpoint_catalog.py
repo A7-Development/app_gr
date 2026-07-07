@@ -75,6 +75,21 @@ BITFIN_ENDPOINTS: tuple[EndpointSpec, ...] = (
         default_schedule_value="15",
         canonical_table="wh_serasa_pj_consulta",
     ),
+    EndpointSpec(
+        admin_code="bitfin",
+        name="bitfin.liquidacoes",
+        label="Bitfin · Liquidacoes (desfecho declarado)",
+        description=(
+            "Eventos de desfecho declarado por titulo (F3 antifraude): "
+            "liquidacao bancaria com praca declarada (ocorrencias 36/37), "
+            "recompra (RecompraItem + transferencia), baixa manual "
+            "classificada por evidencia, baixa administrativa e perda. "
+            "Full refresh idempotente -> wh_liquidacao."
+        ),
+        default_schedule_kind=ScheduleKind.INTERVAL,
+        default_schedule_value="360",
+        canonical_table="wh_liquidacao",
+    ),
 )
 
 
