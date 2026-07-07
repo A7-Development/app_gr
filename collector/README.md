@@ -40,9 +40,16 @@ Principios (plano Landing Zone Multi-tenant, CLAUDE.md §sobre filedrop):
 strata-collector run              roda em console (debug)
 strata-collector run -once        executa UM ciclo e sai (smoke test)
 strata-collector run -config X    config.json explicito
+strata-collector check            testa conexao usando o config.json instalado
+strata-collector check -url X -token Y    testa conexao com credenciais explicitas
 strata-collector install|uninstall|start|stop    controla o servico Windows
 strata-collector version
 ```
+
+`check` imprime `OK: conectado como "<agente>" - N pasta(s) configurada(s)`
+(exit 0) ou `ERRO: <motivo>` (exit 1). E o que o instalador roda ao avancar
+da pagina de credenciais — e a primeira ferramenta de diagnostico do suporte
+("roda `strata-collector check` e me manda a saida").
 
 ## Build
 
@@ -58,8 +65,10 @@ Cross-compile de qualquer SO: `GOOS=windows GOARCH=amd64 go build ...`.
 ## Instalador
 
 [`installer/strata-collector.iss`](./installer/strata-collector.iss) (Inno
-Setup 6). O wizard pede **apenas** URL do servidor + token; escreve o
-`config.json`, registra o servico e inicia. Compilar:
+Setup 6). O wizard pede **apenas** URL do servidor + token; **testa a
+conexao na hora** (roda `check` e mostra "conectado como X - N pastas" ou o
+erro, com opcao de instalar mesmo assim); escreve o `config.json`, registra
+o servico e inicia. Compilar:
 
 ```
 go build -ldflags="-s -w" -o strata-collector.exe .
