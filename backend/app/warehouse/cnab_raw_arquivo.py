@@ -61,6 +61,9 @@ TIPO_ARQUIVO_REMESSA = "remessa"  # nos -> banco (instrucoes enviadas)
 # em `tenant_source_config`). `api` aceito mas inerte ate o handler existir.
 FILE_SOURCE_LOCAL_PATH = "local_path"
 FILE_SOURCE_UPLOAD = "upload"
+# Landing zone multi-tenant (file_landing + StorageBackend), alimentada
+# pelo Strata Collector no servidor do cliente.
+FILE_SOURCE_LANDING = "landing"
 FILE_SOURCE_API = "api"
 
 

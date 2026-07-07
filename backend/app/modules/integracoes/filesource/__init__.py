@@ -8,10 +8,12 @@ config do tenant. `api` e reconhecido (cadastravel) mas ainda nao tem handler
 from __future__ import annotations
 
 from app.modules.integracoes.filesource._base import CNAB_ENCODING, FileSource, RawFile
+from app.modules.integracoes.filesource.landing import LandingFileSource
 from app.modules.integracoes.filesource.local_path import LocalPathFileSource
 from app.modules.integracoes.filesource.upload import UploadFileSource
 from app.warehouse.cnab_raw_arquivo import (
     FILE_SOURCE_API,
+    FILE_SOURCE_LANDING,
     FILE_SOURCE_LOCAL_PATH,
     FILE_SOURCE_UPLOAD,
 )
@@ -19,6 +21,7 @@ from app.warehouse.cnab_raw_arquivo import (
 _REGISTRY: dict[str, type[FileSource]] = {
     FILE_SOURCE_LOCAL_PATH: LocalPathFileSource,
     FILE_SOURCE_UPLOAD: UploadFileSource,
+    FILE_SOURCE_LANDING: LandingFileSource,
 }
 
 
