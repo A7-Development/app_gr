@@ -99,6 +99,20 @@ class Settings(BaseSettings):
     # Gerar com: python -c "import secrets; print(secrets.token_hex(32))"
     SYSTEM_HEALTH_TOKEN: str = Field(default="", min_length=0)
 
+    # ---------- Landing zone de arquivos (filedrop / Strata Collector) ----------
+    # Backend do object storage canonico de arquivos externos (CNAB, XMLs
+    # operacionais, uploads). `local` (disco, dev/StateDirectory) ou `s3`
+    # (AWS sa-east-1, bucket por tenant). Ver app/shared/storage/.
+    FILE_STORAGE_BACKEND: str = Field(default="local")
+    FILE_STORAGE_LOCAL_ROOT: str = Field(default="./storage/filedrop")
+    # Template do bucket S3; `{tenant}` = primeiro segmento da key (tenant_id).
+    # Ex.: "strata-filedrop-{tenant}". Sem `{tenant}` = bucket unico fixo.
+    FILE_STORAGE_S3_BUCKET_TEMPLATE: str = Field(default="")
+    FILE_STORAGE_S3_REGION: str = Field(default="sa-east-1")
+    # Limites do gateway de upload (por arquivo / por request multipart).
+    FILEDROP_MAX_FILE_BYTES: int = Field(default=26214400, ge=1)  # 25 MB
+    FILEDROP_MAX_FILES_PER_REQUEST: int = Field(default=200, ge=1)
+
     # ---------- Credito: storage de anexos do dossie ----------
     # Diretorio raiz para blobs de anexos. Em dev defaults para um path local;
     # em prod sempre setar via env (caminho absoluto fora do repo).
