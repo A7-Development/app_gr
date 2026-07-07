@@ -12,9 +12,15 @@ Shape:
       "scan_interval_minutes": 5,
       "watches": [
         {"path": "C:/Bitfin/Retorno", "glob": "*", "source_label": "cobranca_cnab"},
-        {"path": "C:/Bitfin/XML",     "glob": "*.xml", "source_label": "bitfin_xml_operacoes"}
+        {"path": "C:/Bitfin/XML",     "glob": "*.zip", "source_label": "bitfin_xml_operacoes",
+         "container": "zip"}
       ]
     }
+
+`container` (opcional) sinaliza ao CONSUMIDOR server-side que o arquivo e um
+pacote a descompactar (cliente que armazena zipado por dia). O agente ignora
+o campo de proposito: arquivo sobe sempre como esta (fidelidade bronze 13.2
+— quem abre o zip e o servidor).
 """
 
 from datetime import datetime
