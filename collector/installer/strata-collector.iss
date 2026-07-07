@@ -56,10 +56,10 @@ begin
   ConfigPage.Add('Token do agente (strata_agt_...):', False);
 end;
 
-{ Testa a conexao chamando o proprio binario ("strata-collector check") com
-  a URL + token digitados. O exe e extraido para {tmp} (ainda nao ha nada
-  instalado neste ponto do wizard); a saida vai para um arquivo temporario
-  que e lida e mostrada a quem instala. }
+// Testa a conexao chamando o proprio binario ("strata-collector check") com
+// a URL + token digitados. O exe e extraido para a pasta temporaria (ainda
+// nao ha nada instalado neste ponto do wizard); a saida vai para um arquivo
+// temporario que e lido e mostrado a quem instala.
 function TestConnection(const Url, Token: string; var Verdict: string): Boolean;
 var
   ExePath, OutPath, Params: string;
@@ -113,8 +113,9 @@ begin
         MsgBox('Conexao com o Strata verificada com sucesso!' + #13#10#13#10 + Verdict,
           mbInformation, MB_OK)
       else
-        Result := MsgBox('O teste de conexao FALHOU:' + #13#10#13#10 + Verdict +
-          #13#10#13#10 + 'Deseja instalar mesmo assim? O agente continuara ' +
+        Result := MsgBox('O teste de conexao FALHOU:' + #13#10#13#10 +
+          Verdict + #13#10#13#10 +
+          'Deseja instalar mesmo assim? O agente continuara ' +
           'tentando conectar automaticamente apos a instalacao.',
           mbConfirmation, MB_YESNO) = IDYES;
     finally
