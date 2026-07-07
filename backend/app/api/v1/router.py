@@ -9,6 +9,9 @@ from app.modules.bi.api.router import router as bi_router
 from app.modules.cadastros.api.router import router as cadastros_router
 from app.modules.controladoria.api.router import router as controladoria_router
 from app.modules.credito.api.router import router as credito_router
+from app.modules.integracoes.routers.coletores import (
+    router as integracoes_coletores_router,
+)
 from app.modules.integracoes.routers.endpoints import (
     router as integracoes_endpoints_router,
 )
@@ -76,6 +79,10 @@ api_router.include_router(
 # File Gateway (landing zone): auth por token de agente (Strata Collector),
 # nao JWT — ver MOTIVO no docstring do router. Prefixo raiz /filedrop.
 api_router.include_router(integracoes_filedrop_router)
+# Gestao das credenciais desses agentes (JWT + INTEGRACOES/ADMIN).
+api_router.include_router(
+    integracoes_coletores_router, prefix="/integracoes", tags=["integracoes:coletores"]
+)
 api_router.include_router(
     integracoes_qitech_jobs_router,
     prefix="/integracoes",

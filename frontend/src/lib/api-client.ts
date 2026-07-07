@@ -3440,6 +3440,61 @@ export const integracoes = {
   },
 }
 
+// ── Coletores (Strata Collector) — credenciais de agente + watch_config ─────
+// Espelha backend/app/modules/integracoes/routers/coletores.py.
+
+export type ColetorWatch = {
+  path: string
+  glob: string
+  source_label: string
+  /** Hint pro consumidor server-side: "zip" = pacote a descompactar la. */
+  container?: "zip"
+}
+
+export type ColetorWatchConfig = {
+  scan_interval_minutes: number
+  watches: ColetorWatch[]
+}
+
+export type ColetorRead = {
+  id: string
+  name: string
+  unidade_administrativa_id: string | null
+  watch_config: Partial<ColetorWatchConfig>
+  agent_version: string | null
+  last_seen_at: string | null
+  revoked_at: string | null
+  created_at: string
+  arquivos_total: number
+}
+
+/** Resposta de create/rotate: token plaintext aparece SO aqui, uma unica vez. */
+export type ColetorCreated = ColetorRead & { token: string }
+
+export type ColetorCreatePayload = {
+  name: string
+  unidade_administrativa_id?: string | null
+  watch_config: ColetorWatchConfig
+}
+
+export type ColetorUpdatePayload = {
+  name?: string
+  unidade_administrativa_id?: string | null
+  watch_config?: ColetorWatchConfig
+}
+
+export const coletores = {
+  list: () => apiClient.get<ColetorRead[]>("/integracoes/coletores"),
+  create: (payload: ColetorCreatePayload) =>
+    apiClient.post<ColetorCreated>("/integracoes/coletores", payload),
+  update: (id: string, payload: ColetorUpdatePayload) =>
+    apiClient.put<ColetorRead>(`/integracoes/coletores/${id}`, payload),
+  rotate: (id: string) =>
+    apiClient.post<ColetorCreated>(`/integracoes/coletores/${id}/rotate`),
+  revoke: (id: string) =>
+    apiClient.post<ColetorRead>(`/integracoes/coletores/${id}/revoke`),
+}
+
 /** Modulo cadastros — entidades primarias do tenant. */
 
 export type TipoUA =

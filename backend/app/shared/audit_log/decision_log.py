@@ -30,6 +30,10 @@ class DecisionType(enum.StrEnum):
     # Output: {removed_count, business_keys, snapshot_critical_fields}.
     # Ver CLAUDE.md 14 + refactor "espelho fiel QiTech" (2026-05-20).
     DATA_CORRECTION = "data_correction"
+    # Mudanca de configuracao administrativa feita por usuario (ex.: credencial
+    # de coletor criada/rotacionada/revogada, watch_config editada).
+    # Coluna e VARCHAR (native_enum=False) — valor novo nao exige migration.
+    CONFIGURATION_CHANGE = "configuration_change"
 
 
 class DecisionLog(Base):

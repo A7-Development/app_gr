@@ -33,6 +33,7 @@ import {
   RiSignalTowerLine,
   RiStackLine,
   RiToolsLine,
+  RiUploadCloud2Line,
   RiUserLine,
   RiUserStarLine,
   RiWallet3Line,
@@ -422,6 +423,9 @@ export const MODULES: ModuleDefinition[] = [
           { name: "Historico", href: "/integracoes/operacao/historico", enabled: true, icon: RiHistoryLine },
         ],
       },
+      // Coletores — credenciais dos agentes Strata Collector (landing zone
+      // de arquivos, PR#491/#492). Criar token, editar watch_config, revogar.
+      { name: "Coletores", href: "/integracoes/coletores", enabled: true, icon: RiUploadCloud2Line },
     ],
   },
   {
