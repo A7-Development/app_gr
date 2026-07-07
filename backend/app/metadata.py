@@ -38,6 +38,8 @@ from app.modules.credito.models import (  # noqa: F401
     CreditDossierPleito,
     CreditDossierRedFlag,
 )
+from app.modules.integracoes.models.agent_credential import AgentCredential  # noqa: F401
+from app.modules.integracoes.models.file_landing import FileLanding  # noqa: F401
 from app.modules.integracoes.models.qitech_report_job import QitechReportJob  # noqa: F401
 from app.modules.integracoes.models.qitech_ua_classe import QiTechUaClasse  # noqa: F401
 from app.modules.integracoes.models.tenant_source_config import TenantSourceConfig  # noqa: F401

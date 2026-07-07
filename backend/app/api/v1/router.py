@@ -12,6 +12,9 @@ from app.modules.credito.api.router import router as credito_router
 from app.modules.integracoes.routers.endpoints import (
     router as integracoes_endpoints_router,
 )
+from app.modules.integracoes.routers.filedrop import (
+    router as integracoes_filedrop_router,
+)
 from app.modules.integracoes.routers.operacao import (
     router as integracoes_operacao_router,
 )
@@ -70,6 +73,9 @@ api_router.include_router(
 api_router.include_router(
     integracoes_webhooks_router, prefix="/integracoes", tags=["integracoes:webhooks"]
 )
+# File Gateway (landing zone): auth por token de agente (Strata Collector),
+# nao JWT — ver MOTIVO no docstring do router. Prefixo raiz /filedrop.
+api_router.include_router(integracoes_filedrop_router)
 api_router.include_router(
     integracoes_qitech_jobs_router,
     prefix="/integracoes",
