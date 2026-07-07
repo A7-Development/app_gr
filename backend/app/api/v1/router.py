@@ -32,6 +32,7 @@ from app.modules.integracoes.routers.qitech_jobs import (
 )
 from app.modules.integracoes.routers.sources import router as integracoes_sources_router
 from app.modules.integracoes.routers.webhooks import router as integracoes_webhooks_router
+from app.modules.risco.api.router import router as risco_router
 
 api_router = APIRouter()
 
@@ -60,6 +61,8 @@ api_router.include_router(
 # Modulo credito — dossie inteligente + workflow visual + agentes especialistas.
 # (router ja inclui prefix="/credito" internamente)
 api_router.include_router(credito_router)
+# Modulo risco — contrato de liquidacao por produto (programa antifraude).
+api_router.include_router(risco_router, prefix="/risco", tags=["risco"])
 api_router.include_router(
     integracoes_sources_router, prefix="/integracoes", tags=["integracoes"]
 )

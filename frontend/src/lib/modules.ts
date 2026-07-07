@@ -389,10 +389,16 @@ export const MODULES: ModuleDefinition[] = [
     initials: "RI",
     icon: RiShieldCheckLine,
     color: "amber",
-    enabled: false,
-    permission: "none",
+    enabled: true,
+    permission: "admin",
     basePath: "/risco",
-    sections: [{ name: "Em breve", href: "#", enabled: false }],
+    sections: [
+      {
+        name: "Contratos de liquidação",
+        href: "/risco/contratos-liquidacao",
+        enabled: true,
+      },
+    ],
   },
   {
     id: "integracoes",
