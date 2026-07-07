@@ -39,7 +39,9 @@ _SEED: dict[str, tuple[str, str, str]] = {
     "CBS": ("BOLETO_BANCARIO", "OBRIGATORIO", "ANOMALA"),
     # Deposito em conta + boleto nao esperado + baixa normal
     "CMS": ("DEPOSITO_EM_CONTA", "NAO_ESPERADO", "NORMAL"),
-    "DMS": ("DEPOSITO_EM_CONTA", "NAO_ESPERADO", "NORMAL"),
+    # DMS ajustado pos-analise 90d (2026-07-07): opera legitimamente em 2
+    # modos (bancarizado E deposito direto) -> boleto PERMITIDO, sem alerta.
+    "DMS": ("DEPOSITO_EM_CONTA", "PERMITIDO", "NORMAL"),
     "RCS": ("DEPOSITO_EM_CONTA", "NAO_ESPERADO", "NORMAL"),
     "TVB": ("DEPOSITO_EM_CONTA", "NAO_ESPERADO", "NORMAL"),
     "EXP": ("DEPOSITO_EM_CONTA", "NAO_ESPERADO", "NORMAL"),
