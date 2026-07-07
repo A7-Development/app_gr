@@ -18,11 +18,12 @@
 
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { RiScales3Line } from "@remixicon/react"
+import { RiPencilLine, RiScales3Line } from "@remixicon/react"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 import { format, parseISO } from "date-fns"
 import { toast } from "sonner"
 
+import { Button } from "@/components/tremor/Button"
 import { Divider } from "@/components/tremor/Divider"
 import { DataTableShell, DrillDownSheet, PageHeader } from "@/design-system/components"
 import { tableTokens } from "@/design-system/tokens/table"
@@ -53,40 +54,62 @@ const JANELA_DIAS = 180
 // Cells
 // ───────────────────────────────────────────────────────────────────────────
 
-function DeclaradoCell({ value }: { value: string | null }) {
+function DeclaradoCell({ value, warn }: { value: string | null; warn?: boolean }) {
   if (value === null) {
-    return <span className={cx(tableTokens.badge, tableTokens.badgeNeutral)}>Em aberto</span>
+    // `warn` = produto em aberto COM volume na janela (item de curadoria).
+    return (
+      <span
+        className={cx(
+          tableTokens.badge,
+          warn ? tableTokens.badgeWarning : tableTokens.badgeNeutral,
+        )}
+        title={warn ? "Produto em aberto com volume na janela — definir contrato." : undefined}
+      >
+        Em aberto
+      </span>
+    )
   }
   return <span className={tableTokens.cellText}>{value}</span>
 }
 
-function ObservadoCell({ row }: { row: ContratoLiquidacaoRow }) {
-  const obs = row.observado
-  if (obs.qtd_titulos === 0) {
+// Percentual observado pareado com o campo declarado ao lado. Quando o
+// observado CONTRADIZ o contrato (divergencia vinda do backend), o numero
+// vira pill amber — a cor na celula E o alerta, sem coluna de badge separada.
+function PctObservadoCell({
+  pct,
+  divergente,
+  tooltip,
+  semDados,
+}: {
+  pct: number | null
+  divergente: boolean
+  tooltip: string
+  semDados: string
+}) {
+  if (pct === null) {
+    return <span className={tableTokens.cellMuted}>{semDados}</span>
+  }
+  const valor = `${pct.toLocaleString("pt-BR")}%`
+  if (divergente) {
     return (
-      <span className={tableTokens.cellMuted}>sem títulos em {obs.janela_dias}d</span>
+      <span className={cx(tableTokens.badge, tableTokens.badgeWarning)} title={tooltip}>
+        {valor}
+      </span>
     )
   }
-  const tooltip =
+  return (
+    <span className={tableTokens.cellNumber} title={tooltip}>
+      {valor}
+    </span>
+  )
+}
+
+function tooltipObservado(row: ContratoLiquidacaoRow): string {
+  const obs = row.observado
+  return (
     `${obs.qtd_titulos.toLocaleString("pt-BR")} títulos nos últimos ${obs.janela_dias} dias · ` +
     `${obs.qtd_bancarizados.toLocaleString("pt-BR")} com boleto · ` +
     `${obs.qtd_baixa_manual_bancarizados.toLocaleString("pt-BR")} baixados à mão`
-  return (
-    <span className={tableTokens.cellSecondary} title={tooltip}>
-      <span className={tableTokens.cellNumber}>
-        {obs.pct_bancarizado?.toLocaleString("pt-BR") ?? "0"}%
-      </span>{" "}
-      boleto
-      {obs.pct_baixa_manual_bancarizados !== null && (
-        <>
-          {" · "}
-          <span className={tableTokens.cellNumber}>
-            {obs.pct_baixa_manual_bancarizados.toLocaleString("pt-BR")}%
-          </span>{" "}
-          baixa manual
-        </>
-      )}
-    </span>
   )
 }
 
@@ -232,6 +255,7 @@ export default function ContratosLiquidacaoPage() {
                 ? FLUXO_LABELS[row.original.fluxo_esperado]
                 : null
             }
+            warn={row.original.divergencias.includes("volume_em_produto_aberto")}
           />
         ),
       }) as ColumnDef<ContratoLiquidacaoRow, unknown>,
@@ -242,6 +266,21 @@ export default function ContratosLiquidacaoPage() {
         cell: ({ row }) => (
           <DeclaradoCell
             value={row.original.boleto ? BOLETO_LABELS[row.original.boleto] : null}
+          />
+        ),
+      }) as ColumnDef<ContratoLiquidacaoRow, unknown>,
+      col.display({
+        id: "boleto_observado",
+        header: "Boleto observado",
+        size: 130,
+        cell: ({ row }) => (
+          <PctObservadoCell
+            pct={row.original.observado.pct_bancarizado}
+            divergente={row.original.divergencias.some(
+              (d) => d === "boleto_alem_do_esperado" || d === "boleto_abaixo_do_esperado",
+            )}
+            tooltip={tooltipObservado(row.original)}
+            semDados={`sem títulos em ${JANELA_DIAS}d`}
           />
         ),
       }) as ColumnDef<ContratoLiquidacaoRow, unknown>,
@@ -260,16 +299,19 @@ export default function ContratosLiquidacaoPage() {
         ),
       }) as ColumnDef<ContratoLiquidacaoRow, unknown>,
       col.display({
-        id: "observado",
-        header: `Observado (${JANELA_DIAS}d)`,
-        size: 200,
-        cell: ({ row }) => <ObservadoCell row={row.original} />,
-      }) as ColumnDef<ContratoLiquidacaoRow, unknown>,
-      col.display({
-        id: "divergencias",
-        header: "Divergência",
-        size: 200,
-        cell: ({ row }) => <DivergenciasCell row={row.original} />,
+        id: "baixa_manual_observada",
+        header: "Baixa manual observada",
+        size: 130,
+        cell: ({ row }) => (
+          <PctObservadoCell
+            pct={row.original.observado.pct_baixa_manual_bancarizados}
+            divergente={row.original.divergencias.includes(
+              "baixa_manual_em_produto_anomalo",
+            )}
+            tooltip={tooltipObservado(row.original)}
+            semDados="—"
+          />
+        ),
       }) as ColumnDef<ContratoLiquidacaoRow, unknown>,
       col.accessor("version", {
         header: "Versão",
@@ -290,8 +332,29 @@ export default function ContratosLiquidacaoPage() {
           )
         },
       }) as ColumnDef<ContratoLiquidacaoRow, unknown>,
+      col.display({
+        id: "actions",
+        header: "",
+        size: 48,
+        cell: ({ row }) => (
+          <div className="flex justify-end">
+            <Button
+              variant="ghost"
+              className="size-7 p-0"
+              aria-label={`Editar contrato de ${row.original.produto_nome}`}
+              title="Editar contrato"
+              onClick={(e) => {
+                e.stopPropagation()
+                openEdit(row.original)
+              }}
+            >
+              <RiPencilLine className="size-4" aria-hidden />
+            </Button>
+          </div>
+        ),
+      }) as ColumnDef<ContratoLiquidacaoRow, unknown>,
     ],
-    [],
+    [openEdit],
   )
 
   return (
@@ -350,9 +413,23 @@ export default function ContratosLiquidacaoPage() {
       >
         {selected && (
           <div className="flex flex-col gap-5 p-6">
-            <div className="flex flex-col gap-1">
-              <span className={tableTokens.header}>Observado na janela</span>
-              <ObservadoCell row={selected} />
+            <div className="flex flex-col gap-1.5">
+              <span className={tableTokens.header}>
+                Observado nos últimos {selected.observado.janela_dias} dias
+              </span>
+              {selected.observado.qtd_titulos === 0 ? (
+                <span className={tableTokens.cellMuted}>Sem títulos na janela.</span>
+              ) : (
+                <span className={tableTokens.cellSecondary}>
+                  {selected.observado.qtd_titulos.toLocaleString("pt-BR")} títulos ·{" "}
+                  {selected.observado.qtd_bancarizados.toLocaleString("pt-BR")} com boleto (
+                  {selected.observado.pct_bancarizado?.toLocaleString("pt-BR") ?? "0"}%) ·{" "}
+                  {selected.observado.qtd_baixa_manual_bancarizados.toLocaleString("pt-BR")}{" "}
+                  baixados à mão
+                  {selected.observado.pct_baixa_manual_bancarizados !== null &&
+                    ` (${selected.observado.pct_baixa_manual_bancarizados.toLocaleString("pt-BR")}% dos bancarizados)`}
+                </span>
+              )}
               {selected.divergencias.length > 0 && <DivergenciasCell row={selected} />}
             </div>
 
