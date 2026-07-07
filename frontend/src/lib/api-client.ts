@@ -3495,6 +3495,75 @@ export const coletores = {
     apiClient.post<ColetorRead>(`/integracoes/coletores/${id}/revoke`),
 }
 
+// ── Risco · Contrato de liquidacao por produto ──────────────────────────────
+// Espelha backend/app/modules/risco/api/contratos_liquidacao.py.
+
+export type FluxoLiquidacao =
+  | "boleto_bancario"
+  | "deposito_em_conta"
+  | "liquidacao_interna"
+
+export type ExpectativaBoleto = "obrigatorio" | "permitido" | "nao_esperado"
+
+export type ExpectativaBaixaManual = "normal" | "anomala"
+
+export type PerfilObservadoProduto = {
+  janela_dias: number
+  qtd_titulos: number
+  valor_total: number
+  qtd_bancarizados: number
+  qtd_baixa_manual_bancarizados: number
+  pct_bancarizado: number | null
+  pct_baixa_manual_bancarizados: number | null
+}
+
+export type ContratoLiquidacaoRow = {
+  produto_sigla: string
+  produto_nome: string
+  version: number | null
+  fluxo_esperado: FluxoLiquidacao | null
+  boleto: ExpectativaBoleto | null
+  baixa_manual: ExpectativaBaixaManual | null
+  justificativa: string | null
+  atualizado_em: string | null
+  em_aberto: boolean
+  observado: PerfilObservadoProduto
+  divergencias: string[]
+}
+
+export type ContratoLiquidacaoUpdatePayload = {
+  fluxo_esperado: FluxoLiquidacao
+  boleto: ExpectativaBoleto
+  baixa_manual: ExpectativaBaixaManual
+  justificativa?: string | null
+}
+
+export type ContratoLiquidacaoVersao = {
+  version: number
+  fluxo_esperado: FluxoLiquidacao
+  boleto: ExpectativaBoleto
+  baixa_manual: ExpectativaBaixaManual
+  justificativa: string | null
+  created_at: string
+  created_by: string | null
+}
+
+export const riscoContratosLiquidacao = {
+  list: (janelaDias: number) =>
+    apiClient.get<ContratoLiquidacaoRow[]>(
+      `/risco/contratos-liquidacao?janela_dias=${janelaDias}`,
+    ),
+  definir: (sigla: string, payload: ContratoLiquidacaoUpdatePayload) =>
+    apiClient.put<ContratoLiquidacaoRow>(
+      `/risco/contratos-liquidacao/${encodeURIComponent(sigla)}`,
+      payload,
+    ),
+  versoes: (sigla: string) =>
+    apiClient.get<ContratoLiquidacaoVersao[]>(
+      `/risco/contratos-liquidacao/${encodeURIComponent(sigla)}/versoes`,
+    ),
+}
+
 /** Modulo cadastros — entidades primarias do tenant. */
 
 export type TipoUA =
