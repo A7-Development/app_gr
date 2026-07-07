@@ -121,7 +121,7 @@ async def upload(
     settings = get_settings()
     if len(files) > settings.FILEDROP_MAX_FILES_PER_REQUEST:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=(
                 f"Batch com {len(files)} arquivos excede o limite de "
                 f"{settings.FILEDROP_MAX_FILES_PER_REQUEST} por request."

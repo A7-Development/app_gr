@@ -1,7 +1,7 @@
 """filedrop_landing_zone
 
 Revision ID: b2d7e4a8c1f5
-Revises: a1c4e7f9b2d3
+Revises: d2e8a4c1f9b7
 Create Date: 2026-07-06
 
 Fase 1 da landing zone multi-tenant de arquivos (plano "Landing Zone
@@ -25,7 +25,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision: str = "b2d7e4a8c1f5"
-down_revision: str | None = "a1c4e7f9b2d3"
+down_revision: str | None = "d2e8a4c1f9b7"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
