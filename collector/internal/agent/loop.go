@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -115,7 +116,9 @@ func (r *Runner) scan(watch Watch, maxFileBytes int64) []candidate {
 		if entry.IsDir() {
 			continue
 		}
-		if ok, _ := filepath.Match(glob, entry.Name()); !ok {
+		// Match case-insensitive: no mundo Windows/CNAB convivem .RET/.ret e
+		// .REM/.rem na mesma pasta — "*.rem" tem que pegar os dois.
+		if ok, _ := filepath.Match(strings.ToLower(glob), strings.ToLower(entry.Name())); !ok {
 			continue
 		}
 		info, err := entry.Info()
