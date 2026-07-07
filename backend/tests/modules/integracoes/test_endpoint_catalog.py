@@ -60,20 +60,22 @@ def test_qitech_catalog_index_matches_tuple():
         assert QITECH_ENDPOINTS_BY_NAME[ep.name] is ep
 
 
-def test_bitfin_catalog_has_3_endpoints():
+def test_bitfin_catalog_has_4_endpoints():
     """Documenta o tamanho atual do catalogo Bitfin. Trocar este numero
     exige batalha consciente (adicionar endpoint = atualizar este teste +
     snapshot da migration).
 
-    Composicao atual (2026-06-10):
+    Composicao atual (2026-07-07):
         - bitfin.full_sync (ERP monolitico — )
         - bitfin.entidades (party model: wh_entidade + papeis + grupos)
         - bitfin.serasa_relay (replica ConsultaFinanceira -> wh_serasa_pj_*)
+        - bitfin.liquidacoes (desfecho declarado -> wh_liquidacao, F3)
     """
     assert [ep.name for ep in BITFIN_ENDPOINTS] == [
         "bitfin.full_sync",
         "bitfin.entidades",
         "bitfin.serasa_relay",
+        "bitfin.liquidacoes",
     ]
 
 
@@ -129,6 +131,7 @@ EXPECTED_BITFIN_SNAPSHOT = [
     ("bitfin.full_sync", "interval", "30"),
     ("bitfin.entidades", "interval", "360"),
     ("bitfin.serasa_relay", "interval", "15"),
+    ("bitfin.liquidacoes", "interval", "360"),
 ]
 
 
@@ -504,7 +507,7 @@ def test_endpoint_catalog_qitech():
 
 def test_endpoint_catalog_bitfin():
     cat = endpoint_catalog(SourceType.ERP_BITFIN)
-    assert len(cat) == 3
+    assert len(cat) == 4
     assert cat[0].name == "bitfin.full_sync"
 
 

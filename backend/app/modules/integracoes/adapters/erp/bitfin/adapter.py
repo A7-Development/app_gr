@@ -114,11 +114,23 @@ async def adapter_sync_endpoint(
         summary["endpoint_name"] = endpoint_name
         return summary
 
+    # Liquidacoes declaradas (F3 antifraude) -> wh_liquidacao.
+    if endpoint_name == "bitfin.liquidacoes":
+        from app.modules.integracoes.adapters.erp.bitfin.liquidacao_sync import (
+            sync_liquidacoes,
+        )
+
+        summary = await sync_liquidacoes(
+            tenant_id, config, triggered_by=triggered_by, endpoint_name=endpoint_name
+        )
+        summary["endpoint_name"] = endpoint_name
+        return summary
+
     if endpoint_name != "bitfin.full_sync":
         raise ValueError(
             f"Endpoint desconhecido para Bitfin: {endpoint_name!r}. "
             f"Conhecido: ['bitfin.full_sync', 'bitfin.entidades', "
-            f"'bitfin.serasa_relay']"
+            f"'bitfin.serasa_relay', 'bitfin.liquidacoes']"
         )
 
     summary = await sync_all(
