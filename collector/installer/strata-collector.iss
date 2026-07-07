@@ -34,7 +34,10 @@ UninstallDisplayName={#AppName}
 Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
 
 [Files]
-Source: "..\{#ServiceExe}"; DestDir: "{app}"; Flags: ignoreversion
+; AfterInstall garante o config.json gravado DURANTE a copia de arquivos —
+; antes do [Run] registrar/iniciar o servico. (Incidente do piloto A7:
+; gravar no ssPostInstall deixava o servico subir sem config e morrer.)
+Source: "..\{#ServiceExe}"; DestDir: "{app}"; Flags: ignoreversion; AfterInstall: WriteConfig
 
 [Dirs]
 Name: "{commonappdata}\StrataCollector"
@@ -132,20 +135,21 @@ begin
   StringChangeEx(Result, '"', '\"', True);
 end;
 
-procedure CurStepChanged(CurStep: TSetupStep);
+procedure WriteConfig;
 var
   ConfigFile, Content: string;
 begin
-  if CurStep = ssPostInstall then
-  begin
-    ConfigFile := ExpandConstant('{commonappdata}\StrataCollector\config.json');
-    Content :=
-      '{' + #13#10 +
-      '  "server_url": "' + JsonEscape(Trim(ConfigPage.Values[0])) + '",' + #13#10 +
-      '  "token": "' + JsonEscape(Trim(ConfigPage.Values[1])) + '"' + #13#10 +
-      '}' + #13#10;
-    SaveStringToFile(ConfigFile, Content, False);
-  end;
+  ForceDirectories(ExpandConstant('{commonappdata}\StrataCollector'));
+  ConfigFile := ExpandConstant('{commonappdata}\StrataCollector\config.json');
+  Content :=
+    '{' + #13#10 +
+    '  "server_url": "' + JsonEscape(Trim(ConfigPage.Values[0])) + '",' + #13#10 +
+    '  "token": "' + JsonEscape(Trim(ConfigPage.Values[1])) + '"' + #13#10 +
+    '}' + #13#10;
+  if not SaveStringToFile(ConfigFile, Content, False) then
+    MsgBox('ATENCAO: falha ao gravar ' + ConfigFile + #13#10 +
+      'O servico aguardara a configuracao (re-tenta a cada 60s); ' +
+      'crie o arquivo manualmente se necessario.', mbError, MB_OK);
 end;
 
 [Run]
