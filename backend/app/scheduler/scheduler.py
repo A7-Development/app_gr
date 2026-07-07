@@ -8,7 +8,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from app.scheduler import cobranca_landing, sync_dispatcher
+from app.scheduler import cobranca_landing, fiscal_landing, sync_dispatcher
 from app.scheduler.jobs import (
     backfill_worker,
     qitech_jobs_poll,
@@ -63,6 +63,16 @@ def start_scheduler() -> AsyncIOScheduler:
         cobranca_landing.run,
         trigger=IntervalTrigger(minutes=cobranca_landing.INTERVAL_MINUTES),
         id="cobranca_landing",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=120,
+    )
+    # Drena a landing zone fiscal (NFe/CTe) pro warehouse (raw JSONB + silver).
+    _scheduler.add_job(
+        fiscal_landing.run,
+        trigger=IntervalTrigger(minutes=fiscal_landing.INTERVAL_MINUTES),
+        id="fiscal_landing",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
