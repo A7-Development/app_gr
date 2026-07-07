@@ -1,9 +1,10 @@
 """Re-parse do bronze CNAB: atualiza o payload de wh_cnab_raw_ocorrencia in-place.
 
 Quando o parser ganha campos novos (ex.: v1.3.0 -- banco_pagador/agencia_pagadora/
-data_credito das posicoes 166-173/296-301 do retorno), o payload das ocorrencias
-ja pousadas fica defasado. Este oneshot re-parseia o `conteudo` (o raw imutavel
-de verdade) de cada arquivo de retorno e ATUALIZA o payload das ocorrencias
+data_credito das posicoes 166-173/296-301 do retorno; sacado_documento/nome das
+posicoes 219-274 da remessa), o payload das ocorrencias ja pousadas fica
+defasado. Este oneshot re-parseia o `conteudo` (o raw imutavel de verdade) de
+cada arquivo (retorno E remessa) e ATUALIZA o payload das ocorrencias
 existentes casando por (arquivo_id, linha_num) -- preservando `id` e, portanto,
 a linhagem ocorrencia_id -> wh_boleto_evento.
 
@@ -28,7 +29,11 @@ from sqlalchemy import select
 import app.shared.identity.tenant  # noqa: F401  -- registry SQLAlchemy completo
 from app.core.database import AsyncSessionLocal
 from app.modules.integracoes.adapters.cobranca.etl import _LAYOUTS
-from app.warehouse.cnab_raw_arquivo import TIPO_ARQUIVO_RETORNO, CnabRawArquivo
+from app.warehouse.cnab_raw_arquivo import (
+    TIPO_ARQUIVO_REMESSA,
+    TIPO_ARQUIVO_RETORNO,
+    CnabRawArquivo,
+)
 from app.warehouse.cnab_raw_ocorrencia import CnabRawOcorrencia
 
 _COMMIT_EVERY = 50  # arquivos por commit (transacoes curtas na VPN)
@@ -39,7 +44,9 @@ async def main() -> None:
 
     async with AsyncSessionLocal() as db:
         stmt = select(CnabRawArquivo.id).where(
-            CnabRawArquivo.tipo_arquivo == TIPO_ARQUIVO_RETORNO
+            CnabRawArquivo.tipo_arquivo.in_(
+                [TIPO_ARQUIVO_RETORNO, TIPO_ARQUIVO_REMESSA]
+            )
         )
         if bancos:
             stmt = stmt.where(CnabRawArquivo.banco.in_(bancos))
@@ -57,7 +64,12 @@ async def main() -> None:
             if spec is None:
                 n_sem_layout += 1
                 continue
-            parsed = spec["parse_retorno"](arq.conteudo)
+            parser = (
+                spec["parse_retorno"]
+                if arq.tipo_arquivo == TIPO_ARQUIVO_RETORNO
+                else spec["parse_remessa"]
+            )
+            parsed = parser(arq.conteudo)
             por_linha = {o.linha_num: o.payload for o in parsed.ocorrencias}
 
             rows = (

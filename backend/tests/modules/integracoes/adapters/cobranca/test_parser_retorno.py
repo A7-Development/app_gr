@@ -82,6 +82,30 @@ def test_parse_retorno_praca_vazia_em_evento_sem_liquidacao() -> None:
     assert p["data_credito"] == ""
 
 
+def test_parse_remessa_extrai_sacado() -> None:
+    from app.modules.integracoes.adapters.cobranca.bradesco.parser import parse_remessa
+
+    detalhe = _make_line(
+        "1",
+        {
+            (38, 62): "DID102904",
+            (71, 82): "600000021344",
+            (109, 110): "01",
+            (111, 120): "5101/3",
+            (121, 126): "150626",
+            (127, 139): "0000000661563",
+            (219, 220): "02",
+            (221, 234): "08773297000130",
+            (235, 274): "JCL DISTRIBUIDORA DE ALIMENTOS LTDA ME",
+        },
+    )
+    parsed = parse_remessa("\n".join([_make_line("0", {(95, 100): "040526"}), detalhe]))
+    p = parsed.ocorrencias[0].payload
+    assert p["sacado_tipo_inscricao"] == "02"
+    assert p["sacado_documento"] == "08773297000130"
+    assert p["sacado_nome"] == "JCL DISTRIBUIDORA DE ALIMENTOS LTDA ME"
+
+
 def test_praca_field_normaliza_zeros_e_preserva_zeros_a_esquerda() -> None:
     assert _praca_field("756") == "756"
     assert _praca_field("07723") == "07723"  # zero a esquerda preservado
