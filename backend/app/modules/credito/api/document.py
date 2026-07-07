@@ -248,8 +248,8 @@ async def _resume_official_fetch_if_waiting(
     """Retoma o run quando a homologacao destrava o gate da busca oficial."""
     from sqlalchemy import select
 
-    from app.agentic.playbooks.models.run import PlaybookRunStep
-    from app.agentic.playbooks.services import engine as workflow_engine
+    from app.agentic.workflows.models.run import WorkflowRunStep
+    from app.agentic.workflows.services import engine as workflow_engine
     from app.core.enums import NodeRunStatus
     from app.modules.credito.services import dossier as dossier_svc
 
@@ -260,10 +260,10 @@ async def _resume_official_fetch_if_waiting(
         return
     waiting = (
         await db.execute(
-            select(PlaybookRunStep).where(
-                PlaybookRunStep.run_id == dossier.workflow_run_id,
-                PlaybookRunStep.node_type == "official_document_fetch",
-                PlaybookRunStep.status == NodeRunStatus.WAITING_INPUT,
+            select(WorkflowRunStep).where(
+                WorkflowRunStep.run_id == dossier.workflow_run_id,
+                WorkflowRunStep.node_type == "official_document_fetch",
+                WorkflowRunStep.status == NodeRunStatus.WAITING_INPUT,
             )
         )
     ).scalars().all()

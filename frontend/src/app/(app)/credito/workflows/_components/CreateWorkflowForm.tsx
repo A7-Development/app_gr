@@ -1,12 +1,12 @@
 // src/app/(app)/credito/workflows/_components/CreateWorkflowForm.tsx
 //
-// Form de criacao de playbook — usado dentro do <DrillDownSheet> da
+// Form de criacao de workflow — usado dentro do <DrillDownSheet> da
 // listagem `/credito/workflows`.
 //
 // Dois modos:
-//   (a) "empty" — playbook minimo (so trigger + output, sem edge); usuario
+//   (a) "empty" — workflow minimo (so trigger + output, sem edge); usuario
 //       monta o resto arrastando da palette no editor.
-//   (b) "clone" — copia o graph (nodes + edges) de um playbook existente
+//   (b) "clone" — copia o graph (nodes + edges) de um workflow existente
 //       (template Strata ou outro do tenant). Usuario ajusta no editor.
 //
 // O caller (page.tsx) e responsavel por `handleSubmit` (mutation) e
@@ -144,7 +144,7 @@ export function CreateWorkflowForm({
           <Textarea
             id="wf-desc"
             rows={2}
-            placeholder="Para que serve este playbook"
+            placeholder="Para que serve este workflow"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
@@ -172,7 +172,7 @@ export function CreateWorkflowForm({
               Clonar de um template
             </p>
             <p className={cx(tableTokens.cellSecondary, "mt-0.5")}>
-              Copia o graph (nos + edges) de um playbook existente. Voce
+              Copia o graph (nos + edges) de um workflow existente. Voce
               ajusta no editor.
             </p>
             {mode === "clone" && (

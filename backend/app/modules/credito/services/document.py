@@ -153,7 +153,7 @@ async def process_document(
     # Lazy imports — runtime puxa muita coisa; evita ciclo no import tree.
     from app.agentic.engine.catalog import CATALOG
     from app.agentic.engine.runtime import run_document_extraction
-    from app.agentic.playbooks.nodes._base import NodeContext
+    from app.agentic.workflows.nodes._base import NodeContext
 
     spec = CATALOG.get("document_extractor")
     if spec is None:

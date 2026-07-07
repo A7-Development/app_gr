@@ -197,9 +197,7 @@ async def fetch_social_contract_from_junta(
         process_document,
     )
     from app.modules.credito.services.dossier import get_dossier
-    from app.modules.integracoes.adapters.data.infosimples.errors import (
-        InfosimplesAdapterError,
-    )
+    from app.modules.integracoes.public import InfosimplesAdapterError
 
     dossier = await get_dossier(db, tenant_id=tenant_id, dossier_id=dossier_id)
     if dossier is None:
@@ -340,9 +338,7 @@ async def prepare_social_contract_options(
     sem NIRE — aí o fluxo cai no upload manual (aresta found==false).
     """
     from app.modules.credito.services.dossier import get_dossier
-    from app.modules.integracoes.adapters.data.infosimples.errors import (
-        InfosimplesAdapterError,
-    )
+    from app.modules.integracoes.public import InfosimplesAdapterError
 
     dossier = await get_dossier(db, tenant_id=tenant_id, dossier_id=dossier_id)
     if dossier is None:
@@ -447,9 +443,7 @@ async def download_social_contract_by_registro(
         create_document,
         process_document,
     )
-    from app.modules.integracoes.adapters.data.infosimples.errors import (
-        InfosimplesAdapterError,
-    )
+    from app.modules.integracoes.public import InfosimplesAdapterError
 
     try:
         download = await fetch_junta_documento(

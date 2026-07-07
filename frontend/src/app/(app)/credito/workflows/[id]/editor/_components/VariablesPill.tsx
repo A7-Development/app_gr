@@ -67,7 +67,7 @@ export function VariablesPill({
     return (
       <div className="absolute left-3 top-3 z-10 flex items-center gap-2 rounded-md border border-gray-200 bg-white/95 px-3 py-1.5 text-xs text-gray-500 shadow-sm backdrop-blur-sm dark:border-gray-800 dark:bg-gray-950/95 dark:text-gray-400">
         <RiInformationLine className="size-3.5" aria-hidden />
-        Nenhuma variável upstream — este nó é a raiz do playbook.
+        Nenhuma variável upstream — este nó é a raiz do workflow.
       </div>
     )
   }

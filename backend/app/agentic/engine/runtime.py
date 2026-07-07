@@ -58,9 +58,9 @@ from app.agentic.engine.catalog import (
 from app.agentic.engine.model_resolver import ResolvedModels, resolve_models_for_agent
 from app.agentic.engine.prompts import repository as prompt_repo
 from app.agentic.memory import AnalysisSession
-from app.agentic.playbooks.services.resolver import resolve_templates
 from app.agentic.tools._base import AgentTool
 from app.agentic.tools.registry import ToolRegistry
+from app.agentic.workflows.services.resolver import resolve_templates
 from app.core.config import get_settings
 from app.core.enums import Module, Permission
 from app.modules.integracoes.adapters.llm.anthropic.config import (
@@ -69,7 +69,7 @@ from app.modules.integracoes.adapters.llm.anthropic.config import (
 )
 
 if TYPE_CHECKING:
-    from app.agentic.playbooks.nodes._base import NodeContext
+    from app.agentic.workflows.nodes._base import NodeContext
 
 logger = logging.getLogger(__name__)
 
@@ -657,7 +657,7 @@ async def run_standalone_agent(
 ) -> AgentRunResult:
     """Run a specialist agent OUTSIDE the Credito workflow.
 
-    Unlike `run_specialist_agent` (acoplado ao NodeContext do playbook engine
+    Unlike `run_specialist_agent` (acoplado ao NodeContext do workflow engine
     e a Module.CREDITO hardcoded), este caminho permite invocar qualquer
     agente do CATALOG passando scope + tenant + permissions explicitamente.
 
@@ -685,7 +685,7 @@ async def run_standalone_agent(
         persist_run,
     )
     from app.agentic.engine.catalog import CATALOG
-    from app.agentic.playbooks.nodes._base import NodeContext
+    from app.agentic.workflows.nodes._base import NodeContext
 
     # Resolve catalog spec — strip prefixo de modulo se houver.
     raw_name = agent_name.split(".", 1)[1] if "." in agent_name else agent_name

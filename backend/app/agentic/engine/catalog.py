@@ -49,7 +49,7 @@ from app.agentic.engine.output_schemas import (
     SocialContractAnalysis,
     SocietarioAnalysis,
 )
-from app.agentic.playbooks.nodes._base import VarType
+from app.agentic.workflows.nodes._base import VarType
 
 if TYPE_CHECKING:
     pass
@@ -698,7 +698,7 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
 
 @dataclass(frozen=True, slots=True)
 class AgentPaletteMeta:
-    """Como um agente aparece na paleta do builder de playbook (frontend).
+    """Como um agente aparece na paleta do builder de workflow (frontend).
 
     SINGLE SOURCE: a curadoria de quais agentes aparecem no builder de credito
     (+ label/icone/blurb) vive AQUI, junto do CATALOG. O frontend deriva 100%

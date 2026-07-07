@@ -126,7 +126,7 @@ function ConfidenceChip({ level }: { level: "alta" | "media" | "baixa" }) {
 }
 
 // Corpo da caixa de vidro — reusável como conteúdo da aba "Atividade" do
-// <ContextPanel> (handoff playbook JUCESP: a barra direita virou painel de
+// <ContextPanel> (handoff workflow JUCESP: a barra direita virou painel de
 // contexto com abas; esta é a aba viva).
 export function AgentesAoVivoBody({
   activeStationLabel,

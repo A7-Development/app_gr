@@ -293,7 +293,7 @@ export default function WorkflowEditorPage() {
   if (isLoading || !workflow) {
     return (
       <div className="px-6 py-6">
-        <p className={tableTokens.cellSecondary}>Carregando playbook...</p>
+        <p className={tableTokens.cellSecondary}>Carregando workflow...</p>
       </div>
     )
   }
@@ -355,7 +355,7 @@ function EditorBody({
   const [esteiraOpen, setEsteiraOpen] = React.useState(false)
   const [viewMode, setViewMode] = React.useState<"canvas" | "roteiro">("canvas")
 
-  // Re-sync when playbook changes (after save).
+  // Re-sync when workflow changes (after save).
   React.useEffect(() => {
     setNodes(initialNodes)
     setEdges(initialEdges)
@@ -549,7 +549,7 @@ function EditorBody({
   const addNodeFromEntry = React.useCallback(
     (entry: PaletteEntry, position?: { x: number; y: number }) => {
       if (!canEdit) {
-        toast.error("Este playbook esta arquivado e nao pode ser editado.")
+        toast.error("Este workflow esta arquivado e nao pode ser editado.")
         return
       }
 
@@ -717,7 +717,7 @@ function EditorBody({
   // ─── Save (PATCH → new version; template Strata → cria copia do tenant) ──
   //
   // Template global (tenant_id NULL) e imutavel por design — o PATCH recusa
-  // com 404. Salvar a partir de um template cria um playbook NOVO do tenant
+  // com 404. Salvar a partir de um template cria um workflow NOVO do tenant
   // com o grafo editado (POST /workflows) e redireciona pro editor da copia.
   const isTemplate = workflow.tenant_id === null
 
@@ -891,7 +891,7 @@ function EditorBody({
               <Button
                 variant="ghost"
                 onClick={() => setTestDrawerOpen(true)}
-                title="Roda o playbook em modo sandbox sem chamar Serasa nem Anthropic."
+                title="Roda o workflow em modo sandbox sem chamar Serasa nem Anthropic."
               >
                 <RiFlashlightLine className="size-4" aria-hidden />
                 Testar
@@ -1134,7 +1134,7 @@ function ValidationDetailsPanel({
     <div className="absolute left-3 top-3 z-10 max-w-md rounded-md border border-gray-200 bg-white p-3 text-xs shadow-lg dark:border-gray-800 dark:bg-gray-950">
       <div className="mb-2 flex items-center justify-between">
         <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-          {errors.length} {errors.length === 1 ? "problema" : "problemas"} no playbook
+          {errors.length} {errors.length === 1 ? "problema" : "problemas"} no workflow
         </p>
         <button
           type="button"

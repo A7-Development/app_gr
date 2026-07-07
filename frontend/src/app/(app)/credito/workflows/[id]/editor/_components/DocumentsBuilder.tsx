@@ -136,7 +136,7 @@ export function DocumentsBuilder({
       </ul>
 
       <p className={tableTokens.cellSecondary}>
-        <span className="font-medium">Obrigatorio</span> bloqueia o avanco do playbook.{" "}
+        <span className="font-medium">Obrigatorio</span> bloqueia o avanco do workflow.{" "}
         <span className="font-medium">Opcional</span> pode ser pulado.
       </p>
     </div>

@@ -184,7 +184,7 @@ class PapelCota(enum.StrEnum):
 # laboratorio).
 
 
-class PlaybookStatus(enum.StrEnum):
+class WorkflowStatus(enum.StrEnum):
     """Lifecycle of a `workflow_definition` row."""
 
     DRAFT = "draft"
@@ -192,7 +192,7 @@ class PlaybookStatus(enum.StrEnum):
     ARCHIVED = "archived"
 
 
-class PlaybookRunStatus(enum.StrEnum):
+class WorkflowRunStatus(enum.StrEnum):
     """Status of an execution of a workflow (one row in `workflow_run`)."""
 
     PENDING = "pending"

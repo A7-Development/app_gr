@@ -1,6 +1,6 @@
 // src/app/(app)/credito/workflows/[id]/editor/_components/RefField.tsx
 //
-// "Reference Field" — campo do editor de playbook que aceita (a) variavel
+// "Reference Field" — campo do editor de workflow que aceita (a) variavel
 // upstream OU (b) valor literal. Visual no padrao Tremor Select fechado:
 // trigger de largura completa, click em qualquer lugar abre dropdown com
 // lista de variaveis disponiveis + opcao "Digitar valor manual".
@@ -74,7 +74,7 @@ type UpstreamVar = {
   template: string     // "{{node.X.output.cnpj}}"
   name: string         // "cnpj"
   varType: string      // "cnpj"
-  sourceLabel: string  // "Cadastro empresa" / "Inicio do playbook"
+  sourceLabel: string  // "Cadastro empresa" / "Inicio do workflow"
   sourceType: string   // "trigger" | "human_input" | ...
 }
 
@@ -312,7 +312,7 @@ function DropdownList({
                 <span className="font-mono">{expectedTypeLabel}</span>.
               </>
             ) : (
-              "esta etapa esta na raiz do playbook."
+              "esta etapa esta na raiz do workflow."
             )}
           </div>
         )}
@@ -515,7 +515,7 @@ function parseExpression(
     return {
       kind: "trigger",
       field,
-      sourceLabel: "Inicio do playbook",
+      sourceLabel: "Inicio do workflow",
       varType: triggerVars[field],
     }
   }

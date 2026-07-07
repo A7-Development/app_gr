@@ -40,7 +40,7 @@ class ScopedContext:
             que nao operam em dados de empresa, raro).
         user_id: UUID do usuario que iniciou a chamada agentica.
         module: Modulo de origem da invocacao (define scope default de
-            tools/playbooks disponiveis).
+            tools/workflows disponiveis).
         permissions: dict de Module -> Permission do usuario. Usado pelo
             registry pra filtrar tools que o usuario nao pode chamar.
         db: AsyncSession SQLAlchemy. Vive durante a chamada agentica.

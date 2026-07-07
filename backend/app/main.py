@@ -29,7 +29,7 @@ async def lifespan(_: FastAPI):
     # run em RUNNING apos um restart perdeu sua task de execucao. Marca FAILED
     # pra nao ficar girando pra sempre (em vez do antigo "RUNNING preso").
     try:
-        from app.agentic.playbooks.services.engine import reconcile_orphaned_runs
+        from app.agentic.workflows.services.engine import reconcile_orphaned_runs
         from app.core.database import AsyncSessionLocal
 
         async with AsyncSessionLocal() as db:

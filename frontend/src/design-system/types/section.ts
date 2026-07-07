@@ -274,7 +274,7 @@ export type StationDescriptor = {
   sections: SectionDescriptor[]
 }
 
-/** O dossiê inteiro projetado do run do playbook. */
+/** O dossiê inteiro projetado do run do workflow. */
 export type DossierDescriptor = {
   /** Código humano (DC-AAAA-NNNN). */
   code: string

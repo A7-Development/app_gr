@@ -18,12 +18,12 @@ from app.agentic.engine.output_schemas import (
     SocialContractAnalysis,
     TendenciaFaturamento,
 )
-from app.agentic.playbooks.schemas.section_builders import (
+from app.agentic.workflows.schemas.section_builders import (
     cadastral_to_section,
     revenue_to_section,
     social_contract_to_section,
 )
-from app.agentic.playbooks.schemas.section_descriptor import (
+from app.agentic.workflows.schemas.section_descriptor import (
     ApontamentosBlock,
     ConclusaoAgenteBlock,
     FichaBlock,

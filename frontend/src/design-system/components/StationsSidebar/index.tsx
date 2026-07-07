@@ -37,7 +37,7 @@ import { cx } from "@/lib/utils"
 // Vocabulário canônico de estados mora em types/section (dono do contrato, Fase 1).
 export type { StationState }
 
-/** Fase interna da estação (handoff playbook JUCESP: as fases vivem no card
+/** Fase interna da estação (handoff workflow JUCESP: as fases vivem no card
  *  da estação ativa na trilha, não como trilho horizontal no header). */
 export type StationPhase = {
   label: string

@@ -17,25 +17,25 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agentic.playbooks.models.definition import (
-    PlaybookDefinition,
-    PlaybookDefinitionActive,
+from app.agentic.workflows.models.definition import (
+    WorkflowDefinition,
+    WorkflowDefinitionActive,
 )
-from app.agentic.playbooks.schemas.definition import (
-    PlaybookActivatePayload,
-    PlaybookDefinitionCreate,
-    PlaybookDefinitionRead,
-    PlaybookDefinitionUpdate,
-    PlaybookGraph,
+from app.agentic.workflows.schemas.definition import (
+    WorkflowActivatePayload,
+    WorkflowDefinitionCreate,
+    WorkflowDefinitionRead,
+    WorkflowDefinitionUpdate,
+    WorkflowGraph,
 )
-from app.agentic.playbooks.services.dry_run import dry_run_workflow
-from app.agentic.playbooks.services.engine import list_node_types_for_editor
-from app.agentic.playbooks.services.graph_validator import (
+from app.agentic.workflows.services.dry_run import dry_run_workflow
+from app.agentic.workflows.services.engine import list_node_types_for_editor
+from app.agentic.workflows.services.graph_validator import (
     ValidationResult,
     validate_graph,
 )
 from app.core.database import get_db
-from app.core.enums import Module, Permission, PlaybookStatus
+from app.core.enums import Module, Permission, WorkflowStatus
 from app.core.module_guard import require_module
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.shared.data_providers.models.dataset import DataProviderDataset
@@ -43,51 +43,51 @@ from app.shared.data_providers.models.dataset import DataProviderDataset
 router = APIRouter()
 
 
-@router.get("/workflows", response_model=list[PlaybookDefinitionRead])
+@router.get("/workflows", response_model=list[WorkflowDefinitionRead])
 async def list_workflows(
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
     _: None = Depends(require_module(Module.CREDITO, Permission.READ)),
-) -> list[PlaybookDefinitionRead]:
+) -> list[WorkflowDefinitionRead]:
     """List Strata templates + tenant's own workflows (category=credit)."""
     rows = (
         await db.execute(
-            select(PlaybookDefinition)
+            select(WorkflowDefinition)
             .where(
-                PlaybookDefinition.category == "credit",
+                WorkflowDefinition.category == "credit",
                 or_(
-                    PlaybookDefinition.tenant_id.is_(None),  # Strata templates
-                    PlaybookDefinition.tenant_id == principal.tenant_id,
+                    WorkflowDefinition.tenant_id.is_(None),  # Strata templates
+                    WorkflowDefinition.tenant_id == principal.tenant_id,
                 ),
-                PlaybookDefinition.archived_at.is_(None),
+                WorkflowDefinition.archived_at.is_(None),
             )
-            .order_by(PlaybookDefinition.created_at.desc())
+            .order_by(WorkflowDefinition.created_at.desc())
         )
     ).scalars().all()
-    return [PlaybookDefinitionRead.model_validate(r) for r in rows]
+    return [WorkflowDefinitionRead.model_validate(r) for r in rows]
 
 
-@router.get("/workflows/{workflow_id}", response_model=PlaybookDefinitionRead)
+@router.get("/workflows/{workflow_id}", response_model=WorkflowDefinitionRead)
 async def get_workflow(
     workflow_id: UUID,
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
     _: None = Depends(require_module(Module.CREDITO, Permission.READ)),
-) -> PlaybookDefinitionRead:
+) -> WorkflowDefinitionRead:
     row = (
         await db.execute(
-            select(PlaybookDefinition).where(
-                PlaybookDefinition.id == workflow_id,
+            select(WorkflowDefinition).where(
+                WorkflowDefinition.id == workflow_id,
                 or_(
-                    PlaybookDefinition.tenant_id.is_(None),
-                    PlaybookDefinition.tenant_id == principal.tenant_id,
+                    WorkflowDefinition.tenant_id.is_(None),
+                    WorkflowDefinition.tenant_id == principal.tenant_id,
                 ),
             )
         )
     ).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="Workflow nao encontrado.")
-    return PlaybookDefinitionRead.model_validate(row)
+    return WorkflowDefinitionRead.model_validate(row)
 
 
 async def _next_version(db: AsyncSession, tenant_id: UUID | None, name: str) -> int:
@@ -101,9 +101,9 @@ async def _next_version(db: AsyncSession, tenant_id: UUID | None, name: str) -> 
     """
     current_max = (
         await db.execute(
-            select(func.max(PlaybookDefinition.version)).where(
-                PlaybookDefinition.tenant_id == tenant_id,
-                PlaybookDefinition.name == name,
+            select(func.max(WorkflowDefinition.version)).where(
+                WorkflowDefinition.tenant_id == tenant_id,
+                WorkflowDefinition.name == name,
             )
         )
     ).scalar_one_or_none()
@@ -112,15 +112,15 @@ async def _next_version(db: AsyncSession, tenant_id: UUID | None, name: str) -> 
 
 @router.post(
     "/workflows",
-    response_model=PlaybookDefinitionRead,
+    response_model=WorkflowDefinitionRead,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_workflow(
-    payload: PlaybookDefinitionCreate,
+    payload: WorkflowDefinitionCreate,
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
     _: None = Depends(require_module(Module.CREDITO, Permission.ADMIN)),
-) -> PlaybookDefinitionRead:
+) -> WorkflowDefinitionRead:
     """Create a new tenant-owned workflow (v1, status=DRAFT).
 
     Two modes:
@@ -132,11 +132,11 @@ async def create_workflow(
     if payload.clone_from is not None:
         source = (
             await db.execute(
-                select(PlaybookDefinition).where(
-                    PlaybookDefinition.id == payload.clone_from,
+                select(WorkflowDefinition).where(
+                    WorkflowDefinition.id == payload.clone_from,
                     or_(
-                        PlaybookDefinition.tenant_id.is_(None),
-                        PlaybookDefinition.tenant_id == principal.tenant_id,
+                        WorkflowDefinition.tenant_id.is_(None),
+                        WorkflowDefinition.tenant_id == principal.tenant_id,
                     ),
                 )
             )
@@ -160,56 +160,56 @@ async def create_workflow(
         graph_dict = payload.graph.model_dump()
         category = payload.category
 
-    row = PlaybookDefinition(
+    row = WorkflowDefinition(
         tenant_id=principal.tenant_id,
         name=payload.name,
         version=await _next_version(db, principal.tenant_id, payload.name),
         description=payload.description,
         category=category,
         graph=graph_dict,
-        status=PlaybookStatus.DRAFT,
+        status=WorkflowStatus.DRAFT,
         created_by=principal.user_id,
     )
     db.add(row)
     await db.commit()
     await db.refresh(row)
-    return PlaybookDefinitionRead.model_validate(row)
+    return WorkflowDefinitionRead.model_validate(row)
 
 
-@router.patch("/workflows/{workflow_id}", response_model=PlaybookDefinitionRead)
+@router.patch("/workflows/{workflow_id}", response_model=WorkflowDefinitionRead)
 async def update_workflow(
     workflow_id: UUID,
-    payload: PlaybookDefinitionUpdate,
+    payload: WorkflowDefinitionUpdate,
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
     _: None = Depends(require_module(Module.CREDITO, Permission.ADMIN)),
-) -> PlaybookDefinitionRead:
+) -> WorkflowDefinitionRead:
     """Create a new VERSION of an existing workflow (immutable history)."""
     base = (
         await db.execute(
-            select(PlaybookDefinition).where(
-                PlaybookDefinition.id == workflow_id,
-                PlaybookDefinition.tenant_id == principal.tenant_id,
+            select(WorkflowDefinition).where(
+                WorkflowDefinition.id == workflow_id,
+                WorkflowDefinition.tenant_id == principal.tenant_id,
             )
         )
     ).scalar_one_or_none()
     if base is None:
         raise HTTPException(status_code=404, detail="Workflow nao encontrado ou nao editavel.")
 
-    new_row = PlaybookDefinition(
+    new_row = WorkflowDefinition(
         tenant_id=base.tenant_id,
         name=base.name,
         version=await _next_version(db, base.tenant_id, base.name),
         description=payload.description if payload.description is not None else base.description,
         category=base.category,
         graph=payload.graph.model_dump(),
-        status=PlaybookStatus.DRAFT,
+        status=WorkflowStatus.DRAFT,
         created_by=principal.user_id,
     )
     db.add(new_row)
     await db.commit()
     await db.refresh(new_row)
-    return PlaybookDefinitionRead.model_validate(new_row)
+    return WorkflowDefinitionRead.model_validate(new_row)
 
 
 @router.delete(
@@ -237,13 +237,13 @@ async def delete_workflow(
     """
     from sqlalchemy import func
 
-    from app.agentic.playbooks.models.run import PlaybookRun
+    from app.agentic.workflows.models.run import WorkflowRun
     from app.modules.credito.models.dossier import CreditDossier
     from app.shared.identity.tenant import Tenant
 
     row = (
         await db.execute(
-            select(PlaybookDefinition).where(PlaybookDefinition.id == workflow_id)
+            select(WorkflowDefinition).where(WorkflowDefinition.id == workflow_id)
         )
     ).scalar_one_or_none()
     if row is None:
@@ -274,15 +274,15 @@ async def delete_workflow(
         raise HTTPException(
             status_code=400,
             detail=(
-                f"{n_dossiers} dossie(s) usam esta versao do playbook — "
+                f"{n_dossiers} dossie(s) usam esta versao do workflow — "
                 "exclua-os primeiro (a trilha de auditoria deles referencia "
                 "este grafo)."
             ),
         )
     n_runs = await db.scalar(
         select(func.count())
-        .select_from(PlaybookRun)
-        .where(PlaybookRun.definition_id == workflow_id)
+        .select_from(WorkflowRun)
+        .where(WorkflowRun.definition_id == workflow_id)
     )
     if n_runs:
         raise HTTPException(
@@ -296,13 +296,13 @@ async def delete_workflow(
     # Ponteiro de versao ativa: se aponta pra ESTA versao e existem OUTRAS
     # versoes vivas do mesmo nome, peca pra ativar outra (senao o nome fica
     # sem versao ativa por acidente). Se e a ultima versao, o ponteiro sai
-    # junto — exclusao limpa do playbook inteiro.
+    # junto — exclusao limpa do workflow inteiro.
     # Template global pode ter VARIOS ponteiros (um por tenant) — trata lista.
     actives = list(
         (
             await db.execute(
-                select(PlaybookDefinitionActive).where(
-                    PlaybookDefinitionActive.active_definition_id == workflow_id
+                select(WorkflowDefinitionActive).where(
+                    WorkflowDefinitionActive.active_definition_id == workflow_id
                 )
             )
         )
@@ -312,15 +312,15 @@ async def delete_workflow(
     if actives:
         n_outras = await db.scalar(
             select(func.count())
-            .select_from(PlaybookDefinition)
+            .select_from(WorkflowDefinition)
             .where(
-                PlaybookDefinition.name == row.name,
+                WorkflowDefinition.name == row.name,
                 # Irmas no MESMO escopo da versao (tenant ou global/Strata).
-                PlaybookDefinition.tenant_id.is_(None)
+                WorkflowDefinition.tenant_id.is_(None)
                 if row.tenant_id is None
-                else PlaybookDefinition.tenant_id == row.tenant_id,
-                PlaybookDefinition.id != workflow_id,
-                PlaybookDefinition.archived_at.is_(None),
+                else WorkflowDefinition.tenant_id == row.tenant_id,
+                WorkflowDefinition.id != workflow_id,
+                WorkflowDefinition.archived_at.is_(None),
             )
         )
         if n_outras:
@@ -328,7 +328,7 @@ async def delete_workflow(
                 status_code=400,
                 detail=(
                     "Esta e a versao ATIVA e existem outras versoes deste "
-                    "playbook — ative outra antes de excluir esta."
+                    "workflow — ative outra antes de excluir esta."
                 ),
             )
         for a in actives:
@@ -341,15 +341,15 @@ async def delete_workflow(
 
 @router.put(
     "/workflows/{name}/active",
-    response_model=PlaybookDefinitionRead,
+    response_model=WorkflowDefinitionRead,
 )
 async def activate_workflow(
     name: str,
-    payload: PlaybookActivatePayload,
+    payload: WorkflowActivatePayload,
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
     _: None = Depends(require_module(Module.CREDITO, Permission.ADMIN)),
-) -> PlaybookDefinitionRead:
+) -> WorkflowDefinitionRead:
     """Set `definition_id` as the tenant's active version of `name`.
 
     The definition must:
@@ -362,12 +362,12 @@ async def activate_workflow(
     """
     target = (
         await db.execute(
-            select(PlaybookDefinition).where(
-                PlaybookDefinition.id == payload.definition_id,
-                PlaybookDefinition.name == name,
+            select(WorkflowDefinition).where(
+                WorkflowDefinition.id == payload.definition_id,
+                WorkflowDefinition.name == name,
                 or_(
-                    PlaybookDefinition.tenant_id.is_(None),
-                    PlaybookDefinition.tenant_id == principal.tenant_id,
+                    WorkflowDefinition.tenant_id.is_(None),
+                    WorkflowDefinition.tenant_id == principal.tenant_id,
                 ),
             )
         )
@@ -377,7 +377,7 @@ async def activate_workflow(
             status_code=404,
             detail="Versao nao encontrada para esse nome de workflow.",
         )
-    if target.status == PlaybookStatus.ARCHIVED:
+    if target.status == WorkflowStatus.ARCHIVED:
         raise HTTPException(
             status_code=400,
             detail="Nao e possivel ativar uma versao ARCHIVED.",
@@ -386,7 +386,7 @@ async def activate_workflow(
     # Gate de validação semântica (Fase 2). DRAFT pode ser inválido — você
     # constrói incrementalmente. Mas ATIVAR um fluxo que vai rodar em prod
     # com erro estrutural é bloqueado: 422 com lista de erros pra UI mostrar.
-    graph_obj = PlaybookGraph.model_validate(target.graph)
+    graph_obj = WorkflowGraph.model_validate(target.graph)
     val = validate_graph(graph_obj)
     if val.has_errors:
         raise HTTPException(
@@ -407,9 +407,9 @@ async def activate_workflow(
 
     existing = (
         await db.execute(
-            select(PlaybookDefinitionActive).where(
-                PlaybookDefinitionActive.name == name,
-                PlaybookDefinitionActive.tenant_id == pointer_tenant_id,
+            select(WorkflowDefinitionActive).where(
+                WorkflowDefinitionActive.name == name,
+                WorkflowDefinitionActive.tenant_id == pointer_tenant_id,
             )
         )
     ).scalar_one_or_none()
@@ -423,7 +423,7 @@ async def activate_workflow(
         existing.activated_at = func.now()
     else:
         db.add(
-            PlaybookDefinitionActive(
+            WorkflowDefinitionActive(
                 id=uuid4(),
                 name=name,
                 tenant_id=pointer_tenant_id,
@@ -433,8 +433,8 @@ async def activate_workflow(
         )
 
     # Promote target to ACTIVE if it was DRAFT.
-    if target.status == PlaybookStatus.DRAFT:
-        target.status = PlaybookStatus.ACTIVE
+    if target.status == WorkflowStatus.DRAFT:
+        target.status = WorkflowStatus.ACTIVE
 
     # (Optional) other versions of the same name from this tenant could be
     # archived here. For now we don't auto-archive — user can archive
@@ -443,19 +443,19 @@ async def activate_workflow(
 
     await db.commit()
     await db.refresh(target)
-    return PlaybookDefinitionRead.model_validate(target)
+    return WorkflowDefinitionRead.model_validate(target)
 
 
 @router.get(
     "/workflows/{name}/active",
-    response_model=PlaybookDefinitionRead,
+    response_model=WorkflowDefinitionRead,
 )
 async def get_active_workflow(
     name: str,
     principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
     _: None = Depends(require_module(Module.CREDITO, Permission.READ)),
-) -> PlaybookDefinitionRead:
+) -> WorkflowDefinitionRead:
     """Return the active workflow definition for `name` for this tenant.
 
     Resolution order:
@@ -464,9 +464,9 @@ async def get_active_workflow(
     """
     pointer = (
         await db.execute(
-            select(PlaybookDefinitionActive).where(
-                PlaybookDefinitionActive.name == name,
-                PlaybookDefinitionActive.tenant_id == principal.tenant_id,
+            select(WorkflowDefinitionActive).where(
+                WorkflowDefinitionActive.name == name,
+                WorkflowDefinitionActive.tenant_id == principal.tenant_id,
             )
         )
     ).scalar_one_or_none()
@@ -474,9 +474,9 @@ async def get_active_workflow(
     if pointer is None:
         pointer = (
             await db.execute(
-                select(PlaybookDefinitionActive).where(
-                    PlaybookDefinitionActive.name == name,
-                    PlaybookDefinitionActive.tenant_id.is_(None),
+                select(WorkflowDefinitionActive).where(
+                    WorkflowDefinitionActive.name == name,
+                    WorkflowDefinitionActive.tenant_id.is_(None),
                 )
             )
         ).scalar_one_or_none()
@@ -489,8 +489,8 @@ async def get_active_workflow(
 
     target = (
         await db.execute(
-            select(PlaybookDefinition).where(
-                PlaybookDefinition.id == pointer.active_definition_id
+            select(WorkflowDefinition).where(
+                WorkflowDefinition.id == pointer.active_definition_id
             )
         )
     ).scalar_one_or_none()
@@ -500,7 +500,7 @@ async def get_active_workflow(
             detail="Pointer ativo aponta para definition inexistente — DB inconsistente.",
         )
 
-    return PlaybookDefinitionRead.model_validate(target)
+    return WorkflowDefinitionRead.model_validate(target)
 
 
 @router.get("/node-types")
@@ -643,7 +643,7 @@ def _validation_to_response(result: ValidationResult) -> dict:
 
 @router.post("/workflows/_validate")
 async def validate_workflow_graph(
-    graph: Annotated[PlaybookGraph, Body(embed=False)],
+    graph: Annotated[WorkflowGraph, Body(embed=False)],
     _principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
     _: None = Depends(require_module(Module.CREDITO, Permission.READ)),
 ) -> dict:
@@ -692,11 +692,11 @@ async def dry_run_workflow_endpoint(
     """
     base = (
         await db.execute(
-            select(PlaybookDefinition).where(
-                PlaybookDefinition.id == workflow_id,
+            select(WorkflowDefinition).where(
+                WorkflowDefinition.id == workflow_id,
                 or_(
-                    PlaybookDefinition.tenant_id.is_(None),
-                    PlaybookDefinition.tenant_id == principal.tenant_id,
+                    WorkflowDefinition.tenant_id.is_(None),
+                    WorkflowDefinition.tenant_id == principal.tenant_id,
                 ),
             )
         )
@@ -705,7 +705,7 @@ async def dry_run_workflow_endpoint(
         raise HTTPException(
             status_code=404, detail="Workflow nao encontrado ou nao acessivel."
         )
-    graph = PlaybookGraph.model_validate(base.graph)
+    graph = WorkflowGraph.model_validate(base.graph)
     result = dry_run_workflow(graph, trigger_data=payload.trigger_data)
     return {
         "final_status": result.final_status,

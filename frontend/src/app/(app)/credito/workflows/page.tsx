@@ -163,7 +163,7 @@ export default function WorkflowsPage() {
   const createMutation = useMutation({
     mutationFn: (payload: WorkflowCreatePayload) => credito.workflows.create(payload),
     onSuccess: (newWorkflow) => {
-      toast.success(`Playbook "${newWorkflow.name}" criado.`)
+      toast.success(`Workflow "${newWorkflow.name}" criado.`)
       queryClient.invalidateQueries({ queryKey: ["credito", "workflows"] })
       closeSheet()
       router.push(`/credito/workflows/${newWorkflow.id}/editor`)
@@ -171,7 +171,7 @@ export default function WorkflowsPage() {
     onError: (e) => toast.error(`Erro ao criar workflow: ${(e as Error).message}`),
   })
 
-  // Exclusao de playbook (versao DRAFT, nao-ativa, do tenant — o backend
+  // Exclusao de workflow (versao DRAFT, nao-ativa, do tenant — o backend
   // valida e recusa ACTIVE/ARCHIVED/template Strata). Estado local efemero.
   const [pendingDelete, setPendingDelete] =
     React.useState<WorkflowDefinitionRead | null>(null)
@@ -185,10 +185,10 @@ export default function WorkflowsPage() {
     if (!pendingDelete) return
     try {
       await deleteMutation.mutateAsync(pendingDelete.id)
-      toast.success(`Playbook "${pendingDelete.name}" (v${pendingDelete.version}) excluido.`)
+      toast.success(`Workflow "${pendingDelete.name}" (v${pendingDelete.version}) excluido.`)
       setPendingDelete(null)
     } catch (e) {
-      toast.error((e as Error).message || "Falha ao excluir playbook.")
+      toast.error((e as Error).message || "Falha ao excluir workflow.")
     }
   }, [deleteMutation, pendingDelete])
 
@@ -199,13 +199,13 @@ export default function WorkflowsPage() {
   return (
     <div className="flex flex-col gap-6 px-6 pt-5 pb-6">
       <PageHeader
-        title="Playbooks"
-        info="Templates Strata e playbooks do tenant. Cada análise executa um playbook."
+        title="Workflows"
+        info="Templates Strata e workflows do tenant. Cada análise executa um workflow."
         subtitle="Crédito · Configuração"
         actions={
           <Button variant="primary" onClick={openNew} disabled={isLoading}>
             <RiAddLine className="mr-1 size-4" aria-hidden />
-            Novo playbook
+            Novo workflow
           </Button>
         }
       />
@@ -215,12 +215,12 @@ export default function WorkflowsPage() {
       ) : isEmpty ? (
         <EmptyState
           icon={RiFlowChart}
-          title="Nenhum playbook ainda"
-          description="Comece criando seu primeiro playbook ou clonando um template Strata."
+          title="Nenhum workflow ainda"
+          description="Comece criando seu primeiro workflow ou clonando um template Strata."
           action={
             <Button variant="primary" onClick={openNew}>
               <RiAddLine className="mr-1 size-4" aria-hidden />
-              Criar primeiro playbook
+              Criar primeiro workflow
             </Button>
           }
         />
@@ -250,7 +250,7 @@ export default function WorkflowsPage() {
               aria-live="polite"
             >
               {visible.length === counts.todos
-                ? `${visible.length} ${visible.length === 1 ? "playbook" : "playbooks"}`
+                ? `${visible.length} ${visible.length === 1 ? "workflow" : "workflows"}`
                 : `${visible.length} de ${counts.todos}`}
             </span>
           </Card>
@@ -290,7 +290,7 @@ export default function WorkflowsPage() {
       <DrillDownSheet
         open={action === "new"}
         onClose={closeSheet}
-        title="Novo playbook"
+        title="Novo workflow"
         size="md"
       >
         <div className="p-6">
@@ -303,7 +303,7 @@ export default function WorkflowsPage() {
         </div>
       </DrillDownSheet>
 
-      {/* Confirmacao de exclusao de playbook (admin). O backend so deleta
+      {/* Confirmacao de exclusao de workflow (admin). O backend so deleta
           versao DRAFT, nao-ativa e do tenant — se for ACTIVE/ARCHIVED/template,
           retorna 400 e o toast mostra o motivo. */}
       <Dialog
@@ -314,7 +314,7 @@ export default function WorkflowsPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Excluir playbook</DialogTitle>
+            <DialogTitle>Excluir workflow</DialogTitle>
             <DialogDescription>
               Remove permanentemente a versao{" "}
               <span className="font-medium text-gray-900 dark:text-gray-50">
@@ -340,7 +340,7 @@ export default function WorkflowsPage() {
               disabled={deleteMutation.isPending}
             >
               <RiDeleteBinLine className="mr-1.5 size-4" aria-hidden />
-              Excluir playbook
+              Excluir workflow
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -390,7 +390,7 @@ const STATUS_META: Record<
 }
 
 /** Heuristica client-side de "workflow obviamente quebrado".
- *  Detecta: (a) zero ou 1 node — playbook nao roda, (b) zero edges com 2+ nodes
+ *  Detecta: (a) zero ou 1 node — workflow nao roda, (b) zero edges com 2+ nodes
  *  — nodes desconectados, (c) presenca de nodes com label vazio.
  *  Validacao semantica server-side (via /workflows/_validate) fica como backlog
  *  — exigiria chamada por card no list. */
@@ -401,10 +401,10 @@ function detectWorkflowIssues(wf: WorkflowDefinitionRead): {
   const nodeCount = wf.graph.nodes?.length ?? 0
   const edgeCount = wf.graph.edges?.length ?? 0
   if (nodeCount === 0) {
-    return { hasIssue: true, message: "Playbook vazio — sem nos" }
+    return { hasIssue: true, message: "Workflow vazio — sem nos" }
   }
   if (nodeCount === 1) {
-    return { hasIssue: true, message: "Playbook incompleto — apenas 1 no" }
+    return { hasIssue: true, message: "Workflow incompleto — apenas 1 no" }
   }
   if (edgeCount === 0) {
     return {
@@ -464,7 +464,7 @@ function WorkflowCard({
                   tableTokens.badge,
                   "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300",
                 )}
-                title={issues.message ?? "Playbook com problema estrutural"}
+                title={issues.message ?? "Workflow com problema estrutural"}
               >
                 <RiErrorWarningLine className="mr-1 inline size-3" aria-hidden />
                 {issues.message ?? "Com erro"}
@@ -512,7 +512,7 @@ function WorkflowCard({
                 <RiPencilLine className="mr-2 size-4" aria-hidden />
                 Abrir editor
               </DropdownMenuItem>
-              {/* Excluir: playbooks do tenant sempre; template Strata so
+              {/* Excluir: workflows do tenant sempre; template Strata so
                   pro master user (mantenedor). Backend valida referencia
                   (dossies/execucoes) antes de apagar. */}
               {canDelete && (

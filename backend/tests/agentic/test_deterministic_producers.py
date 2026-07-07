@@ -5,12 +5,12 @@ pytest tests/agentic/test_deterministic_producers.py --noconftest
 
 from __future__ import annotations
 
-from app.agentic.playbooks.schemas.deterministic_producers import (
+from app.agentic.workflows.schemas.deterministic_producers import (
     cadastral_card_to_section,
     faturamento_to_section,
     societario_to_section,
 )
-from app.agentic.playbooks.schemas.section_descriptor import (
+from app.agentic.workflows.schemas.section_descriptor import (
     ApontamentosBlock,
     FichaBlock,
     TabelaBlock,

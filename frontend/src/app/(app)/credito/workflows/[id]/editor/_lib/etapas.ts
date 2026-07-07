@@ -210,7 +210,7 @@ export type PaletteEntry = {
 // Catalogo de CONSULTAS DE BUREAU que aparecem na palette.
 //
 // `serasa_pj` e `bigdatacorp` estao wired no backend (ver _WIRED_ADAPTERS em
-// `backend/app/agentic/playbooks/nodes/bureau_query.py`). Os 4 produtos
+// `backend/app/agentic/workflows/nodes/bureau_query.py`). Os 4 produtos
 // nomeados (Dados Basicos RFB, Processos Detalhado, etc.) sao
 // placeholders pra fontes futuras — quando uma API for ligada, basta
 // flippar `available: true` e ajustar o `config` pro adapter correto.
@@ -299,7 +299,7 @@ export const DATA_PRODUCT_PALETTE: Array<{
 // o DOCUMENTO (nao os datasets crus); cada receita e uma cadeia curada de
 // 1..N consultas do catalogo de dados executada pelo backend (decisao de
 // produto 2026-06-11). Espelha `RECIPES` em
-// backend/app/agentic/playbooks/nodes/official_document_fetch.py.
+// backend/app/agentic/workflows/nodes/official_document_fetch.py.
 export const OFFICIAL_DOCUMENT_PALETTE: Array<{
   /** Chave estavel da receita (vai em `config.document`). */
   key: string

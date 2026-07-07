@@ -1,6 +1,6 @@
 // src/app/(app)/credito/workflows/[id]/editor/_components/TestRunDrawer.tsx
 //
-// Drawer "Testar" — roda o playbook em modo SANDBOX (dry-run) sem
+// Drawer "Testar" — roda o workflow em modo SANDBOX (dry-run) sem
 // chamar Serasa real, sem chamar Anthropic, sem persistir nada. Cada
 // nó produz output mock baseado em produces() (Fase 2/3a).
 //
@@ -127,7 +127,7 @@ export function TestRunDrawer({
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <RiFlashlightLine className="size-5 text-amber-500" aria-hidden />
-            Testar playbook
+            Testar workflow
           </SheetTitle>
           <SheetDescription>
             Roda <span className="font-mono">{workflowName}</span> em modo
@@ -139,7 +139,7 @@ export function TestRunDrawer({
           {hasUnsavedChanges && (
             <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
               Você tem mudanças não salvas. O dry-run usa a versão{" "}
-              <strong>salva</strong> do playbook. Salve antes de testar pra ver as
+              <strong>salva</strong> do workflow. Salve antes de testar pra ver as
               mudanças refletidas.
             </div>
           )}

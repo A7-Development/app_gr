@@ -31,6 +31,10 @@ from app.modules.integracoes.adapters.cobranca.etl import (
 )
 from app.modules.integracoes.adapters.data.bigdatacorp.mappers.cadastral import (
     CadastralFields,
+    map_basic_data,
+)
+from app.modules.integracoes.adapters.data.infosimples.errors import (
+    InfosimplesAdapterError,
 )
 from app.modules.integracoes.adapters.erp.bitfin.endpoint_catalog import (
     BITFIN_ENDPOINTS,
@@ -172,6 +176,7 @@ __all__ = [
     "CadastralFields",
     "CadastralQueryResult",
     "DossieResult",
+    "InfosimplesAdapterError",
     "JuntaDownloadResult",
     "JuntaFichaResult",
     "JuntaListaDocsResult",
@@ -198,6 +203,7 @@ __all__ = [
     "list_endpoint_configs_for_source",
     "list_reports",
     "listar_datas_disponiveis_qitech",
+    "map_basic_data",
     "rule_name_for",
     "run_cobranca_manual_sync",
     "run_ping",

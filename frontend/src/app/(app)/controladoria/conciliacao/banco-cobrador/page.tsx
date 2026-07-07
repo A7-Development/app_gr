@@ -53,7 +53,7 @@ import {
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { AIPanel, useAIPanel } from "@/design-system/components/AIPanel"
 import { cardTokens } from "@/design-system/tokens/card"
-import { ProvenanceFooter } from "@/components/bi/ProvenanceFooter"
+import { ProvenanceFooter } from "@/design-system/components"
 import { useScrollShadow } from "@/lib/hooks/use-scroll-shadow"
 import {
   useConciliacaoBancoCobrador,
@@ -507,8 +507,8 @@ export default function ConciliacaoBancoCobradorPage() {
           )}
         </div>
 
-        {/* Z4 — ProvenanceFooter (BI) — backend ainda nao expoe; render quando houver */}
-        <ProvenanceFooter provenance={undefined} />
+        {/* Z4 — ProvenanceFooter (DS) — backend ainda nao expoe; render quando houver */}
+        <ProvenanceFooter provenances={[]} />
       </div>
 
       <AIPanel open={ai.open} onClose={() => ai.setOpen(false)} context={aiContext} />

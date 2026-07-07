@@ -1,6 +1,6 @@
 // src/design-system/components/ContextPanel/index.tsx
 //
-// Painel de contexto da Bancada Viva (handoff playbook JUCESP, 2026-06-18).
+// Painel de contexto da Bancada Viva (handoff workflow JUCESP, 2026-06-18).
 // A barra direita deixou de ser uma "Agentes ao vivo" ociosa e virou um painel
 // de abas, sempre útil — o conteúdo cresce com o processo:
 //

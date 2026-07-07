@@ -567,9 +567,7 @@ async def resolve_cnpj_by_ua_id(
     """
     from sqlalchemy import select
 
-    from app.modules.cadastros.models.unidade_administrativa import (
-        UnidadeAdministrativa,
-    )
+    from app.modules.cadastros.public import UnidadeAdministrativa
 
     async with AsyncSessionLocal() as db:
         stmt = (
@@ -602,9 +600,7 @@ async def resolve_ua_id_by_cnpj(
     """
     from sqlalchemy import select
 
-    from app.modules.cadastros.models.unidade_administrativa import (
-        UnidadeAdministrativa,
-    )
+    from app.modules.cadastros.public import UnidadeAdministrativa
 
     cnpj_norm = _normalize_cnpj(cnpj_fundo)
     if not cnpj_norm:

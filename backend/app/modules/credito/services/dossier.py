@@ -12,9 +12,9 @@ from uuid import UUID
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agentic.playbooks.models.definition import PlaybookDefinition
-from app.agentic.playbooks.models.run import PlaybookRun, PlaybookRunStep
-from app.agentic.playbooks.services import engine as workflow_engine
+from app.agentic.workflows.models.definition import WorkflowDefinition
+from app.agentic.workflows.models.run import WorkflowRun, WorkflowRunStep
+from app.agentic.workflows.services import engine as workflow_engine
 from app.core.database import AsyncSessionLocal
 from app.core.enums import (
     CompanyRole,
@@ -22,7 +22,7 @@ from app.core.enums import (
     NodeRunStatus,
     OpinionRecommendation,
     PersonRole,
-    PlaybookRunStatus,
+    WorkflowRunStatus,
 )
 from app.modules.credito.models.company import CreditDossierCompany
 from app.modules.credito.models.dossier import CreditDossier
@@ -79,11 +79,11 @@ async def _resume_execution_bg(
             async with AsyncSessionLocal() as db:
                 run = (
                     await db.execute(
-                        select(PlaybookRun).where(PlaybookRun.id == run_id)
+                        select(WorkflowRun).where(WorkflowRun.id == run_id)
                     )
                 ).scalar_one_or_none()
-                if run is not None and run.status == PlaybookRunStatus.RUNNING:
-                    run.status = PlaybookRunStatus.FAILED
+                if run is not None and run.status == WorkflowRunStatus.RUNNING:
+                    run.status = WorkflowRunStatus.FAILED
                     run.error_detail = (
                         "Falha inesperada ao executar a etapa em background."
                     )
@@ -220,7 +220,7 @@ async def delete_dossier(
     if workflow_run_id is not None:
         run = (
             await db.execute(
-                select(PlaybookRun).where(PlaybookRun.id == workflow_run_id)
+                select(WorkflowRun).where(WorkflowRun.id == workflow_run_id)
             )
         ).scalar_one_or_none()
         if run is not None:
@@ -261,13 +261,13 @@ async def sync_status_from_workflow(
         return dossier
     run = (
         await db.execute(
-            select(PlaybookRun).where(PlaybookRun.id == dossier.workflow_run_id)
+            select(WorkflowRun).where(WorkflowRun.id == dossier.workflow_run_id)
         )
     ).scalar_one_or_none()
     if run is None:
         return dossier
     dossier.status = _status_from_run(run)
-    if run.status == PlaybookRunStatus.COMPLETED and dossier.finalized_at is None:
+    if run.status == WorkflowRunStatus.COMPLETED and dossier.finalized_at is None:
         dossier.finalized_at = run.completed_at
     await db.flush()
     return dossier
@@ -671,8 +671,8 @@ async def rerun_node(
 
     wf_def = (
         await db.execute(
-            select(PlaybookDefinition).where(
-                PlaybookDefinition.id == dossier.workflow_definition_id
+            select(WorkflowDefinition).where(
+                WorkflowDefinition.id == dossier.workflow_definition_id
             )
         )
     ).scalar_one_or_none()
@@ -681,9 +681,9 @@ async def rerun_node(
 
     run_steps = (
         await db.execute(
-            select(PlaybookRunStep).where(
-                PlaybookRunStep.run_id == dossier.workflow_run_id,
-                PlaybookRunStep.node_id.in_(targets),
+            select(WorkflowRunStep).where(
+                WorkflowRunStep.run_id == dossier.workflow_run_id,
+                WorkflowRunStep.node_id.in_(targets),
             )
         )
     ).scalars().all()
@@ -709,7 +709,7 @@ async def rerun_node(
 
     run = (
         await db.execute(
-            select(PlaybookRun).where(PlaybookRun.id == dossier.workflow_run_id)
+            select(WorkflowRun).where(WorkflowRun.id == dossier.workflow_run_id)
         )
     ).scalar_one_or_none()
     if run is not None:
@@ -717,7 +717,7 @@ async def rerun_node(
         # so entao marca RUNNING. Setar RUNNING aqui fazia o prepare_resume
         # recusar ("Cannot resume run ... in status running"). Tambem cobre o
         # caso de re-rodar a partir de um run FAILED (reprocessamento).
-        run.status = PlaybookRunStatus.PAUSED
+        run.status = WorkflowRunStatus.PAUSED
         run.completed_at = None
         run.paused_at = datetime.now(UTC)
         await db.flush()
@@ -727,21 +727,21 @@ async def rerun_node(
     )
 
 
-def _status_from_run(run: PlaybookRun) -> DossierStatus:
-    """Derive DossierStatus from PlaybookRunStatus + node-level signals."""
+def _status_from_run(run: WorkflowRun) -> DossierStatus:
+    """Derive DossierStatus from WorkflowRunStatus + node-level signals."""
     rs = run.status
-    if rs == PlaybookRunStatus.PENDING:
+    if rs == WorkflowRunStatus.PENDING:
         return DossierStatus.DRAFT
-    if rs == PlaybookRunStatus.RUNNING:
+    if rs == WorkflowRunStatus.RUNNING:
         # Heuristic: if we're past document_request, we're analyzing; else collecting.
         return DossierStatus.ANALYZING
-    if rs == PlaybookRunStatus.PAUSED:
+    if rs == WorkflowRunStatus.PAUSED:
         return DossierStatus.REVIEW
-    if rs == PlaybookRunStatus.COMPLETED:
+    if rs == WorkflowRunStatus.COMPLETED:
         return DossierStatus.FINALIZED
-    if rs == PlaybookRunStatus.CANCELLED:
+    if rs == WorkflowRunStatus.CANCELLED:
         return DossierStatus.CANCELLED
-    if rs == PlaybookRunStatus.FAILED:
+    if rs == WorkflowRunStatus.FAILED:
         return DossierStatus.REVIEW  # surfaces in UI as needing analyst intervention
     return DossierStatus.DRAFT
 
@@ -755,8 +755,8 @@ _RUNNING_NODE_TYPES = {"specialist_agent", "bureau_query", "document_extractor",
 def _next_action_for_dossier(
     *,
     dossier: CreditDossier,
-    run: PlaybookRun | None,
-    node_runs: list[PlaybookRunStep],
+    run: WorkflowRun | None,
+    node_runs: list[WorkflowRunStep],
 ) -> tuple[str, str, str | None]:
     """Compute (kind, label, next_node_id) for the dossier listing.
 
@@ -784,17 +784,17 @@ def _next_action_for_dossier(
         return ("agent_running", "Em execucao", running.node_id)
 
     # Run is paused/blocked but no waiting_input — likely transitioning.
-    if run is not None and run.status == PlaybookRunStatus.PAUSED:
+    if run is not None and run.status == WorkflowRunStatus.PAUSED:
         return ("blocked", "Bloqueado", None)
 
     # All nodes completed but dossier still not finalized — needs analyst review.
-    if run is not None and run.status == PlaybookRunStatus.COMPLETED:
+    if run is not None and run.status == WorkflowRunStatus.COMPLETED:
         return ("ready_to_finalize", "Pronto para finalizar", None)
 
-    if run is None or run.status == PlaybookRunStatus.PENDING:
+    if run is None or run.status == WorkflowRunStatus.PENDING:
         return ("blocked", "Aguardando inicio", None)
 
-    if run.status == PlaybookRunStatus.FAILED:
+    if run.status == WorkflowRunStatus.FAILED:
         return ("blocked", "Falha — revisar", None)
 
     return ("blocked", "Bloqueado", None)
@@ -821,33 +821,33 @@ async def compute_progress_map(
     run_ids = {d.workflow_run_id for d in dossiers if d.workflow_run_id is not None}
 
     # Bulk-fetch definitions (for total_steps).
-    defs_by_id: dict[UUID, PlaybookDefinition] = {}
+    defs_by_id: dict[UUID, WorkflowDefinition] = {}
     if def_ids:
         defs_rows = (
             await db.execute(
-                select(PlaybookDefinition).where(PlaybookDefinition.id.in_(def_ids))
+                select(WorkflowDefinition).where(WorkflowDefinition.id.in_(def_ids))
             )
         ).scalars().all()
         defs_by_id = {d.id: d for d in defs_rows}
 
     # Bulk-fetch runs.
-    runs_by_id: dict[UUID, PlaybookRun] = {}
+    runs_by_id: dict[UUID, WorkflowRun] = {}
     if run_ids:
         runs_rows = (
             await db.execute(
-                select(PlaybookRun).where(PlaybookRun.id.in_(run_ids))
+                select(WorkflowRun).where(WorkflowRun.id.in_(run_ids))
             )
         ).scalars().all()
         runs_by_id = {r.id: r for r in runs_rows}
 
     # Bulk-fetch node_runs grouped by run_id.
-    node_runs_by_run: dict[UUID, list[PlaybookRunStep]] = {}
+    node_runs_by_run: dict[UUID, list[WorkflowRunStep]] = {}
     if run_ids:
         nr_rows = (
             await db.execute(
-                select(PlaybookRunStep)
-                .where(PlaybookRunStep.run_id.in_(run_ids))
-                .order_by(PlaybookRunStep.started_at.asc().nulls_last())
+                select(WorkflowRunStep)
+                .where(WorkflowRunStep.run_id.in_(run_ids))
+                .order_by(WorkflowRunStep.started_at.asc().nulls_last())
             )
         ).scalars().all()
         for nr in nr_rows:

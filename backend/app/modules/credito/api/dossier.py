@@ -12,24 +12,24 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agentic.playbooks.models.definition import PlaybookDefinition
-from app.agentic.playbooks.models.run import PlaybookRun, PlaybookRunStep
-from app.agentic.playbooks.schemas.definition import PlaybookGraph
-from app.agentic.playbooks.schemas.deterministic_producers import (
+from app.agentic.workflows.models.definition import WorkflowDefinition
+from app.agentic.workflows.models.run import WorkflowRun, WorkflowRunStep
+from app.agentic.workflows.schemas.definition import WorkflowGraph
+from app.agentic.workflows.schemas.deterministic_producers import (
     cadastral_card_to_section,
     faturamento_to_section,
     societario_to_section,
 )
-from app.agentic.playbooks.schemas.dossier_descriptor_builder import (
+from app.agentic.workflows.schemas.dossier_descriptor_builder import (
     NodeStep,
     build_dossier_descriptor,
 )
-from app.agentic.playbooks.schemas.section_descriptor import (
+from app.agentic.workflows.schemas.section_descriptor import (
     DossierDescriptor,
     StationDescriptor,
 )
-from app.agentic.playbooks.services import engine as workflow_engine
-from app.agentic.playbooks.services.graph_validator import _topological_order
+from app.agentic.workflows.services import engine as workflow_engine
+from app.agentic.workflows.services.graph_validator import _topological_order
 from app.core.database import get_db
 from app.core.enums import DossierStatus, Module, NodeRunStatus, Permission
 from app.core.module_guard import require_module
@@ -192,7 +192,7 @@ async def get_dossie_state(
     if dossier.workflow_run_id is not None:
         run_row = (
             await db.execute(
-                select(PlaybookRun).where(PlaybookRun.id == dossier.workflow_run_id)
+                select(WorkflowRun).where(WorkflowRun.id == dossier.workflow_run_id)
             )
         ).scalar_one_or_none()
         if run_row is not None:
@@ -209,9 +209,9 @@ async def get_dossie_state(
 
             nr_rows = (
                 await db.execute(
-                    select(PlaybookRunStep)
-                    .where(PlaybookRunStep.run_id == run_row.id)
-                    .order_by(PlaybookRunStep.started_at.asc().nulls_last())
+                    select(WorkflowRunStep)
+                    .where(WorkflowRunStep.run_id == run_row.id)
+                    .order_by(WorkflowRunStep.started_at.asc().nulls_last())
                 )
             ).scalars().all()
 
@@ -311,7 +311,7 @@ async def get_dossie_descriptor(
 
     run_row = (
         await db.execute(
-            select(PlaybookRun).where(PlaybookRun.id == dossier.workflow_run_id)
+            select(WorkflowRun).where(WorkflowRun.id == dossier.workflow_run_id)
         )
     ).scalar_one_or_none()
     if run_row is None:
@@ -319,18 +319,18 @@ async def get_dossie_descriptor(
 
     definition = (
         await db.execute(
-            select(PlaybookDefinition).where(PlaybookDefinition.id == run_row.definition_id)
+            select(WorkflowDefinition).where(WorkflowDefinition.id == run_row.definition_id)
         )
     ).scalar_one_or_none()
     if definition is None:
         return DossierDescriptor(code=code, stations=[])
 
-    graph = PlaybookGraph.model_validate(definition.graph)
+    graph = WorkflowGraph.model_validate(definition.graph)
     ordered = _topological_order(graph)
 
     step_rows = (
         await db.execute(
-            select(PlaybookRunStep).where(PlaybookRunStep.run_id == run_row.id)
+            select(WorkflowRunStep).where(WorkflowRunStep.run_id == run_row.id)
         )
     ).scalars().all()
     by_node = {s.node_id: s for s in step_rows}
@@ -467,10 +467,10 @@ async def submit_node_input(
     # Validate the run is paused and node is awaiting input.
     waiting = (
         await db.execute(
-            select(PlaybookRunStep).where(
-                PlaybookRunStep.run_id == dossier.workflow_run_id,
-                PlaybookRunStep.node_id == node_id,
-                PlaybookRunStep.status == NodeRunStatus.WAITING_INPUT,
+            select(WorkflowRunStep).where(
+                WorkflowRunStep.run_id == dossier.workflow_run_id,
+                WorkflowRunStep.node_id == node_id,
+                WorkflowRunStep.status == NodeRunStatus.WAITING_INPUT,
             )
         )
     ).scalar_one_or_none()
@@ -584,10 +584,10 @@ async def finalize_dossie(
 
     waiting = (
         await db.execute(
-            select(PlaybookRunStep).where(
-                PlaybookRunStep.run_id == dossier.workflow_run_id,
-                PlaybookRunStep.node_id == payload.node_id,
-                PlaybookRunStep.status == NodeRunStatus.WAITING_INPUT,
+            select(WorkflowRunStep).where(
+                WorkflowRunStep.run_id == dossier.workflow_run_id,
+                WorkflowRunStep.node_id == payload.node_id,
+                WorkflowRunStep.status == NodeRunStatus.WAITING_INPUT,
             )
         )
     ).scalar_one_or_none()

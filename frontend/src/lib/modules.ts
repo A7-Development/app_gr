@@ -245,7 +245,7 @@ export const MODULES: ModuleDefinition[] = [
         ],
       },
       {
-        name: "Playbooks",
+        name: "Workflows",
         href: "/credito/workflows",
         enabled: true,
         icon: RiFlowChart,
