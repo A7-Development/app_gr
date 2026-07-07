@@ -9,6 +9,7 @@
 //
 //	strata-collector run            roda em console (debug)
 //	strata-collector run -once      executa UM ciclo e sai (smoke test)
+//	strata-collector check          testa a conexao (usado pelo instalador)
 //	strata-collector install        registra o servico do Windows
 //	strata-collector uninstall      remove o servico
 //	strata-collector start | stop   controla o servico
@@ -25,6 +26,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/kardianos/service"
 
@@ -71,6 +73,9 @@ func main() {
 		case "run":
 			runConsole(os.Args[2:])
 			return
+		case "check":
+			runCheck(os.Args[2:])
+			return
 		case "install", "uninstall", "start", "stop":
 			controlService(os.Args[1])
 			return
@@ -106,6 +111,42 @@ func runConsole(args []string) {
 		return
 	}
 	runner.Run(context.Background())
+}
+
+// runCheck tests connectivity + credential against the gateway and prints a
+// one-line verdict (ASCII-only: the installer wizard reads this output from
+// a temp file and shows it to whoever is installing). Exit 0 = ok, 1 = fail.
+func runCheck(args []string) {
+	fs := flag.NewFlagSet("check", flag.ExitOnError)
+	url := fs.String("url", "", "URL do servidor (ex.: https://strata.exemplo.com.br/api/v1)")
+	token := fs.String("token", "", "token do agente (strata_agt_...)")
+	configPath := fs.String("config", "", "config.json (alternativa a -url/-token)")
+	_ = fs.Parse(args)
+
+	var cfg *agent.Config
+	var err error
+	if *url != "" || *token != "" {
+		cfg, err = agent.NewConfig(*url, *token)
+	} else {
+		cfg, _, err = agent.LoadConfig(*configPath)
+	}
+	if err != nil {
+		fmt.Printf("ERRO: %v\n", err)
+		os.Exit(1)
+	}
+
+	client := agent.NewClient(cfg, Version)
+	client.SetTimeout(15 * time.Second)
+	ping, err := client.Ping()
+	if err != nil {
+		fmt.Printf("ERRO: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("OK: conectado como \"%s\" - %d pasta(s) configurada(s) no servidor.\n",
+		ping.AgentName, len(ping.WatchConfig.Watches))
+	if len(ping.WatchConfig.Watches) == 0 {
+		fmt.Println("Aviso: nenhuma pasta configurada ainda; o agente aguardara a configuracao.")
+	}
 }
 
 func serviceConfig() *service.Config {

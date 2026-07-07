@@ -28,6 +28,16 @@ type Config struct {
 
 const defaultMinAgeSeconds = 60
 
+// NewConfig builds a validated Config from explicit values (used by the
+// `check` command, where URL/token come from flags instead of config.json).
+func NewConfig(serverURL, token string) (*Config, error) {
+	cfg := &Config{ServerURL: serverURL, Token: token}
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
 // DataDir is where the collector keeps its own state and logs
 // (%PROGRAMDATA%\StrataCollector on Windows).
 func DataDir() string {

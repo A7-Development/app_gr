@@ -29,6 +29,10 @@ func NewClient(cfg *Config, version string) *Client {
 	}
 }
 
+// SetTimeout overrides the HTTP timeout (the `check` command uses a short
+// one so a wrong URL fails fast inside the installer wizard).
+func (c *Client) SetTimeout(d time.Duration) { c.http.Timeout = d }
+
 // Watch is one folder-to-label rule from the server-side watch_config.
 type Watch struct {
 	Path        string `json:"path"`

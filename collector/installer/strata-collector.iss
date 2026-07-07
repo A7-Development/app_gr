@@ -56,9 +56,37 @@ begin
   ConfigPage.Add('Token do agente (strata_agt_...):', False);
 end;
 
+{ Testa a conexao chamando o proprio binario ("strata-collector check") com
+  a URL + token digitados. O exe e extraido para {tmp} (ainda nao ha nada
+  instalado neste ponto do wizard); a saida vai para um arquivo temporario
+  que e lida e mostrada a quem instala. }
+function TestConnection(const Url, Token: string; var Verdict: string): Boolean;
+var
+  ExePath, OutPath, Params: string;
+  ResultCode: Integer;
+  Output: AnsiString;
+begin
+  ExtractTemporaryFile('{#ServiceExe}');
+  ExePath := ExpandConstant('{tmp}\{#ServiceExe}');
+  OutPath := ExpandConstant('{tmp}\strata-check.txt');
+  Params := '/C ""' + ExePath + '" check -url "' + Url + '" -token "' + Token +
+    '" > "' + OutPath + '" 2>&1"';
+  if not Exec(ExpandConstant('{cmd}'), Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  begin
+    Verdict := 'Nao foi possivel executar o teste de conexao.';
+    Result := False;
+    exit;
+  end;
+  if LoadStringFromFile(OutPath, Output) then
+    Verdict := Trim(String(Output))
+  else
+    Verdict := '(sem detalhes)';
+  Result := (ResultCode = 0);
+end;
+
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
-  Url, Token: string;
+  Url, Token, Verdict: string;
 begin
   Result := True;
   if CurPageID = ConfigPage.ID then
@@ -75,6 +103,23 @@ begin
     begin
       MsgBox('O token do agente deve comecar com "strata_agt_".', mbError, MB_OK);
       Result := False;
+      exit;
+    end;
+
+    WizardForm.NextButton.Enabled := False;
+    WizardForm.StatusLabel.Caption := 'Testando conexao com o servidor Strata...';
+    try
+      if TestConnection(Url, Token, Verdict) then
+        MsgBox('Conexao com o Strata verificada com sucesso!' + #13#10#13#10 + Verdict,
+          mbInformation, MB_OK)
+      else
+        Result := MsgBox('O teste de conexao FALHOU:' + #13#10#13#10 + Verdict +
+          #13#10#13#10 + 'Deseja instalar mesmo assim? O agente continuara ' +
+          'tentando conectar automaticamente apos a instalacao.',
+          mbConfirmation, MB_YESNO) = IDYES;
+    finally
+      WizardForm.StatusLabel.Caption := '';
+      WizardForm.NextButton.Enabled := True;
     end;
   end;
 end;
