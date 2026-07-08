@@ -59,6 +59,7 @@ export {
   type ShellStatusFilterOption,
   type ShellStatusFilterConfig,
 } from "./DataTableShell"
+export { TablePagination, type TablePaginationProps } from "./TablePagination"
 export {
   ExpandableTable,
   type ExpandableTableProps,

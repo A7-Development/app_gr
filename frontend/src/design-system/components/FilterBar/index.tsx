@@ -147,7 +147,15 @@ interface FilterSearchProps extends React.InputHTMLAttributes<HTMLInputElement> 
 
 export function FilterSearch({ className, onClear, ...props }: FilterSearchProps) {
   return (
-    <div className={cx("relative flex items-center", className)}>
+    // Largura mora no WRAPPER (default w-56, expande p/ w-72 no foco) e o
+    // input e w-full — assim `className="w-48"` do caller restringe o input
+    // de verdade, em vez de deixar o input fixo vazar sobre o vizinho.
+    <div
+      className={cx(
+        "relative flex w-56 items-center transition-[width] duration-150 focus-within:w-72",
+        className,
+      )}
+    >
       <RiSearchLine
         className="pointer-events-none absolute left-2.5 size-3.5 shrink-0 text-gray-400 dark:text-gray-600"
         aria-hidden="true"
@@ -155,14 +163,13 @@ export function FilterSearch({ className, onClear, ...props }: FilterSearchProps
       <input
         type="search"
         className={cx(
-          "h-[26px] w-56 rounded border pl-7 text-[13px]",
+          "h-[26px] w-full rounded border pl-7 text-[13px]",
           props.value ? "pr-7" : "pr-2.5",
           "border-gray-200 dark:border-gray-800",
           "bg-white dark:bg-gray-950",
           "text-gray-900 dark:text-gray-50",
           "placeholder:text-gray-400 dark:placeholder:text-gray-600",
           "[&::-webkit-search-cancel-button]:hidden",
-          "transition-[width] duration-150 focus:w-72",
           focusInput,
         )}
         {...props}
