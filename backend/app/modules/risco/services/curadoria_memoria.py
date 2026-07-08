@@ -348,10 +348,18 @@ async def montar_memoria(
         if ev["pago_em_banco_digital"]:
             bits.append("em banco digital")
         if bits:
+            # NAO e declaracao do banco: o CNAB traz so banco+agencia+data.
+            # A semantica de praca (na praca do cedente, fora da praca do
+            # sacado...) e CALCULADA pelo ERP comparando a agencia do CNAB
+            # (cadastro BancoAgencia dele) com os enderecos cadastrais das
+            # partes. Flag presente = informativo; flag ausente = nada (o
+            # furo do FK NULL documentado no F0). Rotulo corrigido apos
+            # feedback do Ricardo (2026-07-08).
             itens_praca.append(
                 _item(
-                    "Declarado pelo banco cobrador",
-                    ", ".join(bits),
+                    "Classificação de praça do ERP (Bitfin)",
+                    ", ".join(bits)
+                    + " — calculado do cadastro do ERP, não do arquivo do banco",
                     destaque=bool(ev["pago_na_agencia_cliente"]),
                 )
             )
