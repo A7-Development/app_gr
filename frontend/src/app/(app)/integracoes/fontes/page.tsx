@@ -23,6 +23,7 @@ import {
   statusFrom,
 } from "@/design-system/components/AdapterStatusBadge"
 import { DataTableShell } from "@/design-system/components/DataTableShell"
+import { filterControlClass } from "@/design-system/components/FilterBar"
 import { LastSyncCell } from "@/design-system/components/LastSyncCell"
 import {
   Select,
@@ -141,7 +142,7 @@ export default function CatalogoPage() {
               value={environment}
               onValueChange={(v) => setEnvironment(v as Environment)}
             >
-              <SelectTrigger className="w-36">
+              <SelectTrigger className={cx(filterControlClass, "w-36")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

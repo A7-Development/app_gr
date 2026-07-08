@@ -49,7 +49,8 @@ export function SegmentSwitch<T extends string>({
       role="tablist"
       aria-label={ariaLabel}
       className={cx(
-        "inline-flex items-center gap-0.5 rounded border border-gray-200 bg-gray-50 p-0.5",
+        // h-[26px] = regua canonica dos controles de filtro (FilterSearch).
+        "inline-flex h-[26px] items-center gap-0.5 rounded border border-gray-200 bg-gray-50 p-0.5",
         "dark:border-gray-800 dark:bg-gray-900",
         className,
       )}
@@ -64,7 +65,7 @@ export function SegmentSwitch<T extends string>({
             aria-selected={active}
             onClick={() => onChange(opt.value)}
             className={cx(
-              "inline-flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors",
+              "inline-flex h-5 items-center gap-1 rounded px-2 text-xs transition-colors",
               active
                 ? "bg-white text-gray-900 shadow-sm dark:bg-gray-950 dark:text-gray-50"
                 : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200",

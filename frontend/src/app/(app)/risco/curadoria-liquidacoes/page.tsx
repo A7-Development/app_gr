@@ -50,6 +50,7 @@ import {
   DataTable,
   DrillDownSheet,
   FilterSearch,
+  filterControlClass,
   PageHeader,
   SegmentSwitch,
 } from "@/design-system/components"
@@ -592,7 +593,7 @@ export default function CuradoriaLiquidacoesPage() {
             className="w-48"
           />
           <Select value={produto} onValueChange={setProduto}>
-            <SelectTrigger className="h-[30px] w-52 text-[13px]">
+            <SelectTrigger className={cx(filterControlClass, "w-52")}>
               <SelectValue placeholder="Produto" />
             </SelectTrigger>
             <SelectContent>
@@ -605,7 +606,7 @@ export default function CuradoriaLiquidacoesPage() {
             </SelectContent>
           </Select>
           <Select value={situacao} onValueChange={setSituacao}>
-            <SelectTrigger className="h-[30px] w-52 text-[13px]">
+            <SelectTrigger className={cx(filterControlClass, "w-52")}>
               <SelectValue placeholder="Situação do título" />
             </SelectTrigger>
             <SelectContent>

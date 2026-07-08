@@ -43,7 +43,7 @@ import {
   SelectValue,
 } from "@/components/tremor/Select"
 import { Textarea } from "@/components/tremor/Textarea"
-import { PageHeader } from "@/design-system/components"
+import { filterControlClass, PageHeader } from "@/design-system/components"
 import { cardTokens } from "@/design-system/tokens/card"
 import { tableTokens } from "@/design-system/tokens/table"
 import { cx } from "@/lib/utils"
@@ -150,7 +150,7 @@ export default function TemplatesPage() {
           value={filterDocType}
           onValueChange={(v) => setFilterDocType(v as DocumentType | "all")}
         >
-          <SelectTrigger id="doc-type-filter" className="w-72">
+          <SelectTrigger id="doc-type-filter" className={cx(filterControlClass, "w-72")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

@@ -25,6 +25,8 @@ import { PageHeader } from "@/design-system/components/PageHeader"
 import { AdapterStatusBadge, statusFrom } from "@/design-system/components/AdapterStatusBadge"
 import { EmptyState } from "@/design-system/components/EmptyState"
 import { ErrorState } from "@/design-system/components/ErrorState"
+import { filterControlClass } from "@/design-system/components/FilterBar"
+import { cx } from "@/lib/utils"
 import { Button } from "@/components/tremor/Button"
 import {
   Select,
@@ -215,7 +217,7 @@ export default function SourceDetailPage() {
                 onValueChange={(v) => setUa(v || null)}
                 disabled={uasQuery.isLoading || uas.length === 0}
               >
-                <SelectTrigger className="w-56">
+                <SelectTrigger className={cx(filterControlClass, "w-56")}>
                   <SelectValue
                     placeholder={
                       uasQuery.isLoading

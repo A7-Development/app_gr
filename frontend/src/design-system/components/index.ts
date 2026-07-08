@@ -33,7 +33,7 @@ export {
 } from "./KpiBand"
 export {
   FilterBar, FilterSearch, FilterChip, RemovableChip,
-  MoreFiltersButton, SavedViewsDropdown,
+  MoreFiltersButton, SavedViewsDropdown, filterControlClass,
   type SavedView,
 } from "./FilterBar"
 export {
