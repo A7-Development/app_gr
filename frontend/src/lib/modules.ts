@@ -540,6 +540,13 @@ export const MODULES: ModuleDefinition[] = [
         groupLabel: "Inteligencia Artificial",
       },
       {
+        name: "Saúde das integrações",
+        href: "/admin/dados/saude",
+        enabled: true,
+        icon: RiPulseLine,
+        groupLabel: "Dados",
+      },
+      {
         name: "Provedores",
         href: "/admin/dados/provedores",
         enabled: true,
