@@ -123,12 +123,31 @@ WHERE l.tenant_id = :tenant_id
 
 _CANAL_LABEL = {
     "banco_praca": "banco com praça física",
-    "banco_sem_praca": "banco sem praça física (eletrônica/matriz)",
     "cooperativa": "cooperativa de crédito (sem praça pública)",
     "ip": "instituição de pagamento (conta eletrônica)",
     "outras_if": "outra instituição financeira",
     "nao_resolvido": "não resolvido na referência Bacen",
 }
+
+
+def _label_canal(praca: Any) -> str:
+    """Human label of the channel — banco_sem_praca is NOT one thing.
+
+    The resolver bucket `banco_sem_praca` mixes (a) genuine electronic
+    settlement at the agencia-matriz 0001 and (b) a real branch the current
+    Bacen snapshot does not list (internal numbering or EXTINCT agency —
+    known F2 gotcha, e.g. Bradesco 1417/RJ). Calling (b) "sem praça física"
+    misled the curator (feedback Ricardo 2026-07-08) — the truth is "praça
+    não identificada", possibly a physical branch.
+    """
+    if praca.canal != "banco_sem_praca":
+        return _CANAL_LABEL.get(praca.canal, praca.canal)
+    if "matriz" in (praca.detalhe or ""):
+        return "liquidação eletrônica (agência-matriz 0001 — cidade não é praça)"
+    return (
+        "banco — praça não identificada (agência fora da referência Bacen; "
+        "pode ser física extinta ou renumerada)"
+    )
 
 _SITUACAO_LABEL = {
     0: "Em aberto",
@@ -311,7 +330,7 @@ async def montar_memoria(
         itens_praca = [
             _item("Banco pagador", f"{banco} — {praca.instituicao or 'não identificado'}"),
             _item("Agência", agencia or "—"),
-            _item("Canal", _CANAL_LABEL.get(praca.canal, praca.canal)),
+            _item("Canal", _label_canal(praca)),
             _item(
                 "Praça do pagamento",
                 f"{praca.municipio}/{praca.uf}" if praca.praca_resolvida else f"não resolvida ({praca.detalhe})",
