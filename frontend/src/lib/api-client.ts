@@ -3701,7 +3701,7 @@ export const riscoCuradoriaLiquidacoes = {
     apiClient.get<MemoriaLiquidacao>(
       `/risco/curadoria-liquidacoes/${liquidacaoId}`,
     ),
-  tag: (liquidacaoId: string, tag: "fraude" | "ok", nota?: string | null) =>
+  tag: (liquidacaoId: string, tag: "fraude" | "ok" | "neutro", nota?: string | null) =>
     apiClient.post<{ id: string }>(
       `/risco/curadoria-liquidacoes/${liquidacaoId}/tag`,
       { tag, nota: nota ?? null },

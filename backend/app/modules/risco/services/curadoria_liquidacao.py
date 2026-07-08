@@ -59,7 +59,9 @@ SELECT
     ds.features AS score_features,
     ds.regra_dura,
     ds.regra_dura_motivo,
-    tv.tag AS tag_vigente,
+    -- NEUTRO como tag vigente = volta a "sem marcacao" (append-only: a linha
+    -- NEUTRO existe e preserva a auditoria, mas a UI a trata como neutro).
+    nullif(tv.tag, 'NEUTRO') AS tag_vigente,
     tv.nota AS tag_nota,
     tv.autor_nome AS tag_autor,
     tv.created_at AS tag_em,
@@ -175,7 +177,8 @@ async def listar_liquidacoes(
         filtros.append("AND l.situacao_titulo = :situacao_titulo")
         params["situacao_titulo"] = situacao_titulo
     if tag == "sem_tag":
-        filtros.append("AND tv.tag IS NULL")
+        # Nunca marcada OU marcada e depois neutralizada — ambas sem veredito.
+        filtros.append("AND (tv.tag IS NULL OR tv.tag = 'NEUTRO')")
     elif tag in ("fraude", "ok"):
         filtros.append("AND tv.tag = :tag")
         params["tag"] = tag.upper()
