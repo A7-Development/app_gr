@@ -61,20 +61,24 @@ _FINGERPRINT_MIN_EVENTOS = 3
 _FINGERPRINT_MIN_ESTABILIDADE = 0.8
 
 # Ordem canonica das features — treino e score compartilham este contrato.
+# TRILHO B REMOVIDO (2026-07-08): os bits de praca do ERP (bit_pago_agencia_
+# cliente / bit_pago_praca_cliente / bit_fora_praca_sacado / pago_banco_
+# digital) sairam — a praca agora vem SO da resolucao propria (escada Bacen
+# -> cadastro ERP), com `praca_fonte` distinguindo a origem.
 FEATURE_NAMES: tuple[str, ...] = (
-    "bit_pago_agencia_cliente",
-    "bit_pago_praca_cliente",
-    "bit_fora_praca_sacado",
-    "pago_banco_digital",
     "match_agencia_conta_cedente",
     "cidade_pgto_eq_cedente",
     "cidade_pgto_neq_sacado",
+    "praca_fonte_bacen",
+    "praca_fonte_cadastro_erp",
+    "praca_nao_resolvida",
     "canal_cooperativa",
     "canal_ip",
     "canal_sem_praca",
     "canal_nao_resolvido",
     "quebra_fingerprint",
     "agencia_compartilhada",
+    "agencia_compartilhada_cedentes",
     "canal_baixa_manual",
     "baixa_confirmada",
     "sem_ocorrencia",
@@ -212,25 +216,40 @@ WHERE be.tenant_id = :tenant_id
 GROUP BY bv.sacado_documento, be.banco_pagador
 """)
 
-# S2: sacados distintos do mesmo cedente pagando na mesma agencia fisica (12m).
+# S2: por (banco, agencia fisica, 12m) — sacados distintos POR CEDENTE e o
+# total de CEDENTES distintos na agencia (dimensao de rede: operador comum).
 _SQL_AGENCIA_COMPARTILHADA = text("""
-SELECT o.cedente_documento, be.banco_pagador, be.agencia_pagadora,
-       count(DISTINCT bv.sacado_documento) AS n_sacados
-FROM wh_boleto_evento be
-JOIN wh_boleto_vigente bv
-    ON bv.tenant_id = be.tenant_id
-   AND bv.banco_origem = be.banco_origem
-   AND bv.nosso_numero = be.nosso_numero
-JOIN wh_titulo t
-    ON t.tenant_id = be.tenant_id AND t.numero = bv.numero_documento
-JOIN wh_operacao o
-    ON o.operacao_id = t.operacao_id AND o.tenant_id = t.tenant_id
-WHERE be.tenant_id = :tenant_id
-  AND be.banco_pagador IS NOT NULL
-  AND be.agencia_pagadora IS NOT NULL
-  AND be.valor_pago > 0
-  AND be.data_ocorrencia >= now() - interval '365 days'
-GROUP BY o.cedente_documento, be.banco_pagador, be.agencia_pagadora
+WITH base AS (
+    SELECT DISTINCT o.cedente_documento, bv.sacado_documento,
+           be.banco_pagador, be.agencia_pagadora
+    FROM wh_boleto_evento be
+    JOIN wh_boleto_vigente bv
+        ON bv.tenant_id = be.tenant_id
+       AND bv.banco_origem = be.banco_origem
+       AND bv.nosso_numero = be.nosso_numero
+    JOIN wh_titulo t
+        ON t.tenant_id = be.tenant_id AND t.numero = bv.numero_documento
+    JOIN wh_operacao o
+        ON o.operacao_id = t.operacao_id AND o.tenant_id = t.tenant_id
+    WHERE be.tenant_id = :tenant_id
+      AND be.banco_pagador IS NOT NULL
+      AND be.agencia_pagadora IS NOT NULL
+      AND be.valor_pago > 0
+      AND be.data_ocorrencia >= now() - interval '365 days'
+),
+por_agencia AS (
+    SELECT banco_pagador, agencia_pagadora,
+           count(DISTINCT cedente_documento) AS n_cedentes
+    FROM base GROUP BY banco_pagador, agencia_pagadora
+)
+SELECT b.cedente_documento, b.banco_pagador, b.agencia_pagadora,
+       count(DISTINCT b.sacado_documento) AS n_sacados,
+       max(pa.n_cedentes) AS n_cedentes
+FROM base b
+JOIN por_agencia pa
+    ON pa.banco_pagador = b.banco_pagador
+   AND pa.agencia_pagadora = b.agencia_pagadora
+GROUP BY b.cedente_documento, b.banco_pagador, b.agencia_pagadora
 """)
 
 # Contas cadastradas: (banco, agencia, cidade) por raiz de documento.
@@ -296,13 +315,17 @@ async def montar_features(db: AsyncSession, tenant_id: UUID) -> list[FeatureRow]
             _zfill_banco(r["banco_pagador"]) or "?"
         ] = int(r["n"])
 
+    # (cedente, banco, agencia) -> nº sacados do cedente naquela agencia
     compartilhada: dict[tuple[str, str, str], int] = {}
+    # (banco, agencia) -> nº de cedentes distintos na agencia (rede)
+    compart_cedentes: dict[tuple[str, str], int] = {}
     for r in (await db.execute(_SQL_AGENCIA_COMPARTILHADA, {"tenant_id": tenant_id})).mappings():
         b = _zfill_banco(r["banco_pagador"])
         a = _zfill_agencia(r["agencia_pagadora"])
         ced = _doc(r["cedente_documento"])
         if b and a and ced:
             compartilhada[(ced, b, a)] = int(r["n_sacados"])
+            compart_cedentes[(b, a)] = int(r["n_cedentes"])
 
     contas_por_raiz: dict[str, set[tuple[str, str]]] = {}
     cidades_conta_por_raiz: dict[str, set[tuple[str | None, str | None]]] = {}
@@ -372,10 +395,14 @@ async def montar_features(db: AsyncSession, tenant_id: UUID) -> list[FeatureRow]
                 if dominante >= _FINGERPRINT_MIN_ESTABILIDADE:
                     quebra = 1.0 - (hist.get(banco, 0) / total)
 
-        # S2 (excluindo gateways declarados).
+        # S2 (excluindo gateways declarados): sacados do cedente na agencia +
+        # cedentes distintos na agencia (rede — operador comum).
         n_compart = 0
-        if cedente_doc and banco and agencia and (banco, agencia) not in _EXCLUSOES_AGENCIA_GATEWAY:
+        n_compart_ced = 0
+        is_gateway = bool(banco and agencia and (banco, agencia) in _EXCLUSOES_AGENCIA_GATEWAY)
+        if cedente_doc and banco and agencia and not is_gateway:
             n_compart = compartilhada.get((cedente_doc, banco, agencia), 0)
+            n_compart_ced = compart_cedentes.get((banco, agencia), 0)
 
         contrato_boleto = ev["contrato_boleto"]  # OBRIGATORIO|PERMITIDO|NAO_ESPERADO|None
         contrato_baixa = ev["contrato_baixa_manual"]  # NORMAL|ANOMALA|None
@@ -402,16 +429,18 @@ async def montar_features(db: AsyncSession, tenant_id: UUID) -> list[FeatureRow]
         teve_trilho_bancario = canal_evento == "bancaria" or evidencia == "baixa_confirmada"
 
         f: dict[str, float] = {
-            "bit_pago_agencia_cliente": 1.0 if ev["pago_na_agencia_cliente"] else 0.0,
-            "bit_pago_praca_cliente": 1.0 if ev["pago_na_praca_cliente"] else 0.0,
-            "bit_fora_praca_sacado": 1.0 if ev["pago_fora_praca_sacado"] else 0.0,
-            "pago_banco_digital": 1.0 if ev["pago_em_banco_digital"] else 0.0,
             "match_agencia_conta_cedente": 1.0 if match_conta else 0.0,
             "cidade_pgto_eq_cedente": (
                 1.0 if cidade_pgto and cidade_pgto in cidades_cedente else 0.0
             ),
             "cidade_pgto_neq_sacado": (
                 1.0 if cidade_pgto and cidade_sacado and cidade_pgto != cidade_sacado else 0.0
+            ),
+            # praca_fonte (escada): de onde veio a resolucao da praca.
+            "praca_fonte_bacen": 1.0 if praca.praca_fonte == "bacen" else 0.0,
+            "praca_fonte_cadastro_erp": 1.0 if praca.praca_fonte == "cadastro_erp" else 0.0,
+            "praca_nao_resolvida": (
+                1.0 if banco is not None and not praca.praca_resolvida else 0.0
             ),
             "canal_cooperativa": 1.0 if praca.canal == CANAL_COOPERATIVA else 0.0,
             "canal_ip": 1.0 if praca.canal == CANAL_IP else 0.0,
@@ -427,6 +456,7 @@ async def montar_features(db: AsyncSession, tenant_id: UUID) -> list[FeatureRow]
             ),
             "quebra_fingerprint": round(quebra, 4),
             "agencia_compartilhada": round(math.log1p(max(0, n_compart - 1)), 4),
+            "agencia_compartilhada_cedentes": round(math.log1p(max(0, n_compart_ced - 1)), 4),
             "canal_baixa_manual": 1.0 if canal_evento == "baixa_manual" else 0.0,
             "baixa_confirmada": 1.0 if evidencia == "baixa_confirmada" else 0.0,
             "sem_ocorrencia": 1.0 if evidencia == "sem_ocorrencia" else 0.0,
@@ -444,6 +474,8 @@ async def montar_features(db: AsyncSession, tenant_id: UUID) -> list[FeatureRow]
         }
 
         # --- regra dura (deterministica, fora do modelo) --------------------
+        # Praca resolvida SO por fonte propria (escada Bacen->ERP); trilho B
+        # (bit do ERP) nao entra mais na regra.
         regra = False
         motivo = None
         if (
@@ -451,12 +483,28 @@ async def montar_features(db: AsyncSession, tenant_id: UUID) -> list[FeatureRow]
             and cidade_sacado
             and cidade_pgto
             and cidade_pgto != cidade_sacado
-            and (match_conta or bool(ev["pago_na_agencia_cliente"]))
+            and match_conta
         ):
             regra = True
             motivo = (
                 "sacado de outra cidade pagou na agencia do cedente "
                 f"(banco {banco} ag {agencia}, {praca.municipio}/{praca.uf})"
+            )
+        # Regra nova (pos-escada): agencia FISICA compartilhada por >=10
+        # sacados de cidades divergentes da cidade da agencia, nao-gateway —
+        # concentracao regional nao explica; e operador comum.
+        elif (
+            praca.praca_resolvida
+            and not is_gateway
+            and n_compart >= 10
+            and cidade_sacado
+            and cidade_pgto
+            and cidade_pgto != cidade_sacado
+        ):
+            regra = True
+            motivo = (
+                f"agencia compartilhada por {n_compart} sacados de outras "
+                f"cidades (banco {banco} ag {agencia}, {praca.municipio}/{praca.uf})"
             )
 
         rows.append(

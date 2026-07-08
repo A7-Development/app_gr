@@ -857,3 +857,21 @@ LEFT JOIN dbo.Banco b
 LEFT JOIN dbo.BancoAgencia ba
     ON ba.AgenciaId = cb.AgenciaId
 """
+
+# Cadastro completo de agencias bancarias do ERP (2o degrau da escada de
+# resolucao de praca — memoria project_deteccao_anomalias_liquidacao).
+SELECT_BANCO_AGENCIA = """
+SELECT
+    ba.AgenciaId AS agencia_source_id,
+    b.Codigo AS banco_codigo,
+    b.Nome AS banco_nome,
+    ba.Codigo AS agencia_codigo,
+    ba.Digito AS agencia_digito,
+    ba.Localidade AS localidade,
+    ba.Estado AS estado,
+    ba.Bairro AS bairro,
+    ba.Cep AS cep
+FROM dbo.BancoAgencia ba
+LEFT JOIN dbo.Banco b
+    ON b.BancoId = ba.BancoId
+"""

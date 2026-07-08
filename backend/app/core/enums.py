@@ -146,6 +146,9 @@ class SourceType(enum.StrEnum):
     # Infosimples -- consultas governamentais (CENPROT/IEPTB protestos, etc.).
     # native_enum=False (VARCHAR) -> adicionar valor nao exige migration de tipo.
     DATA_INFOSIMPLES_PROTESTO = "data:infosimples_protesto"
+    # Serie historica de agencias do BCB (dados abertos, re-host Base dos
+    # Dados/BigQuery). Publico, sem tenant. native_enum=False -> sem migration.
+    PUBLIC_BCB_AGENCIA = "public:bcb_agencia"
     SELF_DECLARED = "self_declared"
     PEER_DECLARED = "peer_declared"
     INTERNAL_NOTE = "internal_note"

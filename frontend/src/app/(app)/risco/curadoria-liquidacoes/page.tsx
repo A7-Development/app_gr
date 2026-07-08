@@ -68,10 +68,6 @@ const PAGE_SIZE = 50
 
 // Labels humanas das features (fatores de explicabilidade §14.3).
 const FEATURE_LABELS: Record<string, string> = {
-  bit_pago_agencia_cliente: "Pago na agência do cedente (classificação do ERP)",
-  bit_pago_praca_cliente: "Pago na praça do cedente (classificação do ERP)",
-  bit_fora_praca_sacado: "Pago fora da praça do sacado (classificação do ERP)",
-  pago_banco_digital: "Pago em banco digital",
   match_agencia_conta_cedente: "Agência onde o cedente mantém conta",
   cidade_pgto_eq_cedente: "Pagamento na cidade do cedente",
   cidade_pgto_neq_sacado: "Pagamento fora da cidade do sacado",
@@ -79,6 +75,10 @@ const FEATURE_LABELS: Record<string, string> = {
   canal_ip: "Canal: instituição de pagamento",
   canal_sem_praca: "Canal: banco sem praça física",
   canal_nao_resolvido: "Canal não resolvido",
+  praca_fonte_bacen: "Praça resolvida pela referência Bacen",
+  praca_fonte_cadastro_erp: "Praça resolvida pelo cadastro do ERP (fora do Bacen)",
+  praca_nao_resolvida: "Praça não identificada em nenhuma fonte",
+  agencia_compartilhada_cedentes: "Agência usada por vários cedentes (rede)",
   quebra_fingerprint: "Quebra do padrão bancário do sacado",
   agencia_compartilhada: "Agência compartilhada por vários sacados do cedente",
   canal_baixa_manual: "Liquidação por baixa manual",
@@ -97,8 +97,9 @@ const FEATURE_LABELS: Record<string, string> = {
 const SINAL_LABELS: Record<string, string> = {
   regra_dura: "Sacado de outra cidade pagou na agência do cedente",
   baixa_confirmada: "Boleto baixado por instrução e liquidado por fora",
-  pago_agencia_cedente: "Pago na agência do cedente",
   agencia_conta_cedente: "Pago em agência onde o cedente mantém conta",
+  agencia_compartilhada: "Agência compartilhada por vários sacados do cedente",
+  agencia_multi_cedente: "Agência usada por vários cedentes (rede)",
   quebra_fingerprint: "Quebrou o padrão bancário do sacado",
   boleto_nao_esperado: "Boleto em produto onde não era esperado",
   lastro_inconsistente: "Lastro marcado inconsistente na verificação",
@@ -108,8 +109,9 @@ const SINAL_LABELS: Record<string, string> = {
 const SINAL_CURTO: Record<string, string> = {
   regra_dura: "agência do cedente",
   baixa_confirmada: "baixa confirmada",
-  pago_agencia_cedente: "agência do cedente",
   agencia_conta_cedente: "conta do cedente",
+  agencia_compartilhada: "agência compartilhada",
+  agencia_multi_cedente: "multi-cedente",
   quebra_fingerprint: "quebra de padrão",
   boleto_nao_esperado: "boleto inesperado",
   lastro_inconsistente: "lastro inconsistente",
@@ -120,8 +122,8 @@ const SINAL_CURTO: Record<string, string> = {
 const SINAIS_FORTES = new Set([
   "regra_dura",
   "baixa_confirmada",
-  "pago_agencia_cedente",
   "agencia_conta_cedente",
+  "agencia_multi_cedente",
   "lastro_inconsistente",
 ])
 
@@ -143,14 +145,14 @@ const SITUACAO_OPTIONS: MultiOption[] = Object.entries(SITUACAO_LABELS)
   .map(([value, label]) => ({ value, label }))
 
 const SINAL_OPTIONS: MultiOption[] = [
-  { value: "regra_dura", label: "Padrão crítico (agência do cedente)" },
+  { value: "regra_dura", label: "Padrão crítico" },
   { value: "baixa_confirmada", label: "Baixa confirmada" },
-  { value: "pago_agencia_cedente", label: "Pago na agência do cedente" },
   { value: "agencia_conta_cedente", label: "Conta do cedente" },
+  { value: "agencia_compartilhada", label: "Agência compartilhada" },
+  { value: "agencia_multi_cedente", label: "Multi-cedente (rede)" },
   { value: "quebra_fingerprint", label: "Quebra de padrão" },
   { value: "boleto_nao_esperado", label: "Boleto inesperado" },
   { value: "lastro_inconsistente", label: "Lastro inconsistente" },
-  { value: "fora_praca_sacado", label: "Fora da praça" },
   { value: "sem_ocorrencia", label: "Sem ocorrência" },
 ]
 

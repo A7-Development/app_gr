@@ -104,6 +104,25 @@ GROUP BY be.banco_pagador
 ORDER BY n DESC
 """)
 
+_SQL_USO_AGENCIA = text("""
+SELECT count(DISTINCT bv.sacado_documento) AS n_sacados,
+       count(DISTINCT o.cedente_documento) AS n_cedentes,
+       count(*) AS n_pagamentos
+FROM wh_boleto_evento be
+JOIN wh_boleto_vigente bv
+    ON bv.tenant_id = be.tenant_id
+   AND bv.banco_origem = be.banco_origem
+   AND bv.nosso_numero = be.nosso_numero
+JOIN wh_titulo t ON t.tenant_id = be.tenant_id AND t.numero = bv.numero_documento
+JOIN wh_operacao o
+    ON o.operacao_id = t.operacao_id AND o.tenant_id = t.tenant_id
+WHERE be.tenant_id = :tenant_id
+  AND lpad(be.banco_pagador, 3, '0') = :banco
+  AND lpad(be.agencia_pagadora, 5, '0') = lpad(:agencia_raw, 5, '0')
+  AND be.valor_pago > 0
+  AND be.data_ocorrencia >= now() - interval '365 days'
+""")
+
 _SQL_CONTRATO = text("""
 SELECT fluxo_esperado, boleto, baixa_manual, version
 FROM produto_contrato_liquidacao
@@ -327,43 +346,59 @@ async def montar_memoria(
     secoes.append({"titulo": "A liquidação", "itens": itens_liq})
 
     if banco:
+        fonte_label = {
+            "bacen": "referência Bacen (mês corrente)",
+            "bcb_historico": "série histórica BCB (agência fora do snapshot atual)",
+            "cadastro_erp": "cadastro do ERP (agência fora das fontes BCB)",
+        }.get(praca.praca_fonte, "não resolvida")
         itens_praca = [
             _item("Banco pagador", f"{banco} — {praca.instituicao or 'não identificado'}"),
             _item("Agência", agencia or "—"),
             _item("Canal", _label_canal(praca)),
             _item(
                 "Praça do pagamento",
-                f"{praca.municipio}/{praca.uf}" if praca.praca_resolvida else f"não resolvida ({praca.detalhe})",
+                f"{praca.municipio}/{praca.uf} (fonte: {fonte_label})"
+                if praca.praca_resolvida
+                else f"não resolvida ({praca.detalhe})",
+                destaque=praca.praca_fonte == "cadastro_erp",
             ),
         ]
-        bits = []
-        if ev["pago_na_agencia_cliente"]:
-            bits.append("na agência do cedente")
-        if ev["pago_na_praca_cliente"]:
-            bits.append("na praça do cedente")
-        if ev["pago_fora_praca_sacado"]:
-            bits.append("fora da praça do sacado")
-        if ev["pago_na_agencia_sacado"]:
-            bits.append("na agência do sacado")
-        if ev["pago_em_banco_digital"]:
-            bits.append("em banco digital")
-        if bits:
-            # NAO e declaracao do banco: o CNAB traz so banco+agencia+data.
-            # A semantica de praca (na praca do cedente, fora da praca do
-            # sacado...) e CALCULADA pelo ERP comparando a agencia do CNAB
-            # (cadastro BancoAgencia dele) com os enderecos cadastrais das
-            # partes. Flag presente = informativo; flag ausente = nada (o
-            # furo do FK NULL documentado no F0). Rotulo corrigido apos
-            # feedback do Ricardo (2026-07-08).
-            itens_praca.append(
-                _item(
-                    "Classificação de praça do ERP (Bitfin)",
-                    ", ".join(bits)
-                    + " — calculado do cadastro do ERP, não do arquivo do banco",
-                    destaque=bool(ev["pago_na_agencia_cliente"]),
-                )
-            )
+        # Trilho B (bits de praca do ERP) REMOVIDO da memoria (2026-07-08):
+        # a praca agora vem SO da resolucao propria (escada Bacen->cadastro ERP).
         secoes.append({"titulo": "Onde foi pago", "itens": itens_praca})
+
+        # Uso desta agencia (S2): quantos sacados e cedentes distintos usam
+        # este mesmo (banco, agencia) — a coincidencia que interessa.
+        if agencia:
+            uso = (
+                await db.execute(
+                    _SQL_USO_AGENCIA,
+                    {
+                        "tenant_id": tenant_id,
+                        "banco": banco,
+                        "agencia_raw": ev["agencia_pagadora"],
+                    },
+                )
+            ).mappings().first()
+            if uso and int(uso["n_sacados"] or 0) > 1:
+                secoes.append(
+                    {
+                        "titulo": "Uso desta agência (12 meses)",
+                        "itens": [
+                            _item(
+                                "Sacados distintos aqui",
+                                str(uso["n_sacados"]),
+                                destaque=int(uso["n_sacados"]) >= 5,
+                            ),
+                            _item(
+                                "Cedentes distintos aqui",
+                                str(uso["n_cedentes"]),
+                                destaque=int(uso["n_cedentes"]) >= 3,
+                            ),
+                            _item("Pagamentos", str(uso["n_pagamentos"])),
+                        ],
+                    }
+                )
 
     itens_partes = [
         _item(

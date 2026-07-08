@@ -43,6 +43,7 @@ from app.modules.integracoes.adapters.erp.bitfin.queries import bitfin
 from app.modules.integracoes.adapters.erp.bitfin.version import ADAPTER_VERSION
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 from app.shared.documento import DocumentoNormalizado, normalizar_documento
+from app.warehouse.banco_agencia import WhBancoAgencia
 from app.warehouse.conta_bancaria import ContaBancariaEntidade
 from app.warehouse.entidade import (
     WhEntidade,
@@ -136,6 +137,9 @@ async def sync_entidades(
     )
     conta_bancaria_rows = await asyncio.to_thread(
         fetch_rows, config, db_name, bitfin.SELECT_CONTA_BANCARIA
+    )
+    banco_agencia_rows = await asyncio.to_thread(
+        fetch_rows, config, db_name, bitfin.SELECT_BANCO_AGENCIA
     )
 
     now = datetime.now(UTC)
@@ -450,6 +454,37 @@ async def sync_entidades(
             ["tenant_id", "source_id"],
         )
 
+        # Espelho do cadastro de agencias — 2o degrau da escada de praca.
+        # Campos numericos podem vir INT (cast defensivo, licao do PR#510).
+        def _map_banco_agencia(row: dict) -> dict:
+            def _s(campo: str, limite: int) -> str | None:
+                v = row.get(campo)
+                if v is None:
+                    return None
+                v = str(v).strip()
+                return v[:limite] if v else None
+
+            return {
+                "tenant_id": tenant_id,
+                "agencia_source_id": int(row["agencia_source_id"]),
+                "banco_codigo": _s("banco_codigo", 3),
+                "banco_nome": _s("banco_nome", 255),
+                "agencia_codigo": _s("agencia_codigo", 10),
+                "agencia_digito": _s("agencia_digito", 2),
+                "localidade": _s("localidade", 255),
+                "estado": _s("estado", 2),
+                "bairro": _s("bairro", 255),
+                "cep": _s("cep", 9),
+                **_provenance(str(row["agencia_source_id"]), row),
+            }
+
+        n_agencias = await _bulk_upsert(
+            db,
+            WhBancoAgencia,
+            [_map_banco_agencia(r) for r in banco_agencia_rows],
+            ["tenant_id", "source_id"],
+        )
+
     summary = {
         "adapter_version": ADAPTER_VERSION,
         "started_at": started_at.isoformat(),
@@ -466,6 +501,7 @@ async def sync_entidades(
             {"table": "wh_posicao_sacado_cedente", "rows": n_pos_sacado_cedente},
             {"table": "wh_pagamento_praca_mensal", "rows": n_praca_mensal},
             {"table": "wh_conta_bancaria", "rows": n_contas},
+            {"table": "wh_banco_agencia", "rows": n_agencias},
         ],
         "quarentena_documentos": len(quarentena),
         "papeis_em_quarentena": {
