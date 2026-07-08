@@ -145,9 +145,9 @@ function ScoreBadge({ row }: { row: LiquidacaoCuradoriaRow }) {
     return (
       <span
         className={cx(tableTokens.badge, tableTokens.badgeDanger)}
-        title={row.regra_dura_motivo ?? "Regra determinística disparada"}
+        title={row.regra_dura_motivo ?? "Padrão inequívoco de auto-liquidação"}
       >
-        Regra dura
+        Padrão crítico
       </span>
     )
   }
@@ -369,7 +369,7 @@ export default function CuradoriaLiquidacoesPage() {
     try {
       const r = await pontuarMut.mutateAsync("liquidacao_boleto")
       toast.success(
-        `Scoring executado: ${r.scores_gravados.toLocaleString("pt-BR")} liquidações avaliadas, ${r.regra_dura} regras duras.`,
+        `Scoring executado: ${r.scores_gravados.toLocaleString("pt-BR")} liquidações avaliadas, ${r.regra_dura} padrões críticos.`,
       )
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Falha ao pontuar.")
@@ -534,7 +534,7 @@ export default function CuradoriaLiquidacoesPage() {
               className="h-[30px] text-[13px]"
               isLoading={pontuarMut.isPending}
               onClick={() => void pontuar()}
-              title="Aplica a versão ativa do modelo (ou só as regras duras) agora"
+              title="Aplica a versão ativa do modelo (ou só os padrões críticos determinísticos) agora"
             >
               Pontuar agora
             </Button>
@@ -625,7 +625,7 @@ export default function CuradoriaLiquidacoesPage() {
             options={[
               { value: "todas", label: "Todas" },
               { value: "sugeridas", label: "Sugeridas" },
-              { value: "regra_dura", label: "Regra dura" },
+              { value: "regra_dura", label: "Padrão crítico" },
               { value: "fraude", label: "Fraude" },
               { value: "sem_tag", label: "Sem marcação" },
             ]}
@@ -726,7 +726,7 @@ export default function CuradoriaLiquidacoesPage() {
 
             {selected.regra_dura && (
               <span className={cx(tableTokens.badge, tableTokens.badgeDanger, "w-fit")}>
-                {selected.regra_dura_motivo ?? "Regra determinística disparada"}
+                {selected.regra_dura_motivo ?? "Padrão crítico disparado"}
               </span>
             )}
 
