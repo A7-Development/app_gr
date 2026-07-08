@@ -26,10 +26,9 @@ from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 from app.shared.identity.tenant import Tenant
 from app.shared.identity.user import User
 from app.shared.identity.user_permission import UserModulePermission
-from app.warehouse.boleto_vigente import BoletoVigente
 from app.warehouse.dim import DimProduto
+from app.warehouse.liquidacao import Liquidacao
 from app.warehouse.operacao import Operacao
-from app.warehouse.titulo import Titulo
 
 API_BASE = "/api/v1/risco/contratos-liquidacao"
 
@@ -75,43 +74,24 @@ def _operacao(tenant_id, operacao_id: int, modalidade: str) -> Operacao:
     )
 
 
-def _titulo(tenant_id, titulo_id: int, operacao_id: int, numero: str, situacao: int) -> Titulo:
+def _liquidacao(
+    tenant_id, titulo_id: int, operacao_id: int, *, canal: str, evidencia: str | None = None
+) -> Liquidacao:
+    """Evento de desfecho declarado (F3) como o sync do Bitfin gravaria."""
     now = datetime.now(UTC)
-    return Titulo(
+    return Liquidacao(
         tenant_id=tenant_id,
         titulo_id=titulo_id,
-        sigla="DM",
-        numero=numero,
-        data_de_emissao=now,
-        data_de_vencimento=now,
-        data_de_vencimento_efetiva=now,
-        data_de_cadastro=now,
-        data_da_situacao=now,
-        valor=1000,
-        situacao=situacao,
-        sacado_id=1,
-        conta_operacional_id=1,
-        unidade_administrativa_id=1,
         operacao_id=operacao_id,
+        canal=canal,
+        evidencia=evidencia,
+        data_evento=now,
+        valor_titulo=1000,
+        situacao_titulo=1,
         source_type="erp:bitfin",
-        source_id=f"titulo:{titulo_id}",
+        source_id=f"test:{canal}:{titulo_id}",
         ingested_by_version="test",
-    )
-
-
-def _boleto_vigente(tenant_id, numero_documento: str, estado: str) -> BoletoVigente:
-    now = datetime.now(UTC)
-    return BoletoVigente(
-        tenant_id=tenant_id,
-        banco_origem="237",
-        nosso_numero=f"nn-{uuid4().hex[:10]}",
-        numero_documento=numero_documento,
-        estado=estado,
-        tipo_evento_vigente="retorno",
-        data_ocorrencia_vigente=now.date(),
-        n_eventos=1,
-        projected_at=now,
-        projected_by_version="test",
+        trust_level="high",
     )
 
 
@@ -257,16 +237,31 @@ async def test_definir_sigla_inexistente_404(
 async def test_perfil_observado_e_divergencias(
     client: AsyncClient, user_in_tenant_a: User, produtos_tenant_a: None, tenant_a: Tenant
 ):
-    """FAT com 2 titulos: #1 bancarizado liquidado por baixa manual (boleto
-    vigente segue 'ativo'), #2 sem boleto. CSG (em aberto) com 1 titulo.
+    """Perfil observado le os eventos DECLARADOS de wh_liquidacao (F3).
+
+    FAT com 3 liquidacoes: 1 bancaria + 1 baixa manual com boleto
+    (baixa_confirmada) + 1 baixa manual sem boleto (sem_registro)
+    -> 66,7% com boleto (< 90% obrigatorio) e 50% de baixa manual nos
+    com-boleto. CSG (em aberto) com 1 liquidacao. Recompra NAO entra no
+    universo do perfil.
     """
     async with AsyncSessionLocal() as db:
         db.add(_operacao(tenant_a.id, 100, "FAT-DM"))
         db.add(_operacao(tenant_a.id, 200, "CSG-DM"))
-        db.add(_titulo(tenant_a.id, 1, 100, "DOC-1", situacao=1))
-        db.add(_titulo(tenant_a.id, 2, 100, "DOC-2", situacao=0))
-        db.add(_titulo(tenant_a.id, 3, 200, "DOC-3", situacao=0))
-        db.add(_boleto_vigente(tenant_a.id, "DOC-1", estado="ativo"))
+        db.add(_liquidacao(tenant_a.id, 1, 100, canal="bancaria"))
+        db.add(
+            _liquidacao(
+                tenant_a.id, 2, 100, canal="baixa_manual", evidencia="baixa_confirmada"
+            )
+        )
+        db.add(
+            _liquidacao(
+                tenant_a.id, 3, 100, canal="baixa_manual", evidencia="sem_registro"
+            )
+        )
+        db.add(_liquidacao(tenant_a.id, 4, 200, canal="bancaria"))
+        # Recompra fica FORA do universo do perfil (canal proprio).
+        db.add(_liquidacao(tenant_a.id, 5, 100, canal="recompra", evidencia="recompra_efetivada"))
         await db.commit()
 
     token = await _login(client, user_in_tenant_a.email)
@@ -277,12 +272,12 @@ async def test_perfil_observado_e_divergencias(
     rows = {row["produto_sigla"]: row for row in r.json()}
 
     fat = rows["FAT"]
-    assert fat["observado"]["qtd_titulos"] == 2
-    assert fat["observado"]["qtd_bancarizados"] == 1
-    assert fat["observado"]["pct_bancarizado"] == 50.0
+    assert fat["observado"]["qtd_titulos"] == 3
+    assert fat["observado"]["qtd_bancarizados"] == 2
+    assert fat["observado"]["pct_bancarizado"] == 66.7
     assert fat["observado"]["qtd_baixa_manual_bancarizados"] == 1
-    assert fat["observado"]["pct_baixa_manual_bancarizados"] == 100.0
-    # boleto obrigatorio com 50% bancarizado + baixa manual em produto anomalo.
+    assert fat["observado"]["pct_baixa_manual_bancarizados"] == 50.0
+    # boleto obrigatorio com 66,7% + baixa manual em produto anomalo.
     assert "boleto_abaixo_do_esperado" in fat["divergencias"]
     assert "baixa_manual_em_produto_anomalo" in fat["divergencias"]
 

@@ -1,17 +1,23 @@
 """Liquidation contract per product: active version + observed profile.
 
-Reads ONLY silver tables (wh_dim_produto, wh_titulo, wh_operacao,
-wh_boleto_vigente — CLAUDE.md 13.2.1). Product of a title comes from
+Reads ONLY silver tables (wh_dim_produto, wh_operacao, wh_liquidacao —
+CLAUDE.md 13.2.1). Product of an event comes from
 `split_part(wh_operacao.modalidade, '-', 1)` ('FAT-DM' -> 'FAT'), the same
 convention used by the BI services.
 
-"Bancarizado" = the title's `numero` matches a `wh_boleto_vigente.numero_documento`
-row of the same tenant (fold identity per documento — memoria
-project_conciliacao_boletos_estado_vigente). "Baixa manual em bancarizado" =
-title liquidated (situacao=1) that HAS a boleto but no boleto in state
-'liquidado' — i.e. the money did not arrive through the bank rail.
-NOTE: this is the S3v2-style inference; F3 (wh_liquidacao with the declared
-Bitfin outcome) will replace it with declared data.
+The observed profile reads the DECLARED outcome events of `wh_liquidacao`
+(F3 — populated by the `bitfin.liquidacoes` endpoint), replacing the old
+S3v2 inference (wh_titulo x wh_boleto_vigente document match):
+
+    universe        liquidation events in the window with canal in
+                    ('bancaria', 'baixa_manual') — recompra and
+                    administrative write-offs are their own channels and
+                    stay out of this ratio.
+    "com boleto"    canal='bancaria' OR evidencia in ('baixa_confirmada',
+                    'sem_ocorrencia') — the title entered the bank rail.
+    "baixa manual"  evidencia in ('baixa_confirmada', 'sem_ocorrencia') —
+                    entered the rail but the money did NOT arrive through
+                    it (baixa_confirmada = strong / sem_ocorrencia = weak).
 """
 
 import logging
@@ -52,38 +58,33 @@ DIVERGENCIA_BAIXA_MANUAL_ANOMALA = "baixa_manual_em_produto_anomalo"
 
 _PERFIL_SQL = text(
     """
-    WITH t AS (
+    WITH liq AS (
         SELECT
             split_part(op.modalidade, '-', 1) AS produto,
-            ti.situacao,
-            ti.valor,
-            EXISTS (
-                SELECT 1 FROM wh_boleto_vigente bv
-                WHERE bv.tenant_id = ti.tenant_id
-                  AND bv.numero_documento = ti.numero
-            ) AS bancarizado,
-            EXISTS (
-                SELECT 1 FROM wh_boleto_vigente bv
-                WHERE bv.tenant_id = ti.tenant_id
-                  AND bv.numero_documento = ti.numero
-                  AND bv.estado = 'liquidado'
-            ) AS boleto_liquidado
-        FROM wh_titulo ti
+            l.canal,
+            l.evidencia,
+            l.valor_titulo,
+            (
+                l.canal = 'bancaria'
+                OR l.evidencia IN ('baixa_confirmada', 'sem_ocorrencia')
+            ) AS com_boleto,
+            l.evidencia IN ('baixa_confirmada', 'sem_ocorrencia')
+                AS baixa_manual_com_boleto
+        FROM wh_liquidacao l
         JOIN wh_operacao op
-          ON op.tenant_id = ti.tenant_id
-         AND op.operacao_id = ti.operacao_id
-        WHERE ti.tenant_id = :tenant_id
-          AND ti.data_de_cadastro >= :cutoff
+          ON op.tenant_id = l.tenant_id
+         AND op.operacao_id = l.operacao_id
+        WHERE l.tenant_id = :tenant_id
+          AND l.data_evento >= :cutoff
+          AND l.canal IN ('bancaria', 'baixa_manual')
     )
     SELECT
         produto,
-        count(*)                                            AS qtd_titulos,
-        coalesce(sum(valor), 0)                             AS valor_total,
-        count(*) FILTER (WHERE bancarizado)                 AS qtd_bancarizados,
-        count(*) FILTER (
-            WHERE bancarizado AND situacao = 1 AND NOT boleto_liquidado
-        )                                                   AS qtd_baixa_manual
-    FROM t
+        count(*)                                             AS qtd_titulos,
+        coalesce(sum(valor_titulo), 0)                       AS valor_total,
+        count(*) FILTER (WHERE com_boleto)                   AS qtd_bancarizados,
+        count(*) FILTER (WHERE baixa_manual_com_boleto)      AS qtd_baixa_manual
+    FROM liq
     GROUP BY produto
     """
 )

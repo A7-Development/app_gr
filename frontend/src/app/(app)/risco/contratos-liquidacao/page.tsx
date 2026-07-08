@@ -46,8 +46,8 @@ import { cx } from "@/lib/utils"
 
 import { ContratoForm } from "./_components/ContratoForm"
 
-// Janela do perfil observado. O corpus de boletos (CNAB) começa em dez/2025 —
-// janela longa demais deprimiria o % bancarizado com títulos antigos sem CNAB.
+// Janela do perfil observado, calculado sobre os eventos DECLARADOS de
+// wh_liquidacao (desfecho por título, visão Bitfin — cobre 2019+).
 const JANELA_DIAS = 180
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -107,9 +107,9 @@ function PctObservadoCell({
 function tooltipObservado(row: ContratoLiquidacaoRow): string {
   const obs = row.observado
   return (
-    `${obs.qtd_titulos.toLocaleString("pt-BR")} títulos nos últimos ${obs.janela_dias} dias · ` +
+    `${obs.qtd_titulos.toLocaleString("pt-BR")} liquidações nos últimos ${obs.janela_dias} dias · ` +
     `${obs.qtd_bancarizados.toLocaleString("pt-BR")} com boleto · ` +
-    `${obs.qtd_baixa_manual_bancarizados.toLocaleString("pt-BR")} baixados à mão`
+    `${obs.qtd_baixa_manual_bancarizados.toLocaleString("pt-BR")} baixadas à mão`
   )
 }
 
@@ -280,7 +280,7 @@ export default function ContratosLiquidacaoPage() {
               (d) => d === "boleto_alem_do_esperado" || d === "boleto_abaixo_do_esperado",
             )}
             tooltip={tooltipObservado(row.original)}
-            semDados={`sem títulos em ${JANELA_DIAS}d`}
+            semDados={`sem liquidações em ${JANELA_DIAS}d`}
           />
         ),
       }) as ColumnDef<ContratoLiquidacaoRow, unknown>,
@@ -418,14 +418,14 @@ export default function ContratosLiquidacaoPage() {
                 Observado nos últimos {selected.observado.janela_dias} dias
               </span>
               {selected.observado.qtd_titulos === 0 ? (
-                <span className={tableTokens.cellMuted}>Sem títulos na janela.</span>
+                <span className={tableTokens.cellMuted}>Sem liquidações na janela.</span>
               ) : (
                 <span className={tableTokens.cellSecondary}>
-                  {selected.observado.qtd_titulos.toLocaleString("pt-BR")} títulos ·{" "}
+                  {selected.observado.qtd_titulos.toLocaleString("pt-BR")} liquidações ·{" "}
                   {selected.observado.qtd_bancarizados.toLocaleString("pt-BR")} com boleto (
                   {selected.observado.pct_bancarizado?.toLocaleString("pt-BR") ?? "0"}%) ·{" "}
                   {selected.observado.qtd_baixa_manual_bancarizados.toLocaleString("pt-BR")}{" "}
-                  baixados à mão
+                  baixadas à mão
                   {selected.observado.pct_baixa_manual_bancarizados !== null &&
                     ` (${selected.observado.pct_baixa_manual_bancarizados.toLocaleString("pt-BR")}% dos bancarizados)`}
                 </span>
