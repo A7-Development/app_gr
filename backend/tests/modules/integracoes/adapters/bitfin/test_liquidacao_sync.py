@@ -78,23 +78,28 @@ def test_map_bancaria_liquidacao_normal_com_praca():
 
 
 def test_map_baixa_manual_evidencias():
-    # Registrado + ocorrencia 05 = baixa confirmada (padrao MFL, FORTE)
+    # Ocorrencia 05 = baixa confirmada (padrao MFL, FORTE) — mesmo com
+    # Registrado=False, que e o estado POS-baixa no Bitfin (validado em
+    # prod: Registrado=0/Baixado=1 em 100% dos casos com 05).
     forte = _map_baixa_manual(
-        _base_titulo(registrado=True, teve_baixa_confirmada=1), TENANT
+        _base_titulo(registrado=False, tem_procedimento=1, teve_baixa_confirmada=1),
+        TENANT,
     )
     assert forte["canal"] == CANAL_BAIXA_MANUAL
     assert forte["evidencia"] == EVIDENCIA_BAIXA_CONFIRMADA
     assert forte["source_id"] == "man:4242"
 
-    # Nunca registrado = deposito direto plausivel
+    # Nunca entrou em cobranca bancaria = deposito direto plausivel
     sem_reg = _map_baixa_manual(
-        _base_titulo(registrado=None, teve_baixa_confirmada=None), TENANT
+        _base_titulo(registrado=None, tem_procedimento=0, teve_baixa_confirmada=None),
+        TENANT,
     )
     assert sem_reg["evidencia"] == EVIDENCIA_SEM_REGISTRO
 
-    # Registrado sem ocorrencia alguma = fraco
+    # Em cobranca sem ocorrencia alguma = fraco
     fraco = _map_baixa_manual(
-        _base_titulo(registrado=True, teve_baixa_confirmada=0), TENANT
+        _base_titulo(registrado=True, tem_procedimento=1, teve_baixa_confirmada=0),
+        TENANT,
     )
     assert fraco["evidencia"] == EVIDENCIA_SEM_OCORRENCIA
 
