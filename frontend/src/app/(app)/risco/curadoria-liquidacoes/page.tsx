@@ -25,8 +25,6 @@ import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   RiAlarmWarningLine,
-  RiArrowLeftSLine,
-  RiArrowRightSLine,
   RiCheckLine,
   RiFlaskLine,
   RiSearchEyeLine,
@@ -52,7 +50,7 @@ import {
   FilterSearch,
   filterControlClass,
   PageHeader,
-  SegmentSwitch,
+  TablePagination,
 } from "@/design-system/components"
 import { tableTokens } from "@/design-system/tokens/table"
 import type { LiquidacaoCuradoriaRow } from "@/lib/api-client"
@@ -624,17 +622,20 @@ export default function CuradoriaLiquidacoesPage() {
                 ))}
             </SelectContent>
           </Select>
-          <SegmentSwitch
-            value={segmento}
-            onChange={(v) => setSegmento(v as Segmento)}
-            options={[
-              { value: "todas", label: "Todas" },
-              { value: "sugeridas", label: "Sugeridas" },
-              { value: "regra_dura", label: "Padrão crítico" },
-              { value: "fraude", label: "Fraude" },
-              { value: "sem_tag", label: "Sem marcação" },
-            ]}
-          />
+          {/* Marcação como dropdown (nao pills): 6 controles na linha — pills
+              estouravam a toolbar; single-select server-side => Select. */}
+          <Select value={segmento} onValueChange={(v) => setSegmento(v as Segmento)}>
+            <SelectTrigger className={cx(filterControlClass, "w-48")}>
+              <SelectValue placeholder="Marcação" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas as marcações</SelectItem>
+              <SelectItem value="sugeridas">Sugeridas pelo modelo</SelectItem>
+              <SelectItem value="regra_dura">Padrão crítico</SelectItem>
+              <SelectItem value="fraude">Fraude</SelectItem>
+              <SelectItem value="sem_tag">Sem marcação</SelectItem>
+            </SelectContent>
+          </Select>
           <span className={cx(tableTokens.cellSecondary, "ml-auto tabular-nums")}>
             {rows.length.toLocaleString("pt-BR")} de {total.toLocaleString("pt-BR")}{" "}
             liquidações
@@ -658,42 +659,26 @@ export default function CuradoriaLiquidacoesPage() {
               </span>
             </div>
           )}
-          renderFooter={() => (
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className={cx(tableTokens.cellSecondary, "tabular-nums")}>
-                {total === 0
-                  ? "0 de 0"
-                  : `${((page - 1) * PAGE_SIZE + 1).toLocaleString("pt-BR")}–${Math.min(
-                      page * PAGE_SIZE,
-                      total,
-                    ).toLocaleString("pt-BR")} de ${total.toLocaleString("pt-BR")}`}
-                {listQuery.isFetching && " · atualizando…"}
-              </span>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  className="h-7 px-2"
-                  disabled={page <= 1 || listQuery.isFetching}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  aria-label="Página anterior"
-                >
-                  <RiArrowLeftSLine className="size-4" aria-hidden />
-                </Button>
-                <span className={cx(tableTokens.cellSecondary, "tabular-nums")}>
-                  {page} / {totalPaginas.toLocaleString("pt-BR")}
-                </span>
-                <Button
-                  variant="ghost"
-                  className="h-7 px-2"
-                  disabled={page >= totalPaginas || listQuery.isFetching}
-                  onClick={() => setPage((p) => Math.min(totalPaginas, p + 1))}
-                  aria-label="Próxima página"
-                >
-                  <RiArrowRightSLine className="size-4" aria-hidden />
-                </Button>
-              </div>
-            </div>
-          )}
+        />
+
+        {/* Pager no local canonico: rodape do Card, FORA da <table> (tfoot so
+            aceita <tr> — div la dentro colapsa o layout). */}
+        <TablePagination
+          page={page}
+          totalPages={totalPaginas}
+          onPageChange={setPage}
+          disabled={listQuery.isFetching}
+          info={
+            <>
+              {total === 0
+                ? "0 de 0"
+                : `${((page - 1) * PAGE_SIZE + 1).toLocaleString("pt-BR")}–${Math.min(
+                    page * PAGE_SIZE,
+                    total,
+                  ).toLocaleString("pt-BR")} de ${total.toLocaleString("pt-BR")}`}
+              {listQuery.isFetching && " · atualizando…"}
+            </>
+          }
         />
       </Card>
 
