@@ -404,6 +404,10 @@ export default function CuradoriaLiquidacoesPage() {
 
   const columns = React.useMemo<ColumnDef<LiquidacaoCuradoriaRow, unknown>[]>(
     () => [
+      // LARGURAS: layout fixed — `size` e largura REAL (inclui px-3 da
+      // cell); Cedente/Sacado NAO declaram size e dividem o restante em
+      // partes IGUAIS. Acima de tableMinWidth a tabela nunca excede o
+      // container (sem scroll-x); abaixo, rola horizontalmente (canonico).
       col.accessor("data_evento", {
         header: "Data",
         size: 88,
@@ -424,16 +428,14 @@ export default function CuradoriaLiquidacoesPage() {
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("cedente_nome", {
         header: "Cedente",
-        // Calibrado com o Ricardo (2026-07-08): -20% e depois -10%; Sacado
-        // com a MESMA largura. Objetivo: caber sem scroll-x; nome completo
-        // continua no tooltip.
-        size: 188,
+        // SEM size: no layout fixed, Cedente e Sacado dividem o espaco
+        // restante em partes IGUAIS (iguais por construcao). Nome completo
+        // no tooltip; truncate acompanha a largura real da coluna.
         cell: (info) => {
           const nome = (info.getValue() as string | null) ?? "—"
-          // Uma linha, corte limpo — nome completo no tooltip.
           return (
             <span
-              className={cx(tableTokens.cellStrong, "block max-w-[300px] truncate")}
+              className={cx(tableTokens.cellStrong, "block truncate")}
               title={nome}
             >
               {nome}
@@ -443,12 +445,11 @@ export default function CuradoriaLiquidacoesPage() {
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("sacado_nome", {
         header: "Sacado",
-        size: 188,
         cell: (info) => {
           const nome = (info.getValue() as string | null) ?? "—"
           return (
             <span
-              className={cx(tableTokens.cellText, "block max-w-[300px] truncate")}
+              className={cx(tableTokens.cellText, "block truncate")}
               title={nome}
             >
               {nome}
@@ -458,9 +459,9 @@ export default function CuradoriaLiquidacoesPage() {
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("produto_nome", {
         header: "Produto",
-        size: 130,
-        // nowrap: nome de produto NUNCA trunca nem quebra (regra: nome
-        // completo sempre) — a coluna estica em vez de cortar.
+        // 160px cobre o maior nome de produto atual sem truncar (regra:
+        // nome completo). Se surgir produto maior, SUBA o size.
+        size: 145,
         cell: (info) => (
           <span className={cx(tableTokens.cellText, "whitespace-nowrap")}>
             {info.getValue() ?? info.row.original.produto_sigla ?? "—"}
@@ -469,7 +470,7 @@ export default function CuradoriaLiquidacoesPage() {
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("valor", {
         header: "Valor",
-        size: 105,
+        size: 112,
         meta: { align: "right" },
         cell: (info) => {
           const v = info.getValue() as number | null
@@ -485,32 +486,32 @@ export default function CuradoriaLiquidacoesPage() {
       col.display({
         id: "situacao",
         header: "Situação do título",
-        size: 130,
+        size: 150,
         cell: ({ row }) => <SituacaoCell situacao={row.original.situacao_titulo} />,
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.display({
         id: "sinal",
         header: "Sinal",
-        size: 150,
+        size: 158,
         cell: ({ row }) => <SinaisCell sinais={row.original.sinais} />,
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.display({
         id: "score",
         header: "Risco",
-        // 112px = "Padrão crítico" em 1 linha (badge agora tem nowrap).
+        // Cabe "Padrão crítico" em 1 linha (badge nowrap) + px-3 da cell.
         size: 112,
         cell: ({ row }) => <ScoreBadge row={row.original} />,
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.display({
         id: "tag",
         header: "Marcação",
-        size: 86,
+        size: 80,
         cell: ({ row }) => <TagBadge row={row.original} />,
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.display({
         id: "actions",
         header: "",
-        size: 64,
+        size: 88,
         cell: ({ row }) => (
           <div className="flex justify-end gap-1">
             <Button
@@ -681,6 +682,8 @@ export default function CuradoriaLiquidacoesPage() {
         <DataTable<LiquidacaoCuradoriaRow>
           data={rows}
           columns={columns}
+          tableLayout="fixed"
+          tableMinWidth={1320}
           loading={listQuery.isLoading}
           error={listQuery.error ? listQuery.error.message : null}
           onRetry={() => listQuery.refetch()}

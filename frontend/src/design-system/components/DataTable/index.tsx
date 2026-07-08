@@ -47,6 +47,19 @@ export interface DataTableProps<TData> {
   globalFilter?:       string
   renderFooter?:       (data: TData[]) => React.ReactNode
   className?:          string
+  /**
+   * Layout da <table>. "auto" (default): browser dimensiona pelo CONTEUDO —
+   * `size` e sugestao e a tabela pode ESTOURAR o container (scroll-x).
+   * "fixed": `size` vira largura REAL; colunas SEM `size` declarado dividem
+   * o espaco restante em partes iguais; a tabela NUNCA excede 100%. Use
+   * quando a tela nao pode ter scroll horizontal (cells de texto livre devem
+   * usar `block truncate` + title).
+   */
+  tableLayout?:        "auto" | "fixed"
+  /** Largura minima da <table> em px (so faz sentido com tableLayout="fixed"):
+   *  abaixo disso o container rola horizontalmente (canonico em tela estreita)
+   *  em vez de colapsar as colunas sem `size`. */
+  tableMinWidth?:      number
   virtualize?:         boolean
   showDensityToggle?:  boolean
   showColumnManager?:  boolean
@@ -330,6 +343,8 @@ export function DataTable<TData>({
   globalFilter      = "",
   renderFooter,
   className,
+  tableLayout       = "auto",
+  tableMinWidth,
   virtualize,
   showDensityToggle = true,
   showColumnManager = true,
@@ -469,7 +484,10 @@ export function DataTable<TData>({
         <ErrorState message={error} onRetry={onRetry} />
       ) : (
         <div ref={parentRef} className="flex-1 overflow-auto">
-          <table className="w-full border-collapse text-[13px]">
+          <table
+            className={cx("w-full border-collapse text-[13px]", tableLayout === "fixed" && "table-fixed")}
+            style={tableMinWidth ? { minWidth: tableMinWidth } : undefined}
+          >
             <thead className="sticky top-0 z-[1] bg-white dark:bg-gray-950">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
@@ -543,7 +561,7 @@ export function DataTable<TData>({
                       const canExpand = row.getCanExpand()
                       const isExpanded = row.getIsExpanded()
                       return (
-                        <td key={cell.id} className="px-3 text-gray-900 dark:text-gray-50">
+                        <td key={cell.id} className={cx("px-3 text-gray-900 dark:text-gray-50", tableLayout === "fixed" && "overflow-hidden")}>
                           {isExpandCol ? (
                             <span className="inline-flex items-center gap-1.5">
                               {/* Indent baseado em depth (16px por nivel) */}
