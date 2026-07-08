@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.warehouse.banco_agencia import WhBancoAgencia
 from app.warehouse.ref_bacen import (
     SEGMENTO_BANCO,
     SEGMENTO_BANCO_COOPERATIVO,
@@ -67,6 +68,9 @@ class PracaLiquidacao:
     praca_resolvida: bool
     # Racional legivel ("agencia fora da referencia Bacen", ...) p/ auditoria.
     detalhe: str
+    # Fonte da resolucao da praca (escada): "bacen" | "cadastro_erp" |
+    # "nao_resolvida". Vira feature do modelo e aparece na memoria de calculo.
+    praca_fonte: str = "nao_resolvida"
 
 
 def _norm_banco(banco: str | None) -> str | None:
@@ -88,9 +92,13 @@ class RefBacenResolver:
         self,
         instituicoes: dict[str, RefBacenInstituicao],
         agencias: dict[tuple[str, str], RefBacenAgencia],
+        erp_agencias: dict[tuple[str, str], tuple[str, str]] | None = None,
     ) -> None:
         self._inst = instituicoes
         self._ag = agencias
+        # 2o degrau: (banco_compe, agencia_5) -> (municipio, uf) do cadastro
+        # ERP. Cobre agencias que a referencia Bacen (snapshot atual) perdeu.
+        self._erp = erp_agencias or {}
 
     @classmethod
     async def carregar(cls, db: AsyncSession) -> RefBacenResolver:
@@ -102,7 +110,18 @@ class RefBacenResolver:
             (row.banco_compe, row.agencia_codigo): row
             for row in (await db.execute(select(RefBacenAgencia))).scalars()
         }
-        return cls(inst, ag)
+        # Cadastro ERP: dedup por (banco, agencia) — linha COM cidade vence
+        # (multiplas AgenciaId podem apontar o mesmo par; queremos a util).
+        erp: dict[tuple[str, str], tuple[str, str]] = {}
+        for row in (await db.execute(select(WhBancoAgencia))).scalars():
+            b = _norm_banco(row.banco_codigo)
+            a = _norm_agencia(row.agencia_codigo)
+            if not b or not a or not row.localidade:
+                continue
+            key = (b, a)
+            if key not in erp:
+                erp[key] = (row.localidade, (row.estado or "").strip() or "")
+        return cls(inst, ag, erp)
 
     def resolver(self, banco: str | None, agencia: str | None) -> PracaLiquidacao:
         b = _norm_banco(banco)
@@ -145,16 +164,27 @@ class RefBacenResolver:
                 False, "agencia-matriz (0001): liquidacao eletronica, cidade nao e praca",
             )
         if row is None or row.municipio is None:
+            # 2o degrau da escada: cadastro ERP recupera agencia fisica que a
+            # referencia Bacen (snapshot atual) nao lista (extinta/renumerada).
+            erp = self._erp.get((b, a)) if a else None
+            if erp is not None:
+                return PracaLiquidacao(
+                    CANAL_BANCO_PRACA, b, inst.nome_reduzido, inst.segmento, a,
+                    erp[0], None, erp[1] or None, True,
+                    f"agencia {a} resolvida pelo cadastro do ERP: {erp[0]}/{erp[1]}",
+                    praca_fonte="cadastro_erp",
+                )
             return PracaLiquidacao(
                 CANAL_BANCO_SEM_PRACA, b, inst.nome_reduzido, inst.segmento, a,
                 None, None, None, False,
-                "agencia fora da referencia Bacen (numeracao interna ou extinta)"
+                "agencia fora da referencia Bacen e do cadastro (interna/extinta)"
                 if a else "evento sem agencia pagadora",
             )
         return PracaLiquidacao(
             CANAL_BANCO_PRACA, b, inst.nome_reduzido, inst.segmento, a,
             row.municipio, row.municipio_ibge, row.uf, True,
             f"agencia {a} resolvida: {row.municipio}/{row.uf}",
+            praca_fonte="bacen",
         )
 
 
