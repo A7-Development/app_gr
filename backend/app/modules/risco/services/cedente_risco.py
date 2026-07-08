@@ -235,6 +235,19 @@ async def consolidar(
     return summary
 
 
+# Carteira ATUAL por cedente (posicao vendor-computed do Bitfin, wh_posicao_
+# cedente): exposicao em aberto — natureza diferente do valor liquidado
+# suspeito, que e retrospectivo. Documento normalizado para casar com o
+# cedente_documento (14 digitos) do snapshot.
+_SQL_CARTEIRA = text("""
+SELECT e.documento, sum(p.risco_total_valor) AS carteira_atual
+FROM wh_posicao_cedente p
+JOIN wh_entidade e ON e.id = p.entidade_id AND e.tenant_id = p.tenant_id
+WHERE p.tenant_id = :tenant_id AND p.risco_total_valor IS NOT NULL
+GROUP BY e.documento
+""")
+
+
 _SQL_PAINEL = text("""
 WITH ultimo AS (
     SELECT DISTINCT ON (cedente_documento, modelo_id)
@@ -273,6 +286,14 @@ async def painel(
         )
     ).mappings().all()
 
+    carteira_por_doc: dict[str, float] = {}
+    for r in (await db.execute(_SQL_CARTEIRA, {"tenant_id": tenant_id})).mappings():
+        doc = _doc14(r["documento"])
+        if doc:
+            carteira_por_doc[doc] = carteira_por_doc.get(doc, 0.0) + float(
+                r["carteira_atual"] or 0
+            )
+
     por_cedente: dict[str, dict[str, Any]] = {}
     for r in rows:
         doc = r["cedente_documento"]
@@ -287,6 +308,7 @@ async def painel(
                 "indicadores": [],
                 "valor_avaliado": 0.0,
                 "valor_em_risco": 0.0,
+                "carteira_atual": carteira_por_doc.get(doc),
                 "n_criticos": 0,
                 "n_alto_risco": 0,
                 "n_eventos": 0,
