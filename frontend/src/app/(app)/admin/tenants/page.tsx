@@ -108,9 +108,9 @@ export default function TenantsPage() {
     [data, selectedId],
   )
 
-  // Search e segments (client-side).
+  // Search e filtro de status multi-select (client-side).
   const [search, setSearch] = React.useState("")
-  const [segment, setSegment] = React.useState<"todos" | "ativo" | "trial" | "suspenso">("todos")
+  const [statusSel, setStatusSel] = React.useState<string[]>([])
 
   // Dialog pos-criacao com o accept_url (mostrado uma vez).
   const [newInvite, setNewInvite] = React.useState<InvitationCreateResponse | null>(null)
@@ -288,14 +288,15 @@ export default function TenantsPage() {
           onChange: setSearch,
           placeholder: "Buscar por slug ou nome...",
         }}
-        segments={{
-          value: segment,
-          onChange: (v) => setSegment(v as typeof segment),
+        statusFilter={{
+          value: statusSel,
+          onChange: setStatusSel,
+          // Tones espelham STATUS_TONES do badge da coluna (mesma linguagem).
           options: [
-            { value: "todos",    label: "Todos",    filter: () => true },
-            { value: "ativo",    label: "Ativos",   filter: (t) => t.status === "active" },
-            { value: "trial",    label: "Trial",    filter: (t) => t.status === "trial" },
-            { value: "suspenso", label: "Suspenso", filter: (t) => t.status === "suspended" || t.status === "cancelled" },
+            { value: "active",    label: "Ativo",     tone: "success", filter: (t) => t.status === "active" },
+            { value: "trial",     label: "Trial",     tone: "warning", filter: (t) => t.status === "trial" },
+            { value: "suspended", label: "Suspenso",  tone: "danger",  filter: (t) => t.status === "suspended" },
+            { value: "cancelled", label: "Cancelado", tone: "neutral", filter: (t) => t.status === "cancelled" },
           ],
         }}
         itemNoun={{ singular: "tenant", plural: "tenants" }}

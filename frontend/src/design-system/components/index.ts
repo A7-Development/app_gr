@@ -53,6 +53,11 @@ export {
   type ShellPillOption,
   type ShellPillFiltersConfig,
   type ShellEmptyState,
+  ShellStatusFilter,
+  type ShellStatusTone,
+  type ShellStatusOption,
+  type ShellStatusFilterOption,
+  type ShellStatusFilterConfig,
 } from "./DataTableShell"
 export {
   ExpandableTable,
