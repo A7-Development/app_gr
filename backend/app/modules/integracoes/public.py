@@ -26,6 +26,18 @@ from app.modules.integracoes.adapters.bureau.serasa_pj.liminar import (
 from app.modules.integracoes.adapters.bureau.serasa_pj.liminar import (
     classify_negative_summary_message as classify_serasa_negative_summary_message,
 )
+
+# Resolver de canal/praca Bacen (F2 antifraude) — consumido pelo modulo risco
+# (feature builder do modelo de deteccao de liquidacao). Contrato estavel:
+# carregar(db) uma vez por job; resolver(banco, agencia) puro e barato.
+from app.modules.integracoes.adapters.cobranca.canal import (
+    CANAL_BANCO_PRACA,
+    CANAL_COOPERATIVA,
+    CANAL_IP,
+    CANAL_NAO_RESOLVIDO,
+    PracaLiquidacao,
+    RefBacenResolver,
+)
 from app.modules.integracoes.adapters.cobranca.etl import (
     run_cobranca_manual_sync,
 )
@@ -165,6 +177,10 @@ def get_report_spec(slug: str) -> ReportSpec | None:
 
 
 __all__ = [
+    "CANAL_BANCO_PRACA",
+    "CANAL_COOPERATIVA",
+    "CANAL_IP",
+    "CANAL_NAO_RESOLVIDO",
     "ESCOPOS_POR_FONTE",
     "ESCOPO_CENPROT_SP",
     "ESCOPO_IEPTB_DETALHE",
@@ -180,9 +196,11 @@ __all__ = [
     "JuntaDownloadResult",
     "JuntaFichaResult",
     "JuntaListaDocsResult",
+    "PracaLiquidacao",
     "ProcessosResult",
     "ProtestoConsultaResult",
     "ProtestoParte",
+    "RefBacenResolver",
     "ReportCategory",
     "ReportSpec",
     "classify_serasa_negative_summary_message",

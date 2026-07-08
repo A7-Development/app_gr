@@ -43,6 +43,7 @@ from app.modules.integracoes.adapters.erp.bitfin.queries import bitfin
 from app.modules.integracoes.adapters.erp.bitfin.version import ADAPTER_VERSION
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 from app.shared.documento import DocumentoNormalizado, normalizar_documento
+from app.warehouse.conta_bancaria import ContaBancariaEntidade
 from app.warehouse.entidade import (
     WhEntidade,
     WhEntidadeFonte,
@@ -132,6 +133,9 @@ async def sync_entidades(
     )
     praca_mensal_rows = await asyncio.to_thread(
         fetch_rows, config, db_name, bitfin.SELECT_PAGAMENTO_PRACA_MENSAL
+    )
+    conta_bancaria_rows = await asyncio.to_thread(
+        fetch_rows, config, db_name, bitfin.SELECT_CONTA_BANCARIA
     )
 
     now = datetime.now(UTC)
@@ -392,6 +396,50 @@ async def sync_entidades(
             ["tenant_id", "source_type", "source_id"],
         )
 
+        # Contas bancarias cadastradas por entidade — consumidas pelo S1
+        # ("praca do cedente") do modelo de deteccao de liquidacao.
+        def _map_conta_bancaria(row: dict) -> dict:
+            doc = normalizar_documento(
+                row.get("documento"),
+                _TIPO_HINT.get((row.get("tipo_entidade") or "").strip()),
+            )
+            return {
+                "tenant_id": tenant_id,
+                "entidade_source_id": int(row["entidade_source_id"]),
+                "entidade_documento": doc.documento if doc and doc.valido else None,
+                "banco_id": row.get("banco_id"),
+                "banco_codigo": (str(row.get("banco_codigo") or "").strip() or None),
+                "banco_nome": row.get("banco_nome"),
+                "banco_digital": row.get("banco_digital"),
+                "agencia_codigo": (
+                    str(row.get("agencia_codigo") or "").strip() or None
+                ),
+                "agencia_digito": (
+                    str(row.get("agencia_digito") or "").strip() or None
+                ),
+                "agencia_localidade": row.get("agencia_localidade"),
+                "agencia_estado": (
+                    str(row.get("agencia_estado") or "").strip() or None
+                ),
+                "numero_conta": row.get("numero_conta"),
+                "tipo_conta": row.get("tipo_conta"),
+                "ativa": row.get("ativa"),
+                "escrow": row.get("escrow"),
+                "suporte_para_depositos": row.get("suporte_para_depositos"),
+                **_provenance(
+                    str(row["conta_bancaria_id"]),
+                    row,
+                    row.get("data_cadastro_fonte"),
+                ),
+            }
+
+        n_contas = await _bulk_upsert(
+            db,
+            ContaBancariaEntidade,
+            [_map_conta_bancaria(r) for r in conta_bancaria_rows],
+            ["tenant_id", "source_id"],
+        )
+
     summary = {
         "adapter_version": ADAPTER_VERSION,
         "started_at": started_at.isoformat(),
@@ -407,6 +455,7 @@ async def sync_entidades(
             {"table": "wh_posicao_sacado", "rows": n_pos_sacado},
             {"table": "wh_posicao_sacado_cedente", "rows": n_pos_sacado_cedente},
             {"table": "wh_pagamento_praca_mensal", "rows": n_praca_mensal},
+            {"table": "wh_conta_bancaria", "rows": n_contas},
         ],
         "quarentena_documentos": len(quarentena),
         "papeis_em_quarentena": {

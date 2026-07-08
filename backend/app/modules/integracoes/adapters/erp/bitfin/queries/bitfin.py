@@ -825,3 +825,35 @@ WHERE (
       )
    OR t.Situacao = 9
 """
+
+# Contas bancarias cadastradas por entidade (S1 "praca do cedente" do modelo
+# de deteccao de liquidacao — memoria project_deteccao_anomalias_liquidacao).
+# Banco.Codigo = COMPE (mesmo espaco de codigo do CNAB banco_pagador).
+SELECT_CONTA_BANCARIA = """
+SELECT
+    cb.ContaBancariaId AS conta_bancaria_id,
+    cb.EntidadeId AS entidade_source_id,
+    e.Documento AS documento,
+    e.Tipo AS tipo_entidade,
+    cb.BancoId AS banco_id,
+    b.Codigo AS banco_codigo,
+    b.Nome AS banco_nome,
+    b.Digital AS banco_digital,
+    ba.Codigo AS agencia_codigo,
+    ba.Digito AS agencia_digito,
+    ba.Localidade AS agencia_localidade,
+    ba.Estado AS agencia_estado,
+    cb.Numero AS numero_conta,
+    cb.Tipo AS tipo_conta,
+    cb.Ativa AS ativa,
+    cb.Escrow AS escrow,
+    cb.SuporteParaDepositos AS suporte_para_depositos,
+    cb.DataDeCadastro AS data_cadastro_fonte
+FROM dbo.ContaBancaria cb
+JOIN dbo.Entidade e
+    ON e.EntidadeId = cb.EntidadeId
+LEFT JOIN dbo.Banco b
+    ON b.BancoId = cb.BancoId
+LEFT JOIN dbo.BancoAgencia ba
+    ON ba.AgenciaId = cb.AgenciaId
+"""

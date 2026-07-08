@@ -48,3 +48,76 @@ export function useVersoesContratoLiquidacao(sigla: string | null) {
     staleTime: 30 * 1000,
   })
 }
+
+// ── Curadoria de liquidações + modelo de detecção ──────────────────────────
+
+import {
+  riscoCuradoriaLiquidacoes,
+  type CuradoriaLiquidacoesFilters,
+} from "@/lib/api-client"
+
+const KEY_CURADORIA = ["risco", "curadoria-liquidacoes"] as const
+const KEY_MODELOS = ["risco", "deteccao-modelos"] as const
+
+export function useCuradoriaLiquidacoes(filters: CuradoriaLiquidacoesFilters) {
+  return useQuery({
+    queryKey: [...KEY_CURADORIA, filters],
+    queryFn: () => riscoCuradoriaLiquidacoes.list(filters),
+    staleTime: 30 * 1000,
+    placeholderData: (prev) => prev, // paginação sem "flash" de loading
+  })
+}
+
+export function useTagLiquidacao() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      liquidacaoId,
+      tag,
+      nota,
+    }: {
+      liquidacaoId: string
+      tag: "fraude" | "ok"
+      nota?: string | null
+    }) => riscoCuradoriaLiquidacoes.tag(liquidacaoId, tag, nota),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: KEY_CURADORIA })
+    },
+  })
+}
+
+export function useDeteccaoModelos() {
+  return useQuery({
+    queryKey: KEY_MODELOS,
+    queryFn: () => riscoCuradoriaLiquidacoes.modelos(),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useTreinarModelo() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (nome: string) => riscoCuradoriaLiquidacoes.treinar(nome),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY_MODELOS }),
+  })
+}
+
+export function useAtivarVersaoModelo() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ nome, versao }: { nome: string; versao: number }) =>
+      riscoCuradoriaLiquidacoes.ativarVersao(nome, versao),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: KEY_MODELOS })
+      qc.invalidateQueries({ queryKey: KEY_CURADORIA })
+    },
+  })
+}
+
+export function usePontuarAgora() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (nome: string) => riscoCuradoriaLiquidacoes.pontuarAgora(nome),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY_CURADORIA }),
+  })
+}

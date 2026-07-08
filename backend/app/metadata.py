@@ -44,6 +44,16 @@ from app.modules.integracoes.models.qitech_report_job import QitechReportJob  # 
 from app.modules.integracoes.models.qitech_ua_classe import QiTechUaClasse  # noqa: F401
 from app.modules.integracoes.models.tenant_source_config import TenantSourceConfig  # noqa: F401
 
+# Modulo risco — contrato de liquidacao + espinha de deteccao (2026-07-08)
+from app.modules.risco.models import (  # noqa: F401
+    CuradoriaTag,
+    DeteccaoModelo,
+    DeteccaoModeloAtivo,
+    DeteccaoModeloVersao,
+    DeteccaoScore,
+    ProdutoContratoLiquidacao,
+)
+
 # Shared kernel
 from app.shared.ai.models import (  # noqa: F401
     AgentConfig,
@@ -74,6 +84,7 @@ from app.shared.identity.user import User  # noqa: F401
 from app.shared.identity.user_permission import UserModulePermission  # noqa: F401
 from app.warehouse.aquisicao_recebivel import AquisicaoRecebivel  # noqa: F401
 from app.warehouse.bdc_raw_consulta import BdcRawConsulta  # noqa: F401
+from app.warehouse.conta_bancaria import ContaBancariaEntidade  # noqa: F401
 from app.warehouse.cpr_movimento import CprMovimento  # noqa: F401
 
 # Warehouse (populado pelo ETL)
