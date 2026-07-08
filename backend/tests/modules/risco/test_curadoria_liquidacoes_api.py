@@ -216,6 +216,29 @@ async def test_listagem_traz_todas_com_total(
     # Cross-signal de lastro e FLAG, nunca tag.
     assert por_titulo[1002]["candidato_lastro"] is True
     assert por_titulo[1002]["tag_vigente"] is None
+    # "Qual foi o bad": sinais legiveis derivados dos campos declarados.
+    assert "baixa_confirmada" in por_titulo[1002]["sinais"]
+    assert "lastro_inconsistente" in por_titulo[1002]["sinais"]
+    assert por_titulo[1001]["sinais"] == []
+    assert por_titulo[1001]["situacao_titulo"] == 1
+
+
+@pytest.mark.asyncio
+async def test_filtros_sacado_e_situacao(
+    client: AsyncClient,
+    user_in_tenant_a: User,
+    modelo_catalogo: DeteccaoModelo,
+    liquidacoes_tenant_a: list[Liquidacao],
+):
+    token = await _login(client, user_in_tenant_a.email)
+    # Situacao do titulo: fixtures gravam situacao_titulo=1 (liq normal).
+    r = await client.get(f"{API_BASE}?situacao_titulo=1", headers=_auth(token))
+    assert r.json()["total"] == 2
+    r = await client.get(f"{API_BASE}?situacao_titulo=3", headers=_auth(token))
+    assert r.json()["total"] == 0
+    # Sacado: fixtures nao tem boleto_vigente -> busca por sacado zera.
+    r = await client.get(f"{API_BASE}?sacado=inexistente", headers=_auth(token))
+    assert r.json()["total"] == 0
 
 
 @pytest.mark.asyncio

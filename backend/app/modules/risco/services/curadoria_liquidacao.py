@@ -40,6 +40,7 @@ SELECT
     l.canal,
     l.evidencia,
     l.data_evento,
+    l.situacao_titulo,
     coalesce(l.valor_pago, l.valor_titulo) AS valor,
     l.local_pagamento,
     l.pago_na_agencia_cliente,
@@ -55,6 +56,7 @@ SELECT
     bv.sacado_documento,
     ds.score,
     ds.fatores,
+    ds.features AS score_features,
     ds.regra_dura,
     ds.regra_dura_motivo,
     tv.tag AS tag_vigente,
@@ -111,6 +113,8 @@ async def listar_liquidacoes(
     data_fim: date | None = None,
     produto_sigla: str | None = None,
     cedente_busca: str | None = None,
+    sacado_busca: str | None = None,
+    situacao_titulo: int | None = None,
     tag: str | None = None,  # 'fraude' | 'ok' | 'sem_tag'
     score_min: float | None = None,
     somente_regra_dura: bool = False,
@@ -137,8 +141,30 @@ async def listar_liquidacoes(
         filtros.append("AND split_part(o.modalidade, '-', 1) = :produto_sigla")
         params["produto_sigla"] = produto_sigla.upper()
     if cedente_busca:
-        filtros.append("AND o.cedente_nome ILIKE :cedente_busca")
+        digitos = "".join(c for c in cedente_busca if c.isdigit())
+        if digitos:
+            filtros.append(
+                "AND (o.cedente_nome ILIKE :cedente_busca "
+                "OR o.cedente_documento LIKE :cedente_busca_doc)"
+            )
+            params["cedente_busca_doc"] = f"%{digitos}%"
+        else:
+            filtros.append("AND o.cedente_nome ILIKE :cedente_busca")
         params["cedente_busca"] = f"%{cedente_busca}%"
+    if sacado_busca:
+        digitos = "".join(c for c in sacado_busca if c.isdigit())
+        if digitos:
+            filtros.append(
+                "AND (bv.sacado_nome ILIKE :sacado_busca "
+                "OR bv.sacado_documento LIKE :sacado_busca_doc)"
+            )
+            params["sacado_busca_doc"] = f"%{digitos}%"
+        else:
+            filtros.append("AND bv.sacado_nome ILIKE :sacado_busca")
+        params["sacado_busca"] = f"%{sacado_busca}%"
+    if situacao_titulo is not None:
+        filtros.append("AND l.situacao_titulo = :situacao_titulo")
+        params["situacao_titulo"] = situacao_titulo
     if tag == "sem_tag":
         filtros.append("AND tv.tag IS NULL")
     elif tag in ("fraude", "ok"):
@@ -156,12 +182,50 @@ async def listar_liquidacoes(
     rows = (await db.execute(sql, params)).mappings().all()
     total = int(rows[0]["total"]) if rows else 0
 
+    saida = []
+    for r in rows:
+        d = dict(r)
+        d["sinais"] = _sinais(d)
+        d.pop("score_features", None)  # interno — a conclusao vira `sinais`
+        saida.append(d)
+
     return {
         "total": total,
         "page": page,
         "page_size": page_size,
-        "rows": [dict(r) for r in rows],
+        "rows": saida,
     }
+
+
+def _sinais(row: dict[str, Any]) -> list[str]:
+    """Legible system conclusions for one row, most severe first.
+
+    "Qual foi o bad dele" (feedback Ricardo 2026-07-08): the screen must say
+    WHY the system looked at this liquidation, independently of a trained
+    score. Declared fields always exist; score features enrich when a
+    scoring row exists. Codes are translated to pt-BR in the frontend.
+    """
+    s: list[str] = []
+    if row.get("regra_dura"):
+        s.append("regra_dura")
+    if row.get("evidencia") == "baixa_confirmada":
+        s.append("baixa_confirmada")
+    if row.get("pago_na_agencia_cliente"):
+        s.append("pago_agencia_cedente")
+    feats = row.get("score_features") or {}
+    if feats.get("match_agencia_conta_cedente"):
+        s.append("agencia_conta_cedente")
+    if (feats.get("quebra_fingerprint") or 0) >= 0.5:
+        s.append("quebra_fingerprint")
+    if feats.get("boleto_nao_esperado_mas_teve"):
+        s.append("boleto_nao_esperado")
+    if row.get("candidato_lastro"):
+        s.append("lastro_inconsistente")
+    if row.get("pago_fora_praca_sacado"):
+        s.append("fora_praca_sacado")
+    if row.get("evidencia") == "sem_ocorrencia":
+        s.append("sem_ocorrencia")
+    return s
 
 
 async def registrar_tag(

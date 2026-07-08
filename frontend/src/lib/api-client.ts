@@ -3579,6 +3579,8 @@ export type LiquidacaoCuradoriaRow = {
   canal: "bancaria" | "baixa_manual"
   evidencia: string | null
   data_evento: string
+  /** Snapshot de Titulo.Situacao (1 Liq Normal, 2 Cartório, 3 Baixado, 5 Recomprado, 7 Recuperação, 9 Perda). */
+  situacao_titulo: number | null
   valor: number | null
   cedente_nome: string | null
   cedente_documento: string | null
@@ -3599,6 +3601,8 @@ export type LiquidacaoCuradoriaRow = {
   tag_autor: string | null
   tag_em: string | null
   candidato_lastro: boolean
+  /** Conclusões legíveis do sistema ("qual foi o bad"), mais severa primeiro. */
+  sinais: string[]
 }
 
 export type LiquidacaoCuradoriaPage = {
@@ -3615,6 +3619,8 @@ export type CuradoriaLiquidacoesFilters = {
   data_fim?: string
   produto_sigla?: string
   cedente?: string
+  sacado?: string
+  situacao_titulo?: number
   tag?: "fraude" | "ok" | "sem_tag"
   score_min?: number
   regra_dura?: boolean
@@ -3651,6 +3657,9 @@ function curadoriaFiltersToQuery(f: CuradoriaLiquidacoesFilters): string {
   if (f.data_fim) params.set("data_fim", f.data_fim)
   if (f.produto_sigla) params.set("produto_sigla", f.produto_sigla)
   if (f.cedente) params.set("cedente", f.cedente)
+  if (f.sacado) params.set("sacado", f.sacado)
+  if (f.situacao_titulo !== undefined)
+    params.set("situacao_titulo", String(f.situacao_titulo))
   if (f.tag) params.set("tag", f.tag)
   if (f.score_min !== undefined) params.set("score_min", String(f.score_min))
   if (f.regra_dura) params.set("regra_dura", "true")
