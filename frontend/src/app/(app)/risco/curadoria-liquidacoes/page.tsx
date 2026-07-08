@@ -407,13 +407,16 @@ export default function CuradoriaLiquidacoesPage() {
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("cedente_nome", {
         header: "Cedente",
-        size: 190,
+        // Colunas de NOME recebem a folga da tabela (w-full): size maior e
+        // cap generoso — o truncate acompanha a largura real da coluna, em
+        // vez de cortar a 180px e deixar espaco morto.
+        size: 260,
         cell: (info) => {
           const nome = (info.getValue() as string | null) ?? "—"
           // Uma linha, corte limpo — nome completo no tooltip.
           return (
             <span
-              className={cx(tableTokens.cellStrong, "block max-w-[180px] truncate")}
+              className={cx(tableTokens.cellStrong, "block max-w-[420px] truncate")}
               title={nome}
             >
               {nome}
@@ -423,12 +426,12 @@ export default function CuradoriaLiquidacoesPage() {
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("sacado_nome", {
         header: "Sacado",
-        size: 170,
+        size: 240,
         cell: (info) => {
           const nome = (info.getValue() as string | null) ?? "—"
           return (
             <span
-              className={cx(tableTokens.cellText, "block max-w-[160px] truncate")}
+              className={cx(tableTokens.cellText, "block max-w-[400px] truncate")}
               title={nome}
             >
               {nome}
@@ -468,13 +471,14 @@ export default function CuradoriaLiquidacoesPage() {
       col.display({
         id: "sinal",
         header: "Sinal",
-        size: 160,
+        size: 150,
         cell: ({ row }) => <SinaisCell sinais={row.original.sinais} />,
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.display({
         id: "score",
         header: "Risco",
-        size: 90,
+        // 112px = "Padrão crítico" em 1 linha (badge agora tem nowrap).
+        size: 112,
         cell: ({ row }) => <ScoreBadge row={row.original} />,
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.display({
@@ -486,7 +490,7 @@ export default function CuradoriaLiquidacoesPage() {
       col.display({
         id: "actions",
         header: "",
-        size: 80,
+        size: 64,
         cell: ({ row }) => (
           <div className="flex justify-end gap-1">
             <Button

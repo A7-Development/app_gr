@@ -41,32 +41,34 @@ export const tableTokens = {
   cellNumberNegative: "tabular-nums text-xs text-red-600 dark:text-red-400",
 
   // ── Badges dentro de celulas (combinar com cor de tone) ──────────────
+  // whitespace-nowrap: badge NUNCA quebra linha — em row de density compact
+  // a quebra sobrepoe o texto (bug visual). Coluna estreita = aumentar size.
   /** Badge basico — combine com `bg-X-50 text-X-700 dark:...` por tone. */
   badge:
-    "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium",
+    "inline-flex items-center gap-1 whitespace-nowrap rounded-sm px-1.5 py-0.5 text-[11px] font-medium",
 
   /** Badge com dot indicador a esquerda. Combine com tone. */
   badgeWithDot:
-    "inline-flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-[11px] font-medium",
+    "inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm px-1.5 py-0.5 text-[11px] font-medium",
 
   // ── Badges semanticos de STATUS (CLAUDE.md §4/§6 — decisao 2026-07-06).
   // Codigo novo usa ESTES tokens; nao recriar a receita de cor inline.
   // Legado com receita inline converte quando a area for tocada.
   /** Status positivo — "Ativo", "Aceito", "Conciliado", "Member". */
   badgeSuccess:
-    "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300",
+    "inline-flex items-center gap-1 whitespace-nowrap rounded-sm px-1.5 py-0.5 text-[11px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300",
 
   /** Status de atencao — "Pendente", "Aguardando", "Parcial". */
   badgeWarning:
-    "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
+    "inline-flex items-center gap-1 whitespace-nowrap rounded-sm px-1.5 py-0.5 text-[11px] font-medium bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
 
   /** Status negativo — "Expirado", "Falhou", "Bloqueado". */
   badgeDanger:
-    "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300",
+    "inline-flex items-center gap-1 whitespace-nowrap rounded-sm px-1.5 py-0.5 text-[11px] font-medium bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300",
 
   /** Status neutro — "Inativo", "Rascunho", "Arquivado". */
   badgeNeutral:
-    "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium bg-gray-100 text-gray-600 dark:bg-gray-500/10 dark:text-gray-400",
+    "inline-flex items-center gap-1 whitespace-nowrap rounded-sm px-1.5 py-0.5 text-[11px] font-medium bg-gray-100 text-gray-600 dark:bg-gray-500/10 dark:text-gray-400",
 
   // ── Header (`<th>`) ──────────────────────────────────────────────────
   /** Estilo eyebrow do header — assinatura visual Strata.
