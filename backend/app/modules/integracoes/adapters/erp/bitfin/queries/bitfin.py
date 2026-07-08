@@ -743,9 +743,8 @@ SELECT
     t.ValorDoPagamento AS valor_pago,
     t.DataDaSituacao AS data_evento,
     p.Registrado AS registrado,
+    p.Baixado AS baixado,
     p.CarteiraBancariaId AS carteira_bancaria_id,
-    CASE WHEN p.ProcedimentoDeCobrancaId IS NOT NULL THEN 1 ELSE 0 END
-        AS tem_procedimento,
     CASE WHEN EXISTS (
         SELECT 1 FROM dbo.CobrancaAcoesOcorrencia bx
         WHERE bx.ProcedimentoDeCobrancaId = p.ProcedimentoDeCobrancaId
