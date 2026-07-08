@@ -29,6 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.warehouse.banco_agencia import WhBancoAgencia
+from app.warehouse.bcb_agencia import WhBcbAgencia
 from app.warehouse.ref_bacen import (
     SEGMENTO_BANCO,
     SEGMENTO_BANCO_COOPERATIVO,
@@ -93,11 +94,15 @@ class RefBacenResolver:
         instituicoes: dict[str, RefBacenInstituicao],
         agencias: dict[tuple[str, str], RefBacenAgencia],
         erp_agencias: dict[tuple[str, str], tuple[str, str]] | None = None,
+        bcb_hist_agencias: dict[tuple[str, str], tuple[str, str]] | None = None,
     ) -> None:
         self._inst = instituicoes
         self._ag = agencias
-        # 2o degrau: (banco_compe, agencia_5) -> (municipio, uf) do cadastro
-        # ERP. Cobre agencias que a referencia Bacen (snapshot atual) perdeu.
+        # Escada de resolucao (decisao Ricardo 2026-07-08):
+        #   1. ref_bacen_agencia (Olinda ao vivo, mes corrente)
+        #   2. wh_bcb_agencia (serie historica BCB — inclui EXTINTAS)
+        #   3. cadastro ERP (fallback factual)
+        self._bcb = bcb_hist_agencias or {}
         self._erp = erp_agencias or {}
 
     @classmethod
@@ -110,8 +115,25 @@ class RefBacenResolver:
             (row.banco_compe, row.agencia_codigo): row
             for row in (await db.execute(select(RefBacenAgencia))).scalars()
         }
-        # Cadastro ERP: dedup por (banco, agencia) — linha COM cidade vence
-        # (multiplas AgenciaId podem apontar o mesmo par; queremos a util).
+        # Serie historica BCB (2o degrau): (banco_compe, agencia_5) ->
+        # (municipio, uf). Cobre extintas que o snapshot Olinda perdeu.
+        # Select de colunas (nao a entidade) — evita coercao do enum
+        # source_type e e mais leve na varredura.
+        bcb: dict[tuple[str, str], tuple[str, str]] = {}
+        bcb_rows = await db.execute(
+            select(
+                WhBcbAgencia.banco_compe,
+                WhBcbAgencia.agencia_codigo,
+                WhBcbAgencia.municipio,
+                WhBcbAgencia.uf,
+            )
+        )
+        for banco_c, ag_c, municipio, uf in bcb_rows:
+            b = _norm_banco(banco_c)
+            a = _norm_agencia(ag_c)
+            if b and a and municipio:
+                bcb[(b, a)] = (municipio, (uf or "").strip() or "")
+        # Cadastro ERP (3o degrau): dedup por (banco, agencia).
         erp: dict[tuple[str, str], tuple[str, str]] = {}
         for row in (await db.execute(select(WhBancoAgencia))).scalars():
             b = _norm_banco(row.banco_codigo)
@@ -121,7 +143,7 @@ class RefBacenResolver:
             key = (b, a)
             if key not in erp:
                 erp[key] = (row.localidade, (row.estado or "").strip() or "")
-        return cls(inst, ag, erp)
+        return cls(inst, ag, erp, bcb)
 
     def resolver(self, banco: str | None, agencia: str | None) -> PracaLiquidacao:
         b = _norm_banco(banco)
@@ -164,8 +186,16 @@ class RefBacenResolver:
                 False, "agencia-matriz (0001): liquidacao eletronica, cidade nao e praca",
             )
         if row is None or row.municipio is None:
-            # 2o degrau da escada: cadastro ERP recupera agencia fisica que a
-            # referencia Bacen (snapshot atual) nao lista (extinta/renumerada).
+            # 2o degrau: serie historica BCB (inclui extintas, ex.: 1417/Penha).
+            bcb = self._bcb.get((b, a)) if a else None
+            if bcb is not None:
+                return PracaLiquidacao(
+                    CANAL_BANCO_PRACA, b, inst.nome_reduzido, inst.segmento, a,
+                    bcb[0], None, bcb[1] or None, True,
+                    f"agencia {a} resolvida pela serie historica BCB: {bcb[0]}/{bcb[1]}",
+                    praca_fonte="bcb_historico",
+                )
+            # 3o degrau: cadastro ERP (fallback factual).
             erp = self._erp.get((b, a)) if a else None
             if erp is not None:
                 return PracaLiquidacao(
@@ -177,7 +207,7 @@ class RefBacenResolver:
             return PracaLiquidacao(
                 CANAL_BANCO_SEM_PRACA, b, inst.nome_reduzido, inst.segmento, a,
                 None, None, None, False,
-                "agencia fora da referencia Bacen e do cadastro (interna/extinta)"
+                "agencia fora de todas as fontes (interna/extinta desconhecida)"
                 if a else "evento sem agencia pagadora",
             )
         return PracaLiquidacao(
