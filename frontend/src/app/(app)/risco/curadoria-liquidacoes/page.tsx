@@ -1,19 +1,22 @@
 // src/app/(app)/risco/curadoria-liquidacoes/page.tsx
 //
 // Risco · Curadoria de liquidações — a máquina de rotulagem do modelo de
-// detecção de anomalias (handoff 2026-07-08).
+// detecção de anomalias (handoff 2026-07-08; ajustes de UX 2026-07-08:
+// anatomia canônica + filtros Cedente/Sacado/Produto/Situação + coluna
+// "Sinal" com a conclusão legível do sistema).
 //
 // Princípios duros implementados aqui:
 // - Mostra TODAS as liquidações (não só alertas do modelo): falso negativo
 //   precisa ser etiquetável. Paginação SERVER-SIDE real (~93k eventos) com
 //   total exposto — nada é cortado silenciosamente (§14.6).
 // - Tag é append-only: marcar de novo cria registro novo; nada se apaga.
-// - Sugestão do sistema (score, regra dura, candidato de lastro) é FLAG,
-//   nunca tag — a tag é sempre humana, com autor e data.
+// - Sugestão do sistema (sinais, score, regra dura) é FLAG, nunca tag —
+//   a tag é sempre humana, com autor e data.
 //
-// Pattern: ListagemComDrilldown (DataTable direta + DrillDownSheet de
-// evidência via ?selected=<id>); paginação server-side no rodapé.
-// MOTIVO: DataTableShell é client-side (~200 rows) — aqui o universo é 93k.
+// Anatomia: canônica das listagens CRUD (Card > busca + segments + contador
+// > tabela > rodapé), com a MECÂNICA server-side por trás.
+// MOTIVO: DataTableShell é client-side (~200 rows) — aqui o universo é 93k;
+// a anatomia é reproduzida manualmente para manter a identidade visual.
 //
 
 "use client"
@@ -33,8 +36,15 @@ import { format, parseISO } from "date-fns"
 import { toast } from "sonner"
 
 import { Button } from "@/components/tremor/Button"
+import { Card } from "@/components/tremor/Card"
 import { Divider } from "@/components/tremor/Divider"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/tremor/Select"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/tremor/Select"
 import { Textarea } from "@/components/tremor/Textarea"
 import {
   DataTable,
@@ -46,6 +56,7 @@ import {
 import { tableTokens } from "@/design-system/tokens/table"
 import type { LiquidacaoCuradoriaRow } from "@/lib/api-client"
 import {
+  useContratosLiquidacao,
   useCuradoriaLiquidacoes,
   useDeteccaoModelos,
   usePontuarAgora,
@@ -83,6 +94,49 @@ const FEATURE_LABELS: Record<string, string> = {
   valor_log: "Magnitude do valor",
 }
 
+// Conclusões do sistema ("qual foi o bad") — códigos do backend em pt-BR.
+const SINAL_LABELS: Record<string, string> = {
+  regra_dura: "Sacado de outra cidade pagou na agência do cedente",
+  baixa_confirmada: "Boleto baixado por instrução e liquidado por fora",
+  pago_agencia_cedente: "Pago na agência do cedente",
+  agencia_conta_cedente: "Pago em agência onde o cedente mantém conta",
+  quebra_fingerprint: "Quebrou o padrão bancário do sacado",
+  boleto_nao_esperado: "Boleto em produto onde não era esperado",
+  lastro_inconsistente: "Lastro marcado inconsistente na verificação",
+  fora_praca_sacado: "Pago fora da praça do sacado",
+  sem_ocorrencia: "Bancarizado sem ocorrência de liquidação",
+}
+const SINAL_CURTO: Record<string, string> = {
+  regra_dura: "agência do cedente",
+  baixa_confirmada: "baixa confirmada",
+  pago_agencia_cedente: "agência do cedente",
+  agencia_conta_cedente: "conta do cedente",
+  quebra_fingerprint: "quebra de padrão",
+  boleto_nao_esperado: "boleto inesperado",
+  lastro_inconsistente: "lastro inconsistente",
+  fora_praca_sacado: "fora da praça",
+  sem_ocorrencia: "sem ocorrência",
+}
+// Sinais fortes ganham pill amber; informativos ficam neutros.
+const SINAIS_FORTES = new Set([
+  "regra_dura",
+  "baixa_confirmada",
+  "pago_agencia_cedente",
+  "agencia_conta_cedente",
+  "lastro_inconsistente",
+])
+
+// Dicionário Titulo.Situacao (mapeado 2026-07-08).
+const SITUACAO_LABELS: Record<number, string> = {
+  0: "Em aberto",
+  1: "Liquidação Normal",
+  2: "Liquidação em Cartório",
+  3: "Baixado",
+  5: "Recomprado",
+  7: "Recuperação de Crédito",
+  9: "Perda",
+}
+
 type Segmento = "todas" | "sugeridas" | "regra_dura" | "fraude" | "sem_tag"
 
 function ScoreBadge({ row }: { row: LiquidacaoCuradoriaRow }) {
@@ -107,6 +161,53 @@ function ScoreBadge({ row }: { row: LiquidacaoCuradoriaRow }) {
         ? tableTokens.badgeWarning
         : tableTokens.badgeNeutral
   return <span className={cx(tableTokens.badge, classe)}>{pct}%</span>
+}
+
+function SinaisCell({ sinais }: { sinais: string[] }) {
+  if (sinais.length === 0) {
+    return <span className={tableTokens.cellMuted}>sem sinal</span>
+  }
+  const [primeiro, ...resto] = sinais
+  return (
+    <div className="flex items-center gap-1">
+      <span
+        className={cx(
+          tableTokens.badge,
+          SINAIS_FORTES.has(primeiro)
+            ? tableTokens.badgeWarning
+            : tableTokens.badgeNeutral,
+        )}
+        title={SINAL_LABELS[primeiro] ?? primeiro}
+      >
+        {SINAL_CURTO[primeiro] ?? primeiro}
+      </span>
+      {resto.length > 0 && (
+        <span
+          className={tableTokens.cellSecondary}
+          title={resto.map((s) => SINAL_LABELS[s] ?? s).join(" · ")}
+        >
+          +{resto.length}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function SituacaoCell({ situacao }: { situacao: number | null }) {
+  if (situacao === null) return <span className={tableTokens.cellMuted}>—</span>
+  const label = SITUACAO_LABELS[situacao] ?? `Situação ${situacao}`
+  // Baixado/Perda merecem o olho: título saiu da carteira fora do fluxo normal.
+  const destaque = situacao === 3 || situacao === 9
+  return (
+    <span
+      className={cx(
+        tableTokens.badge,
+        destaque ? tableTokens.badgeWarning : tableTokens.badgeNeutral,
+      )}
+    >
+      {label}
+    </span>
+  )
 }
 
 function TagBadge({ row }: { row: LiquidacaoCuradoriaRow }) {
@@ -139,25 +240,34 @@ export default function CuradoriaLiquidacoesPage() {
   const selectedId = sp.get("selected")
 
   const [page, setPage] = React.useState(1)
-  const [busca, setBusca] = React.useState("")
-  const [buscaDebounced, setBuscaDebounced] = React.useState("")
+  const [buscaCedente, setBuscaCedente] = React.useState("")
+  const [buscaSacado, setBuscaSacado] = React.useState("")
+  const [cedenteDebounced, setCedenteDebounced] = React.useState("")
+  const [sacadoDebounced, setSacadoDebounced] = React.useState("")
   const [segmento, setSegmento] = React.useState<Segmento>("todas")
   const [produto, setProduto] = React.useState<string>("todos")
+  const [situacao, setSituacao] = React.useState<string>("todas")
 
   React.useEffect(() => {
-    const t = setTimeout(() => setBuscaDebounced(busca), 350)
+    const t = setTimeout(() => setCedenteDebounced(buscaCedente), 350)
     return () => clearTimeout(t)
-  }, [busca])
+  }, [buscaCedente])
+  React.useEffect(() => {
+    const t = setTimeout(() => setSacadoDebounced(buscaSacado), 350)
+    return () => clearTimeout(t)
+  }, [buscaSacado])
   React.useEffect(() => {
     setPage(1)
-  }, [buscaDebounced, segmento, produto])
+  }, [cedenteDebounced, sacadoDebounced, segmento, produto, situacao])
 
   const filtros = React.useMemo(
     () => ({
       page,
       page_size: PAGE_SIZE,
-      cedente: buscaDebounced || undefined,
+      cedente: cedenteDebounced || undefined,
+      sacado: sacadoDebounced || undefined,
       produto_sigla: produto !== "todos" ? produto : undefined,
+      situacao_titulo: situacao !== "todas" ? Number(situacao) : undefined,
       sugeridos: segmento === "sugeridas" || undefined,
       regra_dura: segmento === "regra_dura" || undefined,
       tag:
@@ -167,11 +277,13 @@ export default function CuradoriaLiquidacoesPage() {
             ? ("sem_tag" as const)
             : undefined,
     }),
-    [page, buscaDebounced, segmento, produto],
+    [page, cedenteDebounced, sacadoDebounced, segmento, produto, situacao],
   )
 
   const listQuery = useCuradoriaLiquidacoes(filtros)
   const modelosQuery = useDeteccaoModelos()
+  // Catálogo completo de produtos (nome por extenso) — não depende da página.
+  const contratosQuery = useContratosLiquidacao(180)
   const tagMut = useTagLiquidacao()
   const treinarMut = useTreinarModelo()
   const pontuarMut = usePontuarAgora()
@@ -182,7 +294,8 @@ export default function CuradoriaLiquidacoesPage() {
   const totalPaginas = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   const selected = React.useMemo(
-    () => (selectedId ? (rows.find((r) => r.liquidacao_id === selectedId) ?? null) : null),
+    () =>
+      selectedId ? (rows.find((r) => r.liquidacao_id === selectedId) ?? null) : null,
     [rows, selectedId],
   )
   const [nota, setNota] = React.useState("")
@@ -245,20 +358,19 @@ export default function CuradoriaLiquidacoesPage() {
     }
   }, [pontuarMut])
 
-  const produtos = React.useMemo(() => {
-    // Opções do filtro de produto: colhidas da própria página (nome completo).
-    const vistos = new Map<string, string>()
-    for (const r of rows) {
-      if (r.produto_sigla) vistos.set(r.produto_sigla, r.produto_nome ?? r.produto_sigla)
-    }
-    return Array.from(vistos.entries()).sort((a, b) => a[1].localeCompare(b[1]))
-  }, [rows])
+  const produtos = React.useMemo(
+    () =>
+      (contratosQuery.data ?? [])
+        .map((c) => [c.produto_sigla, c.produto_nome] as const)
+        .sort((a, b) => a[1].localeCompare(b[1])),
+    [contratosQuery.data],
+  )
 
   const columns = React.useMemo<ColumnDef<LiquidacaoCuradoriaRow, unknown>[]>(
     () => [
       col.accessor("data_evento", {
         header: "Data",
-        size: 92,
+        size: 88,
         cell: (info) => (
           <span className={tableTokens.cellSecondary}>
             {format(parseISO(info.getValue() as string), "dd/MM/yyyy")}
@@ -267,21 +379,21 @@ export default function CuradoriaLiquidacoesPage() {
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("cedente_nome", {
         header: "Cedente",
-        size: 200,
+        size: 190,
         cell: (info) => (
           <span className={tableTokens.cellStrong}>{info.getValue() ?? "—"}</span>
         ),
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("sacado_nome", {
         header: "Sacado",
-        size: 180,
+        size: 170,
         cell: (info) => (
           <span className={tableTokens.cellText}>{info.getValue() ?? "—"}</span>
         ),
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("produto_nome", {
         header: "Produto",
-        size: 140,
+        size: 130,
         cell: (info) => (
           <span className={tableTokens.cellText}>
             {info.getValue() ?? info.row.original.produto_sigla ?? "—"}
@@ -290,7 +402,7 @@ export default function CuradoriaLiquidacoesPage() {
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("valor", {
         header: "Valor",
-        size: 110,
+        size: 105,
         cell: (info) => {
           const v = info.getValue() as number | null
           return v !== null ? (
@@ -303,52 +415,33 @@ export default function CuradoriaLiquidacoesPage() {
         },
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.display({
-        id: "mecanica",
-        header: "Mecânica",
-        size: 150,
-        cell: ({ row }) => (
-          <span className={tableTokens.cellSecondary}>
-            {row.original.canal === "bancaria" ? "Bancária" : "Baixa manual"}
-            {row.original.evidencia === "baixa_confirmada" && (
-              <span className={cx(tableTokens.badge, tableTokens.badgeWarning, "ml-1.5")}>
-                baixa confirmada
-              </span>
-            )}
-          </span>
-        ),
+        id: "situacao",
+        header: "Situação do título",
+        size: 130,
+        cell: ({ row }) => <SituacaoCell situacao={row.original.situacao_titulo} />,
+      }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
+      col.display({
+        id: "sinal",
+        header: "Sinal",
+        size: 160,
+        cell: ({ row }) => <SinaisCell sinais={row.original.sinais} />,
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.display({
         id: "score",
         header: "Risco",
-        size: 96,
+        size: 90,
         cell: ({ row }) => <ScoreBadge row={row.original} />,
-      }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
-      col.display({
-        id: "sugestao",
-        header: "Sugestão",
-        size: 96,
-        cell: ({ row }) =>
-          row.original.candidato_lastro ? (
-            <span
-              className={cx(tableTokens.badge, tableTokens.badgeWarning)}
-              title="Título com lastro marcado como inconsistente na verificação — candidato a fraude de liquidação. Sugestão do sistema; a tag é sua."
-            >
-              candidato
-            </span>
-          ) : (
-            <span className={tableTokens.cellMuted}>—</span>
-          ),
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.display({
         id: "tag",
         header: "Marcação",
-        size: 90,
+        size: 86,
         cell: ({ row }) => <TagBadge row={row.original} />,
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.display({
         id: "actions",
         header: "",
-        size: 84,
+        size: 80,
         cell: ({ row }) => (
           <div className="flex justify-end gap-1">
             <Button
@@ -388,7 +481,7 @@ export default function CuradoriaLiquidacoesPage() {
     <div className="flex flex-col gap-6 px-6 pt-5 pb-6">
       <PageHeader
         title="Curadoria de liquidações"
-        info="Todas as liquidações da carteira, com o risco estimado pelo modelo de detecção e as regras determinísticas. Marque fraude/OK: cada marcação é registrada com autor e data (nada se apaga) e realimenta o treino do modelo — IA opina, humano homologa."
+        info="Todas as liquidações da carteira, com a conclusão do sistema (coluna Sinal), o risco estimado pelo modelo e as regras determinísticas. Marque fraude/OK: cada marcação é registrada com autor e data (nada se apaga) e realimenta o treino do modelo — IA opina, humano homologa."
         subtitle="Risco · Detecção de anomalias"
         actions={
           <div className="flex items-center gap-2">
@@ -423,7 +516,7 @@ export default function CuradoriaLiquidacoesPage() {
             {" · "}
             {modelo.versao_ativa
               ? `versão ativa v${modelo.versao_ativa}`
-              : "sem versão ativa — exibindo apenas regras determinísticas"}
+              : "sem versão ativa — exibindo regras determinísticas e sinais declarados"}
             {modelo.versoes.length > 0 &&
               modelo.versoes[0] &&
               ` · última treinada: v${modelo.versoes[0].versao} (Gini OOT ${String(
@@ -433,96 +526,121 @@ export default function CuradoriaLiquidacoesPage() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <FilterSearch
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar cedente..."
-          className="w-64"
-        />
-        <SegmentSwitch
-          value={segmento}
-          onChange={(v) => setSegmento(v as Segmento)}
-          options={[
-            { value: "todas", label: "Todas" },
-            { value: "sugeridas", label: "Sugeridas" },
-            { value: "regra_dura", label: "Regra dura" },
-            { value: "fraude", label: "Fraude" },
-            { value: "sem_tag", label: "Sem marcação" },
-          ]}
-        />
-        <Select value={produto} onValueChange={setProduto}>
-          <SelectTrigger className="h-[30px] w-56 text-[13px]">
-            <SelectValue placeholder="Produto" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos os produtos</SelectItem>
-            {produtos.map(([sigla, nome]) => (
-              <SelectItem key={sigla} value={sigla}>
-                {nome} ({sigla})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <span className={cx(tableTokens.cellSecondary, "ml-auto tabular-nums")}>
-          {total.toLocaleString("pt-BR")} liquidações
-        </span>
-      </div>
+      {/* Anatomia canônica: Card > filtros + segments + contador > tabela > rodapé */}
+      <Card className="p-0">
+        <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 p-4 dark:border-gray-800">
+          <FilterSearch
+            value={buscaCedente}
+            onChange={(e) => setBuscaCedente(e.target.value)}
+            placeholder="Cedente (nome ou CNPJ)..."
+            className="w-56"
+          />
+          <FilterSearch
+            value={buscaSacado}
+            onChange={(e) => setBuscaSacado(e.target.value)}
+            placeholder="Sacado (nome ou CNPJ)..."
+            className="w-56"
+          />
+          <Select value={produto} onValueChange={setProduto}>
+            <SelectTrigger className="h-[30px] w-52 text-[13px]">
+              <SelectValue placeholder="Produto" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os produtos</SelectItem>
+              {produtos.map(([sigla, nome]) => (
+                <SelectItem key={sigla} value={sigla}>
+                  {nome} ({sigla})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={situacao} onValueChange={setSituacao}>
+            <SelectTrigger className="h-[30px] w-52 text-[13px]">
+              <SelectValue placeholder="Situação do título" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas as situações</SelectItem>
+              {Object.entries(SITUACAO_LABELS)
+                .filter(([v]) => v !== "0") // em aberto não gera evento de liquidação
+                .map(([valor, label]) => (
+                  <SelectItem key={valor} value={valor}>
+                    {label}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          <SegmentSwitch
+            value={segmento}
+            onChange={(v) => setSegmento(v as Segmento)}
+            options={[
+              { value: "todas", label: "Todas" },
+              { value: "sugeridas", label: "Sugeridas" },
+              { value: "regra_dura", label: "Regra dura" },
+              { value: "fraude", label: "Fraude" },
+              { value: "sem_tag", label: "Sem marcação" },
+            ]}
+          />
+          <span className={cx(tableTokens.cellSecondary, "ml-auto tabular-nums")}>
+            {rows.length.toLocaleString("pt-BR")} de {total.toLocaleString("pt-BR")}{" "}
+            liquidações
+          </span>
+        </div>
 
-      <DataTable<LiquidacaoCuradoriaRow>
-        data={rows}
-        columns={columns}
-        loading={listQuery.isLoading}
-        error={listQuery.error ? listQuery.error.message : null}
-        onRetry={() => listQuery.refetch()}
-        onRowClick={(r) => setSelected(r.liquidacao_id)}
-        showDensityToggle={false}
-        showColumnManager={false}
-        renderEmpty={() => (
-          <div className="flex flex-col items-center gap-1 py-10">
-            <RiSearchEyeLine className="size-6 text-gray-400" aria-hidden />
-            <span className={tableTokens.cellSecondary}>
-              Nenhuma liquidação com estes filtros.
-            </span>
-          </div>
-        )}
-        renderFooter={() => (
-          <div className="flex items-center justify-between px-3 py-2">
-            <span className={cx(tableTokens.cellSecondary, "tabular-nums")}>
-              {total === 0
-                ? "0 de 0"
-                : `${((page - 1) * PAGE_SIZE + 1).toLocaleString("pt-BR")}–${Math.min(
-                    page * PAGE_SIZE,
-                    total,
-                  ).toLocaleString("pt-BR")} de ${total.toLocaleString("pt-BR")}`}
-              {listQuery.isFetching && " · atualizando…"}
-            </span>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                className="h-7 px-2"
-                disabled={page <= 1 || listQuery.isFetching}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                aria-label="Página anterior"
-              >
-                <RiArrowLeftSLine className="size-4" aria-hidden />
-              </Button>
-              <span className={cx(tableTokens.cellSecondary, "tabular-nums")}>
-                {page} / {totalPaginas.toLocaleString("pt-BR")}
+        <DataTable<LiquidacaoCuradoriaRow>
+          data={rows}
+          columns={columns}
+          loading={listQuery.isLoading}
+          error={listQuery.error ? listQuery.error.message : null}
+          onRetry={() => listQuery.refetch()}
+          onRowClick={(r) => setSelected(r.liquidacao_id)}
+          showDensityToggle={false}
+          showColumnManager={false}
+          renderEmpty={() => (
+            <div className="flex flex-col items-center gap-1 py-10">
+              <RiSearchEyeLine className="size-6 text-gray-400" aria-hidden />
+              <span className={tableTokens.cellSecondary}>
+                Nenhuma liquidação com estes filtros.
               </span>
-              <Button
-                variant="ghost"
-                className="h-7 px-2"
-                disabled={page >= totalPaginas || listQuery.isFetching}
-                onClick={() => setPage((p) => Math.min(totalPaginas, p + 1))}
-                aria-label="Próxima página"
-              >
-                <RiArrowRightSLine className="size-4" aria-hidden />
-              </Button>
             </div>
-          </div>
-        )}
-      />
+          )}
+          renderFooter={() => (
+            <div className="flex items-center justify-between px-3 py-2">
+              <span className={cx(tableTokens.cellSecondary, "tabular-nums")}>
+                {total === 0
+                  ? "0 de 0"
+                  : `${((page - 1) * PAGE_SIZE + 1).toLocaleString("pt-BR")}–${Math.min(
+                      page * PAGE_SIZE,
+                      total,
+                    ).toLocaleString("pt-BR")} de ${total.toLocaleString("pt-BR")}`}
+                {listQuery.isFetching && " · atualizando…"}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  className="h-7 px-2"
+                  disabled={page <= 1 || listQuery.isFetching}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  aria-label="Página anterior"
+                >
+                  <RiArrowLeftSLine className="size-4" aria-hidden />
+                </Button>
+                <span className={cx(tableTokens.cellSecondary, "tabular-nums")}>
+                  {page} / {totalPaginas.toLocaleString("pt-BR")}
+                </span>
+                <Button
+                  variant="ghost"
+                  className="h-7 px-2"
+                  disabled={page >= totalPaginas || listQuery.isFetching}
+                  onClick={() => setPage((p) => Math.min(totalPaginas, p + 1))}
+                  aria-label="Próxima página"
+                >
+                  <RiArrowRightSLine className="size-4" aria-hidden />
+                </Button>
+              </div>
+            </div>
+          )}
+        />
+      </Card>
 
       {/* Drawer: evidência completa + marcação com nota */}
       <DrillDownSheet
@@ -558,7 +676,36 @@ export default function CuradoriaLiquidacoesPage() {
                 {selected.evidencia && ` · evidência: ${selected.evidencia}`}
                 {selected.local_pagamento && ` · local: ${selected.local_pagamento}`}
               </span>
+              <span className={tableTokens.cellSecondary}>
+                Situação do título:{" "}
+                {selected.situacao_titulo !== null
+                  ? (SITUACAO_LABELS[selected.situacao_titulo] ??
+                    `Situação ${selected.situacao_titulo}`)
+                  : "—"}
+              </span>
             </div>
+
+            {selected.sinais.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <span className={tableTokens.header}>Conclusão do sistema</span>
+                <ul className="flex flex-col gap-1">
+                  {selected.sinais.map((s) => (
+                    <li key={s}>
+                      <span
+                        className={cx(
+                          tableTokens.badge,
+                          SINAIS_FORTES.has(s)
+                            ? tableTokens.badgeWarning
+                            : tableTokens.badgeNeutral,
+                        )}
+                      >
+                        {SINAL_LABELS[s] ?? s}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {selected.regra_dura && (
               <div className="flex flex-col gap-1">

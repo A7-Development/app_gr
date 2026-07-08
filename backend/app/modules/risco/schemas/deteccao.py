@@ -18,6 +18,9 @@ class LiquidacaoCuradoriaRow(BaseModel):
     canal: str
     evidencia: str | None = None
     data_evento: datetime
+    # Snapshot de Titulo.Situacao (dicionario: 1 Liq Normal, 2 Cartorio,
+    # 3 Baixado, 5 Recomprado, 7 Recuperacao, 9 Perda).
+    situacao_titulo: int | None = None
     valor: float | None = None
     cedente_nome: str | None = None
     cedente_documento: str | None = None
@@ -39,6 +42,8 @@ class LiquidacaoCuradoriaRow(BaseModel):
     tag_autor: str | None = None
     tag_em: datetime | None = None
     candidato_lastro: bool = False
+    # Conclusoes legiveis do sistema ("qual foi o bad"), mais severa primeiro.
+    sinais: list[str] = []
 
 
 class LiquidacaoCuradoriaPage(BaseModel):
