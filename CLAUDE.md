@@ -767,7 +767,8 @@ Local: `.venv` + `.env` + `uvicorn app.main:app --reload`. **Atencao: dev e prod
 - [ ] Cores: paleta §4 como default; fora dela so com handoff/proposta aprovada; badge de status via `tableTokens.badge*` (nao receita inline nova)?
 - [ ] Navegacao 3 niveis, sidebar aninha max 1 nivel, estado deep-linkavel via URL (§11.6)?
 - [ ] Pagina nasce de pattern canonico da §7 — divergencia tem `// MOTIVO:` no header?
-- [ ] Tabela certa pro caso (§6: DataTableShell / DataTable / DenseTable.Series) e cells custom com `tableTokens.*`? Fuga tem `// MOTIVO:`?
+- [ ] Tabela certa pro caso (§6: DataTableShell / DataTable / DenseTable.Series / ExpandableTable) e cells custom com `tableTokens.*`? Fuga tem `// MOTIVO:`?
+- [ ] Familia de tabela/filtro usa o CANONICO do catalogo — anatomia de card via `tableTokens.cardWrapper/filterBar/countLabel` (nunca Card p-0 + toolbar artesanal), pager via `TablePagination` no rodape do Card (nunca div em `renderFooter`), filtro na regua `filterControlClass`/`FilterSearch`, status multi via `ShellStatusFilter`, badge via `badge*`? **Se o canonico nao existe para a necessidade, PARE: crie o componente no DS primeiro (componente + README + demo), depois a pagina.**
 - [ ] PageHeader com `info` + `subtitle` + `actions` — nao so `title` (§7)? Listagem de cards segue `ListagemCrudCards` com EntityCard canonico (§7)?
 - [ ] Zero ocultacao: tabela/drill reconcilia com o headline; corte tem expand-revela-tudo ou linha "Outros (N) · valor"; nenhum contador maior que as linhas alcancaveis (§14.6)?
 - [ ] Feedback de progresso em toda acao > ~400ms; backend assincrono visivel AO VIVO; desfecho explicito (§7.3)?
