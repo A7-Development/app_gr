@@ -77,7 +77,7 @@ export function useTagLiquidacao() {
       nota,
     }: {
       liquidacaoId: string
-      tag: "fraude" | "ok"
+      tag: "fraude" | "ok" | "neutro"
       nota?: string | null
     }) => riscoCuradoriaLiquidacoes.tag(liquidacaoId, tag, nota),
     onSuccess: () => {

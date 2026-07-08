@@ -41,11 +41,18 @@ _MIN_POSITIVOS = 10
 _MAX_NEG_POR_POS = 20
 _SEED = 42
 
+# Ultima tag por liquidacao, exceto quando a ultima e NEUTRO (curador
+# desmarcou) — nesse caso o evento volta a ser NAO-marcado, elegivel como
+# negativa presumida, nunca positivo/OK. Append-only: a linha NEUTRO existe
+# no historico, apenas nao rotula o treino.
 _SQL_TAGS_VIGENTES = text("""
-SELECT DISTINCT ON (liquidacao_id) liquidacao_id, tag
-FROM curadoria_tag
-WHERE tenant_id = :tenant_id AND modelo_id = :modelo_id
-ORDER BY liquidacao_id, created_at DESC
+SELECT liquidacao_id, tag FROM (
+    SELECT DISTINCT ON (liquidacao_id) liquidacao_id, tag
+    FROM curadoria_tag
+    WHERE tenant_id = :tenant_id AND modelo_id = :modelo_id
+    ORDER BY liquidacao_id, created_at DESC
+) ult
+WHERE tag <> 'NEUTRO'
 """)
 
 

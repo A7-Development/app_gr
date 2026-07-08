@@ -27,6 +27,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import {
   RiAlarmWarningLine,
   RiCheckLine,
+  RiEraserLine,
   RiFlaskLine,
   RiSearchEyeLine,
 } from "@remixicon/react"
@@ -333,17 +334,24 @@ export default function CuradoriaLiquidacoesPage() {
   )
 
   const marcar = React.useCallback(
-    async (row: LiquidacaoCuradoriaRow, tag: "fraude" | "ok", notaTexto?: string) => {
+    async (
+      row: LiquidacaoCuradoriaRow,
+      tag: "fraude" | "ok" | "neutro",
+      notaTexto?: string,
+    ) => {
       try {
         await tagMut.mutateAsync({
           liquidacaoId: row.liquidacao_id,
           tag,
           nota: notaTexto || null,
         })
+        const doc = row.titulo_numero ?? row.titulo_id
         toast.success(
           tag === "fraude"
-            ? `Liquidação do título ${row.titulo_numero ?? row.titulo_id} marcada como fraude.`
-            : `Liquidação do título ${row.titulo_numero ?? row.titulo_id} marcada como OK.`,
+            ? `Liquidação do título ${doc} marcada como fraude.`
+            : tag === "ok"
+              ? `Liquidação do título ${doc} marcada como OK.`
+              : `Marcação do título ${doc} removida (voltou a neutro).`,
         )
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Falha ao registrar a marcação.")
@@ -539,6 +547,22 @@ export default function CuradoriaLiquidacoesPage() {
             >
               <RiCheckLine className="size-4" aria-hidden />
             </Button>
+            {/* Limpar (volta a neutro) — so quando ha marcacao vigente */}
+            {row.original.tag_vigente && (
+              <Button
+                variant="ghost"
+                className="size-7 p-0"
+                aria-label="Remover marcação"
+                title="Remover marcação (voltar a neutro)"
+                isLoading={tagMut.isPending}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void marcar(row.original, "neutro")
+                }}
+              >
+                <RiEraserLine className="size-4" aria-hidden />
+              </Button>
+            )}
           </div>
         ),
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
@@ -850,10 +874,19 @@ export default function CuradoriaLiquidacoesPage() {
                 >
                   Marcar OK
                 </Button>
+                {selected.tag_vigente && (
+                  <Button
+                    variant="ghost"
+                    isLoading={tagMut.isPending}
+                    onClick={() => void marcar(selected, "neutro", nota)}
+                  >
+                    Remover marcação
+                  </Button>
+                )}
               </div>
               <span className={tableTokens.cellMuted}>
                 Marcações são registradas com autor e data e nunca são apagadas —
-                remarcar cria um novo registro.
+                remarcar (ou remover) cria um novo registro; o histórico fica auditável.
               </span>
             </div>
           </div>

@@ -58,10 +58,18 @@ class TipoModeloDeteccao(enum.StrEnum):
 
 
 class CuradoriaTagValor(enum.StrEnum):
-    """Human verdict on one scored unit."""
+    """Human verdict on one scored unit.
+
+    NEUTRO is a first-class verdict, not an absence: append-only means a tag
+    is never deleted, so "un-marking" is a NEW row valued NEUTRO that becomes
+    the vigente — the row returns to neutral WITHOUT losing the audit trail
+    of who marked/unmarked and when (feedback Ricardo 2026-07-08). NEUTRO as
+    the latest tag = the event behaves as untagged (not fraude, not ok).
+    """
 
     FRAUDE = "fraude"
     OK = "ok"
+    NEUTRO = "neutro"
 
 
 class DeteccaoModelo(Base):
