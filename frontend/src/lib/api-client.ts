@@ -488,6 +488,26 @@ export type DataProviderCredentialUpdatePayload = {
   notes?: string | null
 }
 
+
+/** Admin — painel de saude das integracoes (mantenedor do sistema). */
+
+export type SaudeIntegracaoItem = {
+  chave: string
+  label: string
+  categoria: "fonte_externa" | "job_interno" | "modelo" | "federado"
+  descricao: string
+  cadencia_horas: number
+  ultima_execucao: string | null
+  status: "ok" | "atrasado" | "erro" | "nunca_rodou"
+  detalhe: string | null
+  volume: number | null
+  disparado_por: string | null
+}
+
+export const adminSaudeIntegracoes = {
+  list: () => apiClient.get<SaudeIntegracaoItem[]>(`/admin/saude-integracoes`),
+}
+
 export const adminDataProviders = {
   providers: () => apiClient.get<DataProviderRead[]>("/admin/data-providers"),
   credentials: {

@@ -23,6 +23,7 @@ from app.modules.admin.api import (
     data_catalog,
     data_contracts,
     data_provider_credentials,
+    saude_integracoes,
     tenants,
     users,
 )
@@ -37,6 +38,7 @@ router.include_router(ai_expertises.router)
 router.include_router(ai_agent_definitions.router)  # novo: /ia/agents (catalogo central)
 router.include_router(ai_tools.router)  # F2.c.4: /ia/tools (read-only)
 router.include_router(data_provider_credentials.router)  # /admin/data-providers
+router.include_router(saude_integracoes.router)  # /admin/saude-integracoes (observabilidade)
 router.include_router(data_catalog.router)  # /admin/data-catalog (Fase F — tronco)
 router.include_router(data_contracts.router)  # /admin/data-contracts (Fase 5 — folha)
 router.include_router(tenants.router)
