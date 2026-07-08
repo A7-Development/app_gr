@@ -100,18 +100,20 @@ def _classificar_evidencia_manual(row: dict) -> str:
                       `Registrado` atual: apos a baixa o Bitfin flipa
                       Registrado=0 / Baixado=1 (validado em prod — a regra
                       "registrado E 05" zerava a classe inteira).
-    sem_registro      titulo nunca entrou em cobranca bancaria (sem
-                      ProcedimentoDeCobranca) — deposito direto plausivel
-                      (produtos de deposito em conta).
-    sem_ocorrencia    entrou em cobranca mas nenhuma ocorrencia de
-                      liquidacao/baixa — fraco (cobertura CNAB ou baixa
-                      silenciosa).
+    sem_registro      titulo nunca entrou no trilho bancario: Registrado=0
+                      E Baixado=0 (quase todo titulo tem uma linha de
+                      ProcedimentoDeCobranca criada por default — o flag e
+                      que diz se o boleto foi registrado) — deposito direto
+                      plausivel (produtos de deposito em conta).
+    sem_ocorrencia    entrou no trilho (Registrado=1 ou Baixado=1) mas
+                      nenhuma ocorrencia de liquidacao — fraco (cobertura
+                      CNAB ou baixa silenciosa).
     """
     if bool(row.get("teve_baixa_confirmada")):
         return EVIDENCIA_BAIXA_CONFIRMADA
-    if not bool(row.get("tem_procedimento")):
-        return EVIDENCIA_SEM_REGISTRO
-    return EVIDENCIA_SEM_OCORRENCIA
+    if bool(row.get("registrado")) or bool(row.get("baixado")):
+        return EVIDENCIA_SEM_OCORRENCIA
+    return EVIDENCIA_SEM_REGISTRO
 
 
 def _map_baixa_manual(row: dict, tenant_id: UUID) -> dict:

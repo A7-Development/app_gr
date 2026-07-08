@@ -82,23 +82,30 @@ def test_map_baixa_manual_evidencias():
     # Registrado=False, que e o estado POS-baixa no Bitfin (validado em
     # prod: Registrado=0/Baixado=1 em 100% dos casos com 05).
     forte = _map_baixa_manual(
-        _base_titulo(registrado=False, tem_procedimento=1, teve_baixa_confirmada=1),
+        _base_titulo(registrado=False, baixado=True, teve_baixa_confirmada=1),
         TENANT,
     )
     assert forte["canal"] == CANAL_BAIXA_MANUAL
     assert forte["evidencia"] == EVIDENCIA_BAIXA_CONFIRMADA
     assert forte["source_id"] == "man:4242"
 
-    # Nunca entrou em cobranca bancaria = deposito direto plausivel
+    # Nunca entrou no trilho bancario (Registrado=0 e Baixado=0, mesmo com
+    # linha de procedimento default) = deposito direto plausivel
     sem_reg = _map_baixa_manual(
-        _base_titulo(registrado=None, tem_procedimento=0, teve_baixa_confirmada=None),
+        _base_titulo(registrado=False, baixado=False, teve_baixa_confirmada=0),
         TENANT,
     )
     assert sem_reg["evidencia"] == EVIDENCIA_SEM_REGISTRO
+    # Sem linha de procedimento (NULLs) tambem e sem_registro
+    sem_proc = _map_baixa_manual(
+        _base_titulo(registrado=None, baixado=None, teve_baixa_confirmada=None),
+        TENANT,
+    )
+    assert sem_proc["evidencia"] == EVIDENCIA_SEM_REGISTRO
 
-    # Em cobranca sem ocorrencia alguma = fraco
+    # Registrado no banco sem ocorrencia de liquidacao = fraco
     fraco = _map_baixa_manual(
-        _base_titulo(registrado=True, tem_procedimento=1, teve_baixa_confirmada=0),
+        _base_titulo(registrado=True, baixado=False, teve_baixa_confirmada=0),
         TENANT,
     )
     assert fraco["evidencia"] == EVIDENCIA_SEM_OCORRENCIA
