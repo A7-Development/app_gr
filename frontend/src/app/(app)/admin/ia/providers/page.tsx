@@ -94,12 +94,7 @@ function ProviderBadge({ provider }: { provider: AIProviderCredentialRead["provi
 function ZdrBadge({ enabled }: { enabled: boolean }) {
   return (
     <span
-      className={cx(
-        tableTokens.badge,
-        enabled
-          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
-          : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
-      )}
+      className={enabled ? tableTokens.badgeSuccess : tableTokens.badgeNeutral}
       title={
         enabled
           ? "ZDR contratado — adapter permite uso em producao."
@@ -118,14 +113,8 @@ function ZdrBadge({ enabled }: { enabled: boolean }) {
 
 function ActiveBadge({ active }: { active: boolean }) {
   return (
-    <span
-      className={cx(
-        tableTokens.badge,
-        active
-          ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
-          : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
-      )}
-    >
+    // Status semantico usa token (§4: azul nao e cor de "sucesso").
+    <span className={active ? tableTokens.badgeSuccess : tableTokens.badgeNeutral}>
       {active && <RiCheckLine className="size-3" aria-hidden />}
       {active ? "Ativa" : "Suspensa"}
     </span>

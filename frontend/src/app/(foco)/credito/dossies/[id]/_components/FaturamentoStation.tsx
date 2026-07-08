@@ -394,8 +394,7 @@ const conferenceColumns: ColumnDef<ConfRow, unknown>[] = [
           {fmtBRL(ai.value)}
           {state === "pendente" && (
             <span
-              className="ml-1.5 inline-flex h-4 items-center rounded-full px-[5px] text-[9.5px] font-medium leading-none"
-              style={{ background: "#FEFCE8", color: "#713F12" }}
+              className={cx(tableTokens.badgeWarning, "ml-1.5")}
               title="Confiança baixa nesta leitura — confira no documento ao lado."
             >
               confira
@@ -416,12 +415,12 @@ const conferenceColumns: ColumnDef<ConfRow, unknown>[] = [
     meta: { align: "right" },
     cell: ({ row }) => {
       const { state, onConfirm } = row.original
+      // MOTIVO: coluna "Estado" usa texto quieto 11px (nao pill) — status por
+      // linha em tabela de conferencia densa; pill em toda linha viraria ruido.
+      // Cores via classes semanticas (emerald/gray/amber), zero hex.
       if (state === "ok")
         return (
-          <span
-            className="flex items-center justify-end gap-1 text-[11px] font-medium"
-            style={{ color: "#059669" }}
-          >
+          <span className="flex items-center justify-end gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
             <RiCheckLine className="size-3" aria-hidden />
             ok
           </span>
@@ -482,7 +481,7 @@ function NoDossieCell({ row, state, editable, onSelect, onChangeValue }: ConfRow
           if (e.key === "Escape") setEditing(false)
         }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-[140px] rounded border border-blue-500 bg-white px-2 py-[3px] text-[12.5px] font-semibold tabular-nums outline-none dark:bg-gray-950"
+        className={cx(tableTokens.cellNumber, "w-full max-w-[140px] rounded border border-blue-500 bg-white px-2 py-[3px] font-semibold outline-none dark:bg-gray-950")}
         style={{ boxShadow: "0 0 0 2px rgba(59,130,246,0.3)" }}
       />
     )

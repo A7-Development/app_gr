@@ -108,7 +108,7 @@ function makeColumns(
       const cabeBaixa = situacaoTituloCabeBaixa(row.situacao_titulo)
       return (
         <span className="flex items-center gap-1.5">
-          <span className={cx("shrink-0", tableTokens.badge, STATUS_META[s].tone)}>
+          <span className={cx("shrink-0", STATUS_META[s].tone)}>
             {STATUS_BADGE_LABEL[s]}
           </span>
           {dias !== null && (

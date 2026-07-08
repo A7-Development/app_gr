@@ -96,14 +96,8 @@ function TipoBadge({ tipo }: { tipo: TipoUA }) {
 
 function StatusBadge({ ativa }: { ativa: boolean }) {
   return (
-    <span
-      className={cx(
-        tableTokens.badge,
-        ativa
-          ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
-          : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
-      )}
-    >
+    // Status semantico usa token (§4: azul nao e cor de "sucesso").
+    <span className={ativa ? tableTokens.badgeSuccess : tableTokens.badgeNeutral}>
       {ativa ? "Ativa" : "Inativa"}
     </span>
   )

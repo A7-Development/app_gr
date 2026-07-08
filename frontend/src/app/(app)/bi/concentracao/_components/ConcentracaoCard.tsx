@@ -201,7 +201,7 @@ export function ConcentracaoCard({
             <span
               className={cx(
                 "tabular-nums",
-                mark ? tableTokens.cellStrong : cx("text-xs", tableTokens.cellMuted),
+                mark ? tableTokens.cellStrong : tableTokens.cellMuted,
               )}
             >
               {pct1(row.acm as number)}

@@ -1316,12 +1316,7 @@ function Conferencias({
       colConf.accessor("desconto", {
         header: "Desconto concedido",
         cell: (c) => (
-          <span
-            className={cx(
-              tableTokens.cellNumber,
-              c.getValue() > 0 && "text-red-600 dark:text-red-400",
-            )}
-          >
+          <span className={c.getValue() > 0 ? tableTokens.cellNumberNegative : tableTokens.cellNumber}>
             {fmtBRL(c.getValue())}
           </span>
         ),

@@ -57,11 +57,7 @@ function ModuleBadge({ module }: { module: string }) {
   }
   return (
     <span
-      className={cx(
-        "inline-flex items-center rounded-sm px-1.5 py-0.5 text-[11px] font-medium",
-        tone.bg,
-        tone.fg,
-      )}
+      className={cx(tableTokens.badge, tone.bg, tone.fg)}
     >
       {module}
     </span>
@@ -77,11 +73,7 @@ function PermissionBadge({ perm }: { perm: string }) {
         : { bg: "bg-gray-100 dark:bg-gray-800", fg: "text-gray-700 dark:text-gray-300" }
   return (
     <span
-      className={cx(
-        "inline-flex items-center rounded-sm px-1.5 py-0.5 text-[11px] font-medium",
-        tone.bg,
-        tone.fg,
-      )}
+      className={cx(tableTokens.badge, tone.bg, tone.fg)}
     >
       {perm}
     </span>
@@ -97,11 +89,7 @@ function CostBadge({ cost }: { cost: string }) {
         : { bg: "bg-emerald-50 dark:bg-emerald-500/10", fg: "text-emerald-700 dark:text-emerald-300" }
   return (
     <span
-      className={cx(
-        "inline-flex items-center rounded-sm px-1.5 py-0.5 text-[11px] font-medium",
-        tone.bg,
-        tone.fg,
-      )}
+      className={cx(tableTokens.badge, tone.bg, tone.fg)}
     >
       {cost}
     </span>

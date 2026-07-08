@@ -21,6 +21,7 @@ import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
 import { cx } from "@/lib/utils"
 import { Card } from "@/components/tremor/Card"
 import { DataTable } from "@/design-system/components/DataTable"
+import { tableTokens } from "@/design-system/tokens/table"
 import type { VariacaoItem, VariacoesDiaResponse } from "@/lib/api-client"
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,7 +57,7 @@ function DescricaoCell({ value }: { value: string | null }) {
   return (
     <span
       title={value}
-      className="block max-w-full truncate whitespace-nowrap text-xs text-gray-500 dark:text-gray-400"
+      className={cx("block max-w-full truncate whitespace-nowrap", tableTokens.cellSecondary)}
     >
       {value}
     </span>
@@ -67,7 +68,7 @@ function LabelCell({ value }: { value: string }) {
   return (
     <span
       title={value}
-      className="block max-w-full truncate whitespace-nowrap text-sm text-gray-900 dark:text-gray-50"
+      className={cx("block max-w-full truncate whitespace-nowrap", tableTokens.cellText)}
     >
       {value}
     </span>
@@ -98,7 +99,7 @@ const COLUMNS: ColumnDef<VariacaoItem, unknown>[] = [
     cell: (info) => (
       <div
         style={{ textAlign: "right" }}
-        className="tabular-nums font-medium text-gray-700 dark:text-gray-300"
+        className={cx("font-medium", tableTokens.cellNumber)}
       >
         −{formatValor(info.getValue<number>())}
       </div>

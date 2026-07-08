@@ -164,12 +164,7 @@ function ContratosInner() {
             <span>
               <span className={tableTokens.cellTextMono}>{c.field_path}</span>
               {c.novo && (
-                <span
-                  className={cx(
-                    tableTokens.badge,
-                    "ml-1.5 bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
-                  )}
-                >
+                <span className={cx(tableTokens.badgeWarning, "ml-1.5")}>
                   novo
                 </span>
               )}

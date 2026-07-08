@@ -66,6 +66,7 @@ import {
   SavedViewsDropdown,
 } from "@/design-system/components/FilterBar"
 import { EmptyState } from "@/design-system/components/EmptyState"
+import { tableTokens } from "@/design-system/tokens/table"
 import { Insight, InsightBar } from "@/design-system/components/Insight"
 import { useUAs } from "@/lib/hooks/cadastros"
 import {
@@ -603,7 +604,7 @@ const MOVIMENTACOES_COLUMNS: ColumnDef<MovimentacaoRow, unknown>[] = [
     header: "Classe",
     size:   110,
     cell:   (info) => (
-      <span className="text-sm text-gray-500 dark:text-gray-400">
+      <span className={tableTokens.cellSecondary}>
         {info.getValue<string>()}
       </span>
     ),
@@ -615,12 +616,7 @@ const MOVIMENTACOES_COLUMNS: ColumnDef<MovimentacaoRow, unknown>[] = [
       const tipo  = info.getValue<MovimentacaoTipo>()
       const isSub = tipo === "subscricao"
       return (
-        <span className={cx(
-          "inline-flex items-center rounded-sm px-1.5 py-0.5 text-[11px] font-medium",
-          isSub
-            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
-            : "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300",
-        )}>
+        <span className={isSub ? tableTokens.badgeSuccess : tableTokens.badgeDanger}>
           {isSub ? "Subscricao" : "Resgate"}
         </span>
       )

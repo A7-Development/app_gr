@@ -160,7 +160,7 @@ export function EndpointsTab({
               </span>
               {/* global_id mono — facilita correlacao com logs e referencias
                   cruzadas no catalogo de proveniencia (Fase 1 2026-05-18). */}
-              <span className={cx(tableTokens.cellTextMono, "text-gray-500")}>
+              <span className={cx(tableTokens.cellSecondary, "font-mono")}>
                 {ep.global_id}
               </span>
             </div>

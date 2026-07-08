@@ -113,11 +113,7 @@ function DomainBadge({ domain }: { domain: string }) {
   }
   return (
     <span
-      className={cx(
-        "inline-flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-[11px] font-medium",
-        tone.bg,
-        tone.fg,
-      )}
+      className={cx(tableTokens.badgeWithDot, tone.bg, tone.fg)}
     >
       {domain}
     </span>

@@ -200,6 +200,9 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
         const indent = info.row.depth * 16
 
         if (row.kind === "grupo") {
+          // MOTIVO: linhas estruturais do balanco (grupo/residuo) usam eyebrow
+          // 10px proprio — sao separadores de secao, nao celulas de dado; o
+          // token `header` fixa cor via DataTable e nao cabe em <td>.
           return (
             <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-600 dark:text-gray-300">
               {row.label}
@@ -230,6 +233,8 @@ function buildColumns(opts: BuildColsOpts): ColumnDef<Row, unknown>[] {
               title={row.tooltip}
               className={cx(
                 "block truncate",
+                // MOTIVO: "PL fonte MEC" e linha-espelho de conferencia — meio
+                // termo entre cellStrong e cellSecondary (gray-700 deliberado).
                 isMain ? tableTokens.cellStrong : "text-xs font-medium text-gray-700 dark:text-gray-300",
                 row.tooltip && "cursor-help",
               )}

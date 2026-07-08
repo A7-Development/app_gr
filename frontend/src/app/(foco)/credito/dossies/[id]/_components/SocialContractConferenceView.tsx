@@ -89,12 +89,12 @@ const TEMA_LABEL: Record<string, string> = {
   outras: "Outras restrições",
 }
 
+// Badge COMPLETO por status (tableTokens.badge*) — usar direto no className.
 const STATUS_TONE: Record<string, string> = {
-  vedado: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300",
-  condicionado: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
-  permitido_expressamente:
-    "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300",
-  sem_clausula: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
+  vedado: tableTokens.badgeDanger,
+  condicionado: tableTokens.badgeWarning,
+  permitido_expressamente: tableTokens.badgeSuccess,
+  sem_clausula: tableTokens.badgeNeutral,
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -430,7 +430,7 @@ function restricaoColumns(onFocus: CitFocus): ColumnDef<SocietarioRestricao, unk
       cell: (i) => {
         const s = String(i.getValue() ?? "")
         return (
-          <span className={cx(tableTokens.badge, STATUS_TONE[s] ?? STATUS_TONE.sem_clausula)}>
+          <span className={STATUS_TONE[s] ?? STATUS_TONE.sem_clausula}>
             {STATUS_LABEL[s] ?? (s || "—")}
           </span>
         )

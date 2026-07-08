@@ -81,14 +81,7 @@ function RoleBadge({ role }: { role: TenantRoleId }) {
 
 function ActiveBadge({ ativo }: { ativo: boolean }) {
   return (
-    <span
-      className={cx(
-        tableTokens.badge,
-        ativo
-          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
-          : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
-      )}
-    >
+    <span className={ativo ? tableTokens.badgeSuccess : tableTokens.badgeNeutral}>
       {ativo ? "Ativo" : "Inativo"}
     </span>
   )
@@ -279,16 +272,16 @@ export default function UsersPage() {
         cell: ({ row }) => {
           const r = row.original
           if (r.accepted_at) {
-            return <span className={cx(tableTokens.badge, "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300")}>Aceito</span>
+            return <span className={tableTokens.badgeSuccess}>Aceito</span>
           }
           if (r.revoked_at) {
-            return <span className={cx(tableTokens.badge, "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400")}>Cancelado</span>
+            return <span className={tableTokens.badgeNeutral}>Cancelado</span>
           }
           const expired = new Date(r.expires_at) <= new Date()
           if (expired) {
-            return <span className={cx(tableTokens.badge, "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300")}>Expirado</span>
+            return <span className={tableTokens.badgeDanger}>Expirado</span>
           }
-          return <span className={cx(tableTokens.badge, "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300")}>Pendente</span>
+          return <span className={tableTokens.badgeWarning}>Pendente</span>
         },
       }) as ColumnDef<InvitationRead, unknown>,
       inviteCol.accessor("expires_at", {

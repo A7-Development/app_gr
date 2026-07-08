@@ -107,7 +107,7 @@ export default function AgentUsageOverviewPage() {
           return ref ? (
             <Link
               href={`${LIST_HREF}/${ref.id}`}
-              className="font-mono text-[12px] font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+              className={cx(tableTokens.cellTextMono, "font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400")}
             >
               {u.agent_name}
             </Link>

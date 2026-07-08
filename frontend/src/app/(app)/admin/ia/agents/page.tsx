@@ -116,10 +116,7 @@ export default function AgentsAdminPage() {
         header: "Codigo",
         cell: ({ row }) => (
           <span
-            className={cx(
-              "rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] font-medium",
-              "text-gray-600 dark:bg-gray-800 dark:text-gray-300",
-            )}
+            className={cx(tableTokens.badge, "font-mono bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300")}
             title="Codigo discreto do agente (rastreabilidade)"
           >
             {row.original.code}
@@ -147,7 +144,7 @@ export default function AgentsAdminPage() {
           <span className={tableTokens.cellSecondary}>
             v{row.original.version}
             {row.original.version_count > 1 && (
-              <span className="ml-1 text-[11px] text-gray-400">
+              <span className={cx("ml-1", tableTokens.cellMuted)}>
                 · {row.original.version_count} versoes
               </span>
             )}
@@ -179,7 +176,7 @@ export default function AgentsAdminPage() {
         accessorKey: "prompt_name",
         header: "Prompt",
         cell: ({ row }) => (
-          <span className={cx(tableTokens.cellSecondary, "font-mono text-[12px]")}>
+          <span className={cx(tableTokens.cellSecondary, "font-mono")}>
             {row.original.prompt_name}
           </span>
         ),
@@ -189,7 +186,7 @@ export default function AgentsAdminPage() {
         header: "Modelo",
         cell: ({ row }) =>
           row.original.model ? (
-            <span className={cx(tableTokens.cellSecondary, "font-mono text-[12px]")}>
+            <span className={cx(tableTokens.cellSecondary, "font-mono")}>
               {row.original.model}
             </span>
           ) : (

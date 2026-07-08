@@ -180,19 +180,19 @@ export default function CedenteOperacoesPage({
                 )
                 return (
                   <tr>
-                    <td className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+                    <td className={cx("px-3 py-2", tableTokens.cellSecondary)}>
                       {fmt.number.format(rows.length)} operações
                     </td>
                     <td className="px-3 py-2" />
                     <td className="px-3 py-2" />
-                    <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-50">
+                    <td className={cx("px-3 py-2 text-right font-semibold", tableTokens.cellNumber)}>
                       {fmt.currencyWhole.format(vop)}
                     </td>
                     {/* deságio · taxa_final · prazo */}
                     <td className="px-3 py-2" />
                     <td className="px-3 py-2" />
                     <td className="px-3 py-2" />
-                    <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-50">
+                    <td className={cx("px-3 py-2 text-right font-semibold", tableTokens.cellNumber)}>
                       {fmt.currencyWhole.format(receita)}
                     </td>
                   </tr>
@@ -293,11 +293,11 @@ export default function CedenteOperacoesPage({
                       )
                       return (
                         <tr>
-                          <td className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+                          <td className={cx("px-3 py-2", tableTokens.cellSecondary)}>
                             {fmt.number.format(rows.length)} documentos
                           </td>
                           <td className="px-3 py-2" />
-                          <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-50">
+                          <td className={cx("px-3 py-2 text-right font-semibold", tableTokens.cellNumber)}>
                             {fmt.currencyWhole.format(valor)}
                           </td>
                           <td className="px-3 py-2" />
@@ -535,11 +535,11 @@ function ComposicaoReceita({ op }: { op: Operacoes5OperacaoItem }) {
         density="ultra"
         renderFooter={() => (
           <tr>
-            <td className="px-3 py-2 text-xs font-semibold text-gray-900 dark:text-gray-50">
+            <td className={cx("px-3 py-2", tableTokens.cellStrong)}>
               Receita total
             </td>
             <td className="px-3 py-2" />
-            <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-50">
+            <td className={cx("px-3 py-2 text-right font-semibold", tableTokens.cellNumber)}>
               {fmt.currencyWhole.format(total)}
             </td>
           </tr>
