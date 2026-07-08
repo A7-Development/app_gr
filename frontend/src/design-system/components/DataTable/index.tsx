@@ -1,7 +1,8 @@
 // src/design-system/components/DataTable/index.tsx
 // Production DataTable — TanStack Table v8 + TanStack Virtual.
 // Adds: column manager, export menu, comfortable density, calculation footer,
-//       bulk action animation, error state, loading skeleton.
+//       bulk action band (faixa blue-50 no topo — handoff Tabela canonica,
+//       Opcao B), error state, loading skeleton.
 
 "use client"
 
@@ -440,6 +441,28 @@ export function DataTable<TData>({
         </div>
       )}
 
+      {/* Faixa de acoes em massa — Opcao B do handoff Tabela canonica: faixa
+          blue-50 clara PRESA ao topo da tabela ("N selecionadas · acoes ·
+          Limpar"). Nunca barra escura flutuante. */}
+      {hasSelection && renderBulkActions && (
+        <div className="flex shrink-0 items-center gap-3 border-b border-b-blue-100 bg-blue-50 px-3 py-1.5 dark:border-b-blue-500/20 dark:bg-blue-500/10">
+          <span className="text-xs font-medium tabular-nums text-blue-700 dark:text-blue-300">
+            {selectedFlatRows.length} selecionada{selectedFlatRows.length !== 1 ? "s" : ""}
+          </span>
+          <span className="h-4 w-px bg-blue-200 dark:bg-blue-500/30" aria-hidden="true" />
+          <div className="flex min-w-0 items-center gap-2">
+            {renderBulkActions(selectedFlatRows, () => setRowSelection({}))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setRowSelection({})}
+            className="ml-auto text-xs font-medium text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+          >
+            Limpar
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <LoadingSkeleton cols={columns.length} />
       ) : error ? (
@@ -602,26 +625,6 @@ export function DataTable<TData>({
         </div>
       )}
 
-      {hasSelection && renderBulkActions && (
-        <div
-          className={cx(
-            "absolute bottom-4 left-1/2 z-20 -translate-x-1/2",
-            "animate-slide-up-and-fade",
-          )}
-        >
-          <div className={cx(
-            "flex items-center gap-3 rounded-lg px-5 py-2.5",
-            "bg-gray-900 dark:bg-gray-800 text-white",
-            "shadow-xl ring-1 ring-black/10",
-          )}>
-            <span className="text-sm font-medium">
-              {selectedFlatRows.length} selecionada{selectedFlatRows.length !== 1 ? "s" : ""}
-            </span>
-            <span className="h-4 w-px bg-white/20" aria-hidden="true" />
-            {renderBulkActions(selectedFlatRows, () => setRowSelection({}))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

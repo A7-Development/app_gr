@@ -74,8 +74,9 @@ export const tableTokens = {
   header: "text-[10px] font-semibold uppercase tracking-[0.05em]",
 
   // ── Layout do `<DataTableShell>` ──────────────────────────────────────
-  /** Card que envolve filtros + DataTable. */
-  cardWrapper: "flex flex-col gap-3 p-3",
+  /** Card que envolve filtros + DataTable. Padding 16px — superficie da
+   *  familia de tabelas (handoff Tabela canonica v2: padding 12->16px). */
+  cardWrapper: "flex flex-col gap-3 p-4",
 
   /** Faixa horizontal de filtros (search + segments + counter). */
   filterBar: "flex flex-wrap items-center gap-2",
