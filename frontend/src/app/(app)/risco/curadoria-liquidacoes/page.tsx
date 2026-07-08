@@ -38,19 +38,15 @@ import { toast } from "sonner"
 import { Button } from "@/components/tremor/Button"
 import { Card } from "@/components/tremor/Card"
 import { Divider } from "@/components/tremor/Divider"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/tremor/Select"
 import { Textarea } from "@/components/tremor/Textarea"
 import {
   DataTable,
   DrillDownSheet,
+  FilterChip,
   FilterSearch,
-  filterControlClass,
+  MultiCheckList,
+  multiLabel,
+  type MultiOption,
   PageHeader,
   TablePagination,
 } from "@/design-system/components"
@@ -140,7 +136,39 @@ const SITUACAO_LABELS: Record<number, string> = {
   9: "Perda",
 }
 
-type Segmento = "todas" | "sugeridas" | "regra_dura" | "fraude" | "sem_tag"
+// ── Opcoes dos chips multi-select (vocabulario BI, §7.1) ─────────────────────
+// Codigos = _SINAL_SQL/_MARCACAO_SQL/_RISCO_SQL do backend (curadoria_liquidacao.py).
+const SITUACAO_OPTIONS: MultiOption[] = Object.entries(SITUACAO_LABELS)
+  .filter(([v]) => v !== "0") // em aberto não gera evento de liquidação
+  .map(([value, label]) => ({ value, label }))
+
+const SINAL_OPTIONS: MultiOption[] = [
+  { value: "regra_dura", label: "Padrão crítico (agência do cedente)" },
+  { value: "baixa_confirmada", label: "Baixa confirmada" },
+  { value: "pago_agencia_cedente", label: "Pago na agência do cedente" },
+  { value: "agencia_conta_cedente", label: "Conta do cedente" },
+  { value: "quebra_fingerprint", label: "Quebra de padrão" },
+  { value: "boleto_nao_esperado", label: "Boleto inesperado" },
+  { value: "lastro_inconsistente", label: "Lastro inconsistente" },
+  { value: "fora_praca_sacado", label: "Fora da praça" },
+  { value: "sem_ocorrencia", label: "Sem ocorrência" },
+]
+
+const RISCO_OPTIONS: MultiOption[] = [
+  { value: "padrao_critico", label: "Padrão crítico" },
+  { value: "alto", label: "Alto (≥ 70%)" },
+  { value: "medio", label: "Médio (40–70%)" },
+  { value: "baixo", label: "Baixo (< 40%)" },
+  { value: "sem_score", label: "Sem score" },
+]
+
+const MARCACAO_OPTIONS: MultiOption[] = [
+  { value: "sugeridas", label: "Sugeridas pelo modelo" },
+  { value: "padrao_critico", label: "Padrão crítico" },
+  { value: "fraude", label: "Fraude" },
+  { value: "ok", label: "OK" },
+  { value: "sem_tag", label: "Sem marcação" },
+]
 
 function ScoreBadge({ row }: { row: LiquidacaoCuradoriaRow }) {
   if (row.regra_dura) {
@@ -249,9 +277,12 @@ export default function CuradoriaLiquidacoesPage() {
   const [cedenteDebounced, setCedenteDebounced] = React.useState("")
   const [sacadoDebounced, setSacadoDebounced] = React.useState("")
   const [documentoDebounced, setDocumentoDebounced] = React.useState("")
-  const [segmento, setSegmento] = React.useState<Segmento>("todas")
-  const [produto, setProduto] = React.useState<string>("todos")
-  const [situacao, setSituacao] = React.useState<string>("todas")
+  // Chips BI multi-select (vazio = todos): OR dentro do eixo, AND entre eixos.
+  const [produtosSel, setProdutosSel] = React.useState<string[]>([])
+  const [situacoesSel, setSituacoesSel] = React.useState<string[]>([])
+  const [sinaisSel, setSinaisSel] = React.useState<string[]>([])
+  const [riscosSel, setRiscosSel] = React.useState<string[]>([])
+  const [marcacoesSel, setMarcacoesSel] = React.useState<string[]>([])
 
   React.useEffect(() => {
     const t = setTimeout(() => setCedenteDebounced(buscaCedente), 350)
@@ -267,7 +298,16 @@ export default function CuradoriaLiquidacoesPage() {
   }, [buscaDocumento])
   React.useEffect(() => {
     setPage(1)
-  }, [cedenteDebounced, sacadoDebounced, documentoDebounced, segmento, produto, situacao])
+  }, [
+    cedenteDebounced,
+    sacadoDebounced,
+    documentoDebounced,
+    produtosSel,
+    situacoesSel,
+    sinaisSel,
+    riscosSel,
+    marcacoesSel,
+  ])
 
   const filtros = React.useMemo(
     () => ({
@@ -276,25 +316,22 @@ export default function CuradoriaLiquidacoesPage() {
       cedente: cedenteDebounced || undefined,
       sacado: sacadoDebounced || undefined,
       documento: documentoDebounced || undefined,
-      produto_sigla: produto !== "todos" ? produto : undefined,
-      situacao_titulo: situacao !== "todas" ? Number(situacao) : undefined,
-      sugeridos: segmento === "sugeridas" || undefined,
-      regra_dura: segmento === "regra_dura" || undefined,
-      tag:
-        segmento === "fraude"
-          ? ("fraude" as const)
-          : segmento === "sem_tag"
-            ? ("sem_tag" as const)
-            : undefined,
+      produtos: produtosSel.length ? produtosSel : undefined,
+      situacoes: situacoesSel.length ? situacoesSel.map(Number) : undefined,
+      sinais: sinaisSel.length ? sinaisSel : undefined,
+      riscos: riscosSel.length ? riscosSel : undefined,
+      marcacoes: marcacoesSel.length ? marcacoesSel : undefined,
     }),
     [
       page,
       cedenteDebounced,
       sacadoDebounced,
       documentoDebounced,
-      segmento,
-      produto,
-      situacao,
+      produtosSel,
+      situacoesSel,
+      sinaisSel,
+      riscosSel,
+      marcacoesSel,
     ],
   )
 
@@ -402,11 +439,14 @@ export default function CuradoriaLiquidacoesPage() {
     }
   }, [pontuarMut])
 
-  const produtos = React.useMemo(
+  const produtoOptions = React.useMemo<MultiOption[]>(
     () =>
       (contratosQuery.data ?? [])
-        .map((c) => [c.produto_sigla, c.produto_nome] as const)
-        .sort((a, b) => a[1].localeCompare(b[1])),
+        .map((c) => ({
+          value: c.produto_sigla,
+          label: `${c.produto_nome} (${c.produto_sigla})`,
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
     [contratosQuery.data],
   )
 
@@ -655,48 +695,66 @@ export default function CuradoriaLiquidacoesPage() {
             placeholder="Documento / nº do título..."
             className="w-48"
           />
-          <Select value={produto} onValueChange={setProduto}>
-            <SelectTrigger className={cx(filterControlClass, "w-52")}>
-              <SelectValue placeholder="Produto" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Todos os produtos</SelectItem>
-              {produtos.map(([sigla, nome]) => (
-                <SelectItem key={sigla} value={sigla}>
-                  {nome} ({sigla})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={situacao} onValueChange={setSituacao}>
-            <SelectTrigger className={cx(filterControlClass, "w-52")}>
-              <SelectValue placeholder="Situação do título" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todas">Todas as situações</SelectItem>
-              {Object.entries(SITUACAO_LABELS)
-                .filter(([v]) => v !== "0") // em aberto não gera evento de liquidação
-                .map(([valor, label]) => (
-                  <SelectItem key={valor} value={valor}>
-                    {label}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-          {/* Marcação como dropdown (nao pills): 6 controles na linha — pills
-              estouravam a toolbar; single-select server-side => Select. */}
-          <Select value={segmento} onValueChange={(v) => setSegmento(v as Segmento)}>
-            <SelectTrigger className={cx(filterControlClass, "w-48")}>
-              <SelectValue placeholder="Marcação" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todas">Todas as marcações</SelectItem>
-              <SelectItem value="sugeridas">Sugeridas pelo modelo</SelectItem>
-              <SelectItem value="regra_dura">Padrão crítico</SelectItem>
-              <SelectItem value="fraude">Fraude</SelectItem>
-              <SelectItem value="sem_tag">Sem marcação</SelectItem>
-            </SelectContent>
-          </Select>
+          {/* Chips multi-select — vocabulario canonico do BI (§7.1):
+              FilterChip + multiLabel + MultiCheckList. OR dentro do eixo,
+              AND entre eixos; filtragem SERVER-SIDE via params repetidos. */}
+          <FilterChip
+            label="Produto"
+            value={multiLabel(produtosSel, produtoOptions)}
+            active={produtosSel.length > 0}
+          >
+            <MultiCheckList
+              options={produtoOptions}
+              selected={produtosSel}
+              onChange={setProdutosSel}
+              searchable
+              searchPlaceholder="Buscar produto…"
+            />
+          </FilterChip>
+          <FilterChip
+            label="Situação"
+            value={multiLabel(situacoesSel, SITUACAO_OPTIONS, "Todas")}
+            active={situacoesSel.length > 0}
+          >
+            <MultiCheckList
+              options={SITUACAO_OPTIONS}
+              selected={situacoesSel}
+              onChange={setSituacoesSel}
+            />
+          </FilterChip>
+          <FilterChip
+            label="Sinal"
+            value={multiLabel(sinaisSel, SINAL_OPTIONS)}
+            active={sinaisSel.length > 0}
+          >
+            <MultiCheckList
+              options={SINAL_OPTIONS}
+              selected={sinaisSel}
+              onChange={setSinaisSel}
+            />
+          </FilterChip>
+          <FilterChip
+            label="Risco"
+            value={multiLabel(riscosSel, RISCO_OPTIONS)}
+            active={riscosSel.length > 0}
+          >
+            <MultiCheckList
+              options={RISCO_OPTIONS}
+              selected={riscosSel}
+              onChange={setRiscosSel}
+            />
+          </FilterChip>
+          <FilterChip
+            label="Marcação"
+            value={multiLabel(marcacoesSel, MARCACAO_OPTIONS, "Todas")}
+            active={marcacoesSel.length > 0}
+          >
+            <MultiCheckList
+              options={MARCACAO_OPTIONS}
+              selected={marcacoesSel}
+              onChange={setMarcacoesSel}
+            />
+          </FilterChip>
           <span className={tableTokens.countLabel} aria-live="polite">
             {rows.length.toLocaleString("pt-BR")} de {total.toLocaleString("pt-BR")}{" "}
             liquidações

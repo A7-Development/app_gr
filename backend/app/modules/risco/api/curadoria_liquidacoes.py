@@ -69,6 +69,13 @@ async def list_liquidacoes(
     score_min: Annotated[float | None, Query(ge=0, le=1)] = None,
     regra_dura: bool = False,
     sugeridos: bool = False,
+    # Multi-select (chips BI, 2026-07-08) — params repetidos (?produto=A&produto=B).
+    # OR dentro do eixo, AND entre eixos. Codigos invalidos sao ignorados.
+    produto: Annotated[list[str] | None, Query()] = None,
+    situacao: Annotated[list[int] | None, Query()] = None,
+    marcacao: Annotated[list[str] | None, Query()] = None,
+    sinal: Annotated[list[str] | None, Query()] = None,
+    risco: Annotated[list[str] | None, Query()] = None,
     _: None = _GuardRead,
 ) -> LiquidacaoCuradoriaPage:
     resultado = await svc.listar_liquidacoes(
@@ -87,6 +94,11 @@ async def list_liquidacoes(
         score_min=score_min,
         somente_regra_dura=regra_dura,
         somente_sugeridos=sugeridos,
+        produtos=produto,
+        situacoes=situacao,
+        marcacoes=marcacao,
+        sinais_sel=sinal,
+        riscos=risco,
     )
     return LiquidacaoCuradoriaPage(**resultado)
 

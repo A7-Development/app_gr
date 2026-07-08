@@ -256,6 +256,71 @@ async def test_filtro_sugeridos(
     assert page["rows"][0]["titulo_id"] == 1002
 
 
+@pytest.mark.asyncio
+async def test_filtros_multi_select(
+    client: AsyncClient,
+    user_in_tenant_a: User,
+    modelo_catalogo: DeteccaoModelo,
+    liquidacoes_tenant_a: list[Liquidacao],
+):
+    """Chips BI (2026-07-08): OR dentro do eixo, AND entre eixos.
+
+    Fixtures: 2 liquidacoes, ambas situacao_titulo=1, produto FAT (FAT-DM),
+    sem score/tag; a #1002 tem evidencia=baixa_confirmada e status=3 (lastro).
+    """
+    token = await _login(client, user_in_tenant_a.email)
+
+    # produto multi (repetido): FAT pega as 2; XX zera; FAT+XX = OR -> 2.
+    r = await client.get(f"{API_BASE}?produto=FAT&produto=XX", headers=_auth(token))
+    assert r.json()["total"] == 2
+    r = await client.get(f"{API_BASE}?produto=XX", headers=_auth(token))
+    assert r.json()["total"] == 0
+
+    # situacao multi: 1 OR 3 -> 2; so 3 -> 0.
+    r = await client.get(f"{API_BASE}?situacao=1&situacao=3", headers=_auth(token))
+    assert r.json()["total"] == 2
+    r = await client.get(f"{API_BASE}?situacao=3", headers=_auth(token))
+    assert r.json()["total"] == 0
+
+    # marcacao: sem_tag pega as 2 (nunca marcadas); sugeridas so a de lastro;
+    # fraude zera; sugeridas OR fraude -> 1.
+    r = await client.get(f"{API_BASE}?marcacao=sem_tag", headers=_auth(token))
+    assert r.json()["total"] == 2
+    r = await client.get(
+        f"{API_BASE}?marcacao=sugeridas&marcacao=fraude", headers=_auth(token)
+    )
+    page = r.json()
+    assert page["total"] == 1
+    assert page["rows"][0]["titulo_id"] == 1002
+
+    # sinal: baixa_confirmada -> 1; fora_praca_sacado -> 0; OR -> 1.
+    r = await client.get(
+        f"{API_BASE}?sinal=baixa_confirmada&sinal=fora_praca_sacado",
+        headers=_auth(token),
+    )
+    page = r.json()
+    assert page["total"] == 1
+    assert page["rows"][0]["titulo_id"] == 1002
+
+    # risco: sem score/regra_dura nas fixtures -> sem_score pega as 2;
+    # padrao_critico/alto zeram.
+    r = await client.get(f"{API_BASE}?risco=sem_score", headers=_auth(token))
+    assert r.json()["total"] == 2
+    r = await client.get(
+        f"{API_BASE}?risco=padrao_critico&risco=alto", headers=_auth(token)
+    )
+    assert r.json()["total"] == 0
+
+    # codigo desconhecido e ignorado (nunca 500) e eixo AND: sem_tag AND sinal
+    # baixa_confirmada -> 1.
+    r = await client.get(
+        f"{API_BASE}?marcacao=sem_tag&sinal=baixa_confirmada&risco=invalido",
+        headers=_auth(token),
+    )
+    assert r.status_code == 200
+    assert r.json()["total"] == 1
+
+
 # ---- Tags (append-only) ----------------------------------------------------
 
 

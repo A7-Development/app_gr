@@ -3626,6 +3626,12 @@ export type CuradoriaLiquidacoesFilters = {
   score_min?: number
   regra_dura?: boolean
   sugeridos?: boolean
+  // Multi-select (chips BI) — OR dentro do eixo, AND entre eixos.
+  produtos?: string[]
+  situacoes?: number[]
+  marcacoes?: string[]
+  sinais?: string[]
+  riscos?: string[]
 }
 
 export type DeteccaoModeloVersao = {
@@ -3666,6 +3672,11 @@ function curadoriaFiltersToQuery(f: CuradoriaLiquidacoesFilters): string {
   if (f.score_min !== undefined) params.set("score_min", String(f.score_min))
   if (f.regra_dura) params.set("regra_dura", "true")
   if (f.sugeridos) params.set("sugeridos", "true")
+  for (const p of f.produtos ?? []) params.append("produto", p)
+  for (const s of f.situacoes ?? []) params.append("situacao", String(s))
+  for (const m of f.marcacoes ?? []) params.append("marcacao", m)
+  for (const s of f.sinais ?? []) params.append("sinal", s)
+  for (const r of f.riscos ?? []) params.append("risco", r)
   const qs = params.toString()
   return qs ? `?${qs}` : ""
 }
