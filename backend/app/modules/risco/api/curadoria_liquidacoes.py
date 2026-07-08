@@ -32,6 +32,7 @@ from app.modules.risco.schemas.deteccao import (
     CuradoriaTagCreate,
     CuradoriaTagOut,
     LiquidacaoCuradoriaPage,
+    MemoriaLiquidacao,
     ModeloOut,
     ModeloVersaoOut,
     ScoringResult,
@@ -39,6 +40,7 @@ from app.modules.risco.schemas.deteccao import (
     TreinoResult,
 )
 from app.modules.risco.services import curadoria_liquidacao as svc
+from app.modules.risco.services.curadoria_memoria import montar_memoria
 from app.modules.risco.services.deteccao_scoring import pontuar
 from app.modules.risco.services.deteccao_treino import treinar
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
@@ -61,6 +63,7 @@ async def list_liquidacoes(
     produto_sigla: str | None = None,
     cedente: str | None = None,
     sacado: str | None = None,
+    documento: str | None = None,
     situacao_titulo: Annotated[int | None, Query(ge=0, le=9)] = None,
     tag: Annotated[str | None, Query(pattern="^(fraude|ok|sem_tag)$")] = None,
     score_min: Annotated[float | None, Query(ge=0, le=1)] = None,
@@ -78,6 +81,7 @@ async def list_liquidacoes(
         produto_sigla=produto_sigla,
         cedente_busca=cedente,
         sacado_busca=sacado,
+        documento_busca=documento,
         situacao_titulo=situacao_titulo,
         tag=tag,
         score_min=score_min,
@@ -85,6 +89,26 @@ async def list_liquidacoes(
         somente_sugeridos=sugeridos,
     )
     return LiquidacaoCuradoriaPage(**resultado)
+
+
+@router.get(
+    "/curadoria-liquidacoes/{liquidacao_id}",
+    response_model=MemoriaLiquidacao,
+)
+async def detalhe_liquidacao(
+    liquidacao_id: UUID,
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = _GuardRead,
+) -> MemoriaLiquidacao:
+    """Memoria de calculo completa de uma liquidacao (evidencia por secao)."""
+    memoria = await montar_memoria(db, principal.tenant_id, liquidacao_id)
+    if memoria is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Liquidacao nao encontrada neste tenant.",
+        )
+    return MemoriaLiquidacao(**memoria)
 
 
 @router.post(

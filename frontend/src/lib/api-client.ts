@@ -3620,6 +3620,7 @@ export type CuradoriaLiquidacoesFilters = {
   produto_sigla?: string
   cedente?: string
   sacado?: string
+  documento?: string
   situacao_titulo?: number
   tag?: "fraude" | "ok" | "sem_tag"
   score_min?: number
@@ -3658,6 +3659,7 @@ function curadoriaFiltersToQuery(f: CuradoriaLiquidacoesFilters): string {
   if (f.produto_sigla) params.set("produto_sigla", f.produto_sigla)
   if (f.cedente) params.set("cedente", f.cedente)
   if (f.sacado) params.set("sacado", f.sacado)
+  if (f.documento) params.set("documento", f.documento)
   if (f.situacao_titulo !== undefined)
     params.set("situacao_titulo", String(f.situacao_titulo))
   if (f.tag) params.set("tag", f.tag)
@@ -3668,10 +3670,36 @@ function curadoriaFiltersToQuery(f: CuradoriaLiquidacoesFilters): string {
   return qs ? `?${qs}` : ""
 }
 
+export type MemoriaItem = {
+  label: string
+  valor: string
+  destaque: boolean
+}
+
+export type MemoriaSecao = {
+  titulo: string
+  itens: MemoriaItem[]
+}
+
+export type MemoriaLiquidacao = {
+  liquidacao_id: string
+  titulo_numero: string | null
+  cedente_nome: string | null
+  regra_dura: boolean
+  regra_dura_motivo: string | null
+  score: number | null
+  fatores: FatorScore[] | null
+  secoes: MemoriaSecao[]
+}
+
 export const riscoCuradoriaLiquidacoes = {
   list: (f: CuradoriaLiquidacoesFilters = {}) =>
     apiClient.get<LiquidacaoCuradoriaPage>(
       `/risco/curadoria-liquidacoes${curadoriaFiltersToQuery(f)}`,
+    ),
+  detalhe: (liquidacaoId: string) =>
+    apiClient.get<MemoriaLiquidacao>(
+      `/risco/curadoria-liquidacoes/${liquidacaoId}`,
     ),
   tag: (liquidacaoId: string, tag: "fraude" | "ok", nota?: string | null) =>
     apiClient.post<{ id: string }>(
