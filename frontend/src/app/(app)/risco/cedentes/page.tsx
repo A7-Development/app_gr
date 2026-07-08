@@ -96,6 +96,9 @@ export default function CedentesRiscoPage() {
   const [segment, setSegment] = React.useState<"todos" | "criticos" | "alto" | "piorando">(
     "todos",
   )
+  // Eixo ortogonal aos segments: exposicao em aberto (analise direcionada =
+  // "com carteira" + qualquer recorte de risco). Vazio = todos.
+  const [carteiraFilter, setCarteiraFilter] = React.useState<string[]>([])
 
   const setSelected = React.useCallback(
     (doc: string | null) => {
@@ -242,6 +245,26 @@ export default function CedentesRiscoPage() {
           value: search,
           onChange: setSearch,
           placeholder: "Buscar cedente...",
+        }}
+        statusFilter={{
+          label: "Carteira",
+          ariaLabel: "Filtrar por exposição em aberto",
+          options: [
+            {
+              value: "com",
+              label: "Com carteira",
+              tone: "info",
+              filter: (c) => (c.carteira_atual ?? 0) > 0,
+            },
+            {
+              value: "sem",
+              label: "Sem carteira",
+              tone: "neutral",
+              filter: (c) => !c.carteira_atual,
+            },
+          ],
+          value: carteiraFilter,
+          onChange: setCarteiraFilter,
         }}
         segments={{
           value: segment,
