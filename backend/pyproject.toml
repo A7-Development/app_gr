@@ -44,6 +44,14 @@ dependencies = [
     "email-validator>=2.2.0",
     # Excel export (scripts/export_*.py, futuro catalogo de relatorios).
     "openpyxl>=3.1,<4",
+    # Deteccao de anomalias (modulo risco) — AUTORIZADO Ricardo 2026-07-08
+    # (handoff deteccao-anomalias-liquidacao). Uso RESTRITO a treino/score
+    # dos modelos de deteccao (app/modules/risco/services/deteccao*); regra
+    # do handoff: UMA lib de ML so — logistic regression interpretavel,
+    # coeficientes persistidos em deteccao_modelo_versao (JSONB), sem pickle.
+    "scikit-learn>=1.5,<2",
+    "pandas>=2.2,<3",
+    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]

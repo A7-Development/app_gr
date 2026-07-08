@@ -3564,6 +3564,129 @@ export const riscoContratosLiquidacao = {
     ),
 }
 
+/** Modulo risco — curadoria de liquidacoes + modelo de deteccao. */
+
+export type FatorScore = {
+  feature: string
+  contrib: number
+  valor: number
+}
+
+export type LiquidacaoCuradoriaRow = {
+  liquidacao_id: string
+  titulo_id: number
+  titulo_numero: string | null
+  canal: "bancaria" | "baixa_manual"
+  evidencia: string | null
+  data_evento: string
+  valor: number | null
+  cedente_nome: string | null
+  cedente_documento: string | null
+  produto_sigla: string | null
+  produto_nome: string | null
+  sacado_nome: string | null
+  sacado_documento: string | null
+  local_pagamento: string | null
+  pago_na_agencia_cliente: boolean | null
+  pago_na_praca_cliente: boolean | null
+  pago_fora_praca_sacado: boolean | null
+  score: number | null
+  fatores: FatorScore[] | null
+  regra_dura: boolean | null
+  regra_dura_motivo: string | null
+  tag_vigente: "FRAUDE" | "OK" | null
+  tag_nota: string | null
+  tag_autor: string | null
+  tag_em: string | null
+  candidato_lastro: boolean
+}
+
+export type LiquidacaoCuradoriaPage = {
+  total: number
+  page: number
+  page_size: number
+  rows: LiquidacaoCuradoriaRow[]
+}
+
+export type CuradoriaLiquidacoesFilters = {
+  page?: number
+  page_size?: number
+  data_ini?: string
+  data_fim?: string
+  produto_sigla?: string
+  cedente?: string
+  tag?: "fraude" | "ok" | "sem_tag"
+  score_min?: number
+  regra_dura?: boolean
+  sugeridos?: boolean
+}
+
+export type DeteccaoModeloVersao = {
+  id: string
+  versao: number
+  metrics: Record<string, unknown> | null
+  n_amostras: number | null
+  n_positivos: number | null
+  trained_at: string
+  notas: string | null
+  ativa: boolean
+}
+
+export type DeteccaoModelo = {
+  id: string
+  nome: string
+  alvo: string
+  tipo: string
+  unidade: string
+  descricao: string | null
+  versao_ativa: number | null
+  versoes: DeteccaoModeloVersao[]
+}
+
+function curadoriaFiltersToQuery(f: CuradoriaLiquidacoesFilters): string {
+  const params = new URLSearchParams()
+  if (f.page) params.set("page", String(f.page))
+  if (f.page_size) params.set("page_size", String(f.page_size))
+  if (f.data_ini) params.set("data_ini", f.data_ini)
+  if (f.data_fim) params.set("data_fim", f.data_fim)
+  if (f.produto_sigla) params.set("produto_sigla", f.produto_sigla)
+  if (f.cedente) params.set("cedente", f.cedente)
+  if (f.tag) params.set("tag", f.tag)
+  if (f.score_min !== undefined) params.set("score_min", String(f.score_min))
+  if (f.regra_dura) params.set("regra_dura", "true")
+  if (f.sugeridos) params.set("sugeridos", "true")
+  const qs = params.toString()
+  return qs ? `?${qs}` : ""
+}
+
+export const riscoCuradoriaLiquidacoes = {
+  list: (f: CuradoriaLiquidacoesFilters = {}) =>
+    apiClient.get<LiquidacaoCuradoriaPage>(
+      `/risco/curadoria-liquidacoes${curadoriaFiltersToQuery(f)}`,
+    ),
+  tag: (liquidacaoId: string, tag: "fraude" | "ok", nota?: string | null) =>
+    apiClient.post<{ id: string }>(
+      `/risco/curadoria-liquidacoes/${liquidacaoId}/tag`,
+      { tag, nota: nota ?? null },
+    ),
+  modelos: () => apiClient.get<DeteccaoModelo[]>(`/risco/deteccao/modelos`),
+  treinar: (nome: string) =>
+    apiClient.post<{ versao: number; metrics: Record<string, unknown> }>(
+      `/risco/deteccao/modelos/${encodeURIComponent(nome)}/treinar`,
+      {},
+    ),
+  ativarVersao: (nome: string, versao: number) =>
+    apiClient.post<DeteccaoModeloVersao>(
+      `/risco/deteccao/modelos/${encodeURIComponent(nome)}/versoes/${versao}/ativar`,
+      {},
+    ),
+  pontuarAgora: (nome: string) =>
+    apiClient.post<{ scores_gravados: number; regra_dura: number }>(
+      `/risco/deteccao/modelos/${encodeURIComponent(nome)}/pontuar`,
+      {},
+    ),
+}
+
 /** Modulo cadastros — entidades primarias do tenant. */
 
 export type TipoUA =

@@ -8,7 +8,12 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from app.scheduler import cobranca_landing, fiscal_landing, sync_dispatcher
+from app.scheduler import (
+    cobranca_landing,
+    deteccao_scoring,
+    fiscal_landing,
+    sync_dispatcher,
+)
 from app.scheduler.jobs import (
     backfill_worker,
     qitech_jobs_poll,
@@ -77,6 +82,18 @@ def start_scheduler() -> AsyncIOScheduler:
         max_instances=1,
         coalesce=True,
         misfire_grace_time=120,
+    )
+    # Scoring do modelo de deteccao de liquidacao (modulo risco) — aplica a
+    # versao ativa (ou so regras duras) sobre wh_liquidacao; mesma cadencia
+    # do endpoint bitfin.liquidacoes que alimenta a tabela.
+    _scheduler.add_job(
+        deteccao_scoring.run,
+        trigger=IntervalTrigger(minutes=deteccao_scoring.INTERVAL_MINUTES),
+        id="deteccao_scoring",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=600,
     )
     _scheduler.add_job(
         backfill_worker.run,

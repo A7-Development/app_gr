@@ -374,6 +374,7 @@ Quando o usuario pedir "cria uma pagina de X" ou "audita a tela Y", prefira invo
 | Linter/formatter | Ruff | black standalone, flake8, pylint |
 | Testes | pytest + pytest-asyncio + httpx | unittest manual |
 | Task scheduling | APScheduler (MVP); Celery/Temporal (futuro) | threading.Timer ad-hoc |
+| ML / deteccao de anomalias | `scikit-learn` (logistic regression) + `pandas`/`numpy` — uso RESTRITO a treino/score dos modelos de deteccao do modulo risco (autorizado 2026-07-08); coeficientes persistidos em `deteccao_modelo_versao` (JSONB versionado, rollback 1 clique) | pickle/artefato binario de modelo; MLflow (v1); PyOD/mlxtend/GBM sem nova autorizacao; SMOTE/oversampling sintetico |
 | HTTP client | httpx (async) | requests |
 | Logging | `logging` stdlib (logger nomeado por modulo) | `print()` em codigo de dominio; structlog (removido — era dep morta) |
 | Secrets | `.env` em dev, env vars no systemd em prod | hard-coded |
@@ -614,6 +615,7 @@ app/modules/integracoes/adapters/<tipo>/<nome>/
 5. **Proibido adapter em codigo de dominio.** Services de dominio leem APENAS do warehouse canonico.
 6. **Observabilidade obrigatoria:** cada sync registra metricas (linhas lidas, tempo, erros) no `decision_log`.
 7. **Custo + rate limit como metadados** em `source_catalog` quando fonte for paga (bureaus).
+8. **Fonte Bitfin = apenas tabelas base** (`dbo.Titulo`, `dbo.Operacao`, ...). As views `dbo.VW_*` no SQL Server do Bitfin (`VW_CARTEIRA`, `VW_OPERACOES`, `VW_OPERACOES_RENTABILIDADE`, `VW_OPERACAO_SLA`, `VW_COHORT_*`, `VW_DIAS_UTEIS`, `VW_FERIADOS_NACIONAL`) sao **residuo do passado — proibido consumi-las em qualquer camada da solucao** (adapter, service, script, seed). Em PR, referencia a `VW_*` do Bitfin e bloqueador. Mesma regra para as views `control.vw_elig_*` (residuo, decisao 2026-07-07) — analise e KPI (ex.: indice de recompra) nascem no warehouse do GR, nunca em view no banco do ERP.
 
 Adicionar uma fonte nova = novo adapter + registro em `source_catalog` + registro em `tenant_source_config`. **Zero refactor do core.**
 
