@@ -406,16 +406,15 @@ export default function CuradoriaLiquidacoesPage() {
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("cedente_nome", {
         header: "Cedente",
-        // Colunas de NOME recebem a folga da tabela (w-full): size maior e
-        // cap generoso — o truncate acompanha a largura real da coluna, em
-        // vez de cortar a 180px e deixar espaco morto.
-        size: 260,
+        // -20% (pedido Ricardo 2026-07-08): a tabela precisa caber sem
+        // scroll horizontal; nome completo continua no tooltip.
+        size: 208,
         cell: (info) => {
           const nome = (info.getValue() as string | null) ?? "—"
           // Uma linha, corte limpo — nome completo no tooltip.
           return (
             <span
-              className={cx(tableTokens.cellStrong, "block max-w-[420px] truncate")}
+              className={cx(tableTokens.cellStrong, "block max-w-[336px] truncate")}
               title={nome}
             >
               {nome}
@@ -425,12 +424,12 @@ export default function CuradoriaLiquidacoesPage() {
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("sacado_nome", {
         header: "Sacado",
-        size: 240,
+        size: 192,
         cell: (info) => {
           const nome = (info.getValue() as string | null) ?? "—"
           return (
             <span
-              className={cx(tableTokens.cellText, "block max-w-[400px] truncate")}
+              className={cx(tableTokens.cellText, "block max-w-[320px] truncate")}
               title={nome}
             >
               {nome}
@@ -441,8 +440,10 @@ export default function CuradoriaLiquidacoesPage() {
       col.accessor("produto_nome", {
         header: "Produto",
         size: 130,
+        // nowrap: nome de produto NUNCA trunca nem quebra (regra: nome
+        // completo sempre) — a coluna estica em vez de cortar.
         cell: (info) => (
-          <span className={tableTokens.cellText}>
+          <span className={cx(tableTokens.cellText, "whitespace-nowrap")}>
             {info.getValue() ?? info.row.original.produto_sigla ?? "—"}
           </span>
         ),
@@ -450,14 +451,15 @@ export default function CuradoriaLiquidacoesPage() {
       col.accessor("valor", {
         header: "Valor",
         size: 105,
+        meta: { align: "right" },
         cell: (info) => {
           const v = info.getValue() as number | null
           return v !== null ? (
-            <span className={tableTokens.cellNumber}>
+            <span className={cx(tableTokens.cellNumber, "block whitespace-nowrap text-right")}>
               {v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
             </span>
           ) : (
-            <span className={tableTokens.cellMuted}>—</span>
+            <span className={cx(tableTokens.cellMuted, "block text-right")}>—</span>
           )
         },
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
