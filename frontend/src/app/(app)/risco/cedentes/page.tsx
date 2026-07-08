@@ -135,8 +135,28 @@ export default function CedentesRiscoPage() {
         size: 100,
         cell: (info) => <TendenciaCell delta={info.getValue() as number | null} />,
       }) as ColumnDef<CedenteRiscoRow, unknown>,
+      col.accessor("carteira_atual", {
+        header: () => (
+          <span title="Posição em aberto do cedente no ERP (risco total: vencido + a vencer). É a exposição atual — não confundir com o volume liquidado suspeito.">
+            Carteira atual
+          </span>
+        ),
+        size: 120,
+        cell: (info) => {
+          const v = info.getValue() as number | null
+          return v === null ? (
+            <span className={tableTokens.cellMuted}>—</span>
+          ) : (
+            <span className={tableTokens.cellNumber}>{brl(v)}</span>
+          )
+        },
+      }) as ColumnDef<CedenteRiscoRow, unknown>,
       col.accessor("valor_em_risco", {
-        header: "R$ em risco",
+        header: () => (
+          <span title="Valor JÁ PAGO em liquidações que o modelo marcou como suspeitas (score ≥ 0,7 ou evento crítico). Retrospectivo — não é exposição em aberto.">
+            R$ liq. suspeito
+          </span>
+        ),
         size: 120,
         cell: (info) => (
           <span
@@ -159,7 +179,11 @@ export default function CedentesRiscoPage() {
         ),
       }) as ColumnDef<CedenteRiscoRow, unknown>,
       col.accessor("n_criticos", {
-        header: "Padrões críticos",
+        header: () => (
+          <span title="Nº de liquidações que dispararam a regra determinística (padrão crítico): sacado de outra cidade pagando na agência do cedente.">
+            Eventos críticos
+          </span>
+        ),
         size: 110,
         cell: (info) => {
           const n = info.getValue() as number
@@ -204,7 +228,7 @@ export default function CedentesRiscoPage() {
     <div className="flex flex-col gap-6 px-6 pt-5 pb-6">
       <PageHeader
         title="Risco de cedentes"
-        info="Risco composto por cedente, combinando os indicadores do programa de detecção (hoje: liquidação de boleto; novos indicadores entram na composição conforme forem criados). Score 0–100 ponderado por valor, com piso quando há padrão crítico. Use antes de renovar ou ampliar limite — o drill mostra a decomposição e leva às liquidações que explicam o número."
+        info="Risco composto por cedente, combinando os indicadores do programa de detecção (hoje: liquidação de boleto; novos indicadores entram na composição conforme forem criados). Score 0–100 ponderado por valor, com piso quando há evento crítico. 'R$ liq. suspeito' é retrospectivo (valor já pago em liquidações suspeitas); 'Carteira atual' é a exposição em aberto no ERP. Use antes de renovar ou ampliar limite — o drill mostra a decomposição e leva às liquidações que explicam o número."
         subtitle="Risco · Detecção de anomalias"
       />
 
@@ -226,7 +250,7 @@ export default function CedentesRiscoPage() {
             { value: "todos", label: "Todos", filter: () => true },
             {
               value: "criticos",
-              label: "Com padrão crítico",
+              label: "Com evento crítico",
               filter: (c) => c.n_criticos > 0,
             },
             { value: "alto", label: "Risco ≥ 40", filter: (c) => c.risco >= 40 },
@@ -265,11 +289,21 @@ export default function CedentesRiscoPage() {
             </div>
 
             <div className="flex flex-col gap-1">
-              <span className={tableTokens.header}>Exposição</span>
+              <span className={tableTokens.header}>Carteira atual</span>
               <span className={tableTokens.cellSecondary}>
-                {brl(selected.valor_em_risco)} em risco de {brl(selected.valor_avaliado)}{" "}
-                avaliados · {selected.n_eventos.toLocaleString("pt-BR")} liquidações ·{" "}
-                {selected.n_criticos} padrões críticos · {selected.n_alto_risco} eventos ≥70%
+                {selected.carteira_atual === null
+                  ? "Sem posição em aberto no ERP"
+                  : `${brl(selected.carteira_atual)} em aberto (vencido + a vencer)`}
+              </span>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <span className={tableTokens.header}>Liquidações suspeitas (retrospectivo)</span>
+              <span className={tableTokens.cellSecondary}>
+                {brl(selected.valor_em_risco)} liquidado suspeito de{" "}
+                {brl(selected.valor_avaliado)} avaliados ·{" "}
+                {selected.n_eventos.toLocaleString("pt-BR")} liquidações ·{" "}
+                {selected.n_criticos} eventos críticos · {selected.n_alto_risco} eventos ≥70%
               </span>
             </div>
 
@@ -286,7 +320,7 @@ export default function CedentesRiscoPage() {
                     <RiscoBadge valor={i.subscore} />
                   </div>
                   <span className={tableTokens.cellSecondary}>
-                    {brl(i.valor_em_risco)} em risco de {brl(i.valor_avaliado)} ·{" "}
+                    {brl(i.valor_em_risco)} liquidado suspeito de {brl(i.valor_avaliado)} ·{" "}
                     {i.n_eventos ?? 0} eventos · {i.n_criticos ?? 0} críticos
                   </span>
                   {i.componentes?.piso_critico_aplicado === true && (

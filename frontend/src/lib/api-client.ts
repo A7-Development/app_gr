@@ -3725,6 +3725,7 @@ export type CedenteRiscoRow = {
   data_ref: string
   valor_avaliado: number
   valor_em_risco: number
+  carteira_atual: number | null
   n_eventos: number
   n_criticos: number
   n_alto_risco: number

@@ -43,6 +43,8 @@ class CedenteRiscoRow(BaseModel):
     data_ref: Any
     valor_avaliado: float
     valor_em_risco: float
+    # Posicao em aberto (Bitfin wh_posicao_cedente); None = cedente sem posicao.
+    carteira_atual: float | None = None
     n_eventos: int
     n_criticos: int
     n_alto_risco: int
