@@ -58,6 +58,7 @@ import type { LiquidacaoCuradoriaRow } from "@/lib/api-client"
 import {
   useContratosLiquidacao,
   useCuradoriaLiquidacoes,
+  useAtivarVersaoModelo,
   useDeteccaoModelos,
   useMemoriaLiquidacao,
   usePontuarAgora,
@@ -302,6 +303,7 @@ export default function CuradoriaLiquidacoesPage() {
   const contratosQuery = useContratosLiquidacao(180)
   const tagMut = useTagLiquidacao()
   const treinarMut = useTreinarModelo()
+  const ativarMut = useAtivarVersaoModelo()
   const pontuarMut = usePontuarAgora()
 
   const pageData = listQuery.data
@@ -351,6 +353,22 @@ export default function CuradoriaLiquidacoesPage() {
   )
 
   const modelo = modelosQuery.data?.find((m) => m.nome === "liquidacao_boleto")
+  // Versões vêm em ordem desc do backend — [0] é a última treinada.
+  const ultimaVersao = modelo?.versoes[0]
+
+  const ativar = React.useCallback(
+    async (versao: number) => {
+      try {
+        await ativarMut.mutateAsync({ nome: "liquidacao_boleto", versao })
+        toast.success(
+          `Versão v${versao} ativada. Rode "Pontuar agora" para reavaliar as liquidações com ela.`,
+        )
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Falha ao ativar a versão.")
+      }
+    },
+    [ativarMut],
+  )
 
   const treinar = React.useCallback(async () => {
     try {
@@ -557,7 +575,7 @@ export default function CuradoriaLiquidacoesPage() {
         }
       />
 
-      {/* Faixa do modelo: versão ativa + métrica — visibilidade do estado (§7.3) */}
+      {/* Faixa do modelo: versão ativa + métrica + ativar — estado (§7.3) */}
       {modelo && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-gray-200 bg-gray-50 px-4 py-2 dark:border-gray-800 dark:bg-gray-900">
           <RiFlaskLine className="size-4 text-gray-500" aria-hidden />
@@ -573,6 +591,18 @@ export default function CuradoriaLiquidacoesPage() {
                 (modelo.versoes[0].metrics as Record<string, unknown>)?.gini_oot ?? "—",
               )})`}
           </span>
+          {/* Ativar a última versão treinada quando ela ainda não é a ativa */}
+          {ultimaVersao && ultimaVersao.versao !== modelo.versao_ativa && (
+            <Button
+              variant="secondary"
+              className="ml-auto h-[26px] text-[12px]"
+              isLoading={ativarMut.isPending}
+              onClick={() => void ativar(ultimaVersao.versao)}
+              title="Torna esta versão a que pontua as liquidações (rollback: reative uma versão anterior)"
+            >
+              Ativar v{ultimaVersao.versao}
+            </Button>
+          )}
         </div>
       )}
 
