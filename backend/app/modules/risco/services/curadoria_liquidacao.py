@@ -25,6 +25,39 @@ from app.modules.risco.models import CuradoriaTag, CuradoriaTagValor, DeteccaoMo
 
 _SITUACAO_LASTRO_INCONSISTENTE = 3  # Titulo.Status=3 no Bitfin (dicionario 2026-07-08)
 
+# ── Multi-select filters (BI chips, 2026-07-08) ─────────────────────────────
+# Each code maps to a SQL condition; selected codes are OR-ed. Unknown codes
+# are ignored (additive API — never 500 on a stale frontend).
+# The `sinal` map MIRRORS `_sinais()` below — change one, change both.
+_MARCACAO_SQL: dict[str, str] = {
+    "fraude": "tv.tag = 'FRAUDE'",
+    "ok": "tv.tag = 'OK'",
+    "sem_tag": "(tv.tag IS NULL OR tv.tag = 'NEUTRO')",
+    "sugeridas": "t.status = :status_lastro",
+    "padrao_critico": "ds.regra_dura IS TRUE",
+}
+_SINAL_SQL: dict[str, str] = {
+    "regra_dura": "ds.regra_dura IS TRUE",
+    "baixa_confirmada": "l.evidencia = 'baixa_confirmada'",
+    "pago_agencia_cedente": "l.pago_na_agencia_cliente IS TRUE",
+    # ds.features e dict[str, float] (deteccao_features) — cast ::float seguro.
+    "agencia_conta_cedente": "coalesce((ds.features->>'match_agencia_conta_cedente')::float, 0) > 0",
+    "quebra_fingerprint": "coalesce((ds.features->>'quebra_fingerprint')::float, 0) >= 0.5",
+    "boleto_nao_esperado": "coalesce((ds.features->>'boleto_nao_esperado_mas_teve')::float, 0) > 0",
+    "lastro_inconsistente": "t.status = :status_lastro",
+    "fora_praca_sacado": "l.pago_fora_praca_sacado IS TRUE",
+    "sem_ocorrencia": "l.evidencia = 'sem_ocorrencia'",
+}
+# Faixas de risco como exibidas no ScoreBadge do frontend (regra_dura tem
+# precedencia sobre o score — as faixas de score EXCLUEM padrao critico).
+_RISCO_SQL: dict[str, str] = {
+    "padrao_critico": "ds.regra_dura IS TRUE",
+    "alto": "(ds.regra_dura IS NOT TRUE AND ds.score >= 0.7)",
+    "medio": "(ds.regra_dura IS NOT TRUE AND ds.score >= 0.4 AND ds.score < 0.7)",
+    "baixo": "(ds.regra_dura IS NOT TRUE AND ds.score < 0.4)",
+    "sem_score": "(ds.regra_dura IS NOT TRUE AND ds.score IS NULL)",
+}
+
 _SQL_LISTAGEM = """
 WITH tag_vigente AS (
     SELECT DISTINCT ON (ct.liquidacao_id)
@@ -122,6 +155,12 @@ async def listar_liquidacoes(
     score_min: float | None = None,
     somente_regra_dura: bool = False,
     somente_sugeridos: bool = False,
+    # Multi-select (chips BI) — OR dentro de cada eixo, AND entre eixos.
+    produtos: list[str] | None = None,
+    situacoes: list[int] | None = None,
+    marcacoes: list[str] | None = None,
+    sinais_sel: list[str] | None = None,
+    riscos: list[str] | None = None,
 ) -> dict[str, Any]:
     """One page of the curation universe + total (nothing silently cut)."""
     modelo_id = await _modelo_id(db, modelo_nome)
@@ -189,6 +228,28 @@ async def listar_liquidacoes(
         filtros.append("AND ds.regra_dura IS TRUE")
     if somente_sugeridos:
         filtros.append("AND t.status = :status_lastro")
+
+    if produtos:
+        keys: list[str] = []
+        for i, p in enumerate(produtos):
+            params[f"prod_{i}"] = p.upper()
+            keys.append(f":prod_{i}")
+        filtros.append(f"AND split_part(o.modalidade, '-', 1) IN ({', '.join(keys)})")
+    if situacoes:
+        keys = []
+        for i, s in enumerate(situacoes):
+            params[f"sit_{i}"] = s
+            keys.append(f":sit_{i}")
+        filtros.append(f"AND l.situacao_titulo IN ({', '.join(keys)})")
+    for selecionados, mapa in (
+        (marcacoes, _MARCACAO_SQL),
+        (sinais_sel, _SINAL_SQL),
+        (riscos, _RISCO_SQL),
+    ):
+        if selecionados:
+            conds = [mapa[c] for c in selecionados if c in mapa]
+            if conds:
+                filtros.append("AND (" + " OR ".join(conds) + ")")
 
     sql = text(_SQL_LISTAGEM.format(filtros="\n  ".join(filtros)))
     rows = (await db.execute(sql, params)).mappings().all()

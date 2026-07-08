@@ -34,6 +34,7 @@ export {
 export {
   FilterBar, FilterSearch, FilterChip, RemovableChip,
   MoreFiltersButton, SavedViewsDropdown, filterControlClass,
+  MultiCheckList, multiLabel, type MultiOption,
   type SavedView,
 } from "./FilterBar"
 export {
