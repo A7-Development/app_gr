@@ -298,12 +298,12 @@ export default function Operacoes5Page() {
                     )
                     return (
                       <tr>
-                        <td className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+                        <td className={cx("px-3 py-2", tableTokens.cellSecondary)}>
                           {fmt.number.format(rows.length)} cedente
                           {rows.length === 1 ? "" : "s"}
                         </td>
                         <td className="px-3 py-2" />
-                        <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-50">
+                        <td className={cx("px-3 py-2 text-right font-semibold", tableTokens.cellNumber)}>
                           {fmt.currencyWhole.format(vop)}
                         </td>
                         {/* share · deságio · taxa_final · prazo */}
@@ -311,7 +311,7 @@ export default function Operacoes5Page() {
                         <td className="px-3 py-2" />
                         <td className="px-3 py-2" />
                         <td className="px-3 py-2" />
-                        <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-50">
+                        <td className={cx("px-3 py-2 text-right font-semibold", tableTokens.cellNumber)}>
                           {fmt.currencyWhole.format(receita)}
                         </td>
                       </tr>

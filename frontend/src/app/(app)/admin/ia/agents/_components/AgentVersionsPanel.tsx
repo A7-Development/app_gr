@@ -110,7 +110,7 @@ export function AgentVersionsPanel({
             <span className={cx(tableTokens.cellTextMono, "whitespace-nowrap")}>
               v{v.version}
               {isCurrent && (
-                <span className="ml-1.5 font-sans text-[10px] text-blue-600 dark:text-blue-400">
+                <span className={cx(tableTokens.cellSecondary, "ml-1.5 font-sans text-blue-600 dark:text-blue-400")}>
                   (aberta)
                 </span>
               )}

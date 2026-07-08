@@ -155,7 +155,7 @@ function CelulaFundo({
       <span
         className={cx(
           tableTokens.cellNumber,
-          melhor && "font-semibold text-gray-900 dark:text-gray-50",
+          melhor && "font-semibold",
         )}
       >
         {formatIndicador(
@@ -187,7 +187,7 @@ function CelulaComposicao({
   forte?: boolean
 }) {
   const tom = forte
-    ? cx(tableTokens.cellNumber, "font-semibold text-gray-900 dark:text-gray-50")
+    ? cx(tableTokens.cellNumber, "font-semibold")
     : folha
       ? tableTokens.cellNumberSecondary
       : tableTokens.cellNumber

@@ -110,11 +110,7 @@ function DomainsCell({ domains }: { domains: string[] | null }) {
       {domains.slice(0, 3).map((d) => (
         <span
           key={d}
-          className={cx(
-            "rounded-sm px-1.5 py-0.5 text-[11px] font-medium",
-            "bg-gray-100 text-gray-700",
-            "dark:bg-gray-800 dark:text-gray-300",
-          )}
+          className={cx(tableTokens.badge, "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300")}
         >
           {d}
         </span>

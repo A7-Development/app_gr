@@ -27,7 +27,6 @@ import {
   SegmentSwitch,
   type SegmentDef,
 } from "@/design-system/components"
-import { Badge } from "@/components/tremor/Badge"
 import { cardTokens } from "@/design-system/tokens/card"
 import { tableTokens } from "@/design-system/tokens/table"
 import { biOperacoes2 } from "@/lib/api-client"
@@ -64,11 +63,11 @@ function DeltaCell({ pct }: { pct: number | null }) {
     return <span className={cx(tableTokens.cellMuted, "tabular-nums")}>—</span>
   }
   const isUp = pct >= 0
-  const colorClass = isUp
-    ? "text-emerald-600 dark:text-emerald-400"
-    : "text-red-600 dark:text-red-400"
   return (
-    <span className={cx("tabular-nums text-xs font-medium", colorClass)}>
+    <span className={cx(
+      "font-medium",
+      isUp ? tableTokens.cellNumberPositive : tableTokens.cellNumberNegative,
+    )}>
       {isUp ? "+" : ""}
       {fmtPct1(pct)}
     </span>
@@ -77,33 +76,19 @@ function DeltaCell({ pct }: { pct: number | null }) {
 
 function StatusBadge({ status }: { status: Operacoes2CedenteMtdItem["status"] }) {
   if (status === "novo") {
+    // MOTIVO: "novo" e informativo (chegada), nao success/warning/danger —
+    // compoe tableTokens.badge + tone blue (mesmo precedente do
+    // "enviado_nao_confirmado" da conciliacao).
     return (
-      <Badge
-        variant="default"
-        className="bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
-      >
+      <span className={cx(tableTokens.badge, "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300")}>
         novo
-      </Badge>
+      </span>
     )
   }
   if (status === "sumido") {
-    return (
-      <Badge
-        variant="default"
-        className="bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300"
-      >
-        sumido
-      </Badge>
-    )
+    return <span className={tableTokens.badgeDanger}>sumido</span>
   }
-  return (
-    <Badge
-      variant="default"
-      className="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-    >
-      recorrente
-    </Badge>
-  )
+  return <span className={tableTokens.badgeNeutral}>recorrente</span>
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────

@@ -313,17 +313,17 @@ function ReconcileBlock({ d }: { d: DrillPddResponse }) {
         counter={`${fmtBRL.format(d.pdd_granular_ex_wop_d1)} → ${fmtBRL.format(d.pdd_granular_ex_wop_d0)}`}
       />
       <div className={cx("mt-2", drillTableWrap)}>
-        <table className="w-full whitespace-nowrap text-[12px] tabular-nums">
+        <table className="w-full whitespace-nowrap tabular-nums">
           <tbody>
             {linhas.map((l) => (
               <tr key={l.label} className={drillRowBorder}>
-                <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200">
+                <td className={cx("px-3 py-1.5", tableTokens.cellText)}>
                   {l.label}
                   {l.nota && (
-                    <span className="ml-1.5 text-[10px] text-gray-400 dark:text-gray-500">· {l.nota}</span>
+                    <span className={cx("ml-1.5", tableTokens.cellMuted)}>· {l.nota}</span>
                   )}
                 </td>
-                <td className={cx("px-3 py-1.5 text-right font-medium", l.tone)}>
+                <td className={cx(tableTokens.cellNumber, "px-3 py-1.5 text-right font-medium", l.tone)}>
                   {fmtBRLSigned(l.valor)}
                 </td>
               </tr>
@@ -331,13 +331,13 @@ function ReconcileBlock({ d }: { d: DrillPddResponse }) {
           </tbody>
           <tfoot>
             <tr className={drillTfootRow}>
-              <td className="px-3 py-1.5 text-gray-700 dark:text-gray-200">
+              <td className={cx("px-3 py-1.5", tableTokens.cellStrong)}>
                 = Δ PDD ativo (A-H)
-                <span className={cx("ml-1.5 text-[10px] font-normal", fecha ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>
+                <span className={cx("ml-1.5 font-normal text-xs", fecha ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>
                   {fecha ? "· fecha ✓" : "· não fecha ✗"}
                 </span>
               </td>
-              <td className={cx("px-3 py-1.5 text-right", toneClass(deltaAtivo, false))}>
+              <td className={cx(tableTokens.cellNumber, "px-3 py-1.5 text-right font-semibold", toneClass(deltaAtivo, false))}>
                 {fmtBRLSigned(deltaAtivo)}
               </td>
             </tr>
@@ -393,12 +393,12 @@ function WopTable({ papeis }: { papeis: DrillPddPapel[] }) {
         return (
           <div className="text-right">
             {neutro ? (
-              <span className="inline-flex items-center gap-1 text-[11px] text-gray-400 dark:text-gray-500">
+              <span className={cx("inline-flex items-center gap-1", tableTokens.cellMuted)}>
                 <span className="inline-block size-1.5 rounded-full bg-gray-400" aria-hidden />
                 neutro
               </span>
             ) : (
-              <span className="text-xs font-semibold tabular-nums text-red-600 dark:text-red-400">{fmtBRLSigned(impacto)}</span>
+              <span className={cx("font-semibold", tableTokens.cellNumberNegative)}>{fmtBRLSigned(impacto)}</span>
             )}
           </div>
         )
@@ -419,9 +419,9 @@ function WopTable({ papeis }: { papeis: DrillPddPapel[] }) {
             <td className="px-3">
               <div className="text-right">
                 {Math.abs(totImpacto) < 0.01 ? (
-                  <span className="text-[11px] text-gray-400 dark:text-gray-500">neutro</span>
+                  <span className={tableTokens.cellMuted}>neutro</span>
                 ) : (
-                  <span className="text-xs font-semibold tabular-nums text-red-600 dark:text-red-400">{fmtBRLSigned(totImpacto)}</span>
+                  <span className={cx("font-semibold", tableTokens.cellNumberNegative)}>{fmtBRLSigned(totImpacto)}</span>
                 )}
               </div>
             </td>
@@ -461,6 +461,8 @@ function PapeisTable({
         const p = info.row.original
         return (
           <div className="text-center">
+            {/* MOTIVO: indicador de transicao de faixa (dot→dot) em 10px — dois
+                estados lado a lado nao cabem em 12px na coluna de 130px. */}
             <span className="inline-flex items-center gap-1 text-[10px]">
               <span className={cx("inline-block size-1.5 rounded-full", FAIXA_DOT[p.faixa_pdd_d1 ?? "NOVO"])} aria-hidden />
               <span className="text-gray-500">{FAIXA_LABEL[p.faixa_pdd_d1 ?? "NOVO"]}</span>
@@ -469,7 +471,7 @@ function PapeisTable({
               <span className={cx(
                 p.faixa_pdd_d0 === "LIQUIDADO"
                   ? "font-medium text-emerald-700 dark:text-emerald-400"
-                  : "text-gray-900 dark:text-gray-50",
+                  : "text-gray-900 dark:text-gray-100",
               )}>{FAIXA_LABEL[p.faixa_pdd_d0 ?? "WOP"]}</span>
             </span>
           </div>

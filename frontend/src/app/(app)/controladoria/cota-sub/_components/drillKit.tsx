@@ -60,11 +60,11 @@ export const drillThead =
   "bg-gray-50 text-[10px] font-medium uppercase tracking-[0.04em] text-gray-500 dark:bg-gray-900/30 dark:text-gray-400"
 
 /** Borda entre linhas do corpo. */
-export const drillRowBorder = "border-t border-gray-100 dark:border-gray-900"
+export const drillRowBorder = "border-t border-t-gray-100 dark:border-t-gray-900"
 
-/** Linha Total no rodape da tabela (tfoot). */
+/** Linha Total no rodape da tabela (tfoot). Borda com lado explicito (§6). */
 export const drillTfootRow =
-  "border-t-2 border-gray-200 font-semibold dark:border-gray-700"
+  "border-t-2 border-t-gray-200 font-semibold dark:border-t-gray-700"
 
 // ── Selo de fechamento (universal — topo de todo card de drill) ─────────────
 

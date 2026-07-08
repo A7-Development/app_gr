@@ -257,7 +257,7 @@ function RankingTable({ data }: { data: ComparativoResponse }) {
                           <span className={tableTokens.cellStrong}>
                             {linha.label}
                           </span>
-                          <span className="text-[11px] text-gray-400">
+                          <span className={tableTokens.cellMuted}>
                             {linha.direction === "desc" ? "↑ melhor" : "↓ melhor"}
                           </span>
                         </div>

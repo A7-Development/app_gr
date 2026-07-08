@@ -52,13 +52,13 @@ const col = createColumnHelper<ResumoStatusConciliacao>()
 const COLUMNS: ColumnDef<ResumoStatusConciliacao, unknown>[] = [
   col.accessor("status", {
     id: "status", header: "Status", size: 150,
-    // Badge canonico (tableTokens.badge + tone), sem icone, com o MESMO label
-    // curto do detalhe (STATUS_BADGE_LABEL) — resumo e detalhe nao divergem
-    // ("So BITFIN", nao "So em BITFIN").
+    // Badge canonico (STATUS_META.tone ja e o tableTokens.badge* completo),
+    // sem icone, com o MESMO label curto do detalhe (STATUS_BADGE_LABEL) —
+    // resumo e detalhe nao divergem ("So BITFIN", nao "So em BITFIN").
     cell: (info) => {
       const s = info.getValue<StatusConciliacaoBoleto>()
       return (
-        <span className={cx(tableTokens.badge, STATUS_META[s].tone)}>
+        <span className={STATUS_META[s].tone}>
           {STATUS_BADGE_LABEL[s]}
         </span>
       )
@@ -132,7 +132,7 @@ export function ResumoConciliacaoTable({
 
   const renderFooter = React.useCallback(
     () => (
-      <tr className="border-t-2 border-gray-200 dark:border-gray-700">
+      <tr className="border-t-2 border-t-gray-200 dark:border-t-gray-700">
         <td className={cx("px-3 py-1.5", tableTokens.cellStrong)}>Total</td>
         <td className={cx("px-3 py-1.5 text-right font-semibold", tableTokens.cellNumber)}>
           {fmtInt.format(total.quantidade)}

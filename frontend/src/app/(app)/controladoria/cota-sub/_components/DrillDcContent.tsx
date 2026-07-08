@@ -308,7 +308,7 @@ const WOP_COLUMNS: ColumnDef<DrillDcMigracaoWopPapel, unknown>[] = [
     id: "faixa", header: "Faixa D-1", size: 90, meta: { align: "center" },
     cell: (info) => (
       <div className="text-center">
-        <span className="inline-flex items-center rounded-sm bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+        <span className={tableTokens.badgeNeutral}>
           {info.getValue<string>()}
         </span>
       </div>

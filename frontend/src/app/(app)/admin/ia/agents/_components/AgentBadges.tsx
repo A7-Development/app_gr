@@ -29,11 +29,7 @@ export function ModuleBadge({ module }: { module: string }) {
   }
   return (
     <span
-      className={cx(
-        "inline-flex items-center rounded-sm px-1.5 py-0.5 text-[11px] font-medium",
-        tone.bg,
-        tone.fg,
-      )}
+      className={cx(tableTokens.badge, tone.bg, tone.fg)}
     >
       {module}
     </span>

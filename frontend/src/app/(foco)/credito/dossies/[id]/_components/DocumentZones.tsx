@@ -43,6 +43,7 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/tremor/Button"
 import { provenanceTokens } from "@/design-system/tokens/provenance"
+import { tableTokens } from "@/design-system/tokens/table"
 import { credito, type CreditDocumentRead } from "@/lib/credito-client"
 import { cx } from "@/lib/utils"
 
@@ -908,7 +909,7 @@ function FichaRow({
         )}
       </span>
 
-      <span className="min-w-0 font-semibold text-gray-900 tabular-nums dark:text-gray-50">
+      <span className="min-w-0 font-semibold text-gray-900 tabular-nums dark:text-gray-100">
         {editing ? (
           <input
             autoFocus
@@ -950,7 +951,7 @@ function FichaRow({
 
       <span className="flex items-center justify-end gap-1 text-right text-[11px] font-medium">
         {state === "ok" ? (
-          <span className="inline-flex items-center gap-1" style={{ color: "#059669" }}>
+          <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
             <RiCheckLine className="size-3" aria-hidden />
             ok
           </span>
@@ -984,11 +985,11 @@ function FichaListBlock({ fieldKey, rows }: { fieldKey: string; rows: unknown[] 
       <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-200 dark:border-gray-800">
+            <tr className="border-b border-b-gray-200 dark:border-b-gray-800">
               {columns.map((c) => (
                 <th
                   key={c}
-                  className="px-3 py-1.5 text-left text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400 dark:text-gray-500"
+                  className={cx(tableTokens.header, "px-3 py-1.5 text-left text-gray-500 dark:text-gray-400")}
                 >
                   {humanizeKey(c)}
                 </th>
@@ -999,12 +1000,12 @@ function FichaListBlock({ fieldKey, rows }: { fieldKey: string; rows: unknown[] 
             {objects.map((row, i) => (
               <tr
                 key={i}
-                className="border-b border-gray-50 last:border-0 dark:border-gray-900/60"
+                className="border-b border-b-gray-50 last:border-0 dark:border-b-gray-900/60"
               >
                 {columns.map((c) => (
                   <td
                     key={c}
-                    className="px-3 py-1 text-[12.5px] text-gray-700 tabular-nums dark:text-gray-300"
+                    className={cx(tableTokens.cellText, "px-3 py-1 tabular-nums")}
                   >
                     {displayValue(c, row[c])}
                   </td>

@@ -54,12 +54,11 @@ function fmtDeltaPct(v: number): string {
 // ── Cells ───────────────────────────────────────────────────────────────────
 
 function DeltaPPCell({ pp }: { pp: number }) {
-  const isUp = pp >= 0
-  const colorClass = isUp
-    ? "text-emerald-600 dark:text-emerald-400"
-    : "text-red-600 dark:text-red-400"
   return (
-    <span className={cx("tabular-nums text-xs font-medium", colorClass)}>
+    <span className={cx(
+      "font-medium",
+      pp >= 0 ? tableTokens.cellNumberPositive : tableTokens.cellNumberNegative,
+    )}>
       {fmtDeltaPP(pp)}
     </span>
   )
@@ -69,12 +68,11 @@ function DeltaPctCell({ pct }: { pct: number | null }) {
   if (pct == null) {
     return <span className={cx(tableTokens.cellMuted, "tabular-nums")}>—</span>
   }
-  const isUp = pct >= 0
-  const colorClass = isUp
-    ? "text-emerald-600 dark:text-emerald-400"
-    : "text-red-600 dark:text-red-400"
   return (
-    <span className={cx("tabular-nums text-xs font-medium", colorClass)}>
+    <span className={cx(
+      "font-medium",
+      pct >= 0 ? tableTokens.cellNumberPositive : tableTokens.cellNumberNegative,
+    )}>
       {fmtDeltaPct(pct)}
     </span>
   )
@@ -89,7 +87,7 @@ function ShareCell({ share }: { share: number }) {
           style={{ width: `${Math.min(100, share)}%` }}
         />
       </div>
-      <span className="w-[36px] text-right tabular-nums text-xs text-gray-700 dark:text-gray-300">
+      <span className={cx("w-[36px] text-right", tableTokens.cellNumber)}>
         {fmtPct1(share)}
       </span>
     </div>

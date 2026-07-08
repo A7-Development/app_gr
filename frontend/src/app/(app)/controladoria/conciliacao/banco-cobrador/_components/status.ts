@@ -11,11 +11,14 @@ import {
   type RemixiconComponentType,
 } from "@remixicon/react"
 
+import { tableTokens } from "@/design-system/tokens/table"
+import { cx } from "@/lib/utils"
 import type { StatusConciliacaoBoleto } from "@/lib/api-client"
 
 export type StatusMeta = {
   label: string
-  /** Classes de bg+texto do badge (combinam com tableTokens.badge, 11px). */
+  /** Badge COMPLETO (tableTokens.badge*) — usar direto no className, sem
+   *  compor com tableTokens.badge no callsite. */
   tone: string
   /** Cor do texto/label na linha do resumo. */
   textTone: string
@@ -27,42 +30,44 @@ export type StatusMeta = {
 export const STATUS_META: Record<StatusConciliacaoBoleto, StatusMeta> = {
   conciliado: {
     label: "Conciliado",
-    tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
+    tone: tableTokens.badgeSuccess,
     textTone: "text-emerald-700 dark:text-emerald-400",
     icon: RiCheckboxCircleFill,
     iconTone: "text-emerald-500",
   },
   divergencia_valor: {
     label: "Divergência de valor",
-    tone: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400",
+    tone: tableTokens.badgeDanger,
     textTone: "text-red-700 dark:text-red-400",
     icon: RiErrorWarningFill,
     iconTone: "text-red-500",
   },
   divergencia_vencimento: {
     label: "Divergência de vencimento",
-    tone: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
+    tone: tableTokens.badgeWarning,
     textTone: "text-amber-700 dark:text-amber-400",
     icon: RiErrorWarningFill,
     iconTone: "text-amber-500",
   },
   so_em_bitfin: {
     label: "Só em BITFIN",
-    tone: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
+    tone: tableTokens.badgeNeutral,
     textTone: "text-gray-700 dark:text-gray-300",
     icon: RiCloseCircleFill,
     iconTone: "text-gray-400 dark:text-gray-500",
   },
   enviado_nao_confirmado: {
+    // MOTIVO: estado "em transito" (nem success/warning/danger/neutral) —
+    // nao ha token semantico azul; compoe tableTokens.badge + tone blue.
     label: "Enviado, aguardando confirmação",
-    tone: "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400",
+    tone: cx(tableTokens.badge, "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400"),
     textTone: "text-blue-700 dark:text-blue-400",
     icon: RiSendPlaneFill,
     iconTone: "text-blue-500",
   },
   so_em_banco: {
     label: "Só em banco",
-    tone: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
+    tone: tableTokens.badgeWarning,
     textTone: "text-amber-700 dark:text-amber-400",
     icon: RiCloseCircleFill,
     iconTone: "text-amber-500",
@@ -105,22 +110,10 @@ export function situacaoTituloCabeBaixa(s: number | null | undefined): boolean {
 // e o unico lugar que os mostra. Em cartorio/instruido = acao em curso (red);
 // sustado/retirado = pipeline interrompido (gray).
 export const PROTESTO_META: Record<string, { label: string; tone: string }> = {
-  protesto_instruido: {
-    label: "Instruído",
-    tone: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400",
-  },
-  encaminhado_cartorio: {
-    label: "Em cartório",
-    tone: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400",
-  },
-  protesto_sustado: {
-    label: "Sustado",
-    tone: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
-  },
-  retirado_cartorio: {
-    label: "Retirado",
-    tone: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
-  },
+  protesto_instruido: { label: "Instruído", tone: tableTokens.badgeDanger },
+  encaminhado_cartorio: { label: "Em cartório", tone: tableTokens.badgeDanger },
+  protesto_sustado: { label: "Sustado", tone: tableTokens.badgeNeutral },
+  retirado_cartorio: { label: "Retirado", tone: tableTokens.badgeNeutral },
 }
 
 export function protestoLabel(tipo: string | null | undefined): string {

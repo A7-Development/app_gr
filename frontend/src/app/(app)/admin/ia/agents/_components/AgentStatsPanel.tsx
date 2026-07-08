@@ -79,20 +79,20 @@ function KpiTile({
 function StatusPill({ status }: { status: string }) {
   if (status === "success") {
     return (
-      <span className="inline-flex items-center gap-1 text-[12px] text-emerald-700 dark:text-emerald-400">
+      <span className={tableTokens.badgeSuccess}>
         <RiCheckLine className="size-3.5" aria-hidden /> ok
       </span>
     )
   }
   if (status === "error") {
     return (
-      <span className="inline-flex items-center gap-1 text-[12px] text-red-600 dark:text-red-400">
+      <span className={tableTokens.badgeDanger}>
         <RiCloseLine className="size-3.5" aria-hidden /> erro
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 text-[12px] text-amber-600 dark:text-amber-400">
+    <span className={tableTokens.badgeWarning}>
       <RiErrorWarningLine className="size-3.5" aria-hidden /> {status}
     </span>
   )

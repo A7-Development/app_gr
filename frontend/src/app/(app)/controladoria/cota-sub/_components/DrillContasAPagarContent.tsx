@@ -91,9 +91,9 @@ const PAGAMENTOS_COLUMNS: ColumnDef<PagamentoRow, unknown>[] = [
     cell: (info) => (
       <div className="text-center">
         {info.getValue<boolean>() ? (
-          <span className="text-[11px] text-emerald-600 dark:text-emerald-400">sim</span>
+          <span className={tableTokens.badgeSuccess}>sim</span>
         ) : (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+          <span className={tableTokens.badgeWarning}>
             <RiErrorWarningLine className="size-3.5" aria-hidden /> não
           </span>
         )}

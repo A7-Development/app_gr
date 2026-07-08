@@ -25,6 +25,8 @@ import {
   DecompositionTable,
 } from "@/design-system/components/FinancialTable"
 import { DenseTable } from "@/design-system/components/DenseTable"
+import { ExpandableTable } from "@/design-system/components/ExpandableTable"
+import { tableTokens } from "@/design-system/tokens/table"
 import { Button } from "@/components/tremor/Button"
 import { Badge } from "@/components/tremor/Badge"
 import { Input } from "@/components/tremor/Input"
@@ -443,6 +445,42 @@ export function DesignSystemClient() {
               />
               <div className="mt-3">
                 <CopyButton text={`import { DenseTable } from "@/design-system/components"`} />
+              </div>
+            </Card>
+
+            <Card title="ExpandableTable (master-detail)">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                Membro master-detail da família canônica: mesma gramática do DataTable
+                (header hairline 28px, tokens, trilho azul), mas a linha expande para um
+                <strong> painel de detalhe livre</strong> (`renderRowDetail`).
+                <strong> Use</strong> para logs/execuções com detalhe por linha (syncs, endpoints, versões).
+                <strong> Não use</strong> para árvore multi-nível (DataTable `enableExpanding`) nem CRUD (DataTableShell).
+              </p>
+              <ExpandableTable
+                data={[
+                  { id: "sync-01", fonte: "Bitfin", status: "ok", linhas: 1240, detalhe: "12 tabelas lidas · 0 erros · 41s" },
+                  { id: "sync-02", fonte: "QiTech", status: "ok", linhas: 863, detalhe: "9 relatórios · 0 erros · 2m 04s" },
+                  { id: "sync-03", fonte: "Serasa PJ", status: "erro", linhas: 0, detalhe: "HTTP 503 no relatório Relato — retry agendado." },
+                ]}
+                getRowId={(r) => r.id}
+                columns={[
+                  { id: "fonte", header: "Fonte", cell: (r) => <span className={tableTokens.cellText}>{r.fonte}</span> },
+                  {
+                    id: "status", header: "Status",
+                    cell: (r) => (
+                      <span className={r.status === "ok" ? tableTokens.badgeSuccess : tableTokens.badgeDanger}>
+                        {r.status}
+                      </span>
+                    ),
+                  },
+                  { id: "linhas", header: "Linhas", align: "right", cell: (r) => <span className={tableTokens.cellNumber}>{r.linhas.toLocaleString("pt-BR")}</span> },
+                ]}
+                renderRowDetail={(r) => (
+                  <p className={tableTokens.cellSecondary}>{r.detalhe}</p>
+                )}
+              />
+              <div className="mt-3">
+                <CopyButton text={`import { ExpandableTable } from "@/design-system/components"`} />
               </div>
             </Card>
 
