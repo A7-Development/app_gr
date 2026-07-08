@@ -71,9 +71,9 @@ const PAGE_SIZE = 50
 
 // Labels humanas das features (fatores de explicabilidade §14.3).
 const FEATURE_LABELS: Record<string, string> = {
-  bit_pago_agencia_cliente: "Pago na agência do cedente (declarado pelo banco)",
-  bit_pago_praca_cliente: "Pago na praça do cedente (declarado pelo banco)",
-  bit_fora_praca_sacado: "Pago fora da praça do sacado (declarado pelo banco)",
+  bit_pago_agencia_cliente: "Pago na agência do cedente (classificação do ERP)",
+  bit_pago_praca_cliente: "Pago na praça do cedente (classificação do ERP)",
+  bit_fora_praca_sacado: "Pago fora da praça do sacado (classificação do ERP)",
   pago_banco_digital: "Pago em banco digital",
   match_agencia_conta_cedente: "Agência onde o cedente mantém conta",
   cidade_pgto_eq_cedente: "Pagamento na cidade do cedente",
