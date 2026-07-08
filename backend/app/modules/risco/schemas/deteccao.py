@@ -53,6 +53,30 @@ class LiquidacaoCuradoriaPage(BaseModel):
     rows: list[LiquidacaoCuradoriaRow]
 
 
+class MemoriaItem(BaseModel):
+    label: str
+    valor: str
+    destaque: bool = False
+
+
+class MemoriaSecao(BaseModel):
+    titulo: str
+    itens: list[MemoriaItem]
+
+
+class MemoriaLiquidacao(BaseModel):
+    """Memoria de calculo completa de uma liquidacao (drawer da curadoria)."""
+
+    liquidacao_id: UUID
+    titulo_numero: str | None
+    cedente_nome: str | None
+    regra_dura: bool
+    regra_dura_motivo: str | None
+    score: float | None
+    fatores: list[dict[str, Any]] | None
+    secoes: list[MemoriaSecao]
+
+
 class CuradoriaTagCreate(BaseModel):
     tag: CuradoriaTagValor
     nota: str | None = Field(default=None, max_length=512)

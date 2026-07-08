@@ -59,6 +59,7 @@ import {
   useContratosLiquidacao,
   useCuradoriaLiquidacoes,
   useDeteccaoModelos,
+  useMemoriaLiquidacao,
   usePontuarAgora,
   useTagLiquidacao,
   useTreinarModelo,
@@ -242,8 +243,10 @@ export default function CuradoriaLiquidacoesPage() {
   const [page, setPage] = React.useState(1)
   const [buscaCedente, setBuscaCedente] = React.useState("")
   const [buscaSacado, setBuscaSacado] = React.useState("")
+  const [buscaDocumento, setBuscaDocumento] = React.useState("")
   const [cedenteDebounced, setCedenteDebounced] = React.useState("")
   const [sacadoDebounced, setSacadoDebounced] = React.useState("")
+  const [documentoDebounced, setDocumentoDebounced] = React.useState("")
   const [segmento, setSegmento] = React.useState<Segmento>("todas")
   const [produto, setProduto] = React.useState<string>("todos")
   const [situacao, setSituacao] = React.useState<string>("todas")
@@ -257,8 +260,12 @@ export default function CuradoriaLiquidacoesPage() {
     return () => clearTimeout(t)
   }, [buscaSacado])
   React.useEffect(() => {
+    const t = setTimeout(() => setDocumentoDebounced(buscaDocumento), 350)
+    return () => clearTimeout(t)
+  }, [buscaDocumento])
+  React.useEffect(() => {
     setPage(1)
-  }, [cedenteDebounced, sacadoDebounced, segmento, produto, situacao])
+  }, [cedenteDebounced, sacadoDebounced, documentoDebounced, segmento, produto, situacao])
 
   const filtros = React.useMemo(
     () => ({
@@ -266,6 +273,7 @@ export default function CuradoriaLiquidacoesPage() {
       page_size: PAGE_SIZE,
       cedente: cedenteDebounced || undefined,
       sacado: sacadoDebounced || undefined,
+      documento: documentoDebounced || undefined,
       produto_sigla: produto !== "todos" ? produto : undefined,
       situacao_titulo: situacao !== "todas" ? Number(situacao) : undefined,
       sugeridos: segmento === "sugeridas" || undefined,
@@ -277,7 +285,15 @@ export default function CuradoriaLiquidacoesPage() {
             ? ("sem_tag" as const)
             : undefined,
     }),
-    [page, cedenteDebounced, sacadoDebounced, segmento, produto, situacao],
+    [
+      page,
+      cedenteDebounced,
+      sacadoDebounced,
+      documentoDebounced,
+      segmento,
+      produto,
+      situacao,
+    ],
   )
 
   const listQuery = useCuradoriaLiquidacoes(filtros)
@@ -298,6 +314,8 @@ export default function CuradoriaLiquidacoesPage() {
       selectedId ? (rows.find((r) => r.liquidacao_id === selectedId) ?? null) : null,
     [rows, selectedId],
   )
+  // Memoria de calculo completa — buscada por demanda ao abrir o drawer.
+  const memoriaQuery = useMemoriaLiquidacao(selectedId)
   const [nota, setNota] = React.useState("")
   React.useEffect(() => setNota(""), [selectedId])
 
@@ -377,19 +395,45 @@ export default function CuradoriaLiquidacoesPage() {
           </span>
         ),
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
+      col.accessor("titulo_numero", {
+        header: "Documento",
+        size: 100,
+        cell: (info) => (
+          <span className={tableTokens.cellTextMono}>
+            {info.getValue() ?? info.row.original.titulo_id}
+          </span>
+        ),
+      }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("cedente_nome", {
         header: "Cedente",
         size: 190,
-        cell: (info) => (
-          <span className={tableTokens.cellStrong}>{info.getValue() ?? "—"}</span>
-        ),
+        cell: (info) => {
+          const nome = (info.getValue() as string | null) ?? "—"
+          // Uma linha, corte limpo — nome completo no tooltip.
+          return (
+            <span
+              className={cx(tableTokens.cellStrong, "block max-w-[180px] truncate")}
+              title={nome}
+            >
+              {nome}
+            </span>
+          )
+        },
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("sacado_nome", {
         header: "Sacado",
         size: 170,
-        cell: (info) => (
-          <span className={tableTokens.cellText}>{info.getValue() ?? "—"}</span>
-        ),
+        cell: (info) => {
+          const nome = (info.getValue() as string | null) ?? "—"
+          return (
+            <span
+              className={cx(tableTokens.cellText, "block max-w-[160px] truncate")}
+              title={nome}
+            >
+              {nome}
+            </span>
+          )
+        },
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("produto_nome", {
         header: "Produto",
@@ -541,6 +585,12 @@ export default function CuradoriaLiquidacoesPage() {
             placeholder="Sacado (nome ou CNPJ)..."
             className="w-56"
           />
+          <FilterSearch
+            value={buscaDocumento}
+            onChange={(e) => setBuscaDocumento(e.target.value)}
+            placeholder="Documento / nº do título..."
+            className="w-48"
+          />
           <Select value={produto} onValueChange={setProduto}>
             <SelectTrigger className="h-[30px] w-52 text-[13px]">
               <SelectValue placeholder="Produto" />
@@ -655,74 +705,71 @@ export default function CuradoriaLiquidacoesPage() {
       >
         {selected && (
           <div className="flex flex-col gap-5 p-6">
-            <div className="flex flex-col gap-1">
-              <span className={tableTokens.header}>Evento</span>
-              <span className={tableTokens.cellSecondary}>
-                {format(parseISO(selected.data_evento), "dd/MM/yyyy")} ·{" "}
-                {selected.produto_nome ?? selected.produto_sigla ?? "—"} ·{" "}
-                {selected.valor !== null
-                  ? selected.valor.toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
-                    })
-                  : "—"}
-              </span>
-              <span className={tableTokens.cellSecondary}>
-                Sacado: {selected.sacado_nome ?? "—"}
-                {selected.sacado_documento && ` (${selected.sacado_documento})`}
-              </span>
-              <span className={tableTokens.cellSecondary}>
-                Mecânica: {selected.canal === "bancaria" ? "bancária" : "baixa manual"}
-                {selected.evidencia && ` · evidência: ${selected.evidencia}`}
-                {selected.local_pagamento && ` · local: ${selected.local_pagamento}`}
-              </span>
-              <span className={tableTokens.cellSecondary}>
-                Situação do título:{" "}
-                {selected.situacao_titulo !== null
-                  ? (SITUACAO_LABELS[selected.situacao_titulo] ??
-                    `Situação ${selected.situacao_titulo}`)
-                  : "—"}
-              </span>
-            </div>
-
+            {/* Conclusões (sinais) no topo — o resumo do porquê */}
             {selected.sinais.length > 0 && (
-              <div className="flex flex-col gap-1.5">
-                <span className={tableTokens.header}>Conclusão do sistema</span>
+              <div className="flex flex-wrap gap-1.5">
+                {selected.sinais.map((s) => (
+                  <span
+                    key={s}
+                    className={cx(
+                      tableTokens.badge,
+                      SINAIS_FORTES.has(s)
+                        ? tableTokens.badgeWarning
+                        : tableTokens.badgeNeutral,
+                    )}
+                  >
+                    {SINAL_LABELS[s] ?? s}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {selected.regra_dura && (
+              <span className={cx(tableTokens.badge, tableTokens.badgeDanger, "w-fit")}>
+                {selected.regra_dura_motivo ?? "Regra determinística disparada"}
+              </span>
+            )}
+
+            {/* Memória de cálculo — os DADOS que sustentam cada conclusão */}
+            {memoriaQuery.isLoading && (
+              <span className={tableTokens.cellMuted}>
+                Montando a memória de cálculo…
+              </span>
+            )}
+            {memoriaQuery.data?.secoes.map((secao) => (
+              <div key={secao.titulo} className="flex flex-col gap-1.5">
+                <span className={tableTokens.header}>{secao.titulo}</span>
                 <ul className="flex flex-col gap-1">
-                  {selected.sinais.map((s) => (
-                    <li key={s}>
+                  {secao.itens.map((item, i) => (
+                    <li
+                      key={`${item.label}-${i}`}
+                      className="flex items-baseline justify-between gap-4"
+                    >
+                      <span className={tableTokens.cellSecondary}>{item.label}</span>
                       <span
                         className={cx(
-                          tableTokens.badge,
-                          SINAIS_FORTES.has(s)
-                            ? tableTokens.badgeWarning
-                            : tableTokens.badgeNeutral,
+                          "text-right",
+                          item.destaque
+                            ? cx(tableTokens.cellStrong, "text-amber-700 dark:text-amber-400")
+                            : tableTokens.cellText,
                         )}
                       >
-                        {SINAL_LABELS[s] ?? s}
+                        {item.valor}
                       </span>
                     </li>
                   ))}
                 </ul>
               </div>
-            )}
+            ))}
 
-            {selected.regra_dura && (
-              <div className="flex flex-col gap-1">
-                <span className={tableTokens.header}>Regra determinística</span>
-                <span className={cx(tableTokens.badge, tableTokens.badgeDanger, "w-fit")}>
-                  {selected.regra_dura_motivo ?? "Regra dura disparada"}
-                </span>
-              </div>
-            )}
-
-            {selected.fatores && selected.fatores.length > 0 && (
+            {memoriaQuery.data?.fatores && memoriaQuery.data.fatores.length > 0 && (
               <div className="flex flex-col gap-2">
                 <span className={tableTokens.header}>
-                  Por que este risco ({Math.round((selected.score ?? 0) * 100)}%)
+                  Contribuições do modelo (
+                  {Math.round((memoriaQuery.data.score ?? 0) * 100)}%)
                 </span>
                 <ul className="flex flex-col gap-1">
-                  {selected.fatores.map((f) => (
+                  {memoriaQuery.data.fatores.map((f) => (
                     <li key={f.feature} className="flex items-baseline justify-between gap-3">
                       <span className={tableTokens.cellText}>
                         {FEATURE_LABELS[f.feature] ?? f.feature}

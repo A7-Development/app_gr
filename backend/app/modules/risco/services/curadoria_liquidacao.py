@@ -114,6 +114,7 @@ async def listar_liquidacoes(
     produto_sigla: str | None = None,
     cedente_busca: str | None = None,
     sacado_busca: str | None = None,
+    documento_busca: str | None = None,
     situacao_titulo: int | None = None,
     tag: str | None = None,  # 'fraude' | 'ok' | 'sem_tag'
     score_min: float | None = None,
@@ -162,6 +163,14 @@ async def listar_liquidacoes(
         else:
             filtros.append("AND bv.sacado_nome ILIKE :sacado_busca")
         params["sacado_busca"] = f"%{sacado_busca}%"
+    if documento_busca:
+        # Numero do documento no sistema (ex.: "4902/1") ou o id do titulo.
+        filtros.append(
+            "AND (t.numero ILIKE :documento_busca "
+            "OR CAST(t.titulo_id AS TEXT) = :documento_exato)"
+        )
+        params["documento_busca"] = f"%{documento_busca.strip()}%"
+        params["documento_exato"] = documento_busca.strip()
     if situacao_titulo is not None:
         filtros.append("AND l.situacao_titulo = :situacao_titulo")
         params["situacao_titulo"] = situacao_titulo

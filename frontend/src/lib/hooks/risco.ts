@@ -121,3 +121,12 @@ export function usePontuarAgora() {
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY_CURADORIA }),
   })
 }
+
+export function useMemoriaLiquidacao(liquidacaoId: string | null) {
+  return useQuery({
+    queryKey: [...KEY_CURADORIA, "memoria", liquidacaoId],
+    queryFn: () => riscoCuradoriaLiquidacoes.detalhe(liquidacaoId as string),
+    enabled: liquidacaoId !== null,
+    staleTime: 60 * 1000,
+  })
+}
