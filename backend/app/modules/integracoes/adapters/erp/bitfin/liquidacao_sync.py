@@ -94,18 +94,22 @@ def _map_bancaria(row: dict, tenant_id: UUID) -> dict:
 def _classificar_evidencia_manual(row: dict) -> str:
     """S3v3: declared evidence class of a manual write-off.
 
-    baixa_confirmada  boleto registrado + ocorrencia 05 (Baixa Confirmada)
-                      — o boleto foi baixado POR INSTRUCAO e o titulo
-                      liquidou por fora (padrao MFL, sinal FORTE).
-    sem_registro      titulo nunca teve boleto registrado — deposito direto
-                      plausivel (produtos de deposito em conta).
-    sem_ocorrencia    boleto registrado mas nenhuma ocorrencia — fraco
-                      (cobertura CNAB ou baixa silenciosa).
+    baixa_confirmada  o boleto teve ocorrencia 05 (Baixa Confirmada) — foi
+                      baixado POR INSTRUCAO e o titulo liquidou por fora
+                      (padrao MFL, sinal FORTE). NAO depende do flag
+                      `Registrado` atual: apos a baixa o Bitfin flipa
+                      Registrado=0 / Baixado=1 (validado em prod — a regra
+                      "registrado E 05" zerava a classe inteira).
+    sem_registro      titulo nunca entrou em cobranca bancaria (sem
+                      ProcedimentoDeCobranca) — deposito direto plausivel
+                      (produtos de deposito em conta).
+    sem_ocorrencia    entrou em cobranca mas nenhuma ocorrencia de
+                      liquidacao/baixa — fraco (cobertura CNAB ou baixa
+                      silenciosa).
     """
-    registrado = bool(row.get("registrado"))
-    if registrado and bool(row.get("teve_baixa_confirmada")):
+    if bool(row.get("teve_baixa_confirmada")):
         return EVIDENCIA_BAIXA_CONFIRMADA
-    if not registrado:
+    if not bool(row.get("tem_procedimento")):
         return EVIDENCIA_SEM_REGISTRO
     return EVIDENCIA_SEM_OCORRENCIA
 
@@ -163,6 +167,7 @@ async def sync_liquidacoes(
     endpoint_name: str | None = None,
 ) -> dict[str, Any]:
     """Full refresh dos eventos de desfecho declarado. Summary auditavel."""
+    started_at = datetime.now(UTC)
     t0 = time.monotonic()
     db_name = config.database_bitfin
 
@@ -200,6 +205,12 @@ async def sync_liquidacoes(
             db, Liquidacao, eventos, ["tenant_id", "source_id"]
         )
         summary: dict[str, Any] = {
+            # Chaves consumidas pelo EndpointSyncResult do router de endpoints.
+            "ok": True,
+            "rows_ingested": n_upserted,
+            "started_at": started_at.isoformat(),
+            "steps": [{"table": "wh_liquidacao", "rows": n_upserted}],
+            "errors": [],
             "adapter_version": ADAPTER_VERSION,
             "elapsed_seconds": round(time.monotonic() - t0, 2),
             "synced_at": datetime.now(UTC).isoformat(),
