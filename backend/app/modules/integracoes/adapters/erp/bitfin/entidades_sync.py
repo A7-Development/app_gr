@@ -421,8 +421,18 @@ async def sync_entidades(
                 "agencia_estado": (
                     str(row.get("agencia_estado") or "").strip() or None
                 ),
-                "numero_conta": row.get("numero_conta"),
-                "tipo_conta": row.get("tipo_conta"),
+                # Tipo/Numero chegam como INT do Bitfin em parte das linhas —
+                # cast defensivo (DataError em prod no 1o sync, 2026-07-08).
+                "numero_conta": (
+                    str(row["numero_conta"]).strip()
+                    if row.get("numero_conta") is not None
+                    else None
+                ),
+                "tipo_conta": (
+                    str(row["tipo_conta"]).strip()
+                    if row.get("tipo_conta") is not None
+                    else None
+                ),
                 "ativa": row.get("ativa"),
                 "escrow": row.get("escrow"),
                 "suporte_para_depositos": row.get("suporte_para_depositos"),
