@@ -13,10 +13,11 @@
 // - Sugestão do sistema (sinais, score, regra dura) é FLAG, nunca tag —
 //   a tag é sempre humana, com autor e data.
 //
-// Anatomia: canônica das listagens CRUD (Card > busca + segments + contador
-// > tabela > rodapé), com a MECÂNICA server-side por trás.
+// Anatomia: canônica das listagens CRUD via tableTokens.cardWrapper/filterBar/
+// countLabel (Card p-4 + gap > filtros + contador > tabela > TablePagination
+// sangrando ate as bordas), com a MECÂNICA server-side por trás.
 // MOTIVO: DataTableShell é client-side (~200 rows) — aqui o universo é 93k;
-// a anatomia é reproduzida manualmente para manter a identidade visual.
+// a anatomia usa os MESMOS tokens do Shell para nao divergir visualmente.
 //
 
 "use client"
@@ -573,9 +574,11 @@ export default function CuradoriaLiquidacoesPage() {
         </div>
       )}
 
-      {/* Anatomia canônica: Card > filtros + segments + contador > tabela > rodapé */}
-      <Card className="p-0">
-        <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 p-4 dark:border-gray-800">
+      {/* Anatomia canônica do Shell (tableTokens.cardWrapper): Card p-4 +
+          gap-3, tabela DENTRO do respiro — toolbar SEM divisória própria
+          (a hairline do header da tabela separa). Igual aos CRUDs. */}
+      <Card className={tableTokens.cardWrapper}>
+        <div className={tableTokens.filterBar}>
           <FilterSearch
             value={buscaCedente}
             onChange={(e) => setBuscaCedente(e.target.value)}
@@ -636,7 +639,7 @@ export default function CuradoriaLiquidacoesPage() {
               <SelectItem value="sem_tag">Sem marcação</SelectItem>
             </SelectContent>
           </Select>
-          <span className={cx(tableTokens.cellSecondary, "ml-auto tabular-nums")}>
+          <span className={tableTokens.countLabel} aria-live="polite">
             {rows.length.toLocaleString("pt-BR")} de {total.toLocaleString("pt-BR")}{" "}
             liquidações
           </span>
@@ -661,9 +664,11 @@ export default function CuradoriaLiquidacoesPage() {
           )}
         />
 
-        {/* Pager no local canonico: rodape do Card, FORA da <table> (tfoot so
-            aceita <tr> — div la dentro colapsa o layout). */}
+        {/* Pager no local canonico: rodape do Card, FORA da <table>. Sangra
+            ate as bordas (-mx-4 -mb-2) para a divisória atravessar o card
+            (handoff: "o rodapé sangra até as bordas"). */}
         <TablePagination
+          className="-mx-4 -mb-2"
           page={page}
           totalPages={totalPaginas}
           onPageChange={setPage}
