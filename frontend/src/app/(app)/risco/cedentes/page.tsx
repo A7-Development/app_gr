@@ -93,12 +93,15 @@ export default function CedentesRiscoPage() {
   )
 
   const [search, setSearch] = React.useState("")
+  // Default = recorte de trabalho (decisao Ricardo 2026-07-08): risco >= 40 E
+  // com carteira em aberto. Nao e ocultacao (§14.6): segment/chip mostram o
+  // filtro ativo e o contador "X de Y" denuncia o recorte; "Todos" a 1 clique.
   const [segment, setSegment] = React.useState<"todos" | "criticos" | "alto" | "piorando">(
-    "todos",
+    "alto",
   )
   // Eixo ortogonal aos segments: exposicao em aberto (analise direcionada =
   // "com carteira" + qualquer recorte de risco). Vazio = todos.
-  const [carteiraFilter, setCarteiraFilter] = React.useState<string[]>([])
+  const [carteiraFilter, setCarteiraFilter] = React.useState<string[]>(["com"])
 
   const setSelected = React.useCallback(
     (doc: string | null) => {
