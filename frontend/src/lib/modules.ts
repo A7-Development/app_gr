@@ -394,6 +394,11 @@ export const MODULES: ModuleDefinition[] = [
     basePath: "/risco",
     sections: [
       {
+        name: "Risco de cedentes",
+        href: "/risco/cedentes",
+        enabled: true,
+      },
+      {
         name: "Curadoria de liquidações",
         href: "/risco/curadoria-liquidacoes",
         enabled: true,

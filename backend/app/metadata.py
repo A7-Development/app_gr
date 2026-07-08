@@ -46,6 +46,8 @@ from app.modules.integracoes.models.tenant_source_config import TenantSourceConf
 
 # Modulo risco — contrato de liquidacao + espinha de deteccao (2026-07-08)
 from app.modules.risco.models import (  # noqa: F401
+    CedenteRiscoComposicao,
+    CedenteRiscoSnapshot,
     CuradoriaTag,
     DeteccaoModelo,
     DeteccaoModeloAtivo,

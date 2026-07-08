@@ -40,6 +40,7 @@ from app.modules.risco.schemas.deteccao import (
     TreinoResult,
 )
 from app.modules.risco.services import curadoria_liquidacao as svc
+from app.modules.risco.services.cedente_risco import consolidar
 from app.modules.risco.services.curadoria_memoria import montar_memoria
 from app.modules.risco.services.deteccao_scoring import pontuar
 from app.modules.risco.services.deteccao_treino import treinar
@@ -351,6 +352,10 @@ async def pontuar_agora(
             principal.tenant_id,
             modelo_nome=modelo_nome,
             triggered_by=f"user:{principal.user_id}",
+        )
+        # Painel de cedentes acompanha o scoring na mesma transacao.
+        await consolidar(
+            db, principal.tenant_id, triggered_by=f"user:{principal.user_id}"
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

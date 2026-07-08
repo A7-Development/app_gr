@@ -52,6 +52,7 @@ export function useVersoesContratoLiquidacao(sigla: string | null) {
 // ── Curadoria de liquidações + modelo de detecção ──────────────────────────
 
 import {
+  riscoCedentes,
   riscoCuradoriaLiquidacoes,
   type CuradoriaLiquidacoesFilters,
 } from "@/lib/api-client"
@@ -127,6 +128,14 @@ export function useMemoriaLiquidacao(liquidacaoId: string | null) {
     queryKey: [...KEY_CURADORIA, "memoria", liquidacaoId],
     queryFn: () => riscoCuradoriaLiquidacoes.detalhe(liquidacaoId as string),
     enabled: liquidacaoId !== null,
+    staleTime: 60 * 1000,
+  })
+}
+
+export function useCedentesRisco(tendenciaDias = 30) {
+  return useQuery({
+    queryKey: ["risco", "cedentes", tendenciaDias],
+    queryFn: () => riscoCedentes.list(tendenciaDias),
     staleTime: 60 * 1000,
   })
 }

@@ -3703,6 +3703,42 @@ export type MemoriaLiquidacao = {
   secoes: MemoriaSecao[]
 }
 
+
+/** Modulo risco — painel de risco de cedentes (indicadores compostos). */
+
+export type IndicadorCedente = {
+  indicador: string
+  subscore: number
+  valor_avaliado: number
+  valor_em_risco: number
+  n_eventos: number | null
+  n_criticos: number | null
+  n_alto_risco: number | null
+  componentes: Record<string, unknown> | null
+}
+
+export type CedenteRiscoRow = {
+  cedente_documento: string
+  cedente_nome: string | null
+  risco: number
+  tendencia: number | null
+  data_ref: string
+  valor_avaliado: number
+  valor_em_risco: number
+  n_eventos: number
+  n_criticos: number
+  n_alto_risco: number
+  indicadores: IndicadorCedente[]
+  componentes: Record<string, unknown> | null
+}
+
+export const riscoCedentes = {
+  list: (tendenciaDias = 30) =>
+    apiClient.get<CedenteRiscoRow[]>(
+      `/risco/cedentes?tendencia_dias=${tendenciaDias}`,
+    ),
+}
+
 export const riscoCuradoriaLiquidacoes = {
   list: (f: CuradoriaLiquidacoesFilters = {}) =>
     apiClient.get<LiquidacaoCuradoriaPage>(
