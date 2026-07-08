@@ -16,6 +16,7 @@ import logging
 from sqlalchemy import text
 
 from app.core.database import AsyncSessionLocal
+from app.modules.risco.services.cedente_risco import consolidar
 from app.modules.risco.services.deteccao_scoring import pontuar
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,10 @@ async def run() -> None:
                     db,
                     tenant_id,
                     triggered_by="scheduler:deteccao_scoring",
+                )
+                # Consolida o risco por cedente (painel) na mesma transacao.
+                await consolidar(
+                    db, tenant_id, triggered_by="scheduler:deteccao_scoring"
                 )
                 await db.commit()
             logger.info(

@@ -1,3 +1,7 @@
+from app.modules.risco.models.cedente_risco import (
+    CedenteRiscoComposicao,
+    CedenteRiscoSnapshot,
+)
 from app.modules.risco.models.contrato_liquidacao import (
     ExpectativaBaixaManual,
     ExpectativaBoleto,
@@ -15,6 +19,8 @@ from app.modules.risco.models.deteccao import (
 )
 
 __all__ = [
+    "CedenteRiscoComposicao",
+    "CedenteRiscoSnapshot",
     "CuradoriaTag",
     "CuradoriaTagValor",
     "DeteccaoModelo",

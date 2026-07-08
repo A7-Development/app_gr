@@ -243,10 +243,11 @@ export default function CuradoriaLiquidacoesPage() {
   const selectedId = sp.get("selected")
 
   const [page, setPage] = React.useState(1)
-  const [buscaCedente, setBuscaCedente] = React.useState("")
+  // Deep-link: /risco/cedentes envia ?cedente=<nome> para abrir ja filtrado.
+  const [buscaCedente, setBuscaCedente] = React.useState(() => sp.get("cedente") ?? "")
   const [buscaSacado, setBuscaSacado] = React.useState("")
   const [buscaDocumento, setBuscaDocumento] = React.useState("")
-  const [cedenteDebounced, setCedenteDebounced] = React.useState("")
+  const [cedenteDebounced, setCedenteDebounced] = React.useState(() => sp.get("cedente") ?? "")
   const [sacadoDebounced, setSacadoDebounced] = React.useState("")
   const [documentoDebounced, setDocumentoDebounced] = React.useState("")
   const [segmento, setSegmento] = React.useState<Segmento>("todas")
