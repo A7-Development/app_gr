@@ -347,8 +347,9 @@ async def montar_memoria(
 
     if banco:
         fonte_label = {
-            "bacen": "referência Bacen",
-            "cadastro_erp": "cadastro do ERP (agência fora da referência Bacen)",
+            "bacen": "referência Bacen (mês corrente)",
+            "bcb_historico": "série histórica BCB (agência fora do snapshot atual)",
+            "cadastro_erp": "cadastro do ERP (agência fora das fontes BCB)",
         }.get(praca.praca_fonte, "não resolvida")
         itens_praca = [
             _item("Banco pagador", f"{banco} — {praca.instituicao or 'não identificado'}"),
