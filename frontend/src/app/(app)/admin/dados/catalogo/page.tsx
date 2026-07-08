@@ -32,7 +32,7 @@ import { Checkbox } from "@/components/tremor/Checkbox"
 import { Input } from "@/components/tremor/Input"
 import { Label } from "@/components/tremor/Label"
 import { Switch } from "@/components/tremor/Switch"
-import { DataTable, DrillDownSheet, PageHeader } from "@/design-system/components"
+import { DataTable, DrillDownSheet, FilterSearch, PageHeader } from "@/design-system/components"
 import { tableTokens } from "@/design-system/tokens/table"
 import {
   dataCatalog,
@@ -187,11 +187,11 @@ export default function CatalogoPage() {
 
       {/* Filtros */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Input
+        <FilterSearch
           placeholder="Buscar dataset, código, public_code…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="h-8 max-w-xs"
+          onClear={() => setSearch("")}
         />
         <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400">
           <Checkbox checked={onlyEnabled} onCheckedChange={(v) => setOnlyEnabled(v === true)} />

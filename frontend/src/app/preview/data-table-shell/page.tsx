@@ -148,6 +148,9 @@ type Segment = "todos" | "ativos" | "suspensos" | "em_analise"
 export default function DataTableShellDemoPage() {
   const [search, setSearch] = React.useState("")
   const [segment, setSegment] = React.useState<Segment>("todos")
+  // Demo 2: filtro de status multi-select (dropdown quieto do handoff v2).
+  const [search2, setSearch2] = React.useState("")
+  const [statusSel, setStatusSel] = React.useState<string[]>([])
 
   const columns = React.useMemo<ColumnDef<CedenteRow, unknown>[]>(
     () => [
@@ -289,6 +292,38 @@ export default function DataTableShellDemoPage() {
         }}
         onRowClick={(row) => console.log("Row click:", row.id)}
       />
+
+      <div>
+        <h2 className="mb-1 text-sm font-semibold text-gray-900 dark:text-gray-100">
+          Variante · statusFilter (dropdown quieto multi-select)
+        </h2>
+        <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+          Filtro de status do handoff Tabela canônica v2: aplica no toggle (sem
+          Apply/Reset); o gatilho fechado mostra cor + contagem do filtro ativo;
+          seleção vazia = todos. Selecione 1 status (valor colorido) e depois 2+
+          (dots empilhados + contagem neutra).
+        </p>
+        <DataTableShell<CedenteRow>
+          data={SAMPLE}
+          columns={columns}
+          search={{
+            value: search2,
+            onChange: setSearch2,
+            placeholder: "Buscar por razão social ou CNPJ...",
+          }}
+          statusFilter={{
+            value: statusSel,
+            onChange: setStatusSel,
+            options: [
+              { value: "ativo",      label: "Ativo",      tone: "success", filter: (r) => r.status === "ativo" },
+              { value: "em_analise", label: "Em análise", tone: "warning", filter: (r) => r.status === "em_analise" },
+              { value: "suspenso",   label: "Suspenso",   tone: "neutral", filter: (r) => r.status === "suspenso" },
+            ],
+          }}
+          itemNoun={{ singular: "cedente", plural: "cedentes" }}
+          onRowClick={(row) => console.log("Row click:", row.id)}
+        />
+      </div>
     </div>
   )
 }

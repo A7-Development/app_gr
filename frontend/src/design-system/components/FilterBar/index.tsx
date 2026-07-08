@@ -132,6 +132,15 @@ export function FilterBar({ children, extraActions, className }: FilterBarProps)
   )
 }
 
+/**
+ * REGUA CANONICA de controle de FILTRO (decisao Ricardo 2026-07-08): todo
+ * controle de filtro do sistema — select, chip, dropdown, segment — tem a
+ * MESMA altura do filtro de texto (FilterSearch): 26px / text 13px.
+ * Aplique em SelectTrigger de filtro via `cx(filterControlClass, "w-...")`.
+ * (Acoes/CTAs de header seguem outra regua — 30/32px, §7.1.)
+ */
+export const filterControlClass = "h-[26px] py-0 px-2.5 text-[13px]"
+
 interface FilterSearchProps extends React.InputHTMLAttributes<HTMLInputElement> {
   onClear?: () => void
 }

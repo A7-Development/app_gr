@@ -9,10 +9,11 @@
 //
 // Quando usar:
 //   - Listagens admin/CRUD (~5-200 rows): Provedores, Usuarios, Etiquetas...
-//   - Tabelas com filtros simples (search global + segments single-select).
+//   - Tabelas com filtros simples (search global + segments single-select +
+//     statusFilter multi-select "dropdown quieto" do handoff v2).
 //
 // Quando NAO usar (caia de volta na <DataTable> direta + tableTokens):
-//   - Filtros complexos (range sliders, multi-select com Popover).
+//   - Filtros complexos (range sliders, multiplos eixos de multi-select).
 //   - Footer com agregacoes custom.
 //   - Tabelas hierarquicas multi-nivel pesadas (BalanceTable, etc).
 
@@ -34,6 +35,10 @@ import { SegmentSwitch } from "@/design-system/components/SegmentSwitch"
 import type { DensityMode } from "@/design-system/tokens/spacing"
 import { tableTokens } from "@/design-system/tokens/table"
 import type { Provenance } from "@/design-system/types/provenance"
+
+import { ShellStatusFilter, type ShellStatusTone } from "./ShellStatusFilter"
+
+export { ShellStatusFilter, type ShellStatusTone, type ShellStatusOption } from "./ShellStatusFilter"
 
 // ───────────────────────────────────────────────────────────────────────────
 // Configs
@@ -76,6 +81,32 @@ export type ShellPillFiltersConfig = {
   ariaLabel?: string
 }
 
+/** Uma opcao do filtro de status multi-select (dropdown quieto do handoff
+ *  Tabela canonica v2). `filter` e o predicado; `tone` pinta dot/valor/pill. */
+export type ShellStatusFilterOption<T> = {
+  value: string
+  label: string
+  tone: ShellStatusTone
+  filter: (row: T) => boolean
+}
+
+/**
+ * Filtro de status **multi-select** na toolbar ("dropdown quieto" — aplica no
+ * toggle). Selecao vazia = todos. A filtragem e INTERNA (OR entre os status
+ * selecionados, combinada com `segments` e `search`); o trigger fechado mostra
+ * cor + contagem do filtro ativo. Coexiste com `segments` — use segments para
+ * recorte single-select e statusFilter para o eixo de status multi-select.
+ */
+export type ShellStatusFilterConfig<T> = {
+  /** Rotulo no trigger. Default "Status". */
+  label?: string
+  options: ShellStatusFilterOption<T>[]
+  /** Valores selecionados (controlado). Vazio = filtro inativo. */
+  value: string[]
+  onChange: (next: string[]) => void
+  ariaLabel?: string
+}
+
 export type ShellEmptyState = {
   icon: RemixiconComponentType
   title: string
@@ -101,6 +132,9 @@ export type DataTableShellProps<T> = {
   // ── Filtros (opcionais — Shell renderiza condicionalmente) ──────────
   search?: ShellSearchConfig
   segments?: ShellSegmentsConfig<T>
+  /** Filtro de status multi-select ("dropdown quieto" do handoff v2).
+   *  Filtragem interna: OR entre selecionados, AND com segments/search. */
+  statusFilter?: ShellStatusFilterConfig<T>
   /** Modo Triagem (`queue`): filtros pill no lugar dos segments. Filtragem
    *  e do caller — passe `data` ja filtrado. */
   pillFilters?: ShellPillFiltersConfig
@@ -148,6 +182,7 @@ export function DataTableShell<T>({
   onRetry,
   search,
   segments,
+  statusFilter,
   pillFilters,
   itemNoun,
   density = "compact",
@@ -172,15 +207,36 @@ export function DataTableShell<T>({
     return data.filter(opt.filter)
   }, [data, segments])
 
+  // Status multi-select (OR entre selecionados; vazio = todos) — aplicado
+  // DEPOIS do segment e ANTES do search (que roda via globalFilter).
+  const statusFiltered = React.useMemo<T[]>(() => {
+    if (!statusFilter || statusFilter.value.length === 0) return segmentFiltered
+    const preds = statusFilter.options
+      .filter((o) => statusFilter.value.includes(o.value))
+      .map((o) => o.filter)
+    if (preds.length === 0) return segmentFiltered
+    return segmentFiltered.filter((row) => preds.some((p) => p(row)))
+  }, [segmentFiltered, statusFilter])
+
+  const statusOptionsWithCounts = React.useMemo(() => {
+    if (!statusFilter) return null
+    return statusFilter.options.map((opt) => ({
+      value: opt.value,
+      label: opt.label,
+      tone: opt.tone,
+      count: segmentFiltered.filter(opt.filter).length,
+    }))
+  }, [statusFilter, segmentFiltered])
+
   const visibleCount = React.useMemo(() => {
     const term = (search?.value ?? "").trim().toLowerCase()
-    if (!term) return segmentFiltered.length
-    return segmentFiltered.filter((row) =>
+    if (!term) return statusFiltered.length
+    return statusFiltered.filter((row) =>
       Object.values(row as Record<string, unknown>).some(
         (v) => typeof v === "string" && v.toLowerCase().includes(term),
       ),
     ).length
-  }, [segmentFiltered, search?.value])
+  }, [statusFiltered, search?.value])
 
   const segmentOptionsWithCounts = React.useMemo(() => {
     if (!segments) return null
@@ -197,7 +253,8 @@ export function DataTableShell<T>({
     if (segments && segments.options[0]) {
       segments.onChange(segments.options[0].value)
     }
-  }, [search, segments])
+    statusFilter?.onChange([])
+  }, [search, segments, statusFilter])
 
   // ── Error state externo ──────────────────────────────────────────────
   if (error && !loading) {
@@ -237,7 +294,7 @@ export function DataTableShell<T>({
     )
   }
 
-  const hasFilterBar = !!search || !!segments || !!pillFilters || !!itemNoun
+  const hasFilterBar = !!search || !!segments || !!statusFilter || !!pillFilters || !!itemNoun
 
   // Counter label (X de Y, ou X cedentes/credenciais/etc).
   const counterLabel = itemNoun
@@ -264,6 +321,16 @@ export function DataTableShell<T>({
               value={segments.value}
               onChange={segments.onChange}
               ariaLabel={segments.ariaLabel}
+            />
+          )}
+          {statusFilter && statusOptionsWithCounts && (
+            <ShellStatusFilter
+              label={statusFilter.label}
+              options={statusOptionsWithCounts}
+              value={statusFilter.value}
+              onChange={statusFilter.onChange}
+              activeCount={statusFilter.value.length > 0 ? statusFiltered.length : undefined}
+              ariaLabel={statusFilter.ariaLabel}
             />
           )}
           {/* Modo Triagem (queue): filtros pill. Filtragem e do caller. */}
@@ -321,7 +388,7 @@ export function DataTableShell<T>({
         </div>
       ) : (
         <DataTable
-          data={segmentFiltered}
+          data={statusFiltered}
           columns={columns}
           loading={loading}
           density={density}
@@ -336,8 +403,8 @@ export function DataTableShell<T>({
           expandedColumnId={expandedColumnId}
           rowClassName={rowClassName}
           initialColumnVisibility={initialColumnVisibility}
-          renderEmpty={(hasFilters) =>
-            hasFilters ? (
+          renderEmpty={(hasSearchTerm) =>
+            hasSearchTerm || (statusFilter?.value.length ?? 0) > 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {filteredEmptyText ?? "Nenhum resultado para esses filtros"}

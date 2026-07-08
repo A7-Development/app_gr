@@ -51,7 +51,7 @@ import {
   ExpandableTable,
   type ExpandableColumn,
 } from "@/design-system/components/ExpandableTable"
-import { FilterBar } from "@/design-system/components/FilterBar"
+import { FilterBar, filterControlClass } from "@/design-system/components/FilterBar"
 import { LastSyncCell } from "@/design-system/components/LastSyncCell"
 import { SegmentSwitch } from "@/design-system/components/SegmentSwitch"
 import { Badge } from "@/components/tremor/Badge"
@@ -231,7 +231,7 @@ export default function SyncPage() {
                 })
               }
             >
-              <SelectTrigger className="w-36">
+              <SelectTrigger className={cx(filterControlClass, "w-36")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

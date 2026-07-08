@@ -33,7 +33,7 @@ export {
 } from "./KpiBand"
 export {
   FilterBar, FilterSearch, FilterChip, RemovableChip,
-  MoreFiltersButton, SavedViewsDropdown,
+  MoreFiltersButton, SavedViewsDropdown, filterControlClass,
   type SavedView,
 } from "./FilterBar"
 export {
@@ -53,6 +53,11 @@ export {
   type ShellPillOption,
   type ShellPillFiltersConfig,
   type ShellEmptyState,
+  ShellStatusFilter,
+  type ShellStatusTone,
+  type ShellStatusOption,
+  type ShellStatusFilterOption,
+  type ShellStatusFilterConfig,
 } from "./DataTableShell"
 export {
   ExpandableTable,

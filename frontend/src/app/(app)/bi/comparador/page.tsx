@@ -30,6 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/tremor/Select"
+import { filterControlClass } from "@/design-system/components"
 import { biBenchmarkIndicadores } from "@/lib/api-client"
 
 import {
@@ -132,7 +133,7 @@ export default function ComparadorPage() {
               value={comp || competencias[0] || ""}
               onValueChange={(v) => void setComp(v)}
             >
-              <SelectTrigger className="h-[30px] w-32 py-1 text-[13px]">
+              <SelectTrigger className={cx(filterControlClass, "w-32")}>
                 <SelectValue placeholder="Última" />
               </SelectTrigger>
               <SelectContent>
