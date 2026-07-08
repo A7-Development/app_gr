@@ -424,15 +424,16 @@ export default function CuradoriaLiquidacoesPage() {
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("cedente_nome", {
         header: "Cedente",
-        // -20% (pedido Ricardo 2026-07-08): a tabela precisa caber sem
-        // scroll horizontal; nome completo continua no tooltip.
-        size: 208,
+        // Calibrado com o Ricardo (2026-07-08): -20% e depois -10%; Sacado
+        // com a MESMA largura. Objetivo: caber sem scroll-x; nome completo
+        // continua no tooltip.
+        size: 188,
         cell: (info) => {
           const nome = (info.getValue() as string | null) ?? "—"
           // Uma linha, corte limpo — nome completo no tooltip.
           return (
             <span
-              className={cx(tableTokens.cellStrong, "block max-w-[336px] truncate")}
+              className={cx(tableTokens.cellStrong, "block max-w-[300px] truncate")}
               title={nome}
             >
               {nome}
@@ -442,12 +443,12 @@ export default function CuradoriaLiquidacoesPage() {
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("sacado_nome", {
         header: "Sacado",
-        size: 192,
+        size: 188,
         cell: (info) => {
           const nome = (info.getValue() as string | null) ?? "—"
           return (
             <span
-              className={cx(tableTokens.cellText, "block max-w-[320px] truncate")}
+              className={cx(tableTokens.cellText, "block max-w-[300px] truncate")}
               title={nome}
             >
               {nome}
