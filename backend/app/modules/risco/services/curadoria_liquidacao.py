@@ -39,14 +39,15 @@ _MARCACAO_SQL: dict[str, str] = {
 _SINAL_SQL: dict[str, str] = {
     "regra_dura": "ds.regra_dura IS TRUE",
     "baixa_confirmada": "l.evidencia = 'baixa_confirmada'",
-    "pago_agencia_cedente": "l.pago_na_agencia_cliente IS TRUE",
     # ds.features e dict[str, float] (deteccao_features) — cast ::float seguro.
     "agencia_conta_cedente": "coalesce((ds.features->>'match_agencia_conta_cedente')::float, 0) > 0",
+    "agencia_compartilhada": "coalesce((ds.features->>'agencia_compartilhada')::float, 0) >= 1.6",
+    "agencia_multi_cedente": "coalesce((ds.features->>'agencia_compartilhada_cedentes')::float, 0) >= 1.1",
     "quebra_fingerprint": "coalesce((ds.features->>'quebra_fingerprint')::float, 0) >= 0.5",
     "boleto_nao_esperado": "coalesce((ds.features->>'boleto_nao_esperado_mas_teve')::float, 0) > 0",
     "lastro_inconsistente": "t.status = :status_lastro",
-    "fora_praca_sacado": "l.pago_fora_praca_sacado IS TRUE",
     "sem_ocorrencia": "l.evidencia = 'sem_ocorrencia'",
+    # Trilho B (pago_na_agencia_cliente / pago_fora_praca_sacado) removido.
 }
 # Faixas de risco como exibidas no ScoreBadge do frontend (regra_dura tem
 # precedencia sobre o score — as faixas de score EXCLUEM padrao critico).
@@ -279,25 +280,28 @@ def _sinais(row: dict[str, Any]) -> list[str]:
     scoring row exists. Codes are translated to pt-BR in the frontend.
     """
     s: list[str] = []
+    feats = row.get("score_features") or {}
     if row.get("regra_dura"):
         s.append("regra_dura")
     if row.get("evidencia") == "baixa_confirmada":
         s.append("baixa_confirmada")
-    if row.get("pago_na_agencia_cliente"):
-        s.append("pago_agencia_cedente")
-    feats = row.get("score_features") or {}
     if feats.get("match_agencia_conta_cedente"):
         s.append("agencia_conta_cedente")
+    # S2: agencia compartilhada (log1p — >= ~1.6 corresponde a >=5 sacados).
+    if (feats.get("agencia_compartilhada") or 0) >= 1.6:
+        s.append("agencia_compartilhada")
+    if (feats.get("agencia_compartilhada_cedentes") or 0) >= 1.1:
+        s.append("agencia_multi_cedente")
     if (feats.get("quebra_fingerprint") or 0) >= 0.5:
         s.append("quebra_fingerprint")
     if feats.get("boleto_nao_esperado_mas_teve"):
         s.append("boleto_nao_esperado")
     if row.get("candidato_lastro"):
         s.append("lastro_inconsistente")
-    if row.get("pago_fora_praca_sacado"):
-        s.append("fora_praca_sacado")
     if row.get("evidencia") == "sem_ocorrencia":
         s.append("sem_ocorrencia")
+    # Trilho B (bits de praca do ERP: pago_agencia_cliente / fora_praca_sacado)
+    # REMOVIDO dos sinais (2026-07-08) — praca agora vem so da resolucao propria.
     return s
 
 
