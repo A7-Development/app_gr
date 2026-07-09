@@ -393,20 +393,41 @@ export const MODULES: ModuleDefinition[] = [
     permission: "admin",
     basePath: "/risco",
     sections: [
+      // Macro-menu "Liquidacoes" — parent expand-only (§11.6 regra 2): clicar
+      // so abre/fecha, nao navega (href e prefixo de active-state). Agrupa o
+      // ciclo de analise de liquidacoes; abre espaco p/ futuros macro-menus
+      // do Risco (Concentracao, Inadimplencia, PDD) como irmaos.
       {
-        name: "Risco de cedentes",
-        href: "/risco/cedentes",
+        name: "Liquidações",
+        href: "#liquidacoes",
         enabled: true,
-      },
-      {
-        name: "Curadoria de liquidações",
-        href: "/risco/curadoria-liquidacoes",
-        enabled: true,
-      },
-      {
-        name: "Contratos de liquidação",
-        href: "/risco/contratos-liquidacao",
-        enabled: true,
+        icon: RiHandCoinLine,
+        children: [
+          {
+            name: "Padrões de liquidação",
+            href: "/risco/padroes-liquidacao",
+            enabled: true,
+            icon: RiBarChartGroupedLine,
+          },
+          {
+            name: "Risco de cedentes",
+            href: "/risco/cedentes",
+            enabled: true,
+            icon: RiUserStarLine,
+          },
+          {
+            name: "Curadoria de liquidações",
+            href: "/risco/curadoria-liquidacoes",
+            enabled: true,
+            icon: RiCheckDoubleLine,
+          },
+          {
+            name: "Contratos de liquidação",
+            href: "/risco/contratos-liquidacao",
+            enabled: true,
+            icon: RiFileTextLine,
+          },
+        ],
       },
     ],
   },

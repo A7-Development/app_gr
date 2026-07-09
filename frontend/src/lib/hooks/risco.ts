@@ -139,3 +139,16 @@ export function useCedentesRisco(tendenciaDias = 30) {
     staleTime: 60 * 1000,
   })
 }
+
+// ── Padrões de liquidação (perfil determinístico) ──────────────────────────
+
+import { riscoPadroesLiquidacao, type JanelaLiquidacao } from "@/lib/api-client"
+
+export function usePadroesLiquidacao(janela: JanelaLiquidacao = "30d") {
+  return useQuery({
+    queryKey: ["risco", "padroes-liquidacao", janela],
+    queryFn: () => riscoPadroesLiquidacao.perfil(janela),
+    staleTime: 60 * 1000,
+    placeholderData: (prev) => prev, // troca de janela sem "flash" de loading
+  })
+}

@@ -3760,6 +3760,57 @@ export const riscoCedentes = {
     ),
 }
 
+// ── Padrões de liquidação (perfil determinístico) ──────────────────────────
+// Espelha backend/app/modules/risco/api/padroes_liquidacao.py.
+export type JanelaLiquidacao = "7d" | "15d" | "30d" | "90d" | "12m" | "tudo"
+
+export type CedentePerfilRow = {
+  cedente_documento: string
+  cedente_nome: string | null
+  n_liq: number
+  valor: number
+  ultima_liq: string | null
+  n_alerta: number
+  n_alerta_conta: number
+  n_alerta_anel: number
+  // Contagem de ocorrência por sinal (match_conta, match_cidade, fora_praca,
+  // ag_compartilhada, anel_cedentes, contrato_aberto, baixa_manual_anomala,
+  // boleto_nao_esperado, quebra_fingerprint, pago_exato_vencimento).
+  sinais: Record<string, number>
+  // Mix de canal: banco_praca / cooperativa / ip / sem_praca / nao_resolvido /
+  // baixa_manual.
+  canal: Record<string, number>
+  delta_alerta: number | null
+  delta_liq: number | null
+  cedente_novo: boolean
+}
+
+export type PadroesLiquidacaoKpis = {
+  valor_total: number
+  n_liq_total: number
+  n_cedentes: number
+  n_alerta_total: number
+  n_alerta_anterior: number | null
+  pct_banco_praca: number
+  pct_baixa_manual: number
+  pct_fora_praca: number
+}
+
+export type PadroesLiquidacaoResponse = {
+  janela: JanelaLiquidacao
+  inicio: string | null
+  fim: string
+  kpis: PadroesLiquidacaoKpis
+  cedentes: CedentePerfilRow[]
+}
+
+export const riscoPadroesLiquidacao = {
+  perfil: (janela: JanelaLiquidacao = "30d") =>
+    apiClient.get<PadroesLiquidacaoResponse>(
+      `/risco/padroes-liquidacao?janela=${janela}`,
+    ),
+}
+
 export const riscoCuradoriaLiquidacoes = {
   list: (f: CuradoriaLiquidacoesFilters = {}) =>
     apiClient.get<LiquidacaoCuradoriaPage>(
