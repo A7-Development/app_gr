@@ -282,7 +282,18 @@ def _sinais(row: dict[str, Any]) -> list[str]:
     s: list[str] = []
     feats = row.get("score_features") or {}
     if row.get("regra_dura"):
-        s.append("regra_dura")
+        # regra_dura dispara por DUAS regras distintas — o sinal precisa dizer
+        # QUAL (bug 2026-07-08: o chip afirmava "agencia do cedente" mesmo
+        # quando a agencia NAO e do cedente, so compartilhada). Deriva do
+        # motivo persistido em deteccao_score.
+        motivo = (row.get("regra_dura_motivo") or "").lower()
+        if motivo.startswith("agencia compartilhada"):
+            s.append("regra_dura_multicidade")
+        elif motivo.startswith("sacado de outra cidade"):
+            # So esta regra confirma match de conta cadastrada do cedente.
+            s.append("regra_dura_conta")
+        else:
+            s.append("regra_dura")
     if row.get("evidencia") == "baixa_confirmada":
         s.append("baixa_confirmada")
     if feats.get("match_agencia_conta_cedente"):

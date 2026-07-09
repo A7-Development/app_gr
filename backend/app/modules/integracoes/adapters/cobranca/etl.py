@@ -51,6 +51,7 @@ from app.modules.integracoes.adapters.cobranca.persist import (
 from app.modules.integracoes.adapters.cobranca.project_vigente import (
     project_tenant_vigente,
 )
+from app.modules.integracoes.adapters.cobranca.resolve_titulo import resolve_titulo_ids
 from app.modules.integracoes.adapters.cobranca.version import ADAPTER_VERSION
 from app.modules.integracoes.filesource import get_file_source
 from app.modules.integracoes.models.file_landing import FileLanding
@@ -291,6 +292,9 @@ async def run_cobranca_manual_sync(
                 arquivos_novos=coleta.arquivos_novos,
             )
             eventos = await decode_tenant_eventos(db, tenant_id=tenant_id)
+            # Resolve a identidade estavel do titulo (nao nosso_numero, que
+            # colide entre cedentes) — espinha de identidade (2026-07-09).
+            await resolve_titulo_ids(db, tenant_id)
             await _run_update(run_id, fase=SYNC_FASE_PROJECT)
             vigente = await project_tenant_vigente(db, tenant_id=tenant_id)
     except Exception as e:
