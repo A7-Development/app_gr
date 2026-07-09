@@ -72,6 +72,53 @@ class RefBacenInstituicao(Base):
     fetched_by_version: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
+class RefBacenPosto(Base):
+    """Posto de atendimento (PAB/PAE) do Bacen — a OUTRA metade da rede fisica.
+
+    Dado publico sem tenant_id (excecao §10, como as demais ref_*). Cobre
+    unidades que operam com codigo proprio de agencia no CNAB mas na taxonomia
+    Bacen sao postos (AG Empresarial/Plataforma Empresas da CEF, PABs em orgaos
+    publicos). 3o degrau da escada de praca (antes do ERP). Fonte: Olinda
+    Informes_PostosDeAtendimento (snapshot corrente; upsert-sem-delete acumula
+    a historia via primeira/ultima posicao).
+
+    Chave natural: (cnpj_base, nome_posto) — o NomePosto identifica o posto na
+    instituicao. Lookup do resolver: (banco_compe, posto_codigo) — o codigo vem
+    embutido no NomePosto ("6425 - PLATAFORMA EMPRESAS..."); postos sem codigo
+    no nome ficam com posto_codigo NULL (fora do lookup, mas na tabela p/ audit).
+    """
+
+    __tablename__ = "ref_bacen_posto"
+    __table_args__ = (
+        UniqueConstraint("cnpj_base", "nome_posto", name="uq_ref_bacen_posto"),
+        Index("ix_ref_bacen_posto_lookup", "banco_compe", "posto_codigo"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    cnpj_base: Mapped[str] = mapped_column(String(8), nullable=False)
+    # Compe do banco dono (derivado ISPB=CnpjBase); NULL se sem Compe.
+    banco_compe: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    nome_if: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    nome_posto: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Codigo do posto (5 digitos zero-padded) extraido do prefixo do NomePosto.
+    posto_codigo: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    tipo_posto: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    endereco: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    bairro: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cep: Mapped[str | None] = mapped_column(String(9), nullable=True)
+    municipio: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    municipio_ibge: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    uf: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    # Historia acumulada (upsert-sem-delete): 1a e ultima posicao vista.
+    primeira_posicao: Mapped[date | None] = mapped_column(Date, nullable=True)
+    ultima_posicao: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    fetched_by_version: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
 class RefBacenAgencia(Base):
     """Agencia bancaria com praca (municipio/UF), chaveada por (banco, agencia)
     no formato do CNAB (agencia com 5 digitos, zeros a esquerda)."""

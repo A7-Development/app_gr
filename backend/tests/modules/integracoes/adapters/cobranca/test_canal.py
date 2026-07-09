@@ -20,6 +20,7 @@ from app.modules.integracoes.adapters.cobranca.canal import (
 )
 from app.modules.integracoes.adapters.data.bacen.etl import (
     _pad_agencia,
+    extrair_posto_codigo,
     inferir_segmento,
 )
 
@@ -121,3 +122,63 @@ def test_pad_agencia() -> None:
     assert _pad_agencia("0") is None
     assert _pad_agencia("") is None
     assert _pad_agencia(None) is None
+
+
+def _resolver_com_postos() -> RefBacenResolver:
+    """Resolver com CEF (104) e um posto codificado — sem agencia Olinda p/ ela."""
+    instituicoes = {
+        i.codigo_compe: i
+        for i in [
+            _inst("104", "CAIXA ECONOMICA FEDERAL", "Caixa Economica Federal"),
+            _inst("237", "BCO BRADESCO S.A.", "Banco Bradesco S.A."),
+        ]
+    }
+    agencias = {
+        (a.banco_compe, a.agencia_codigo): a
+        for a in [_ag("237", "03372", "SOROCABA", "SP", 3552205)]
+    }
+    # (banco, agencia) -> (municipio, uf, tipo_posto)
+    postos = {
+        ("104", "06425"): ("PIRACICABA", "SP", "AG EMPRESARIAL"),
+        # tambem existe como agencia historica BCB -> BCB deve vencer o posto:
+        ("237", "09090"): ("CAMPINAS", "SP", "PAB"),
+    }
+    bcb = {("237", "09090"): ("SANTOS", "SP")}
+    return RefBacenResolver(instituicoes, agencias, {}, bcb, postos)
+
+
+def test_posto_resolve_praca_quando_agencia_e_bcb_falham() -> None:
+    # CEF 6425: nao esta no Informes_Agencias nem na serie BCB, mas e um posto
+    # (AG Empresarial) — hoje cairia em banco_sem_praca; agora resolve.
+    p = _resolver_com_postos().resolver("104", "6425")
+    assert p.canal == CANAL_BANCO_PRACA
+    assert (p.municipio, p.uf) == ("PIRACICABA", "SP")
+    assert p.praca_resolvida is True
+    assert p.praca_fonte == "bcb_posto"
+    assert p.tipo_posto == "AG EMPRESARIAL"
+
+
+def test_bcb_historico_vence_posto_na_escada() -> None:
+    # Mesma chave em BCB e em posto: o degrau BCB (2o) vem antes do posto (3o).
+    p = _resolver_com_postos().resolver("237", "9090")
+    assert p.canal == CANAL_BANCO_PRACA
+    assert p.municipio == "SANTOS"  # BCB, nao CAMPINAS (posto)
+    assert p.praca_fonte == "bcb_historico"
+    assert p.tipo_posto is None
+
+
+def test_posto_sem_codigo_nao_resolve() -> None:
+    # Banco sem posto codificado p/ a agencia -> permanece banco_sem_praca.
+    p = _resolver_com_postos().resolver("104", "99999")
+    assert p.canal == CANAL_BANCO_SEM_PRACA
+    assert p.praca_resolvida is False
+
+
+def test_extrair_posto_codigo() -> None:
+    assert extrair_posto_codigo("6425 - PLATAFORMA EMPRESAS PIRACICABA") == "06425"
+    assert extrair_posto_codigo("05501 - AG EMPRESARIAL MOGI") == "05501"
+    assert extrair_posto_codigo("123 – POSTO COM TRAVESSAO UNICODE") == "00123"  # noqa: RUF001
+    assert extrair_posto_codigo("PAB DETRAN SP") is None
+    assert extrair_posto_codigo("0 - POSTO CODIGO ZERO") is None
+    assert extrair_posto_codigo("") is None
+    assert extrair_posto_codigo(None) is None

@@ -114,3 +114,38 @@ async def fetch_sedes_segmentos() -> list[dict[str, Any]]:
                 )
             logger.info("bacen sedes %s: total %d", recurso, len(out))
     return out
+
+
+OLINDA_POSTOS_URL = (
+    "https://olinda.bcb.gov.br/olinda/servico/Informes_PostosDeAtendimento"
+    "/versao/v1/odata/PostosAtendimento"
+)
+
+
+async def fetch_postos() -> list[dict[str, Any]]:
+    """Baixa todos os postos de atendimento (OData, paginado).
+
+    A OUTRA metade da rede fisica bancaria (PAB/PAE), ausente do dataset de
+    agencias. Campos: Cnpj (base 8), NomeIf, Segmento, NomePosto, TipoPosto,
+    Endereco/Bairro/Cep, MunicipioIbge, Municipio, UF, Posicao.
+    """
+    out: list[dict[str, Any]] = []
+    async with httpx.AsyncClient(timeout=_TIMEOUT_S) as client:
+        skip = 0
+        while True:
+            resp = await client.get(
+                OLINDA_POSTOS_URL,
+                params={
+                    "$format": "json",
+                    "$top": str(_PAGE_SIZE),
+                    "$skip": str(skip),
+                },
+            )
+            resp.raise_for_status()
+            page = resp.json().get("value", [])
+            out.extend(page)
+            logger.info("bacen postos: +%d (total %d)", len(page), len(out))
+            if len(page) < _PAGE_SIZE:
+                break
+            skip += _PAGE_SIZE
+    return out
