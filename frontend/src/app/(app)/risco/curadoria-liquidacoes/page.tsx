@@ -28,6 +28,8 @@ import {
   RiAlarmWarningLine,
   RiCheckLine,
   RiEraserLine,
+  RiErrorWarningLine,
+  RiFlagLine,
   RiFlaskLine,
   RiSearchEyeLine,
 } from "@remixicon/react"
@@ -124,7 +126,8 @@ const SINAL_CURTO: Record<string, string> = {
   fora_praca_sacado: "fora da praça",
   sem_ocorrencia: "sem ocorrência",
 }
-// Sinais fortes ganham pill amber; informativos ficam neutros.
+// Sinais fortes ganham tint amber no DRAWER (resumo do "porquê"). Na TABELA,
+// Sinal é neutro por política (cor-como-sinal: o vermelho fica no Risco).
 const SINAIS_FORTES = new Set([
   "regra_dura_conta",
   "regra_dura_multicidade",
@@ -134,7 +137,6 @@ const SINAIS_FORTES = new Set([
   "agencia_multi_cedente",
   "lastro_inconsistente",
 ])
-
 // Dicionário Titulo.Situacao (mapeado 2026-07-08).
 const SITUACAO_LABELS: Record<number, string> = {
   0: "Em aberto",
@@ -180,13 +182,17 @@ const MARCACAO_OPTIONS: MultiOption[] = [
   { value: "sem_tag", label: "Sem marcação" },
 ]
 
+// "Cor como sinal, não decoração" (handoff Liquidações 2026-07-09): pill
+// vermelho tintado SÓ quando é alerta real; risco médio = amber; baixo =
+// texto de apoio sem pill — o olho vai direto ao que importa.
 function ScoreBadge({ row }: { row: LiquidacaoCuradoriaRow }) {
   if (row.regra_dura) {
     return (
       <span
-        className={cx(tableTokens.badge, tableTokens.badgeDanger)}
+        className={tableTokens.pillDanger}
         title={row.regra_dura_motivo ?? "Padrão inequívoco de auto-liquidação"}
       >
+        <RiErrorWarningLine className="size-3" aria-hidden />
         Padrão crítico
       </span>
     )
@@ -195,58 +201,64 @@ function ScoreBadge({ row }: { row: LiquidacaoCuradoriaRow }) {
     return <span className={tableTokens.cellMuted}>—</span>
   }
   const pct = Math.round(row.score * 100)
-  const classe =
-    row.score >= 0.7
-      ? tableTokens.badgeDanger
-      : row.score >= 0.4
-        ? tableTokens.badgeWarning
-        : tableTokens.badgeNeutral
-  return <span className={cx(tableTokens.badge, classe)}>{pct}%</span>
+  if (row.score >= 0.7) {
+    return (
+      <span className={tableTokens.pillDanger}>
+        <RiErrorWarningLine className="size-3" aria-hidden />
+        {pct}%
+      </span>
+    )
+  }
+  if (row.score >= 0.4) {
+    return <span className={tableTokens.pillWarning}>{pct}%</span>
+  }
+  return <span className={cx(tableTokens.cellSecondary, "tabular-nums")}>{pct}%</span>
 }
 
+// Sinal é informação, não alerta: texto neutro + contador "+N" (o vermelho
+// fica reservado ao Risco/Marcação). Tooltip carrega a conclusão completa.
 function SinaisCell({ sinais }: { sinais: string[] }) {
   if (sinais.length === 0) {
-    return <span className={tableTokens.cellMuted}>sem sinal</span>
+    return <span className={tableTokens.cellMuted}>—</span>
   }
   const [primeiro, ...resto] = sinais
   return (
-    <div className="flex items-center gap-1">
-      <span
-        className={cx(
-          tableTokens.badge,
-          SINAIS_FORTES.has(primeiro)
-            ? tableTokens.badgeWarning
-            : tableTokens.badgeNeutral,
-        )}
-        title={SINAL_LABELS[primeiro] ?? primeiro}
-      >
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <span className={tableTokens.cellText} title={SINAL_LABELS[primeiro] ?? primeiro}>
         {SINAL_CURTO[primeiro] ?? primeiro}
       </span>
       {resto.length > 0 && (
         <span
-          className={tableTokens.cellSecondary}
+          className={tableTokens.chipCount}
           title={resto.map((s) => SINAL_LABELS[s] ?? s).join(" · ")}
         >
           +{resto.length}
         </span>
       )}
-    </div>
+    </span>
   )
+}
+
+// Status = dot + texto (sem pill): a cor do dot é o sinal. Verde = liquidação
+// normal; amber = saiu da carteira fora do fluxo (baixado); vermelho = perda.
+// Recomprado (5) / Recuperação (7) caem no default neutro — não são alerta.
+const SITUACAO_DOT: Record<number, string> = {
+  1: "bg-emerald-600", // Liquidação Normal
+  2: "bg-emerald-600", // Liquidação em Cartório
+  3: "bg-amber-500", // Baixado
+  9: "bg-red-500", // Perda
 }
 
 function SituacaoCell({ situacao }: { situacao: number | null }) {
   if (situacao === null) return <span className={tableTokens.cellMuted}>—</span>
   const label = SITUACAO_LABELS[situacao] ?? `Situação ${situacao}`
-  // Baixado/Perda merecem o olho: título saiu da carteira fora do fluxo normal.
-  const destaque = situacao === 3 || situacao === 9
   return (
-    <span
-      className={cx(
-        tableTokens.badge,
-        destaque ? tableTokens.badgeWarning : tableTokens.badgeNeutral,
-      )}
-    >
-      {label}
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <span
+        className={cx("size-1.5 rounded-full", SITUACAO_DOT[situacao] ?? "bg-gray-300")}
+        aria-hidden
+      />
+      <span className={tableTokens.cellText}>{label}</span>
     </span>
   )
 }
@@ -258,16 +270,14 @@ function TagBadge({ row }: { row: LiquidacaoCuradoriaRow }) {
   const fraude = row.tag_vigente === "FRAUDE"
   return (
     <span
-      className={cx(
-        tableTokens.badge,
-        fraude ? tableTokens.badgeDanger : tableTokens.badgeSuccess,
-      )}
+      className={fraude ? tableTokens.pillDanger : tableTokens.pillSuccess}
       title={
         row.tag_autor
           ? `${row.tag_autor} · ${row.tag_em ? format(parseISO(row.tag_em), "dd/MM/yyyy HH:mm") : ""}`
           : undefined
       }
     >
+      {fraude && <RiFlagLine className="size-3" aria-hidden />}
       {fraude ? "Fraude" : "OK"}
     </span>
   )
@@ -463,28 +473,13 @@ export default function CuradoriaLiquidacoesPage() {
 
   const columns = React.useMemo<ColumnDef<LiquidacaoCuradoriaRow, unknown>[]>(
     () => [
+      // ORDEM POR INTENÇÃO DE LEITURA (handoff Liquidações 2026-07-09):
+      // identifica (Cedente·Sacado) → quantifica (Doc·Data·Produto·Valor)
+      // → avalia (Situação·Sinal·Risco·Marcação, junto das ações).
       // LARGURAS: layout fixed — `size` e largura REAL (inclui px-3 da
       // cell); Cedente/Sacado NAO declaram size e dividem o restante em
       // partes IGUAIS. Acima de tableMinWidth a tabela nunca excede o
       // container (sem scroll-x); abaixo, rola horizontalmente (canonico).
-      col.accessor("data_evento", {
-        header: "Data",
-        size: 88,
-        cell: (info) => (
-          <span className={tableTokens.cellSecondary}>
-            {format(parseISO(info.getValue() as string), "dd/MM/yyyy")}
-          </span>
-        ),
-      }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
-      col.accessor("titulo_numero", {
-        header: "Documento",
-        size: 100,
-        cell: (info) => (
-          <span className={tableTokens.cellTextMono}>
-            {info.getValue() ?? info.row.original.titulo_id}
-          </span>
-        ),
-      }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("cedente_nome", {
         header: "Cedente",
         // SEM size: no layout fixed, Cedente e Sacado dividem o espaco
@@ -516,6 +511,24 @@ export default function CuradoriaLiquidacoesPage() {
           )
         },
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
+      col.accessor("titulo_numero", {
+        header: () => <span title="Documento do título">Doc.</span>,
+        size: 92,
+        cell: (info) => (
+          <span className={tableTokens.cellTextMono}>
+            {info.getValue() ?? info.row.original.titulo_id}
+          </span>
+        ),
+      }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
+      col.accessor("data_evento", {
+        header: "Data",
+        size: 88,
+        cell: (info) => (
+          <span className={cx(tableTokens.cellSecondary, "tabular-nums")}>
+            {format(parseISO(info.getValue() as string), "dd/MM/yyyy")}
+          </span>
+        ),
+      }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("produto_nome", {
         header: "Produto",
         // 160px cobre o maior nome de produto atual sem truncar (regra:
@@ -538,7 +551,12 @@ export default function CuradoriaLiquidacoesPage() {
         cell: (info) => {
           const v = info.getValue() as number | null
           return v !== null ? (
-            <span className={cx(tableTokens.cellNumber, "block whitespace-nowrap text-right")}>
+            <span
+              className={cx(
+                tableTokens.cellNumber,
+                "block whitespace-nowrap text-right font-medium",
+              )}
+            >
               {v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
             </span>
           ) : (
@@ -548,8 +566,8 @@ export default function CuradoriaLiquidacoesPage() {
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.display({
         id: "situacao",
-        header: "Situação do título",
-        size: 150,
+        header: "Situação",
+        size: 140,
         cell: ({ row }) => <SituacaoCell situacao={row.original.situacao_titulo} />,
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.display({
@@ -568,18 +586,20 @@ export default function CuradoriaLiquidacoesPage() {
       col.display({
         id: "tag",
         header: "Marcação",
-        size: 80,
+        size: 92,
         cell: ({ row }) => <TagBadge row={row.original} />,
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.display({
         id: "actions",
         header: "",
         size: 88,
+        // Ações em repouso ficam apagadas (gray-300) e ganham a cor
+        // semântica no hover — a linha lê limpa, a ação aparece ao mirar.
         cell: ({ row }) => (
           <div className="flex justify-end gap-1">
             <Button
               variant="ghost"
-              className="size-7 p-0 text-red-600 dark:text-red-400"
+              className="size-7 p-0 text-gray-300 hover:text-red-600 dark:text-gray-600 dark:hover:text-red-400"
               aria-label="Marcar como fraude"
               title="Marcar como fraude"
               isLoading={tagMut.isPending}
@@ -592,7 +612,7 @@ export default function CuradoriaLiquidacoesPage() {
             </Button>
             <Button
               variant="ghost"
-              className="size-7 p-0"
+              className="size-7 p-0 text-gray-300 hover:text-emerald-600 dark:text-gray-600 dark:hover:text-emerald-400"
               aria-label="Marcar como OK"
               title="Marcar como OK"
               isLoading={tagMut.isPending}
@@ -607,7 +627,7 @@ export default function CuradoriaLiquidacoesPage() {
             {row.original.tag_vigente && (
               <Button
                 variant="ghost"
-                className="size-7 p-0"
+                className="size-7 p-0 text-gray-300 hover:text-gray-900 dark:text-gray-600 dark:hover:text-gray-100"
                 aria-label="Remover marcação"
                 title="Remover marcação (voltar a neutro)"
                 isLoading={tagMut.isPending}

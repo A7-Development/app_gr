@@ -168,6 +168,20 @@ import { DashboardOperacional, ListagemComDrilldown } from "@/design-system/patt
 
 Tipografia do header e igual nos dois modos (`tableTokens.header`: 10px/600/uppercase/tracking 0.05em/gray-500). Densidade de linha de DADOS nao muda (default 32px). Tabela operacional nova que recrie `<thead>` proprio segue a anatomia de bloco — nao reintroduzir header branco/hairline em modo operacional.
 
+**Cor de texto de celula — 3 niveis (canonico 2026-07-09):** cada tom tem UM papel; `gray-700` esta FORA do vocabulario de texto.
+
+| Papel | Token | Uso |
+|---|---|---|
+| **Conteudo** | `cellText` / `cellStrong` / `cellNumber` (gray-900) | o que o usuario veio ler: nomes, produto, valor, status |
+| **Apoio** | `cellSecondary` / `cellTextMono` / `header` (gray-500) | metadados e identificadores: data, doc/CNPJ mono, unidades |
+| **Ausencia** | `cellMuted` (gray-400) | "—", placeholder, pendente |
+
+Enfase = PESO (semibold em `cellStrong`), nao cor. Regra: **cor = papel · peso = importancia**.
+
+**Cor como sinal (canonico 2026-07-09):** vermelho tintado (`pillDanger`, rounded-full) so em alerta real (Risco alto/critico, Fraude); `pillWarning` = risco medio; `pillSuccess` = OK homologado; status neutro = dot semantico + texto; sinal informativo = texto + `chipCount` "+N". O olho vai direto ao que e risco de fato.
+
+**Ordem de colunas por intencao (canonico 2026-07-09) — identifica -> quantifica -> avalia:** entidades ancoram e vem primeiro (Cedente·Sacado), depois fatos (Doc·Data·Produto·Valor), depois avaliacao (Situacao·Sinal·Risco·Marcacao) junto das acoes a direita.
+
 ### Filtros
 
 | Caso | Use |
