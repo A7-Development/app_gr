@@ -10,14 +10,28 @@
 //   - Badges dentro de celulas: 11px
 //   - Header: 10px uppercase eyebrow (preserva assinatura visual Strata)
 //   - Cor primaria dark: gray-100 (nao gray-50, mais coerente com o app)
+//
+// POLITICA DE COR DE TEXTO — 3 niveis (canonico 2026-07-09, handoff
+// Liquidacoes): cada tom tem UM papel; gray-700 esta FORA do vocabulario
+// de texto de tabela (era ambiguo com o 900).
+//   gray-900 (cellText/cellStrong/cellNumber) = CONTEUDO — o que o usuario
+//       veio ler (nomes, produto, valor, status).
+//   gray-500 (cellSecondary/cellTextMono/header) = APOIO — metadados e
+//       identificadores tecnicos (data, doc/CNPJ mono, unidades, header).
+//   gray-400 (cellMuted) = AUSENCIA — "—", placeholder, pendente.
+// Enfase NAO e cor, e PESO: semibold marca a ancora da linha (cellStrong).
+// Regra final: cor = papel · peso = importancia.
 
 export const tableTokens = {
   // ── Texto de celula (use 1 destes em todo cell custom) ────────────────
   /** Texto principal sans, peso normal — 90% das celulas. */
   cellText: "text-xs text-gray-900 dark:text-gray-100",
 
-  /** Identificador estrutural mono (ID, alias, CNPJ, codigo). */
-  cellTextMono: "font-mono text-xs text-gray-900 dark:text-gray-100",
+  /** Identificador estrutural mono (ID, alias, CNPJ, codigo) — papel de
+   *  APOIO (gray-500, politica de 3 cores 2026-07-09): o usuario nao "le"
+   *  o identificador, ele o confere. */
+  cellTextMono:
+    "font-mono tabular-nums text-xs text-gray-500 dark:text-gray-400",
 
   /** Metadado (data relativa, contagem, descricao secundaria). */
   cellSecondary: "text-xs text-gray-500 dark:text-gray-400",
@@ -69,6 +83,27 @@ export const tableTokens = {
   /** Status neutro — "Inativo", "Rascunho", "Arquivado". */
   badgeNeutral:
     "inline-flex items-center gap-1 whitespace-nowrap rounded-sm px-1.5 py-0.5 text-[11px] font-medium bg-gray-100 text-gray-600 dark:bg-gray-500/10 dark:text-gray-400",
+
+  // ── Pills de ALERTA (handoff Liquidacoes 2026-07-09) ─────────────────
+  // "Cor como sinal, nao decoracao": pill rounded-full com tint 10% da cor,
+  // reservada a avaliacao REAL (Risco, Marcacao de fraude). Status neutro
+  // usa dot + texto; sinal informativo usa texto + chipCount.
+  /** Alerta real — Risco alto/critico, marcacao Fraude. */
+  pillDanger:
+    "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-px text-[11px] font-medium bg-red-600/10 text-red-600 dark:bg-red-500/10 dark:text-red-400",
+
+  /** Atencao — risco medio. */
+  pillWarning:
+    "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-px text-[11px] font-medium bg-amber-500/10 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
+
+  /** Confirmacao — marcacao OK homologada. */
+  pillSuccess:
+    "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-px text-[11px] font-medium bg-emerald-600/10 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300",
+
+  /** Chip contador "+N" (rounded-full, apoio) — acompanha um texto de
+   *  celula quando ha itens alem do primeiro (ex.: coluna Sinal). */
+  chipCount:
+    "inline-flex h-4 min-w-5 items-center justify-center rounded-full bg-gray-100 px-1 text-[10px] font-bold tabular-nums text-gray-500 dark:bg-gray-800 dark:text-gray-400",
 
   // ── Header (`<th>`) ──────────────────────────────────────────────────
   /** Estilo eyebrow do header — assinatura visual Strata.

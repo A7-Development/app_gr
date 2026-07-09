@@ -509,7 +509,10 @@ export function DataTable<TData>({
                           "text-[10px] font-semibold uppercase tracking-[0.05em]",
                           "text-gray-500 dark:text-gray-400 whitespace-nowrap select-none",
                           align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left",
-                          header.column.getCanSort() && "cursor-pointer hover:text-gray-700 dark:hover:text-gray-300",
+                          // Politica de 3 cores (2026-07-09): gray-700 saiu do
+                          // vocabulario — hover e coluna ordenada vao a gray-900.
+                          header.column.getCanSort() && "cursor-pointer hover:text-gray-900 dark:hover:text-gray-100",
+                          header.column.getIsSorted() && "text-gray-900 dark:text-gray-100",
                         )}
                         onClick={header.column.getToggleSortingHandler()}
                       >
