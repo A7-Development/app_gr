@@ -100,6 +100,11 @@ class BoletoEvento(Base):
     # Identidade do boleto no banco (chave do fold) + cruzamento com carteira.
     nosso_numero: Mapped[str] = mapped_column(String(50), nullable=False)
     numero_documento: Mapped[str] = mapped_column(String(50), nullable=False)
+    # Identidade resolvida do titulo (Bitfin TituloId, via wh_titulo). O
+    # nosso_numero COLIDE entre cedentes (decisao Ricardo 2026-07-09: usar
+    # ID unico); resolvido por numero_documento -> titulo, desempate por
+    # valor. Espinha de identidade — join limpo evento->titulo->cedente.
+    titulo_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Sacado (confirmacao do vinculo).
     sacado_documento: Mapped[str | None] = mapped_column(String(20), nullable=True)

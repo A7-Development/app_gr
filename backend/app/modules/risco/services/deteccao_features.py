@@ -175,7 +175,7 @@ SELECT
     ca.baixa_manual     AS contrato_baixa_manual,
     ev.banco_pagador,
     ev.agencia_pagadora,
-    ev.sacado_documento
+    sac.documento       AS sacado_documento
 FROM wh_liquidacao l
 JOIN wh_titulo t
     ON t.titulo_id = l.titulo_id AND t.tenant_id = l.tenant_id
@@ -184,53 +184,55 @@ LEFT JOIN wh_operacao o
 LEFT JOIN contrato_ativo ca
     ON ca.tenant_id = l.tenant_id
    AND ca.produto_sigla = split_part(o.modalidade, '-', 1)
+-- Praca do proprio evento desta liquidacao (identidade estavel titulo_id,
+-- NAO nosso_numero — que colide entre cedentes). Desempate por valor do
+-- evento mais proximo do valor liquidado (§ fix 2026-07-09).
 LEFT JOIN LATERAL (
-    SELECT be.banco_pagador, be.agencia_pagadora, bv.sacado_documento
-    FROM wh_boleto_vigente bv
-    LEFT JOIN wh_boleto_evento be
-        ON be.tenant_id = bv.tenant_id
-       AND be.banco_origem = bv.banco_origem
-       AND be.nosso_numero = bv.nosso_numero
-       AND be.banco_pagador IS NOT NULL
-    WHERE bv.tenant_id = l.tenant_id
-      AND bv.numero_documento = t.numero
-    ORDER BY (be.banco_pagador IS NOT NULL) DESC, be.data_ocorrencia DESC
+    SELECT be.banco_pagador, be.agencia_pagadora
+    FROM wh_boleto_evento be
+    WHERE be.tenant_id = l.tenant_id
+      AND be.titulo_id = l.titulo_id
+      AND be.banco_pagador IS NOT NULL
+    ORDER BY abs(coalesce(be.valor_pago, 0) - coalesce(l.valor_pago, 0)) ASC,
+             be.data_ocorrencia DESC
     LIMIT 1
 ) ev ON true
+-- Sacado do TITULO (autoritativo via sacado_id), nao do boleto colidido.
+LEFT JOIN wh_entidade sac
+    ON sac.tenant_id = l.tenant_id AND sac.source_id = t.sacado_id::text
 WHERE l.tenant_id = :tenant_id
   AND l.canal IN ('bancaria', 'baixa_manual')
 """)
 
-# Fingerprint do sacado: historico de pagamentos com praca por documento.
+# Fingerprint do sacado: historico de pagamentos com praca por sacado.
+# Identidade via titulo_id (nao nosso_numero, que colide); sacado do TITULO.
 _SQL_FINGERPRINT = text("""
-SELECT bv.sacado_documento, be.banco_pagador, count(*) AS n
+SELECT sac.documento AS sacado_documento, be.banco_pagador, count(*) AS n
 FROM wh_boleto_evento be
-JOIN wh_boleto_vigente bv
-    ON bv.tenant_id = be.tenant_id
-   AND bv.banco_origem = be.banco_origem
-   AND bv.nosso_numero = be.nosso_numero
+JOIN wh_titulo t ON t.tenant_id = be.tenant_id AND t.titulo_id = be.titulo_id
+JOIN wh_entidade sac
+    ON sac.tenant_id = be.tenant_id AND sac.source_id = t.sacado_id::text
 WHERE be.tenant_id = :tenant_id
   AND be.banco_pagador IS NOT NULL
   AND be.valor_pago > 0
-  AND bv.sacado_documento IS NOT NULL
-GROUP BY bv.sacado_documento, be.banco_pagador
+GROUP BY sac.documento, be.banco_pagador
 """)
 
 # S2: por (banco, agencia fisica, 12m) — sacados distintos POR CEDENTE e o
 # total de CEDENTES distintos na agencia (dimensao de rede: operador comum).
 _SQL_AGENCIA_COMPARTILHADA = text("""
 WITH base AS (
-    SELECT DISTINCT o.cedente_documento, bv.sacado_documento,
+    -- Identidade via titulo_id (nao nosso_numero, que colide); sacado e
+    -- cedente do TITULO autoritativo.
+    SELECT DISTINCT o.cedente_documento, sac.documento AS sacado_documento,
            be.banco_pagador, be.agencia_pagadora
     FROM wh_boleto_evento be
-    JOIN wh_boleto_vigente bv
-        ON bv.tenant_id = be.tenant_id
-       AND bv.banco_origem = be.banco_origem
-       AND bv.nosso_numero = be.nosso_numero
     JOIN wh_titulo t
-        ON t.tenant_id = be.tenant_id AND t.numero = bv.numero_documento
+        ON t.tenant_id = be.tenant_id AND t.titulo_id = be.titulo_id
     JOIN wh_operacao o
         ON o.operacao_id = t.operacao_id AND o.tenant_id = t.tenant_id
+    LEFT JOIN wh_entidade sac
+        ON sac.tenant_id = be.tenant_id AND sac.source_id = t.sacado_id::text
     WHERE be.tenant_id = :tenant_id
       AND be.banco_pagador IS NOT NULL
       AND be.agencia_pagadora IS NOT NULL
