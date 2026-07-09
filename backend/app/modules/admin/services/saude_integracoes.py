@@ -81,9 +81,13 @@ _MONITORADOS: tuple[Monitorado, ...] = (
         rule_or_model="cedente_risco",
     ),
     Monitorado(
-        "ref_bacen", "Referencia Bacen (agencias/IFs)", "fonte_externa", 24 * 40,
+        "ref_bacen",
+        "Referencia Bacen (agencias/IFs/segmento oficial)",
+        "fonte_externa",
+        24 * 40,
         rule_or_model="ref_bacen_adapter",
-        descricao="Cadastro publico de agencias/instituicoes (Olinda). "
+        descricao="Cadastro publico Bacen: agencias (Olinda) + instituicoes "
+        "(STR) + segmento OFICIAL (Relacao de Instituicoes em Funcionamento). "
         "Mensal — HOJE MANUAL (agendamento pendente).",
     ),
     # CVM: ETL externo (repo etl-cvm, VM 26) via postgres_fdw — nao escreve no
