@@ -462,3 +462,32 @@ async def test_isolamento_tenant_b_nao_ve_nem_tageia(
             )
         ).scalar_one()
     assert n == 0
+
+
+def test_sinais_distingue_regra_dura_conta_vs_multicidade():
+    """Bug 2026-07-08: o chip nao pode afirmar 'agencia do cedente' quando a
+    regra que disparou foi a de agencia multi-cidade compartilhada."""
+    from app.modules.risco.services.curadoria_liquidacao import _sinais
+
+    # Regra clássica (match de conta do cedente) -> agência É do cedente.
+    conta = _sinais({
+        "regra_dura": True,
+        "regra_dura_motivo": "sacado de outra cidade pagou na agencia do cedente "
+        "(banco 237 ag 03368, Campinas/SP)",
+    })
+    assert "regra_dura_conta" in conta
+    assert "regra_dura_multicidade" not in conta
+
+    # Regra nova (agência compartilhada) -> NÃO é do cedente.
+    multi = _sinais({
+        "regra_dura": True,
+        "regra_dura_motivo": "agencia compartilhada por 13 sacados de outras "
+        "cidades (banco 033 ag 01571, INDAIATUBA/SP)",
+    })
+    assert "regra_dura_multicidade" in multi
+    assert "regra_dura_conta" not in multi
+
+    # Sem motivo -> fallback genérico (nunca afirma 'do cedente').
+    generico = _sinais({"regra_dura": True, "regra_dura_motivo": None})
+    assert "regra_dura" in generico
+    assert "regra_dura_conta" not in generico

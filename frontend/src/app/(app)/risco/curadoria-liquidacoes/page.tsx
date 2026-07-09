@@ -95,7 +95,11 @@ const FEATURE_LABELS: Record<string, string> = {
 
 // Conclusões do sistema ("qual foi o bad") — códigos do backend em pt-BR.
 const SINAL_LABELS: Record<string, string> = {
-  regra_dura: "Sacado de outra cidade pagou na agência do cedente",
+  // regra_dura por match de conta cadastrada do cedente (a agência É do cedente).
+  regra_dura_conta: "Sacado de outra cidade pagou em agência do cedente",
+  // regra_dura por agência multi-cidade compartilhada (NÃO é do cedente).
+  regra_dura_multicidade: "Agência compartilhada por sacados de outras cidades",
+  regra_dura: "Padrão crítico",
   baixa_confirmada: "Boleto baixado por instrução e liquidado por fora",
   agencia_conta_cedente: "Pago em agência onde o cedente mantém conta",
   agencia_compartilhada: "Agência compartilhada por vários sacados do cedente",
@@ -107,7 +111,9 @@ const SINAL_LABELS: Record<string, string> = {
   sem_ocorrencia: "Bancarizado sem ocorrência de liquidação",
 }
 const SINAL_CURTO: Record<string, string> = {
-  regra_dura: "agência do cedente",
+  regra_dura_conta: "agência do cedente",
+  regra_dura_multicidade: "compartilhada multi-cidade",
+  regra_dura: "padrão crítico",
   baixa_confirmada: "baixa confirmada",
   agencia_conta_cedente: "conta do cedente",
   agencia_compartilhada: "agência compartilhada",
@@ -120,6 +126,8 @@ const SINAL_CURTO: Record<string, string> = {
 }
 // Sinais fortes ganham pill amber; informativos ficam neutros.
 const SINAIS_FORTES = new Set([
+  "regra_dura_conta",
+  "regra_dura_multicidade",
   "regra_dura",
   "baixa_confirmada",
   "agencia_conta_cedente",
