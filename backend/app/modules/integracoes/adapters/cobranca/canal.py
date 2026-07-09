@@ -37,6 +37,7 @@ from app.warehouse.ref_bacen import (
     SEGMENTO_IP,
     RefBacenAgencia,
     RefBacenInstituicao,
+    RefBacenPosto,
 )
 
 CANAL_BANCO_PRACA = "banco_praca"
@@ -69,9 +70,13 @@ class PracaLiquidacao:
     praca_resolvida: bool
     # Racional legivel ("agencia fora da referencia Bacen", ...) p/ auditoria.
     detalhe: str
-    # Fonte da resolucao da praca (escada): "bacen" | "cadastro_erp" |
-    # "nao_resolvida". Vira feature do modelo e aparece na memoria de calculo.
+    # Fonte da resolucao da praca (escada): "bacen" | "bcb_historico" |
+    # "bcb_posto" | "cadastro_erp" | "nao_resolvida". Vira feature do modelo e
+    # aparece na memoria de calculo.
     praca_fonte: str = "nao_resolvida"
+    # Tipo do posto Bacen (PAB/PAE/AG Empresarial/...) quando a praca veio do
+    # degrau de postos; None nos demais degraus.
+    tipo_posto: str | None = None
 
 
 def _norm_banco(banco: str | None) -> str | None:
@@ -95,14 +100,17 @@ class RefBacenResolver:
         agencias: dict[tuple[str, str], RefBacenAgencia],
         erp_agencias: dict[tuple[str, str], tuple[str, str]] | None = None,
         bcb_hist_agencias: dict[tuple[str, str], tuple[str, str]] | None = None,
+        postos: dict[tuple[str, str], tuple[str, str, str | None]] | None = None,
     ) -> None:
         self._inst = instituicoes
         self._ag = agencias
-        # Escada de resolucao (decisao Ricardo 2026-07-08):
+        # Escada de resolucao (decisao Ricardo 2026-07-08/09):
         #   1. ref_bacen_agencia (Olinda ao vivo, mes corrente)
         #   2. wh_bcb_agencia (serie historica BCB — inclui EXTINTAS)
-        #   3. cadastro ERP (fallback factual)
+        #   3. ref_bacen_posto (postos de atendimento Bacen — PAB/PAE/AG Empresarial)
+        #   4. cadastro ERP (fallback factual)
         self._bcb = bcb_hist_agencias or {}
+        self._posto = postos or {}
         self._erp = erp_agencias or {}
 
     @classmethod
@@ -133,7 +141,31 @@ class RefBacenResolver:
             a = _norm_agencia(ag_c)
             if b and a and municipio:
                 bcb[(b, a)] = (municipio, (uf or "").strip() or "")
-        # Cadastro ERP (3o degrau): dedup por (banco, agencia).
+        # Postos de atendimento Bacen (3o degrau): (banco_compe, posto_codigo)
+        # -> (municipio, uf, tipo_posto). Cobre unidades com codigo proprio no
+        # CNAB que na taxonomia Bacen sao postos (AG Empresarial/PAB da CEF).
+        posto: dict[tuple[str, str], tuple[str, str, str | None]] = {}
+        posto_rows = await db.execute(
+            select(
+                RefBacenPosto.banco_compe,
+                RefBacenPosto.posto_codigo,
+                RefBacenPosto.municipio,
+                RefBacenPosto.uf,
+                RefBacenPosto.tipo_posto,
+            ).where(
+                RefBacenPosto.banco_compe.isnot(None),
+                RefBacenPosto.posto_codigo.isnot(None),
+                RefBacenPosto.municipio.isnot(None),
+            )
+        )
+        for banco_c, codigo, municipio, uf, tipo in posto_rows:
+            b = _norm_banco(banco_c)
+            a = _norm_agencia(codigo)
+            if b and a and municipio:
+                key = (b, a)
+                if key not in posto:  # 1a ocorrencia vence (dups raros)
+                    posto[key] = (municipio, (uf or "").strip() or "", tipo)
+        # Cadastro ERP (4o degrau): dedup por (banco, agencia).
         erp: dict[tuple[str, str], tuple[str, str]] = {}
         for row in (await db.execute(select(WhBancoAgencia))).scalars():
             b = _norm_banco(row.banco_codigo)
@@ -143,7 +175,7 @@ class RefBacenResolver:
             key = (b, a)
             if key not in erp:
                 erp[key] = (row.localidade, (row.estado or "").strip() or "")
-        return cls(inst, ag, erp, bcb)
+        return cls(inst, ag, erp, bcb, posto)
 
     def resolver(self, banco: str | None, agencia: str | None) -> PracaLiquidacao:
         b = _norm_banco(banco)
@@ -195,7 +227,18 @@ class RefBacenResolver:
                     f"agencia {a} resolvida pela serie historica BCB: {bcb[0]}/{bcb[1]}",
                     praca_fonte="bcb_historico",
                 )
-            # 3o degrau: cadastro ERP (fallback factual).
+            # 3o degrau: postos de atendimento Bacen (AG Empresarial/PAB/PAE).
+            posto = self._posto.get((b, a)) if a else None
+            if posto is not None:
+                return PracaLiquidacao(
+                    CANAL_BANCO_PRACA, b, inst.nome_reduzido, inst.segmento, a,
+                    posto[0], None, posto[1] or None, True,
+                    f"agencia {a} resolvida via posto de atendimento Bacen"
+                    f" ({posto[2] or 'posto'}): {posto[0]}/{posto[1]}",
+                    praca_fonte="bcb_posto",
+                    tipo_posto=posto[2],
+                )
+            # 4o degrau: cadastro ERP (fallback factual).
             erp = self._erp.get((b, a)) if a else None
             if erp is not None:
                 return PracaLiquidacao(

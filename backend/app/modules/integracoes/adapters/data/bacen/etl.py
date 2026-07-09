@@ -20,13 +20,14 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.integracoes.adapters.data.bacen.client import (
     fetch_agencias,
     fetch_participantes_str,
+    fetch_postos,
     fetch_sedes_segmentos,
 )
 from app.modules.integracoes.adapters.data.bacen.version import ADAPTER_VERSION
@@ -41,6 +42,7 @@ from app.warehouse.ref_bacen import (
     SEGMENTO_SCD,
     RefBacenAgencia,
     RefBacenInstituicao,
+    RefBacenPosto,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,6 +101,23 @@ def _pad_agencia(v: Any) -> str | None:
     if not s or not s.isdigit() or int(s) == 0:
         return None
     return s.zfill(5)
+
+
+# Prefixo numerico do NomePosto: "6425 - PLATAFORMA EMPRESAS..." -> 06425.
+# Alguns postos nao tem codigo no nome (PABs de orgaos publicos); ficam NULL.
+_POSTO_CODIGO_RE = re.compile(r"^\s*(\d{1,5})\s*[-–]")  # noqa: RUF001 -- en dash e real no NomePosto
+
+
+def extrair_posto_codigo(nome_posto: str | None) -> str | None:
+    """Codigo do posto (5 digitos zero-padded) extraido do prefixo do NomePosto.
+
+    O CNAB entrega esse codigo no campo de agencia; o resolver casa por
+    (banco_compe, posto_codigo). Postos sem prefixo numerico retornam None.
+    """
+    m = _POSTO_CODIGO_RE.match(nome_posto or "")
+    if not m or int(m.group(1)) == 0:
+        return None
+    return m.group(1).zfill(5)
 
 
 async def sync_instituicoes(db: AsyncSession) -> dict[str, int]:
@@ -297,12 +316,103 @@ async def sync_segmento_oficial(db: AsyncSession) -> dict[str, int]:
     return {"segmento_oficial": n}
 
 
+async def sync_postos(db: AsyncSession) -> dict[str, int]:
+    """Informes_PostosDeAtendimento -> ref_bacen_posto.
+
+    A OUTRA metade da rede fisica (PAB/PAE). O banco_compe e resolvido pelo
+    ISPB(=CnpjBase) via STR -- rode `sync_instituicoes` antes. Upsert-sem-delete
+    por (cnpj_base, nome_posto): acumula historia via LEAST/GREATEST da posicao
+    (posto que sai do snapshot permanece; o acervo CNAB historico o referencia).
+    """
+    ispb_to_compe = {
+        row.ispb: row.codigo_compe
+        for row in (
+            await db.execute(
+                select(RefBacenInstituicao.ispb, RefBacenInstituicao.codigo_compe)
+            )
+        ).all()
+    }
+    rows = await fetch_postos()
+    fetched_at = datetime.now(UTC)
+    values: list[dict[str, Any]] = []
+    com_codigo = 0
+    vistos: set[tuple[str, str]] = set()
+    for r in rows:
+        cnpj_base = str(r.get("Cnpj") or "").strip().zfill(8)[-8:]
+        nome_posto = str(r.get("NomePosto") or "").strip()
+        if not cnpj_base or cnpj_base == "00000000" or not nome_posto:
+            continue
+        key = (cnpj_base, nome_posto[:255])
+        if key in vistos:
+            continue  # 1a ocorrencia vence (dups raros no snapshot)
+        vistos.add(key)
+        codigo = extrair_posto_codigo(nome_posto)
+        if codigo:
+            com_codigo += 1
+        posicao = _parse_data_br(r.get("Posicao"))
+        values.append(
+            {
+                "id": uuid4(),
+                "cnpj_base": cnpj_base,
+                "banco_compe": ispb_to_compe.get(cnpj_base),
+                "nome_if": (str(r.get("NomeIf") or "").strip()[:255] or None),
+                "nome_posto": nome_posto[:255],
+                "posto_codigo": codigo,
+                "tipo_posto": (str(r.get("TipoPosto") or "").strip()[:80] or None),
+                "endereco": (str(r.get("Endereco") or "").strip()[:255] or None),
+                "bairro": (str(r.get("Bairro") or "").strip()[:255] or None),
+                "cep": (str(r.get("Cep") or "").strip()[:9] or None),
+                "municipio": (str(r.get("Municipio") or "").strip()[:120] or None),
+                "municipio_ibge": int(r["MunicipioIbge"])
+                if str(r.get("MunicipioIbge") or "").strip().isdigit()
+                else None,
+                "uf": (str(r.get("UF") or "").strip()[:2] or None),
+                "primeira_posicao": posicao,
+                "ultima_posicao": posicao,
+                "fetched_at": fetched_at,
+                "fetched_by_version": ADAPTER_VERSION,
+            }
+        )
+    for i in range(0, len(values), _CHUNK):
+        stmt = pg_insert(RefBacenPosto).values(values[i : i + _CHUNK])
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_ref_bacen_posto",
+            set_={
+                "banco_compe": stmt.excluded.banco_compe,
+                "nome_if": stmt.excluded.nome_if,
+                "posto_codigo": stmt.excluded.posto_codigo,
+                "tipo_posto": stmt.excluded.tipo_posto,
+                "endereco": stmt.excluded.endereco,
+                "bairro": stmt.excluded.bairro,
+                "cep": stmt.excluded.cep,
+                "municipio": stmt.excluded.municipio,
+                "municipio_ibge": stmt.excluded.municipio_ibge,
+                "uf": stmt.excluded.uf,
+                # historia acumulada: mantem a 1a posicao, avanca a ultima.
+                "primeira_posicao": func.least(
+                    RefBacenPosto.primeira_posicao, stmt.excluded.primeira_posicao
+                ),
+                "ultima_posicao": func.greatest(
+                    RefBacenPosto.ultima_posicao, stmt.excluded.ultima_posicao
+                ),
+                "fetched_at": stmt.excluded.fetched_at,
+                "fetched_by_version": stmt.excluded.fetched_by_version,
+            },
+        )
+        await db.execute(stmt)
+    logger.info(
+        "ref_bacen_posto: %d upserts (com_codigo=%d)", len(values), com_codigo
+    )
+    return {"postos": len(values), "postos_com_codigo": com_codigo}
+
+
 async def sync_ref_bacen(db: AsyncSession) -> dict[str, int]:
-    """Ciclo completo: instituicoes (STR) + agencias + segmento oficial."""
+    """Ciclo completo: instituicoes (STR) + agencias + segmento oficial + postos."""
     m1 = await sync_instituicoes(db)
     m2 = await sync_agencias(db)
     m3 = await sync_segmento_oficial(db)
-    metricas = {**m1, **m2, **m3}
+    m4 = await sync_postos(db)
+    metricas = {**m1, **m2, **m3, **m4}
     # Fonte publica global (sem tenant), mas decision_log exige tenant_id:
     # atribui ao mantenedor do sistema (ou 1o tenant) so p/ proveniencia.
     tid = (
@@ -323,7 +433,7 @@ async def sync_ref_bacen(db: AsyncSession) -> dict[str, int]:
             rule_or_model="ref_bacen_adapter",
             rule_or_model_version=ADAPTER_VERSION,
             output={"ok": True, "rows": sum(v for v in metricas.values() if isinstance(v, int)), **metricas},
-            explanation="sync referencia Bacen: instituicoes + agencias + segmento oficial",
+            explanation="sync referencia Bacen: instituicoes + agencias + segmento oficial + postos",
             triggered_by="script:sync_ref_bacen",
         )
     )

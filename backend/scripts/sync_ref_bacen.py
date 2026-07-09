@@ -1,8 +1,10 @@
 """Sincroniza a referencia publica Bacen (ref_bacen_instituicao/agencia).
 
-Fontes: CSV Participantes do STR + API Olinda Informes_Agencias. Idempotente
-(upsert sem delete). Rodar mensalmente (agendamento via cron/APScheduler e
-follow-up); on-demand quando o classificador reportar nao-resolvidos novos.
+Fontes: CSV Participantes do STR + API Olinda Informes_Agencias + Relacao de
+Instituicoes em Funcionamento (segmento oficial) + Informes_PostosDeAtendimento.
+Idempotente (upsert sem delete). O agendamento e AUTOMATICO via APScheduler
+(`app/scheduler/ref_bacen_sync.py`, diario 05:30 SP) — este script permanece
+para execucao on-demand/manual (backfill, debug).
 
 Uso (de backend/):
     .venv/bin/python scripts/sync_ref_bacen.py
