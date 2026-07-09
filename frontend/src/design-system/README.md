@@ -159,6 +159,15 @@ import { DashboardOperacional, ListagemComDrilldown } from "@/design-system/patt
 | Series temporais FIDC (PL mes-a-mes) | `<DenseTable.Series>` | Austin-style transposta, density compact |
 | Tabela ad-hoc (< 10 rows, dentro de DrillDownSheet) | `<Table>` Tremor cru | DataTable e overkill |
 
+**Anatomia de header (canonico 2026-07-09) — faixa = tabela operacional · hairline = lamina de leitura:**
+
+| Modo | Componentes | Header |
+|---|---|---|
+| Operacional (Exploracao, Gestao, Triagem) | `DataTable` / `DataTableShell` / `ExpandableTable` | **Bloco de cabecalho**: faixa `bg-gray-50 dark:bg-gray-900`, fechada por `border-y` `gray-200 dark:gray-800`, linha de 30px (`h-[30px]`) |
+| Leitura (Resumo, Evolucao) | `DenseTable` / `DenseTable.Series` | **Hairline**: so `border-b gray-200`, sem faixa e sem border-top (titulo/eyebrow ja ancoram o topo) |
+
+Tipografia do header e igual nos dois modos (`tableTokens.header`: 10px/600/uppercase/tracking 0.05em/gray-500). Densidade de linha de DADOS nao muda (default 32px). Tabela operacional nova que recrie `<thead>` proprio segue a anatomia de bloco — nao reintroduzir header branco/hairline em modo operacional.
+
 ### Filtros
 
 | Caso | Use |
