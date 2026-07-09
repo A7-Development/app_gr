@@ -197,9 +197,14 @@ LEFT JOIN LATERAL (
              be.data_ocorrencia DESC
     LIMIT 1
 ) ev ON true
--- Sacado do TITULO (autoritativo via sacado_id), nao do boleto colidido.
-LEFT JOIN wh_entidade sac
-    ON sac.tenant_id = l.tenant_id AND sac.source_id = t.sacado_id::text
+-- Sacado do TITULO (autoritativo): sacado_id e ID de PAPEL (Bitfin SacadoId)
+-- — a ponte e wh_entidade_papel.source_id, NUNCA wh_entidade.source_id
+-- (que e EntidadeId; espacos de ID diferentes — bug 2026-07-09: titulo 39535
+-- resolvia Ey Espumas em vez de Mega Pack).
+LEFT JOIN wh_entidade_papel pap
+    ON pap.tenant_id = l.tenant_id AND pap.papel = 'sacado'
+   AND pap.source_id = t.sacado_id::text
+LEFT JOIN wh_entidade sac ON sac.id = pap.entidade_id
 WHERE l.tenant_id = :tenant_id
   AND l.canal IN ('bancaria', 'baixa_manual')
 """)
@@ -210,8 +215,10 @@ _SQL_FINGERPRINT = text("""
 SELECT sac.documento AS sacado_documento, be.banco_pagador, count(*) AS n
 FROM wh_boleto_evento be
 JOIN wh_titulo t ON t.tenant_id = be.tenant_id AND t.titulo_id = be.titulo_id
-JOIN wh_entidade sac
-    ON sac.tenant_id = be.tenant_id AND sac.source_id = t.sacado_id::text
+JOIN wh_entidade_papel pap
+    ON pap.tenant_id = be.tenant_id AND pap.papel = 'sacado'
+   AND pap.source_id = t.sacado_id::text
+JOIN wh_entidade sac ON sac.id = pap.entidade_id
 WHERE be.tenant_id = :tenant_id
   AND be.banco_pagador IS NOT NULL
   AND be.valor_pago > 0
@@ -231,8 +238,10 @@ WITH base AS (
         ON t.tenant_id = be.tenant_id AND t.titulo_id = be.titulo_id
     JOIN wh_operacao o
         ON o.operacao_id = t.operacao_id AND o.tenant_id = t.tenant_id
-    LEFT JOIN wh_entidade sac
-        ON sac.tenant_id = be.tenant_id AND sac.source_id = t.sacado_id::text
+    LEFT JOIN wh_entidade_papel pap
+        ON pap.tenant_id = be.tenant_id AND pap.papel = 'sacado'
+       AND pap.source_id = t.sacado_id::text
+    LEFT JOIN wh_entidade sac ON sac.id = pap.entidade_id
     WHERE be.tenant_id = :tenant_id
       AND be.banco_pagador IS NOT NULL
       AND be.agencia_pagadora IS NOT NULL

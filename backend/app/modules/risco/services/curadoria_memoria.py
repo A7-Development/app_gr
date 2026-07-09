@@ -55,10 +55,13 @@ LEFT JOIN wh_operacao o
     ON o.operacao_id = l.operacao_id AND o.tenant_id = l.tenant_id
 LEFT JOIN wh_dim_produto dp
     ON dp.tenant_id = l.tenant_id AND dp.sigla = split_part(o.modalidade, '-', 1)
--- Sacado do TITULO (autoritativo via sacado_id); boleto so como fallback —
--- numero_documento colide entre cedentes (espelha deteccao_features).
-LEFT JOIN wh_entidade sac
-    ON sac.tenant_id = l.tenant_id AND sac.source_id = t.sacado_id::text
+-- Sacado do TITULO (autoritativo); sacado_id e ID de PAPEL (Bitfin SacadoId)
+-- — ponte via wh_entidade_papel, nunca wh_entidade.source_id (EntidadeId).
+-- Boleto so como fallback (numero_documento colide entre cedentes).
+LEFT JOIN wh_entidade_papel pap
+    ON pap.tenant_id = l.tenant_id AND pap.papel = 'sacado'
+   AND pap.source_id = t.sacado_id::text
+LEFT JOIN wh_entidade sac ON sac.id = pap.entidade_id
 LEFT JOIN LATERAL (
     SELECT b.sacado_nome, b.sacado_documento
     FROM wh_boleto_vigente b
@@ -104,8 +107,10 @@ _SQL_FINGERPRINT_SACADO = text("""
 SELECT be.banco_pagador, count(*) AS n
 FROM wh_boleto_evento be
 JOIN wh_titulo t ON t.tenant_id = be.tenant_id AND t.titulo_id = be.titulo_id
-JOIN wh_entidade sac
-    ON sac.tenant_id = be.tenant_id AND sac.source_id = t.sacado_id::text
+JOIN wh_entidade_papel pap
+    ON pap.tenant_id = be.tenant_id AND pap.papel = 'sacado'
+   AND pap.source_id = t.sacado_id::text
+JOIN wh_entidade sac ON sac.id = pap.entidade_id
 WHERE be.tenant_id = :tenant_id
   AND sac.documento = :sacado_documento
   AND be.banco_pagador IS NOT NULL
@@ -124,8 +129,10 @@ FROM wh_boleto_evento be
 JOIN wh_titulo t ON t.tenant_id = be.tenant_id AND t.titulo_id = be.titulo_id
 JOIN wh_operacao o
     ON o.operacao_id = t.operacao_id AND o.tenant_id = t.tenant_id
-LEFT JOIN wh_entidade sac
-    ON sac.tenant_id = be.tenant_id AND sac.source_id = t.sacado_id::text
+LEFT JOIN wh_entidade_papel pap
+    ON pap.tenant_id = be.tenant_id AND pap.papel = 'sacado'
+   AND pap.source_id = t.sacado_id::text
+LEFT JOIN wh_entidade sac ON sac.id = pap.entidade_id
 WHERE be.tenant_id = :tenant_id
   AND lpad(be.banco_pagador, 3, '0') = :banco
   AND lpad(be.agencia_pagadora, 5, '0') = lpad(:agencia_raw, 5, '0')
