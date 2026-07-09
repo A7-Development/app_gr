@@ -148,6 +148,7 @@ export default function CedentesRiscoPage() {
           </span>
         ),
         size: 120,
+        meta: { align: "right" },
         cell: (info) => {
           const v = info.getValue() as number | null
           return v === null ? (
@@ -164,6 +165,7 @@ export default function CedentesRiscoPage() {
           </span>
         ),
         size: 120,
+        meta: { align: "right" },
         cell: (info) => (
           <span
             className={cx(
@@ -178,6 +180,7 @@ export default function CedentesRiscoPage() {
       col.accessor("valor_avaliado", {
         header: "R$ avaliado",
         size: 120,
+        meta: { align: "right" },
         cell: (info) => (
           <span className={tableTokens.cellNumberSecondary}>
             {brl(info.getValue() as number)}
