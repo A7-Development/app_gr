@@ -563,8 +563,11 @@ export function DataTable<TData>({
                       const depth = row.depth
                       const canExpand = row.getCanExpand()
                       const isExpanded = row.getIsExpanded()
+                      // `meta.align` vale para header E celula (valor monetario/
+                      // numerico = right; o header ja seguia — td acompanha).
+                      const cellAlign = (cell.column.columnDef.meta as { align?: "left" | "right" | "center" } | undefined)?.align ?? "left"
                       return (
-                        <td key={cell.id} className={cx("px-3 text-gray-900 dark:text-gray-50", tableLayout === "fixed" && "overflow-hidden")}>
+                        <td key={cell.id} className={cx("px-3 text-gray-900 dark:text-gray-50", cellAlign === "right" ? "text-right" : cellAlign === "center" && "text-center", tableLayout === "fixed" && "overflow-hidden")}>
                           {isExpandCol ? (
                             <span className="inline-flex items-center gap-1.5">
                               {/* Indent baseado em depth (16px por nivel) */}
