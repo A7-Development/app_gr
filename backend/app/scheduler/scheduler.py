@@ -12,6 +12,7 @@ from app.scheduler import (
     cobranca_landing,
     deteccao_scoring,
     fiscal_landing,
+    ref_bacen_sync,
     sync_dispatcher,
 )
 from app.scheduler.jobs import (
@@ -177,6 +178,22 @@ def start_scheduler() -> AsyncIOScheduler:
         coalesce=True,
         misfire_grace_time=3600,
     )
+    # Referencia publica Bacen (instituicoes/agencias/segmento oficial/postos).
+    # Diario as 05:30 SP — substitui o disparo manual do script. Upsert sem
+    # delete; snapshot Olinda mensal, custo diario minimo.
+    _scheduler.add_job(
+        ref_bacen_sync.run,
+        trigger=CronTrigger(
+            hour=ref_bacen_sync.DAILY_HOUR,
+            minute=ref_bacen_sync.DAILY_MINUTE,
+            timezone="America/Sao_Paulo",
+        ),
+        id="ref_bacen_sync",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
     _scheduler.start()
     logger.info(
         "scheduler started: sync_dispatcher every %s min, "
@@ -185,7 +202,8 @@ def start_scheduler() -> AsyncIOScheduler:
         "watermark_scanner daily at %02d:%02d SP, "
         "recent_complete_refresher daily at %02d:%02d SP, "
         "state_machine_tick every %s min, "
-        "state_machine_seeder daily at %02d:%02d SP",
+        "state_machine_seeder daily at %02d:%02d SP, "
+        "ref_bacen_sync daily at %02d:%02d SP",
         sync_dispatcher.INTERVAL_MINUTES,
         qitech_jobs_poll.INTERVAL_MINUTES,
         backfill_worker.INTERVAL_SECONDS,
@@ -197,6 +215,8 @@ def start_scheduler() -> AsyncIOScheduler:
         state_machine_tick.INTERVAL_MINUTES,
         state_machine_seeder.DAILY_HOUR,
         state_machine_seeder.DAILY_MINUTE,
+        ref_bacen_sync.DAILY_HOUR,
+        ref_bacen_sync.DAILY_MINUTE,
     )
     return _scheduler
 
