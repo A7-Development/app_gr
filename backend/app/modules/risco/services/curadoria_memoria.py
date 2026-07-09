@@ -45,7 +45,8 @@ SELECT
     o.cedente_nome, o.cedente_documento, o.modalidade,
     split_part(o.modalidade, '-', 1) AS produto_sigla,
     dp.nome AS produto_nome,
-    bv.sacado_nome, bv.sacado_documento,
+    coalesce(sac.nome, bv.sacado_nome) AS sacado_nome,
+    coalesce(sac.documento, bv.sacado_documento) AS sacado_documento,
     ev.banco_pagador, ev.agencia_pagadora,
     ds.score, ds.fatores, ds.regra_dura, ds.regra_dura_motivo
 FROM wh_liquidacao l
@@ -54,20 +55,28 @@ LEFT JOIN wh_operacao o
     ON o.operacao_id = l.operacao_id AND o.tenant_id = l.tenant_id
 LEFT JOIN wh_dim_produto dp
     ON dp.tenant_id = l.tenant_id AND dp.sigla = split_part(o.modalidade, '-', 1)
+-- Sacado do TITULO (autoritativo via sacado_id); boleto so como fallback —
+-- numero_documento colide entre cedentes (espelha deteccao_features).
+LEFT JOIN wh_entidade sac
+    ON sac.tenant_id = l.tenant_id AND sac.source_id = t.sacado_id::text
 LEFT JOIN LATERAL (
-    SELECT b.sacado_nome, b.sacado_documento, b.banco_origem, b.nosso_numero
+    SELECT b.sacado_nome, b.sacado_documento
     FROM wh_boleto_vigente b
     WHERE b.tenant_id = l.tenant_id AND b.numero_documento = t.numero
     LIMIT 1
 ) bv ON true
+-- Evento CNAB DESTA liquidacao: identidade por titulo_id + valor mais
+-- proximo do liquidado (fix 2026-07-09, espelha deteccao_features) — o
+-- boleto pode ter N pagamentos; "mais recente" narrava a praca de OUTRA
+-- liquidacao (caso 39535: drawer mostrava Santander/mai numa liq Sicoob/mar).
 LEFT JOIN LATERAL (
     SELECT be.banco_pagador, be.agencia_pagadora
     FROM wh_boleto_evento be
     WHERE be.tenant_id = l.tenant_id
-      AND be.banco_origem = bv.banco_origem
-      AND be.nosso_numero = bv.nosso_numero
+      AND be.titulo_id = l.titulo_id
       AND be.banco_pagador IS NOT NULL
-    ORDER BY be.data_ocorrencia DESC
+    ORDER BY abs(coalesce(be.valor_pago, 0) - coalesce(l.valor_pago, 0)) ASC,
+             be.data_ocorrencia DESC
     LIMIT 1
 ) ev ON true
 LEFT JOIN deteccao_score ds
@@ -89,33 +98,34 @@ WHERE tenant_id = :tenant_id
 ORDER BY banco_codigo, agencia_codigo
 """)
 
+# Identidade via titulo_id + sacado do TITULO (espelha deteccao_features;
+# nosso_numero colide entre cedentes).
 _SQL_FINGERPRINT_SACADO = text("""
 SELECT be.banco_pagador, count(*) AS n
 FROM wh_boleto_evento be
-JOIN wh_boleto_vigente bv
-    ON bv.tenant_id = be.tenant_id
-   AND bv.banco_origem = be.banco_origem
-   AND bv.nosso_numero = be.nosso_numero
+JOIN wh_titulo t ON t.tenant_id = be.tenant_id AND t.titulo_id = be.titulo_id
+JOIN wh_entidade sac
+    ON sac.tenant_id = be.tenant_id AND sac.source_id = t.sacado_id::text
 WHERE be.tenant_id = :tenant_id
-  AND bv.sacado_documento = :sacado_documento
+  AND sac.documento = :sacado_documento
   AND be.banco_pagador IS NOT NULL
   AND be.valor_pago > 0
 GROUP BY be.banco_pagador
 ORDER BY n DESC
 """)
 
+# Identidade via titulo_id + sacado/cedente do TITULO (espelha a S2 do
+# deteccao_features; nosso_numero/numero_documento colidem entre cedentes).
 _SQL_USO_AGENCIA = text("""
-SELECT count(DISTINCT bv.sacado_documento) AS n_sacados,
+SELECT count(DISTINCT sac.documento) AS n_sacados,
        count(DISTINCT o.cedente_documento) AS n_cedentes,
        count(*) AS n_pagamentos
 FROM wh_boleto_evento be
-JOIN wh_boleto_vigente bv
-    ON bv.tenant_id = be.tenant_id
-   AND bv.banco_origem = be.banco_origem
-   AND bv.nosso_numero = be.nosso_numero
-JOIN wh_titulo t ON t.tenant_id = be.tenant_id AND t.numero = bv.numero_documento
+JOIN wh_titulo t ON t.tenant_id = be.tenant_id AND t.titulo_id = be.titulo_id
 JOIN wh_operacao o
     ON o.operacao_id = t.operacao_id AND o.tenant_id = t.tenant_id
+LEFT JOIN wh_entidade sac
+    ON sac.tenant_id = be.tenant_id AND sac.source_id = t.sacado_id::text
 WHERE be.tenant_id = :tenant_id
   AND lpad(be.banco_pagador, 3, '0') = :banco
   AND lpad(be.agencia_pagadora, 5, '0') = lpad(:agencia_raw, 5, '0')
