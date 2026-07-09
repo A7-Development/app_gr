@@ -26,6 +26,13 @@ STR_CSV_URL = (
 OLINDA_AGENCIAS_URL = (
     "https://olinda.bcb.gov.br/olinda/servico/Informes_Agencias/versao/v1/odata/Agencias"
 )
+# Classificacao OFICIAL de segmento (Relacao de Instituicoes em Funcionamento).
+# 3 recursos por familia; cada um traz CNPJ (base 8) + NOME_INSTITUICAO +
+# SEGMENTO oficial. Cooperativas nao tem campo SEGMENTO (sao todas coop).
+OLINDA_SEDES_BASE = (
+    "https://olinda.bcb.gov.br/olinda/servico/Instituicoes_em_funcionamento"
+    "/versao/v1/odata/"
+)
 
 _TIMEOUT_S = 120
 _PAGE_SIZE = 10_000
@@ -68,4 +75,42 @@ async def fetch_agencias() -> list[dict[str, Any]]:
             if len(page) < _PAGE_SIZE:
                 break
             skip += _PAGE_SIZE
+    return out
+
+
+# (recurso, segmento_default) — cooperativas nao tem campo SEGMENTO.
+_SEDES_RECURSOS = (
+    ("SedesBancoComMultCE", None),
+    ("SedesSociedades", None),
+    ("SedesCooperativas", "Cooperativa de Credito"),
+)
+
+
+async def fetch_sedes_segmentos() -> list[dict[str, Any]]:
+    """Classificacao oficial de segmento por CNPJ (base 8).
+
+    Retorna [{cnpj, nome, segmento}] das 3 familias da Relacao de
+    Instituicoes em Funcionamento. `segmento` e o rotulo OFICIAL do Bacen
+    (ex.: 'Banco Multiplo', 'Instituicao de Pagamento', 'Sociedade de Credito
+    Direto') — sem heuristica.
+    """
+    out: list[dict[str, Any]] = []
+    async with httpx.AsyncClient(timeout=_TIMEOUT_S) as client:
+        for recurso, seg_default in _SEDES_RECURSOS:
+            resp = await client.get(
+                OLINDA_SEDES_BASE + recurso, params={"$format": "json"}
+            )
+            resp.raise_for_status()
+            for row in resp.json().get("value", []):
+                cnpj = (row.get("CNPJ") or "").strip()
+                if not cnpj:
+                    continue
+                out.append(
+                    {
+                        "cnpj": cnpj,
+                        "nome": (row.get("NOME_INSTITUICAO") or "").strip(),
+                        "segmento": (row.get("SEGMENTO") or seg_default or "").strip(),
+                    }
+                )
+            logger.info("bacen sedes %s: total %d", recurso, len(out))
     return out

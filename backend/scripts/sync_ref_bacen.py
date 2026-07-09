@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-import app.shared.identity.tenant  # noqa: F401  -- registry SQLAlchemy completo
+import app.metadata  # noqa: F401  -- registry SQLAlchemy completo (FK decision_log/tenants)
 from app.core.database import AsyncSessionLocal
 from app.modules.integracoes.adapters.data.bacen.etl import sync_ref_bacen
 
