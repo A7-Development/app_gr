@@ -56,8 +56,16 @@ class RefBacenInstituicao(Base):
     nome_extenso: Mapped[str | None] = mapped_column(String(255), nullable=True)
     participa_compe: Mapped[bool] = mapped_column(Boolean, nullable=False)
     segmento: Mapped[str] = mapped_column(String(30), nullable=False)
-    # De onde veio o segmento ("heuristica_nome" | "bcbase" | "manual").
+    # De onde veio o segmento ("oficial_bacen" | "heuristica_nome" | "manual").
     segmento_fonte: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Rotulo OFICIAL do Bacen (ex.: "Banco Multiplo", "Instituicao de
+    # Pagamento") quando resolvido pela Relacao de Instituicoes; NULL se so
+    # heuristica. Preserva a granularidade oficial alem do canonico.
+    segmento_oficial: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # Banco digital = banco (segmento oficial) SEM rede fisica (<=1 agencia).
+    # UNICA inferencia: "digital" nao e categoria regulatoria (Inter/C6 sao
+    # "Banco Multiplo" oficial). Derivado da contagem de agencias (Bacen).
+    is_banco_digital: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     inicio_operacao: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

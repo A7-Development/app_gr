@@ -20,14 +20,17 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.integracoes.adapters.data.bacen.client import (
     fetch_agencias,
     fetch_participantes_str,
+    fetch_sedes_segmentos,
 )
 from app.modules.integracoes.adapters.data.bacen.version import ADAPTER_VERSION
+from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 from app.warehouse.ref_bacen import (
     SEGMENTO_BANCO,
     SEGMENTO_BANCO_COOPERATIVO,
@@ -234,9 +237,95 @@ async def sync_agencias(db: AsyncSession) -> dict[str, int]:
     return {"agencias": len(values), "sem_banco": sem_banco, "sem_codigo": sem_codigo}
 
 
+def _canonico_oficial(segmento_oficial: str) -> str:
+    """De-para do rotulo OFICIAL do Bacen -> segmento canonico (6 familias).
+
+    NAO e inferencia: o rotulo ja e a classificacao oficial; isto so agrupa
+    os ~30 tipos oficiais nas 6 familias que usamos.
+    """
+    s = _norm(segmento_oficial)
+    if "BANCO" in s and "COOPERATIV" in s:
+        return SEGMENTO_BANCO_COOPERATIVO
+    if "COOPERATIV" in s:
+        return SEGMENTO_COOPERATIVA
+    if "INSTITUICAO DE PAGAMENTO" in s:
+        return SEGMENTO_IP
+    if "CREDITO DIRETO" in s:
+        return SEGMENTO_SCD
+    if "FINANCIAMENTO E INVESTIMENTO" in s or "MICROEMPREENDEDOR" in s:
+        return SEGMENTO_FINANCEIRA
+    if s.startswith("BANCO") or "CAIXA ECONOMICA" in s or s == "BNDES":
+        return SEGMENTO_BANCO
+    return SEGMENTO_OUTROS
+
+
+async def sync_segmento_oficial(db: AsyncSession) -> dict[str, int]:
+    """Relacao de Instituicoes em Funcionamento -> segmento OFICIAL.
+
+    Casa por ISPB (= base do CNPJ, 8 digitos). Substitui a heuristica de nome
+    pelo rotulo oficial do Bacen. `is_banco_digital` = banco sem rede fisica
+    (<=1 agencia) — a UNICA inferencia (digital nao e categoria regulatoria).
+    """
+    sedes = await fetch_sedes_segmentos()
+    por_cnpj: dict[str, tuple[str, str]] = {}
+    for r in sedes:
+        cnpj = (r["cnpj"] or "").strip().zfill(8)[-8:]
+        if cnpj and r["segmento"]:
+            por_cnpj[cnpj] = (_canonico_oficial(r["segmento"]), r["segmento"][:80])
+
+    insts = (await db.execute(select(RefBacenInstituicao))).scalars().all()
+    n = 0
+    for inst in insts:
+        hit = por_cnpj.get((inst.ispb or "").zfill(8)[-8:])
+        if hit is not None:
+            inst.segmento = hit[0]
+            inst.segmento_oficial = hit[1]
+            inst.segmento_fonte = "oficial_bacen"
+            n += 1
+    await db.flush()
+    # is_banco_digital: banco (oficial) com <=1 agencia fisica.
+    await db.execute(
+        text(
+            "UPDATE ref_bacen_instituicao i SET is_banco_digital = ("
+            "  i.segmento = :banco AND ("
+            "    SELECT count(*) FROM ref_bacen_agencia a"
+            "    WHERE a.banco_compe = i.codigo_compe) <= 1)"
+        ),
+        {"banco": SEGMENTO_BANCO},
+    )
+    logger.info("bacen segmento oficial: %d instituicoes classificadas", n)
+    return {"segmento_oficial": n}
+
+
 async def sync_ref_bacen(db: AsyncSession) -> dict[str, int]:
-    """Ciclo completo: instituicoes (STR) + agencias (Informes_Agencias)."""
+    """Ciclo completo: instituicoes (STR) + agencias + segmento oficial."""
     m1 = await sync_instituicoes(db)
     m2 = await sync_agencias(db)
+    m3 = await sync_segmento_oficial(db)
+    metricas = {**m1, **m2, **m3}
+    # Fonte publica global (sem tenant), mas decision_log exige tenant_id:
+    # atribui ao mantenedor do sistema (ou 1o tenant) so p/ proveniencia.
+    tid = (
+        await db.execute(
+            text(
+                "SELECT id FROM tenants WHERE is_system_maintainer = true LIMIT 1"
+            )
+        )
+    ).scalar_one_or_none() or (
+        await db.execute(text("SELECT id FROM tenants LIMIT 1"))
+    ).scalar_one()
+    # Observabilidade — alimenta o Painel de Saude das Integracoes.
+    db.add(
+        DecisionLog(
+            tenant_id=tid,
+            decision_type=DecisionType.SYNC,
+            inputs_ref={"fonte": "bacen_publico"},
+            rule_or_model="ref_bacen_adapter",
+            rule_or_model_version=ADAPTER_VERSION,
+            output={"ok": True, "rows": sum(v for v in metricas.values() if isinstance(v, int)), **metricas},
+            explanation="sync referencia Bacen: instituicoes + agencias + segmento oficial",
+            triggered_by="script:sync_ref_bacen",
+        )
+    )
     await db.commit()
-    return {**m1, **m2}
+    return metricas
