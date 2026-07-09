@@ -488,7 +488,10 @@ export function DataTable<TData>({
             className={cx("w-full border-collapse text-[13px]", tableLayout === "fixed" && "table-fixed")}
             style={tableMinWidth ? { minWidth: tableMinWidth } : undefined}
           >
-            <thead className="sticky top-0 z-[1] bg-white dark:bg-gray-950">
+            {/* Bloco de cabecalho (canonico 2026-07-09): faixa bg-gray-50 fechada
+                por border-y gray-200, header 30px — tabela OPERACIONAL usa faixa;
+                lamina de LEITURA (DenseTable) usa hairline (so border-b). */}
+            <thead className="sticky top-0 z-[1] bg-gray-50 dark:bg-gray-900">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
                   {hg.headers.map((header) => {
@@ -502,7 +505,7 @@ export function DataTable<TData>({
                         colSpan={header.colSpan}
                         style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}
                         className={cx(
-                          "group/th h-7 border-b border-gray-200 dark:border-gray-800 px-4",
+                          "group/th h-[30px] border-y border-gray-200 dark:border-gray-800 px-4",
                           "text-[10px] font-semibold uppercase tracking-[0.05em]",
                           "text-gray-500 dark:text-gray-400 whitespace-nowrap select-none",
                           align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left",

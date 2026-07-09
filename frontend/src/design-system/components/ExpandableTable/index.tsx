@@ -104,15 +104,17 @@ export function ExpandableTable<T>({
   return (
     <div className="overflow-auto">
       <table className="w-full border-collapse text-[13px]">
-        <thead className="bg-white dark:bg-gray-950">
+        {/* Bloco de cabecalho (canonico 2026-07-09): faixa + border-y, 30px —
+            mesma anatomia do DataTable (tabela operacional = faixa). */}
+        <thead className="bg-gray-50 dark:bg-gray-900">
           <tr>
-            {/* Coluna do chevron (hairline) */}
-            <th className="w-8 h-7 border-b border-gray-200 px-3 dark:border-gray-800" />
+            {/* Coluna do chevron */}
+            <th className="w-8 h-[30px] border-y border-gray-200 px-3 dark:border-gray-800" />
             {columns.map((col) => (
               <th
                 key={col.id}
                 className={cx(
-                  "h-7 border-b border-gray-200 px-3 dark:border-gray-800",
+                  "h-[30px] border-y border-gray-200 px-3 dark:border-gray-800",
                   tableTokens.header,
                   "text-gray-500 dark:text-gray-400 whitespace-nowrap select-none",
                   alignClass(col.align),
