@@ -528,7 +528,11 @@ export default function CuradoriaLiquidacoesPage() {
         ),
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
       col.accessor("valor", {
-        header: "Valor",
+        header: () => (
+          <span title="Valor efetivamente pago na liquidação (inclui encargos de mora) — não é o valor de face do título. Baixas sem pagamento mostram o valor de face.">
+            Valor pago
+          </span>
+        ),
         size: 112,
         meta: { align: "right" },
         cell: (info) => {
