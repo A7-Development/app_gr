@@ -33,6 +33,7 @@ from app.modules.integracoes.adapters.data.bacen.client import (
 from app.modules.integracoes.adapters.data.bacen.version import ADAPTER_VERSION
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 from app.warehouse.ref_bacen import (
+    FONTE_OLINDA,
     SEGMENTO_BANCO,
     SEGMENTO_BANCO_COOPERATIVO,
     SEGMENTO_COOPERATIVA,
@@ -216,12 +217,17 @@ async def sync_agencias(db: AsyncSession) -> dict[str, int]:
                 "uf": (str(r.get("UF") or "").strip()[:2] or None),
                 "data_inicio": _parse_data_br(r.get("DataInicio")),
                 "posicao": _parse_data_br(r.get("Posicao")),
+                # Linha vista no snapshot vivo = fonte olinda (promove linha
+                # bcb_historico que reapareceu; cadastro mais fresco vence).
+                "fonte": FONTE_OLINDA,
                 "fetched_at": fetched_at,
                 "fetched_by_version": ADAPTER_VERSION,
             }
         )
     for i in range(0, len(values), _CHUNK):
         stmt = pg_insert(RefBacenAgencia).values(values[i : i + _CHUNK])
+        # NAO toca endereco/bairro/cep/primeira|ultima_competencia/ativa —
+        # colunas da serie historica BCB (estatica), preservadas no upsert.
         stmt = stmt.on_conflict_do_update(
             constraint="uq_ref_bacen_agencia_banco_ag",
             set_={
@@ -229,7 +235,7 @@ async def sync_agencias(db: AsyncSession) -> dict[str, int]:
                 for c in (
                     "cnpj_base", "nome_if", "nome_agencia", "municipio",
                     "municipio_ibge", "uf", "data_inicio", "posicao",
-                    "fetched_at", "fetched_by_version",
+                    "fonte", "fetched_at", "fetched_by_version",
                 )
             },
         )
