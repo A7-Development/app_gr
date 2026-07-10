@@ -2932,6 +2932,7 @@ export type SourceTypeId =
   | "bureau:serasa_pf"
   | "bureau:scr_bacen"
   | "document:nfe"
+  | "data:serpro_nfe"
   | "self_declared"
   | "peer_declared"
   | "internal_note"
