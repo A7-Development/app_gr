@@ -159,6 +159,10 @@ export type DataTableShellProps<T> = {
   rowClassName?: (row: T) => string
   initialColumnVisibility?: VisibilityState
   virtualize?: boolean
+  /** Layout da <table>: "fixed" torna `size` largura real (colunas uniformes,
+   *  sem estouro). Use com `minWidth` para o piso antes do scroll-x. */
+  tableLayout?: "auto" | "fixed"
+  minWidth?: number
 
   // ── Proveniencia (CLAUDE.md §14.1) ────────────────────────────────────
   /**
@@ -195,6 +199,8 @@ export function DataTableShell<T>({
   rowClassName,
   initialColumnVisibility,
   virtualize,
+  tableLayout,
+  minWidth,
   provenance,
 }: DataTableShellProps<T>) {
   // ── Counts agregados (segment ANTES, search depois via globalFilter) ─
@@ -393,6 +399,8 @@ export function DataTableShell<T>({
           loading={loading}
           density={density}
           virtualize={virtualize ?? false}
+          tableLayout={tableLayout}
+          tableMinWidth={minWidth}
           showColumnManager={false}
           showDensityToggle={false}
           showExport={false}

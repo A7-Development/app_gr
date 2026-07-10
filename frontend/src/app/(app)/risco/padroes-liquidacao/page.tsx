@@ -43,20 +43,31 @@ const JANELAS: { value: JanelaLiquidacao; label: string }[] = [
 // Red flags intrínsecos ao cedente (heatmap). Conta do cedente é a coluna-líder
 // (peso máximo) e vem separada; estes são os demais.
 const SINAIS: { key: string; head: string; info: string }[] = [
-  { key: "praca_cedente", head: "Praça do cedente", info: "Pago na cidade do cedente E fora da cidade do sacado (se mesma praça, não conta)." },
-  { key: "fora_praca", head: "Fora praça sacado", info: "Pago em cidade diferente da do sacado." },
-  { key: "fora_padrao", head: "Fora do padrão", info: "Sacado pagou fora do banco/agência habitual dele." },
-  { key: "multi_sacado", head: "Ag. multi-sacado", info: "Muitos sacados na mesma agência, de cidades divergentes (concentração local não conta)." },
+  { key: "praca_cedente", head: "Praça Ced.", info: "Praça do cedente — pago na cidade do cedente E fora da cidade do sacado (se mesma praça, não conta)." },
+  { key: "fora_praca", head: "Fora praça", info: "Fora da praça do sacado — pago em cidade diferente da do sacado." },
+  { key: "fora_padrao", head: "Fora padrão Sac.", info: "Fora do padrão do sacado — sacado pagou fora do banco/agência habitual dele." },
+  { key: "multi_sacado", head: "Conta Multi-Sac.", info: "Agência multi-sacado — muitos sacados na mesma agência, de cidades divergentes (concentração local não conta)." },
 ]
 
 // Canal por segmento oficial Bacen (descritor — para onde foi o pagamento).
 const SEGMENTOS: { key: string; head: string; info: string }[] = [
-  { key: "banco_digital", head: "Banco digital", info: "Pago em banco digital (banco sem rede física, ≤1 agência)." },
-  { key: "cooperativa", head: "Cooperativa", info: "Pago em cooperativa de crédito." },
-  { key: "ip", head: "IP", info: "Pago em instituição de pagamento (conta eletrônica)." },
-  { key: "scd", head: "SCD", info: "Pago em sociedade de crédito direto." },
-  { key: "financeira", head: "Financeira", info: "Pago em financeira (SCFI)." },
+  { key: "banco_digital", head: "Banco Dig.", info: "Banco digital (banco sem rede física, ≤1 agência)." },
+  { key: "cooperativa", head: "Coop.", info: "Cooperativa de crédito." },
+  { key: "ip", head: "IP", info: "Instituição de pagamento (conta eletrônica)." },
+  { key: "scd", head: "SCD", info: "Sociedade de crédito direto." },
+  { key: "financeira", head: "Financ.", info: "Financeira (SCFI)." },
 ]
+
+// Cabeçalho que quebra em 2 linhas (colunas estreitas uniformes) + tooltip.
+function Hd({ label, info }: { label: string; info?: string }) {
+  return (
+    <span className="block whitespace-normal leading-[1.15]" title={info}>
+      {label}
+    </span>
+  )
+}
+
+const COL_SINAL = 66 // largura uniforme das colunas de contagem
 
 // Heatmap de red flag: 0 = vazio; senão intensidade pela razão count/n_liq.
 // MOTIVO: chip de heatmap é viz aprovada (matriz determinística) — a cor
@@ -177,13 +188,13 @@ export default function PadroesLiquidacaoPage() {
 
   const columns = React.useMemo<ColumnDef<CedentePerfilRow, unknown>[]>(
     () => [
+      // Cedente — sem size: absorve a folga no layout fixo.
       col.accessor("cedente_nome", {
         header: "Cedente",
-        size: 210,
         cell: (info) => {
           const nome = (info.getValue() as string | null) ?? info.row.original.cedente_documento
           return (
-            <span className={cx(tableTokens.cellStrong, "block max-w-[200px] truncate")} title={nome}>
+            <span className={cx(tableTokens.cellStrong, "block truncate")} title={nome}>
               {nome}
             </span>
           )
@@ -193,11 +204,9 @@ export default function PadroesLiquidacaoPage() {
       col.display({
         id: "conta_cedente",
         header: () => (
-          <span title="Recebido em agência/conta cadastrada do próprio cedente — o maior red flag de auto-liquidação.">
-            ⭐ Conta do cedente
-          </span>
+          <Hd label="Contas Ced. ⭐" info="Conta do cedente — recebido em agência/conta cadastrada do próprio cedente (o maior red flag de auto-liquidação)." />
         ),
-        size: 130,
+        size: COL_SINAL,
         meta: { align: "center" },
         cell: ({ row }) => (
           <HeatCell count={row.original.sinais.conta_cedente ?? 0} total={row.original.n_liq} />
@@ -205,19 +214,20 @@ export default function PadroesLiquidacaoPage() {
       }) as ColumnDef<CedentePerfilRow, unknown>,
       col.display({
         id: "alerta",
-        header: () => <span title="Liquidações que acionaram uma regra determinística (regra dura).">⚠ Alerta</span>,
-        size: 80,
+        header: () => <Hd label="Alertas" info="Liquidações que acionaram uma regra determinística (regra dura)." />,
+        size: 72,
+        meta: { align: "center" },
         cell: ({ row }) => <AlertaCell row={row.original} />,
       }) as ColumnDef<CedentePerfilRow, unknown>,
       col.accessor("n_liq", {
-        header: "N liq.",
-        size: 64,
+        header: () => <Hd label="Nº Liq." info="Nº de liquidações na janela" />,
+        size: 62,
         meta: { align: "right" },
         cell: (info) => <span className={tableTokens.cellNumber}>{(info.getValue() as number).toLocaleString("pt-BR")}</span>,
       }) as ColumnDef<CedentePerfilRow, unknown>,
       col.accessor("valor", {
-        header: "R$ liquidado",
-        size: 112,
+        header: () => <Hd label="R$ Liq." info="Valor liquidado na janela" />,
+        size: 96,
         meta: { align: "right" },
         cell: (info) => <span className={tableTokens.cellNumberSecondary}>{brl(info.getValue() as number)}</span>,
       }) as ColumnDef<CedentePerfilRow, unknown>,
@@ -225,8 +235,8 @@ export default function PadroesLiquidacaoPage() {
         (s) =>
           col.display({
             id: s.key,
-            header: () => <span title={s.info}>{s.head}</span>,
-            size: 110,
+            header: () => <Hd label={s.head} info={s.info} />,
+            size: COL_SINAL,
             meta: { align: "center" },
             cell: ({ row }) => (
               <HeatCell count={row.original.sinais[s.key] ?? 0} total={row.original.n_liq} />
@@ -237,8 +247,8 @@ export default function PadroesLiquidacaoPage() {
         (s) =>
           col.display({
             id: `seg_${s.key}`,
-            header: () => <span title={s.info}>{s.head}</span>,
-            size: 92,
+            header: () => <Hd label={s.head} info={s.info} />,
+            size: COL_SINAL,
             meta: { align: "center" },
             cell: ({ row }) => (
               <SegCell count={row.original.segmentos[s.key] ?? 0} total={row.original.n_liq} />
@@ -246,14 +256,16 @@ export default function PadroesLiquidacaoPage() {
           }) as ColumnDef<CedentePerfilRow, unknown>,
       ),
       col.accessor("ultima_liq", {
-        header: "Última liq.",
-        size: 88,
+        header: () => <Hd label="Últ. liq." info="Última liquidação (recência)" />,
+        size: 72,
+        meta: { align: "center" },
         cell: (info) => <RecenciaCell iso={info.getValue() as string | null} />,
       }) as ColumnDef<CedentePerfilRow, unknown>,
       col.display({
         id: "delta",
-        header: () => <span title="Variação de alertas vs a janela anterior de mesmo tamanho.">Δ alerta</span>,
-        size: 78,
+        header: () => <Hd label="Δ" info="Variação de alertas vs a janela anterior de mesmo tamanho." />,
+        size: 48,
+        meta: { align: "center" },
         cell: ({ row }) => <DeltaCell delta={row.original.delta_alerta} novo={row.original.cedente_novo} />,
       }) as ColumnDef<CedentePerfilRow, unknown>,
     ],
@@ -288,6 +300,10 @@ export default function PadroesLiquidacaoPage() {
         loading={query.isLoading && !query.data}
         error={query.error}
         onRetry={() => query.refetch()}
+        // Layout fixo: colunas de contagem com largura uniforme; Cedente
+        // absorve a folga; scroll-x só abaixo de ~1140px.
+        tableLayout="fixed"
+        minWidth={1140}
         search={{ value: search, onChange: setSearch, placeholder: "Buscar cedente..." }}
         segments={{
           value: segment,
