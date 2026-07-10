@@ -68,10 +68,20 @@ export function reasonCodes(r: CedentePerfilRow): ReasonCode[] {
   }
 
   const s = r.sinais
-  add((s.conta_cedente ?? 0) > 0, "CONTA", "Conta do cedente", "alto", pct(s.conta_cedente ?? 0, total))
+  // praca_cedente ⊆ fora_praca (ambas exigem ≠ cidade do sacado); o resíduo
+  // "fora do sacado numa TERCEIRA praça" = fora_praca − praca_cedente.
+  const capturaGeo = s.praca_cedente ?? 0 // fora do sacado E na praça do cedente
+  const foraOutra = Math.max(0, (s.fora_praca ?? 0) - capturaGeo)
+
+  // CONTA como chip precisa de piso (≥5%): 1 de 99 é ruído, não driver. A
+  // contagem exata segue na narrativa; se a conta DISPAROU o alerta, já entrou
+  // pinned acima (ignora o piso).
+  add(pct(s.conta_cedente ?? 0, total) >= 0.05, "CONTA", "Conta do cedente", "alto", pct(s.conta_cedente ?? 0, total))
+  // Assinatura geográfica de captura — tier ALTO (tão forte quanto conta).
+  add(pct(capturaGeo, total) >= 0.15, "PRAÇA-CED", "Fora do sacado, na praça do cedente", "alto", pct(capturaGeo, total))
   add(pct(s.multi_sacado ?? 0, total) >= 0.15, "MULTI-SAC", "Agência multi-sacado", "medio", pct(s.multi_sacado ?? 0, total))
-  add(pct(s.fora_praca ?? 0, total) >= 0.15, "FORA-PRAÇA", "Fora da praça do sacado", "medio", pct(s.fora_praca ?? 0, total))
-  add(pct(s.praca_cedente ?? 0, total) >= 0.15, "PRAÇA-CED", "Praça do cedente", "medio", pct(s.praca_cedente ?? 0, total))
+  // Resíduo: fora do sacado, mas NÃO na praça do cedente (terceira praça).
+  add(pct(foraOutra, total) >= 0.15, "FORA-PRAÇA", "Fora do sacado (outra praça)", "medio", pct(foraOutra, total))
   add(pct(s.fora_padrao ?? 0, total) >= 0.15, "PADRÃO", "Fora do padrão do sacado", "medio", pct(s.fora_padrao ?? 0, total))
 
   // canal entra como chip SÓ quando o segmento concentra (>~40%)
@@ -118,14 +128,23 @@ export function narrativa(r: CedentePerfilRow): string {
     `Conta do cedente = ${c} de ${r.n_liq} — ${freq(pct(c, total))} usa a conta cadastrada dela.`,
   )
 
-  // sinal geográfico/rede dominante (fora da conta), se relevante
+  // Assinatura geográfica de captura: fora do sacado E na praça do cedente.
+  const capturaGeo = r.sinais.praca_cedente ?? 0
+  if (pct(capturaGeo, total) >= 0.15) {
+    frases.push(
+      `${capturaGeo} de ${r.n_liq} pagas fora da praça do sacado e na praça do cedente (${Math.round(pct(capturaGeo, total) * 100)}%) — a assinatura geográfica de captura.`,
+    )
+  }
+
+  // outro sinal de rede/padrão dominante, se relevante
+  const foraOutra = Math.max(0, (r.sinais.fora_praca ?? 0) - capturaGeo)
   const extras: [number, string][] = [
-    [r.sinais.fora_praca ?? 0, "pago fora da praça do sacado"],
     [r.sinais.multi_sacado ?? 0, "concentrado em agência multi-sacado"],
     [r.sinais.fora_padrao ?? 0, "fora do padrão histórico do sacado"],
+    [foraOutra, "pago fora do sacado, em outra praça"],
   ]
   const dom = extras.filter(([n]) => pct(n, total) >= 0.2).sort((a, b) => b[0] - a[0])[0]
-  if (dom) frases.push(`Predomina ${dom[1]} (${Math.round(pct(dom[0], total) * 100)}%).`)
+  if (dom) frases.push(`Predomina também ${dom[1]} (${Math.round(pct(dom[0], total) * 100)}%).`)
 
   // canal, se concentra
   const seg: [number, string][] = [
