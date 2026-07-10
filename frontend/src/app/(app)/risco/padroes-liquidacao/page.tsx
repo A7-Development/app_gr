@@ -103,6 +103,10 @@ export default function PadroesLiquidacaoPage() {
     if (!kpis) return []
     const deltaAlerta =
       kpis.n_alerta_anterior !== null ? kpis.n_alerta_total - kpis.n_alerta_anterior : null
+    // Captura geográfica = fora do sacado E na praça do cedente (praca_cedente).
+    // Somado sobre os cedentes exibidos — reconcilia (§14.6).
+    const capturaTotal = cedentes.reduce((a, c) => a + (c.sinais.praca_cedente ?? 0), 0)
+    const capturaPct = kpis.n_liq_total ? Math.round((1000 * capturaTotal) / kpis.n_liq_total) / 10 : 0
     return [
       {
         eyebrow: "LIQUIDADO · JANELA",
@@ -119,10 +123,10 @@ export default function PadroesLiquidacaoPage() {
         sub: "regra dura na janela",
       },
       { eyebrow: "CONTA DO CEDENTE", value: `${kpis.pct_conta_cedente}%`, sub: "das liquidações" },
-      { eyebrow: "FORA DA PRAÇA DO SACADO", value: `${kpis.pct_fora_praca}%`, sub: "das liquidações" },
+      { eyebrow: "CAPTURA GEOGRÁFICA", value: `${capturaPct}%`, sub: "fora do sacado, na praça do cedente" },
       { eyebrow: "CANAL DE ATENÇÃO", value: `${kpis.pct_canal_atencao}%`, sub: "digital/coop/IP/SCD/fin." },
     ]
-  }, [kpis])
+  }, [kpis, cedentes])
 
   const columns = React.useMemo<ColumnDef<CedentePerfilRow, unknown>[]>(
     () => [

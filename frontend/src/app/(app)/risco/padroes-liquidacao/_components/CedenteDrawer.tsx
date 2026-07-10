@@ -104,14 +104,14 @@ export function CedenteDrawerBody({
           hint={`${pct(row.sinais.conta_cedente ?? 0, total)}% — o maior red flag`}
         />
         <Stat
-          label="Fora da praça do sacado"
-          value={`${row.sinais.fora_praca ?? 0}`}
-          hint={`${pct(row.sinais.fora_praca ?? 0, total)}% · praça ced. ${pct(row.sinais.praca_cedente ?? 0, total)}%`}
+          label="Fora do sacado, na praça do cedente"
+          value={`${row.sinais.praca_cedente ?? 0} de ${row.n_liq}`}
+          hint={`${pct(row.sinais.praca_cedente ?? 0, total)}% — assinatura geográfica de captura`}
         />
         <Stat
-          label="Agência multi-sacado"
-          value={`${row.sinais.multi_sacado ?? 0}`}
-          hint={`${pct(row.sinais.multi_sacado ?? 0, total)}% · fora padrão ${pct(row.sinais.fora_padrao ?? 0, total)}%`}
+          label="Multi-sacado · fora do padrão"
+          value={`${pct(row.sinais.multi_sacado ?? 0, total)}% · ${pct(row.sinais.fora_padrao ?? 0, total)}%`}
+          hint={`fora do sacado (outra praça) ${pct(Math.max(0, (row.sinais.fora_praca ?? 0) - (row.sinais.praca_cedente ?? 0)), total)}%`}
         />
         <Stat label="Recência · Δ" value={recencia} hint={deltaTxt} />
       </div>
