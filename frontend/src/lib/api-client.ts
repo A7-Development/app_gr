@@ -3772,14 +3772,13 @@ export type CedentePerfilRow = {
   ultima_liq: string | null
   n_alerta: number
   n_alerta_conta: number
-  n_alerta_anel: number
-  // Contagem de ocorrência por sinal (match_conta, match_cidade, fora_praca,
-  // ag_compartilhada, anel_cedentes, contrato_aberto, baixa_manual_anomala,
-  // boleto_nao_esperado, quebra_fingerprint, pago_exato_vencimento).
+  n_alerta_multicedente: number
+  // Red flags intrínsecos: conta_cedente, praca_cedente, fora_praca,
+  // fora_padrao, multi_sacado.
   sinais: Record<string, number>
-  // Mix de canal: banco_praca / cooperativa / ip / sem_praca / nao_resolvido /
-  // baixa_manual.
-  canal: Record<string, number>
+  // Canal por segmento oficial Bacen: banco_digital, cooperativa, ip, scd,
+  // financeira.
+  segmentos: Record<string, number>
   delta_alerta: number | null
   delta_liq: number | null
   cedente_novo: boolean
@@ -3791,9 +3790,9 @@ export type PadroesLiquidacaoKpis = {
   n_cedentes: number
   n_alerta_total: number
   n_alerta_anterior: number | null
-  pct_banco_praca: number
-  pct_baixa_manual: number
+  pct_conta_cedente: number
   pct_fora_praca: number
+  pct_canal_atencao: number
 }
 
 export type PadroesLiquidacaoResponse = {

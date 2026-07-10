@@ -34,12 +34,13 @@ class CedentePerfilRow(BaseModel):
     ultima_liq: datetime | None
     n_alerta: int
     n_alerta_conta: int
-    n_alerta_anel: int
-    # Contagem de ocorrencia por sinal (chaves em `_SINAIS` do service).
+    n_alerta_multicedente: int
+    # Red flags intrinsecos (chaves em `_SINAIS`): conta_cedente, praca_cedente,
+    # fora_praca, fora_padrao, multi_sacado.
     sinais: dict[str, int]
-    # Mix de canal: banco_praca / cooperativa / ip / sem_praca / nao_resolvido /
-    # baixa_manual.
-    canal: dict[str, int]
+    # Canal por segmento oficial Bacen (`_SEGMENTOS`): banco_digital,
+    # cooperativa, ip, scd, financeira.
+    segmentos: dict[str, int]
     delta_alerta: int | None
     delta_liq: int | None
     cedente_novo: bool
@@ -51,9 +52,9 @@ class PerfilKpis(BaseModel):
     n_cedentes: int
     n_alerta_total: int
     n_alerta_anterior: int | None
-    pct_banco_praca: float
-    pct_baixa_manual: float
+    pct_conta_cedente: float
     pct_fora_praca: float
+    pct_canal_atencao: float
 
 
 class PadroesLiquidacaoResponse(BaseModel):
