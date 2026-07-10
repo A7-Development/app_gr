@@ -50,6 +50,7 @@ from app.warehouse.liquidacao_recebivel import LiquidacaoRecebivel
 from app.warehouse.mec_evolucao_cotas import MecEvolucaoCotas
 from app.warehouse.movimento_aberto import MovimentoAberto
 from app.warehouse.movimento_caixa import MovimentoCaixa
+from app.warehouse.nfe_estado import NfeEvento, NfeSituacao
 from app.warehouse.operacao import Operacao, OperacaoItem
 from app.warehouse.operacao_remessa import OperacaoRemessa
 from app.warehouse.pj_cadastro import PjCadastro
@@ -139,7 +140,9 @@ __all__ = [
     "MovimentoCaixa",
     "Nfe",
     "NfeDuplicata",
+    "NfeEvento",
     "NfeRawDocumento",
+    "NfeSituacao",
     "Operacao",
     "OperacaoItem",
     "OperacaoRemessa",
