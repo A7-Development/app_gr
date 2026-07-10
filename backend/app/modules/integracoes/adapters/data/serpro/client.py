@@ -54,6 +54,9 @@ class SerproNfeResponse:
 
     chave: str
     raw: dict[str, Any]
+    # Body EXATO da resposta — o bronze persiste este texto via CAST(jsonb)
+    # para nao perder precisao numerica em round-trip por float do Python.
+    text: str
     http_status: int
     latency_ms: float
     request_tag: str | None = None
@@ -224,6 +227,7 @@ class SerproClient:
         return SerproNfeResponse(
             chave=chave,
             raw=payload,
+            text=resp.text,
             http_status=resp.status_code,
             latency_ms=latency_ms,
             request_tag=request_tag,
