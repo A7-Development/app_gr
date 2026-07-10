@@ -1,8 +1,12 @@
 """warehouse: silver wh_nfe_situacao + wh_nfe_evento (estado vivo via SERPRO).
 
 Revision ID: c4f8a2d7e1b9
-Revises: a9d1c7e4f2b8
+Revises: b3e8d1c6f4a2
 Create Date: 2026-07-10 21:00:00.000000
+
+Re-encadeada de a9d1c7e4f2b8 -> b3e8d1c6f4a2 (2026-07-10): a sessao do
+ref_bacen_agencia (#554) mergeou antes com o mesmo pai; rebase da
+down_revision evita bifurcacao de heads (aviso cruzado entre sessoes).
 
 Silver do estado da NF-e derivado dos snapshots SERPRO (bronze
 wh_serpro_raw_nfe). Perda zero: escalares em colunas + subarvores
@@ -18,7 +22,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "c4f8a2d7e1b9"
-down_revision: str | None = "a9d1c7e4f2b8"
+down_revision: str | None = "b3e8d1c6f4a2"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
