@@ -46,7 +46,7 @@ const SINAIS: { key: string; head: string; info: string }[] = [
   { key: "praca_cedente", head: "Praça Ced.", info: "Praça do cedente — pago na cidade do cedente E fora da cidade do sacado (se mesma praça, não conta)." },
   { key: "fora_praca", head: "Fora praça", info: "Fora da praça do sacado — pago em cidade diferente da do sacado." },
   { key: "fora_padrao", head: "Fora padrão Sac.", info: "Fora do padrão do sacado — sacado pagou fora do banco/agência habitual dele." },
-  { key: "multi_sacado", head: "Conta Multi-Sac.", info: "Agência multi-sacado — muitos sacados na mesma agência, de cidades divergentes (concentração local não conta)." },
+  { key: "multi_sacado", head: "Agência Multi-Sac.", info: "Agência multi-sacado — muitos sacados na mesma agência, de cidades divergentes (concentração local não conta)." },
 ]
 
 // Canal por segmento oficial Bacen (descritor — para onde foi o pagamento).
