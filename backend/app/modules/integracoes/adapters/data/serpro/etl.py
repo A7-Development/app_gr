@@ -153,14 +153,31 @@ async def consultar_e_persistir(
     chave: str,
     trigger: str,
     request_tag: str | None = None,
+    mapear: bool = True,
 ) -> SerproIngestResult:
     """Consulta a chave no SERPRO (chamada COBRADA) e persiste o snapshot.
+
+    Com `mapear=True` (default), snapshot INEDITO tambem materializa o
+    silver (wh_nfe_situacao + wh_nfe_evento) na mesma transacao. Snapshot
+    repetido (dedup) pula o mapper — o silver ja reflete esse estado.
 
     Erros do client (SerproNotFoundError, SerproThrottledError, ...) sobem
     para o caller decidir (backoff, marcar monitoracao, etc). Commit e do
     caller.
     """
     response = await client.consulta_nfe(chave, request_tag=request_tag)
-    return await persistir_snapshot(
+    result = await persistir_snapshot(
         db, tenant_id=tenant_id, response=response, trigger=trigger
     )
+    if mapear and result.changed:
+        # Import tardio: evita ciclo etl <-> mappers na carga do modulo.
+        from app.modules.integracoes.adapters.data.serpro.mappers.nfe_estado import (
+            mapear_snapshot,
+        )
+        from app.warehouse.serpro_raw_nfe import SerproRawNfe as _Raw
+
+        raw = (
+            await db.execute(sa.select(_Raw).where(_Raw.id == result.raw_id))
+        ).scalar_one()
+        await mapear_snapshot(db, raw)
+    return result
