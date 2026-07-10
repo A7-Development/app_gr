@@ -29,8 +29,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.warehouse.banco_agencia import WhBancoAgencia
-from app.warehouse.bcb_agencia import WhBcbAgencia
 from app.warehouse.ref_bacen import (
+    FONTE_OLINDA,
     SEGMENTO_BANCO,
     SEGMENTO_BANCO_COOPERATIVO,
     SEGMENTO_COOPERATIVA,
@@ -77,6 +77,11 @@ class PracaLiquidacao:
     # Tipo do posto Bacen (PAB/PAE/AG Empresarial/...) quando a praca veio do
     # degrau de postos; None nos demais degraus.
     tipo_posto: str | None = None
+    # Janela de vigencia da agencia na serie historica BCB (YYYYMM). NULL =
+    # desconhecida (linha so-Olinda ou posto/ERP) — tratar como vigente.
+    # Consumidor futuro: sinal PRC-04 (pagamento fora de vigencia, as-of).
+    primeira_competencia: int | None = None
+    ultima_competencia: int | None = None
 
 
 def _norm_banco(banco: str | None) -> str | None:
@@ -90,26 +95,25 @@ def _norm_agencia(agencia: str | None) -> str | None:
 
 
 class RefBacenResolver:
-    """Resolver em memoria (carrega a ref inteira: ~1k instituicoes + ~18k
-    agencias). Use `carregar` uma vez por job; `resolver` e puro e barato --
-    o formato certo para o motor de sinais varrer milhares de eventos."""
+    """Resolver em memoria (carrega a ref inteira: ~1k instituicoes + ~30k
+    agencias consolidadas + postos). Use `carregar` uma vez por job;
+    `resolver` e puro e barato -- o formato certo para o motor de sinais
+    varrer milhares de eventos."""
 
     def __init__(
         self,
         instituicoes: dict[str, RefBacenInstituicao],
         agencias: dict[tuple[str, str], RefBacenAgencia],
         erp_agencias: dict[tuple[str, str], tuple[str, str]] | None = None,
-        bcb_hist_agencias: dict[tuple[str, str], tuple[str, str]] | None = None,
         postos: dict[tuple[str, str], tuple[str, str, str | None]] | None = None,
     ) -> None:
         self._inst = instituicoes
         self._ag = agencias
-        # Escada de resolucao (decisao Ricardo 2026-07-08/09):
-        #   1. ref_bacen_agencia (Olinda ao vivo, mes corrente)
-        #   2. wh_bcb_agencia (serie historica BCB — inclui EXTINTAS)
-        #   3. ref_bacen_posto (postos de atendimento Bacen — PAB/PAE/AG Empresarial)
-        #   4. cadastro ERP (fallback factual)
-        self._bcb = bcb_hist_agencias or {}
+        # Escada de resolucao (consolidacao 2026-07-10; ex-4 degraus):
+        #   1. ref_bacen_agencia CONSOLIDADA (Olinda vivo + serie historica BCB
+        #      com extintas — coluna `fonte` distingue; ex-wh_bcb_agencia)
+        #   2. ref_bacen_posto (postos de atendimento — PAB/PAC/AG Empresarial)
+        #   3. cadastro ERP (fallback factual)
         self._posto = postos or {}
         self._erp = erp_agencias or {}
 
@@ -123,25 +127,7 @@ class RefBacenResolver:
             (row.banco_compe, row.agencia_codigo): row
             for row in (await db.execute(select(RefBacenAgencia))).scalars()
         }
-        # Serie historica BCB (2o degrau): (banco_compe, agencia_5) ->
-        # (municipio, uf). Cobre extintas que o snapshot Olinda perdeu.
-        # Select de colunas (nao a entidade) — evita coercao do enum
-        # source_type e e mais leve na varredura.
-        bcb: dict[tuple[str, str], tuple[str, str]] = {}
-        bcb_rows = await db.execute(
-            select(
-                WhBcbAgencia.banco_compe,
-                WhBcbAgencia.agencia_codigo,
-                WhBcbAgencia.municipio,
-                WhBcbAgencia.uf,
-            )
-        )
-        for banco_c, ag_c, municipio, uf in bcb_rows:
-            b = _norm_banco(banco_c)
-            a = _norm_agencia(ag_c)
-            if b and a and municipio:
-                bcb[(b, a)] = (municipio, (uf or "").strip() or "")
-        # Postos de atendimento Bacen (3o degrau): (banco_compe, posto_codigo)
+        # Postos de atendimento Bacen (2o degrau): (banco_compe, posto_codigo)
         # -> (municipio, uf, tipo_posto). Cobre unidades com codigo proprio no
         # CNAB que na taxonomia Bacen sao postos (AG Empresarial/PAB da CEF).
         posto: dict[tuple[str, str], tuple[str, str, str | None]] = {}
@@ -165,7 +151,7 @@ class RefBacenResolver:
                 key = (b, a)
                 if key not in posto:  # 1a ocorrencia vence (dups raros)
                     posto[key] = (municipio, (uf or "").strip() or "", tipo)
-        # Cadastro ERP (4o degrau): dedup por (banco, agencia).
+        # Cadastro ERP (3o degrau): dedup por (banco, agencia).
         erp: dict[tuple[str, str], tuple[str, str]] = {}
         for row in (await db.execute(select(WhBancoAgencia))).scalars():
             b = _norm_banco(row.banco_codigo)
@@ -175,7 +161,7 @@ class RefBacenResolver:
             key = (b, a)
             if key not in erp:
                 erp[key] = (row.localidade, (row.estado or "").strip() or "")
-        return cls(inst, ag, erp, bcb, posto)
+        return cls(inst, ag, erp, posto)
 
     def resolver(self, banco: str | None, agencia: str | None) -> PracaLiquidacao:
         b = _norm_banco(banco)
@@ -218,16 +204,7 @@ class RefBacenResolver:
                 False, "agencia-matriz (0001): liquidacao eletronica, cidade nao e praca",
             )
         if row is None or row.municipio is None:
-            # 2o degrau: serie historica BCB (inclui extintas, ex.: 1417/Penha).
-            bcb = self._bcb.get((b, a)) if a else None
-            if bcb is not None:
-                return PracaLiquidacao(
-                    CANAL_BANCO_PRACA, b, inst.nome_reduzido, inst.segmento, a,
-                    bcb[0], None, bcb[1] or None, True,
-                    f"agencia {a} resolvida pela serie historica BCB: {bcb[0]}/{bcb[1]}",
-                    praca_fonte="bcb_historico",
-                )
-            # 3o degrau: postos de atendimento Bacen (AG Empresarial/PAB/PAE).
+            # 2o degrau: postos de atendimento Bacen (AG Empresarial/PAB/PAE).
             posto = self._posto.get((b, a)) if a else None
             if posto is not None:
                 return PracaLiquidacao(
@@ -238,7 +215,7 @@ class RefBacenResolver:
                     praca_fonte="bcb_posto",
                     tipo_posto=posto[2],
                 )
-            # 4o degrau: cadastro ERP (fallback factual).
+            # 3o degrau: cadastro ERP (fallback factual).
             erp = self._erp.get((b, a)) if a else None
             if erp is not None:
                 return PracaLiquidacao(
@@ -253,11 +230,23 @@ class RefBacenResolver:
                 "agencia fora de todas as fontes (interna/extinta desconhecida)"
                 if a else "evento sem agencia pagadora",
             )
+        # 1o degrau (consolidado): a coluna `fonte` diz se a linha veio do
+        # snapshot vivo Olinda ("bacen") ou da serie historica BCB
+        # ("bcb_historico" — inclui extintas, ex.: 1417/Mercado Sao Sebastiao).
+        fonte_row = getattr(row, "fonte", FONTE_OLINDA)
+        praca_fonte = "bacen" if fonte_row == FONTE_OLINDA else "bcb_historico"
+        origem = (
+            "resolvida"
+            if praca_fonte == "bacen"
+            else "resolvida pela serie historica BCB"
+        )
         return PracaLiquidacao(
             CANAL_BANCO_PRACA, b, inst.nome_reduzido, inst.segmento, a,
             row.municipio, row.municipio_ibge, row.uf, True,
-            f"agencia {a} resolvida: {row.municipio}/{row.uf}",
-            praca_fonte="bacen",
+            f"agencia {a} {origem}: {row.municipio}/{row.uf}",
+            praca_fonte=praca_fonte,
+            primeira_competencia=getattr(row, "primeira_competencia", None),
+            ultima_competencia=getattr(row, "ultima_competencia", None),
         )
 
 

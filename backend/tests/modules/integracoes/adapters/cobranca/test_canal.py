@@ -35,10 +35,11 @@ def _inst(codigo, nome_red, nome_ext):
     )
 
 
-def _ag(banco, agencia, municipio, uf, ibge=None):
+def _ag(banco, agencia, municipio, uf, ibge=None, fonte="olinda", ult_comp=None):
     return SimpleNamespace(
         banco_compe=banco, agencia_codigo=agencia,
         municipio=municipio, uf=uf, municipio_ibge=ibge,
+        fonte=fonte, primeira_competencia=None, ultima_competencia=ult_comp,
     )
 
 
@@ -135,21 +136,23 @@ def _resolver_com_postos() -> RefBacenResolver:
     }
     agencias = {
         (a.banco_compe, a.agencia_codigo): a
-        for a in [_ag("237", "03372", "SOROCABA", "SP", 3552205)]
+        for a in [
+            _ag("237", "03372", "SOROCABA", "SP", 3552205),
+            # consolidada da serie historica BCB (ex-wh_bcb_agencia) — tambem
+            # existe como posto: o degrau 1 (agencia) vence o posto (degrau 2).
+            _ag("237", "09090", "SANTOS", "SP", fonte="bcb_historico", ult_comp=202510),
+        ]
     }
     # (banco, agencia) -> (municipio, uf, tipo_posto)
     postos = {
         ("104", "06425"): ("PIRACICABA", "SP", "AG EMPRESARIAL"),
-        # tambem existe como agencia historica BCB -> BCB deve vencer o posto:
         ("237", "09090"): ("CAMPINAS", "SP", "PAB"),
     }
-    bcb = {("237", "09090"): ("SANTOS", "SP")}
-    return RefBacenResolver(instituicoes, agencias, {}, bcb, postos)
+    return RefBacenResolver(instituicoes, agencias, {}, postos)
 
 
-def test_posto_resolve_praca_quando_agencia_e_bcb_falham() -> None:
-    # CEF 6425: nao esta no Informes_Agencias nem na serie BCB, mas e um posto
-    # (AG Empresarial) — hoje cairia em banco_sem_praca; agora resolve.
+def test_posto_resolve_praca_quando_agencia_falha() -> None:
+    # CEF 6425: nao esta na ref consolidada, mas e um posto (AG Empresarial).
     p = _resolver_com_postos().resolver("104", "6425")
     assert p.canal == CANAL_BANCO_PRACA
     assert (p.municipio, p.uf) == ("PIRACICABA", "SP")
@@ -158,13 +161,21 @@ def test_posto_resolve_praca_quando_agencia_e_bcb_falham() -> None:
     assert p.tipo_posto == "AG EMPRESARIAL"
 
 
-def test_bcb_historico_vence_posto_na_escada() -> None:
-    # Mesma chave em BCB e em posto: o degrau BCB (2o) vem antes do posto (3o).
+def test_agencia_consolidada_bcb_historico_vence_posto() -> None:
+    # Mesma chave como agencia consolidada (fonte=bcb_historico) e como posto:
+    # o degrau 1 (agencia) vence; praca_fonte preserva o vocabulario da feature.
     p = _resolver_com_postos().resolver("237", "9090")
     assert p.canal == CANAL_BANCO_PRACA
-    assert p.municipio == "SANTOS"  # BCB, nao CAMPINAS (posto)
+    assert p.municipio == "SANTOS"  # agencia consolidada, nao CAMPINAS (posto)
     assert p.praca_fonte == "bcb_historico"
     assert p.tipo_posto is None
+    assert p.ultima_competencia == 202510  # vigencia exposta (PRC-04 futuro)
+
+
+def test_agencia_olinda_resolve_com_fonte_bacen() -> None:
+    p = _resolver().resolver("237", "3372")
+    assert p.praca_fonte == "bacen"
+    assert p.ultima_competencia is None
 
 
 def test_posto_sem_codigo_nao_resolve() -> None:

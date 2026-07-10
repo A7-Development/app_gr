@@ -40,6 +40,14 @@ SEGMENTO_SCD = "scd"  # sociedade de credito direto
 SEGMENTO_FINANCEIRA = "financeira"
 SEGMENTO_OUTROS = "outros"
 
+# Fonte cadastral da linha de agencia (consolidacao 2026-07-10):
+#   olinda         snapshot vivo Informes_Agencias (sync mensal atualiza)
+#   bcb_historico  serie historica BCB 2007-2026 (estatica; inclui extintas —
+#                  ex. Bradesco 1417 "Mercado Sao Sebastiao") — absorvida da
+#                  antiga wh_bcb_agencia (tabela dropada)
+FONTE_OLINDA = "olinda"
+FONTE_BCB_HISTORICO = "bcb_historico"
+
 
 class RefBacenInstituicao(Base):
     """Instituicao participante do STR, chaveada pelo codigo Compe (o codigo
@@ -150,6 +158,27 @@ class RefBacenAgencia(Base):
     # Data-posicao do snapshot Bacen em que a linha foi vista pela ultima vez.
     # Linha ausente de snapshots novos NAO e apagada (CNAB historico).
     posicao: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # --- Consolidacao da serie historica BCB (2026-07-10; ex-wh_bcb_agencia) ---
+    # Endereco fisico (so a serie historica traz; Olinda nao tem).
+    endereco: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    bairro: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cep: Mapped[str | None] = mapped_column(String(9), nullable=True)
+    # Janela de VIGENCIA observada na serie historica BCB (YYYYMM). Habilita
+    # resolucao as-of (pagamento numa agencia fora de vigencia = anomalia
+    # temporal — sinal PRC-04 do catalogo). NULL = vigencia desconhecida
+    # (linha so-Olinda): tratar como vigente, nunca como anomalia.
+    primeira_competencia: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ultima_competencia: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Flag "ativa" do ultimo snapshot da serie historica; NULL = so-Olinda.
+    # NUNCA sobrescrita por ausencia em snapshot (extincao se le pela
+    # ultima_competencia envelhecida, nao por delete).
+    ativa: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Fonte cadastral da linha: FONTE_OLINDA | FONTE_BCB_HISTORICO. Linha
+    # bcb_historico que reaparecer no Informes_Agencias e promovida a olinda
+    # pelo upsert do sync (cadastro mais fresco vence).
+    fonte: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=FONTE_OLINDA
+    )
 
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     fetched_by_version: Mapped[str] = mapped_column(String(64), nullable=False)
