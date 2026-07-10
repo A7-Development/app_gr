@@ -184,6 +184,32 @@ const FIELDS_BY_SOURCE: Partial<Record<SourceTypeId, FieldDescriptor[]>> = {
         "CNPJ (so digitos) do consultante real — A7 Credit consome como distribuidor, e este header e OBRIGATORIO em toda chamada. Sem ele, o consumo conta para a A7 em vez do tenant.",
     },
   ],
+  "data:serpro_nfe": [
+    {
+      key: "consumer_key",
+      label: "Consumer Key",
+      type: "secret",
+      required: true,
+      helper:
+        "Emitida na Area do Cliente SERPRO. Vai no Authorization: Basic base64(consumer_key:consumer_secret) da request de token OAuth2.",
+    },
+    {
+      key: "consumer_secret",
+      label: "Consumer Secret",
+      type: "secret",
+      required: true,
+      helper:
+        "Secret correspondente a Consumer Key. Cifrado em repouso via envelope encryption.",
+    },
+    {
+      key: "plan",
+      label: "Plano contratado",
+      type: "text",
+      placeholder: "df",
+      helper:
+        "df (Direto na Faixa, preco fixo por consulta — plano atual da A7) ou escalonado (preco por faixa de volume). Define a base URL; 403 na consulta = plano errado.",
+    },
+  ],
 }
 
 // Valor que o backend usa para indicar "secret persistido sem vazamento".

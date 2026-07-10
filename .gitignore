@@ -79,3 +79,6 @@ backend/tests/modules/integracoes/adapters/data/bigdatacorp/fixtures/
 .claude/scheduled_tasks.lock
 .mcp.json
 .claude/skills/
+
+# Saidas ad-hoc de scripts de smoke/probe (payloads de bancada)
+backend/scripts/_out/
