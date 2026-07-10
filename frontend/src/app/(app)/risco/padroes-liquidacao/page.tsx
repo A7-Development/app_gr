@@ -1,20 +1,18 @@
 // src/app/(app)/risco/padroes-liquidacao/page.tsx
 //
 // Risco · Liquidações · Padrões de liquidação — painel 100% DETERMINÍSTICO
-// (decisão Ricardo 2026-07-09). Diferente de /risco/cedentes (que usa o SCORE
-// do modelo), aqui só há FATOS: as ocorrências já materializadas em
-// deteccao_score.features + as conclusões determinísticas (regra_dura). O
-// score do modelo é deliberadamente ignorado.
+// (decisão Ricardo 2026-07-09). Diferente de /risco/cedentes (score do modelo),
+// aqui só há fatos: ocorrências já materializadas em deteccao_score.features +
+// as conclusões determinísticas (regra_dura). O score do modelo é ignorado.
 //
-// Duas camadas por cedente, escopadas por uma JANELA sobre data_evento:
-//   - Fatos   → matriz de contagem de ocorrência por sinal (heatmap) + mix de
-//               canal.
-//   - Alertas → regra_dura acionada (cedente em alerta sobe ao topo).
-// Temporalidade: a janela filtra 100% dos agregados; cada célula/kpi traz o Δ
-// vs a janela anterior; a recência evita alerta velho parecendo atual.
+// Indicadores (travados 2026-07-09), todos INTRÍNSECOS ao cedente:
+//   Conta do cedente (o maior red flag, peso máximo) · Praça do cedente
+//   (condicionada) · Fora da praça do sacado · Fora do padrão do sacado ·
+//   Agência multi-sacado (condicionada). + Canal por segmento oficial Bacen
+//   (banco digital / cooperativa / IP / SCD / financeira). Alerta = regra dura.
 //
-// Detalhe por cedente (buckets temporais + liquidações por canal) = 2º momento
-// (drawer), conforme combinado.
+// Temporalidade: janela sobre data_evento (filtra 100%) + Δ vs janela anterior
+// + recência. Detalhe por cedente (rede/anel + liquidações) = 2º momento.
 //
 
 "use client"
@@ -42,33 +40,25 @@ const JANELAS: { value: JanelaLiquidacao; label: string }[] = [
   { value: "tudo", label: "Tudo" },
 ]
 
-// Sinais de ocorrência — ordem canônica da matriz. `key` casa com o dict
-// `sinais` do backend; `head` é o cabeçalho curto; `info` o tooltip.
+// Red flags intrínsecos ao cedente (heatmap). Conta do cedente é a coluna-líder
+// (peso máximo) e vem separada; estes são os demais.
 const SINAIS: { key: string; head: string; info: string }[] = [
-  { key: "match_conta", head: "Conta", info: "Recebido na agência/conta do próprio cedente." },
-  { key: "match_cidade", head: "Cidade", info: "Cidade do pagamento = cidade do cedente." },
-  { key: "fora_praca", head: "Fora praça", info: "Pago fora da praça (cidade) do sacado." },
-  { key: "ag_compartilhada", head: "Ag. comp.", info: "Agência compartilhada por vários sacados." },
-  { key: "anel_cedentes", head: "Anel", info: "Agência compartilhada entre cedentes diferentes." },
-  { key: "contrato_aberto", head: "Contr. aberto", info: "Liquidado com o contrato ainda aberto." },
-  { key: "boleto_nao_esperado", head: "Boleto ines.", info: "Boleto não esperado, mas houve trilho bancário." },
-  { key: "baixa_manual_anomala", head: "Baixa anôm.", info: "Baixa manual anômala para o produto." },
-  { key: "quebra_fingerprint", head: "Fingerpr.", info: "Quebra do padrão histórico de pagamento do sacado." },
-  { key: "pago_exato_vencimento", head: "Venc. exato", info: "Pago exatamente no dia do vencimento." },
+  { key: "praca_cedente", head: "Praça do cedente", info: "Pago na cidade do cedente E fora da cidade do sacado (se mesma praça, não conta)." },
+  { key: "fora_praca", head: "Fora praça sacado", info: "Pago em cidade diferente da do sacado." },
+  { key: "fora_padrao", head: "Fora do padrão", info: "Sacado pagou fora do banco/agência habitual dele." },
+  { key: "multi_sacado", head: "Ag. multi-sacado", info: "Muitos sacados na mesma agência, de cidades divergentes (concentração local não conta)." },
 ]
 
-// Mix de canal (mini-barra) — cores categóricas (viz aprovada). Ordem = norma
-// primeiro (banco na praça), depois os canais de atenção.
-const CANAL: { key: string; label: string; cor: string }[] = [
-  { key: "banco_praca", label: "Banco na praça", cor: "bg-gray-400 dark:bg-gray-500" },
-  { key: "cooperativa", label: "Cooperativa", cor: "bg-sky-500" },
-  { key: "ip", label: "Inst. pagamento", cor: "bg-violet-500" },
-  { key: "sem_praca", label: "Sem praça (inc. SCD/fin.)", cor: "bg-amber-500" },
-  { key: "nao_resolvido", label: "Não resolvido", cor: "bg-red-500" },
-  { key: "baixa_manual", label: "Baixa manual", cor: "bg-orange-500" },
+// Canal por segmento oficial Bacen (descritor — para onde foi o pagamento).
+const SEGMENTOS: { key: string; head: string; info: string }[] = [
+  { key: "banco_digital", head: "Banco digital", info: "Pago em banco digital (banco sem rede física, ≤1 agência)." },
+  { key: "cooperativa", head: "Cooperativa", info: "Pago em cooperativa de crédito." },
+  { key: "ip", head: "IP", info: "Pago em instituição de pagamento (conta eletrônica)." },
+  { key: "scd", head: "SCD", info: "Pago em sociedade de crédito direto." },
+  { key: "financeira", head: "Financeira", info: "Pago em financeira (SCFI)." },
 ]
 
-// Heatmap de ocorrência: 0 = vazio; senão intensidade pela razão count/n_liq.
+// Heatmap de red flag: 0 = vazio; senão intensidade pela razão count/n_liq.
 // MOTIVO: chip de heatmap é viz aprovada (matriz determinística) — a cor
 // carrega a intensidade; tableTokens não tem variante de heat.
 function HeatCell({ count, total }: { count: number; total: number }) {
@@ -90,11 +80,21 @@ function HeatCell({ count, total }: { count: number; total: number }) {
   )
 }
 
+// Segmento = descritor, não red flag: contagem neutra (sem heat).
+function SegCell({ count, total }: { count: number; total: number }) {
+  if (!count) return <span className={tableTokens.cellMuted}>—</span>
+  return (
+    <span className={tableTokens.cellNumberSecondary} title={`${count} de ${total} liquidações`}>
+      {count}
+    </span>
+  )
+}
+
 function AlertaCell({ row }: { row: CedentePerfilRow }) {
   if (!row.n_alerta) return <span className={tableTokens.cellMuted}>—</span>
   const partes: string[] = []
-  if (row.n_alerta_conta) partes.push(`${row.n_alerta_conta} conta/cidade`)
-  if (row.n_alerta_anel) partes.push(`${row.n_alerta_anel} anel de agência`)
+  if (row.n_alerta_conta) partes.push(`${row.n_alerta_conta} conta+cidade`)
+  if (row.n_alerta_multicedente) partes.push(`${row.n_alerta_multicedente} agência multi-cedente`)
   return (
     <span
       className={cx(tableTokens.badge, tableTokens.badgeDanger)}
@@ -105,25 +105,10 @@ function AlertaCell({ row }: { row: CedentePerfilRow }) {
   )
 }
 
-function CanalMixBar({ row }: { row: CedentePerfilRow }) {
-  const total = row.n_liq || 1
-  const tooltip = CANAL.map((c) => `${c.label}: ${row.canal[c.key] ?? 0}`).join(" · ")
-  return (
-    <div className="flex h-3 w-[120px] overflow-hidden rounded-sm" title={tooltip}>
-      {CANAL.map((c) => {
-        const n = row.canal[c.key] ?? 0
-        if (!n) return null
-        return <div key={c.key} className={c.cor} style={{ width: `${(100 * n) / total}%` }} />
-      })}
-    </div>
-  )
-}
-
 function RecenciaCell({ iso }: { iso: string | null }) {
   if (!iso) return <span className={tableTokens.cellMuted}>—</span>
   const dias = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
   const label = dias <= 0 ? "hoje" : `há ${dias}d`
-  // Recência velha (>90d) = alerta possivelmente parado — sinaliza em âmbar.
   return (
     <span
       className={cx(tableTokens.cellSecondary, dias > 90 && "text-amber-600 dark:text-amber-400")}
@@ -156,7 +141,7 @@ const col = createColumnHelper<CedentePerfilRow>()
 export default function PadroesLiquidacaoPage() {
   const [janela, setJanela] = React.useState<JanelaLiquidacao>("30d")
   const [search, setSearch] = React.useState("")
-  const [segment, setSegment] = React.useState<"todos" | "alerta" | "anel">("todos")
+  const [segment, setSegment] = React.useState<"todos" | "alerta" | "conta">("todos")
 
   const query = usePadroesLiquidacao(janela)
   const cedentes = React.useMemo(() => query.data?.cedentes ?? [], [query.data])
@@ -184,9 +169,9 @@ export default function PadroesLiquidacaoPage() {
             : undefined,
         sub: "regra dura na janela",
       },
-      { eyebrow: "BANCO NA PRAÇA", value: `${kpis.pct_banco_praca}%`, sub: "das liquidações" },
+      { eyebrow: "CONTA DO CEDENTE", value: `${kpis.pct_conta_cedente}%`, sub: "das liquidações" },
       { eyebrow: "FORA DA PRAÇA DO SACADO", value: `${kpis.pct_fora_praca}%`, sub: "das liquidações" },
-      { eyebrow: "BAIXA MANUAL", value: `${kpis.pct_baixa_manual}%`, sub: "das liquidações" },
+      { eyebrow: "CANAL DE ATENÇÃO", value: `${kpis.pct_canal_atencao}%`, sub: "digital/coop/IP/SCD/fin." },
     ]
   }, [kpis])
 
@@ -194,15 +179,29 @@ export default function PadroesLiquidacaoPage() {
     () => [
       col.accessor("cedente_nome", {
         header: "Cedente",
-        size: 220,
+        size: 210,
         cell: (info) => {
           const nome = (info.getValue() as string | null) ?? info.row.original.cedente_documento
           return (
-            <span className={cx(tableTokens.cellStrong, "block max-w-[210px] truncate")} title={nome}>
+            <span className={cx(tableTokens.cellStrong, "block max-w-[200px] truncate")} title={nome}>
               {nome}
             </span>
           )
         },
+      }) as ColumnDef<CedentePerfilRow, unknown>,
+      // Conta do cedente — o MAIOR red flag (peso máximo), coluna-líder.
+      col.display({
+        id: "conta_cedente",
+        header: () => (
+          <span title="Recebido em agência/conta cadastrada do próprio cedente — o maior red flag de auto-liquidação.">
+            ⭐ Conta do cedente
+          </span>
+        ),
+        size: 130,
+        meta: { align: "center" },
+        cell: ({ row }) => (
+          <HeatCell count={row.original.sinais.conta_cedente ?? 0} total={row.original.n_liq} />
+        ),
       }) as ColumnDef<CedentePerfilRow, unknown>,
       col.display({
         id: "alerta",
@@ -218,7 +217,7 @@ export default function PadroesLiquidacaoPage() {
       }) as ColumnDef<CedentePerfilRow, unknown>,
       col.accessor("valor", {
         header: "R$ liquidado",
-        size: 116,
+        size: 112,
         meta: { align: "right" },
         cell: (info) => <span className={tableTokens.cellNumberSecondary}>{brl(info.getValue() as number)}</span>,
       }) as ColumnDef<CedentePerfilRow, unknown>,
@@ -227,22 +226,28 @@ export default function PadroesLiquidacaoPage() {
           col.display({
             id: s.key,
             header: () => <span title={s.info}>{s.head}</span>,
-            size: 78,
+            size: 110,
             meta: { align: "center" },
             cell: ({ row }) => (
               <HeatCell count={row.original.sinais[s.key] ?? 0} total={row.original.n_liq} />
             ),
           }) as ColumnDef<CedentePerfilRow, unknown>,
       ),
-      col.display({
-        id: "canal",
-        header: () => <span title="Mix de canal de liquidação. SCD/financeira ainda contam em 'sem praça'.">Canal</span>,
-        size: 130,
-        cell: ({ row }) => <CanalMixBar row={row.original} />,
-      }) as ColumnDef<CedentePerfilRow, unknown>,
+      ...SEGMENTOS.map(
+        (s) =>
+          col.display({
+            id: `seg_${s.key}`,
+            header: () => <span title={s.info}>{s.head}</span>,
+            size: 92,
+            meta: { align: "center" },
+            cell: ({ row }) => (
+              <SegCell count={row.original.segmentos[s.key] ?? 0} total={row.original.n_liq} />
+            ),
+          }) as ColumnDef<CedentePerfilRow, unknown>,
+      ),
       col.accessor("ultima_liq", {
         header: "Última liq.",
-        size: 90,
+        size: 88,
         cell: (info) => <RecenciaCell iso={info.getValue() as string | null} />,
       }) as ColumnDef<CedentePerfilRow, unknown>,
       col.display({
@@ -259,7 +264,7 @@ export default function PadroesLiquidacaoPage() {
     <div className="flex flex-col gap-6 px-6 pt-5 pb-6">
       <PageHeader
         title="Padrões de liquidação"
-        info="Perfil 100% determinístico das liquidações: só fatos (ocorrências de sinal já materializadas) e conclusões determinísticas (regra dura). O score do modelo é ignorado aqui — ele vive em 'Risco de cedentes'. A janela filtra todos os agregados; cada célula é a contagem na janela (heatmap por intensidade); Δ compara com a janela anterior; a recência evita alerta velho parecendo atual."
+        info="Perfil 100% determinístico das liquidações: só fatos (ocorrências já materializadas) e conclusões determinísticas (regra dura). O score do modelo é ignorado — ele vive em 'Risco de cedentes'. Indicadores intrínsecos ao cedente: Conta do cedente (o maior red flag), Praça do cedente (só quando ≠ praça do sacado), Fora da praça do sacado, Fora do padrão do sacado, Agência multi-sacado (só com cidades divergentes) + canal por segmento Bacen. A janela filtra todos os agregados; Δ compara com a janela anterior; recência evita alerta velho."
         subtitle="Risco · Liquidações"
       />
 
@@ -291,9 +296,9 @@ export default function PadroesLiquidacaoPage() {
             { value: "todos", label: "Todos", filter: () => true },
             { value: "alerta", label: "Em alerta", filter: (c) => c.n_alerta > 0 },
             {
-              value: "anel",
-              label: "Anel de agência",
-              filter: (c) => (c.sinais.anel_cedentes ?? 0) > 0 || c.n_alerta_anel > 0,
+              value: "conta",
+              label: "Conta do cedente",
+              filter: (c) => (c.sinais.conta_cedente ?? 0) > 0,
             },
           ],
         }}

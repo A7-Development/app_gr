@@ -34,7 +34,8 @@ API = "/api/v1/risco/padroes-liquidacao"
 async def _seed_scores(
     tenant_id, modelo_id, liq1: Liquidacao, liq2: Liquidacao
 ) -> None:
-    """liq1 = banco na praca + regra dura (conta/cidade); liq2 = baixa manual."""
+    """liq1 = conta do cedente + praca do cedente + alerta (regra dura conta) +
+    banco digital; liq2 = fora do padrao + agencia multi-sacado + cooperativa."""
     async with AsyncSessionLocal() as db:
         db.add(
             DeteccaoScore(
@@ -51,6 +52,7 @@ async def _seed_scores(
                     "match_agencia_conta_cedente": 1.0,
                     "cidade_pgto_eq_cedente": 1.0,
                     "cidade_pgto_neq_sacado": 1.0,
+                    "seg_banco_digital": 1.0,
                 },
             )
         )
@@ -62,8 +64,10 @@ async def _seed_scores(
                 score=0.1,
                 regra_dura=False,
                 features={
-                    "canal_baixa_manual": 1.0,
-                    "contrato_aberto": 1.0,
+                    "cidade_pgto_neq_sacado": 1.0,
+                    "quebra_fingerprint": 0.9,
+                    "agencia_compartilhada": 1.5,
+                    "seg_cooperativa": 1.0,
                 },
             )
         )
@@ -114,9 +118,9 @@ async def test_perfil_agrega_sinais_canal_e_alerta(
     assert kpis["valor_total"] == 2000.0
     assert kpis["n_cedentes"] == 1
     assert kpis["n_alerta_total"] == 1
-    assert kpis["pct_banco_praca"] == 50.0
-    assert kpis["pct_baixa_manual"] == 50.0
-    assert kpis["pct_fora_praca"] == 50.0
+    assert kpis["pct_conta_cedente"] == 50.0  # 1 de 2
+    assert kpis["pct_fora_praca"] == 100.0  # ambas fora da praca do sacado
+    assert kpis["pct_canal_atencao"] == 100.0  # digital + cooperativa
 
     assert len(data["cedentes"]) == 1
     c = data["cedentes"][0]
@@ -124,17 +128,19 @@ async def test_perfil_agrega_sinais_canal_e_alerta(
     assert c["n_liq"] == 2
     assert c["n_alerta"] == 1
     assert c["n_alerta_conta"] == 1
-    assert c["n_alerta_anel"] == 0
-    # ocorrencias de sinal
-    assert c["sinais"]["match_conta"] == 1
-    assert c["sinais"]["match_cidade"] == 1
-    assert c["sinais"]["fora_praca"] == 1
-    assert c["sinais"]["contrato_aberto"] == 1
-    assert c["sinais"]["anel_cedentes"] == 0
-    # mix de canal: 1 banco na praca (liq1) + 1 baixa manual (liq2)
-    assert c["canal"]["banco_praca"] == 1
-    assert c["canal"]["baixa_manual"] == 1
-    assert c["canal"]["cooperativa"] == 0
+    assert c["n_alerta_multicedente"] == 0
+    # red flags intrinsecos
+    assert c["sinais"]["conta_cedente"] == 1
+    # praca do cedente CONDICIONADA: liq1 tem eq_cedente E neq_sacado -> 1
+    assert c["sinais"]["praca_cedente"] == 1
+    assert c["sinais"]["fora_praca"] == 2
+    assert c["sinais"]["fora_padrao"] == 1  # liq2 quebra_fingerprint > 0
+    # multi-sacado CONDICIONADO: liq2 ag_compartilhada>0 E fora da praca -> 1
+    assert c["sinais"]["multi_sacado"] == 1
+    # canal por segmento: 1 banco digital (liq1) + 1 cooperativa (liq2)
+    assert c["segmentos"]["banco_digital"] == 1
+    assert c["segmentos"]["cooperativa"] == 1
+    assert c["segmentos"]["ip"] == 0
     # janela 30d default: sem janela anterior com dados -> cedente novo, sem Delta
     assert c["cedente_novo"] is True
     assert c["delta_alerta"] is None

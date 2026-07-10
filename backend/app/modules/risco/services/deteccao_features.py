@@ -48,6 +48,14 @@ from app.modules.integracoes.public import (
     CANAL_NAO_RESOLVIDO,
     RefBacenResolver,
 )
+from app.warehouse.ref_bacen import (
+    SEGMENTO_BANCO,
+    SEGMENTO_BANCO_COOPERATIVO,
+    SEGMENTO_COOPERATIVA,
+    SEGMENTO_FINANCEIRA,
+    SEGMENTO_IP,
+    SEGMENTO_SCD,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -374,6 +382,21 @@ async def montar_features(db: AsyncSession, tenant_id: UUID) -> list[FeatureRow]
         if _doc(r["cedente_documento"])
     }
 
+    # Bancos digitais (segmento oficial banco SEM rede fisica) — chave Compe.
+    # Descritor de canal por segmento p/ o painel deterministico; NAO e feature
+    # do modelo (chave extra no vetor, ignorada por FEATURE_NAMES).
+    digital: set[str] = {
+        row[0]
+        for row in (
+            await db.execute(
+                text(
+                    "SELECT codigo_compe FROM ref_bacen_instituicao "
+                    "WHERE is_banco_digital IS TRUE"
+                )
+            )
+        ).all()
+    }
+
     # --- per-event assembly -------------------------------------------------
     rows: list[FeatureRow] = []
     for ev in eventos:
@@ -483,6 +506,21 @@ async def montar_features(db: AsyncSession, tenant_id: UUID) -> list[FeatureRow]
             "ticket_z": round(ticket_z, 4),
             "valor_log": round(math.log1p(valor), 4),
         }
+
+        # --- descritores de segmento da instituicao pagadora ----------------
+        # Chaves EXTRA (fora de FEATURE_NAMES): alimentam o painel
+        # deterministico de padroes de liquidacao (canal por segmento oficial
+        # Bacen), ignoradas pelo modelo (score le so FEATURE_NAMES).
+        seg = praca.segmento
+        f["seg_banco_digital"] = (
+            1.0 if seg == SEGMENTO_BANCO and (praca.banco_compe in digital) else 0.0
+        )
+        f["seg_cooperativa"] = (
+            1.0 if seg in (SEGMENTO_COOPERATIVA, SEGMENTO_BANCO_COOPERATIVO) else 0.0
+        )
+        f["seg_ip"] = 1.0 if seg == SEGMENTO_IP else 0.0
+        f["seg_scd"] = 1.0 if seg == SEGMENTO_SCD else 0.0
+        f["seg_financeira"] = 1.0 if seg == SEGMENTO_FINANCEIRA else 0.0
 
         # --- regra dura (deterministica, fora do modelo) --------------------
         # Praca resolvida SO por fonte propria (escada Bacen->ERP); trilho B

@@ -2,24 +2,31 @@
 
 Diferente de `cedente_risco` (que consome o SCORE do modelo), este servico e
 100% factual: le apenas os fatos ja materializados em `deteccao_score.features`
-(o vetor de entrada, snapshot por liquidacao) + `regra_dura`/`regra_dura_motivo`
-(as conclusoes DETERMINISTICAS, fora do modelo). O `score` do modelo e
-deliberadamente IGNORADO aqui.
+(o vetor de entrada + descritores de segmento) + `regra_dura`/`regra_dura_motivo`
+(as conclusoes DETERMINISTICAS). O `score` do modelo e IGNORADO aqui.
 
-Duas camadas por cedente, escopadas por uma janela temporal sobre
-`wh_liquidacao.data_evento` (a data do evento economico, nao a de ingestao):
-  - Fatos    -> contagem de ocorrencias por sinal (match conta/cidade, fora da
-                praca, agencia compartilhada, anel entre cedentes, contrato
-                aberto, ...) + mix de canal (banco na praca / cooperativa / IP /
-                sem praca / nao resolvido / baixa manual).
-  - Alertas  -> `regra_dura` acionada (conta+cidade OU agencia compartilhada por
-                >=10 sacados de outras cidades). O cedente em alerta sobe ao topo.
+Conjunto de indicadores (travado com Ricardo 2026-07-09), todos INTRINSECOS ao
+cedente, escopados por uma janela sobre `wh_liquidacao.data_evento`:
+
+  Red flags de captura & descolamento:
+    - Conta do cedente  -> pagamento bate com o cadastro de conta do cedente
+                           (o MAIOR red flag; coluna fixa, peso maximo).
+    - Praca do cedente  -> pago na cidade do cedente E FORA da do sacado
+                           (CONDICIONADO: mesma praca = sem forca, zera).
+    - Fora da praca do sacado -> pago em cidade != do sacado.
+    - Fora do padrao do sacado -> sacado pagou fora do banco/agencia habitual.
+    - Agencia multi-sacado -> muitos sacados na mesma agencia, CONDICIONADO a
+                              cidades divergentes (concentracao regional inocente
+                              nao conta).
+
+  Canal por segmento oficial Bacen (descritor de para onde foi o pagamento):
+    - Banco digital / Cooperativa / IP / SCD / Financeira.
+
+  Alerta (regra dura): conta+cidade OU agencia multi-cedente (ex-"anel").
 
 Temporalidade: a janela filtra 100% dos agregados (§7.2); cada metrica traz o
-Delta vs a janela anterior de mesmo tamanho (separa cronico de novo); a recencia
-(ultima `data_evento` na janela) evita alerta velho parecendo atual.
-
-Silver-only, tenant-scoped. Read puro — nao grava decision_log.
+Delta vs a janela anterior; a recencia (ultima `data_evento`) evita alerta velho
+parecendo atual. Silver-only, tenant-scoped, read puro.
 """
 
 from __future__ import annotations
@@ -31,8 +38,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# Janela -> dias (None = "tudo", sem limite inferior). Espelha os presets do
-# seletor no frontend.
+# Janela -> dias (None = "tudo", sem limite inferior).
 JANELAS: dict[str, int | None] = {
     "7d": 7,
     "15d": 15,
@@ -44,7 +50,7 @@ JANELAS: dict[str, int | None] = {
 JANELA_PADRAO = "30d"
 
 # Agregado deterministico por cedente numa janela [inicio, fim). Le SO
-# deteccao_score.features (fatos) + regra_dura (alertas) — nunca ds.score.
+# deteccao_score.features (fatos + segmento) + regra_dura (alertas).
 _SQL_PERFIL = text("""
 SELECT
     o.cedente_documento,
@@ -59,54 +65,43 @@ SELECT
     ) AS n_alerta_conta,
     count(*) FILTER (
         WHERE ds.regra_dura AND ds.regra_dura_motivo ILIKE 'agencia compartilhada%'
-    ) AS n_alerta_anel,
-    -- ocorrencias de sinal (contagem de eventos que acionaram)
+    ) AS n_alerta_multicedente,
+    -- red flags (intrinsecos ao cedente)
     count(*) FILTER (
         WHERE coalesce((ds.features->>'match_agencia_conta_cedente')::numeric, 0) >= 0.5
-    ) AS match_conta,
+    ) AS conta_cedente,
+    -- praca do cedente CONDICIONADA: pago na cidade do cedente E fora da do sacado
     count(*) FILTER (
         WHERE coalesce((ds.features->>'cidade_pgto_eq_cedente')::numeric, 0) >= 0.5
-    ) AS match_cidade,
+          AND coalesce((ds.features->>'cidade_pgto_neq_sacado')::numeric, 0) >= 0.5
+    ) AS praca_cedente,
     count(*) FILTER (
         WHERE coalesce((ds.features->>'cidade_pgto_neq_sacado')::numeric, 0) >= 0.5
     ) AS fora_praca,
     count(*) FILTER (
-        WHERE coalesce((ds.features->>'agencia_compartilhada')::numeric, 0) > 0
-    ) AS ag_compartilhada,
-    count(*) FILTER (
-        WHERE coalesce((ds.features->>'agencia_compartilhada_cedentes')::numeric, 0) > 0
-    ) AS anel_cedentes,
-    count(*) FILTER (
-        WHERE coalesce((ds.features->>'contrato_aberto')::numeric, 0) >= 0.5
-    ) AS contrato_aberto,
-    count(*) FILTER (
-        WHERE coalesce((ds.features->>'baixa_manual_produto_anomala')::numeric, 0) >= 0.5
-    ) AS baixa_manual_anomala,
-    count(*) FILTER (
-        WHERE coalesce((ds.features->>'boleto_nao_esperado_mas_teve')::numeric, 0) >= 0.5
-    ) AS boleto_nao_esperado,
-    count(*) FILTER (
         WHERE coalesce((ds.features->>'quebra_fingerprint')::numeric, 0) > 0
-    ) AS quebra_fingerprint,
+    ) AS fora_padrao,
+    -- agencia multi-sacado CONDICIONADA a cidades divergentes
     count(*) FILTER (
-        WHERE coalesce((ds.features->>'pago_exato_vencimento')::numeric, 0) >= 0.5
-    ) AS pago_exato_vencimento,
-    -- mix de canal (o banco na praca e derivado: n_liq - os demais)
+        WHERE coalesce((ds.features->>'agencia_compartilhada')::numeric, 0) > 0
+          AND coalesce((ds.features->>'cidade_pgto_neq_sacado')::numeric, 0) >= 0.5
+    ) AS multi_sacado,
+    -- canal por segmento oficial Bacen (mutuamente exclusivos)
     count(*) FILTER (
-        WHERE coalesce((ds.features->>'canal_cooperativa')::numeric, 0) >= 0.5
-    ) AS canal_cooperativa,
+        WHERE coalesce((ds.features->>'seg_banco_digital')::numeric, 0) >= 0.5
+    ) AS seg_banco_digital,
     count(*) FILTER (
-        WHERE coalesce((ds.features->>'canal_ip')::numeric, 0) >= 0.5
-    ) AS canal_ip,
+        WHERE coalesce((ds.features->>'seg_cooperativa')::numeric, 0) >= 0.5
+    ) AS seg_cooperativa,
     count(*) FILTER (
-        WHERE coalesce((ds.features->>'canal_sem_praca')::numeric, 0) >= 0.5
-    ) AS canal_sem_praca,
+        WHERE coalesce((ds.features->>'seg_ip')::numeric, 0) >= 0.5
+    ) AS seg_ip,
     count(*) FILTER (
-        WHERE coalesce((ds.features->>'canal_nao_resolvido')::numeric, 0) >= 0.5
-    ) AS canal_nao_resolvido,
+        WHERE coalesce((ds.features->>'seg_scd')::numeric, 0) >= 0.5
+    ) AS seg_scd,
     count(*) FILTER (
-        WHERE coalesce((ds.features->>'canal_baixa_manual')::numeric, 0) >= 0.5
-    ) AS canal_baixa_manual
+        WHERE coalesce((ds.features->>'seg_financeira')::numeric, 0) >= 0.5
+    ) AS seg_financeira
 FROM deteccao_score ds
 JOIN wh_liquidacao l ON l.id = ds.liquidacao_id
 JOIN wh_operacao o
@@ -118,19 +113,16 @@ WHERE ds.tenant_id = :tenant_id
 GROUP BY o.cedente_documento
 """)
 
-# Colunas de sinal (contagem de ocorrencia) na ordem canonica da matriz.
+# Red flags (contagem de ocorrencia) — ordem canonica da matriz.
 _SINAIS = (
-    "match_conta",
-    "match_cidade",
+    "conta_cedente",
+    "praca_cedente",
     "fora_praca",
-    "ag_compartilhada",
-    "anel_cedentes",
-    "contrato_aberto",
-    "baixa_manual_anomala",
-    "boleto_nao_esperado",
-    "quebra_fingerprint",
-    "pago_exato_vencimento",
+    "fora_padrao",
+    "multi_sacado",
 )
+# Canal por segmento oficial Bacen.
+_SEGMENTOS = ("banco_digital", "cooperativa", "ip", "scd", "financeira")
 
 
 async def _agregar(
@@ -145,26 +137,6 @@ async def _agregar(
     return {r["cedente_documento"]: dict(r) for r in rows}
 
 
-def _canal_mix(r: dict[str, Any]) -> dict[str, int]:
-    """Mix de canal por cedente; banco_praca = resto (nenhum flag acionado)."""
-    coop = int(r["canal_cooperativa"] or 0)
-    ip = int(r["canal_ip"] or 0)
-    sem_praca = int(r["canal_sem_praca"] or 0)
-    nao_resolvido = int(r["canal_nao_resolvido"] or 0)
-    baixa_manual = int(r["canal_baixa_manual"] or 0)
-    banco_praca = max(
-        0, int(r["n_liq"] or 0) - (coop + ip + sem_praca + nao_resolvido + baixa_manual)
-    )
-    return {
-        "banco_praca": banco_praca,
-        "cooperativa": coop,
-        "ip": ip,
-        "sem_praca": sem_praca,
-        "nao_resolvido": nao_resolvido,
-        "baixa_manual": baixa_manual,
-    }
-
-
 async def perfil(
     db: AsyncSession,
     tenant_id: UUID,
@@ -174,7 +146,8 @@ async def perfil(
     """Perfil deterministico das liquidacoes na janela + Delta vs anterior.
 
     Retorna {janela, inicio, fim, kpis, cedentes[]}. `cedentes` ordenado por
-    alerta (regra dura) desc, depois valor desc — cedente em alerta no topo.
+    alerta desc, depois Conta do cedente desc, depois valor desc — cedente em
+    alerta (e captura direta) no topo.
     """
     dias = JANELAS.get(janela, JANELAS[JANELA_PADRAO])
     fim = datetime.now(UTC)
@@ -182,7 +155,6 @@ async def perfil(
 
     atual = await _agregar(db, tenant_id, inicio, fim)
 
-    # Janela anterior de mesmo tamanho (para o Delta). "tudo" nao tem anterior.
     anterior: dict[str, dict[str, Any]] = {}
     if dias is not None and inicio is not None:
         anterior = await _agregar(
@@ -203,10 +175,9 @@ async def perfil(
                 "ultima_liq": r["ultima_liq"],
                 "n_alerta": n_alerta,
                 "n_alerta_conta": int(r["n_alerta_conta"] or 0),
-                "n_alerta_anel": int(r["n_alerta_anel"] or 0),
+                "n_alerta_multicedente": int(r["n_alerta_multicedente"] or 0),
                 "sinais": {s: int(r[s] or 0) for s in _SINAIS},
-                "canal": _canal_mix(r),
-                # Delta vs janela anterior (None quando "tudo" ou cedente novo).
+                "segmentos": {s: int(r[f"seg_{s}"] or 0) for s in _SEGMENTOS},
                 "delta_alerta": (
                     n_alerta - int(prev["n_alerta"] or 0) if prev is not None else None
                 ),
@@ -217,15 +188,21 @@ async def perfil(
             }
         )
 
-    cedentes.sort(key=lambda c: (-c["n_alerta"], -c["valor"]))
+    # Ordena: alerta desc -> Conta do cedente desc (o maior red flag) -> valor.
+    cedentes.sort(
+        key=lambda c: (-c["n_alerta"], -c["sinais"]["conta_cedente"], -c["valor"])
+    )
 
     # KPIs da janela (somados sobre os cedentes exibidos — reconcilia §14.6).
     n_liq_total = sum(c["n_liq"] for c in cedentes)
     valor_total = sum(c["valor"] for c in cedentes)
     n_alerta_total = sum(c["n_alerta"] for c in cedentes)
-    banco_praca_total = sum(c["canal"]["banco_praca"] for c in cedentes)
-    baixa_manual_total = sum(c["canal"]["baixa_manual"] for c in cedentes)
+    conta_total = sum(c["sinais"]["conta_cedente"] for c in cedentes)
     fora_praca_total = sum(c["sinais"]["fora_praca"] for c in cedentes)
+    # Canal de atencao = qualquer segmento != banco tradicional na praca.
+    canal_atencao_total = sum(
+        sum(c["segmentos"].values()) for c in cedentes
+    )
     n_alerta_anterior = (
         sum(int(r["n_alerta"] or 0) for r in anterior.values())
         if anterior
@@ -245,9 +222,9 @@ async def perfil(
             "n_cedentes": len(cedentes),
             "n_alerta_total": n_alerta_total,
             "n_alerta_anterior": n_alerta_anterior,
-            "pct_banco_praca": _pct(banco_praca_total),
-            "pct_baixa_manual": _pct(baixa_manual_total),
+            "pct_conta_cedente": _pct(conta_total),
             "pct_fora_praca": _pct(fora_praca_total),
+            "pct_canal_atencao": _pct(canal_atencao_total),
         },
         "cedentes": cedentes,
     }
