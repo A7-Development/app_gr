@@ -27,6 +27,7 @@ import { usePadroesLiquidacao } from "@/lib/hooks/risco"
 import { cx } from "@/lib/utils"
 import { CedenteDrawerBody } from "./_components/CedenteDrawer"
 import { ReasonChips, SeverityCell } from "./_components/chips"
+import { severidade } from "./_components/leitura"
 
 const brl = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })
@@ -77,7 +78,10 @@ export default function PadroesLiquidacaoPage() {
 
   const [janela, setJanela] = React.useState<JanelaLiquidacao>("30d")
   const [search, setSearch] = React.useState("")
-  const [segment, setSegment] = React.useState<"todos" | "alerta" | "conta">("todos")
+  // Severidade = filtro multi-select (Crítico E/OU Atenção juntos). Vazio = todos.
+  const [sevFilter, setSevFilter] = React.useState<string[]>([])
+  // Eixo ortogonal: recorte por driver (single-select).
+  const [segment, setSegment] = React.useState<"todos" | "conta" | "captura">("todos")
 
   const query = usePadroesLiquidacao(janela)
   const cedentes = React.useMemo(() => query.data?.cedentes ?? [], [query.data])
@@ -214,13 +218,24 @@ export default function PadroesLiquidacaoPage() {
         minWidth={760}
         onRowClick={(c) => setSelected(c.cedente_documento)}
         search={{ value: search, onChange: setSearch, placeholder: "Buscar cedente..." }}
+        statusFilter={{
+          label: "Severidade",
+          ariaLabel: "Filtrar por severidade (multi-seleção)",
+          options: [
+            { value: "critico", label: "Crítico", tone: "danger", filter: (c) => severidade(c) === "critico" },
+            { value: "atencao", label: "Atenção", tone: "warning", filter: (c) => severidade(c) === "atencao" },
+            { value: "neutro", label: "Neutro", tone: "neutral", filter: (c) => severidade(c) === "neutro" },
+          ],
+          value: sevFilter,
+          onChange: setSevFilter,
+        }}
         segments={{
           value: segment,
           onChange: (v) => setSegment(v as typeof segment),
           options: [
             { value: "todos", label: "Todos", filter: () => true },
-            { value: "alerta", label: "Em alerta", filter: (c) => c.n_alerta > 0 },
             { value: "conta", label: "Conta do cedente", filter: (c) => (c.sinais.conta_cedente ?? 0) > 0 },
+            { value: "captura", label: "Captura geográfica", filter: (c) => (c.sinais.praca_cedente ?? 0) > 0 },
           ],
         }}
         itemNoun={{ singular: "cedente", plural: "cedentes" }}
