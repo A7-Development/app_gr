@@ -146,6 +146,11 @@ class SourceType(enum.StrEnum):
     # Infosimples -- consultas governamentais (CENPROT/IEPTB protestos, etc.).
     # native_enum=False (VARCHAR) -> adicionar valor nao exige migration de tipo.
     DATA_INFOSIMPLES_PROTESTO = "data:infosimples_protesto"
+    # SERPRO Consulta NF-e -- estado VIVO da nota por chave de acesso (cStat
+    # atual, cancelamento, manifestacao do destinatario) + eventos
+    # (procEventosNFe). Complementa DOCUMENT_NFE (retrato do XML no momento
+    # da autorizacao, via landing fiscal). native_enum=False -> sem migration.
+    DATA_SERPRO_NFE = "data:serpro_nfe"
     # Serie historica de agencias do BCB (dados abertos, re-host Base dos
     # Dados/BigQuery). Publico, sem tenant. native_enum=False -> sem migration.
     PUBLIC_BCB_AGENCIA = "public:bcb_agencia"
