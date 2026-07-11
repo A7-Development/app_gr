@@ -182,3 +182,12 @@ export function useRaioXCedente(cedenteDocumento: string | null) {
     staleTime: 60 * 1000,
   })
 }
+
+export function useDossieLiquidacao(liquidacaoId: string | null) {
+  return useQuery({
+    queryKey: ["risco", "dossie-liquidacao", liquidacaoId],
+    queryFn: () => riscoCuradoriaLiquidacoes.dossie(liquidacaoId as string),
+    enabled: liquidacaoId !== null,
+    staleTime: 30 * 1000,
+  })
+}
