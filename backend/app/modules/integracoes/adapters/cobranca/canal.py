@@ -51,7 +51,10 @@ CANAL_NAO_RESOLVIDO = "nao_resolvido"
 # liquidacao ELETRONICA do pais inteiro -- tratar a cidade da matriz como
 # "praca do pagamento" geraria S1 falso (ex.: ABC 246/0001 Sao Paulo). A
 # cidade resolvida e preservada no resultado, mas o canal fica sem_praca.
-_AGENCIA_MATRIZ = "00001"
+# DEFAULT de nascenca — o valor vigente vem do parametro versionado
+# `agencia_matriz` (deteccao_parametro), passado pelo caller em `carregar`
+# (zero hardcode, decisao 2026-07-10).
+_AGENCIA_MATRIZ_DEFAULT = "00001"
 
 
 @dataclass(frozen=True)
@@ -106,7 +109,9 @@ class RefBacenResolver:
         agencias: dict[tuple[str, str], RefBacenAgencia],
         erp_agencias: dict[tuple[str, str], tuple[str, str]] | None = None,
         postos: dict[tuple[str, str], tuple[str, str, str | None]] | None = None,
+        agencia_matriz: str = _AGENCIA_MATRIZ_DEFAULT,
     ) -> None:
+        self._matriz = agencia_matriz
         self._inst = instituicoes
         self._ag = agencias
         # Escada de resolucao (consolidacao 2026-07-10; ex-4 degraus):
@@ -118,7 +123,9 @@ class RefBacenResolver:
         self._erp = erp_agencias or {}
 
     @classmethod
-    async def carregar(cls, db: AsyncSession) -> RefBacenResolver:
+    async def carregar(
+        cls, db: AsyncSession, *, agencia_matriz: str = _AGENCIA_MATRIZ_DEFAULT
+    ) -> RefBacenResolver:
         inst = {
             row.codigo_compe: row
             for row in (await db.execute(select(RefBacenInstituicao))).scalars()
@@ -161,7 +168,7 @@ class RefBacenResolver:
             key = (b, a)
             if key not in erp:
                 erp[key] = (row.localidade, (row.estado or "").strip() or "")
-        return cls(inst, ag, erp, posto)
+        return cls(inst, ag, erp, posto, agencia_matriz=agencia_matriz)
 
     def resolver(self, banco: str | None, agencia: str | None) -> PracaLiquidacao:
         b = _norm_banco(banco)
@@ -195,7 +202,7 @@ class RefBacenResolver:
             )
         # Banco: tenta resolver a agencia fisica.
         row = self._ag.get((b, a)) if a else None
-        if a == _AGENCIA_MATRIZ:
+        if a == self._matriz:
             return PracaLiquidacao(
                 CANAL_BANCO_SEM_PRACA, b, inst.nome_reduzido, inst.segmento, a,
                 row.municipio if row else None,

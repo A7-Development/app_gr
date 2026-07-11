@@ -31,6 +31,7 @@ from app.modules.risco.services.deteccao_features import (
     _zfill_agencia,
     _zfill_banco,
 )
+from app.modules.risco.services.deteccao_parametros import carregar_parametros
 
 _SQL_EVENTO = text("""
 SELECT
@@ -218,7 +219,10 @@ async def montar_memoria(
     if ev is None:
         return None
 
-    resolver = await RefBacenResolver.carregar(db)
+    params = await carregar_parametros(db)
+    resolver = await RefBacenResolver.carregar(
+        db, agencia_matriz=str(params["agencia_matriz"])
+    )
     banco = _zfill_banco(ev["banco_pagador"])
     agencia = _zfill_agencia(ev["agencia_pagadora"])
     praca = resolver.resolver(banco, agencia)

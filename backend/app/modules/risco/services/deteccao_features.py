@@ -48,6 +48,7 @@ from app.modules.integracoes.public import (
     CANAL_NAO_RESOLVIDO,
     RefBacenResolver,
 )
+from app.modules.risco.services.deteccao_parametros import carregar_parametros
 from app.warehouse.ref_bacen import (
     SEGMENTO_BANCO,
     SEGMENTO_BANCO_COOPERATIVO,
@@ -59,14 +60,11 @@ from app.warehouse.ref_bacen import (
 
 logger = logging.getLogger(__name__)
 
-# Exclusoes parametricas do S2 (agencias-gateway de infraestrutura: pagam N
-# sacados de N cedentes por desenho, nao por fraude). Calibrado no F0:
-# Santander 033/2271 = gateway (11 cedentes / 79 sacados). Promover a tabela
-# versionada quando a lista crescer (hoje: 1 entrada, constante documentada).
-_EXCLUSOES_AGENCIA_GATEWAY: frozenset[tuple[str, str]] = frozenset({("033", "02271")})
-
-_FINGERPRINT_MIN_EVENTOS = 3
-_FINGERPRINT_MIN_ESTABILIDADE = 0.8
+# ZERO HARDCODE (decisao Ricardo 2026-07-10): thresholds/janelas vem da
+# tabela versionada `deteccao_parametro` (loader deteccao_parametros.py).
+# A exclusao de agencia-gateway (Santander 033/2271) MORREU sem substituto:
+# falso positivo assumido, filtrado pela curadoria; se o padrao se repetir,
+# nasce como lente versionada com criterio explicito — nunca constante.
 
 # Ordem canonica das features — treino e score compartilham este contrato.
 # TRILHO B REMOVIDO (2026-07-08): os bits de praca do ERP (bit_pago_agencia_
@@ -254,7 +252,7 @@ WITH base AS (
       AND be.banco_pagador IS NOT NULL
       AND be.agencia_pagadora IS NOT NULL
       AND be.valor_pago > 0
-      AND be.data_ocorrencia >= now() - interval '365 days'
+      AND be.data_ocorrencia >= now() - make_interval(days => :janela_dias)
 ),
 por_agencia AS (
     SELECT banco_pagador, agencia_pagadora,
@@ -323,7 +321,15 @@ def _zfill_agencia(a: str | None) -> str | None:
 
 async def montar_features(db: AsyncSession, tenant_id: UUID) -> list[FeatureRow]:
     """Build the full feature set for every scorable liquidation event."""
-    resolver = await RefBacenResolver.carregar(db)
+    params = await carregar_parametros(db)
+    fgp_min_eventos = int(params["fgp_min_eventos"])
+    fgp_min_estabilidade = float(params["fgp_min_estabilidade"])
+    cnv90_min_sacados = int(params["cnv90_min_sacados"])
+    cnv_janela_dias = int(params["cnv_janela_dias"])
+
+    resolver = await RefBacenResolver.carregar(
+        db, agencia_matriz=str(params["agencia_matriz"])
+    )
 
     eventos = (await db.execute(_SQL_EVENTOS, {"tenant_id": tenant_id})).mappings().all()
 
@@ -338,7 +344,12 @@ async def montar_features(db: AsyncSession, tenant_id: UUID) -> list[FeatureRow]
     compartilhada: dict[tuple[str, str, str], int] = {}
     # (banco, agencia) -> nº de cedentes distintos na agencia (rede)
     compart_cedentes: dict[tuple[str, str], int] = {}
-    for r in (await db.execute(_SQL_AGENCIA_COMPARTILHADA, {"tenant_id": tenant_id})).mappings():
+    for r in (
+        await db.execute(
+            _SQL_AGENCIA_COMPARTILHADA,
+            {"tenant_id": tenant_id, "janela_dias": cnv_janela_dias},
+        )
+    ).mappings():
         b = _zfill_banco(r["banco_pagador"])
         a = _zfill_agencia(r["agencia_pagadora"])
         ced = _doc(r["cedente_documento"])
@@ -424,17 +435,17 @@ async def montar_features(db: AsyncSession, tenant_id: UUID) -> list[FeatureRow]
         if sacado_doc and banco:
             hist = fingerprint.get(sacado_doc, {})
             total = sum(hist.values())
-            if total >= _FINGERPRINT_MIN_EVENTOS:
+            if total >= fgp_min_eventos:
                 dominante = max(hist.values()) / total
-                if dominante >= _FINGERPRINT_MIN_ESTABILIDADE:
+                if dominante >= fgp_min_estabilidade:
                     quebra = 1.0 - (hist.get(banco, 0) / total)
 
-        # S2 (excluindo gateways declarados): sacados do cedente na agencia +
-        # cedentes distintos na agencia (rede — operador comum).
+        # S2: sacados do cedente na agencia + cedentes distintos na agencia
+        # (rede — operador comum). Sem exclusao de gateway (morta 2026-07-10:
+        # falso positivo assumido, curadoria filtra).
         n_compart = 0
         n_compart_ced = 0
-        is_gateway = bool(banco and agencia and (banco, agencia) in _EXCLUSOES_AGENCIA_GATEWAY)
-        if cedente_doc and banco and agencia and not is_gateway:
+        if cedente_doc and banco and agencia:
             n_compart = compartilhada.get((cedente_doc, banco, agencia), 0)
             n_compart_ced = compart_cedentes.get((banco, agencia), 0)
 
@@ -539,13 +550,12 @@ async def montar_features(db: AsyncSession, tenant_id: UUID) -> list[FeatureRow]
                 "sacado de outra cidade pagou na agencia do cedente "
                 f"(banco {banco} ag {agencia}, {praca.municipio}/{praca.uf})"
             )
-        # Regra nova (pos-escada): agencia FISICA compartilhada por >=10
-        # sacados de cidades divergentes da cidade da agencia, nao-gateway —
-        # concentracao regional nao explica; e operador comum.
+        # CNV-90 (composto critico do catalogo): agencia FISICA compartilhada
+        # por >= cnv90_min_sacados sacados de cidades divergentes da cidade
+        # da agencia — concentracao regional nao explica; e operador comum.
         elif (
             praca.praca_resolvida
-            and not is_gateway
-            and n_compart >= 10
+            and n_compart >= cnv90_min_sacados
             and cidade_sacado
             and cidade_pgto
             and cidade_pgto != cidade_sacado
