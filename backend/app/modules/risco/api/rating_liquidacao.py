@@ -22,6 +22,7 @@ from app.core.enums import Module, Permission
 from app.core.module_guard import require_module
 from app.core.tenant_middleware import RequestPrincipal, get_current_principal
 from app.modules.risco.models.rating import RatingLiquidacao
+from app.modules.risco.services.raio_x_cedente import raio_x
 
 router = APIRouter(tags=["risco:rating-liquidacao"])
 
@@ -124,3 +125,19 @@ async def listar_pares(
         .all()
     )
     return RatingResponse(total=len(rows), rows=[_to_row(r) for r in rows])
+
+
+@router.get("/rating-liquidacao/cedente/{cedente_documento}", dependencies=[_GuardRead])
+async def raio_x_cedente(
+    cedente_documento: str,
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Raio-X do cedente: header + filme mensal + sinais + agencias. 404 se
+    o cedente nao tem rating calculado."""
+    dossie = await raio_x(db, principal.tenant_id, cedente_documento)
+    if dossie is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Cedente sem rating calculado.")
+    return dossie

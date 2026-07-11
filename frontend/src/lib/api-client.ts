@@ -3839,12 +3839,66 @@ export type RatingLiquidacaoResponse = {
   rows: RatingLiquidacaoRow[]
 }
 
+export type RaioXFilmeMes = {
+  competencia: string
+  n_eventos: number
+  valor: number
+  via_boleto: number
+  n_prc01: number
+  n_cnv90: number
+  n_critico: number
+}
+export type RaioXAgencia = {
+  banco: string | null
+  agencia: string | null
+  nome: string | null
+  cidade: string | null
+  uf: string | null
+  endereco: string | null
+  bairro: string | null
+  ativa: boolean | null
+  vigencia: string | null
+  n: number
+  valor: number
+  conta_do_cedente: boolean
+  ultimo_credito: string | null
+}
+export type RaioXSinal = {
+  codigo: string
+  n: number
+  nome: string
+  definicao: string | null
+  severidade: string
+}
+export type RaioXCedente = {
+  cedente_documento: string
+  cedente_nome: string | null
+  grade: string
+  score: number | null
+  watchlist: boolean
+  critico_historico: boolean
+  dias_ultimo_critico: number | null
+  pendencias_curadoria: number
+  cobertura: number
+  n_eventos_score: number
+  n_desfechos: number
+  valor_desfechos: number
+  formula_version: string
+  filme: RaioXFilmeMes[]
+  agencias: RaioXAgencia[]
+  sinais: RaioXSinal[]
+}
+
 export const riscoRatingLiquidacao = {
   cedentes: () =>
     apiClient.get<RatingLiquidacaoResponse>(`/risco/rating-liquidacao`),
   pares: (cedenteDocumento: string) =>
     apiClient.get<RatingLiquidacaoResponse>(
       `/risco/rating-liquidacao/pares?cedente_documento=${encodeURIComponent(cedenteDocumento)}`,
+    ),
+  raioX: (cedenteDocumento: string) =>
+    apiClient.get<RaioXCedente>(
+      `/risco/rating-liquidacao/cedente/${encodeURIComponent(cedenteDocumento)}`,
     ),
 }
 

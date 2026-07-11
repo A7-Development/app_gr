@@ -351,7 +351,7 @@ export default function RatingLiquidacaoPage() {
         onRetry={() => query.refetch()}
         tableLayout="fixed"
         minWidth={860}
-        onRowClick={(r) => setSelected(r.cedente_documento)}
+        onRowClick={(r) => router.push(`/risco/rating-liquidacao/cedente/${encodeURIComponent(r.cedente_documento)}`)}
         search={{ value: search, onChange: setSearch, placeholder: "Buscar cedente..." }}
         segments={{
           value: "todos",
