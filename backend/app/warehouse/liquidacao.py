@@ -66,6 +66,9 @@ class Liquidacao(Auditable, Base):
     kind so distinct events of the same title coexist:
         liq:<tituloId>                    bank liquidation (max 1 per title)
         rec:<recompraId>:<tituloId>       recompra item (title can repeat)
+        rcs:<tituloId>                    recompra declared only by the title
+                                          stamp (Situacao 5 without
+                                          RecompraItem — legacy recompras)
         tra:<tituloId>:<operacaoDestino>  recompra via transfer
         man:<tituloId>                    manual write-off (synthesized)
         bxa:<tituloId>                    administrative write-off
@@ -94,7 +97,7 @@ class Liquidacao(Auditable, Base):
     canal: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
     # Qualifies the canal (see module docstring): baixa_confirmada /
     # sem_registro / sem_ocorrencia (baixa_manual); recompra_efetivada /
-    # transferencia (recompra). NULL for bancaria/baixa_administrativa/perda.
+    # situacao / transferencia (recompra). NULL for bancaria/baixa_administrativa/perda.
     evidencia: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
     # Declared occurrence code of the bank event ('36' | '37').
     meio_codigo: Mapped[str | None] = mapped_column(String(4), nullable=True)
