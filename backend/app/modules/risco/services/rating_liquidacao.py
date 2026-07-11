@@ -110,6 +110,11 @@ def score_evento(
 
 
 # Universo do SCORE: eventos com alegacao de pagamento do sacado, scoreados.
+# EXCLUI baixa_manual de titulo que TEM recompra declarada: pela precedencia
+# do framework ("recompra vence a inferencia" — caso 693), a recompra explica
+# a saida e o evento manual e artefato de registro (Situacao=1 + RecompraItem)
+# — nao e alegacao de pagamento do sacado. Bancaria permanece mesmo com
+# recompra (dinheiro no trilho e fato CNAB; titulo de vidas multiplas).
 _SQL_EVENTOS_SCORE = text("""
 SELECT o.cedente_documento,
        max(o.cedente_nome) AS cedente_nome,
@@ -130,6 +135,15 @@ LEFT JOIN wh_entidade_papel pap
 LEFT JOIN wh_entidade sac ON sac.id = pap.entidade_id
 WHERE ds.tenant_id = :tenant_id
   AND l.canal IN ('bancaria', 'baixa_manual')
+  AND NOT (
+      l.canal = 'baixa_manual'
+      AND EXISTS (
+          SELECT 1 FROM wh_liquidacao r
+          WHERE r.tenant_id = l.tenant_id
+            AND r.titulo_id = l.titulo_id
+            AND r.canal = 'recompra'
+      )
+  )
   AND o.cedente_documento IS NOT NULL
   AND l.data_evento >= now() - make_interval(days => :janela_dias)
 GROUP BY o.cedente_documento, sac.documento, ds.features, ds.regra_dura,
@@ -137,25 +151,44 @@ GROUP BY o.cedente_documento, sac.documento, ds.features, ds.regra_dura,
 """)
 
 # Universo COMPLETO de desfechos (denominador da cobertura) por par.
+# 1 linha por TITULO (nao por evento — titulo com baixa manual + recompra
+# contava o valor DUAS vezes; bug pego pelo Ricardo 2026-07-11 na MFL:
+# 18,5M por evento vs 15,1M por titulo, VOP 16,6M confirma o por-titulo).
+# Desfecho final por precedencia deterministica: recompra > bancaria >
+# baixa_manual > baixa_administrativa > perda.
 _SQL_DESFECHOS = text("""
+WITH desfecho_titulo AS (
+    SELECT DISTINCT ON (l.titulo_id)
+           l.titulo_id, l.tenant_id, l.operacao_id, l.canal,
+           coalesce(l.valor_pago, l.valor_titulo, 0) AS valor
+    FROM wh_liquidacao l
+    WHERE l.tenant_id = :tenant_id
+      AND l.data_evento >= now() - make_interval(days => :janela_dias)
+    ORDER BY l.titulo_id,
+             CASE l.canal
+                 WHEN 'recompra' THEN 1
+                 WHEN 'bancaria' THEN 2
+                 WHEN 'baixa_manual' THEN 3
+                 WHEN 'baixa_administrativa' THEN 4
+                 ELSE 5
+             END
+)
 SELECT o.cedente_documento,
        sac.documento AS sacado_documento,
-       l.canal,
+       d.canal,
        count(*) AS n,
-       sum(coalesce(l.valor_pago, l.valor_titulo, 0)) AS valor
-FROM wh_liquidacao l
+       sum(d.valor) AS valor
+FROM desfecho_titulo d
 JOIN wh_operacao o
-    ON o.operacao_id = l.operacao_id AND o.tenant_id = l.tenant_id
+    ON o.operacao_id = d.operacao_id AND o.tenant_id = d.tenant_id
 JOIN wh_titulo t
-    ON t.tenant_id = l.tenant_id AND t.titulo_id = l.titulo_id
+    ON t.tenant_id = d.tenant_id AND t.titulo_id = d.titulo_id
 LEFT JOIN wh_entidade_papel pap
-    ON pap.tenant_id = l.tenant_id AND pap.papel = 'sacado'
+    ON pap.tenant_id = d.tenant_id AND pap.papel = 'sacado'
    AND pap.source_id = t.sacado_id::text
 LEFT JOIN wh_entidade sac ON sac.id = pap.entidade_id
-WHERE l.tenant_id = :tenant_id
-  AND o.cedente_documento IS NOT NULL
-  AND l.data_evento >= now() - make_interval(days => :janela_dias)
-GROUP BY o.cedente_documento, sac.documento, l.canal
+WHERE o.cedente_documento IS NOT NULL
+GROUP BY o.cedente_documento, sac.documento, d.canal
 """)
 
 
