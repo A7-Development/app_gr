@@ -74,7 +74,7 @@ function CoberturaCell({ v }: { v: number }) {
   return (
     <span
       className={cx(tableTokens.cellNumber, pct < 50 && "text-amber-600 dark:text-amber-400")}
-      title="% do valor de desfechos que passou pelo trilho bancário (atestável)"
+      title="% do valor liquidado pago via boleto (a parte conferível)"
     >
       {pct}%
     </span>
@@ -115,9 +115,8 @@ function ParesDrawerBody({ cedente }: { cedente: RatingLiquidacaoRow }) {
   return (
     <div className="space-y-4">
       <p className={tableTokens.cellSecondary}>
-        Pares cedente×sacado — o sinal agrega pelo lado do <strong>cedente</strong> (quem
-        controla o fluxo de liquidação); o sacado nunca é penalizado globalmente por
-        conduta do cedente.
+        Nota sacado a sacado <strong>dentro deste cedente</strong>. A fraude de auto-liquidação
+        é conduta do cedente — por isso o sacado não é penalizado na carteira geral.
       </p>
       {pares.isPending ? (
         <p className={tableTokens.cellMuted}>Carregando pares…</p>
@@ -131,8 +130,8 @@ function ParesDrawerBody({ cedente }: { cedente: RatingLiquidacaoRow }) {
                 <th className={tableTokens.header}>Sacado</th>
                 <th className={tableTokens.header}>Rating</th>
                 <th className={cx(tableTokens.header, "text-right")}>Score</th>
-                <th className={cx(tableTokens.header, "text-right")}>Ev.</th>
-                <th className={cx(tableTokens.header, "text-right")}>Cobert.</th>
+                <th className={cx(tableTokens.header, "text-right")}>Pagtos.</th>
+                <th className={cx(tableTokens.header, "text-right")}>Via boleto</th>
                 <th className={tableTokens.header}>Sinais</th>
               </tr>
             </thead>
@@ -206,7 +205,7 @@ export default function RatingLiquidacaoPage() {
       {
         eyebrow: "CEDENTES AVALIADOS",
         value: rows.length.toLocaleString("pt-BR"),
-        sub: "rollup por cedente · janela 12m",
+        sub: "janela de 12 meses",
       },
       {
         eyebrow: "COM SINAL CRÍTICO",
@@ -217,12 +216,12 @@ export default function RatingLiquidacaoPage() {
       {
         eyebrow: "SEM CLASSIFICAÇÃO",
         value: nc.length.toLocaleString("pt-BR"),
-        sub: "base insuficiente p/ grade boa",
+        sub: "poucos títulos p/ dar nota boa",
       },
       {
-        eyebrow: "VALOR SOB CRÍTICO",
+        eyebrow: "VALOR LIQUIDADO SOB CRÍTICO",
         value: brl(criticos.reduce((a, r) => a + r.valor_desfechos, 0)),
-        sub: "desfechos 12m dos cedentes críticos",
+        sub: "títulos liquidados 12m dos cedentes críticos",
       },
     ]
   }, [rows])
@@ -257,7 +256,7 @@ export default function RatingLiquidacaoPage() {
         cell: (info) => <ScoreCell score={info.getValue() as number | null} />,
       }) as ColumnDef<RatingLiquidacaoRow, unknown>,
       col.accessor("n_eventos_score", {
-        header: () => <span title="Eventos com alegação de pagamento do sacado (base do score)">Ev.</span>,
+        header: () => <span title="Pagamentos analisados pelo score (boleto pago ou baixa que alega pagamento do sacado)">Pagtos.</span>,
         size: 64,
         meta: { align: "right" },
         cell: (info) => (
@@ -268,8 +267,8 @@ export default function RatingLiquidacaoPage() {
       }) as ColumnDef<RatingLiquidacaoRow, unknown>,
       col.accessor("cobertura", {
         header: () => (
-          <span title="% do valor de desfechos que passou pelo trilho bancário — recompra/perda reduzem a cobertura, não o score (integridade ≠ crédito)">
-            Cobert.
+          <span title="% do valor liquidado que foi pago via boleto no banco (a parte conferível). Recompras e baixas manuais não entram aqui.">
+            Via boleto
           </span>
         ),
         size: 76,
@@ -277,7 +276,7 @@ export default function RatingLiquidacaoPage() {
         cell: (info) => <CoberturaCell v={info.getValue() as number} />,
       }) as ColumnDef<RatingLiquidacaoRow, unknown>,
       col.accessor("valor_desfechos", {
-        header: () => <span title="Valor total de desfechos na janela">R$ 12m</span>,
+        header: () => <span title="Valor TOTAL dos títulos liquidados em 12 meses — pagos, recomprados ou baixados">Valor liquidado</span>,
         size: 104,
         meta: { align: "right" },
         cell: (info) => (
@@ -301,7 +300,7 @@ export default function RatingLiquidacaoPage() {
       <PageHeader
         title="Rating de liquidação"
         subtitle="Risco · Liquidações"
-        info="Nota determinística de INTEGRIDADE de liquidação: o dinheiro vem de quem dizem? Score 0-100 sobre eventos com alegação de pagamento do sacado; sinal crítico (PRC-01/CNV-90) trava a nota; grade boa exige base mínima (senão NC). Recompra/perda não entram no score — entram na cobertura (dimensão de crédito, futuro sub-rating). Fórmula, deduções e cortes são parâmetros versionados. Clique num cedente para os pares cedente×sacado."
+        info="Nota de 0 a 100 que responde: quando os títulos desse cedente são pagos, o dinheiro vem mesmo do sacado? Sinal crítico (pagamento na conta/praça do próprio cedente) trava a nota em E. Nota boa exige volume mínimo de títulos — senão NC. Recompras e baixas manuais não derrubam a nota: aparecem no % via boleto (quanto menor, menos dá pra conferir). Clique num cedente para ver sacado a sacado."
       />
 
       <KpiBand items={kpiItems} loading={query.isLoading && !query.data} />
