@@ -81,8 +81,18 @@ function CoberturaCell({ v }: { v: number }) {
   )
 }
 
+// Severidade manda na ordem (crítico SEMPRE visível); quantidade desempata.
+// PRC-01 com 4 ocorrências é mais grave que PRC-03 com 400 — auto-liquidação
+// na conta do cedente é rara e cirúrgica; ordenar por volume a esconderia.
+const SEVERIDADE_ORDEM: Record<string, number> = {
+  "PRC-01": 0, "CNV-90": 0, // críticos
+  "PRC-02": 1, "PRC-04": 1, "CNV-01": 1, "CNV-02": 1, "MEC-01": 1, // altas
+}
+
 function SinaisCell({ sinais }: { sinais?: Record<string, number> }) {
-  const entries = Object.entries(sinais ?? {}).sort((a, b) => b[1] - a[1])
+  const entries = Object.entries(sinais ?? {}).sort(
+    (a, b) => (SEVERIDADE_ORDEM[a[0]] ?? 2) - (SEVERIDADE_ORDEM[b[0]] ?? 2) || b[1] - a[1],
+  )
   if (entries.length === 0) return <span className={tableTokens.cellMuted}>—</span>
   return (
     <span className="inline-flex flex-wrap gap-1">
