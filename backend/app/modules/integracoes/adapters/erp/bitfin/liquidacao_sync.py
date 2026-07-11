@@ -11,8 +11,11 @@ Fontes (todas declaradas pelo ERP — zero inferencia estatistica aqui):
                                          (baixa_confirmada | sem_registro |
                                          sem_ocorrencia)
 3. `RecompraItem` (Recompra efetivada)-> canal `recompra` / recompra_efetivada
-4. `TituloTransferencia` Motivo=Recompra -> canal `recompra` / transferencia
-5. Titulo Situacao 3 sem transferencia / Situacao 9
+4. Titulo Situacao 5 SEM RecompraItem -> canal `recompra` / situacao
+                                         (recompras antigas, ~4k — o carimbo
+                                         do titulo e o fato declarado)
+5. `TituloTransferencia` Motivo=Recompra -> canal `recompra` / transferencia
+6. Titulo Situacao 3 sem transferencia / Situacao 9
                                       -> canal `baixa_administrativa` / `perda`
 
 Full refresh idempotente (~106k eventos; upsert por tenant+source_id).
@@ -48,6 +51,9 @@ EVIDENCIA_SEM_REGISTRO = "sem_registro"
 EVIDENCIA_SEM_OCORRENCIA = "sem_ocorrencia"
 EVIDENCIA_RECOMPRA_EFETIVADA = "recompra_efetivada"
 EVIDENCIA_TRANSFERENCIA = "transferencia"
+# Recompra declarada so pelo carimbo Situacao=5 (sem RecompraItem — recompras
+# antigas, pre-modulo detalhado). O fato e a propria situacao do titulo.
+EVIDENCIA_SITUACAO = "situacao"
 
 _SITUACAO_PERDA = 9
 
@@ -138,6 +144,17 @@ def _map_recompra(row: dict, tenant_id: UUID) -> dict:
     }
 
 
+def _map_recompra_situacao(row: dict, tenant_id: UUID) -> dict:
+    """Recompra antiga sem RecompraItem: o carimbo Situacao=5 e o fato
+    declarado; detalhes (juros, recompra_id) nao existem — ficam NULL."""
+    return {
+        **_base(row, tenant_id, f"rcs:{row['titulo_id']}"),
+        "canal": CANAL_RECOMPRA,
+        "evidencia": EVIDENCIA_SITUACAO,
+        "valor_pago": row.get("valor_pago"),
+    }
+
+
 def _map_transferencia(row: dict, tenant_id: UUID) -> dict:
     return {
         **_base(
@@ -182,6 +199,9 @@ async def sync_liquidacoes(
     recompra_rows = await asyncio.to_thread(
         fetch_rows, config, db_name, bitfin.SELECT_LIQUIDACAO_RECOMPRA
     )
+    recompra_situacao_rows = await asyncio.to_thread(
+        fetch_rows, config, db_name, bitfin.SELECT_LIQUIDACAO_RECOMPRA_SITUACAO
+    )
     transferencia_rows = await asyncio.to_thread(
         fetch_rows, config, db_name, bitfin.SELECT_LIQUIDACAO_TRANSFERENCIA
     )
@@ -193,6 +213,9 @@ async def sync_liquidacoes(
     eventos.extend(_map_bancaria(r, tenant_id) for r in bancaria_rows)
     eventos.extend(_map_baixa_manual(r, tenant_id) for r in manual_rows)
     eventos.extend(_map_recompra(r, tenant_id) for r in recompra_rows)
+    eventos.extend(
+        _map_recompra_situacao(r, tenant_id) for r in recompra_situacao_rows
+    )
     eventos.extend(_map_transferencia(r, tenant_id) for r in transferencia_rows)
     eventos.extend(_map_baixa_admin(r, tenant_id) for r in baixa_admin_rows)
 
@@ -222,6 +245,7 @@ async def sync_liquidacoes(
                 CANAL_BANCARIA: len(bancaria_rows),
                 CANAL_BAIXA_MANUAL: len(manual_rows),
                 f"{CANAL_RECOMPRA}:{EVIDENCIA_RECOMPRA_EFETIVADA}": len(recompra_rows),
+                f"{CANAL_RECOMPRA}:{EVIDENCIA_SITUACAO}": len(recompra_situacao_rows),
                 f"{CANAL_RECOMPRA}:{EVIDENCIA_TRANSFERENCIA}": len(transferencia_rows),
                 "baixa_administrativa_ou_perda": len(baixa_admin_rows),
             },
@@ -239,7 +263,8 @@ async def sync_liquidacoes(
                 explanation=(
                     f"liquidacoes declaradas: {n_upserted} eventos "
                     f"({len(bancaria_rows)} bancarias, {len(manual_rows)} baixas "
-                    f"manuais, {len(recompra_rows) + len(transferencia_rows)} "
+                    f"manuais, "
+                    f"{len(recompra_rows) + len(recompra_situacao_rows) + len(transferencia_rows)} "
                     f"recompras)"
                 ),
                 triggered_by=triggered_by,

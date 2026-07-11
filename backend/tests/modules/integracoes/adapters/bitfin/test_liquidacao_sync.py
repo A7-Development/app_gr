@@ -21,11 +21,13 @@ from app.modules.integracoes.adapters.erp.bitfin.liquidacao_sync import (
     EVIDENCIA_RECOMPRA_EFETIVADA,
     EVIDENCIA_SEM_OCORRENCIA,
     EVIDENCIA_SEM_REGISTRO,
+    EVIDENCIA_SITUACAO,
     EVIDENCIA_TRANSFERENCIA,
     _map_baixa_admin,
     _map_baixa_manual,
     _map_bancaria,
     _map_recompra,
+    _map_recompra_situacao,
     _map_transferencia,
 )
 from app.modules.integracoes.adapters.erp.bitfin.version import ADAPTER_VERSION
@@ -128,6 +130,23 @@ def test_map_recompra_business_key_inclui_recompra_id():
 
     out2 = _map_recompra({**row, "recompra_id": 78}, TENANT)
     assert out2["source_id"] != out["source_id"]
+
+
+def test_map_recompra_situacao_carimbo_sem_item():
+    """Recompra antiga sem RecompraItem: Situacao=5 e o fato declarado —
+    linha nasce do carimbo do titulo, detalhes NULL (PR 2 do rating)."""
+    row = _base_titulo(
+        situacao_titulo=5,
+        valor_pago=Decimal("10741.10"),
+    )
+    out = _map_recompra_situacao(row, TENANT)
+    assert out["canal"] == CANAL_RECOMPRA
+    assert out["evidencia"] == EVIDENCIA_SITUACAO
+    assert out["source_id"] == "rcs:4242"
+    assert out["valor_pago"] == Decimal("10741.10")
+    assert out["situacao_titulo"] == 5
+    assert "recompra_id" not in out  # detalhe nao existe — fica NULL no upsert
+    assert "juros" not in out
 
 
 def test_map_transferencia_recompra():
