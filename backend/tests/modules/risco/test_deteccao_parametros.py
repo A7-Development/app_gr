@@ -62,10 +62,14 @@ def test_catalogo_sinais_seed_migration() -> None:
     seed do DB de teste, entao o contrato vive no proprio script."""
     from pathlib import Path
 
-    mig = (
-        Path(__file__).resolve().parents[3]
-        / "alembic" / "versions" / "d7f2a9c4e1b8_deteccao_sinal_parametro.py"
-    ).read_text(encoding="utf-8")
+    versions = Path(__file__).resolve().parents[3] / "alembic" / "versions"
+    mig = "\n".join(
+        f.read_text(encoding="utf-8")
+        for f in (
+            versions / "d7f2a9c4e1b8_deteccao_sinal_parametro.py",
+            versions / "f2c7d4a9e3b1_rating_liquidacao.py",
+        )
+    )
     esperados = {
         "PRC-01", "PRC-02", "PRC-03", "PRC-04",
         "CNV-01", "CNV-02", "CNV-90",
