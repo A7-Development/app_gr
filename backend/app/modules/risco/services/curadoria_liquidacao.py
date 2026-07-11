@@ -100,6 +100,8 @@ SELECT
     tv.autor_nome AS tag_autor,
     tv.created_at AS tag_em,
     (t.status = :status_lastro) AS candidato_lastro,
+    ag.banco_pagador, ag.agencia_pagadora, ag.data_credito,
+    ag.nome_agencia, ag.ag_municipio, ag.ag_uf, ag.ag_endereco, ag.ag_bairro,
     count(*) OVER () AS total
 FROM wh_liquidacao l
 JOIN wh_titulo t
@@ -119,6 +121,19 @@ LEFT JOIN deteccao_score ds
     ON ds.tenant_id = l.tenant_id
    AND ds.modelo_id = :modelo_id
    AND ds.liquidacao_id = l.id
+LEFT JOIN LATERAL (
+    SELECT be.banco_pagador, be.agencia_pagadora, be.data_credito,
+           ra.nome_agencia,
+           ra.municipio AS ag_municipio, ra.uf AS ag_uf,
+           ra.endereco AS ag_endereco, ra.bairro AS ag_bairro
+    FROM wh_boleto_evento be
+    LEFT JOIN ref_bacen_agencia ra
+        ON ra.banco_compe = lpad(be.banco_pagador, 3, '0')
+       AND ra.agencia_codigo = lpad(be.agencia_pagadora, 5, '0')
+    WHERE be.tenant_id = l.tenant_id AND be.titulo_id = l.titulo_id
+      AND be.data_credito IS NOT NULL
+    ORDER BY be.data_credito DESC LIMIT 1
+) ag ON true
 LEFT JOIN tag_vigente tv ON tv.liquidacao_id = l.id
 WHERE l.tenant_id = :tenant_id
   AND l.canal IN ('bancaria', 'baixa_manual')
@@ -149,6 +164,7 @@ async def listar_liquidacoes(
     data_fim: date | None = None,
     produto_sigla: str | None = None,
     cedente_busca: str | None = None,
+    cedente_documento_exato: str | None = None,
     sacado_busca: str | None = None,
     documento_busca: str | None = None,
     situacao_titulo: int | None = None,
@@ -183,6 +199,9 @@ async def listar_liquidacoes(
     if produto_sigla:
         filtros.append("AND split_part(o.modalidade, '-', 1) = :produto_sigla")
         params["produto_sigla"] = produto_sigla.upper()
+    if cedente_documento_exato:
+        filtros.append("AND o.cedente_documento = :cedente_exato")
+        params["cedente_exato"] = cedente_documento_exato
     if cedente_busca:
         digitos = "".join(c for c in cedente_busca if c.isdigit())
         if digitos:
