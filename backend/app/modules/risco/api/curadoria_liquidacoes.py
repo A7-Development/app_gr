@@ -44,6 +44,7 @@ from app.modules.risco.services.cedente_risco import consolidar
 from app.modules.risco.services.curadoria_memoria import montar_memoria
 from app.modules.risco.services.deteccao_scoring import pontuar
 from app.modules.risco.services.deteccao_treino import treinar
+from app.modules.risco.services.dossie_liquidacao import dossie
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 
 router = APIRouter(tags=["risco:curadoria-liquidacoes"])
@@ -122,6 +123,23 @@ async def detalhe_liquidacao(
             detail="Liquidacao nao encontrada neste tenant.",
         )
     return MemoriaLiquidacao(**memoria)
+
+
+@router.get("/curadoria-liquidacoes/{liquidacao_id}/dossie")
+async def dossie_liquidacao(
+    liquidacao_id: UUID,
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = _GuardRead,
+) -> dict:
+    """Dossie estruturado de UMA liquidacao para o modal de julgamento."""
+    d = await dossie(db, principal.tenant_id, liquidacao_id)
+    if d is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Liquidacao nao encontrada neste tenant.",
+        )
+    return d
 
 
 @router.post(

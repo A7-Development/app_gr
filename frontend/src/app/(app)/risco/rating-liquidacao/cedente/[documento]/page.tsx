@@ -215,6 +215,27 @@ export default function RaioXCedentePage() {
                     </span>
                   )}
                   <span className={cx(tableTokens.cellMuted, "text-[11px]")}>{a.n} tít.</span>
+                  {/* Convergência (S2): sacados distintos e de outra praça. */}
+                  <span
+                    className={cx(tableTokens.cellMuted, "text-[11px]")}
+                    title="Sacados distintos que pagam nesta agência · de quantas cidades"
+                  >
+                    {a.sacados_distintos} sacados · {a.cidades_distintas} cidades
+                  </span>
+                  {/* "De outra praça" só é sinal em agência FÍSICA resolvida e
+                      não-matriz; matriz 0001 concentra liquidação eletrônica
+                      do país e cooperativa não resolve cidade (fora=0 falso). */}
+                  {a.sacados_outra_cidade > 0 && a.agencia !== "00001" && a.agencia !== "0001" && (
+                    <span
+                      className={cx(
+                        tableTokens.badge,
+                        a.sacados_outra_cidade >= 5 ? tableTokens.badgeDanger : tableTokens.badgeWarning,
+                      )}
+                      title="Sacados de OUTRA cidade pagando nesta agência — convergência implausível (sinal de auto-liquidação)"
+                    >
+                      {a.sacados_outra_cidade} de outra praça
+                    </span>
+                  )}
                   {a.conta_do_cedente && (
                     <span className={cx(tableTokens.badge, tableTokens.badgeDanger)} title="É a agência onde o cedente tem conta">
                       conta do cedente

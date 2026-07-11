@@ -3861,6 +3861,9 @@ export type RaioXAgencia = {
   n: number
   valor: number
   conta_do_cedente: boolean
+  sacados_distintos: number
+  cidades_distintas: number
+  sacados_outra_cidade: number
   ultimo_credito: string | null
 }
 export type RaioXSinal = {
@@ -3902,6 +3905,26 @@ export const riscoRatingLiquidacao = {
     ),
 }
 
+export type DossieSinal = { codigo: string; nome: string; definicao: string | null; severidade: string }
+export type DossieAgencia = {
+  banco: string | null; agencia: string | null; nome: string | null
+  cidade: string | null; uf: string | null; endereco: string | null; bairro: string | null
+  ativa: boolean | null; vigencia: string | null; conta_do_cedente: boolean
+  data_credito: string | null
+  convergencia: { sacados: number; cidades: number; fora: number } | null
+}
+export type DossieTag = { tag: string; nota: string | null; autor: string | null; em: string }
+export type DossieLiquidacao = {
+  liquidacao_id: string; titulo_id: number; titulo_numero: string | null
+  cedente_nome: string | null; cedente_documento: string | null
+  produto_sigla: string | null; produto_nome: string | null
+  sacado_nome: string | null; sacado_documento: string | null
+  sacado_cidade: string | null; sacado_uf: string | null
+  canal: string; evidencia: string | null; valor: number; data_evento: string
+  agencia: DossieAgencia; sinais: DossieSinal[]
+  quebra_fingerprint: number; historico_curadoria: DossieTag[]
+}
+
 export const riscoCuradoriaLiquidacoes = {
   list: (f: CuradoriaLiquidacoesFilters = {}) =>
     apiClient.get<LiquidacaoCuradoriaPage>(
@@ -3910,6 +3933,10 @@ export const riscoCuradoriaLiquidacoes = {
   detalhe: (liquidacaoId: string) =>
     apiClient.get<MemoriaLiquidacao>(
       `/risco/curadoria-liquidacoes/${liquidacaoId}`,
+    ),
+  dossie: (liquidacaoId: string) =>
+    apiClient.get<DossieLiquidacao>(
+      `/risco/curadoria-liquidacoes/${liquidacaoId}/dossie`,
     ),
   tag: (liquidacaoId: string, tag: "fraude" | "ok" | "neutro", nota?: string | null) =>
     apiClient.post<{ id: string }>(
