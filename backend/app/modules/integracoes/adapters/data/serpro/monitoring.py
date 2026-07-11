@@ -159,11 +159,23 @@ async def enrolar_chaves_no_escopo(db: AsyncSession, tenant_id: UUID) -> int:
     reaberto/estorno de baixa) — exceto nota_morta (alerta ja disparado;
     nota cancelada nao ressuscita). Nao commita.
     """
+    # gen_random_uuid() DENTRO do SELECT: com include_defaults o SQLAlchemy
+    # injetaria o default Python do `id` como CONSTANTE (mesmo UUID para
+    # todas as linhas) — estoura a PK com 2+ chaves (bug pego na ativacao).
+    sub = _escopo_titulos_abertos(tenant_id).subquery()
+    escopo = sa.select(
+        sa.func.gen_random_uuid().label("id"),
+        sub.c.tenant_id,
+        sub.c.chave_acesso,
+        sub.c.motivo,
+        sub.c.referencia_vencimento,
+    )
     stmt = (
         pg_insert(SerproNfeMonitor)
         .from_select(
-            ["tenant_id", "chave_acesso", "motivo", "referencia_vencimento"],
-            _escopo_titulos_abertos(tenant_id),
+            ["id", "tenant_id", "chave_acesso", "motivo", "referencia_vencimento"],
+            escopo,
+            include_defaults=False,
         )
         .on_conflict_do_nothing(
             constraint="uq_serpro_nfe_monitor_tenant_chave"
