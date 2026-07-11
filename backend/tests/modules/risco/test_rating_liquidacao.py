@@ -43,17 +43,19 @@ def test_prc01_e_critico_nao_deduz_trava() -> None:
     assert score == 100.0 - 5.0
 
 
-def test_prc01_mesma_cidade_nao_acende() -> None:
+def test_prc01_mesma_cidade_vira_prc05_pendente() -> None:
     """Cidade pequena: sacado local paga na unica agencia da praca, que por
-    acaso e a do cedente — sem poder discriminante (Ricardo 2026-07-11;
-    Fricock 107/107 mesma cidade)."""
+    acaso e a do cedente — ambiguo. Nao e PRC-01 automatico NEM inocencia
+    automatica: vira PRC-05 (critico PENDENTE de curadoria — Ricardo
+    2026-07-11, casos Fricock/Antonioli)."""
     _, critico, acesos = score_evento(
         {"match_agencia_conta_cedente": 1.0, "cidade_pgto_neq_sacado": 0.0},
         regra_dura=False,
         params=P,
     )
-    assert critico is False
     assert "PRC-01" not in acesos
+    assert acesos == ["PRC-05"]
+    assert critico is True  # trava ate a curadoria liberar
 
 
 def test_regra_dura_sem_match_conta_e_cnv90() -> None:
@@ -88,6 +90,42 @@ def test_mec01_acende_em_qualquer_produto() -> None:
     score, _, acesos = score_evento({"baixa_confirmada": 1.0}, regra_dura=False, params=P)
     assert acesos == ["MEC-01"]
     assert score == 85.0
+
+
+def test_prc05_mesma_cidade_trava_pendente_curadoria() -> None:
+    """Agencia do cedente + mesma cidade = ambiguo -> critico PENDENTE."""
+    feats = {"match_agencia_conta_cedente": 1.0, "cidade_pgto_neq_sacado": 0.0}
+    _, critico, acesos = score_evento(feats, regra_dura=False, params=P)
+    assert critico is True
+    assert acesos == ["PRC-05"]
+
+
+def test_tag_ok_libera_prc05() -> None:
+    feats = {"match_agencia_conta_cedente": 1.0, "cidade_pgto_neq_sacado": 0.0}
+    score, critico, acesos = score_evento(
+        feats, regra_dura=False, params=P, tag_curadoria="OK"
+    )
+    assert critico is False
+    assert acesos == []
+    assert score == 100.0
+
+
+def test_tag_fraude_e_critico_definitivo_mesmo_sem_sinal() -> None:
+    score, critico, acesos = score_evento(
+        {}, regra_dura=False, params=P, tag_curadoria="FRAUDE"
+    )
+    assert critico is True
+    assert acesos == ["TAG-FRAUDE"]
+    assert score == 0.0
+
+
+def test_tag_neutro_mantem_pendencia() -> None:
+    feats = {"match_agencia_conta_cedente": 1.0, "cidade_pgto_neq_sacado": 0.0}
+    _, critico, acesos = score_evento(
+        feats, regra_dura=False, params=P, tag_curadoria="NEUTRO"
+    )
+    assert critico is True
+    assert "PRC-05" in acesos
 
 
 def test_grade_cortes() -> None:

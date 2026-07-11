@@ -56,6 +56,8 @@ _SINAIS_EVENTO: tuple[tuple[str, str], ...] = (
     # (codigo, severidade) — predicado em _sinal_acendeu.
     ("PRC-01", "critica"),
     ("CNV-90", "critica"),
+    # Critico PENDENTE: trava a nota ate a curadoria decidir (OK libera).
+    ("PRC-05", "critica_pendente"),
     ("PRC-02", "alta"),
     ("CNV-01", "alta"),
     ("CNV-02", "alta"),
@@ -66,6 +68,8 @@ _SINAIS_EVENTO: tuple[tuple[str, str], ...] = (
 
 
 def _sinal_acendeu(codigo: str, feats: _F, regra_dura: bool) -> bool:
+    """Predicados dos sinais AUTOMATICOS (a tag humana e tratada em
+    score_evento — humano manda sobre qualquer predicado)."""
     neq_sacado = _f(feats, "cidade_pgto_neq_sacado") >= 0.5
     match codigo:
         case "PRC-01":
@@ -75,6 +79,12 @@ def _sinal_acendeu(codigo: str, feats: _F, regra_dura: bool) -> bool:
             # acaso e a do cedente (Fricock: 107/107 mesma cidade). Mesma
             # condicao da regra dura original do motor.
             return _f(feats, "match_agencia_conta_cedente") >= 0.5 and neq_sacado
+        case "PRC-05":
+            # Agencia da conta do cedente, MESMA cidade: ambiguo — cidade
+            # pequena pode ser inocente, mas ambiguidade em sinal grave e
+            # decisao HUMANA (Ricardo 2026-07-11): trava a nota como critico
+            # PENDENTE ate a curadoria liberar (tag OK) ou confirmar (FRAUDE).
+            return _f(feats, "match_agencia_conta_cedente") >= 0.5 and not neq_sacado
         case "CNV-90":
             # Composto critico — hoje materializado pela regra dura de
             # multicidade do builder (motivo 'agencia compartilhada...').
@@ -95,9 +105,19 @@ def _sinal_acendeu(codigo: str, feats: _F, regra_dura: bool) -> bool:
 
 
 def score_evento(
-    feats: _F, regra_dura: bool, params: dict[str, Any]
+    feats: _F,
+    regra_dura: bool,
+    params: dict[str, Any],
+    tag_curadoria: str | None = None,
 ) -> tuple[float, bool, list[str]]:
-    """(score 0-100, tem_critico, codigos acesos) de UM evento — funcao pura."""
+    """(score 0-100, tem_critico, codigos acesos) de UM evento — funcao pura.
+
+    Tag humana da curadoria MANDA sobre o automatico (IA opina, humano
+    decide): FRAUDE = critico definitivo (mesmo sem sinal); OK libera o
+    PRC-05 pendente (validado inocente); NEUTRO/sem tag = pendencia fica.
+    """
+    if tag_curadoria == "FRAUDE":
+        return 0.0, True, ["TAG-FRAUDE"]
     deducao = {"alta": float(params["rating_deducao_alta"]),
                "media": float(params["rating_deducao_media"])}
     acesos: list[str] = []
@@ -106,8 +126,10 @@ def score_evento(
     for codigo, severidade in _SINAIS_EVENTO:
         if not _sinal_acendeu(codigo, feats, regra_dura):
             continue
+        if codigo == "PRC-05" and tag_curadoria == "OK":
+            continue  # humano validou: mesma-cidade inocente
         acesos.append(codigo)
-        if severidade == "critica":
+        if severidade in ("critica", "critica_pendente"):
             critico = True
         else:
             total += deducao[severidade]
@@ -127,9 +149,15 @@ SELECT o.cedente_documento,
        max(sac.nome) AS sacado_nome,
        ds.features, ds.regra_dura,
        coalesce(l.valor_pago, l.valor_titulo, 0) AS valor,
-       l.canal
+       l.canal,
+       tag.tag AS tag_curadoria
 FROM deteccao_score ds
 JOIN wh_liquidacao l ON l.id = ds.liquidacao_id
+LEFT JOIN LATERAL (
+    SELECT ct.tag FROM curadoria_tag ct
+    WHERE ct.liquidacao_id = l.id AND ct.tenant_id = l.tenant_id
+    ORDER BY ct.created_at DESC LIMIT 1
+) tag ON true
 JOIN wh_operacao o
     ON o.operacao_id = l.operacao_id AND o.tenant_id = l.tenant_id
 JOIN wh_titulo t
@@ -152,7 +180,7 @@ WHERE ds.tenant_id = :tenant_id
   AND o.cedente_documento IS NOT NULL
   AND l.data_evento >= now() - make_interval(days => :janela_dias)
 GROUP BY o.cedente_documento, sac.documento, ds.features, ds.regra_dura,
-         l.valor_pago, l.valor_titulo, l.canal, l.id
+         l.valor_pago, l.valor_titulo, l.canal, l.id, tag.tag
 """)
 
 # Universo COMPLETO de desfechos (denominador da cobertura) por par.
@@ -253,6 +281,7 @@ def _consolidar(
         "cobertura": round(cobertura, 4),
         "componentes": {
             "grade_bruta": grade_bruta,
+            "pendencias_curadoria": escopo["pendencias_curadoria"],
             "sinais": escopo["sinais"],
             "mix_desfechos": escopo["mix"],
             "parametros": {
@@ -271,6 +300,7 @@ def _consolidar(
 def _novo_escopo() -> dict[str, Any]:
     return {
         "n_eventos": 0, "soma_ponderada": 0.0, "valor_score": 0.0,
+        "pendencias_curadoria": 0,
         "scores_sem_valor": [], "critico": False, "sinais": {},
         "mix": {}, "n_desfechos": 0,
         "valor_desfechos": Decimal(0), "valor_bancaria": Decimal(0),
@@ -303,7 +333,10 @@ async def recalcular(db: AsyncSession, tenant_id: UUID) -> dict[str, Any]:
         if sacado:
             nomes.setdefault(sacado, r["sacado_nome"])
         s, critico, acesos = score_evento(
-            r["features"] or {}, bool(r["regra_dura"]), params
+            r["features"] or {},
+            bool(r["regra_dura"]),
+            params,
+            tag_curadoria=r["tag_curadoria"],
         )
         valor = float(r["valor"] or 0)
         for escopo in escopos(ced, sacado):
@@ -314,6 +347,8 @@ async def recalcular(db: AsyncSession, tenant_id: UUID) -> dict[str, Any]:
             else:
                 escopo["scores_sem_valor"].append(s)
             escopo["critico"] = escopo["critico"] or critico
+            if "PRC-05" in acesos:
+                escopo["pendencias_curadoria"] += 1
             for codigo in acesos:
                 escopo["sinais"][codigo] = escopo["sinais"].get(codigo, 0) + 1
 
