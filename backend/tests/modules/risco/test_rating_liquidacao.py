@@ -33,11 +33,27 @@ def test_evento_limpo_score_100() -> None:
 
 def test_prc01_e_critico_nao_deduz_trava() -> None:
     score, critico, acesos = score_evento(
-        {"match_agencia_conta_cedente": 1.0}, regra_dura=False, params=P
+        {"match_agencia_conta_cedente": 1.0, "cidade_pgto_neq_sacado": 1.0},
+        regra_dura=False,
+        params=P,
     )
     assert critico is True
     assert "PRC-01" in acesos
-    assert score == 100.0  # critico trava no consolidado, nao deduz no evento
+    # nao deduz pelo PRC-01 (critico trava no consolidado); PRC-03 acende junto
+    assert score == 100.0 - 5.0
+
+
+def test_prc01_mesma_cidade_nao_acende() -> None:
+    """Cidade pequena: sacado local paga na unica agencia da praca, que por
+    acaso e a do cedente — sem poder discriminante (Ricardo 2026-07-11;
+    Fricock 107/107 mesma cidade)."""
+    _, critico, acesos = score_evento(
+        {"match_agencia_conta_cedente": 1.0, "cidade_pgto_neq_sacado": 0.0},
+        regra_dura=False,
+        params=P,
+    )
+    assert critico is False
+    assert "PRC-01" not in acesos
 
 
 def test_regra_dura_sem_match_conta_e_cnv90() -> None:

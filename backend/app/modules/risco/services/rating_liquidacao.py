@@ -69,7 +69,12 @@ def _sinal_acendeu(codigo: str, feats: _F, regra_dura: bool) -> bool:
     neq_sacado = _f(feats, "cidade_pgto_neq_sacado") >= 0.5
     match codigo:
         case "PRC-01":
-            return _f(feats, "match_agencia_conta_cedente") >= 0.5
+            # Agencia da conta do cedente E sacado de OUTRA cidade — o
+            # qualificador e essencial (Ricardo 2026-07-11): em cidade
+            # pequena, sacado local paga na unica agencia da praca, que por
+            # acaso e a do cedente (Fricock: 107/107 mesma cidade). Mesma
+            # condicao da regra dura original do motor.
+            return _f(feats, "match_agencia_conta_cedente") >= 0.5 and neq_sacado
         case "CNV-90":
             # Composto critico — hoje materializado pela regra dura de
             # multicidade do builder (motivo 'agencia compartilhada...').
