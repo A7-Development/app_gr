@@ -68,6 +68,8 @@ def test_catalogo_sinais_seed_migration() -> None:
         for f in (
             versions / "d7f2a9c4e1b8_deteccao_sinal_parametro.py",
             versions / "f2c7d4a9e3b1_rating_liquidacao.py",
+            versions / "a5d8e2c7f1b4_sinal_prc05_curadoria.py",
+            versions / "b8e3f1a6c9d2_rating_v2_pit_decay.py",
         )
     )
     esperados = {
