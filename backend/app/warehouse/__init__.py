@@ -111,6 +111,7 @@ from app.warehouse.serasa_pj_restricao_summary import SerasaPjRestricaoSummary
 from app.warehouse.serasa_pj_socio import SerasaPjSocio
 from app.warehouse.serpro_raw_nfe import SerproRawNfe
 from app.warehouse.titulo import Titulo
+from app.warehouse.titulo_fiscal import WhTituloFiscal
 from app.warehouse.titulo_snapshot import TituloSnapshot
 
 __all__ = [
@@ -204,4 +205,5 @@ __all__ = [
     "WhPosicaoSacadoCedente",
     "WhProtestoConsulta",
     "WhProtestoTitulo",
+    "WhTituloFiscal",
 ]

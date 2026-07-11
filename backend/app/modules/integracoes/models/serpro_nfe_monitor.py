@@ -4,17 +4,20 @@ Tabela OPERACIONAL (nao warehouse): estado mutavel do ciclo de monitoracao
 de cada chave — espelha o papel da `qitech_report_job` para o adapter
 QiTech.
 
-Escopo (decisao Ricardo 2026-07-11): toda chave em `wh_nfe` com duplicata
-a vencer (`wh_nfe_duplicata.vencimento >= hoje`). O job de enrolamento
-insere aqui; o push do SERPRO avisa de evento novo; a consulta atualiza
-bronze+silver; alerta quando a situacao vira cancelada/denegada.
+Escopo (decisao Ricardo 2026-07-11): chave cuja nota lastreia TITULO EM
+ABERTO (`wh_titulo.situacao=0` via ponte `wh_titulo_fiscal`). Vencimento
+NAO governa a permanencia — titulo vencido em aberto continua vigiado.
+O job de enrolamento insere aqui; o push do SERPRO avisa de evento novo;
+a consulta atualiza bronze+silver; alerta quando a situacao vira
+cancelada/denegada.
 
 Ciclo de vida:
     enrolado (ativo, sem solicitacao)
       -> inscrito no push (solicitacao_id + expira_em ~30d)
-      -> renovado a cada ~25d enquanto no escopo
-      -> encerrado (ativo=false) quando vencimento passa (carencia) ou a
-         nota morre (cancelada) — nao renova a inscricao.
+      -> renovado a cada ~25d enquanto o titulo seguir em aberto
+      -> encerrado (ativo=false) quando o titulo e liquidado/baixado
+         (`titulo_encerrado`) ou a nota morre (`nota_morta`) — nao renova.
+      -> reativado se o titulo reabrir (exceto nota_morta).
 """
 
 from __future__ import annotations

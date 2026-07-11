@@ -40,17 +40,15 @@ from app.modules.integracoes.adapters.data.serpro.etl import consultar_e_persist
 from app.modules.integracoes.adapters.data.serpro.version import ADAPTER_VERSION
 from app.modules.integracoes.models.serpro_nfe_monitor import SerproNfeMonitor
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
-from app.warehouse.fiscal_nfe import Nfe, NfeDuplicata
 from app.warehouse.nfe_estado import NfeSituacao
+from app.warehouse.titulo import Titulo
+from app.warehouse.titulo_fiscal import WhTituloFiscal
 
 logger = logging.getLogger(__name__)
 
 # Solicitacao vale 30d; re-inscrever quando faltar menos que isto.
 RENOVAR_ANTES_DE = timedelta(days=5)
 SOLICITACAO_VALIDADE = timedelta(days=30)
-# Apos o vencimento da duplicata, vigiar por mais N dias (cancelamento
-# extemporaneo proximo do vencimento ainda interessa).
-CARENCIA_POS_VENCIMENTO = timedelta(days=10)
 # Rate limit de reconsulta por ping (spoof/dupla entrega no maximo
 # provoca 1 consulta por chave por janela).
 MIN_INTERVALO_ENTRE_CONSULTAS = timedelta(minutes=5)
@@ -59,7 +57,12 @@ _BATCH_PUSH = 500
 # Situacoes do silver que disparam alerta em chave monitorada.
 SITUACOES_CRITICAS = {"cancelada", "cancelada_fora_prazo", "denegada"}
 
-MOTIVO_DUPLICATA_A_VENCER = "duplicata_a_vencer"
+# Regra de escopo (decisao Ricardo 2026-07-11): titulo EM ABERTO no ERP
+# (wh_titulo.situacao=0) => vigia a chave da nota que o lastreia
+# (wh_titulo_fiscal). Vencimento NAO importa: titulo vencido em aberto
+# continua vigiado; titulo liquidado/baixado/recomprado sai.
+MOTIVO_TITULO_EM_ABERTO = "titulo_em_aberto"
+SITUACAO_TITULO_EM_ABERTO = 0  # espelha conciliacao_boleto.SITUACAO_EM_ABERTO
 
 
 # ---- Token do receiver ------------------------------------------------------
@@ -118,33 +121,49 @@ async def build_client_config(db: AsyncSession, tenant_id: UUID) -> SerproConfig
     return SerproConfig.from_dict(plain)
 
 
-# ---- Enrolamento (escopo: duplicata a vencer) -------------------------------
+# ---- Enrolamento (escopo: titulo em aberto) ---------------------------------
+
+
+def _escopo_titulos_abertos(tenant_id: UUID) -> sa.Select:
+    """Chaves lastreando titulo EM ABERTO: wh_titulo (situacao=0) via ponte
+    wh_titulo_fiscal. Vencimento e informativo (referencia_vencimento)."""
+    return (
+        sa.select(
+            Titulo.tenant_id,
+            WhTituloFiscal.chave_acesso,
+            sa.literal(MOTIVO_TITULO_EM_ABERTO).label("motivo"),
+            sa.cast(
+                sa.func.max(Titulo.data_de_vencimento_efetiva), sa.Date
+            ).label("referencia_vencimento"),
+        )
+        .join(
+            WhTituloFiscal,
+            sa.and_(
+                WhTituloFiscal.tenant_id == Titulo.tenant_id,
+                WhTituloFiscal.titulo_id == Titulo.titulo_id,
+            ),
+        )
+        .where(
+            Titulo.tenant_id == tenant_id,
+            Titulo.situacao == SITUACAO_TITULO_EM_ABERTO,
+        )
+        .group_by(Titulo.tenant_id, WhTituloFiscal.chave_acesso)
+    )
 
 
 async def enrolar_chaves_no_escopo(db: AsyncSession, tenant_id: UUID) -> int:
-    """Insere no monitor as chaves com duplicata a vencer ainda nao vigiadas.
+    """Insere no monitor as chaves de titulos em aberto ainda nao vigiadas.
 
-    Idempotente (ON CONFLICT DO NOTHING no UQ tenant+chave). Nao commita.
+    Idempotente (ON CONFLICT DO NOTHING no UQ tenant+chave). Tambem
+    REATIVA monitor encerrado cuja chave voltou ao escopo (titulo
+    reaberto/estorno de baixa) — exceto nota_morta (alerta ja disparado;
+    nota cancelada nao ressuscita). Nao commita.
     """
-    escopo = (
-        sa.select(
-            Nfe.tenant_id,
-            Nfe.chave_acesso,
-            sa.literal(MOTIVO_DUPLICATA_A_VENCER).label("motivo"),
-            sa.func.max(NfeDuplicata.vencimento).label("referencia_vencimento"),
-        )
-        .join(NfeDuplicata, NfeDuplicata.nfe_id == Nfe.id)
-        .where(
-            Nfe.tenant_id == tenant_id,
-            NfeDuplicata.vencimento >= sa.func.current_date(),
-        )
-        .group_by(Nfe.tenant_id, Nfe.chave_acesso)
-    )
     stmt = (
         pg_insert(SerproNfeMonitor)
         .from_select(
             ["tenant_id", "chave_acesso", "motivo", "referencia_vencimento"],
-            escopo,
+            _escopo_titulos_abertos(tenant_id),
         )
         .on_conflict_do_nothing(
             constraint="uq_serpro_nfe_monitor_tenant_chave"
@@ -152,23 +171,58 @@ async def enrolar_chaves_no_escopo(db: AsyncSession, tenant_id: UUID) -> int:
     )
     result = await db.execute(stmt)
     novos = result.rowcount or 0
-    if novos:
-        logger.info("serpro monitor: %d chaves enroladas (tenant=%s)", novos, tenant_id)
-    return novos
+
+    escopo_chaves = sa.select(
+        _escopo_titulos_abertos(tenant_id).subquery().c.chave_acesso
+    )
+    reativados = (
+        await db.execute(
+            sa.update(SerproNfeMonitor)
+            .where(
+                SerproNfeMonitor.tenant_id == tenant_id,
+                SerproNfeMonitor.ativo.is_(False),
+                SerproNfeMonitor.encerrado_motivo != "nota_morta",
+                SerproNfeMonitor.chave_acesso.in_(escopo_chaves),
+            )
+            .values(
+                ativo=True,
+                encerrado_em=None,
+                encerrado_motivo=None,
+                # Forca re-inscricao no push no mesmo tick.
+                solicitacao_id=None,
+                solicitacao_expira_em=None,
+            )
+        )
+    ).rowcount or 0
+
+    if novos or reativados:
+        logger.info(
+            "serpro monitor: %d chaves enroladas, %d reativadas (tenant=%s)",
+            novos,
+            reativados,
+            tenant_id,
+        )
+    return novos + reativados
 
 
 async def encerrar_fora_do_escopo(db: AsyncSession, tenant_id: UUID) -> int:
-    """Desativa chaves vencidas ha mais que a carencia ou com nota morta."""
+    """Desativa chaves sem titulo em aberto (liquidado/baixado) ou nota morta.
+
+    Regra (Ricardo 2026-07-11): a permanencia e governada pelo ESTADO do
+    titulo, nao pelo calendario — titulo vencido em aberto segue vigiado.
+    """
     agora = datetime.now(UTC)
-    corte = (agora - CARENCIA_POS_VENCIMENTO).date()
+    escopo_chaves = sa.select(
+        _escopo_titulos_abertos(tenant_id).subquery().c.chave_acesso
+    )
     result = await db.execute(
         sa.update(SerproNfeMonitor)
         .where(
             SerproNfeMonitor.tenant_id == tenant_id,
             SerproNfeMonitor.ativo.is_(True),
             sa.or_(
-                SerproNfeMonitor.referencia_vencimento < corte,
                 SerproNfeMonitor.ultima_situacao.in_(SITUACOES_CRITICAS),
+                SerproNfeMonitor.chave_acesso.not_in(escopo_chaves),
             ),
         )
         .values(
@@ -179,7 +233,7 @@ async def encerrar_fora_do_escopo(db: AsyncSession, tenant_id: UUID) -> int:
                     SerproNfeMonitor.ultima_situacao.in_(SITUACOES_CRITICAS),
                     "nota_morta",
                 ),
-                else_="vencida",
+                else_="titulo_encerrado",
             ),
         )
     )

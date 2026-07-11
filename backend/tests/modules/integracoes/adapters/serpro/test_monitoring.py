@@ -2,14 +2,18 @@
 
 alerta e receiver do webhook.
 
-Chaves geradas por teste (`_chave()`): o truncate do gr_db_test roda so no
-inicio da sessao, entao chave fixa colidiria com monitores de tenants de
-testes anteriores.
+Regra de escopo (Ricardo 2026-07-11): titulo EM ABERTO (situacao=0) =>
+vigia a chave; titulo liquidado/baixado => sai. Vencimento nao governa.
+
+Chaves/titulo_ids gerados por teste: o truncate do gr_db_test roda so no
+inicio da sessao, entao valores fixos colidiriam com dados de testes
+anteriores na mesma sessao.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from itertools import count
 from uuid import uuid4
 
 import pytest
@@ -19,7 +23,8 @@ from httpx import AsyncClient
 from app.core.database import AsyncSessionLocal
 from app.core.enums import SourceType
 from app.modules.integracoes.adapters.data.serpro.monitoring import (
-    MOTIVO_DUPLICATA_A_VENCER,
+    MOTIVO_TITULO_EM_ABERTO,
+    SITUACAO_TITULO_EM_ABERTO,
     SITUACOES_CRITICAS,
     _alertar_se_critico,
     encerrar_fora_do_escopo,
@@ -32,7 +37,11 @@ from app.modules.integracoes.adapters.data.serpro.monitoring import (
 from app.modules.integracoes.models.serpro_nfe_monitor import SerproNfeMonitor
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 from app.shared.identity.tenant import Tenant
-from app.warehouse.fiscal_nfe import Nfe, NfeDuplicata, NfeRawDocumento
+from app.warehouse.titulo import Titulo
+from app.warehouse.titulo_fiscal import WhTituloFiscal
+
+_TITULO_SEQ = count(900_000_000)
+_SITUACAO_LIQUIDADO = 1
 
 
 def _chave() -> str:
@@ -40,43 +49,74 @@ def _chave() -> str:
     return f"352606{uuid4().int % 10**38:038d}"
 
 
-async def _criar_nfe(
-    tenant_id, chave: str, vencimento: date, *, numero: int = 1
-) -> None:
+async def _criar_titulo(
+    tenant_id,
+    chave: str,
+    *,
+    situacao: int = SITUACAO_TITULO_EM_ABERTO,
+) -> int:
+    """Cria wh_titulo + ponte wh_titulo_fiscal. Retorna o titulo_id."""
+    tid = next(_TITULO_SEQ)
+    agora = datetime.now(UTC)
     async with AsyncSessionLocal() as db:
-        raw = NfeRawDocumento(
-            tenant_id=tenant_id,
-            chave_acesso=chave,
-            documento={"NFe": {}},
-            nome_arquivo_xml=f"{chave}.xml",
-            payload_sha256="0" * 64,
-            fetched_by_version="test",
-        )
-        db.add(raw)
-        await db.flush()
-        nfe = Nfe(
-            tenant_id=tenant_id,
-            raw_documento_id=raw.id,
-            chave_acesso=chave,
-            numero=numero,
-            emitente_documento="11222333000144",
-            autorizada=True,
-            source_type=SourceType.DOCUMENT_NFE,
-            source_id=chave,
-            ingested_by_version="test",
-        )
-        db.add(nfe)
-        await db.flush()
         db.add(
-            NfeDuplicata(
+            Titulo(
                 tenant_id=tenant_id,
-                nfe_id=nfe.id,
-                numero="001",
-                vencimento=vencimento,
+                titulo_id=tid,
+                sigla="DM",
+                numero=f"{tid}/1",
+                data_de_emissao=agora,
+                data_de_vencimento=agora + timedelta(days=30),
+                data_de_vencimento_efetiva=agora + timedelta(days=30),
+                data_de_cadastro=agora,
+                data_da_situacao=agora,
                 valor=1000,
+                situacao=situacao,
+                sacado_id=1,
+                conta_operacional_id=1,
+                unidade_administrativa_id=1,
+                operacao_id=1,
+                source_type=SourceType.ERP_BITFIN,
+                source_id=str(tid),
+                ingested_by_version="test",
+            )
+        )
+        db.add(
+            WhTituloFiscal(
+                tenant_id=tenant_id,
+                titulo_id=tid,
+                nota_fiscal_eletronica_id=tid,
+                chave_acesso=chave,
+                valor_associado=1000,
+                source_type=SourceType.ERP_BITFIN,
+                source_id=f"{tid}:{tid}",
+                ingested_by_version="test",
             )
         )
         await db.commit()
+    return tid
+
+
+async def _set_situacao(tenant_id, titulo_id: int, situacao: int) -> None:
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            sa.update(Titulo)
+            .where(Titulo.tenant_id == tenant_id, Titulo.titulo_id == titulo_id)
+            .values(situacao=situacao)
+        )
+        await db.commit()
+
+
+async def _monitores(tenant_id) -> dict[str, SerproNfeMonitor]:
+    async with AsyncSessionLocal() as db:
+        rows = (
+            await db.execute(
+                sa.select(SerproNfeMonitor).where(
+                    SerproNfeMonitor.tenant_id == tenant_id
+                )
+            )
+        ).scalars().all()
+    return {r.chave_acesso: r for r in rows}
 
 
 class _FakePushClient:
@@ -94,28 +134,20 @@ class _FakePushClient:
 
 
 @pytest.mark.asyncio
-async def test_enrola_so_duplicata_a_vencer(tenant_a: Tenant) -> None:
-    chave_ok, chave_vencida = _chave(), _chave()
-    hoje = date.today()
-    await _criar_nfe(tenant_a.id, chave_ok, hoje + timedelta(days=30), numero=1)
-    await _criar_nfe(tenant_a.id, chave_vencida, hoje - timedelta(days=30), numero=2)
+async def test_enrola_so_titulo_em_aberto(tenant_a: Tenant) -> None:
+    chave_aberto, chave_liquidado = _chave(), _chave()
+    await _criar_titulo(tenant_a.id, chave_aberto)
+    await _criar_titulo(tenant_a.id, chave_liquidado, situacao=_SITUACAO_LIQUIDADO)
 
     async with AsyncSessionLocal() as db:
         novos = await enrolar_chaves_no_escopo(db, tenant_a.id)
         await db.commit()
     assert novos == 1
 
-    async with AsyncSessionLocal() as db:
-        rows = (
-            await db.execute(
-                sa.select(SerproNfeMonitor).where(
-                    SerproNfeMonitor.tenant_id == tenant_a.id
-                )
-            )
-        ).scalars().all()
-    assert [r.chave_acesso for r in rows] == [chave_ok]
-    assert rows[0].motivo == MOTIVO_DUPLICATA_A_VENCER
-    assert rows[0].ativo is True
+    rows = await _monitores(tenant_a.id)
+    assert list(rows) == [chave_aberto]
+    assert rows[chave_aberto].motivo == MOTIVO_TITULO_EM_ABERTO
+    assert rows[chave_aberto].ativo is True
 
     # Idempotente: segunda passada nao duplica.
     async with AsyncSessionLocal() as db:
@@ -124,19 +156,12 @@ async def test_enrola_so_duplicata_a_vencer(tenant_a: Tenant) -> None:
 
 @pytest.mark.asyncio
 async def test_enrolamento_isola_tenant(tenant_a: Tenant, tenant_b: Tenant) -> None:
-    """§10.4: enrolar B nao ve as notas de A."""
-    await _criar_nfe(tenant_a.id, _chave(), date.today() + timedelta(days=10))
+    """§10.4: enrolar B nao ve os titulos de A."""
+    await _criar_titulo(tenant_a.id, _chave())
     async with AsyncSessionLocal() as db:
         await enrolar_chaves_no_escopo(db, tenant_b.id)
         await db.commit()
-        rows_b = (
-            await db.execute(
-                sa.select(SerproNfeMonitor).where(
-                    SerproNfeMonitor.tenant_id == tenant_b.id
-                )
-            )
-        ).scalars().all()
-    assert rows_b == []
+    assert await _monitores(tenant_b.id) == {}
 
 
 # ---- Inscricao push ----------------------------------------------------------
@@ -145,7 +170,7 @@ async def test_enrolamento_isola_tenant(tenant_a: Tenant, tenant_b: Tenant) -> N
 @pytest.mark.asyncio
 async def test_inscreve_pendentes_marca_solicitacao(tenant_a: Tenant) -> None:
     chave = _chave()
-    await _criar_nfe(tenant_a.id, chave, date.today() + timedelta(days=10))
+    await _criar_titulo(tenant_a.id, chave)
     fake = _FakePushClient()
     async with AsyncSessionLocal() as db:
         await enrolar_chaves_no_escopo(db, tenant_a.id)
@@ -154,17 +179,11 @@ async def test_inscreve_pendentes_marca_solicitacao(tenant_a: Tenant) -> None:
     assert inscritas == 1
     assert fake.lotes == [[chave]]
 
-    async with AsyncSessionLocal() as db:
-        row = (
-            await db.execute(
-                sa.select(SerproNfeMonitor).where(
-                    SerproNfeMonitor.tenant_id == tenant_a.id
-                )
-            )
-        ).scalar_one()
-        assert row.solicitacao_id == "SOL-1"
-        assert row.solicitacao_expira_em is not None
+    rows = await _monitores(tenant_a.id)
+    assert rows[chave].solicitacao_id == "SOL-1"
+    assert rows[chave].solicitacao_expira_em is not None
 
+    async with AsyncSessionLocal() as db:
         # Segunda passada: solicitacao valida -> nada a inscrever.
         assert await inscrever_pendentes(db, fake, tenant_a.id) == 0  # type: ignore[arg-type]
 
@@ -173,47 +192,75 @@ async def test_inscreve_pendentes_marca_solicitacao(tenant_a: Tenant) -> None:
 
 
 @pytest.mark.asyncio
-async def test_encerra_vencida_e_nota_morta(tenant_a: Tenant) -> None:
-    chave_vencida, chave_morta = _chave(), _chave()
+async def test_titulo_liquidado_sai_do_monitoramento(tenant_a: Tenant) -> None:
+    """Regra central: em aberto entra; liquidado sai — vencimento nao importa."""
+    chave = _chave()
+    titulo_id = await _criar_titulo(tenant_a.id, chave)
+
     async with AsyncSessionLocal() as db:
-        db.add(
-            SerproNfeMonitor(
-                tenant_id=tenant_a.id,
-                chave_acesso=chave_vencida,
-                motivo=MOTIVO_DUPLICATA_A_VENCER,
-                referencia_vencimento=date.today() - timedelta(days=30),
-            )
-        )
-        db.add(
-            SerproNfeMonitor(
-                tenant_id=tenant_a.id,
-                chave_acesso=chave_morta,
-                motivo=MOTIVO_DUPLICATA_A_VENCER,
-                referencia_vencimento=date.today() + timedelta(days=30),
-                ultima_situacao="cancelada_fora_prazo",
-            )
-        )
+        await enrolar_chaves_no_escopo(db, tenant_a.id)
+        # Titulo em aberto: encerrar nao remove.
+        assert await encerrar_fora_do_escopo(db, tenant_a.id) == 0
         await db.commit()
 
+    await _set_situacao(tenant_a.id, titulo_id, _SITUACAO_LIQUIDADO)
     async with AsyncSessionLocal() as db:
         encerrados = await encerrar_fora_do_escopo(db, tenant_a.id)
         await db.commit()
-    assert encerrados == 2
+    assert encerrados == 1
 
+    rows = await _monitores(tenant_a.id)
+    assert rows[chave].ativo is False
+    assert rows[chave].encerrado_motivo == "titulo_encerrado"
+
+
+@pytest.mark.asyncio
+async def test_titulo_reaberto_reativa_monitoramento(tenant_a: Tenant) -> None:
+    """Estorno de baixa: titulo volta a aberto -> monitor reativa e re-inscreve."""
+    chave = _chave()
+    titulo_id = await _criar_titulo(tenant_a.id, chave)
     async with AsyncSessionLocal() as db:
-        rows = {
-            r.chave_acesso: r
-            for r in (
-                await db.execute(
-                    sa.select(SerproNfeMonitor).where(
-                        SerproNfeMonitor.tenant_id == tenant_a.id
-                    )
-                )
-            ).scalars()
-        }
-    assert rows[chave_vencida].encerrado_motivo == "vencida"
-    assert rows[chave_morta].encerrado_motivo == "nota_morta"
-    assert not rows[chave_vencida].ativo and not rows[chave_morta].ativo
+        await enrolar_chaves_no_escopo(db, tenant_a.id)
+        await db.commit()
+
+    await _set_situacao(tenant_a.id, titulo_id, _SITUACAO_LIQUIDADO)
+    async with AsyncSessionLocal() as db:
+        await encerrar_fora_do_escopo(db, tenant_a.id)
+        await db.commit()
+
+    await _set_situacao(tenant_a.id, titulo_id, SITUACAO_TITULO_EM_ABERTO)
+    async with AsyncSessionLocal() as db:
+        reativados = await enrolar_chaves_no_escopo(db, tenant_a.id)
+        await db.commit()
+    assert reativados == 1
+
+    rows = await _monitores(tenant_a.id)
+    assert rows[chave].ativo is True
+    assert rows[chave].encerrado_motivo is None
+    assert rows[chave].solicitacao_id is None  # forca re-inscricao no push
+
+
+@pytest.mark.asyncio
+async def test_nota_morta_sai_e_nao_reativa(tenant_a: Tenant) -> None:
+    chave = _chave()
+    await _criar_titulo(tenant_a.id, chave)  # titulo SEGUE em aberto
+    async with AsyncSessionLocal() as db:
+        await enrolar_chaves_no_escopo(db, tenant_a.id)
+        await db.execute(
+            sa.update(SerproNfeMonitor)
+            .where(SerproNfeMonitor.chave_acesso == chave)
+            .values(ultima_situacao="cancelada_fora_prazo")
+        )
+        encerrados = await encerrar_fora_do_escopo(db, tenant_a.id)
+        await db.commit()
+    assert encerrados == 1
+
+    rows = await _monitores(tenant_a.id)
+    assert rows[chave].encerrado_motivo == "nota_morta"
+
+    # Titulo continua em aberto, mas nota morta NAO ressuscita.
+    async with AsyncSessionLocal() as db:
+        assert await enrolar_chaves_no_escopo(db, tenant_a.id) == 0
 
 
 # ---- Alerta ------------------------------------------------------------------
@@ -225,8 +272,7 @@ async def test_alerta_critico_uma_vez(tenant_a: Tenant) -> None:
         monitor = SerproNfeMonitor(
             tenant_id=tenant_a.id,
             chave_acesso=_chave(),
-            motivo=MOTIVO_DUPLICATA_A_VENCER,
-            referencia_vencimento=date.today() + timedelta(days=10),
+            motivo=MOTIVO_TITULO_EM_ABERTO,
         )
         db.add(monitor)
         await db.flush()
@@ -274,8 +320,7 @@ async def test_ping_rate_limited_nao_consulta(tenant_a: Tenant) -> None:
             SerproNfeMonitor(
                 tenant_id=tenant_a.id,
                 chave_acesso=chave,
-                motivo=MOTIVO_DUPLICATA_A_VENCER,
-                referencia_vencimento=date.today() + timedelta(days=10),
+                motivo=MOTIVO_TITULO_EM_ABERTO,
                 ultima_consulta_em=datetime.now(UTC),
             )
         )
