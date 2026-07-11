@@ -39,11 +39,8 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/tremor/Button"
 import { Card } from "@/components/tremor/Card"
-import { Divider } from "@/components/tremor/Divider"
-import { Textarea } from "@/components/tremor/Textarea"
 import {
   DataTable,
-  DrillDownSheet,
   FilterChip,
   FilterSearch,
   MultiCheckList,
@@ -59,42 +56,16 @@ import {
   useCuradoriaLiquidacoes,
   useAtivarVersaoModelo,
   useDeteccaoModelos,
-  useMemoriaLiquidacao,
   usePontuarAgora,
   useTagLiquidacao,
   useTreinarModelo,
 } from "@/lib/hooks/risco"
+import { CuradoriaModal } from "@/components/risco/CuradoriaModal"
 import { cx } from "@/lib/utils"
 
 const PAGE_SIZE = 50
 
 // Labels humanas das features (fatores de explicabilidade §14.3).
-const FEATURE_LABELS: Record<string, string> = {
-  match_agencia_conta_cedente: "Agência onde o cedente mantém conta",
-  cidade_pgto_eq_cedente: "Pagamento na cidade do cedente",
-  cidade_pgto_neq_sacado: "Pagamento fora da cidade do sacado",
-  canal_cooperativa: "Canal: cooperativa",
-  canal_ip: "Canal: instituição de pagamento",
-  canal_sem_praca: "Canal: banco sem praça física",
-  canal_nao_resolvido: "Canal não resolvido",
-  praca_fonte_bacen: "Praça resolvida pela referência Bacen",
-  praca_fonte_cadastro_erp: "Praça resolvida pelo cadastro do ERP (fora do Bacen)",
-  praca_nao_resolvida: "Praça não identificada em nenhuma fonte",
-  agencia_compartilhada_cedentes: "Agência usada por vários cedentes (rede)",
-  quebra_fingerprint: "Quebra do padrão bancário do sacado",
-  agencia_compartilhada: "Agência compartilhada por vários sacados do cedente",
-  canal_baixa_manual: "Liquidação por baixa manual",
-  baixa_confirmada: "Boleto baixado por instrução e liquidado por fora",
-  sem_ocorrencia: "Bancarizado sem ocorrência de liquidação",
-  baixa_manual_produto_anomala: "Baixa manual em produto onde é anômala",
-  boleto_nao_esperado_mas_teve: "Boleto em produto onde não era esperado",
-  contrato_aberto: "Produto sem contrato definido",
-  pago_exato_vencimento: "Pago exatamente no vencimento",
-  lote_dia: "Liquidado em lote (mesmo dia, mesmo cedente)",
-  ticket_z: "Valor fora do padrão do cedente",
-  valor_log: "Magnitude do valor",
-}
-
 // Conclusões do sistema ("qual foi o bad") — códigos do backend em pt-BR.
 const SINAL_LABELS: Record<string, string> = {
   // regra_dura por match de conta cadastrada do cedente (a agência É do cedente).
@@ -126,17 +97,6 @@ const SINAL_CURTO: Record<string, string> = {
   fora_praca_sacado: "fora da praça",
   sem_ocorrencia: "sem ocorrência",
 }
-// Sinais fortes ganham tint amber no DRAWER (resumo do "porquê"). Na TABELA,
-// Sinal é neutro por política (cor-como-sinal: o vermelho fica no Risco).
-const SINAIS_FORTES = new Set([
-  "regra_dura_conta",
-  "regra_dura_multicidade",
-  "regra_dura",
-  "baixa_confirmada",
-  "agencia_conta_cedente",
-  "agencia_multi_cedente",
-  "lastro_inconsistente",
-])
 // Dicionário Titulo.Situacao (mapeado 2026-07-08).
 const SITUACAO_LABELS: Record<number, string> = {
   0: "Em aberto",
@@ -370,15 +330,6 @@ export default function CuradoriaLiquidacoesPage() {
   const total = pageData?.total ?? 0
   const totalPaginas = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
-  const selected = React.useMemo(
-    () =>
-      selectedId ? (rows.find((r) => r.liquidacao_id === selectedId) ?? null) : null,
-    [rows, selectedId],
-  )
-  // Memoria de calculo completa — buscada por demanda ao abrir o drawer.
-  const memoriaQuery = useMemoriaLiquidacao(selectedId)
-  const [nota, setNota] = React.useState("")
-  React.useEffect(() => setNota(""), [selectedId])
 
   const setSelected = React.useCallback(
     (id: string | null) => {
@@ -841,153 +792,10 @@ export default function CuradoriaLiquidacoesPage() {
       </Card>
 
       {/* Drawer: evidência completa + marcação com nota */}
-      <DrillDownSheet
-        open={selected !== null}
+      <CuradoriaModal
+        liquidacaoId={selectedId}
         onClose={() => setSelected(null)}
-        title={
-          selected
-            ? `Título ${selected.titulo_numero ?? selected.titulo_id} · ${selected.cedente_nome ?? ""}`
-            : ""
-        }
-        size="md"
-      >
-        {selected && (
-          <div className="flex flex-col gap-5 p-6">
-            {/* Conclusões (sinais) no topo — o resumo do porquê */}
-            {selected.sinais.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {selected.sinais.map((s) => (
-                  <span
-                    key={s}
-                    className={cx(
-                      tableTokens.badge,
-                      SINAIS_FORTES.has(s)
-                        ? tableTokens.badgeWarning
-                        : tableTokens.badgeNeutral,
-                    )}
-                  >
-                    {SINAL_LABELS[s] ?? s}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {selected.regra_dura && (
-              <span className={cx(tableTokens.badge, tableTokens.badgeDanger, "w-fit")}>
-                {selected.regra_dura_motivo ?? "Padrão crítico disparado"}
-              </span>
-            )}
-
-            {/* Memória de cálculo — os DADOS que sustentam cada conclusão */}
-            {memoriaQuery.isLoading && (
-              <span className={tableTokens.cellMuted}>
-                Montando a memória de cálculo…
-              </span>
-            )}
-            {memoriaQuery.data?.secoes.map((secao) => (
-              <div key={secao.titulo} className="flex flex-col gap-1.5">
-                <span className={tableTokens.header}>{secao.titulo}</span>
-                <ul className="flex flex-col gap-1">
-                  {secao.itens.map((item, i) => (
-                    <li
-                      key={`${item.label}-${i}`}
-                      className="flex items-baseline justify-between gap-4"
-                    >
-                      <span className={tableTokens.cellSecondary}>{item.label}</span>
-                      <span
-                        className={cx(
-                          "text-right",
-                          item.destaque
-                            ? cx(tableTokens.cellStrong, "text-amber-700 dark:text-amber-400")
-                            : tableTokens.cellText,
-                        )}
-                      >
-                        {item.valor}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-
-            {memoriaQuery.data?.fatores && memoriaQuery.data.fatores.length > 0 && (
-              <div className="flex flex-col gap-2">
-                <span className={tableTokens.header}>
-                  Contribuições do modelo (
-                  {Math.round((memoriaQuery.data.score ?? 0) * 100)}%)
-                </span>
-                <ul className="flex flex-col gap-1">
-                  {memoriaQuery.data.fatores.map((f) => (
-                    <li key={f.feature} className="flex items-baseline justify-between gap-3">
-                      <span className={tableTokens.cellText}>
-                        {FEATURE_LABELS[f.feature] ?? f.feature}
-                      </span>
-                      <span
-                        className={cx(
-                          tableTokens.cellNumber,
-                          f.contrib > 0
-                            ? "text-red-600 dark:text-red-400"
-                            : "text-gray-500",
-                        )}
-                      >
-                        {f.contrib > 0 ? "+" : ""}
-                        {f.contrib.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <Divider className="my-0" />
-
-            <div className="flex flex-col gap-2">
-              <span className={tableTokens.header}>Marcação</span>
-              {selected.tag_vigente && (
-                <span className={tableTokens.cellSecondary}>
-                  Vigente: <TagBadge row={selected} />
-                  {selected.tag_nota && ` — "${selected.tag_nota}"`}
-                </span>
-              )}
-              <Textarea
-                value={nota}
-                onChange={(e) => setNota(e.target.value)}
-                placeholder="Nota (opcional) — por que esta liquidação é fraude/OK?"
-                rows={2}
-              />
-              <div className="flex gap-2">
-                <Button
-                  variant="destructive"
-                  isLoading={tagMut.isPending}
-                  onClick={() => void marcar(selected, "fraude", nota)}
-                >
-                  Marcar fraude
-                </Button>
-                <Button
-                  variant="secondary"
-                  isLoading={tagMut.isPending}
-                  onClick={() => void marcar(selected, "ok", nota)}
-                >
-                  Marcar OK
-                </Button>
-                {selected.tag_vigente && (
-                  <Button
-                    variant="ghost"
-                    isLoading={tagMut.isPending}
-                    onClick={() => void marcar(selected, "neutro", nota)}
-                  >
-                    Remover marcação
-                  </Button>
-                )}
-              </div>
-              <span className={tableTokens.cellMuted}>
-                Marcações são registradas com autor e data e nunca são apagadas —
-                remarcar (ou remover) cria um novo registro; o histórico fica auditável.
-              </span>
-            </div>
-          </div>
-        )}
-      </DrillDownSheet>
+      />
     </div>
   )
 }
