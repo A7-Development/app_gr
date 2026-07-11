@@ -3861,6 +3861,9 @@ export type RaioXAgencia = {
   n: number
   valor: number
   conta_do_cedente: boolean
+  sacados_distintos: number
+  cidades_distintas: number
+  sacados_outra_cidade: number
   ultimo_credito: string | null
 }
 export type RaioXSinal = {

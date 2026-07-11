@@ -61,7 +61,13 @@ SELECT be.banco_pagador, be.agencia_pagadora,
        count(*) AS n,
        sum(coalesce(l.valor_pago, l.valor_titulo, 0)) AS valor,
        max(be.data_credito) AS ultimo_credito,
-       bool_or(cc.tem_conta) AS conta_do_cedente
+       bool_or(cc.tem_conta) AS conta_do_cedente,
+       count(DISTINCT sac.id) AS sacados_distintos,
+       count(DISTINCT lower(sac.localidade)) AS cidades_distintas,
+       count(DISTINCT sac.id) FILTER (
+           WHERE sac.localidade IS NOT NULL AND ra.municipio IS NOT NULL
+             AND lower(sac.localidade) <> lower(ra.municipio)
+       ) AS sacados_outra_cidade
 FROM wh_liquidacao l
 JOIN wh_operacao o
     ON o.operacao_id = l.operacao_id AND o.tenant_id = l.tenant_id
@@ -77,6 +83,10 @@ JOIN LATERAL (
 LEFT JOIN ref_bacen_agencia ra
     ON ra.banco_compe = lpad(be.banco_pagador, 3, '0')
    AND ra.agencia_codigo = lpad(be.agencia_pagadora, 5, '0')
+LEFT JOIN wh_entidade_papel pap
+    ON pap.tenant_id = l.tenant_id AND pap.papel = 'sacado'
+   AND pap.source_id = t.sacado_id::text
+LEFT JOIN wh_entidade sac ON sac.id = pap.entidade_id
 LEFT JOIN LATERAL (
     SELECT true AS tem_conta
     FROM wh_conta_bancaria cb
@@ -149,6 +159,9 @@ async def raio_x(
             "n": int(r["n"]),
             "valor": float(r["valor"] or 0),
             "conta_do_cedente": bool(r["conta_do_cedente"]),
+            "sacados_distintos": int(r["sacados_distintos"] or 0),
+            "cidades_distintas": int(r["cidades_distintas"] or 0),
+            "sacados_outra_cidade": int(r["sacados_outra_cidade"] or 0),
             "ultimo_credito": r["ultimo_credito"],
         }
         for r in (await db.execute(_SQL_AGENCIAS, p)).mappings()
