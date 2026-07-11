@@ -16,6 +16,7 @@ import {
   RiCloseCircleLine,
   RiMapPin2Line,
   RiQuestionLine,
+  RiScales3Line,
 } from "@remixicon/react"
 
 import { Button } from "@/components/tremor/Button"
@@ -63,6 +64,19 @@ function Kpi({ label, value, tone }: { label: string; value: React.ReactNode; to
   )
 }
 
+// Campo de identidade rotulado (dt/dd) — quem/o quê/quanto, claro.
+function Campo({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string | null }) {
+  return (
+    <div className="min-w-0">
+      <dt className={tableTokens.header}>{label}</dt>
+      <dd className={cx(tableTokens.cellStrong, "truncate")} title={typeof value === "string" ? value : undefined}>
+        {value}
+      </dd>
+      {sub && <dd className={cx(tableTokens.cellMuted, "text-[11px]")}>{sub}</dd>}
+    </div>
+  )
+}
+
 function Secao({ titulo, icon, children }: { titulo: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
@@ -85,43 +99,64 @@ function Corpo({ d, onDecidir, saving }: {
   const conv = ag.convergencia
   const foraPraca = d.sacado_uf && ag.uf && d.sacado_uf !== ag.uf
 
+  const produto = d.produto_nome
+    ? `${d.produto_nome}${d.produto_sigla ? ` (${d.produto_sigla})` : ""}`
+    : (d.produto_sigla ?? "—")
+  const sacado = d.sacado_nome ?? "sacado não identificado"
+  const sacadoLocal = d.sacado_cidade ? `${d.sacado_cidade}/${d.sacado_uf ?? ""}` : null
+
   return (
     <div className="flex max-h-[86vh] flex-col">
-      {/* Header estilo página */}
-      <header className="rounded-t-md bg-gray-50 px-5 py-4 dark:bg-gray-900/60">
+      {/* Header — PROPÓSITO (onde estou / o que faço) + identidade do título */}
+      <header className="rounded-t-md bg-gray-50 px-5 pb-4 pt-4 dark:bg-gray-900/60">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold text-gray-900 dark:text-gray-50">
-              Título {d.titulo_numero ?? d.titulo_id} · {d.sacado_nome ?? "sacado não identificado"}
+            <p className={cx(tableTokens.header, "flex items-center gap-1.5 text-blue-600 dark:text-blue-400")}>
+              <RiScales3Line className="size-3.5" /> CURADORIA DE LIQUIDAÇÃO
+            </p>
+            <h2 className="mt-0.5 text-lg font-semibold text-gray-900 dark:text-gray-50">
+              Título {d.titulo_numero ?? d.titulo_id}
             </h2>
             <p className={cx(tableTokens.cellSecondary, "mt-0.5")}>
-              {d.cedente_nome} · {d.produto_nome ?? d.produto_sigla} · {brl(d.valor)} ·{" "}
-              liquidado {fmtData(d.data_evento)}
+              Avalie se este título foi pago com integridade e registre seu veredito.
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-            {d.sinais.slice(0, 2).map((s) => (
+            {d.sinais.slice(0, 3).map((s) => (
               <span key={s.codigo} className={cx(tableTokens.badge, SEV_BADGE[s.severidade] ?? tableTokens.badgeNeutral)}>
                 {s.codigo}
               </span>
             ))}
           </div>
         </div>
+
+        {/* Identidade — campos rotulados, claros */}
+        <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+          <Campo label="Cedente" value={d.cedente_nome ?? "—"} />
+          <Campo label="Sacado" value={sacado} sub={sacadoLocal} />
+          <Campo label="Produto" value={produto} />
+          <Campo label="Valor" value={brl(d.valor)} />
+          <Campo label="Liquidado em" value={fmtData(d.data_evento)} />
+          <Campo label="Canal" value={CANAL_LABEL[d.canal] ?? d.canal} />
+        </dl>
       </header>
 
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 divide-x divide-gray-200 border-b border-gray-200 sm:grid-cols-4 dark:divide-gray-800 dark:border-gray-800">
-        <Kpi label="CANAL" value={CANAL_LABEL[d.canal] ?? d.canal} />
+      {/* Strip analítico — os alertas (não é identidade, é o "porquê olhar") */}
+      <div className="grid grid-cols-2 divide-x divide-gray-200 border-b border-gray-200 sm:grid-cols-3 dark:divide-gray-800 dark:border-gray-800">
         <Kpi
           label="PRAÇA"
-          value={foraPraca ? `${d.sacado_uf} ≠ ${ag.uf}` : (ag.uf ?? "—")}
+          value={foraPraca ? `sacado ${d.sacado_uf} ≠ pagto ${ag.uf}` : (ag.uf ? `mesma praça (${ag.uf})` : "—")}
           tone={foraPraca ? "danger" : undefined}
         />
-        <Kpi label="SACADO" value={`${d.sacado_cidade ?? "—"}/${d.sacado_uf ?? "—"}`} />
         <Kpi
-          label="BANCO HABITUAL"
-          value={d.quebra_fingerprint > 0 ? "quebrou ⚠" : "estável"}
+          label="BANCO HABITUAL DO SACADO"
+          value={d.quebra_fingerprint > 0 ? "quebrou o padrão ⚠" : "estável"}
           tone={d.quebra_fingerprint > 0 ? "warn" : undefined}
+        />
+        <Kpi
+          label="SINAIS ATIVOS"
+          value={d.sinais.length > 0 ? `${d.sinais.length} · pior ${d.sinais[0].codigo}` : "nenhum"}
+          tone={d.sinais.some((s) => s.severidade === "critica") ? "danger" : undefined}
         />
       </div>
 
