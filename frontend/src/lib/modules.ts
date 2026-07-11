@@ -4,6 +4,7 @@
 
 import {
   RiBarChartGroupedLine,
+  RiShieldStarLine,
   RiBookOpenLine,
   RiBuilding2Line,
   RiBuilding4Line,
@@ -408,6 +409,12 @@ export const MODULES: ModuleDefinition[] = [
             href: "/risco/padroes-liquidacao",
             enabled: true,
             icon: RiBarChartGroupedLine,
+          },
+          {
+            name: "Rating de liquidação",
+            href: "/risco/rating-liquidacao",
+            enabled: true,
+            icon: RiShieldStarLine,
           },
           {
             name: "Risco de cedentes",

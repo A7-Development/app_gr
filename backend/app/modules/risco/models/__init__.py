@@ -17,6 +17,7 @@ from app.modules.risco.models.deteccao import (
     DeteccaoScore,
     TipoModeloDeteccao,
 )
+from app.modules.risco.models.rating import RatingLiquidacao
 
 __all__ = [
     "CedenteRiscoComposicao",
@@ -31,5 +32,6 @@ __all__ = [
     "ExpectativaBoleto",
     "FluxoLiquidacao",
     "ProdutoContratoLiquidacao",
+    "RatingLiquidacao",
     "TipoModeloDeteccao",
 ]

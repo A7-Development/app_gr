@@ -803,6 +803,31 @@ WHERE tt.Efetivada = 1
   AND tt.Motivo = 'Recompra'
 """
 
+# Recompra declarada SO pelo carimbo do titulo (Situacao 5) — recompras
+# antigas sem RecompraItem/Recompra efetivada (~4k, pre-modulo detalhado).
+# O fato "recomprado" esta escrito no titulo; detalhes (juros/multa/data de
+# efetivacao) nao existem — data_evento = DataDaSituacao (0 nulls no recon
+# 2026-07-11), valor_pago = ValorDoPagamento declarado.
+SELECT_LIQUIDACAO_RECOMPRA_SITUACAO = """
+SELECT
+    t.TituloId AS titulo_id,
+    t.OperacaoId AS operacao_id,
+    t.UnidadeAdministrativaId AS unidade_administrativa_id,
+    t.Situacao AS situacao_titulo,
+    t.Valor AS valor_titulo,
+    t.ValorDoPagamento AS valor_pago,
+    t.DataDaSituacao AS data_evento
+FROM dbo.Titulo t
+WHERE t.Situacao = 5
+  AND NOT EXISTS (
+      SELECT 1
+      FROM dbo.RecompraItem ri
+      JOIN dbo.Recompra r
+          ON r.RecompraId = ri.RecompraId AND r.Efetivada = 1
+      WHERE ri.TituloId = t.TituloId
+  )
+"""
+
 # Saidas sem dinheiro: Situacao 3 (Baixado) sem transferencia-recompra =
 # baixa administrativa ("titulo saiu da carteira sem dinheiro entrar");
 # Situacao 9 = perda (write-off contabil).

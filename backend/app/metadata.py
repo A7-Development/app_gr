@@ -54,6 +54,7 @@ from app.modules.risco.models import (  # noqa: F401
     DeteccaoModeloVersao,
     DeteccaoScore,
     ProdutoContratoLiquidacao,
+    RatingLiquidacao,
 )
 
 # Shared kernel
