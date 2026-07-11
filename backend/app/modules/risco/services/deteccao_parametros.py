@@ -41,8 +41,16 @@ DEFAULTS: dict[str, Any] = {
     "cnv90_min_sacados": 10,
     # Janela (dias) da contagem de agencia compartilhada (CNV-01/02).
     "cnv_janela_dias": 365,
-    # --- Formula do rating de integridade de liquidacao (v1, 2026-07-11) ---
+    # --- Formula do rating de integridade de liquidacao (v2 PiT, 2026-07-11) ---
+    # Janela de coleta (corte duro); o decay faz o peso real dentro dela.
     "rating_janela_dias": 365,
+    # Half-life do decaimento exponencial de recencia (dias): evento perde
+    # metade do peso a cada 90d. Torna o rating POINT-IN-TIME (reativo) —
+    # deterioracao recente domina o historico antigo.
+    "rating_half_life_dias": 90,
+    # Early-warning: critico dentro desta janela ATIVA o watchlist e trava o
+    # score; critico mais velho ja foi dissolvido pelo decay (recuperacao).
+    "rating_watchlist_dias": 90,
     "rating_deducao_alta": 15,
     "rating_deducao_media": 5,
     # Sinal critico (PRC-01/CNV-90) trava o score do escopo neste teto.
