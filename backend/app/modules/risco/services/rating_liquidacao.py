@@ -1,15 +1,19 @@
 """Calculo do rating deterministico de integridade de liquidacao.
 
-Formula (fechada com Ricardo 2026-07-11; todos os numeros em
-`deteccao_parametro`, versionados):
+Formula v2 — POINT-IN-TIME (reativa), fechada com Ricardo 2026-07-11 apos
+pesquisa de mercado (TtC das agencias atrasa downgrade 1-2 anos; vigilancia
+de fraude e PiT). Numeros em `deteccao_parametro`:
 
-    score_evento = 100 - soma(deducao dos sinais do catalogo que acenderam)
-    score_par    = media dos score_evento ponderada por VALOR
-    critico      = qualquer evento com sinal de severidade critica
-                   (PRC-01 / CNV-90) -> score do par TRAVA em <= teto_critico
-    grade        = faixa do score; grades boas (A/B) exigem
-                   n >= rating_n_minimo_grade_boa E cobertura >=
-                   rating_cobertura_minima_grade_boa, senao NC
+    peso_recencia = exp(-dias_atras / half_life)   (half_life = 90 dias)
+    score_par     = media dos score_evento ponderada por VALOR x peso_recencia
+                    (evento recente e de alto valor domina; historico antigo
+                    vira poeira — resolve o cedente que deteriora nos ultimos
+                    3 meses mas mantinha nota boa pela media de 12m)
+    watchlist     = existe evento CRITICO nos ultimos rating_watchlist_dias
+                    (early-warning SEPARADO); enquanto ativo TRAVA o score em
+                    <= teto_critico. Critico velho NAO trava -> recuperacao
+                    aparece.
+    grade         = faixa; A/B exigem n e cobertura minimos, senao NC
 
 Universo do score = eventos com ALEGACAO de pagamento do sacado (canais
 bancaria + baixa_manual). Recompra/perda/baixa administrativa ficam fora do
@@ -24,6 +28,7 @@ cidades divergentes — mesma convencao do painel /risco/padroes-liquidacao).
 from __future__ import annotations
 
 import logging
+import math
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -38,7 +43,7 @@ from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 
 logger = logging.getLogger(__name__)
 
-FORMULA_VERSION = "rating_liquidacao@v1"
+FORMULA_VERSION = "rating_liquidacao@v2"
 
 # Sinais do catalogo avaliados por evento: (codigo, severidade, predicado
 # sobre o vetor de features). Predicados espelham as CONDICOES do catalogo
@@ -150,6 +155,7 @@ SELECT o.cedente_documento,
        ds.features, ds.regra_dura,
        coalesce(l.valor_pago, l.valor_titulo, 0) AS valor,
        l.canal,
+       l.data_evento,
        tag.tag AS tag_curadoria
 FROM deteccao_score ds
 JOIN wh_liquidacao l ON l.id = ds.liquidacao_id
@@ -180,7 +186,7 @@ WHERE ds.tenant_id = :tenant_id
   AND o.cedente_documento IS NOT NULL
   AND l.data_evento >= now() - make_interval(days => :janela_dias)
 GROUP BY o.cedente_documento, sac.documento, ds.features, ds.regra_dura,
-         l.valor_pago, l.valor_titulo, l.canal, l.id, tag.tag
+         l.valor_pago, l.valor_titulo, l.canal, l.id, l.data_evento, tag.tag
 """)
 
 # Universo COMPLETO de desfechos (denominador da cobertura) por par.
@@ -262,7 +268,12 @@ def _consolidar(
     elif escopo["n_eventos"] > 0:
         score = min(e for e in escopo["scores_sem_valor"])  # eventos valor 0
     teto = float(params["rating_teto_critico"])
-    if score is not None and escopo["critico"]:
+    watchlist_dias = int(params["rating_watchlist_dias"])
+    dias_ult = escopo["dias_ultimo_critico"]
+    watchlist = dias_ult is not None and dias_ult <= watchlist_dias
+    # Watchlist (early-warning) TRAVA o score enquanto ativo; critico velho
+    # ja foi dissolvido pelo decay -> recuperacao visivel.
+    if score is not None and watchlist:
         score = min(score, teto)
 
     valor_desfechos = escopo["valor_desfechos"]
@@ -274,13 +285,18 @@ def _consolidar(
     return {
         "score": round(score, 2) if score is not None else None,
         "grade": grade,
-        "tem_critico": escopo["critico"],
+        # tem_critico agora = WATCHLIST (critico RECENTE): o flag que trava e
+        # que a UI mostra como alerta ativo. critico_historico separa.
+        "tem_critico": watchlist,
         "n_eventos_score": escopo["n_eventos"],
         "n_desfechos": escopo["n_desfechos"],
         "valor_desfechos": round(float(valor_desfechos), 2),
         "cobertura": round(cobertura, 4),
         "componentes": {
             "grade_bruta": grade_bruta,
+            "watchlist": watchlist,
+            "critico_historico": escopo["critico"],
+            "dias_ultimo_critico": dias_ult,
             "pendencias_curadoria": escopo["pendencias_curadoria"],
             "sinais": escopo["sinais"],
             "mix_desfechos": escopo["mix"],
@@ -288,7 +304,8 @@ def _consolidar(
                 k: params[k]
                 for k in (
                     "rating_deducao_alta", "rating_deducao_media",
-                    "rating_teto_critico", "rating_janela_dias",
+                    "rating_teto_critico", "rating_half_life_dias",
+                    "rating_watchlist_dias", "rating_janela_dias",
                     "rating_n_minimo_grade_boa",
                     "rating_cobertura_minima_grade_boa",
                 )
@@ -304,6 +321,7 @@ def _novo_escopo() -> dict[str, Any]:
         "scores_sem_valor": [], "critico": False, "sinais": {},
         "mix": {}, "n_desfechos": 0,
         "valor_desfechos": Decimal(0), "valor_bancaria": Decimal(0),
+        "dias_ultimo_critico": None,
     }
 
 
@@ -311,6 +329,8 @@ async def recalcular(db: AsyncSession, tenant_id: UUID) -> dict[str, Any]:
     """Full refresh do rating (pares + rollup por cedente) de um tenant."""
     params = await carregar_parametros(db)
     janela = int(params["rating_janela_dias"])
+    half_life = float(params["rating_half_life_dias"])
+    agora_dt = datetime.now(UTC)
 
     pares: dict[tuple[str, str | None], dict[str, Any]] = {}
     cedentes: dict[str, dict[str, Any]] = {}
@@ -339,14 +359,24 @@ async def recalcular(db: AsyncSession, tenant_id: UUID) -> dict[str, Any]:
             tag_curadoria=r["tag_curadoria"],
         )
         valor = float(r["valor"] or 0)
+        # Recencia: decaimento exponencial (half-life 90d). Hoje pesa 1.0;
+        # 90d atras 0.5; 270d ~0.125.
+        dias_atras = max(0.0, (agora_dt - r["data_evento"]).total_seconds() / 86400)
+        peso = math.exp(-dias_atras / half_life)
         for escopo in escopos(ced, sacado):
             escopo["n_eventos"] += 1
-            if valor > 0:
-                escopo["soma_ponderada"] += s * valor
-                escopo["valor_score"] += valor
+            w = valor * peso
+            if w > 0:
+                escopo["soma_ponderada"] += s * w
+                escopo["valor_score"] += w
             else:
                 escopo["scores_sem_valor"].append(s)
             escopo["critico"] = escopo["critico"] or critico
+            if critico:
+                d = int(dias_atras)
+                atual = escopo["dias_ultimo_critico"]
+                if atual is None or d < atual:
+                    escopo["dias_ultimo_critico"] = d
             if "PRC-05" in acesos:
                 escopo["pendencias_curadoria"] += 1
             for codigo in acesos:

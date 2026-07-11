@@ -10,6 +10,8 @@ Contratos sob teste (formula v1, 2026-07-11):
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -17,7 +19,9 @@ from app.main import app
 from app.modules.risco.services.deteccao_parametros import DEFAULTS
 from app.modules.risco.services.rating_liquidacao import (
     _aplicar_portao,
+    _consolidar,
     _grade,
+    _novo_escopo,
     score_evento,
 )
 
@@ -144,6 +148,38 @@ def test_portao_confianca_assimetrico() -> None:
     assert _aplicar_portao("A", n_eventos=50, cobertura=0.9, params=P) == "A"
     assert _aplicar_portao("E", n_eventos=1, cobertura=0.0, params=P) == "E"
     assert _aplicar_portao("C", n_eventos=1, cobertura=0.0, params=P) == "C"
+
+
+def _escopo(critico_dias, score_base):
+    e = _novo_escopo()
+    e["n_eventos"] = 30
+    e["soma_ponderada"] = score_base * 100.0
+    e["valor_score"] = 100.0
+    e["critico"] = critico_dias is not None
+    e["dias_ultimo_critico"] = critico_dias
+    e["n_desfechos"] = 30
+    e["valor_desfechos"] = Decimal(100000)
+    e["valor_bancaria"] = Decimal(80000)
+    return e
+
+
+def test_watchlist_critico_recente_trava_score() -> None:
+    """v2 PiT: critico dentro da janela (90d) ativa watchlist -> teto <=20."""
+    out = _consolidar(_escopo(critico_dias=10, score_base=50.0), P)
+    assert out["tem_critico"] is True  # watchlist ativo
+    assert out["componentes"]["watchlist"] is True
+    assert out["score"] <= 20
+    assert out["grade"] == "E"
+
+
+def test_critico_velho_dissolve_recuperacao() -> None:
+    """Critico fora da janela (213d): decay ja dissolveu, watchlist off ->
+    a recuperacao aparece (o caso Pedreira Sao Pedro)."""
+    out = _consolidar(_escopo(critico_dias=213, score_base=92.0), P)
+    assert out["tem_critico"] is False  # watchlist off
+    assert out["componentes"]["critico_historico"] is True  # mas ja teve
+    assert out["score"] > 20
+    assert out["grade"] == "A"
 
 
 async def test_endpoint_exige_autenticacao() -> None:
