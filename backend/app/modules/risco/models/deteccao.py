@@ -291,3 +291,87 @@ class CuradoriaTag(Base):
 
     def __repr__(self) -> str:
         return f"<CuradoriaTag liq={self.liquidacao_id} tag={self.tag}>"
+
+
+class SeveridadeSinal(enum.StrEnum):
+    """Severity scale of the deterministic signal catalog (framework
+    2026-07-10). CRITICA floors the future liquidation rating on its own
+    (the retired "regra dura" concept lives here now)."""
+
+    CRITICA = "critica"
+    ALTA = "alta"
+    MEDIA = "media"
+    BAIXA = "baixa"
+
+
+class StatusSinal(enum.StrEnum):
+    """Lifecycle of a catalog signal. REFUTADO is kept on purpose (audit
+    trail of dead ends — prevents reintroduction)."""
+
+    ATIVO = "ativo"
+    PLANEJADO = "planejado"
+    REFUTADO = "refutado"
+
+
+class DeteccaoSinal(Base):
+    """Canonical catalog of deterministic liquidation signals (one stable
+    code per atomic/composite fact — PRC-01, CNV-90...).
+
+    GLOBAL like `deteccao_modelo` (no tenant_id): defines WHAT a signal is.
+    `feature_name` maps the code to the persisted feature vector of
+    `deteccao_score.features` when a 1:1 mapping exists; composite or
+    not-yet-implemented signals carry NULL and explain themselves in
+    `definicao`. Severity/threshold VALUES are parameters — they live in
+    `deteccao_parametro`, never hardcoded (decisao Ricardo 2026-07-10).
+    """
+
+    __tablename__ = "deteccao_sinal"
+
+    codigo: Mapped[str] = mapped_column(String(12), primary_key=True)
+    familia: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    nome: Mapped[str] = mapped_column(String(120), nullable=False)
+    definicao: Mapped[str] = mapped_column(String(600), nullable=False)
+    severidade: Mapped[SeveridadeSinal] = mapped_column(
+        SAEnum(SeveridadeSinal, native_enum=False, length=8), nullable=False
+    )
+    status: Mapped[StatusSinal] = mapped_column(
+        SAEnum(StatusSinal, native_enum=False, length=10), nullable=False
+    )
+    feature_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<DeteccaoSinal {self.codigo} sev={self.severidade}>"
+
+
+class DeteccaoParametro(Base):
+    """Versioned parameters of the detection engine (premise_set pattern:
+    APPEND-ONLY, active = highest version per name — no UPDATE, 1-row
+    rollback by inserting the old value as a new version).
+
+    Kills the hardcoded constants (decisao Ricardo 2026-07-10): thresholds,
+    windows and structural rules live here with author + reason. GLOBAL
+    (no tenant_id — engine configuration, like deteccao_sinal).
+    """
+
+    __tablename__ = "deteccao_parametro"
+    __table_args__ = (
+        UniqueConstraint("nome", "version", name="uq_deteccao_parametro_nome_version"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    nome: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
+    # JSONB: numero, string ou estrutura ({"codigo": "00001"}) — o loader
+    # devolve o valor cru; quem consome sabe o tipo que espera.
+    valor: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    motivo: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    criado_por: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<DeteccaoParametro {self.nome}@v{self.version}>"
