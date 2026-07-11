@@ -155,6 +155,21 @@ async def test_enrola_so_titulo_em_aberto(tenant_a: Tenant) -> None:
 
 
 @pytest.mark.asyncio
+async def test_enrola_multiplas_chaves_de_uma_vez(tenant_a: Tenant) -> None:
+    """Regressao (ativacao 2026-07-11): INSERT..SELECT com default Python do
+    id virava UUID CONSTANTE -> PK duplicada com 2+ chaves no mesmo tick."""
+    chaves = [_chave() for _ in range(3)]
+    for c in chaves:
+        await _criar_titulo(tenant_a.id, c)
+
+    async with AsyncSessionLocal() as db:
+        novos = await enrolar_chaves_no_escopo(db, tenant_a.id)
+        await db.commit()
+    assert novos == 3
+    assert set(await _monitores(tenant_a.id)) == set(chaves)
+
+
+@pytest.mark.asyncio
 async def test_enrolamento_isola_tenant(tenant_a: Tenant, tenant_b: Tenant) -> None:
     """§10.4: enrolar B nao ve os titulos de A."""
     await _criar_titulo(tenant_a.id, _chave())
