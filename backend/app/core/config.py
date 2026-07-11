@@ -65,6 +65,16 @@ class Settings(BaseSettings):
     # antes de POSTar pra QiTech (evita callback orfao com host invalido).
     QITECH_WEBHOOK_BASE_URL: str = Field(default="")
 
+    # Secret do receiver de Push NF-e do SERPRO (que tambem nao assina os
+    # POSTs — payload e so {chaveNFe, dataHoraEnvio}). Token estatico
+    # embutido na urlNotificacao cadastrada no contrato. Quando vazio, o
+    # token e DERIVADO de QITECH_WEBHOOK_SECRET (HMAC com salt proprio) —
+    # evita mexer no env do systemd em prod para ativar o push.
+    SERPRO_WEBHOOK_SECRET: str = Field(default="", min_length=0)
+    # Base publica do push SERPRO. Vazia = usa QITECH_WEBHOOK_BASE_URL
+    # (mesmo perimetro callback.strataai.com.br).
+    SERPRO_WEBHOOK_BASE_URL: str = Field(default="")
+
     # Credenciais de adapters (ex.: Bitfin) vivem em `tenant_source_config` — NAO aqui.
     # Cada tenant tem seu proprio banco (ver CLAUDE.md §13 regra 4).
 
