@@ -46,18 +46,38 @@ const GRADE_BADGE: Record<string, string> = {
   NC: tableTokens.badgeNeutral,
 }
 
-function GradeBadge({ grade, critico }: { grade: string; critico: boolean }) {
+function GradeBadge({
+  grade,
+  critico,
+  pendencias = 0,
+}: {
+  grade: string
+  critico: boolean
+  pendencias?: number
+}) {
+  // Pendência de curadoria: liquidação na agência do cedente com sacado da
+  // MESMA cidade — ambíguo, trava em E até um humano validar (OK) ou
+  // confirmar (FRAUDE) em /risco/curadoria-liquidacoes.
+  const soPendente = critico && pendencias > 0
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className={cx(tableTokens.badge, GRADE_BADGE[grade] ?? tableTokens.badgeNeutral)}>
         {grade === "NC" ? "NC" : grade}
       </span>
-      {critico && (
+      {critico && !soPendente && (
         <span
           className={cx(tableTokens.badge, tableTokens.badgeDanger)}
-          title="Sinal crítico (PRC-01/CNV-90) trava a nota"
+          title="Sinal crítico (PRC-01/CNV-90/tag FRAUDE) trava a nota"
         >
           crítico
+        </span>
+      )}
+      {pendencias > 0 && (
+        <span
+          className={cx(tableTokens.badge, tableTokens.badgeWarning)}
+          title={`${pendencias} liquidação(ões) na agência do cedente (mesma cidade) aguardando validação humana — libere ou confirme na Curadoria de liquidações`}
+        >
+          curadoria·{pendencias}
         </span>
       )}
     </span>
@@ -85,7 +105,7 @@ function CoberturaCell({ v }: { v: number }) {
 // PRC-01 com 4 ocorrências é mais grave que PRC-03 com 400 — auto-liquidação
 // na conta do cedente é rara e cirúrgica; ordenar por volume a esconderia.
 const SEVERIDADE_ORDEM: Record<string, number> = {
-  "PRC-01": 0, "CNV-90": 0, // críticos
+  "PRC-01": 0, "CNV-90": 0, "TAG-FRAUDE": 0, "PRC-05": 0, // críticos/pendentes
   "PRC-02": 1, "PRC-04": 1, "CNV-01": 1, "CNV-02": 1, "MEC-01": 1, // altas
 }
 
@@ -101,9 +121,11 @@ function SinaisCell({ sinais }: { sinais?: Record<string, number> }) {
           key={codigo}
           className={cx(
             tableTokens.badge,
-            codigo === "PRC-01" || codigo === "CNV-90"
+            codigo === "PRC-01" || codigo === "CNV-90" || codigo === "TAG-FRAUDE"
               ? tableTokens.badgeDanger
-              : tableTokens.badgeNeutral,
+              : codigo === "PRC-05"
+                ? tableTokens.badgeWarning
+                : tableTokens.badgeNeutral,
           )}
           title={`${codigo}: ${n} eventos`}
         >
@@ -158,7 +180,7 @@ function ParesDrawerBody({ cedente }: { cedente: RatingLiquidacaoRow }) {
                     {p.sacado_nome ?? p.sacado_documento}
                   </td>
                   <td>
-                    <GradeBadge grade={p.grade} critico={p.tem_critico} />
+                    <GradeBadge grade={p.grade} critico={p.tem_critico} pendencias={Number(p.componentes?.pendencias_curadoria ?? 0)} />
                   </td>
                   <td className="text-right">
                     <ScoreCell score={p.score} />
@@ -257,7 +279,13 @@ export default function RatingLiquidacaoPage() {
           </span>
         ),
         size: 120,
-        cell: ({ row }) => <GradeBadge grade={row.original.grade} critico={row.original.tem_critico} />,
+        cell: ({ row }) => (
+          <GradeBadge
+            grade={row.original.grade}
+            critico={row.original.tem_critico}
+            pendencias={Number(row.original.componentes?.pendencias_curadoria ?? 0)}
+          />
+        ),
       }) as ColumnDef<RatingLiquidacaoRow, unknown>,
       col.accessor("score", {
         header: () => <span title="Score 0-100 (maior = melhor); crítico trava em ≤20">Score</span>,

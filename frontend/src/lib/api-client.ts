@@ -3825,6 +3825,7 @@ export type RatingLiquidacaoRow = {
   cobertura: number
   componentes: {
     grade_bruta?: string
+    pendencias_curadoria?: number
     sinais?: Record<string, number>
     mix_desfechos?: Record<string, number>
     parametros?: Record<string, number>

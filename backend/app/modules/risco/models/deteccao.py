@@ -299,6 +299,9 @@ class SeveridadeSinal(enum.StrEnum):
     (the retired "regra dura" concept lives here now)."""
 
     CRITICA = "critica"
+    # Critico PENDENTE de curadoria: sinal ambiguo trava a nota ate um humano
+    # liberar (tag OK) ou confirmar (tag FRAUDE) — decisao Ricardo 2026-07-11.
+    PENDENTE = "pendente"
     ALTA = "alta"
     MEDIA = "media"
     BAIXA = "baixa"
