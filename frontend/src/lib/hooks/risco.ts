@@ -173,3 +173,12 @@ export function useRatingLiquidacaoPares(cedenteDocumento: string | null) {
     staleTime: 60 * 1000,
   })
 }
+
+export function useRaioXCedente(cedenteDocumento: string | null) {
+  return useQuery({
+    queryKey: ["risco", "rating-liquidacao", "raio-x", cedenteDocumento],
+    queryFn: () => riscoRatingLiquidacao.raioX(cedenteDocumento as string),
+    enabled: cedenteDocumento !== null,
+    staleTime: 60 * 1000,
+  })
+}
