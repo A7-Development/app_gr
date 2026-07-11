@@ -57,6 +57,7 @@ from app.warehouse.dim import DimProduto, DimUnidadeAdministrativa
 from app.warehouse.operacao import Operacao, OperacaoItem
 from app.warehouse.posicao_debenture import ORIGEM_SNAPSHOT, PosicaoDebentureDia
 from app.warehouse.titulo import Titulo
+from app.warehouse.titulo_fiscal import WhTituloFiscal
 from app.warehouse.titulo_snapshot import TituloSnapshot
 
 CHUNK_SIZE = 1000
@@ -172,6 +173,16 @@ def _map_titulo(row: dict, tenant_id: UUID) -> dict:
         "tenant_id": tenant_id,
         **merged,
         **_provenance(row["titulo_id"], row, row["data_da_situacao"]),
+    }
+
+
+def _map_titulo_fiscal(row: dict, tenant_id: UUID) -> dict:
+    # source_id composto: um titulo pode lastrear-se em N notas.
+    source_id = f"{row['titulo_id']}:{row['nota_fiscal_eletronica_id']}"
+    return {
+        "tenant_id": tenant_id,
+        **{k: v for k, v in row.items() if v is not None},
+        **_provenance(source_id, row),
     }
 
 
@@ -353,6 +364,22 @@ async def sync_titulo(
     async with AsyncSessionLocal() as db:
         count = await _bulk_upsert(db, Titulo, mapped, ["tenant_id", "source_id"])
     return {"table": "wh_titulo", "rows": count}
+
+
+async def sync_titulo_fiscal(
+    tenant_id: UUID, config: BitfinConfig, since: date | None = None
+) -> dict[str, Any]:
+    """Ponte titulo <-> NF-e (chave de acesso). Full refresh — TituloFiscal
+    nao tem watermark; join por PK e barato e o volume e moderado."""
+    rows = await asyncio.to_thread(
+        fetch_rows, config, config.database_bitfin, bitfin.SELECT_TITULO_FISCAL
+    )
+    mapped = [_map_titulo_fiscal(r, tenant_id) for r in rows]
+    async with AsyncSessionLocal() as db:
+        count = await _bulk_upsert(
+            db, WhTituloFiscal, mapped, ["tenant_id", "source_id"]
+        )
+    return {"table": "wh_titulo_fiscal", "rows": count}
 
 
 async def sync_dim_ua(
@@ -777,6 +804,9 @@ SYNC_PIPELINE = [
     sync_operacao,
     sync_operacao_item,
     sync_titulo,
+    # Ponte titulo<->NF-e (lastro fiscal) — roda apos sync_titulo; alimenta
+    # o escopo do monitoramento SERPRO (titulo em aberto => vigia a chave).
+    sync_titulo_fiscal,
     sync_caixa_snapshot,
     # Snapshot diario da posicao de debentures (going-forward; Bitfin faz o
     # CDI, nos capturamos). Alimenta o denominador do ROA bruto da DRE.

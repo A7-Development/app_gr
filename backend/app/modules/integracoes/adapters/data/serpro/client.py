@@ -241,3 +241,71 @@ class SerproClient:
             headers={"Authorization": f"Bearer {token}"},
         )
         return resp.status_code == 200
+
+    # ---- Push NF-e (webhook) -----------------------------------------------
+
+    async def _push_request(
+        self, method: str, path: str, *, json_body: dict | None = None
+    ) -> dict[str, Any]:
+        token = await self._bearer_token()
+        resp = await self._http().request(
+            method,
+            f"{self.config.base_url}{path}",
+            json=json_body,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if resp.status_code in (400,):
+            raise SerproInvalidKeyError(f"Push {path}: {resp.text[:200]}")
+        if resp.status_code == 401:
+            self._token = None
+            raise SerproAuthError(f"HTTP 401 em {path}.")
+        if resp.status_code == 404:
+            raise SerproNotFoundError(f"Push {path}: nao encontrado.")
+        if resp.status_code == 429:
+            raise SerproThrottledError(f"Quota excedida em {path}.")
+        if resp.status_code >= 400:
+            raise SerproHttpError(resp.status_code, resp.text)
+        try:
+            payload = resp.json()
+        except ValueError:
+            # DELETE/PUT podem devolver corpo vazio.
+            payload = {}
+        return payload if isinstance(payload, dict) else {"data": payload}
+
+    async def push_cadastrar_cliente(self, url_notificacao: str) -> dict[str, Any]:
+        """POST /v1/nfe/push/clientes -- registra a URL de callback (1/contrato)."""
+        return await self._push_request(
+            "POST", "/v1/nfe/push/clientes", json_body={"urlNotificacao": url_notificacao}
+        )
+
+    async def push_atualizar_cliente(self, url_notificacao: str) -> dict[str, Any]:
+        """PUT /v1/nfe/push/clientes -- troca a URL de callback."""
+        return await self._push_request(
+            "PUT", "/v1/nfe/push/clientes", json_body={"urlNotificacao": url_notificacao}
+        )
+
+    async def push_consultar_cliente(self) -> dict[str, Any]:
+        """GET /v1/nfe/push/clientes -- URL cadastrada + datas."""
+        return await self._push_request("GET", "/v1/nfe/push/clientes")
+
+    async def push_criar_solicitacao(self, chaves: list[str]) -> dict[str, Any]:
+        """POST /v1/nfe/push/solicitacoes -- inscreve 1..500 chaves (30 dias)."""
+        if not 1 <= len(chaves) <= 500:
+            raise SerproInvalidKeyError(
+                f"Solicitacao push aceita 1..500 chaves (veio {len(chaves)})."
+            )
+        return await self._push_request(
+            "POST", "/v1/nfe/push/solicitacoes", json_body={"chavesMonitoracao": chaves}
+        )
+
+    async def push_consultar_solicitacao(self, solicitacao_id: str) -> dict[str, Any]:
+        """GET /v1/nfe/push/solicitacoes/{id} -- por chave: entregue/dataEntrega."""
+        return await self._push_request(
+            "GET", f"/v1/nfe/push/solicitacoes/{solicitacao_id}"
+        )
+
+    async def push_excluir_solicitacao(self, solicitacao_id: str) -> dict[str, Any]:
+        """DELETE /v1/nfe/push/solicitacoes/{id}."""
+        return await self._push_request(
+            "DELETE", f"/v1/nfe/push/solicitacoes/{solicitacao_id}"
+        )

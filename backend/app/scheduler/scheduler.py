@@ -20,6 +20,7 @@ from app.scheduler.jobs import (
     qitech_jobs_poll,
     recent_complete_refresher,
     reconciler,
+    serpro_nfe_monitor,
     state_machine_seeder,
     state_machine_tick,
     watermark_scanner,
@@ -194,6 +195,18 @@ def start_scheduler() -> AsyncIOScheduler:
         coalesce=True,
         misfire_grace_time=3600,
     )
+    # Monitoramento SERPRO NF-e (F3): enrola chaves com duplicata a vencer,
+    # inscreve/renova no Push (30d) e audita entregas perdidas. Consulta
+    # paga so via webhook ou auditoria — o tick em si nao reconsulta massa.
+    _scheduler.add_job(
+        serpro_nfe_monitor.run_serpro_monitor_cycle,
+        trigger=IntervalTrigger(minutes=serpro_nfe_monitor.INTERVAL_MINUTES),
+        id="serpro_nfe_monitor",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=600,
+    )
     _scheduler.start()
     logger.info(
         "scheduler started: sync_dispatcher every %s min, "
@@ -203,7 +216,8 @@ def start_scheduler() -> AsyncIOScheduler:
         "recent_complete_refresher daily at %02d:%02d SP, "
         "state_machine_tick every %s min, "
         "state_machine_seeder daily at %02d:%02d SP, "
-        "ref_bacen_sync daily at %02d:%02d SP",
+        "ref_bacen_sync daily at %02d:%02d SP, "
+        "serpro_nfe_monitor every %s min",
         sync_dispatcher.INTERVAL_MINUTES,
         qitech_jobs_poll.INTERVAL_MINUTES,
         backfill_worker.INTERVAL_SECONDS,
@@ -217,6 +231,7 @@ def start_scheduler() -> AsyncIOScheduler:
         state_machine_seeder.DAILY_MINUTE,
         ref_bacen_sync.DAILY_HOUR,
         ref_bacen_sync.DAILY_MINUTE,
+        serpro_nfe_monitor.INTERVAL_MINUTES,
     )
     return _scheduler
 

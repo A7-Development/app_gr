@@ -211,3 +211,68 @@ async def qitech_job_callback(
         job_id=result.get("job_id"),
         idempotent=bool(result.get("idempotent", False)),
     )
+
+
+# ---- SERPRO Push NF-e -------------------------------------------------------
+#
+# O SERPRO tambem NAO assina o POST (payload minimo {chaveNFe, dataHoraEnvio})
+# e a urlNotificacao e UNICA por contrato — token ESTATICO na query string
+# (derivado de QITECH_WEBHOOK_SECRET quando SERPRO_WEBHOOK_SECRET ausente).
+# O ping nao carrega o evento: dispara GET /v1/nfe/{chave} (cobrado) ->
+# bronze -> silver -> alerta se situacao critica. Spoof no maximo provoca
+# 1 reconsulta por chave por janela de rate limit.
+# Respondemos 200 mesmo para chave desconhecida (nao vazar o que vigiamos).
+
+
+class SerproNfePushBody(BaseModel):
+    """Payload do push SERPRO (doc informacoes_push, 2026-07-10)."""
+
+    chave_nfe: str = Field(min_length=44, max_length=44, alias="chaveNFe")
+    data_hora_envio: str | None = Field(default=None, alias="dataHoraEnvio")
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+
+class SerproNfePushResponse(BaseModel):
+    accepted: bool
+    reason: str | None = None
+
+
+@router.post(
+    "/serpro/nfe-push",
+    response_model=SerproNfePushResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def serpro_nfe_push(
+    body: SerproNfePushBody,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    token: Annotated[str, Query()] = "",
+) -> SerproNfePushResponse:
+    """Receiver do Push NF-e do SERPRO (publico, token estatico na query)."""
+    from app.modules.integracoes.adapters.data.serpro.monitoring import (
+        processar_ping,
+        verify_webhook_token,
+    )
+
+    if not verify_webhook_token(token):
+        logger.warning(
+            "serpro push token invalido chave=%s", body.chave_nfe
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="token invalido"
+        )
+
+    try:
+        result = await processar_ping(
+            db,
+            chave=body.chave_nfe,
+            data_hora_envio=body.data_hora_envio or "",
+        )
+    except Exception:
+        logger.exception("serpro push erro chave=%s", body.chave_nfe)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="erro interno",
+        ) from None
+
+    return SerproNfePushResponse(accepted=result.accepted, reason=result.reason)

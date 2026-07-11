@@ -173,6 +173,24 @@ FROM dbo.Titulo
 WHERE DataDaSituacao > ?
 """
 
+# Ponte titulo <-> NF-e (lastro fiscal): TituloFiscal liga o titulo a nota
+# cuja duplicata ele representa. E a chave de acesso que o monitoramento
+# SERPRO usa pra saber QUAL nota vigiar enquanto o titulo esta em aberto.
+# Sem watermark na tabela — full refresh (dezenas de milhares de linhas,
+# join barato por PK).
+SELECT_TITULO_FISCAL = """
+SELECT
+    tf.TituloId AS titulo_id,
+    nfe.NotaFiscalEletronicaId AS nota_fiscal_eletronica_id,
+    nfe.CodigoDeVerificacao AS chave_acesso,
+    tf.ValorAssociado AS valor_associado
+FROM dbo.TituloFiscal tf
+JOIN dbo.DocumentoFiscalNFe nfe
+    ON nfe.NotaFiscalEletronicaId = tf.NotaFiscalEletronicaId
+WHERE nfe.CodigoDeVerificacao IS NOT NULL
+  AND LEN(nfe.CodigoDeVerificacao) = 44
+"""
+
 
 # ---- Reconcile (anti-join): conjunto VIVO de ids no Bitfin, id-only ----
 #
