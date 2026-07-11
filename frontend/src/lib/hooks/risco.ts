@@ -152,3 +152,24 @@ export function usePadroesLiquidacao(janela: JanelaLiquidacao = "30d") {
     placeholderData: (prev) => prev, // troca de janela sem "flash" de loading
   })
 }
+
+// ── Rating de integridade de liquidação ─────────────────────────────────────
+
+import { riscoRatingLiquidacao } from "@/lib/api-client"
+
+export function useRatingLiquidacao() {
+  return useQuery({
+    queryKey: ["risco", "rating-liquidacao"],
+    queryFn: () => riscoRatingLiquidacao.cedentes(),
+    staleTime: 60 * 1000,
+  })
+}
+
+export function useRatingLiquidacaoPares(cedenteDocumento: string | null) {
+  return useQuery({
+    queryKey: ["risco", "rating-liquidacao", "pares", cedenteDocumento],
+    queryFn: () => riscoRatingLiquidacao.pares(cedenteDocumento as string),
+    enabled: cedenteDocumento !== null,
+    staleTime: 60 * 1000,
+  })
+}

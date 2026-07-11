@@ -3811,6 +3811,42 @@ export const riscoPadroesLiquidacao = {
     ),
 }
 
+export type RatingLiquidacaoRow = {
+  cedente_documento: string
+  cedente_nome: string | null
+  sacado_documento: string | null
+  sacado_nome: string | null
+  score: number | null
+  grade: "A" | "B" | "C" | "D" | "E" | "NC"
+  tem_critico: boolean
+  n_eventos_score: number
+  n_desfechos: number
+  valor_desfechos: number
+  cobertura: number
+  componentes: {
+    grade_bruta?: string
+    sinais?: Record<string, number>
+    mix_desfechos?: Record<string, number>
+    parametros?: Record<string, number>
+  }
+  formula_version: string
+  calculado_em: string
+}
+
+export type RatingLiquidacaoResponse = {
+  total: number
+  rows: RatingLiquidacaoRow[]
+}
+
+export const riscoRatingLiquidacao = {
+  cedentes: () =>
+    apiClient.get<RatingLiquidacaoResponse>(`/risco/rating-liquidacao`),
+  pares: (cedenteDocumento: string) =>
+    apiClient.get<RatingLiquidacaoResponse>(
+      `/risco/rating-liquidacao/pares?cedente_documento=${encodeURIComponent(cedenteDocumento)}`,
+    ),
+}
+
 export const riscoCuradoriaLiquidacoes = {
   list: (f: CuradoriaLiquidacoesFilters = {}) =>
     apiClient.get<LiquidacaoCuradoriaPage>(

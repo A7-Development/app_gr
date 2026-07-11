@@ -18,6 +18,7 @@ from sqlalchemy import text
 from app.core.database import AsyncSessionLocal
 from app.modules.risco.services.cedente_risco import consolidar
 from app.modules.risco.services.deteccao_scoring import pontuar
+from app.modules.risco.services.rating_liquidacao import recalcular as recalcular_rating
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,10 @@ async def run() -> None:
                     db, tenant_id, triggered_by="scheduler:deteccao_scoring"
                 )
                 await db.commit()
+            # Rating de integridade de liquidacao (par + cedente) sobre os
+            # scores recem-gravados — sessao propria (commita internamente).
+            async with AsyncSessionLocal() as db:
+                await recalcular_rating(db, tenant_id)
             logger.info(
                 "deteccao_scoring tenant=%s: %d scores (%d regras duras)",
                 tenant_id,

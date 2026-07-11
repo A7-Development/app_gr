@@ -41,6 +41,21 @@ DEFAULTS: dict[str, Any] = {
     "cnv90_min_sacados": 10,
     # Janela (dias) da contagem de agencia compartilhada (CNV-01/02).
     "cnv_janela_dias": 365,
+    # --- Formula do rating de integridade de liquidacao (v1, 2026-07-11) ---
+    "rating_janela_dias": 365,
+    "rating_deducao_alta": 15,
+    "rating_deducao_media": 5,
+    # Sinal critico (PRC-01/CNV-90) trava o score do escopo neste teto.
+    "rating_teto_critico": 20,
+    # Portao de confianca (assimetria estatistica): grade A/B exige base —
+    # nota ruim vale com qualquer n (fato e fato); nota boa precisa de n.
+    "rating_n_minimo_grade_boa": 20,
+    "rating_cobertura_minima_grade_boa": 0.5,
+    # Cortes de exibicao (letra e apresentacao; o primitivo e o score).
+    "rating_grade_a": 85,
+    "rating_grade_b": 70,
+    "rating_grade_c": 50,
+    "rating_grade_d": 30,
 }
 
 
