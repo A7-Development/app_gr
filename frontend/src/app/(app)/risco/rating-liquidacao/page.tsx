@@ -56,14 +56,14 @@ function GradeBadge({
   critico: boolean
   pendencias?: number
 }) {
-  // A trava por sinal crítico NÃO ganha badge próprio: a grade E já é vermelha
-  // e os códigos vivem no detalhe do cedente (a coluna Sinais saiu da lista,
-  // feedback Ricardo 2026-07-12).
+  // A trava por sinal crítico NÃO ganha badge próprio: os códigos críticos
+  // já aparecem em vermelho na coluna Sinais e a grade E já é vermelha —
+  // o badge "crítico" duplicava a informação (feedback Ricardo 2026-07-12).
   const titulo =
     grade === "NC"
       ? "Sem classificação: base insuficiente (poucos títulos/cobertura) para dar nota"
       : critico
-        ? "Nota travada em E por sinal crítico de auto-liquidação — abra o cedente para ver os códigos"
+        ? "Nota travada em E por sinal crítico de auto-liquidação (veja os códigos em vermelho em Sinais)"
         : "Grade do score 0-100 (letra é apresentação; o primitivo é o score)"
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
@@ -82,9 +82,9 @@ function GradeBadge({
             tableTokens.badgeWarning,
             "hover:underline",
           )}
-          title={`Nota E provisória: ${pendencias} liquidação(ões) ambígua(s) — pagas na agência do próprio cedente, na mesma cidade do sacado — segurando a nota até um humano decidir OK (libera) ou FRAUDE (confirma). Clique para abrir a Curadoria.`}
+          title={`${pendencias} liquidação(ões) no caso ambíguo (agência do cedente, sacado da mesma cidade) aguardando decisão humana — a nota fica travada até liberar (OK) ou confirmar (FRAUDE). Clique para abrir a Curadoria.`}
         >
-          revisar ({pendencias})
+          aguarda curadoria ({pendencias})
         </Link>
       )}
     </span>
@@ -226,6 +226,8 @@ export default function RatingLiquidacaoPage() {
   const selectedDoc = sp.get("selected")
 
   const [search, setSearch] = React.useState("")
+  // Filtro canonico de rating ("dropdown quieto" — multi-select por grade).
+  const [gradeFilter, setGradeFilter] = React.useState<string[]>([])
   const query = useRatingLiquidacao()
   const rows = React.useMemo(() => query.data?.rows ?? [], [query.data])
 
@@ -290,11 +292,11 @@ export default function RatingLiquidacaoPage() {
       col.display({
         id: "rating",
         header: () => (
-          <span title="Grade do score (letra é apresentação; o primitivo é o score 0-100). NC = base insuficiente para grade boa. Selo 'revisar' = liquidação ambígua travando a nota até decisão humana na Curadoria.">
+          <span title="Grade do score (letra é apresentação; o primitivo é o score 0-100). NC = base insuficiente para grade boa. 'Aguarda curadoria' = liquidação ambígua travando a nota até decisão humana.">
             Rating
           </span>
         ),
-        size: 170,
+        size: 180,
         cell: ({ row }) => (
           <GradeBadge
             grade={row.original.grade}
@@ -305,13 +307,13 @@ export default function RatingLiquidacaoPage() {
       }) as ColumnDef<RatingLiquidacaoRow, unknown>,
       col.accessor("score", {
         header: () => <span title="Score 0-100 (maior = melhor); crítico trava em ≤20">Score</span>,
-        size: 76,
+        size: 70,
         meta: { align: "right" },
         cell: (info) => <ScoreCell score={info.getValue() as number | null} />,
       }) as ColumnDef<RatingLiquidacaoRow, unknown>,
       col.accessor("n_eventos_score", {
         header: () => <span title="Pagamentos analisados pelo score (boleto pago ou baixa que alega pagamento do sacado)">Pagtos.</span>,
-        size: 84,
+        size: 64,
         meta: { align: "right" },
         cell: (info) => (
           <span className={tableTokens.cellNumberSecondary}>
@@ -325,13 +327,21 @@ export default function RatingLiquidacaoPage() {
             Via boleto
           </span>
         ),
-        size: 96,
+        size: 76,
         meta: { align: "right" },
         cell: (info) => <CoberturaCell v={info.getValue() as number} />,
       }) as ColumnDef<RatingLiquidacaoRow, unknown>,
-      // "Valor liquidado" (PR#574) e "Sinais" (2026-07-12) saíram da lista — o
-      // ranking fica enxuto (identifica → quantifica → avalia). Os sinais vivem
-      // no detalhe do cedente: Z3 "Por que a nota" do raio-X e o drawer de pares.
+      // "Valor liquidado" saiu da tabela (feedback Ricardo 2026-07-12) — o
+      // agregado continua no KPI "Valor liquidado sob crítico"; por cedente,
+      // o dado vive no detalhe (/cedente/[documento]).
+      col.display({
+        id: "sinais",
+        header: () => (
+          <span title="Sinais do catálogo que acenderam (código · nº de eventos)">Sinais</span>
+        ),
+        size: 220,
+        cell: ({ row }) => <SinaisCell sinais={row.original.componentes?.sinais} />,
+      }) as ColumnDef<RatingLiquidacaoRow, unknown>,
     ],
     [],
   )
@@ -341,7 +351,7 @@ export default function RatingLiquidacaoPage() {
       <PageHeader
         title="Rating de liquidação"
         subtitle="Risco · Liquidações"
-        info="Nota de 0 a 100 que responde: quando os títulos desse cedente são pagos, o dinheiro vem mesmo do sacado? Sinal crítico (pagamento na conta/praça do próprio cedente) trava a nota em E. Nota boa exige volume mínimo de títulos — senão NC. Recompras e baixas manuais não derrubam a nota: aparecem no % via boleto (quanto menor, menos dá pra conferir). O selo 'revisar (N)' marca uma nota E provisória: N liquidações ambíguas seguradas até validação humana na Curadoria. Clique num cedente para ver os sinais, o filme mês a mês e sacado a sacado."
+        info="Nota de 0 a 100 que responde: quando os títulos desse cedente são pagos, o dinheiro vem mesmo do sacado? Sinal crítico (pagamento na conta/praça do próprio cedente) trava a nota em E. Nota boa exige volume mínimo de títulos — senão NC. Recompras e baixas manuais não derrubam a nota: aparecem no % via boleto (quanto menor, menos dá pra conferir). Clique num cedente para ver sacado a sacado."
       />
 
       <KpiBand items={kpiItems} loading={query.isLoading && !query.data} />
@@ -352,14 +362,21 @@ export default function RatingLiquidacaoPage() {
         loading={query.isLoading && !query.data}
         error={query.error}
         onRetry={() => query.refetch()}
-        tableLayout="fixed"
-        minWidth={660}
         onRowClick={(r) => router.push(`/risco/rating-liquidacao/cedente/${encodeURIComponent(r.cedente_documento)}`)}
         search={{ value: search, onChange: setSearch, placeholder: "Buscar cedente..." }}
-        segments={{
-          value: "todos",
-          onChange: () => undefined,
-          options: [{ value: "todos", label: "Todos", filter: () => true }],
+        statusFilter={{
+          label: "Rating",
+          ariaLabel: "Filtrar por grade do rating (multi-seleção)",
+          options: [
+            { value: "A", label: "A", tone: "success", filter: (r) => r.grade === "A" },
+            { value: "B", label: "B", tone: "success", filter: (r) => r.grade === "B" },
+            { value: "C", label: "C", tone: "warning", filter: (r) => r.grade === "C" },
+            { value: "D", label: "D", tone: "danger", filter: (r) => r.grade === "D" },
+            { value: "E", label: "E", tone: "danger", filter: (r) => r.grade === "E" },
+            { value: "NC", label: "Sem classificação", tone: "neutral", filter: (r) => r.grade === "NC" },
+          ],
+          value: gradeFilter,
+          onChange: setGradeFilter,
         }}
         itemNoun={{ singular: "cedente", plural: "cedentes" }}
         emptyState={{

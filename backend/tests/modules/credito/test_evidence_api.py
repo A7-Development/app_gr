@@ -17,6 +17,7 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 
+from app.agentic.workflows.models.definition import WorkflowDefinition
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.core.enums import DossierStatus, Module, Permission
@@ -28,7 +29,6 @@ from app.modules.credito.models.dossier_step_note import DossierStepNote
 from app.shared.identity.tenant import Tenant
 from app.shared.identity.user import User
 from app.shared.identity.user_permission import UserModulePermission
-from app.agentic.workflows.models.definition import WorkflowDefinition
 
 API_BASE = "/api/v1/credito"
 

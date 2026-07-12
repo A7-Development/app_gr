@@ -328,7 +328,6 @@ def test_qitech_payload_shape_doc_relpath_format():
 
 def test_qitech_payload_shape_doc_files_exist():
     """Cada relpath aponta pra arquivo .md real no disco."""
-    import os
     from pathlib import Path
 
     # Resolver raiz do repo: subir ate achar `backend/`.
@@ -343,7 +342,7 @@ def test_qitech_payload_shape_doc_files_exist():
         full_path = repo_root / ep.payload_shape_doc_relpath
         if not full_path.is_file():
             missing.append(f"{ep.name}: {full_path}")
-    assert missing == [], f"Arquivos .md faltando:\n  " + "\n  ".join(missing)
+    assert missing == [], "Arquivos .md faltando:\n  " + "\n  ".join(missing)
 
 
 def test_bitfin_has_no_payload_shape_doc_yet():

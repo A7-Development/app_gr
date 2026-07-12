@@ -19,7 +19,6 @@ from app.modules.integracoes.adapters.admin.qitech.payload_summary import (
     summarize_payload,
 )
 
-
 # ── MEC ────────────────────────────────────────────────────────────────────
 
 

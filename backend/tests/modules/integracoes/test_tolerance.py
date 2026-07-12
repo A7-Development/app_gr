@@ -14,7 +14,6 @@ from app.modules.integracoes.services.tolerance import (
     resolve_tolerance_window,
 )
 
-
 # ──────────────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────
