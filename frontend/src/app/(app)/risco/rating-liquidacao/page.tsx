@@ -75,9 +75,9 @@ function GradeBadge({
       {pendencias > 0 && (
         <span
           className={cx(tableTokens.badge, tableTokens.badgeWarning)}
-          title={`${pendencias} liquidação(ões) na agência do cedente (mesma cidade) aguardando validação humana — libere ou confirme na Curadoria de liquidações`}
+          title={`Nota E provisória: ${pendencias} liquidação(ões) ambígua(s) (pagas na agência do próprio cedente, na mesma cidade do sacado) segurando a nota até um humano decidir OK ou fraude. Clique no cedente → Abrir curadoria.`}
         >
-          curadoria·{pendencias}
+          revisar·{pendencias}
         </span>
       )}
     </span>
@@ -278,7 +278,7 @@ export default function RatingLiquidacaoPage() {
             Rating
           </span>
         ),
-        size: 120,
+        size: 168,
         cell: ({ row }) => (
           <GradeBadge
             grade={row.original.grade}
@@ -289,13 +289,13 @@ export default function RatingLiquidacaoPage() {
       }) as ColumnDef<RatingLiquidacaoRow, unknown>,
       col.accessor("score", {
         header: () => <span title="Score 0-100 (maior = melhor); crítico trava em ≤20">Score</span>,
-        size: 70,
+        size: 76,
         meta: { align: "right" },
         cell: (info) => <ScoreCell score={info.getValue() as number | null} />,
       }) as ColumnDef<RatingLiquidacaoRow, unknown>,
       col.accessor("n_eventos_score", {
         header: () => <span title="Pagamentos analisados pelo score (boleto pago ou baixa que alega pagamento do sacado)">Pagtos.</span>,
-        size: 64,
+        size: 84,
         meta: { align: "right" },
         cell: (info) => (
           <span className={tableTokens.cellNumberSecondary}>
@@ -309,26 +309,20 @@ export default function RatingLiquidacaoPage() {
             Via boleto
           </span>
         ),
-        size: 76,
+        size: 96,
         meta: { align: "right" },
         cell: (info) => <CoberturaCell v={info.getValue() as number} />,
       }) as ColumnDef<RatingLiquidacaoRow, unknown>,
       col.accessor("valor_desfechos", {
         header: () => <span title="Valor TOTAL dos títulos liquidados em 12 meses — pagos, recomprados ou baixados">Valor liquidado</span>,
-        size: 104,
+        size: 136,
         meta: { align: "right" },
         cell: (info) => (
           <span className={tableTokens.cellNumberSecondary}>{brl(info.getValue() as number)}</span>
         ),
       }) as ColumnDef<RatingLiquidacaoRow, unknown>,
-      col.display({
-        id: "sinais",
-        header: () => (
-          <span title="Sinais do catálogo que acenderam (código · nº de eventos)">Sinais</span>
-        ),
-        size: 220,
-        cell: ({ row }) => <SinaisCell sinais={row.original.componentes?.sinais} />,
-      }) as ColumnDef<RatingLiquidacaoRow, unknown>,
+      // Sinais SAÍRAM da lista (poluíam o ranking, decisão 2026-07-12) — vivem no
+      // detalhe do cedente: Z3 do raio-X (clique na linha) e no drawer de pares.
     ],
     [],
   )
@@ -338,7 +332,7 @@ export default function RatingLiquidacaoPage() {
       <PageHeader
         title="Rating de liquidação"
         subtitle="Risco · Liquidações"
-        info="Nota de 0 a 100 que responde: quando os títulos desse cedente são pagos, o dinheiro vem mesmo do sacado? Sinal crítico (pagamento na conta/praça do próprio cedente) trava a nota em E. Nota boa exige volume mínimo de títulos — senão NC. Recompras e baixas manuais não derrubam a nota: aparecem no % via boleto (quanto menor, menos dá pra conferir). Clique num cedente para ver sacado a sacado."
+        info="Nota de 0 a 100 que responde: quando os títulos desse cedente são pagos, o dinheiro vem mesmo do sacado? Sinal crítico (pagamento na conta/praça do próprio cedente) trava a nota em E. Nota boa exige volume mínimo de títulos — senão NC. Recompras e baixas manuais não derrubam a nota: aparecem no % via boleto (quanto menor, menos dá pra conferir). O selo 'revisar·N' marca uma nota E provisória: há N liquidações ambíguas seguradas até validação humana na Curadoria. Clique num cedente para ver os sinais, o filme mês a mês e sacado a sacado."
       />
 
       <KpiBand items={kpiItems} loading={query.isLoading && !query.data} />
@@ -350,7 +344,7 @@ export default function RatingLiquidacaoPage() {
         error={query.error}
         onRetry={() => query.refetch()}
         tableLayout="fixed"
-        minWidth={860}
+        minWidth={760}
         onRowClick={(r) => router.push(`/risco/rating-liquidacao/cedente/${encodeURIComponent(r.cedente_documento)}`)}
         search={{ value: search, onChange: setSearch, placeholder: "Buscar cedente..." }}
         segments={{
