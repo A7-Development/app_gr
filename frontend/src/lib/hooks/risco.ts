@@ -191,3 +191,24 @@ export function useDossieLiquidacao(liquidacaoId: string | null) {
     staleTime: 30 * 1000,
   })
 }
+
+// ── Lastro fiscal (F4 SERPRO) ───────────────────────────────────────────────
+
+import { riscoLastroFiscal } from "@/lib/api-client"
+
+export function useLastroFiscalResumo() {
+  return useQuery({
+    queryKey: ["risco", "lastro-fiscal", "resumo"],
+    queryFn: () => riscoLastroFiscal.resumo(),
+    staleTime: 60 * 1000,
+  })
+}
+
+export function useLastroFiscalOcorrencias(desde?: string) {
+  return useQuery({
+    queryKey: ["risco", "lastro-fiscal", "ocorrencias", desde ?? "tudo"],
+    queryFn: () => riscoLastroFiscal.ocorrencias({ desde }),
+    staleTime: 60 * 1000,
+    placeholderData: (prev) => prev,
+  })
+}

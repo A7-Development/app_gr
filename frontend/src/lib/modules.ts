@@ -5,6 +5,7 @@
 import {
   RiBarChartGroupedLine,
   RiShieldStarLine,
+  RiFileShield2Line,
   RiBookOpenLine,
   RiBuilding2Line,
   RiBuilding4Line,
@@ -435,6 +436,14 @@ export const MODULES: ModuleDefinition[] = [
             icon: RiFileTextLine,
           },
         ],
+      },
+      // Lastro fiscal (F4 SERPRO): ocorrencias SEFAZ em notas da carteira
+      // aberta — irmao do macro-menu Liquidacoes (assunto proprio).
+      {
+        name: "Lastro fiscal",
+        href: "/risco/lastro-fiscal",
+        enabled: true,
+        icon: RiFileShield2Line,
       },
     ],
   },
