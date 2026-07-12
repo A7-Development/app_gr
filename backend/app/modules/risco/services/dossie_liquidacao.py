@@ -31,7 +31,8 @@ SELECT l.id AS liquidacao_id, l.titulo_id, l.canal, l.evidencia,
        ra.nome_agencia, ra.municipio AS ag_municipio, ra.uf AS ag_uf,
        ra.endereco AS ag_endereco, ra.bairro AS ag_bairro,
        ra.primeira_competencia, ra.ultima_competencia, ra.ativa,
-       cc.tem_conta AS conta_do_cedente
+       cc.tem_conta AS conta_do_cedente,
+       ced.localidade AS cedente_cidade, ced.estado AS cedente_uf
 FROM wh_liquidacao l
 JOIN wh_titulo t ON t.tenant_id = l.tenant_id AND t.titulo_id = l.titulo_id
 LEFT JOIN wh_operacao o
@@ -54,6 +55,12 @@ LEFT JOIN LATERAL (
 LEFT JOIN ref_bacen_agencia ra
     ON ra.banco_compe = lpad(be.banco_pagador, 3, '0')
    AND ra.agencia_codigo = lpad(be.agencia_pagadora, 5, '0')
+LEFT JOIN LATERAL (
+    SELECT e.localidade, e.estado FROM wh_entidade e
+    WHERE e.documento_raiz = left(ltrim(o.cedente_documento, '0'), 8)
+      AND e.localidade IS NOT NULL
+    ORDER BY e.is_matriz DESC NULLS LAST LIMIT 1
+) ced ON true
 LEFT JOIN LATERAL (
     SELECT true AS tem_conta FROM wh_conta_bancaria cb
     WHERE cb.tenant_id = l.tenant_id
@@ -206,6 +213,8 @@ async def dossie(
         "titulo_numero": ev["titulo_numero"],
         "cedente_nome": ev["cedente_nome"],
         "cedente_documento": ev["cedente_documento"],
+        "cedente_cidade": ev["cedente_cidade"],
+        "cedente_uf": ev["cedente_uf"],
         "produto_sigla": ev["produto_sigla"],
         "produto_nome": ev["produto_nome"],
         "sacado_nome": ev["sacado_nome"],

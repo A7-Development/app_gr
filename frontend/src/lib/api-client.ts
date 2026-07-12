@@ -3978,6 +3978,7 @@ export type DossieTag = { tag: string; nota: string | null; autor: string | null
 export type DossieLiquidacao = {
   liquidacao_id: string; titulo_id: number; titulo_numero: string | null
   cedente_nome: string | null; cedente_documento: string | null
+  cedente_cidade: string | null; cedente_uf: string | null
   produto_sigla: string | null; produto_nome: string | null
   sacado_nome: string | null; sacado_documento: string | null
   sacado_cidade: string | null; sacado_uf: string | null
