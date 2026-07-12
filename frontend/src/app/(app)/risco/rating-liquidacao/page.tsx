@@ -226,6 +226,8 @@ export default function RatingLiquidacaoPage() {
   const selectedDoc = sp.get("selected")
 
   const [search, setSearch] = React.useState("")
+  // Filtro canonico de rating ("dropdown quieto" — multi-select por grade).
+  const [gradeFilter, setGradeFilter] = React.useState<string[]>([])
   const query = useRatingLiquidacao()
   const rows = React.useMemo(() => query.data?.rows ?? [], [query.data])
 
@@ -360,14 +362,21 @@ export default function RatingLiquidacaoPage() {
         loading={query.isLoading && !query.data}
         error={query.error}
         onRetry={() => query.refetch()}
-        tableLayout="fixed"
-        minWidth={860}
         onRowClick={(r) => router.push(`/risco/rating-liquidacao/cedente/${encodeURIComponent(r.cedente_documento)}`)}
         search={{ value: search, onChange: setSearch, placeholder: "Buscar cedente..." }}
-        segments={{
-          value: "todos",
-          onChange: () => undefined,
-          options: [{ value: "todos", label: "Todos", filter: () => true }],
+        statusFilter={{
+          label: "Rating",
+          ariaLabel: "Filtrar por grade do rating (multi-seleção)",
+          options: [
+            { value: "A", label: "A", tone: "success", filter: (r) => r.grade === "A" },
+            { value: "B", label: "B", tone: "success", filter: (r) => r.grade === "B" },
+            { value: "C", label: "C", tone: "warning", filter: (r) => r.grade === "C" },
+            { value: "D", label: "D", tone: "danger", filter: (r) => r.grade === "D" },
+            { value: "E", label: "E", tone: "danger", filter: (r) => r.grade === "E" },
+            { value: "NC", label: "Sem classificação", tone: "neutral", filter: (r) => r.grade === "NC" },
+          ],
+          value: gradeFilter,
+          onChange: setGradeFilter,
         }}
         itemNoun={{ singular: "cedente", plural: "cedentes" }}
         emptyState={{
