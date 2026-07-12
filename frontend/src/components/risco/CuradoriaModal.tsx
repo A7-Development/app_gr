@@ -1,22 +1,21 @@
 // components/risco/CuradoriaModal.tsx
 //
 // Modal de julgamento da curadoria de liquidação — surface de decisão do
-// analista de risco (rolagem única, sem tabs; decisão 2026-07-11). Reusado
-// pela página de curadoria e pelo drill do raio-X. Grande, cara de página:
-// header com título/subtítulo, KPI strip, cards de evidência, footer sticky
-// com OK/FRAUDE/Não sei + ponderação opcional. A trilha (autor+data+nota)
-// já vive em curadoria_tag; o histórico é exibido no próprio modal.
+// analista (rolagem única; layout "confronto de praças", escolhido 2026-07-12).
+// A fraude de auto-liquidação é uma DIVERGÊNCIA DE PRAÇA: o sacado é de um
+// lugar, mas o dinheiro caiu noutro (a praça do cedente). O modal põe os dois
+// lados frente a frente com a divergência no centro. Reusado pela curadoria e
+// pelo raio-X. Trilha (autor+data+nota) já vive em curadoria_tag.
 
 "use client"
 
 import * as React from "react"
 import {
-  RiBankLine,
   RiCheckboxCircleLine,
   RiCloseCircleLine,
-  RiMapPin2Line,
   RiQuestionLine,
   RiScales3Line,
+  RiShieldCheckLine,
 } from "@remixicon/react"
 
 import { Button } from "@/components/tremor/Button"
@@ -29,10 +28,11 @@ import { cx } from "@/lib/utils"
 
 const brl = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 2 })
-const fmtData = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString("pt-BR") : "—"
+const fmtData = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR") : "—")
 const fmtDataHora = (iso: string) =>
   new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
+const norm = (s: string | null) =>
+  (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase()
 
 const SEV_BADGE: Record<string, string> = {
   critica: tableTokens.badgeDanger,
@@ -42,50 +42,17 @@ const SEV_BADGE: Record<string, string> = {
   baixa: tableTokens.badgeNeutral,
 }
 const CANAL_LABEL: Record<string, string> = {
-  bancaria: "Pago no banco",
-  baixa_manual: "Baixa manual (sem rastro)",
-  recompra: "Recompra",
+  bancaria: "pago no banco",
+  baixa_manual: "baixa manual (sem rastro)",
+  recompra: "recompra",
 }
 
-function Kpi({ label, value, tone }: { label: string; value: React.ReactNode; tone?: "danger" | "warn" }) {
-  return (
-    <div className="flex flex-col gap-0.5 px-3 py-2">
-      <span className={tableTokens.header}>{label}</span>
-      <span
-        className={cx(
-          tableTokens.cellStrong,
-          tone === "danger" && "text-red-600 dark:text-red-400",
-          tone === "warn" && "text-amber-600 dark:text-amber-400",
-        )}
-      >
-        {value}
-      </span>
-    </div>
-  )
-}
-
-// Campo de identidade rotulado (dt/dd) — quem/o quê/quanto, claro.
-function Campo({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string | null }) {
+function LiqItem({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className={tableTokens.header}>{label}</dt>
-      <dd className={cx(tableTokens.cellStrong, "truncate")} title={typeof value === "string" ? value : undefined}>
-        {value}
-      </dd>
-      {sub && <dd className={cx(tableTokens.cellMuted, "text-[11px]")}>{sub}</dd>}
+      <div className={tableTokens.header}>{label}</div>
+      <div className={cx(tableTokens.cellStrong, "truncate")}>{value}</div>
     </div>
-  )
-}
-
-function Secao({ titulo, icon, children }: { titulo: string; icon?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
-      <h4 className={cx(tableTokens.cellStrong, "mb-2 flex items-center gap-1.5")}>
-        {icon}
-        {titulo}
-      </h4>
-      {children}
-    </section>
   )
 }
 
@@ -97,31 +64,31 @@ function Corpo({ d, onDecidir, saving }: {
   const [nota, setNota] = React.useState("")
   const ag = d.agencia
   const conv = ag.convergencia
-  const foraPraca = d.sacado_uf && ag.uf && d.sacado_uf !== ag.uf
-
   const produto = d.produto_nome
     ? `${d.produto_nome}${d.produto_sigla ? ` (${d.produto_sigla})` : ""}`
     : (d.produto_sigla ?? "—")
-  const sacado = d.sacado_nome ?? "sacado não identificado"
-  const sacadoLocal = d.sacado_cidade ? `${d.sacado_cidade}/${d.sacado_uf ?? ""}` : null
+
+  const sacadoCidade = d.sacado_cidade
+  const pagCidade = ag.cidade
+  // Divergência = sacado paga fora da própria praça.
+  const divergente = !!(sacadoCidade && pagCidade && norm(sacadoCidade) !== norm(pagCidade))
+  // O pagamento caiu na praça do cedente?
+  const ehPracaCedente = !!(pagCidade && d.cedente_cidade && norm(pagCidade) === norm(d.cedente_cidade))
 
   return (
-    <div className="flex max-h-[86vh] flex-col">
-      {/* Header — PROPÓSITO (onde estou / o que faço) + identidade do título */}
-      <header className="rounded-t-md bg-gray-50 px-5 pb-4 pt-4 dark:bg-gray-900/60">
+    <div className="flex max-h-[88vh] flex-col">
+      {/* ── Header: propósito + dados da liquidação ── */}
+      <header className="border-b border-gray-200 bg-gray-50 px-5 py-4 dark:border-gray-800 dark:bg-gray-900/50">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className={cx(tableTokens.header, "flex items-center gap-1.5 text-blue-600 dark:text-blue-400")}>
-              <RiScales3Line className="size-3.5" /> CURADORIA DE LIQUIDAÇÃO
+            <p className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+              <RiScales3Line className="size-3.5" /> Curadoria de liquidação
             </p>
-            <h2 className="mt-0.5 text-lg font-semibold text-gray-900 dark:text-gray-50">
+            <h2 className="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-50">
               Título {d.titulo_numero ?? d.titulo_id}
             </h2>
-            <p className={cx(tableTokens.cellSecondary, "mt-0.5")}>
-              Avalie se este título foi pago com integridade e registre seu veredito.
-            </p>
           </div>
-          <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+          <div className="flex shrink-0 flex-wrap justify-end gap-1.5" style={{ maxWidth: 160 }}>
             {d.sinais.slice(0, 3).map((s) => (
               <span key={s.codigo} className={cx(tableTokens.badge, SEV_BADGE[s.severidade] ?? tableTokens.badgeNeutral)}>
                 {s.codigo}
@@ -129,71 +96,93 @@ function Corpo({ d, onDecidir, saving }: {
             ))}
           </div>
         </div>
-
-        {/* Identidade — campos rotulados, claros */}
-        <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
-          <Campo label="Cedente" value={d.cedente_nome ?? "—"} />
-          <Campo label="Sacado" value={sacado} sub={sacadoLocal} />
-          <Campo label="Produto" value={produto} />
-          <Campo label="Valor" value={brl(d.valor)} />
-          <Campo label="Liquidado em" value={fmtData(d.data_evento)} />
-          <Campo label="Canal" value={CANAL_LABEL[d.canal] ?? d.canal} />
-        </dl>
+        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
+          <LiqItem label="Cedente" value={d.cedente_nome ?? "—"} />
+          <LiqItem label="Produto" value={produto} />
+          <LiqItem label="Valor" value={<span className="tabular-nums">{brl(d.valor)}</span>} />
+          <LiqItem label="Liquidado em" value={`${fmtData(d.data_evento)} · ${CANAL_LABEL[d.canal] ?? d.canal}`} />
+        </div>
       </header>
 
-      {/* Strip analítico — os alertas (não é identidade, é o "porquê olhar") */}
-      <div className="grid grid-cols-2 divide-x divide-gray-200 border-b border-gray-200 sm:grid-cols-3 dark:divide-gray-800 dark:border-gray-800">
-        <Kpi
-          label="PRAÇA"
-          value={foraPraca ? `sacado ${d.sacado_uf} ≠ pagto ${ag.uf}` : (ag.uf ? `mesma praça (${ag.uf})` : "—")}
-          tone={foraPraca ? "danger" : undefined}
-        />
-        <Kpi
-          label="BANCO HABITUAL DO SACADO"
-          value={d.quebra_fingerprint > 0 ? "quebrou o padrão ⚠" : "estável"}
-          tone={d.quebra_fingerprint > 0 ? "warn" : undefined}
-        />
-        <Kpi
-          label="SINAIS ATIVOS"
-          value={d.sinais.length > 0 ? `${d.sinais.length} · pior ${d.sinais[0].codigo}` : "nenhum"}
-          tone={d.sinais.some((s) => s.severidade === "critica") ? "danger" : undefined}
-        />
-      </div>
+      {/* ── Confronto de praças ── */}
+      <div className="grid grid-cols-[1fr_auto_1fr] items-stretch border-b border-gray-200 dark:border-gray-800">
+        {/* Sacado */}
+        <div className="px-4 py-4">
+          <h3 className="text-xs font-bold text-gray-900 dark:text-gray-100">Sacado — quem deveria pagar</h3>
+          <p className={cx(tableTokens.cellStrong, "mt-1 truncate")} title={d.sacado_nome ?? undefined}>
+            {d.sacado_nome ?? "sacado não identificado"}
+          </p>
+          <p className="mt-1 text-xl font-bold leading-tight tracking-tight text-gray-900 dark:text-gray-100">
+            {sacadoCidade ?? "—"}
+          </p>
+          <p className={tableTokens.cellSecondary}>{d.sacado_uf ?? ""}</p>
+          <p className={cx(tableTokens.cellMuted, "mt-2.5 text-[11.5px]")}>
+            Banco habitual: {d.quebra_fingerprint > 0 ? "quebrou o padrão ⚠" : "estável"}
+          </p>
+        </div>
 
-      {/* Corpo — rolagem única */}
-      <div className="flex-1 space-y-3 overflow-y-auto p-5">
-        <Secao titulo="Onde o dinheiro caiu" icon={<RiBankLine className="size-4 text-gray-500" />}>
-          <p className={tableTokens.cellText}>
+        {/* Divergência no centro */}
+        <div className="flex flex-col items-center justify-center gap-1.5 border-x border-dashed border-gray-200 px-3 dark:border-gray-800">
+          {divergente ? (
+            <>
+              <span className="text-2xl font-extrabold leading-none text-red-600 dark:text-red-400">≠</span>
+              <span className="max-w-[76px] text-center text-[9.5px] font-bold uppercase tracking-wide text-red-600 dark:text-red-400">
+                praça divergente
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="text-2xl font-extrabold leading-none text-gray-400">=</span>
+              <span className="max-w-[76px] text-center text-[9.5px] font-bold uppercase tracking-wide text-gray-400">
+                mesma praça
+              </span>
+            </>
+          )}
+        </div>
+
+        {/* Pagamento / praça do cedente */}
+        <div className={cx("px-4 py-4", divergente && "bg-gradient-to-b from-red-500/[.05] to-transparent")}>
+          <h3 className="text-xs font-bold text-gray-900 dark:text-gray-100">
+            Onde o dinheiro caiu{ehPracaCedente ? " — praça do cedente" : ""}
+          </h3>
+          <p className={cx(tableTokens.cellStrong, "mt-1 truncate")} title={ag.nome ?? undefined}>
             {ag.banco}/{ag.agencia} · {ag.nome ?? "(agência não resolvida)"}
           </p>
-          {ag.cidade && (
-            <p className={cx(tableTokens.cellSecondary, "flex items-center gap-1")}>
-              <RiMapPin2Line className="size-3.5" />
-              {ag.cidade}/{ag.uf}
-              {ag.endereco ? ` · ${ag.endereco}` : ""}
-              {ag.vigencia ? ` · vigente ${ag.vigencia}` : ""}
-            </p>
-          )}
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {ag.conta_do_cedente && (
-              <span className={cx(tableTokens.badge, tableTokens.badgeDanger)}>é a conta do cedente</span>
-            )}
-            {conv && (
-              <span
-                className={cx(
-                  tableTokens.badge,
-                  conv.fora >= 5 ? tableTokens.badgeDanger : conv.fora > 0 ? tableTokens.badgeWarning : tableTokens.badgeNeutral,
-                )}
-                title="Sacados distintos que pagam nesta agência · de outras cidades"
-              >
-                convergência: {conv.sacados} sacados · {conv.cidades} cidades
-                {conv.fora > 0 ? ` · ${conv.fora} de outra praça` : ""}
-              </span>
-            )}
-          </div>
-        </Secao>
+          <p className={cx(
+            "mt-1 text-xl font-bold leading-tight tracking-tight",
+            divergente ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-gray-100",
+          )}>
+            {pagCidade ?? "—"}
+          </p>
+          <p className={tableTokens.cellSecondary}>
+            {ag.uf ?? ""}{ag.endereco ? ` · ${ag.endereco}` : ""}{ag.vigencia ? ` · vigente ${ag.vigencia}` : ""}
+          </p>
+          <p className={cx(tableTokens.cellMuted, "mt-2.5 text-[11.5px]")}>
+            {ag.conta_do_cedente
+              ? "É a agência onde o cedente tem conta"
+              : ehPracaCedente
+                ? `= praça do cedente (${d.cedente_nome?.split(" ")[0] ?? "cedente"} é de ${d.cedente_cidade})`
+                : "Conta do cedente aqui: não cadastrada"}
+          </p>
+        </div>
+      </div>
 
-        <Secao titulo="Por que o sistema marcou">
+      {/* Convergência (S2) */}
+      {conv && conv.sacados > 1 && (
+        <div className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+          <RiShieldCheckLine className="size-4 shrink-0" />
+          <span>
+            Convergência nesta agência:{" "}
+            <b>{conv.sacados} sacados distintos · {conv.cidades} cidades · {conv.fora} de outra praça</b>
+            {conv.fora >= 5 ? " — improvável para uma agência real." : "."}
+          </span>
+        </div>
+      )}
+
+      {/* Corpo rolável — sinais + histórico */}
+      <div className="flex-1 space-y-3 overflow-y-auto px-5 pb-4 pt-3">
+        <section className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+          <h4 className={cx(tableTokens.cellStrong, "mb-2")}>Por que o sistema marcou</h4>
           {d.sinais.length === 0 ? (
             <p className={tableTokens.cellMuted}>Nenhum sinal automático — revisão manual.</p>
           ) : (
@@ -211,9 +200,10 @@ function Corpo({ d, onDecidir, saving }: {
               ))}
             </ul>
           )}
-        </Secao>
+        </section>
 
-        <Secao titulo="Histórico de curadoria">
+        <section className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+          <h4 className={cx(tableTokens.cellStrong, "mb-2")}>Histórico de curadoria</h4>
           {d.historico_curadoria.length === 0 ? (
             <p className={tableTokens.cellMuted}>Sem marcações anteriores.</p>
           ) : (
@@ -229,10 +219,10 @@ function Corpo({ d, onDecidir, saving }: {
               ))}
             </ul>
           )}
-        </Secao>
+        </section>
       </div>
 
-      {/* Footer sticky — a decisão */}
+      {/* Footer sticky — decisão */}
       <footer className="space-y-3 border-t border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-[#090E1A]">
         <Textarea
           value={nota}
@@ -241,11 +231,7 @@ function Corpo({ d, onDecidir, saving }: {
           rows={2}
         />
         <div className="flex flex-wrap gap-2">
-          <Button
-            className="bg-emerald-600 hover:bg-emerald-700"
-            disabled={saving}
-            onClick={() => onDecidir("ok", nota)}
-          >
+          <Button className="bg-emerald-600 hover:bg-emerald-700" disabled={saving} onClick={() => onDecidir("ok", nota)}>
             <RiCheckboxCircleLine className="mr-1 size-4" /> Íntegro (OK)
           </Button>
           <Button variant="destructive" disabled={saving} onClick={() => onDecidir("fraude", nota)}>
@@ -272,23 +258,16 @@ export function CuradoriaModal({
 
   const decidir = (tag: "ok" | "fraude" | "neutro", nota: string) => {
     if (!liquidacaoId) return
-    tagMut.mutate(
-      { liquidacaoId, tag, nota: nota.trim() || null },
-      { onSuccess: onClose },
-    )
+    tagMut.mutate({ liquidacaoId, tag, nota: nota.trim() || null }, { onSuccess: onClose })
   }
 
   return (
     <Dialog open={liquidacaoId !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[95vw] max-w-3xl p-0">
+      <DialogContent className="w-[96vw] max-w-3xl p-0">
         {q.isPending ? (
-          <div className="p-10 text-center">
-            <span className={tableTokens.cellMuted}>Carregando dossiê…</span>
-          </div>
+          <div className="p-10 text-center"><span className={tableTokens.cellMuted}>Carregando dossiê…</span></div>
         ) : q.isError || !q.data ? (
-          <div className="p-10 text-center">
-            <span className={tableTokens.cellSecondary}>Falha ao carregar o dossiê da liquidação.</span>
-          </div>
+          <div className="p-10 text-center"><span className={tableTokens.cellSecondary}>Falha ao carregar o dossiê da liquidação.</span></div>
         ) : (
           <Corpo d={q.data} onDecidir={decidir} saving={tagMut.isPending} />
         )}
