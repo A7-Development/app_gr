@@ -17,6 +17,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { RiShieldStarLine } from "@remixicon/react"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
@@ -55,30 +56,36 @@ function GradeBadge({
   critico: boolean
   pendencias?: number
 }) {
-  // Pendência de curadoria: liquidação na agência do cedente com sacado da
-  // MESMA cidade — ambíguo, trava em E até um humano validar (OK) ou
-  // confirmar (FRAUDE) em /risco/curadoria-liquidacoes.
-  const soPendente = critico && pendencias > 0
+  // A trava por sinal crítico NÃO ganha badge próprio: os códigos críticos
+  // já aparecem em vermelho na coluna Sinais e a grade E já é vermelha —
+  // o badge "crítico" duplicava a informação (feedback Ricardo 2026-07-12).
+  const titulo =
+    grade === "NC"
+      ? "Sem classificação: base insuficiente (poucos títulos/cobertura) para dar nota"
+      : critico
+        ? "Nota travada em E por sinal crítico de auto-liquidação (veja os códigos em vermelho em Sinais)"
+        : "Grade do score 0-100 (letra é apresentação; o primitivo é o score)"
   return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className={cx(tableTokens.badge, GRADE_BADGE[grade] ?? tableTokens.badgeNeutral)}>
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <span
+        className={cx(tableTokens.badge, GRADE_BADGE[grade] ?? tableTokens.badgeNeutral)}
+        title={titulo}
+      >
         {grade === "NC" ? "NC" : grade}
       </span>
-      {critico && !soPendente && (
-        <span
-          className={cx(tableTokens.badge, tableTokens.badgeDanger)}
-          title="Sinal crítico (PRC-01/CNV-90/tag FRAUDE) trava a nota"
-        >
-          crítico
-        </span>
-      )}
       {pendencias > 0 && (
-        <span
-          className={cx(tableTokens.badge, tableTokens.badgeWarning)}
-          title={`${pendencias} liquidação(ões) na agência do cedente (mesma cidade) aguardando validação humana — libere ou confirme na Curadoria de liquidações`}
+        <Link
+          href="/risco/curadoria-liquidacoes"
+          onClick={(e) => e.stopPropagation()}
+          className={cx(
+            tableTokens.badge,
+            tableTokens.badgeWarning,
+            "hover:underline",
+          )}
+          title={`${pendencias} liquidação(ões) no caso ambíguo (agência do cedente, sacado da mesma cidade) aguardando decisão humana — a nota fica travada até liberar (OK) ou confirmar (FRAUDE). Clique para abrir a Curadoria.`}
         >
-          curadoria·{pendencias}
-        </span>
+          aguarda curadoria ({pendencias})
+        </Link>
       )}
     </span>
   )
@@ -114,26 +121,35 @@ function SinaisCell({ sinais }: { sinais?: Record<string, number> }) {
     (a, b) => (SEVERIDADE_ORDEM[a[0]] ?? 2) - (SEVERIDADE_ORDEM[b[0]] ?? 2) || b[1] - a[1],
   )
   if (entries.length === 0) return <span className={tableTokens.cellMuted}>—</span>
+  // Linha ÚNICA (sem wrap): chips que quebravam linha encavalavam com a row
+  // de altura fixa (feedback Ricardo 2026-07-12). Top-3 por severidade +
+  // contador; a lista completa vai no tooltip da célula.
+  const tooltip = entries.map(([c, n]) => `${c}: ${n} eventos`).join(" · ")
   return (
-    <span className="inline-flex flex-wrap gap-1">
-      {entries.slice(0, 4).map(([codigo, n]) => (
+    <span
+      className="inline-flex items-center gap-1 overflow-hidden whitespace-nowrap"
+      title={tooltip}
+    >
+      {entries.slice(0, 3).map(([codigo, n]) => (
         <span
           key={codigo}
           className={cx(
             tableTokens.badge,
+            "shrink-0",
             codigo === "PRC-01" || codigo === "CNV-90" || codigo === "TAG-FRAUDE"
               ? tableTokens.badgeDanger
               : codigo === "PRC-05"
                 ? tableTokens.badgeWarning
                 : tableTokens.badgeNeutral,
           )}
-          title={`${codigo}: ${n} eventos`}
         >
           {codigo}·{n}
         </span>
       ))}
-      {entries.length > 4 && (
-        <span className={tableTokens.cellMuted}>+{entries.length - 4}</span>
+      {entries.length > 3 && (
+        <span className={cx(tableTokens.cellMuted, "shrink-0")}>
+          +{entries.length - 3}
+        </span>
       )}
     </span>
   )
@@ -274,11 +290,11 @@ export default function RatingLiquidacaoPage() {
       col.display({
         id: "rating",
         header: () => (
-          <span title="Grade do score (letra é apresentação; o primitivo é o score 0-100). NC = base insuficiente para grade boa.">
+          <span title="Grade do score (letra é apresentação; o primitivo é o score 0-100). NC = base insuficiente para grade boa. 'Aguarda curadoria' = liquidação ambígua travando a nota até decisão humana.">
             Rating
           </span>
         ),
-        size: 120,
+        size: 180,
         cell: ({ row }) => (
           <GradeBadge
             grade={row.original.grade}
@@ -313,14 +329,9 @@ export default function RatingLiquidacaoPage() {
         meta: { align: "right" },
         cell: (info) => <CoberturaCell v={info.getValue() as number} />,
       }) as ColumnDef<RatingLiquidacaoRow, unknown>,
-      col.accessor("valor_desfechos", {
-        header: () => <span title="Valor TOTAL dos títulos liquidados em 12 meses — pagos, recomprados ou baixados">Valor liquidado</span>,
-        size: 104,
-        meta: { align: "right" },
-        cell: (info) => (
-          <span className={tableTokens.cellNumberSecondary}>{brl(info.getValue() as number)}</span>
-        ),
-      }) as ColumnDef<RatingLiquidacaoRow, unknown>,
+      // "Valor liquidado" saiu da tabela (feedback Ricardo 2026-07-12) — o
+      // agregado continua no KPI "Valor liquidado sob crítico"; por cedente,
+      // o dado vive no detalhe (/cedente/[documento]).
       col.display({
         id: "sinais",
         header: () => (
