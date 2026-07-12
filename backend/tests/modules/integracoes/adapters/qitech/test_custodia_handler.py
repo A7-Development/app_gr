@@ -118,11 +118,10 @@ async def test_fetch_json_401_raises() -> None:
     with patch(
         "app.modules.integracoes.adapters.admin.qitech.custodia.build_async_client",
         return_value=client,
-    ):
-        with pytest.raises(QiTechHttpError) as exc_info:
-            await custodia._fetch_json(
-                tenant_id=uuid4(), environment=None, config=None, path="/test"
-            )
+    ), pytest.raises(QiTechHttpError) as exc_info:
+        await custodia._fetch_json(
+            tenant_id=uuid4(), environment=None, config=None, path="/test"
+        )
 
     assert exc_info.value.status_code == 401
 
@@ -135,11 +134,10 @@ async def test_fetch_json_500_raises() -> None:
     with patch(
         "app.modules.integracoes.adapters.admin.qitech.custodia.build_async_client",
         return_value=client,
-    ):
-        with pytest.raises(QiTechHttpError) as exc_info:
-            await custodia._fetch_json(
-                tenant_id=uuid4(), environment=None, config=None, path="/test"
-            )
+    ), pytest.raises(QiTechHttpError) as exc_info:
+        await custodia._fetch_json(
+            tenant_id=uuid4(), environment=None, config=None, path="/test"
+        )
 
     assert exc_info.value.status_code == 500
 
@@ -172,11 +170,10 @@ async def test_fetch_json_200_invalid_json_raises() -> None:
     with patch(
         "app.modules.integracoes.adapters.admin.qitech.custodia.build_async_client",
         return_value=client,
-    ):
-        with pytest.raises(QiTechHttpError):
-            await custodia._fetch_json(
-                tenant_id=uuid4(), environment=None, config=None, path="/test"
-            )
+    ), pytest.raises(QiTechHttpError):
+        await custodia._fetch_json(
+            tenant_id=uuid4(), environment=None, config=None, path="/test"
+        )
 
 
 # ----- _handler_custodia_periodo: data unitaria, nao janela -------------------
