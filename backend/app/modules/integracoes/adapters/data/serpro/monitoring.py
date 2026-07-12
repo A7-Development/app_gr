@@ -97,9 +97,18 @@ def build_notification_url() -> str:
         raise SerproError(
             "SERPRO_WEBHOOK_BASE_URL/QITECH_WEBHOOK_BASE_URL nao configuradas."
         )
+    token = webhook_token()
+    if not token:
+        # Incidente 2026-07-12: registrar com token vazio fez o receiver de
+        # prod (que TEM o secret) rejeitar todos os pings com 401 — e a
+        # primeira janela de avisos se perdeu. Registro exige o secret do
+        # MESMO ambiente do receiver; nunca cadastrar URL sem token.
+        raise SerproError(
+            "webhook_token vazio (sem SERPRO/QITECH_WEBHOOK_SECRET no env) — "
+            "cadastrar assim faria o receiver de prod rejeitar os pings."
+        )
     return (
-        f"{base}/api/v1/integracoes/webhooks/serpro/nfe-push"
-        f"?token={webhook_token()}"
+        f"{base}/api/v1/integracoes/webhooks/serpro/nfe-push?token={token}"
     )
 
 
