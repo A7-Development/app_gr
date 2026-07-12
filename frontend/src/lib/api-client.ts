@@ -3811,6 +3811,67 @@ export const riscoPadroesLiquidacao = {
     ),
 }
 
+// ── Lastro fiscal (F4 SERPRO) ───────────────────────────────────────────────
+// Espelha backend/app/modules/risco/api/lastro_fiscal.py.
+export type LastroFiscalSeveridade =
+  | "critica"
+  | "media"
+  | "baixa"
+  | "positiva"
+  | "info"
+
+export type LastroFiscalResumo = {
+  notas_vigiadas: number
+  notas_mortas: number
+  notas_mortas_saldo: number
+  sem_manifestacao: number
+  sem_manifestacao_saldo: number
+  sem_manifestacao_dias: number
+  confirmadas: number
+  pct_confirmada: number
+}
+
+export type LastroFiscalOcorrencia = {
+  evento_id: string
+  chave_acesso: string
+  codigo: string
+  severidade: LastroFiscalSeveridade
+  tp_evento: number
+  desc_evento: string | null
+  justificativa: string | null
+  dh_evento: string | null
+  autor_documento: string | null
+  pos_cessao: boolean | null
+  nfe_numero: number | null
+  emitente_nome: string | null
+  emitente_documento: string | null
+  destinatario_nome: string | null
+  valor_nota: number | null
+  situacao_nota: string | null
+  qtd_titulos_abertos: number
+  saldo_devedor_aberto: number
+  primeira_efetivacao: string | null
+}
+
+export type LastroFiscalOcorrenciasPage = {
+  total: number
+  page: number
+  page_size: number
+  ocorrencias: LastroFiscalOcorrencia[]
+}
+
+export const riscoLastroFiscal = {
+  resumo: () => apiClient.get<LastroFiscalResumo>("/risco/lastro-fiscal/resumo"),
+  ocorrencias: (params?: { desde?: string; pageSize?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.desde) qs.set("desde", params.desde)
+    qs.set("page_size", String(params?.pageSize ?? 500))
+    return apiClient.get<LastroFiscalOcorrenciasPage>(
+      `/risco/lastro-fiscal/ocorrencias?${qs.toString()}`,
+    )
+  },
+}
+
 export type RatingLiquidacaoRow = {
   cedente_documento: string
   cedente_nome: string | null
