@@ -14,8 +14,6 @@
 import * as React from "react"
 import {
   RiAlarmWarningFill,
-  RiArrowLeftLine,
-  RiArrowRightLine,
   RiBankLine,
   RiCheckLine,
   RiCloseLine,
@@ -132,18 +130,16 @@ function LiqLine({ label, value, red }: { label: string; value: React.ReactNode;
   )
 }
 
-// ── tabela de evidência (toggle) ─────────────────────────────────────────────
-function Evidencia({ d, onVoltar }: { d: DossieLiquidacao; onVoltar: () => void }) {
+// ── painel de evidência (sacados do balcão) — coluna da análise ──────────────
+function EvidenciaPanel({ d }: { d: DossieLiquidacao }) {
   const conv = d.agencia.convergencia
+  if (!d.evidencia_sacados.length) return null
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between">
-        <span className={CAPTION}>Sacados que liquidam neste balcão</span>
-        <button onClick={onVoltar} className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:underline dark:text-blue-400">
-          <RiArrowLeftLine className="size-3" /> voltar aos sinais
-        </button>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className={cx(CAPTION, "mb-2")}>
+        Sacados que liquidam neste balcão{conv ? ` (${conv.sacados})` : ""}
       </div>
-      <div className="max-h-[168px] overflow-y-auto rounded border border-gray-100 dark:border-gray-800">
+      <div className="min-h-0 flex-1 overflow-y-auto rounded border border-gray-100 dark:border-gray-800">
         <table className="w-full">
           <thead className="sticky top-0 bg-gray-50 dark:bg-gray-900">
             <tr className="text-left">
@@ -191,9 +187,7 @@ function Corpo({ d, onDecidir, onClose, saving }: {
   saving: boolean
 }) {
   const [nota, setNota] = React.useState("")
-  const [verEvidencia, setVerEvidencia] = React.useState(false)
   const ag = d.agencia
-  const conv = ag.convergencia
   const produto = d.produto_nome ?? d.produto_sigla ?? "—"
   const classe = d.classificacao
   const critico = classe.nivel === "critico"
@@ -207,7 +201,7 @@ function Corpo({ d, onDecidir, onClose, saving }: {
   const sync = haQuanto(d.sincronizado_em)
 
   return (
-    <div className="flex max-h-[92vh] flex-col">
+    <div className="flex h-full flex-col">
       {/* ── Header ── */}
       <header className="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-4 dark:border-gray-800">
         <div className="min-w-0">
@@ -232,10 +226,12 @@ function Corpo({ d, onDecidir, onClose, saving }: {
         </div>
       </header>
 
-      {/* ── Corpo (bg cinza) ── */}
-      <div className="flex-1 space-y-3.5 overflow-y-auto bg-gray-50 px-6 py-4 dark:bg-gray-950/40">
-        {/* 2.1 Fichas Cedente | Sacado */}
-        <div className="grid grid-cols-2 gap-3.5">
+      {/* ── Corpo: 2 colunas — os fatos (esq) · a análise (dir) ── */}
+      <div className="grid min-h-0 flex-1 grid-cols-[1.7fr_1fr] bg-gray-50 dark:bg-gray-950/40">
+        {/* Coluna esquerda — fatos: identidades + a liquidação */}
+        <div className="flex min-h-0 flex-col gap-3.5 overflow-y-auto p-4">
+          {/* Fichas Cedente | Sacado */}
+          <div className="grid grid-cols-2 gap-3.5">
           {/* Cedente */}
           <div className="rounded border border-gray-200 bg-white p-3.5 shadow-xs dark:border-gray-800 dark:bg-gray-900">
             <Pill className={ROLE.cedente}>Cedente</Pill>
@@ -338,43 +334,35 @@ function Corpo({ d, onDecidir, onClose, saving }: {
             </div>
           </div>
 
-          {/* faixa Sinais / Evidência */}
-          <div className="border-t border-gray-100 bg-[#FFFBFA] px-4 py-3 dark:border-gray-800 dark:bg-red-950/10">
-            {verEvidencia ? (
-              <Evidencia d={d} onVoltar={() => setVerEvidencia(false)} />
+        </div>
+        </div>
+
+        {/* Coluna direita — análise: por que marcou + evidência do balcão */}
+        <div className="flex min-h-0 flex-col gap-4 border-l border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900/40">
+          <div>
+            <div className={cx(CAPTION, "mb-2")}>Sinais — por que o sistema marcou</div>
+            {d.sinais.length === 0 ? (
+              <p className="text-[12px] text-gray-500">Nenhum sinal automático — revisão manual.</p>
             ) : (
-              <>
-                <div className={cx(CAPTION, "mb-2")}>Sinais — por que o sistema marcou</div>
-                {d.sinais.length === 0 ? (
-                  <p className="text-[12px] text-gray-500">Nenhum sinal automático — revisão manual.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {d.sinais.map((s) => (
-                      <div key={s.codigo} className="flex items-start gap-2.5">
-                        <span className="mt-0.5 shrink-0 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                          {s.codigo}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[12px] font-semibold text-gray-900 dark:text-gray-100">{s.nome}</p>
-                          {s.definicao && <p className="text-[12px] text-gray-600 dark:text-gray-400">{s.definicao}</p>}
-                        </div>
-                        <Pill className={cx((SEV[s.severidade] ?? SEV.media).cls, "shrink-0")}>
-                          {(SEV[s.severidade] ?? SEV.media).label}
-                        </Pill>
-                      </div>
-                    ))}
+              <div className="space-y-2">
+                {d.sinais.map((s) => (
+                  <div key={s.codigo} className="flex items-start gap-2.5">
+                    <span className="mt-0.5 shrink-0 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                      {s.codigo}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12px] font-semibold text-gray-900 dark:text-gray-100">{s.nome}</p>
+                      {s.definicao && <p className="text-[12px] text-gray-600 dark:text-gray-400">{s.definicao}</p>}
+                    </div>
+                    <Pill className={cx((SEV[s.severidade] ?? SEV.media).cls, "shrink-0")}>
+                      {(SEV[s.severidade] ?? SEV.media).label}
+                    </Pill>
                   </div>
-                )}
-                {conv && conv.sacados > 1 && d.evidencia_sacados.length > 0 && (
-                  <div className="mt-2 text-right">
-                    <button onClick={() => setVerEvidencia(true)} className="inline-flex items-center gap-1 text-[11.5px] font-medium text-blue-600 hover:underline dark:text-blue-400">
-                      Ver os {conv.sacados} sacados do balcão <RiArrowRightLine className="size-3.5" />
-                    </button>
-                  </div>
-                )}
-              </>
+                ))}
+              </div>
             )}
           </div>
+          <EvidenciaPanel d={d} />
         </div>
       </div>
 
@@ -430,11 +418,11 @@ export function CuradoriaModal({
 
   return (
     <Dialog open={liquidacaoId !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[940px] max-w-[95vw] gap-0 p-0">
+      <DialogContent className="h-[80vh] w-[70vw] max-w-[70vw] gap-0 p-0">
         {q.isPending ? (
-          <div className="p-10 text-center"><span className="text-[13px] text-gray-400">Carregando dossiê…</span></div>
+          <div className="flex h-full items-center justify-center"><span className="text-[13px] text-gray-400">Carregando dossiê…</span></div>
         ) : q.isError || !q.data ? (
-          <div className="p-10 text-center"><span className="text-[13px] text-gray-500">Falha ao carregar o dossiê da liquidação.</span></div>
+          <div className="flex h-full items-center justify-center"><span className="text-[13px] text-gray-500">Falha ao carregar o dossiê da liquidação.</span></div>
         ) : (
           <Corpo d={q.data} onDecidir={decidir} onClose={onClose} saving={tagMut.isPending} />
         )}
