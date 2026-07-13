@@ -3975,15 +3975,34 @@ export type DossieAgencia = {
   convergencia: { sacados: number; cidades: number; fora: number } | null
 }
 export type DossieTag = { tag: string; nota: string | null; autor: string | null; em: string }
+export type DossieContaCedente = {
+  banco: string; banco_nome: string | null; agencia: string; cidade: string | null; uf: string | null
+}
+export type DossieSacadoHist = {
+  banco: string; banco_nome: string | null; agencia: string
+  cidade: string | null; uf: string | null; bairro: string | null; qtd: number
+}
+export type DossieEvidenciaSacado = {
+  nome: string | null; cidade: string | null; uf: string | null; qtd: number; fora: boolean
+}
+export type DossieClassificacao = { nivel: string; label: string }
 export type DossieLiquidacao = {
   liquidacao_id: string; titulo_id: number; titulo_numero: string | null
+  sincronizado_em: string | null
   cedente_nome: string | null; cedente_documento: string | null
   cedente_cidade: string | null; cedente_uf: string | null
+  cedente_logradouro: string | null; cedente_numero: string | null; cedente_bairro: string | null
+  cedente_contas: DossieContaCedente[]
   produto_sigla: string | null; produto_nome: string | null
   sacado_nome: string | null; sacado_documento: string | null
   sacado_cidade: string | null; sacado_uf: string | null
+  sacado_logradouro: string | null; sacado_numero: string | null; sacado_bairro: string | null
+  sacado_historico: DossieSacadoHist[]
+  sacado_fora_praca: boolean; sacado_liquida_em: string | null
   canal: string; evidencia: string | null; valor: number; data_evento: string
-  agencia: DossieAgencia; sinais: DossieSinal[]
+  classificacao: DossieClassificacao
+  agencia: DossieAgencia; evidencia_sacados: DossieEvidenciaSacado[]
+  sinais: DossieSinal[]
   quebra_fingerprint: number; historico_curadoria: DossieTag[]
 }
 
