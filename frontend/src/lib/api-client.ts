@@ -3968,7 +3968,8 @@ export const riscoRatingLiquidacao = {
 
 export type DossieSinal = { codigo: string; nome: string; definicao: string | null; severidade: string }
 export type DossieAgencia = {
-  banco: string | null; agencia: string | null; nome: string | null
+  banco: string | null; banco_nome: string | null; agencia: string | null; nome: string | null
+  praca_eletronica: boolean
   cidade: string | null; uf: string | null; endereco: string | null; bairro: string | null
   ativa: boolean | null; vigencia: string | null; conta_do_cedente: boolean
   data_credito: string | null
@@ -3980,7 +3981,7 @@ export type DossieContaCedente = {
 }
 export type DossieSacadoHist = {
   banco: string; banco_nome: string | null; agencia: string
-  cidade: string | null; uf: string | null; bairro: string | null; qtd: number
+  cidade: string | null; uf: string | null; bairro: string | null; matriz: boolean; qtd: number
 }
 export type DossieEvidenciaSacado = {
   nome: string | null; cidade: string | null; uf: string | null; qtd: number; fora: boolean
@@ -3998,7 +3999,7 @@ export type DossieLiquidacao = {
   sacado_cidade: string | null; sacado_uf: string | null
   sacado_logradouro: string | null; sacado_numero: string | null; sacado_bairro: string | null
   sacado_historico: DossieSacadoHist[]
-  sacado_fora_praca: boolean; sacado_liquida_em: string | null
+  sacado_fora_praca: boolean; sacado_liquida_eletronico: boolean; sacado_liquida_em: string | null
   canal: string; evidencia: string | null; valor: number; data_evento: string
   classificacao: DossieClassificacao
   agencia: DossieAgencia; evidencia_sacados: DossieEvidenciaSacado[]

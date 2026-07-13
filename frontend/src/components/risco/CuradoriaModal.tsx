@@ -20,6 +20,7 @@ import {
   RiErrorWarningLine,
   RiFlagLine,
   RiHistoryLine,
+  RiInformationLine,
   RiMapPin2Line,
   RiQuestionLine,
 } from "@remixicon/react"
@@ -133,11 +134,14 @@ function LiqLine({ label, value, red }: { label: string; value: React.ReactNode;
 // ── painel de evidência (sacados do balcão) — coluna da análise ──────────────
 function EvidenciaPanel({ d }: { d: DossieLiquidacao }) {
   const conv = d.agencia.convergencia
+  // Na matriz eletrônica (0001) "fora da praça" é ruído (todos aparecem em SP);
+  // vira contexto neutro — concentração, não divergência.
+  const eletronica = d.agencia.praca_eletronica
   if (!d.evidencia_sacados.length) return null
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className={cx(CAPTION, "mb-2")}>
-        Sacados que liquidam neste balcão{conv ? ` (${conv.sacados})` : ""}
+        Sacados que liquidam nesta {eletronica ? "matriz eletrônica" : "agência"}{conv ? ` (${conv.sacados})` : ""}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto rounded border border-gray-100 dark:border-gray-800">
         <table className="w-full">
@@ -161,7 +165,7 @@ function EvidenciaPanel({ d }: { d: DossieLiquidacao }) {
                   </td>
                   <td className="px-2 py-1 text-[12px] text-gray-600 dark:text-gray-400">
                     {cidadeUf(s.cidade, s.uf)}
-                    {s.fora && <span className="ml-1.5 rounded bg-[#FEFCE8] px-1 text-[10px] font-semibold text-[#B45309] dark:bg-amber-950/40">fora</span>}
+                    {!eletronica && s.fora && <span className="ml-1.5 rounded bg-[#FEFCE8] px-1 text-[10px] font-semibold text-[#B45309] dark:bg-amber-950/40">fora</span>}
                   </td>
                   <td className="px-2 py-1 text-right text-[12px] tabular-nums text-gray-600 dark:text-gray-400">{s.qtd}</td>
                 </tr>
@@ -172,7 +176,8 @@ function EvidenciaPanel({ d }: { d: DossieLiquidacao }) {
       </div>
       {conv && (
         <p className="mt-1.5 text-[11px] text-gray-500">
-          <b className="text-gray-700 dark:text-gray-300">{conv.sacados} sacados</b> · {conv.fora} de fora da praça do balcão
+          <b className="text-gray-700 dark:text-gray-300">{conv.sacados} sacados</b>
+          {eletronica ? " desta operação liquidam nesta matriz eletrônica" : ` · ${conv.fora} de fora da praça do balcão`}
         </p>
       )}
     </div>
@@ -291,7 +296,9 @@ function Corpo({ d, onDecidir, onClose, saving }: {
                   <tr key={i} className="border-t border-gray-100 dark:border-gray-800/60">
                     <td className="py-1 text-[12px] text-gray-900 dark:text-gray-100">
                       <span className="font-mono text-gray-500">{h.banco}</span> {bankShort(h.banco_nome)}
-                      {h.cidade && <span className="text-gray-500"> · {[h.bairro, cidadeUf(h.cidade, h.uf)].filter(Boolean).join(", ")}</span>}
+                      {h.matriz
+                        ? <span className="text-gray-400"> · matriz (liq. eletrônica)</span>
+                        : h.cidade && <span className="text-gray-500"> · {[h.bairro, cidadeUf(h.cidade, h.uf)].filter(Boolean).join(", ")}</span>}
                     </td>
                     <td className="py-1 text-right font-mono text-[12px] tabular-nums text-gray-700 dark:text-gray-300">{h.agencia}</td>
                     <td className="py-1 text-right text-[12px] font-semibold tabular-nums text-gray-900 dark:text-gray-100">{h.qtd}</td>
@@ -299,12 +306,17 @@ function Corpo({ d, onDecidir, onClose, saving }: {
                 ))}
               </tbody>
             </table>
-            {d.sacado_fora_praca && (
+            {d.sacado_fora_praca ? (
               <p className="mt-2 flex items-center gap-1 text-[11.5px] font-medium text-[#B45309] dark:text-amber-400">
                 <RiErrorWarningLine className="size-3.5 shrink-0" />
                 Todo o histórico fora da sua praça{d.sacado_liquida_em ? ` (liquida em ${d.sacado_liquida_em})` : ""}
               </p>
-            )}
+            ) : d.sacado_liquida_eletronico ? (
+              <p className="mt-2 flex items-start gap-1 text-[11px] leading-snug text-gray-500">
+                <RiInformationLine className="mt-0.5 size-3.5 shrink-0" />
+                Liquida via matriz eletrônica (0001) — a cidade é a sede do banco, não uma praça física.
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -326,11 +338,19 @@ function Corpo({ d, onDecidir, onClose, saving }: {
             <div className="p-3.5">
               <Pill className={ROLE.onde} icon={RiMapPin2Line}>Onde liquidou</Pill>
               <div className="mt-2">
-                <LiqLine label="Banco" value={ag.banco ? `${bankShort(ag.nome) || "Banco"} (${ag.banco})` : "—"} />
+                <LiqLine label="Banco" value={ag.banco ? `${bankShort(ag.banco_nome) || "Banco"} (${ag.banco})` : "—"} />
                 <LiqLine label="Agência" value={<span>{ag.agencia}{ag.nome ? ` · ${ag.nome}` : ""}</span>} />
                 <LiqLine label="Endereço" value={ag.endereco ? [ag.endereco, ag.bairro].filter(Boolean).join(" — ") : "—"} />
-                <LiqLine label="Praça" value={cidadeUf(ag.cidade, ag.uf)} red />
+                {/* Praça em vermelho só quando é divergência REAL. Na matriz 0001
+                    (liquidação eletrônica) a cidade é a sede do banco, não praça. */}
+                <LiqLine label="Praça" value={cidadeUf(ag.cidade, ag.uf)} red={!ag.praca_eletronica} />
               </div>
+              {ag.praca_eletronica && (
+                <p className="mt-2 flex items-start gap-1 text-[11px] leading-snug text-gray-500">
+                  <RiInformationLine className="mt-0.5 size-3.5 shrink-0" />
+                  Agência-matriz 0001 — liquidação eletrônica. {cidadeUf(ag.cidade, ag.uf)} é a sede do banco, não a praça do pagamento; por isso não há sinal de praça.
+                </p>
+              )}
             </div>
           </div>
 

@@ -21,6 +21,8 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.risco.services.deteccao_parametros import carregar_parametros
+
 # Contexto do evento: titulo + sacado (com endereco) + operacao + score +
 # agencia pagadora (CNAB -> ref_bacen consolidada) + conta do cedente naquela
 # agencia + endereco do cedente. left(ltrim(...,'0'),8) normaliza a raiz do
@@ -39,7 +41,8 @@ SELECT l.id AS liquidacao_id, l.titulo_id, l.canal, l.evidencia,
        sac.bairro AS sacado_bairro,
        ds.features, ds.regra_dura, ds.regra_dura_motivo,
        be.banco_pagador, be.agencia_pagadora, be.data_credito,
-       ra.nome_agencia, ra.municipio AS ag_municipio, ra.uf AS ag_uf,
+       ra.nome_agencia, ra.nome_if AS ag_banco_nome,
+       ra.municipio AS ag_municipio, ra.uf AS ag_uf,
        ra.endereco AS ag_endereco, ra.bairro AS ag_bairro,
        ra.primeira_competencia, ra.ultima_competencia, ra.ativa,
        cc.tem_conta AS conta_do_cedente,
@@ -225,6 +228,13 @@ async def dossie(
     banco = (ev["banco_pagador"] or "").strip().zfill(3) if ev["banco_pagador"] else None
     agencia = (ev["agencia_pagadora"] or "").strip().zfill(5) if ev["agencia_pagadora"] else None
 
+    # Agencia-matriz (0001) = liquidacao eletronica: a cidade da matriz e a sede
+    # do banco, NAO uma praca fisica. O motor zera cidade_pgto_neq_sacado ai (por
+    # isso nao ha sinal); o modal precisa saber pra nao pintar "praca divergente".
+    parametros = await carregar_parametros(db)
+    ag_matriz = str(parametros.get("agencia_matriz", "00001")).zfill(5)
+    praca_eletronica = agencia is not None and agencia == ag_matriz
+
     # Contas conhecidas do cedente (ficha esquerda).
     cedente_contas = [
         {
@@ -251,6 +261,7 @@ async def dossie(
             "cidade": r["cidade"],
             "uf": r["uf"],
             "bairro": r["bairro"],
+            "matriz": (r["agencia"] or "").zfill(5) == ag_matriz,
             "qtd": int(r["qtd"] or 0),
         }
         for r in (
@@ -261,14 +272,19 @@ async def dossie(
         ).mappings()
     ] if ev["sacado_id"] is not None else []
 
-    # Alerta "fora da praca": todo o historico do sacado cai em cidade(s)
-    # diferente(s) da sua propria praca.
+    # Alerta "fora da praca": todo o historico FISICO do sacado cai em cidade(s)
+    # diferente(s) da sua propria praca. Agencias-matriz (liquidacao eletronica)
+    # NAO contam — a cidade da matriz nao e praca. Se so ha matriz, o sacado
+    # liquida eletronicamente (contexto neutro, nao alerta).
     sac_city = _norm(ev["sacado_cidade"])
-    hist_com_cidade = [h for h in sacado_historico if h["cidade"]]
+    hist_fisico = [h for h in sacado_historico if h["cidade"] and not h["matriz"]]
     sacado_fora_praca = bool(
         sac_city
-        and hist_com_cidade
-        and all(_norm(h["cidade"]) != sac_city for h in hist_com_cidade)
+        and hist_fisico
+        and all(_norm(h["cidade"]) != sac_city for h in hist_fisico)
+    )
+    sacado_liquida_eletronico = bool(
+        sacado_historico and all(h["matriz"] for h in sacado_historico)
     )
     sacado_liquida_em = None
     if sacado_historico and sacado_historico[0]["cidade"]:
@@ -387,6 +403,7 @@ async def dossie(
         "sacado_bairro": ev["sacado_bairro"],
         "sacado_historico": sacado_historico,
         "sacado_fora_praca": sacado_fora_praca,
+        "sacado_liquida_eletronico": sacado_liquida_eletronico,
         "sacado_liquida_em": sacado_liquida_em,
         "canal": ev["canal"],
         "evidencia": ev["evidencia"],
@@ -395,8 +412,10 @@ async def dossie(
         "classificacao": {"nivel": nivel, "label": label},
         "agencia": {
             "banco": ev["banco_pagador"],
+            "banco_nome": ev["ag_banco_nome"],
             "agencia": ev["agencia_pagadora"],
             "nome": ev["nome_agencia"],
+            "praca_eletronica": praca_eletronica,
             "cidade": ev["ag_municipio"],
             "uf": ev["ag_uf"],
             "endereco": ev["ag_endereco"],
