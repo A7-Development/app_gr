@@ -134,66 +134,52 @@ export default function LastroFiscalPage() {
     ]
   }, [resumo])
 
+  // Ordem das colunas definida pelo Ricardo (2026-07-13): quem (cedente/
+  // sacado) -> o que (documento/valor/titulos) -> estado (evento/situacao)
+  // -> quando (data/hora no fim, feed continua ordenado por ela).
   const columns = React.useMemo<ColumnDef<LastroFiscalOcorrencia, unknown>[]>(
     () => [
-      col.accessor("dh_evento", {
-        header: "Quando",
-        size: 118,
-        cell: (info) => <DataHoraCell iso={info.getValue() as string | null} />,
-      }) as ColumnDef<LastroFiscalOcorrencia, unknown>,
-      col.accessor("severidade", {
-        header: "Sinal",
-        size: 132,
+      col.accessor("emitente_nome", {
+        header: "Cedente",
         cell: (info) => {
-          const meta = SEVERIDADE_META[info.getValue() as LastroFiscalSeveridade]
+          const nome = info.getValue() as string | null
           return (
-            <span className={cx(tableTokens.badge, meta.badge)}>
-              {info.row.original.codigo} · {meta.label}
+            <span
+              className={cx(tableTokens.cellStrong, "block max-w-[200px] truncate")}
+              title={nome ?? undefined}
+            >
+              {nome ?? "—"}
             </span>
           )
         },
       }) as ColumnDef<LastroFiscalOcorrencia, unknown>,
-      col.accessor("desc_evento", {
-        header: "Evento",
-        size: 230,
-        cell: (info) => (
-          <div className="min-w-0">
-            <div className={tableTokens.cellStrong}>
-              {(info.getValue() as string | null) ??
-                `Evento ${info.row.original.tp_evento}`}
-            </div>
-            {info.row.original.justificativa ? (
-              <div
-                className={cx(tableTokens.cellSecondary, "truncate")}
-                title={info.row.original.justificativa}
-              >
-                {info.row.original.justificativa}
-              </div>
-            ) : null}
-          </div>
-        ),
-      }) as ColumnDef<LastroFiscalOcorrencia, unknown>,
-      col.accessor("emitente_nome", {
-        header: "Nota / emitente",
-        size: 200,
-        cell: (info) => (
-          <div className="min-w-0">
-            <div className={tableTokens.cellText}>
-              NFe {info.row.original.nfe_numero ?? "—"}
-            </div>
-            <div
-              className={cx(tableTokens.cellSecondary, "truncate")}
-              title={(info.getValue() as string | null) ?? undefined}
+      col.accessor("destinatario_nome", {
+        header: "Sacado",
+        cell: (info) => {
+          const nome = info.getValue() as string | null
+          return (
+            <span
+              className={cx(tableTokens.cellText, "block max-w-[180px] truncate")}
+              title={nome ?? undefined}
             >
-              {(info.getValue() as string | null) ??
-                info.row.original.chave_acesso.slice(0, 20)}
-            </div>
-          </div>
+              {nome ?? "—"}
+            </span>
+          )
+        },
+      }) as ColumnDef<LastroFiscalOcorrencia, unknown>,
+      col.accessor("nfe_numero", {
+        header: "Documento",
+        cell: (info) => (
+          <span
+            className={tableTokens.cellTextMono}
+            title={info.row.original.chave_acesso}
+          >
+            NFe {(info.getValue() as number | null) ?? "—"}
+          </span>
         ),
       }) as ColumnDef<LastroFiscalOcorrencia, unknown>,
       col.accessor("valor_nota", {
-        header: "Valor da nota",
-        size: 104,
+        header: "Valor",
         meta: { align: "right" },
         cell: (info) => {
           const v = info.getValue() as number | null
@@ -205,24 +191,46 @@ export default function LastroFiscalPage() {
         },
       }) as ColumnDef<LastroFiscalOcorrencia, unknown>,
       col.accessor("saldo_devedor_aberto", {
-        header: "Exposição aberta",
-        size: 128,
+        header: () => (
+          <span title="Títulos em aberto lastreados pela nota (qtd · saldo devedor)">
+            Títulos
+          </span>
+        ),
         meta: { align: "right" },
         cell: (info) => (
-          <div>
-            <div className={tableTokens.cellNumber}>
-              {brl(info.getValue() as number)}
-            </div>
-            <div className={tableTokens.cellSecondary}>
-              {info.row.original.qtd_titulos_abertos}{" "}
-              {info.row.original.qtd_titulos_abertos === 1 ? "título" : "títulos"}
-            </div>
-          </div>
+          <span className={tableTokens.cellNumberSecondary}>
+            {info.row.original.qtd_titulos_abertos} ·{" "}
+            {brl(info.getValue() as number)}
+          </span>
         ),
+      }) as ColumnDef<LastroFiscalOcorrencia, unknown>,
+      col.accessor("desc_evento", {
+        header: () => (
+          <span title="Evento SEFAZ que gerou a ocorrência (código FIS + severidade)">
+            Evento
+          </span>
+        ),
+        cell: (info) => {
+          const meta = SEVERIDADE_META[info.row.original.severidade]
+          return (
+            <span
+              className={cx(tableTokens.badge, meta.badge, "whitespace-nowrap")}
+              title={[
+                `${info.row.original.codigo} · ${meta.label}`,
+                info.getValue() as string | null,
+                info.row.original.justificativa,
+              ]
+                .filter(Boolean)
+                .join(" — ")}
+            >
+              {(info.getValue() as string | null) ??
+                `Evento ${info.row.original.tp_evento}`}
+            </span>
+          )
+        },
       }) as ColumnDef<LastroFiscalOcorrencia, unknown>,
       col.accessor("situacao_nota", {
         header: "Situação",
-        size: 140,
         cell: (info) => {
           const s = info.getValue() as string | null
           if (!s) return <span className={tableTokens.cellMuted}>—</span>
@@ -231,6 +239,7 @@ export default function LastroFiscalPage() {
             <span
               className={cx(
                 tableTokens.badge,
+                "whitespace-nowrap",
                 morta ? tableTokens.badgeDanger : tableTokens.badgeNeutral,
               )}
             >
@@ -238,6 +247,11 @@ export default function LastroFiscalPage() {
             </span>
           )
         },
+      }) as ColumnDef<LastroFiscalOcorrencia, unknown>,
+      col.accessor("dh_evento", {
+        header: "Data · Hora",
+        meta: { align: "right" },
+        cell: (info) => <DataHoraCell iso={info.getValue() as string | null} />,
       }) as ColumnDef<LastroFiscalOcorrencia, unknown>,
     ],
     [],
@@ -259,8 +273,6 @@ export default function LastroFiscalPage() {
         loading={ocorrenciasQuery.isLoading && !ocorrenciasQuery.data}
         error={ocorrenciasQuery.error}
         onRetry={() => ocorrenciasQuery.refetch()}
-        tableLayout="fixed"
-        minWidth={900}
         onRowClick={(o) => setSelected(o.evento_id)}
         search={{
           value: search,
