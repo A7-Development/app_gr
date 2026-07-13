@@ -331,17 +331,10 @@ export default function RatingLiquidacaoPage() {
         meta: { align: "right" },
         cell: (info) => <CoberturaCell v={info.getValue() as number} />,
       }) as ColumnDef<RatingLiquidacaoRow, unknown>,
-      // "Valor liquidado" saiu da tabela (feedback Ricardo 2026-07-12) — o
-      // agregado continua no KPI "Valor liquidado sob crítico"; por cedente,
-      // o dado vive no detalhe (/cedente/[documento]).
-      col.display({
-        id: "sinais",
-        header: () => (
-          <span title="Sinais do catálogo que acenderam (código · nº de eventos)">Sinais</span>
-        ),
-        size: 220,
-        cell: ({ row }) => <SinaisCell sinais={row.original.componentes?.sinais} />,
-      }) as ColumnDef<RatingLiquidacaoRow, unknown>,
+      // "Valor liquidado" e "Sinais" sairam da tabela (feedback Ricardo
+      // 2026-07-12: chips de sinais poluiam sem agregar na visao de lista).
+      // Ambos continuam no detalhe: valor no /cedente/[documento], sinais
+      // no drawer de pares (sacado a sacado) e no proprio detalhe.
     ],
     [],
   )
