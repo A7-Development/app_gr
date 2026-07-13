@@ -56,14 +56,14 @@ function GradeBadge({
   critico: boolean
   pendencias?: number
 }) {
-  // A trava por sinal crítico NÃO ganha badge próprio: os códigos críticos
-  // já aparecem em vermelho na coluna Sinais e a grade E já é vermelha —
-  // o badge "crítico" duplicava a informação (feedback Ricardo 2026-07-12).
+  // A trava por sinal crítico NÃO ganha badge próprio: a grade E já é vermelha
+  // e os códigos vivem no detalhe do cedente (a coluna Sinais saiu da lista,
+  // feedback Ricardo 2026-07-12).
   const titulo =
     grade === "NC"
       ? "Sem classificação: base insuficiente (poucos títulos/cobertura) para dar nota"
       : critico
-        ? "Nota travada em E por sinal crítico de auto-liquidação (veja os códigos em vermelho em Sinais)"
+        ? "Nota travada em E por sinal crítico de auto-liquidação — abra o cedente para ver os códigos"
         : "Grade do score 0-100 (letra é apresentação; o primitivo é o score)"
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
@@ -82,9 +82,9 @@ function GradeBadge({
             tableTokens.badgeWarning,
             "hover:underline",
           )}
-          title={`${pendencias} liquidação(ões) no caso ambíguo (agência do cedente, sacado da mesma cidade) aguardando decisão humana — a nota fica travada até liberar (OK) ou confirmar (FRAUDE). Clique para abrir a Curadoria.`}
+          title={`Nota E provisória: ${pendencias} liquidação(ões) ambígua(s) — pagas na agência do próprio cedente, na mesma cidade do sacado — segurando a nota até um humano decidir OK (libera) ou FRAUDE (confirma). Clique para abrir a Curadoria.`}
         >
-          aguarda curadoria ({pendencias})
+          revisar ({pendencias})
         </Link>
       )}
     </span>
@@ -292,7 +292,7 @@ export default function RatingLiquidacaoPage() {
       col.display({
         id: "rating",
         header: () => (
-          <span title="Grade do score (letra é apresentação; o primitivo é o score 0-100). NC = base insuficiente para grade boa. 'Aguarda curadoria' = liquidação ambígua travando a nota até decisão humana.">
+          <span title="Grade do score (letra é apresentação; o primitivo é o score 0-100). NC = base insuficiente para grade boa. Selo 'revisar' = liquidação ambígua travando a nota até decisão humana na Curadoria.">
             Rating
           </span>
         ),
@@ -344,7 +344,7 @@ export default function RatingLiquidacaoPage() {
       <PageHeader
         title="Rating de liquidação"
         subtitle="Risco · Liquidações"
-        info="Nota de 0 a 100 que responde: quando os títulos desse cedente são pagos, o dinheiro vem mesmo do sacado? Sinal crítico (pagamento na conta/praça do próprio cedente) trava a nota em E. Nota boa exige volume mínimo de títulos — senão NC. Recompras e baixas manuais não derrubam a nota: aparecem no % via boleto (quanto menor, menos dá pra conferir). Clique num cedente para ver sacado a sacado."
+        info="Nota de 0 a 100 que responde: quando os títulos desse cedente são pagos, o dinheiro vem mesmo do sacado? Sinal crítico (pagamento na conta/praça do próprio cedente) trava a nota em E. Nota boa exige volume mínimo de títulos — senão NC. Recompras e baixas manuais não derrubam a nota: aparecem no % via boleto (quanto menor, menos dá pra conferir). O selo 'revisar (N)' marca uma nota E provisória: N liquidações ambíguas seguradas até validação humana na Curadoria. Clique num cedente para ver os sinais, o filme mês a mês e sacado a sacado."
       />
 
       <KpiBand items={kpiItems} loading={query.isLoading && !query.data} />
