@@ -15,6 +15,7 @@ import {
   getExpandedRowModel,
   flexRender,
   type ColumnDef,
+  type FilterFn,
   type SortingState,
   type RowSelectionState,
   type VisibilityState,
@@ -45,6 +46,13 @@ export interface DataTableProps<TData> {
   renderBulkActions?:  (selectedRows: TData[], clearSelection: () => void) => React.ReactNode
   renderEmpty?:        (hasFilters: boolean) => React.ReactNode
   globalFilter?:       string
+  /**
+   * Predicado do filtro global. Default: "includesString" do TanStack (testa
+   * so os valores das colunas com accessor). Passe uma FilterFn custom quando
+   * a busca precisar alcancar campos do objeto que nao viram coluna (ex.:
+   * DataTableShell busca no row.original inteiro, strings E numeros).
+   */
+  globalFilterFn?:     FilterFn<TData>
   renderFooter?:       (data: TData[]) => React.ReactNode
   className?:          string
   /**
@@ -341,6 +349,7 @@ export function DataTable<TData>({
   renderBulkActions,
   renderEmpty,
   globalFilter      = "",
+  globalFilterFn,
   renderFooter,
   className,
   tableLayout       = "auto",
@@ -394,7 +403,11 @@ export function DataTable<TData>({
     enableRowSelection:       selectable,
     enableExpanding,
     enableMultiSort:          true,
-    globalFilterFn:           "includesString",
+    globalFilterFn:           globalFilterFn ?? "includesString",
+    // Fn custom testa o row.original inteiro e ignora a coluna — toda coluna
+    // vira elegivel (o default do TanStack decide pela 1a linha, que pode ser
+    // null e excluiria a coluna da busca).
+    getColumnCanGlobalFilter: globalFilterFn ? () => true : undefined,
   })
 
   // Resolve qual coluna recebe o chevron (default: primeira coluna).

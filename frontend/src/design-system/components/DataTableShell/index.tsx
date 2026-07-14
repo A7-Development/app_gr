@@ -175,6 +175,24 @@ export type DataTableShellProps<T> = {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// Busca global — predicado unico (contador + tabela)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Testa `term` (ja lowercase/trim) contra TODOS os campos string e numericos
+ * do objeto da linha — inclusive os que nao viram coluna (chave de acesso,
+ * justificativa, documento). Numeros sao stringificados: buscar "43181"
+ * encontra `nfe_numero: 43181`.
+ */
+function rowMatchesSearch(row: unknown, term: string): boolean {
+  return Object.values(row as Record<string, unknown>).some((v) => {
+    if (typeof v === "string") return v.toLowerCase().includes(term)
+    if (typeof v === "number") return String(v).includes(term)
+    return false
+  })
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Component
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -237,12 +255,20 @@ export function DataTableShell<T>({
   const visibleCount = React.useMemo(() => {
     const term = (search?.value ?? "").trim().toLowerCase()
     if (!term) return statusFiltered.length
-    return statusFiltered.filter((row) =>
-      Object.values(row as Record<string, unknown>).some(
-        (v) => typeof v === "string" && v.toLowerCase().includes(term),
-      ),
-    ).length
+    return statusFiltered.filter((row) => rowMatchesSearch(row, term)).length
   }, [statusFiltered, search?.value])
+
+  // Mesmo predicado do contador, no formato FilterFn do TanStack — a tabela
+  // e o "X de Y" enxergam o MESMO universo (antes divergiam: a tabela testava
+  // so colunas com accessor, o contador so strings do objeto).
+  const searchFilterFn = React.useCallback(
+    (row: { original: T }, _columnId: string, filterValue: unknown) => {
+      const term = String(filterValue ?? "").trim().toLowerCase()
+      if (!term) return true
+      return rowMatchesSearch(row.original, term)
+    },
+    [],
+  )
 
   const segmentOptionsWithCounts = React.useMemo(() => {
     if (!segments) return null
@@ -405,6 +431,7 @@ export function DataTableShell<T>({
           showDensityToggle={false}
           showExport={false}
           globalFilter={search?.value ?? ""}
+          globalFilterFn={searchFilterFn}
           onRowClick={onRowClick}
           enableExpanding={enableExpanding}
           getSubRows={getSubRows}

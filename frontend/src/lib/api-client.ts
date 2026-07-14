@@ -3862,13 +3862,45 @@ export type LastroFiscalOcorrenciasPage = {
 
 export const riscoLastroFiscal = {
   resumo: () => apiClient.get<LastroFiscalResumo>("/risco/lastro-fiscal/resumo"),
-  ocorrencias: (params?: { desde?: string; pageSize?: number }) => {
-    const qs = new URLSearchParams()
-    if (params?.desde) qs.set("desde", params.desde)
-    qs.set("page_size", String(params?.pageSize ?? 500))
-    return apiClient.get<LastroFiscalOcorrenciasPage>(
-      `/risco/lastro-fiscal/ocorrencias?${qs.toString()}`,
-    )
+  /**
+   * Busca TODAS as paginas do feed ate cobrir o `total` do backend (§14.6 —
+   * a busca client-side da tela varre o dataset inteiro; parar na pagina 1
+   * cortaria eventos silenciosamente quando o feed passar de `pageSize`).
+   * Dedupe por evento_id: evento novo chegando entre paginas desloca o
+   * offset e pode repetir linha na fronteira.
+   */
+  ocorrencias: async (params?: {
+    desde?: string
+    pageSize?: number
+  }): Promise<LastroFiscalOcorrenciasPage> => {
+    const pageSize = params?.pageSize ?? 500
+    const fetchPage = (page: number) => {
+      const qs = new URLSearchParams()
+      if (params?.desde) qs.set("desde", params.desde)
+      qs.set("page_size", String(pageSize))
+      qs.set("page", String(page))
+      return apiClient.get<LastroFiscalOcorrenciasPage>(
+        `/risco/lastro-fiscal/ocorrencias?${qs.toString()}`,
+      )
+    }
+
+    const primeira = await fetchPage(1)
+    const vistos = new Set(primeira.ocorrencias.map((o) => o.evento_id))
+    const todas = [...primeira.ocorrencias]
+
+    const totalPaginas = Math.ceil(primeira.total / primeira.page_size)
+    for (let page = 2; page <= totalPaginas; page++) {
+      const { ocorrencias } = await fetchPage(page)
+      if (ocorrencias.length === 0) break
+      for (const o of ocorrencias) {
+        if (!vistos.has(o.evento_id)) {
+          vistos.add(o.evento_id)
+          todas.push(o)
+        }
+      }
+    }
+
+    return { ...primeira, page_size: pageSize, ocorrencias: todas }
   },
 }
 
