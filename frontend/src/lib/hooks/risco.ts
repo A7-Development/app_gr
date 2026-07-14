@@ -212,3 +212,12 @@ export function useLastroFiscalOcorrencias(desde?: string) {
     placeholderData: (prev) => prev,
   })
 }
+
+export function useNfeDocumento360(chave: string | null) {
+  return useQuery({
+    queryKey: ["risco", "lastro-fiscal", "documento", chave],
+    queryFn: () => riscoLastroFiscal.documento(chave as string),
+    enabled: !!chave && chave.length === 44,
+    staleTime: 60 * 1000,
+  })
+}

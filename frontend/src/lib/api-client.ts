@@ -3860,6 +3860,102 @@ export type LastroFiscalOcorrenciasPage = {
   ocorrencias: LastroFiscalOcorrencia[]
 }
 
+export type NfeDoc360Nota = {
+  chave_acesso: string
+  numero: number
+  serie: number | null
+  modelo: string | null
+  natureza_operacao: string | null
+  data_emissao: string | null
+  tipo_operacao: string | null
+  finalidade: string | null
+  emitente_documento: string
+  emitente_nome: string | null
+  emitente_uf: string | null
+  emitente_municipio: string | null
+  destinatario_documento: string | null
+  destinatario_nome: string | null
+  destinatario_uf: string | null
+  destinatario_municipio: string | null
+  valor_produtos: number | null
+  valor_frete: number | null
+  valor_desconto: number | null
+  valor_total: number | null
+  valor_tributos: number | null
+  modalidade_frete: string | null
+  meio_pagamento: string | null
+  numero_fatura: string | null
+  valor_fatura_liquido: number | null
+  transportadora_documento: string | null
+  transportadora_nome: string | null
+  veiculo_placa: string | null
+  veiculo_uf: string | null
+  cstat: number | null
+  autorizada: boolean
+  protocolo: string | null
+  data_autorizacao: string | null
+}
+
+export type NfeDoc360Duplicata = {
+  numero: string
+  vencimento: string | null
+  valor: number | null
+}
+
+export type NfeDoc360Item = {
+  n_item: number
+  codigo: string | null
+  descricao: string | null
+  ncm: string | null
+  cfop: string | null
+  ean: string | null
+  quantidade: number | null
+  unidade: string | null
+  valor_unitario: number | null
+  valor_total: number | null
+}
+
+export type NfeDoc360SituacaoSefaz = {
+  situacao: string | null
+  cancelada: boolean | null
+  dh_cancelamento: string | null
+  manifestacao: string | null
+  dh_manifestacao: string | null
+  qtd_eventos: number | null
+  dh_ultimo_evento: string | null
+  consultado_em: string | null
+  motivo: string | null
+}
+
+export type NfeDoc360Evento = {
+  evento_id: string
+  tp_evento: number
+  desc_evento: string | null
+  codigo: string
+  severidade: LastroFiscalSeveridade
+  dh_evento: string | null
+  autor_documento: string | null
+  justificativa: string | null
+}
+
+export type NfeDoc360Titulo = {
+  titulo_id: number
+  numero: string | null
+  valor: number | null
+  saldo_devedor: number | null
+  em_aberto: boolean
+  vencimento: string | null
+}
+
+export type NfeDocumento360 = {
+  nota: NfeDoc360Nota
+  duplicatas: NfeDoc360Duplicata[]
+  itens: NfeDoc360Item[]
+  situacao_sefaz: NfeDoc360SituacaoSefaz | null
+  eventos: NfeDoc360Evento[]
+  titulos: NfeDoc360Titulo[]
+}
+
 export const riscoLastroFiscal = {
   resumo: () => apiClient.get<LastroFiscalResumo>("/risco/lastro-fiscal/resumo"),
   /**
@@ -3902,6 +3998,10 @@ export const riscoLastroFiscal = {
 
     return { ...primeira, page_size: pageSize, ocorrencias: todas }
   },
+  documento: (chave: string) =>
+    apiClient.get<NfeDocumento360>(
+      `/risco/lastro-fiscal/documento/${encodeURIComponent(chave)}`,
+    ),
 }
 
 export type RatingLiquidacaoRow = {

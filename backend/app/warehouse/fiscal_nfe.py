@@ -134,6 +134,12 @@ class Nfe(Auditable, Base):
     numero_fatura: Mapped[str | None] = mapped_column(String(60), nullable=True)
     valor_fatura_liquido: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
 
+    # Transporte (<transp>): transportadora + veiculo (1:1 com a nota).
+    transportadora_documento: Mapped[str | None] = mapped_column(String(14), nullable=True)
+    transportadora_nome: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    veiculo_placa: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    veiculo_uf: Mapped[str | None] = mapped_column(String(2), nullable=True)
+
     # Autorizacao SEFAZ (protNFe): nota nao autorizada NAO e lastro valido.
     cstat: Mapped[int | None] = mapped_column(Integer, nullable=True)
     autorizada: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -168,3 +174,39 @@ class NfeDuplicata(Base):
     numero: Mapped[str] = mapped_column(String(60), nullable=False)
     vencimento: Mapped[date | None] = mapped_column(Date, nullable=True)
     valor: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
+
+
+class NfeItem(Base):
+    """Item/produto da NF-e (<det><prod>) -- o que foi vendido, linha a linha."""
+
+    __tablename__ = "wh_nfe_item"
+    __table_args__ = (
+        UniqueConstraint("nfe_id", "n_item", name="uq_wh_nfe_item_nfe_n"),
+        Index("ix_wh_nfe_item_tenant_nfe", "tenant_id", "nfe_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    nfe_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("wh_nfe.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # nItem: posicao do item na nota (1-based).
+    n_item: Mapped[int] = mapped_column(Integer, nullable=False)
+    codigo: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    descricao: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    ncm: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    cfop: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    ean: Mapped[str | None] = mapped_column(String(14), nullable=True)
+    quantidade: Mapped[Decimal | None] = mapped_column(Numeric(15, 4), nullable=True)
+    unidade: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    # vUnCom tem ate 10 casas decimais no leiaute NF-e.
+    valor_unitario: Mapped[Decimal | None] = mapped_column(Numeric(21, 10), nullable=True)
+    valor_total: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
