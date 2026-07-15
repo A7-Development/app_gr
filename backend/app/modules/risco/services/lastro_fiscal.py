@@ -494,7 +494,12 @@ async def documento_360(
                 "valor": _f(t.valor),
                 "saldo_devedor": _f(t.saldo_devedor),
                 "em_aberto": t.situacao == SITUACAO_TITULO_EM_ABERTO,
-                "vencimento": t.data_de_vencimento,
+                # wh_titulo.data_de_vencimento e timestamptz (meia-noite -03 =
+                # 03:00 UTC); o schema expoe date — sem .date() o Pydantic
+                # rejeita (date_from_datetime_inexact) e o endpoint da 500.
+                "vencimento": (
+                    t.data_de_vencimento.date() if t.data_de_vencimento else None
+                ),
             }
             for t in titulos
         ],

@@ -6,7 +6,7 @@ RBAC (403 sem permissao de risco) e isolamento §10 (B nao ve dado de A).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from itertools import count
 from uuid import uuid4
 
@@ -18,6 +18,7 @@ from app.core.enums import SourceType
 from app.modules.risco.services.lastro_fiscal import classificar_evento
 from app.shared.identity.tenant import Tenant
 from app.shared.identity.user import User
+from app.warehouse.fiscal_nfe import Nfe, NfeRawDocumento
 from app.warehouse.nfe_estado import NfeEvento, NfeSituacao
 from app.warehouse.operacao import Operacao
 from app.warehouse.serpro_raw_nfe import SerproRawNfe
@@ -242,6 +243,53 @@ async def test_403_sem_permissao_de_risco(
     for path in ("/resumo", "/ocorrencias"):
         r = await client.get(f"{API}{path}", headers=_auth(token))
         assert r.status_code == 403, f"{path}: {r.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_documento_360_titulo_vencimento_serializa(
+    client: AsyncClient, tenant_a: Tenant, user_in_tenant_a: User
+) -> None:
+    """Regressao: wh_titulo.data_de_vencimento e timestamptz com hora != 0
+    (meia-noite -03 = 03:00 UTC); o Documento360Out expoe `date`. Sem o
+    .date() no service o Pydantic rejeitava (date_from_datetime_inexact)
+    e o endpoint respondia 500 em prod."""
+    chave = await _seed_nota_com_evento(tenant_a.id, situacao_titulo=0)
+    async with AsyncSessionLocal() as db:
+        raw = NfeRawDocumento(
+            tenant_id=tenant_a.id,
+            chave_acesso=chave,
+            documento={"nfeProc": {}},
+            nome_arquivo_xml=f"{chave}.xml",
+            payload_sha256="0" * 64,
+            fetched_by_version="test",
+        )
+        db.add(raw)
+        await db.flush()
+        db.add(
+            Nfe(
+                tenant_id=tenant_a.id,
+                raw_documento_id=raw.id,
+                chave_acesso=chave,
+                numero=123,
+                emitente_documento="12345678000199",
+                source_type=SourceType.DOCUMENT_NFE,
+                source_id=chave,
+                ingested_by_version="test",
+            )
+        )
+        await db.commit()
+
+    token = await _login(client, user_in_tenant_a.email)
+    r = await client.get(f"{API}/documento/{chave}", headers=_auth(token))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["nota"]["numero"] == 123
+    assert len(body["titulos"]) == 1
+    venc = date.fromisoformat(body["titulos"][0]["vencimento"])
+    # seed poe vencimento em agora+20d; tolera cruzar meia-noite UTC no teste
+    assert 19 <= (venc - datetime.now(UTC).date()).days <= 21
+    # timeline de eventos presente (historia do documento)
+    assert len(body["eventos"]) == 1
 
 
 @pytest.mark.asyncio
