@@ -101,6 +101,20 @@ class DuplicataParsed:
 
 
 @dataclass
+class ItemParsed:
+    n_item: int
+    codigo: str | None
+    descricao: str | None
+    ncm: str | None
+    cfop: str | None
+    ean: str | None
+    quantidade: Decimal | None
+    unidade: str | None
+    valor_unitario: Decimal | None
+    valor_total: Decimal | None
+
+
+@dataclass
 class NfeParsed:
     chave_acesso: str
     schema_versao: str | None
@@ -134,6 +148,11 @@ class NfeParsed:
     protocolo: str | None
     data_autorizacao: datetime | None
     duplicatas: list[DuplicataParsed] = field(default_factory=list)
+    transportadora_documento: str | None = None
+    transportadora_nome: str | None = None
+    veiculo_placa: str | None = None
+    veiculo_uf: str | None = None
+    itens: list[ItemParsed] = field(default_factory=list)
 
 
 def parse_nfe(doc: dict) -> NfeParsed | None:
@@ -180,6 +199,36 @@ def parse_nfe(doc: dict) -> NfeParsed | None:
     det_pag = _as_list(_get(inf, "pag", "detPag"))
     meio_pag = _text(det_pag[0], "tPag") if det_pag and isinstance(det_pag[0], dict) else None
 
+    # Transporte (<transp>): transportadora + veiculo.
+    transp = _get(inf, "transp") if isinstance(_get(inf, "transp"), dict) else {}
+    transporta = _get(transp, "transporta")
+    transporta = transporta if isinstance(transporta, dict) else {}
+    transp_doc, _ = _parte_documento(transporta)
+    veic = _get(transp, "veicTransp")
+    veic = veic if isinstance(veic, dict) else {}
+
+    # Itens (<det>): objeto quando 1 item, lista quando varios (_as_list resolve).
+    itens: list[ItemParsed] = []
+    for det in _as_list(_get(inf, "det")):
+        if not isinstance(det, dict):
+            continue
+        prod = _get(det, "prod")
+        prod = prod if isinstance(prod, dict) else {}
+        itens.append(
+            ItemParsed(
+                n_item=_int(_text(det, "@nItem")) or (len(itens) + 1),
+                codigo=_text(prod, "cProd"),
+                descricao=_text(prod, "xProd"),
+                ncm=_text(prod, "NCM"),
+                cfop=_text(prod, "CFOP"),
+                ean=_text(prod, "cEAN"),
+                quantidade=_decimal(_text(prod, "qCom")),
+                unidade=_text(prod, "uCom"),
+                valor_unitario=_decimal(_text(prod, "vUnCom")),
+                valor_total=_decimal(_text(prod, "vProd")),
+            )
+        )
+
     cstat = _int(_text(prot, "cStat")) if isinstance(prot, dict) else None
     return NfeParsed(
         chave_acesso=chave,
@@ -214,6 +263,11 @@ def parse_nfe(doc: dict) -> NfeParsed | None:
         protocolo=_text(prot, "nProt") if isinstance(prot, dict) else None,
         data_autorizacao=_dt(_text(prot, "dhRecbto")) if isinstance(prot, dict) else None,
         duplicatas=dups,
+        transportadora_documento=transp_doc,
+        transportadora_nome=_text(transporta, "xNome"),
+        veiculo_placa=_text(veic, "placa"),
+        veiculo_uf=_text(veic, "UF"),
+        itens=itens,
     )
 
 

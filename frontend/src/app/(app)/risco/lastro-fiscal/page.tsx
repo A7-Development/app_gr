@@ -15,6 +15,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { RiFileShield2Line } from "@remixicon/react"
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table"
@@ -170,12 +171,17 @@ export default function LastroFiscalPage() {
       col.accessor("nfe_numero", {
         header: "Documento",
         cell: (info) => (
-          <span
-            className={tableTokens.cellTextMono}
-            title={info.row.original.chave_acesso}
+          <Link
+            href={`/risco/lastro-fiscal/${info.row.original.chave_acesso}`}
+            onClick={(e) => e.stopPropagation()}
+            className={cx(
+              tableTokens.cellTextMono,
+              "hover:text-blue-600 hover:underline dark:hover:text-blue-400",
+            )}
+            title={`Abrir ficha do documento · ${info.row.original.chave_acesso}`}
           >
             NFe {(info.getValue() as number | null) ?? "—"}
-          </span>
+          </Link>
         ),
       }) as ColumnDef<LastroFiscalOcorrencia, unknown>,
       col.accessor("valor_nota", {

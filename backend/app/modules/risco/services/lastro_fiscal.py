@@ -34,7 +34,7 @@ from uuid import UUID
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.warehouse.fiscal_nfe import Nfe
+from app.warehouse.fiscal_nfe import Nfe, NfeDuplicata, NfeItem
 from app.warehouse.nfe_estado import NfeEvento, NfeSituacao
 from app.warehouse.operacao import Operacao
 from app.warehouse.titulo import Titulo
@@ -308,4 +308,194 @@ async def resumo(db: AsyncSession, tenant_id: UUID) -> dict[str, Any]:
         "pct_confirmada": (
             round(100.0 * confirmadas / notas_vigiadas, 1) if notas_vigiadas else 0.0
         ),
+    }
+
+
+def _f(v: Any) -> float | None:
+    return float(v) if v is not None else None
+
+
+async def documento_360(
+    db: AsyncSession, tenant_id: UUID, chave: str
+) -> dict[str, Any] | None:
+    """Visao 360 de um documento (NF-e) -- todas as secoes, so silver.
+
+    None quando a nota nao existe no silver (XML ainda nao ingerido). Reune,
+    por chave de acesso: identificacao + partes + valores + transporte
+    (wh_nfe), duplicatas, itens/produtos (wh_nfe_item), situacao viva SEFAZ
+    (wh_nfe_situacao), timeline de eventos (wh_nfe_evento) e titulos
+    lastreados da carteira (wh_titulo_fiscal -> wh_titulo).
+    """
+    nfe = (
+        await db.execute(
+            sa.select(Nfe).where(
+                Nfe.tenant_id == tenant_id, Nfe.chave_acesso == chave
+            )
+        )
+    ).scalar_one_or_none()
+    if nfe is None:
+        return None
+
+    dups = (
+        (
+            await db.execute(
+                sa.select(NfeDuplicata)
+                .where(NfeDuplicata.nfe_id == nfe.id)
+                .order_by(NfeDuplicata.vencimento.nulls_last(), NfeDuplicata.numero)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    itens = (
+        (
+            await db.execute(
+                sa.select(NfeItem)
+                .where(NfeItem.nfe_id == nfe.id)
+                .order_by(NfeItem.n_item)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    sit = (
+        await db.execute(
+            sa.select(NfeSituacao).where(
+                NfeSituacao.tenant_id == tenant_id,
+                NfeSituacao.chave_acesso == chave,
+            )
+        )
+    ).scalar_one_or_none()
+    eventos = (
+        (
+            await db.execute(
+                sa.select(NfeEvento)
+                .where(
+                    NfeEvento.tenant_id == tenant_id,
+                    NfeEvento.chave_acesso == chave,
+                )
+                .order_by(NfeEvento.dh_evento.nulls_last())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    titulos = (
+        await db.execute(
+            sa.select(
+                Titulo.titulo_id,
+                Titulo.numero,
+                Titulo.valor,
+                Titulo.saldo_devedor,
+                Titulo.situacao,
+                Titulo.data_de_vencimento,
+            )
+            .select_from(WhTituloFiscal)
+            .join(
+                Titulo,
+                sa.and_(
+                    Titulo.tenant_id == WhTituloFiscal.tenant_id,
+                    Titulo.titulo_id == WhTituloFiscal.titulo_id,
+                ),
+            )
+            .where(
+                WhTituloFiscal.tenant_id == tenant_id,
+                WhTituloFiscal.chave_acesso == chave,
+            )
+            .order_by(Titulo.data_de_vencimento.nulls_last())
+        )
+    ).all()
+
+    return {
+        "nota": {
+            "chave_acesso": nfe.chave_acesso,
+            "numero": nfe.numero,
+            "serie": nfe.serie,
+            "modelo": nfe.modelo,
+            "natureza_operacao": nfe.natureza_operacao,
+            "data_emissao": nfe.data_emissao,
+            "tipo_operacao": nfe.tipo_operacao,
+            "finalidade": nfe.finalidade,
+            "emitente_documento": nfe.emitente_documento,
+            "emitente_nome": nfe.emitente_nome,
+            "emitente_uf": nfe.emitente_uf,
+            "emitente_municipio": nfe.emitente_municipio,
+            "destinatario_documento": nfe.destinatario_documento,
+            "destinatario_nome": nfe.destinatario_nome,
+            "destinatario_uf": nfe.destinatario_uf,
+            "destinatario_municipio": nfe.destinatario_municipio,
+            "valor_produtos": _f(nfe.valor_produtos),
+            "valor_frete": _f(nfe.valor_frete),
+            "valor_desconto": _f(nfe.valor_desconto),
+            "valor_total": _f(nfe.valor_total),
+            "valor_tributos": _f(nfe.valor_tributos),
+            "modalidade_frete": nfe.modalidade_frete,
+            "meio_pagamento": nfe.meio_pagamento,
+            "numero_fatura": nfe.numero_fatura,
+            "valor_fatura_liquido": _f(nfe.valor_fatura_liquido),
+            "transportadora_documento": nfe.transportadora_documento,
+            "transportadora_nome": nfe.transportadora_nome,
+            "veiculo_placa": nfe.veiculo_placa,
+            "veiculo_uf": nfe.veiculo_uf,
+            "cstat": nfe.cstat,
+            "autorizada": nfe.autorizada,
+            "protocolo": nfe.protocolo,
+            "data_autorizacao": nfe.data_autorizacao,
+        },
+        "duplicatas": [
+            {"numero": d.numero, "vencimento": d.vencimento, "valor": _f(d.valor)}
+            for d in dups
+        ],
+        "itens": [
+            {
+                "n_item": it.n_item,
+                "codigo": it.codigo,
+                "descricao": it.descricao,
+                "ncm": it.ncm,
+                "cfop": it.cfop,
+                "ean": it.ean,
+                "quantidade": _f(it.quantidade),
+                "unidade": it.unidade,
+                "valor_unitario": _f(it.valor_unitario),
+                "valor_total": _f(it.valor_total),
+            }
+            for it in itens
+        ],
+        "situacao_sefaz": None
+        if sit is None
+        else {
+            "situacao": sit.situacao,
+            "cancelada": sit.cancelada,
+            "dh_cancelamento": sit.dh_cancelamento,
+            "manifestacao": sit.manifestacao,
+            "dh_manifestacao": sit.dh_manifestacao,
+            "qtd_eventos": sit.qtd_eventos,
+            "dh_ultimo_evento": sit.dh_ultimo_evento,
+            "consultado_em": sit.consultado_em,
+            "motivo": sit.prot_x_motivo,
+        },
+        "eventos": [
+            {
+                "evento_id": e.id,
+                "tp_evento": e.tp_evento,
+                "desc_evento": e.desc_evento,
+                "codigo": classificar_evento(e.tp_evento, e.ret_c_stat)[0],
+                "severidade": classificar_evento(e.tp_evento, e.ret_c_stat)[1],
+                "dh_evento": e.dh_evento,
+                "autor_documento": e.autor_cnpj or e.autor_cpf,
+                "justificativa": e.x_just or e.x_correcao,
+            }
+            for e in eventos
+        ],
+        "titulos": [
+            {
+                "titulo_id": t.titulo_id,
+                "numero": t.numero,
+                "valor": _f(t.valor),
+                "saldo_devedor": _f(t.saldo_devedor),
+                "em_aberto": t.situacao == SITUACAO_TITULO_EM_ABERTO,
+                "vencimento": t.data_de_vencimento,
+            }
+            for t in titulos
+        ],
     }

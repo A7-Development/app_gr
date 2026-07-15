@@ -42,7 +42,7 @@ from app.modules.integracoes.models.file_landing import FileLanding
 from app.shared.audit_log.decision_log import DecisionLog, DecisionType
 from app.shared.storage import ObjectNotFoundError, get_storage_backend
 from app.warehouse.fiscal_cte import Cte, CteNfe, CteRawDocumento
-from app.warehouse.fiscal_nfe import Nfe, NfeDuplicata, NfeRawDocumento
+from app.warehouse.fiscal_nfe import Nfe, NfeDuplicata, NfeItem, NfeRawDocumento
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +193,10 @@ async def _ingest_nfe(
         meio_pagamento=parsed.meio_pagamento,
         numero_fatura=parsed.numero_fatura,
         valor_fatura_liquido=parsed.valor_fatura_liquido,
+        transportadora_documento=parsed.transportadora_documento,
+        transportadora_nome=parsed.transportadora_nome,
+        veiculo_placa=parsed.veiculo_placa,
+        veiculo_uf=parsed.veiculo_uf,
         cstat=parsed.cstat,
         autorizada=parsed.autorizada,
         protocolo=parsed.protocolo,
@@ -213,6 +217,23 @@ async def _ingest_nfe(
                 numero=dup.numero,
                 vencimento=dup.vencimento,
                 valor=dup.valor,
+            )
+        )
+    for item in parsed.itens:
+        db.add(
+            NfeItem(
+                tenant_id=landing.tenant_id,
+                nfe_id=nfe.id,
+                n_item=item.n_item,
+                codigo=item.codigo,
+                descricao=item.descricao,
+                ncm=item.ncm,
+                cfop=item.cfop,
+                ean=item.ean,
+                quantidade=item.quantidade,
+                unidade=item.unidade,
+                valor_unitario=item.valor_unitario,
+                valor_total=item.valor_total,
             )
         )
     result.nfe_novas += 1
