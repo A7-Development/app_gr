@@ -15,6 +15,9 @@ import logging
 
 import sqlalchemy as sa
 
+# Side-effect import: registra tenants/users no metadata — sem isso o FK
+# wh_nfe.tenant_id -> tenants.id nao resolve (NoReferencedTableError).
+import app.shared.identity  # noqa: F401
 from app.core.database import AsyncSessionLocal
 from app.modules.integracoes.adapters.fiscal.parsers import parse_nfe
 from app.warehouse.fiscal_nfe import Nfe, NfeItem, NfeRawDocumento
