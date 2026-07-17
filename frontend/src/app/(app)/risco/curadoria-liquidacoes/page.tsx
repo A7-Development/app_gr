@@ -422,6 +422,10 @@ export default function CuradoriaLiquidacoesPage() {
     [contratosQuery.data],
   )
 
+  // Só a linha em curso gira (não a tabela inteira): react-query mantém
+  // `variables` durante o pending, então derivamos o alvo sem estado extra.
+  const linhaEmCurso = tagMut.isPending ? tagMut.variables?.liquidacaoId : undefined
+
   const columns = React.useMemo<ColumnDef<LiquidacaoCuradoriaRow, unknown>[]>(
     () => [
       // ORDEM POR INTENÇÃO DE LEITURA (handoff Liquidações 2026-07-09):
@@ -553,7 +557,7 @@ export default function CuradoriaLiquidacoesPage() {
               className="size-7 p-0 text-gray-300 hover:text-red-600 dark:text-gray-600 dark:hover:text-red-400"
               aria-label="Marcar como fraude"
               title="Marcar como fraude"
-              isLoading={tagMut.isPending}
+              isLoading={linhaEmCurso === row.original.liquidacao_id}
               onClick={(e) => {
                 e.stopPropagation()
                 void marcar(row.original, "fraude")
@@ -566,7 +570,7 @@ export default function CuradoriaLiquidacoesPage() {
               className="size-7 p-0 text-gray-300 hover:text-emerald-600 dark:text-gray-600 dark:hover:text-emerald-400"
               aria-label="Marcar como OK"
               title="Marcar como OK"
-              isLoading={tagMut.isPending}
+              isLoading={linhaEmCurso === row.original.liquidacao_id}
               onClick={(e) => {
                 e.stopPropagation()
                 void marcar(row.original, "ok")
@@ -581,7 +585,7 @@ export default function CuradoriaLiquidacoesPage() {
                 className="size-7 p-0 text-gray-300 hover:text-gray-900 dark:text-gray-600 dark:hover:text-gray-100"
                 aria-label="Remover marcação"
                 title="Remover marcação (voltar a neutro)"
-                isLoading={tagMut.isPending}
+                isLoading={linhaEmCurso === row.original.liquidacao_id}
                 onClick={(e) => {
                   e.stopPropagation()
                   void marcar(row.original, "neutro")
@@ -594,7 +598,7 @@ export default function CuradoriaLiquidacoesPage() {
         ),
       }) as ColumnDef<LiquidacaoCuradoriaRow, unknown>,
     ],
-    [marcar, tagMut.isPending],
+    [marcar, linhaEmCurso],
   )
 
   return (

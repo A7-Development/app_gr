@@ -55,6 +55,7 @@ import {
   riscoCedentes,
   riscoCuradoriaLiquidacoes,
   type CuradoriaLiquidacoesFilters,
+  type LiquidacaoCuradoriaPage,
 } from "@/lib/api-client"
 
 const KEY_CURADORIA = ["risco", "curadoria-liquidacoes"] as const
@@ -81,7 +82,35 @@ export function useTagLiquidacao() {
       tag: "fraude" | "ok" | "neutro"
       nota?: string | null
     }) => riscoCuradoriaLiquidacoes.tag(liquidacaoId, tag, nota),
-    onSuccess: () => {
+    // Optimistic: flipa o badge da linha NA HORA em todas as páginas em cache,
+    // sem esperar o refetch da lista (query pesada de ~93k eventos). Sem isto,
+    // o `placeholderData: prev` mantém a marcação "—" por segundos até a query
+    // voltar — dá a impressão de que a marcação não pegou (§7.3: desfecho
+    // explícito e imediato). A reconciliação com o servidor (autor/data/sinais)
+    // acontece em background no onSettled.
+    onMutate: async ({ liquidacaoId, tag }) => {
+      await qc.cancelQueries({ queryKey: KEY_CURADORIA })
+      const snapshots = qc.getQueriesData<LiquidacaoCuradoriaPage>({
+        queryKey: KEY_CURADORIA,
+      })
+      const novaTag: "FRAUDE" | "OK" | null =
+        tag === "fraude" ? "FRAUDE" : tag === "ok" ? "OK" : null
+      for (const [key, page] of snapshots) {
+        if (!page || !("rows" in page)) continue
+        qc.setQueryData<LiquidacaoCuradoriaPage>(key, {
+          ...page,
+          rows: page.rows.map((r) =>
+            r.liquidacao_id === liquidacaoId ? { ...r, tag_vigente: novaTag } : r,
+          ),
+        })
+      }
+      return { snapshots }
+    },
+    onError: (_err, _vars, ctx) => {
+      // Rollback: restaura o snapshot anterior de cada página em cache.
+      ctx?.snapshots?.forEach(([key, page]) => qc.setQueryData(key, page))
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: KEY_CURADORIA })
     },
   })
