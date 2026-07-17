@@ -400,6 +400,10 @@ async def compute_lamina(
     )
 
     # ---- Cadastrais que a QiTech entrega (gestor/originador) ----
+    # A carteira pode ter MAIS DE UM originador na mesma posicao (ex.: originador
+    # dominante + cauda residual de titulos legados). Elegemos o originador com
+    # maior valor presente para nao mostrar um residuo como se fosse o originador
+    # do fundo. O gestor vem junto do mesmo grupo (uniforme no fundo).
     cad = None
     latest_est = est_month_date.get(window[-1])
     if latest_est is not None:
@@ -412,6 +416,13 @@ async def compute_lamina(
                 .where(EstoqueRecebivel.tenant_id == tenant_id)
                 .where(EstoqueRecebivel.fundo_doc == fundo_doc)
                 .where(EstoqueRecebivel.data_referencia == latest_est)
+                .group_by(
+                    EstoqueRecebivel.gestor_nome,
+                    EstoqueRecebivel.originador_nome,
+                )
+                .order_by(
+                    func.coalesce(func.sum(EstoqueRecebivel.valor_presente), 0).desc()
+                )
                 .limit(1)
             )
         ).first()
