@@ -536,7 +536,14 @@ export function DataTable<TData>({
                           // superior-esquerdo nao ser coberto ao rolar nos 2 eixos.
                           isSticky && "sticky left-0 z-[2] bg-gray-50 dark:bg-gray-900 border-r border-r-gray-200 dark:border-r-gray-800",
                           "text-[10px] font-semibold uppercase tracking-[0.05em]",
-                          "text-gray-500 dark:text-gray-400 whitespace-nowrap select-none",
+                          "text-gray-500 dark:text-gray-400 select-none",
+                          // Em layout "fixed" a largura da coluna e REAL, entao
+                          // header comprido tem que TRUNCAR (com `block truncate`
+                          // no render do header). Sem overflow-hidden aqui o
+                          // texto vaza por cima das colunas vizinhas.
+                          tableLayout === "fixed"
+                            ? "overflow-hidden"
+                            : "whitespace-nowrap",
                           align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left",
                           // Politica de 3 cores (2026-07-09): gray-700 saiu do
                           // vocabulario — hover e coluna ordenada vao a gray-900.
@@ -548,6 +555,9 @@ export function DataTable<TData>({
                         {header.isPlaceholder ? null : (
                           <span className={cx(
                             "inline-flex items-center",
+                            // `min-w-0` + largura maxima permitem que um filho
+                            // com `truncate` de fato encolha dentro do flex.
+                            tableLayout === "fixed" && "max-w-full min-w-0",
                             align === "right" && "justify-end",
                             align === "center" && "justify-center",
                           )}>
