@@ -103,16 +103,22 @@ function redFlag(
   return null
 }
 
+/** A partir daqui a coluna fica estreita demais para o formato folgado. */
+const LIMIAR_COMPACTO = 5
+
 function CelulaFundo({
   def,
   fundo,
   direcao,
   melhor,
+  compacto,
 }: {
   def: IndicadorDef
   fundo: ComparadorIndicadoresFundo
   direcao: Record<string, boolean>
   melhor: boolean
+  /** Muitos fundos na tela: encurta valor e percentil para caber sem rolagem. */
+  compacto: boolean
 }) {
   const valor = fundo[def.key]
   const rank = fundo[`${def.key}_rank` as keyof ComparadorIndicadoresFundo]
@@ -135,8 +141,22 @@ function CelulaFundo({
       </div>
     )
   }
+  const texto = formatIndicador(
+    typeof valor === "number" || typeof valor === "string" ? valor : null,
+    def.fmt,
+  )
+  // Em coluna estreita o prefixo "R$ " e o que menos informa (o rotulo da
+  // linha ja diz que e valor) — sai primeiro para o numero nao truncar.
+  const textoFinal =
+    compacto && def.fmt === "brl" ? texto.replace(/^R\$\s*/, "") : texto
+
   return (
-    <div className="flex items-baseline justify-end gap-1.5 whitespace-nowrap">
+    <div
+      className={cx(
+        "flex items-baseline justify-end whitespace-nowrap",
+        compacto ? "gap-1" : "gap-1.5",
+      )}
+    >
       {flag && (
         <span title={flag}>
           <RiAlertFill
@@ -156,16 +176,20 @@ function CelulaFundo({
         className={cx(
           tableTokens.cellNumber,
           melhor && "font-semibold",
+          // Trunca em vez de estourar a coluna elastica.
+          "min-w-0 truncate",
         )}
+        title={texto}
       >
-        {formatIndicador(
-          typeof valor === "number" || typeof valor === "string" ? valor : null,
-          def.fmt,
-        )}
+        {textoFinal}
       </span>
       {orientado !== null && (
         <span
-          className={cx("w-8 text-left tabular-nums", tableTokens.cellMuted)}
+          className={cx(
+            "shrink-0 text-left tabular-nums",
+            compacto ? "w-6" : "w-8",
+            tableTokens.cellMuted,
+          )}
           title={`Percentil ${Math.round(orientado)} de 100 no universo (orientado: 100 = melhor)`}
         >
           p{Math.round(orientado)}
@@ -247,7 +271,12 @@ export function MatrizIndicadores({
       col.display({
         id: "indicador",
         header: "Indicador",
-        size: 240,
+        // Com tableLayout="fixed" este `size` e largura REAL. As colunas de
+        // fundo NAO declaram size — dividem o resto em partes iguais, entao
+        // 10 fundos cabem sem rolagem (CLAUDE.md §6 / prop tableLayout).
+        // 224px: medido para o rotulo mais longo com formula
+        // ("Subordinação total (Jr+Mez)/PL") nao encostar na borda.
+        size: 224,
         cell: (info) => {
           const row = info.row.original
           if (row.tipo === "secao") {
@@ -309,18 +338,18 @@ export function MatrizIndicadores({
         (fundo, idx) =>
           col.display({
             id: `fundo_${idx}`,
-            // Nome do fundo TRUNCADO com largura fixa — sem isso o header
-            // comprido estica a coluna e forca scroll horizontal. Tooltip
-            // mostra o nome completo.
+            // Nome TRUNCADO na largura da coluna (que agora e elastica —
+            // sem w-[] fixo, senao volta a esticar a tabela). Tooltip mostra
+            // o nome completo.
             header: () => {
               const nome = fundo.denom_social ?? fundo.cnpj
               return (
-                <span className="block w-[150px] truncate" title={nome}>
+                <span className="block truncate" title={nome}>
                   {nome}
                 </span>
               )
             },
-            size: 166,
+            // SEM `size`: divide o espaco restante igualmente entre os fundos.
             meta: { align: "right" },
             cell: (info) => {
               const row = info.row.original
@@ -357,6 +386,7 @@ export function MatrizIndicadores({
                   fundo={fundo}
                   direcao={direcao}
                   melhor={melhorPorIndicador.get(row.def.key) === fundo.cnpj}
+                  compacto={fundos.length > LIMIAR_COMPACTO}
                 />
               )
             },
@@ -366,13 +396,13 @@ export function MatrizIndicadores({
         id: "mediana",
         header: () => (
           <span
-            className="block w-[110px] truncate"
+            className="block truncate"
             title="Mediana do universo CVM na competência"
           >
             Mediana
           </span>
         ),
-        size: 126,
+        size: 104,
         meta: { align: "right" },
         cell: (info) => {
           const row = info.row.original
@@ -393,9 +423,14 @@ export function MatrizIndicadores({
               </div>
             )
           }
+          // Mesmo encurtamento das celulas de fundo (sem "R$ "), senao a
+          // coluna Mediana destoa da linha inteira.
+          const txt = formatIndicador(mediana[row.def.key] ?? null, row.def.fmt)
           return (
             <div className={cx("text-right", tableTokens.cellNumberSecondary)}>
-              {formatIndicador(mediana[row.def.key] ?? null, row.def.fmt)}
+              {fundos.length > LIMIAR_COMPACTO && row.def.fmt === "brl"
+                ? txt.replace(/^R\$\s*/, "")
+                : txt}
             </div>
           )
         },
@@ -422,9 +457,15 @@ export function MatrizIndicadores({
         showDensityToggle={false}
         showExport={false}
         virtualize={false}
-        // Ate 10 fundos = ~2.000px de tabela: rola na horizontal e a coluna do
-        // indicador fica congelada, senao o rotulo da linha some e a matriz
-        // vira uma grade de numeros sem legenda.
+        // "fixed": as colunas de fundo (sem `size`) dividem o espaco restante,
+        // entao 10 fundos CABEM sem rolagem — pedido do Ricardo, 2026-07-20.
+        tableLayout="fixed"
+        // Piso: abaixo disso a coluna de fundo ficaria ilegivel, entao a
+        // tabela volta a rolar em vez de esmagar os numeros. 224 (indicador)
+        // + 104 (mediana) + 96 por fundo.
+        tableMinWidth={328 + fundos.length * 96}
+        // So tem efeito quando o piso acima e acionado (tela estreita): sem a
+        // coluna do indicador congelada a matriz vira grade sem legenda.
         stickyFirstColumn
         rowClassName={(row) =>
           row.tipo === "secao"
