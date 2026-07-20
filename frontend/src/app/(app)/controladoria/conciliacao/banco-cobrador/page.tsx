@@ -310,7 +310,7 @@ export default function ConciliacaoBancoCobradorPage() {
         <div className="shrink-0 bg-white px-6 pt-3.5 pb-3 dark:bg-gray-950">
           <PageHeader
             title="Banco Cobrador"
-            info="Conciliação da carteira Bitfin (títulos em aberto elegíveis a boleto: FAT/CBV/DMS/CBS) com os boletos ativos dos bancos cobradores (retorno CNAB). Cruzamento título-a-título por número do documento; valor comparado = valor líquido; vencimento tz-aware (São Paulo)."
+            info="Conciliação da carteira Bitfin (títulos em aberto elegíveis a boleto: FAT/CBV/DMS/CBS) com os boletos ativos dos bancos cobradores (retorno CNAB). Cruzamento título-a-título por número do documento; valor comparado = valor bruto (de face, o que o sacado paga); vencimento tz-aware (São Paulo)."
             subtitle={
               conc
                 ? `${fmtInt.format(conc.titulos_abertos)} títulos abertos · ${fmtInt.format(conc.boletos_ativos)} boletos ativos`

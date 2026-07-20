@@ -19,8 +19,15 @@ Classifica cada titulo/boleto em: Conciliado / Divergencia de valor /
 Divergencia de vencimento / So em BITFIN / So em banco.
 
 Fonte canonica dos dois lados (silver). Le warehouse -- nao chama integracoes
-(CLAUDE.md 11.3). Valor comparado = `wh_titulo.valor_liquido` (face que o
-sacado paga) vs `wh_boleto.valor_boleto`.
+(CLAUDE.md 11.3). Valor comparado = `wh_titulo.valor` (valor BRUTO / de face,
+o que o sacado paga) vs `wh_boleto.valor_boleto`.
+
+GOTCHA de valor (critico): use `Titulo.valor`, NAO `Titulo.valor_liquido`. O
+liquido desconta o desagio da operacao, que nao vai para o boleto -- o sacado
+sempre paga a face. Medicao em 2026-07-20 sobre 2.373 titulos pareados: o
+bruto casa com o banco em 2.365, o liquido em 2.324. Comparar pelo liquido
+gerava 41 `divergencia_valor` FALSAS (ex.: titulo 226952/1, bruto e boleto
+R$ 93.144,00, liquido R$ 84.761,04 -- o delta e o desagio).
 
 GOTCHA de fuso (critico): `wh_titulo.data_de_vencimento` e guardado como
 meia-noite de Sao Paulo (03:00Z). Para casar com a data do boleto (date puro),
@@ -85,7 +92,8 @@ _PROTESTO_TIPOS = (
 @dataclass
 class _TituloLado:
     numero: str
-    valor_liquido: Decimal
+    # Valor BRUTO (`wh_titulo.valor`) — face do titulo, base do boleto.
+    valor_bruto: Decimal
     vencimento: date | None
     data_operacao: date | None
     produto: str
@@ -189,7 +197,7 @@ async def _carregar_titulos(
     stmt = (
         select(
             Titulo.numero,
-            Titulo.valor_liquido,
+            Titulo.valor,
             venc_sp.label("vencimento"),
             data_op_sp.label("data_operacao"),
             produto.label("produto"),
@@ -226,7 +234,7 @@ async def _carregar_titulos(
     return [
         _TituloLado(
             numero=numero,
-            valor_liquido=valor,
+            valor_bruto=valor,
             vencimento=venc,
             data_operacao=data_op,
             produto=prod,
@@ -413,7 +421,7 @@ async def conciliar_boletos(
                         status=STATUS_ENVIADO_NAO_CONFIRMADO,
                         numero=numero,
                         nosso_numero=e.nosso_numero,
-                        valor_bitfin=t.valor_liquido,
+                        valor_bitfin=t.valor_bruto,
                         valor_banco=e.valor_boleto,
                         venc_bitfin=t.vencimento,
                         venc_banco=e.data_vencimento,
@@ -432,7 +440,7 @@ async def conciliar_boletos(
                     LinhaConciliacao(
                         status=STATUS_SO_BITFIN,
                         numero=numero,
-                        valor_bitfin=t.valor_liquido,
+                        valor_bitfin=t.valor_bruto,
                         venc_bitfin=t.vencimento,
                         data_operacao=t.data_operacao,
                         produto=t.produto,
@@ -460,7 +468,7 @@ async def conciliar_boletos(
                 status=STATUS_CONCILIADO,
                 numero=numero,
                 nosso_numero=b.nosso_numero,
-                valor_bitfin=t.valor_liquido,
+                valor_bitfin=t.valor_bruto,
                 valor_banco=b.valor_boleto,
                 venc_bitfin=t.vencimento,
                 venc_banco=b.data_vencimento,
@@ -472,7 +480,7 @@ async def conciliar_boletos(
                 ua_id=t.ua_id,
                 ua_nome=t.ua_nome,
             )
-            if t.valor_liquido != b.valor_boleto:
+            if t.valor_bruto != b.valor_boleto:
                 linha.status = STATUS_DIV_VALOR
             elif t.vencimento != b.data_vencimento:
                 linha.status = STATUS_DIV_VENCIMENTO
