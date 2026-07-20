@@ -1,7 +1,7 @@
 "use client"
 
 // Matriz do Comparador: linhas = 17 indicadores (agrupados por dimensao),
-// colunas = ate 3 fundos + mediana do universo. Cada celula traz o VALOR +
+// colunas = ate 10 fundos + mediana do universo. Cada celula traz o VALOR +
 // percentil no universo (p0-100, orientado: 100 = melhor). ● marca o melhor
 // da linha; ⚠ marca red flag de leitura combinada.
 //
@@ -419,6 +419,10 @@ export function MatrizIndicadores({
         showDensityToggle={false}
         showExport={false}
         virtualize={false}
+        // Ate 10 fundos = ~2.000px de tabela: rola na horizontal e a coluna do
+        // indicador fica congelada, senao o rotulo da linha some e a matriz
+        // vira uma grade de numeros sem legenda.
+        stickyFirstColumn
         rowClassName={(row) =>
           row.tipo === "secao"
             ? "bg-gray-50 dark:bg-gray-900/60 border-t-gray-200 dark:border-t-gray-800"

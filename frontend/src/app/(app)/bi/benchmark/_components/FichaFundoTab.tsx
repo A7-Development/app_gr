@@ -33,7 +33,7 @@ import {
   percent1,
 } from "./formatters"
 import { ChartCard } from "./ChartCard"
-import { FavoritoStar } from "./FavoritoStar"
+import { FavoritoStar } from "@/components/bi/favoritos"
 
 //
 // Helpers de mapping — converte posicional (array paralelo a `periodos`) para

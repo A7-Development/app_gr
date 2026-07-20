@@ -1,12 +1,18 @@
 "use client"
 
-// /bi/comparador — Comparador de FIDCs por indicadores (ate 3 fundos).
+// /bi/comparador — Comparador de FIDCs por indicadores (ate 10 fundos).
 //
 // Opcao A da reorganizacao do grupo Benchmark (aprovada 2026-06-11):
 //   Panorama = mercado · Fundos = explorador · COMPARADOR = confronto.
 // Cesta de 17 indicadores (docs/cvm-fidc/indicadores-benchmarking.md), cada
 // valor com percentil no universo da competencia; mediana do mercado como
-// "4o competidor" implicito. Radar de 5 dimensoes da o veredito visual.
+// competidor implicito de toda linha.
+//
+// 2026-07-20 (Ricardo): teto 3 -> 10 fundos · "Score por dimensao" (radar)
+// REMOVIDO — a matriz passa a ocupar a largura inteira, com a coluna do
+// indicador congelada (stickyFirstColumn) porque 10 colunas exigem scroll-x ·
+// favoritos por usuario plugados (estrela no chip + secao no picker + botao
+// "Carregar favoritos"), reusando `components/bi/favoritos`.
 //
 // Arquitetura (CLAUDE.md §11.6): L1 BI > L2 Benchmark > Comparador.
 // Estado deep-linkavel: ?fundos=cnpj1,cnpj2,cnpj3&comp=YYYY-MM-DD (nuqs).
@@ -16,7 +22,7 @@
 // shell visual do benchmark2/cota-sub (title row + toolbar + conteudo).
 
 import * as React from "react"
-import { RiScales3Line } from "@remixicon/react"
+import { RiScales3Line, RiStarFill } from "@remixicon/react"
 import { useQuery } from "@tanstack/react-query"
 import { parseAsString, useQueryState } from "nuqs"
 
@@ -31,6 +37,7 @@ import {
   SelectValue,
 } from "@/components/tremor/Select"
 import { filterControlClass } from "@/design-system/components"
+import { useFavoritos } from "@/components/bi/favoritos"
 import { biBenchmarkIndicadores } from "@/lib/api-client"
 
 import {
@@ -38,9 +45,10 @@ import {
   type FundoSelecionado,
 } from "./_components/ComparadorFundoPicker"
 import { MatrizIndicadores } from "./_components/MatrizIndicadores"
-import { RadarDimensoes } from "./_components/RadarDimensoes"
 
-const MAX_FUNDOS = 3
+// Par do `_MAX_FUNDOS` em `backend/app/modules/bi/api/benchmark_indicadores.py`
+// — subir aqui sem subir la faz a API rejeitar a request com 422.
+const MAX_FUNDOS = 10
 
 function labelCompetencia(iso: string): string {
   const m = /^(\d{4})-(\d{2})/.exec(iso)
@@ -101,6 +109,26 @@ export default function ComparadorPage() {
     ...(cnpjs.length < MAX_FUNDOS ? [null] : []),
   ]
 
+  // Atalho "Carregar favoritos": completa os slots livres com os favoritos do
+  // usuario que ainda nao estao no comparador, respeitando o teto.
+  const { favoritos } = useFavoritos()
+  const favoritosForaDoComparador = favoritos.filter(
+    (f) => !cnpjs.includes(f.cnpj),
+  )
+  const vagas = MAX_FUNDOS - cnpjs.length
+  const carregarFavoritos = () => {
+    const aAdicionar = favoritosForaDoComparador.slice(0, vagas).map((f) => f.cnpj)
+    if (aAdicionar.length === 0) return
+    setNomes((prev) => {
+      const next = { ...prev }
+      for (const f of favoritosForaDoComparador.slice(0, vagas)) {
+        if (f.denom_social) next[f.cnpj] = f.denom_social
+      }
+      return next
+    })
+    void setFundosCsv([...cnpjs, ...aAdicionar].join(","))
+  }
+
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col overflow-hidden">
       {/* Title row */}
@@ -108,7 +136,7 @@ export default function ComparadorPage() {
         <PageHeader
           title="Comparador de FIDCs"
           subtitle="BI · Benchmark"
-          info="Confronto de até 3 fundos pela cesta de 17 indicadores derivada dos Informes Mensais CVM (dado público). Cada valor traz o percentil no universo da competência (p100 = melhor, já na direção do indicador); a mediana do mercado é o 4º competidor implícito. Semântica validada empiricamente — ver docs/cvm-fidc/indicadores-benchmarking.md."
+          info="Confronto de até 10 fundos pela cesta de 17 indicadores derivada dos Informes Mensais CVM (dado público). Cada valor traz o percentil no universo da competência (p100 = melhor, já na direção do indicador); a mediana do mercado entra como competidor implícito em todas as linhas. Semântica validada empiricamente — ver docs/cvm-fidc/indicadores-benchmarking.md."
         />
       </div>
 
@@ -124,6 +152,22 @@ export default function ComparadorPage() {
               disabledCnpjs={cnpjs}
             />
           ))}
+
+          {favoritosForaDoComparador.length > 0 && vagas > 0 && (
+            <button
+              type="button"
+              onClick={carregarFavoritos}
+              className="flex h-[30px] shrink-0 items-center gap-1.5 rounded border border-gray-300 px-2.5 text-[13px] font-medium text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:border-gray-600 dark:hover:bg-gray-900"
+              title={`Adiciona ${Math.min(favoritosForaDoComparador.length, vagas)} fundo(s) favorito(s) ao comparador`}
+            >
+              <RiStarFill
+                className="size-3.5 text-blue-500 dark:text-blue-400"
+                aria-hidden="true"
+              />
+              Carregar favoritos (
+              {Math.min(favoritosForaDoComparador.length, vagas)})
+            </button>
+          )}
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <span className="text-[11px] text-gray-500 dark:text-gray-400">
@@ -160,7 +204,7 @@ export default function ComparadorPage() {
           <EmptyState
             icon={RiScales3Line}
             title="Escolha os fundos para comparar"
-            description="Adicione até 3 FIDCs pela busca acima. Cada indicador vem com o percentil do fundo no universo CVM da competência — e a mediana do mercado entra como referência em todas as linhas."
+            description="Adicione até 10 FIDCs pela busca acima — ou carregue seus favoritos. Cada indicador vem com o percentil do fundo no universo CVM da competência, e a mediana do mercado entra como referência em todas as linhas."
             className="mt-10"
           />
         ) : q.isError ? (
@@ -201,17 +245,12 @@ export default function ComparadorPage() {
             )}
             {data && data.fundos.length > 0 && (
               <>
-                <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                  <RadarDimensoes fundos={data.fundos} direcao={data.direcao} />
-                  <div className="xl:col-span-2">
-                    <MatrizIndicadores
-                      fundos={data.fundos}
-                      mediana={data.mediana}
-                      composicaoMediana={data.composicao_mediana}
-                      direcao={data.direcao}
-                    />
-                  </div>
-                </div>
+                <MatrizIndicadores
+                  fundos={data.fundos}
+                  mediana={data.mediana}
+                  composicaoMediana={data.composicao_mediana}
+                  direcao={data.direcao}
+                />
                 <p className="text-[11px] text-gray-400 dark:text-gray-500">
                   Fonte: Informes Mensais FIDC · CVM dados abertos
                   (public:cvm_fidc) · competência{" "}

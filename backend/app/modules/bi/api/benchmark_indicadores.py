@@ -38,7 +38,12 @@ logger = logging.getLogger(__name__)
 
 _Guard = Depends(require_module(Module.BI, Permission.READ))
 
-_MAX_FUNDOS = 3
+# Teto de fundos no Comparador. Subiu de 3 -> 10 em 2026-07-20 (pedido do
+# Ricardo). O custo por fundo extra e marginal: o caro e montar o universo da
+# competencia (~4k fundos via FDW), que ja e cacheado e independe de quantos
+# fundos vieram na request. O par no frontend e `MAX_FUNDOS` em
+# `(app)/bi/comparador/page.tsx` — os dois tem que andar juntos.
+_MAX_FUNDOS = 10
 
 # Warm-up do cache do universo (referencia forte p/ evitar GC da task).
 _WARMING: set[asyncio.Task] = set()
@@ -93,7 +98,7 @@ async def comparador_indicadores(
     competencia: date | None = None,
     _: None = _Guard,
 ) -> ComparadorIndicadoresResponse:
-    """Cesta de 17 indicadores de ate 3 fundos + percentis + mediana do universo."""
+    """Cesta de 17 indicadores de ate 10 fundos + percentis + mediana do universo."""
     if competencia is None:
         disponiveis = await competencias_disponiveis(db, limit=1)
         if not disponiveis:

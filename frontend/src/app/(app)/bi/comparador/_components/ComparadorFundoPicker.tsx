@@ -6,7 +6,12 @@
 // pagina. Debounce interno de 300ms.
 
 import * as React from "react"
-import { RiAddLine, RiCloseLine, RiSearchLine } from "@remixicon/react"
+import {
+  RiAddLine,
+  RiCloseLine,
+  RiSearchLine,
+  RiStarFill,
+} from "@remixicon/react"
 import { useQuery } from "@tanstack/react-query"
 
 import { cx, focusInput } from "@/lib/utils"
@@ -16,11 +21,36 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/tremor/Popover"
+import { FavoritoStar, useFavoritos } from "@/components/bi/favoritos"
 import { biBenchmark } from "@/lib/api-client"
 
 const DEBOUNCE_MS = 300
 
 export type FundoSelecionado = { cnpj: string; nome: string }
+
+/** Item da lista do popover — mesma anatomia para favorito e busca geral. */
+function ItemFundo({
+  nome,
+  cnpj,
+  onClick,
+}: {
+  nome: string
+  cnpj: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className="w-full rounded px-2 py-1.5 text-left text-[12px] text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-900"
+      onClick={onClick}
+    >
+      <span className="block truncate font-medium">{nome}</span>
+      <span className="block text-[11px] tabular-nums text-gray-400">
+        {cnpj}
+      </span>
+    </button>
+  )
+}
 
 export function ComparadorFundoPicker({
   selecionado,
@@ -54,9 +84,27 @@ export function ComparadorFundoPicker({
     (f) => !disabledCnpjs.includes(f.cnpj_fundo.replace(/\D/g, "")),
   )
 
+  // Favoritos do usuario que ainda nao estao no comparador, no topo da lista —
+  // atalho para quem acompanha uma carteira fixa.
+  const { favoritos } = useFavoritos()
+  const favoritosDisponiveis = React.useMemo(
+    () => favoritos.filter((f) => !disabledCnpjs.includes(f.cnpj)),
+    [favoritos, disabledCnpjs],
+  )
+  const cnpjsFavoritos = React.useMemo(
+    () => new Set(favoritosDisponiveis.map((f) => f.cnpj)),
+    [favoritosDisponiveis],
+  )
+  // Sem termo de busca, os favoritos ja aparecem na secao propria — nao repete
+  // na lista geral. Com termo, a busca manda e a lista sai completa.
+  const fundosGerais = debounced
+    ? fundos
+    : fundos.filter((f) => !cnpjsFavoritos.has(f.cnpj_fundo.replace(/\D/g, "")))
+
   if (selecionado) {
     return (
-      <span className="flex h-[30px] items-center gap-1.5 rounded border border-blue-200 bg-blue-50 px-2.5 text-[13px] font-medium text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
+      <span className="flex h-[30px] items-center gap-1 rounded border border-blue-200 bg-blue-50 pl-1 pr-2.5 text-[13px] font-medium text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
+        <FavoritoStar cnpj={selecionado.cnpj} className="size-6" />
         <span className="max-w-[220px] truncate" title={selecionado.nome}>
           {selecionado.nome}
         </span>
@@ -103,16 +151,54 @@ export function ComparadorFundoPicker({
           {q.isLoading && (
             <li className="px-2 py-3 text-xs text-gray-400">Buscando…</li>
           )}
-          {!q.isLoading && fundos.length === 0 && (
-            <li className="px-2 py-3 text-xs text-gray-400">
-              Nenhum fundo encontrado.
-            </li>
+
+          {/* Favoritos primeiro (so sem termo de busca) */}
+          {!debounced && favoritosDisponiveis.length > 0 && (
+            <>
+              <li className="flex items-center gap-1 px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-500 dark:text-gray-400">
+                <RiStarFill
+                  className="size-3 text-blue-500 dark:text-blue-400"
+                  aria-hidden="true"
+                />
+                Meus favoritos
+              </li>
+              {favoritosDisponiveis.map((f) => (
+                <li key={`fav-${f.cnpj}`}>
+                  <ItemFundo
+                    nome={f.denom_social ?? f.cnpj}
+                    cnpj={f.cnpj}
+                    onClick={() => {
+                      onSelect({ cnpj: f.cnpj, nome: f.denom_social ?? f.cnpj })
+                      setOpen(false)
+                      setTermo("")
+                    }}
+                  />
+                </li>
+              ))}
+              {fundosGerais.length > 0 && (
+                <li
+                  className="mt-1 border-t border-gray-100 px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-500 dark:border-gray-800 dark:text-gray-400"
+                  aria-hidden="true"
+                >
+                  Todos os fundos
+                </li>
+              )}
+            </>
           )}
-          {fundos.slice(0, 50).map((f) => (
+
+          {!q.isLoading &&
+            fundosGerais.length === 0 &&
+            favoritosDisponiveis.length === 0 && (
+              <li className="px-2 py-3 text-xs text-gray-400">
+                Nenhum fundo encontrado.
+              </li>
+            )}
+
+          {fundosGerais.slice(0, 50).map((f) => (
             <li key={f.cnpj_fundo}>
-              <button
-                type="button"
-                className="w-full rounded px-2 py-1.5 text-left text-[12px] text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-900"
+              <ItemFundo
+                nome={f.denominacao_social ?? "—"}
+                cnpj={f.cnpj_fundo}
                 onClick={() => {
                   onSelect({
                     cnpj: f.cnpj_fundo.replace(/\D/g, ""),
@@ -121,14 +207,7 @@ export function ComparadorFundoPicker({
                   setOpen(false)
                   setTermo("")
                 }}
-              >
-                <span className="block truncate font-medium">
-                  {f.denominacao_social ?? "—"}
-                </span>
-                <span className="block text-[11px] tabular-nums text-gray-400">
-                  {f.cnpj_fundo}
-                </span>
-              </button>
+              />
             </li>
           ))}
         </ul>
