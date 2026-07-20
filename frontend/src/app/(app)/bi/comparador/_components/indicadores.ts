@@ -92,7 +92,7 @@ export const INDICADORES: IndicadorDef[] = [
   { key: "atingimento_pp", label: "Real − Meta (séries com meta)", grupo: "Performance", fmt: "pp",
     info: "Desempenho real menos esperado das séries com meta (senior/mezanino). 0 = entregou a meta exata." },
   { key: "yield_efetivo_pct", label: "Yield efetivo da carteira", grupo: "Performance", fmt: "pct2",
-    info: "Resultado do mês de todas as classes ÷ DC bruto médio. Retorno líquido que a carteira entregou (piso da taxa praticada)." },
+    info: "Resultado do mês de todas as classes ÷ DC bruto médio. Retorno líquido que a carteira entregou (piso da taxa praticada). O resultado usa o PL de cada série na ABERTURA do mês × a rentabilidade do mês — antes usava o PL de fechamento, o que inflava o indicador em fundo que captou forte (corrigido em 20/07/2026)." },
 ]
 
 const fmtInt = new Intl.NumberFormat("pt-BR")
