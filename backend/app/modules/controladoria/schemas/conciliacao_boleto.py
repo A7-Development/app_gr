@@ -33,7 +33,7 @@ class ResumoStatus(BaseModel):
     status: StatusConciliacao
     quantidade: int = Field(description="Quantidade de titulos/boletos no status.")
     percentual: float = Field(description="% sobre o total de linhas (0-100).")
-    valor_bitfin: Decimal = Field(description="Soma do valor liquido (carteira).")
+    valor_bitfin: Decimal = Field(description="Soma do valor bruto (carteira).")
     valor_banco: Decimal = Field(description="Soma do valor do boleto (banco).")
     diferenca: Decimal = Field(description="valor_banco - valor_bitfin.")
 
@@ -46,7 +46,9 @@ class LinhaConciliacaoSchema(BaseModel):
     nosso_numero: str | None = Field(
         default=None, description="Nosso numero do banco (lado boleto)."
     )
-    valor_bitfin: Decimal | None = Field(default=None, description="Valor liquido do titulo.")
+    valor_bitfin: Decimal | None = Field(
+        default=None, description="Valor bruto (de face) do titulo."
+    )
     valor_banco: Decimal | None = Field(default=None, description="Valor do boleto.")
     diferenca_valor: Decimal | None = Field(
         default=None, description="valor_banco - valor_bitfin (quando ambos existem)."
