@@ -328,7 +328,15 @@ def _eh_sub_pura(serie: str | None) -> bool:
 def _montar_fundos(dados: dict[str, list[dict]]) -> list[dict]:
     """Merge por cnpj + formulas da cesta (espelha o SQL antigo, validado)."""
     por = {nome: {r["cnpj"]: r for r in rows} for nome, rows in dados.items()
-           if nome not in ("x2", "x3")}
+           if nome not in ("x2", "x3", "x2_prev")}
+
+    # PL por serie na competencia ANTERIOR — base correta do resultado do mes
+    # (rentabilidade mensal se aplica ao saldo de ABERTURA). Ver comentario em
+    # `resultado_mes` abaixo.
+    pl_serie_prev: dict[tuple[str, str], float] = {}
+    for r in dados.get("x2_prev") or []:
+        chave = (r["cnpj"], r["serie"])
+        pl_serie_prev[chave] = pl_serie_prev.get(chave, 0.0) + (r["pl_serie"] or 0.0)
 
     # Series: PL por (cnpj, serie) + rentab por (cnpj, serie).
     pl_serie: dict[tuple[str, str], float] = {}
@@ -347,10 +355,24 @@ def _montar_fundos(dados: dict[str, list[dict]]) -> list[dict]:
     rentab_sub_wsum: dict[str, float] = defaultdict(float)
     pl_sub_puro: dict[str, float] = defaultdict(float)
     for r in dados["x3"]:
-        pl_da_serie = pl_serie.get((r["cnpj"], r["serie"]))
+        chave = (r["cnpj"], r["serie"])
+        pl_da_serie = pl_serie.get(chave)
         if pl_da_serie is None:
             continue
-        resultado_mes[r["cnpj"]] += pl_da_serie * r["rentab"] / 100.0
+        # Resultado do mes = PL da serie na ABERTURA x rentabilidade do mes.
+        # Usar o PL de FECHAMENTO (como era ate 2026-07-20) rende tambem o
+        # dinheiro que entrou durante o mes, superestimando o resultado de
+        # quem captou forte. Aferido no REALINVEST jun/26: base fechamento
+        # R$ 829.493 vs base abertura R$ 769.168 — a captacao implicita
+        # (ΔPL - resultado) sai R$ 1.503.262 pela abertura contra
+        # R$ 1.500.000 REPORTADOS no informe, erro de 0,2%; pelo fechamento
+        # o erro era 20x maior.
+        # Fallback para o PL de fechamento quando a serie NAO existia no mes
+        # anterior (serie nova) — sem base de abertura, e a unica opcao.
+        base = pl_serie_prev.get(chave, pl_da_serie)
+        resultado_mes[r["cnpj"]] += base * r["rentab"] / 100.0
+        # `rentab_sub_wsum` segue ponderado pelo PL ATUAL: e media ponderada
+        # de PERCENTUAIS (peso = tamanho da serie hoje), nao valor em R$.
         if _eh_sub_pura(r["serie"]):
             rentab_sub_wsum[r["cnpj"]] += pl_da_serie * r["rentab"]
             pl_sub_puro[r["cnpj"]] += pl_da_serie
@@ -577,6 +599,8 @@ async def carregar_universo(
             "vii": await fetch(_Q_VII, competencia),
             "x": await fetch(_Q_X, competencia),
             "x2": await fetch(_Q_X2, competencia),
+            # PL por serie do mes anterior: base de abertura do resultado.
+            "x2_prev": await fetch(_Q_X2, comp_prev),
             "x3": await fetch(_Q_X3, competencia),
             "x4": await fetch(_Q_X4, competencia),
             "x6": await fetch(_Q_X6, competencia),
