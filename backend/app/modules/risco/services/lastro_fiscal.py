@@ -18,7 +18,10 @@ o rating de liquidacao):
                      vive no resumo, nao no feed de eventos)
     FIS-06 positiva  sacado CONFIRMOU a operacao (210200) — trava
                      cancelamento na SEFAZ
-    FIS-07 baixa     carta de correcao (110110) pos-cessao
+    FIS-07 media     carta de correcao (110110) — altera o documento que
+                     lastreia o titulo; exige monitoramento (Ricardo,
+                     2026-07-20). O campo `pos_cessao` da ocorrencia diz se
+                     veio antes ou depois do desembolso.
     FIS-09 info      ciencia da operacao (210210)
     FIS-99 info      demais eventos (CT-e/MDF-e/averbacao/...) — zero
                      ocultacao: fato novo nunca some do feed
@@ -50,7 +53,7 @@ _CLASSIFICACAO: dict[int, tuple[str, str]] = {
     210240: ("FIS-03", "critica"),
     210220: ("FIS-04", "critica"),
     210200: ("FIS-06", "positiva"),
-    110110: ("FIS-07", "baixa"),
+    110110: ("FIS-07", "media"),
     210210: ("FIS-09", "info"),
 }
 
