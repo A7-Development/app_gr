@@ -165,7 +165,7 @@ def test_classificacao_fis() -> None:
     assert classificar_evento(210240, 135) == ("FIS-03", "critica")
     assert classificar_evento(210220, 135) == ("FIS-04", "critica")
     assert classificar_evento(210200, 135) == ("FIS-06", "positiva")
-    assert classificar_evento(110110, 135) == ("FIS-07", "baixa")
+    assert classificar_evento(110110, 135) == ("FIS-07", "media")
     assert classificar_evento(210210, 135) == ("FIS-09", "info")
     # Zero ocultacao: tipo desconhecido nao some do feed.
     assert classificar_evento(610600, None) == ("FIS-99", "info")
