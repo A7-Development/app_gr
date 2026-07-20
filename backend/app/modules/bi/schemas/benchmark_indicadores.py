@@ -79,11 +79,29 @@ class IndicadoresFundo(BaseModel):
     divida_ativa_pct: float | None = None
     divida_ativa_pct_rank: float | None = None
 
+    # ── Movimento do PL (mes) ────────────────────────────────────────────
+    # SO o total, sem decompor em captacao vs resultado (ver VariacaoPL no
+    # service para o porque). SEM `_rank`: sem percentil no universo, que
+    # exigiria montar o universo de 2 competencias.
+    pl_anterior: float | None = Field(
+        default=None, description="PL na competencia anterior (base da variacao)."
+    )
+    var_pl_pct: float | None = Field(
+        default=None, description="Variacao do PL vs competencia anterior (%)."
+    )
+
 
 class ComparadorIndicadoresResponse(BaseModel):
     """Resposta do Comparador: fundos pedidos + mediana do universo."""
 
     competencia: date
+    competencia_anterior: date | None = Field(
+        default=None,
+        description=(
+            "Competencia usada como base do movimento do PL. None quando a "
+            "competencia pedida e a primeira da serie."
+        ),
+    )
     total_fundos_universo: int = Field(
         description="Fundos com PL>0 no universo da competencia."
     )

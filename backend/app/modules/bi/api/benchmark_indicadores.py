@@ -30,6 +30,7 @@ from app.modules.bi.services.benchmark_indicadores import (
     INDICADOR_DIRECAO,
     carregar_universo,
     competencias_disponiveis,
+    variacao_pl,
 )
 
 router = APIRouter(prefix="/benchmark/indicadores", tags=["bi:benchmark"])
@@ -107,18 +108,31 @@ async def comparador_indicadores(
 
     universo = await carregar_universo(db, competencia)
 
+    chaves = [_cnpj_cvm(raw) for raw in cnpjs]
+    # Variacao do PL: consulta o PL da competencia anterior SO destes fundos
+    # (<= 10) — barato. Nao monta universo de 2 competencias porque esta linha
+    # nao tem percentil.
+    comp_anterior, variacoes = await variacao_pl(db, competencia, chaves, universo)
+
     fundos: list[IndicadoresFundo] = []
     nao_encontrados: list[str] = []
-    for raw in cnpjs:
-        chave = _cnpj_cvm(raw)
+    for chave in chaves:
         row = universo.fundos.get(chave)
         if row is None:
             nao_encontrados.append(chave)
-        else:
-            fundos.append(IndicadoresFundo(**row))
+            continue
+        var = variacoes.get(chave)
+        fundos.append(
+            IndicadoresFundo(
+                **row,
+                pl_anterior=var.pl_anterior if var else None,
+                var_pl_pct=var.var_pl_pct if var else None,
+            )
+        )
 
     return ComparadorIndicadoresResponse(
         competencia=universo.competencia,
+        competencia_anterior=comp_anterior,
         total_fundos_universo=universo.total_fundos,
         fundos=fundos,
         nao_encontrados=nao_encontrados,

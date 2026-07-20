@@ -6,6 +6,7 @@ import type { ComparadorIndicadoresFundo } from "@/lib/api-client"
 
 export type GrupoIndicador =
   | "Estrutura"
+  | "Movimento do PL"
   | "Perfil do ativo"
   | "Qualidade de crédito"
   | "Fluxo"
@@ -13,6 +14,7 @@ export type GrupoIndicador =
 
 export const GRUPOS: GrupoIndicador[] = [
   "Estrutura",
+  "Movimento do PL",
   "Perfil do ativo",
   "Qualidade de crédito",
   "Fluxo",
@@ -30,6 +32,12 @@ export type IndicadorDef = {
   fmt: FmtKind
   /** Tooltip de definicao (proveniencia/semantica). */
   info: string
+  /**
+   * Nao marca "melhor da linha" (●). Use quando MAIOR nao significa MELHOR de
+   * forma inequivoca — ex.: variacao do PL, em que encolher pode ser
+   * amortizacao programada de fundo fechado, nao deterioracao.
+   */
+  neutro?: boolean
 }
 
 export const INDICADORES: IndicadorDef[] = [
@@ -45,6 +53,14 @@ export const INDICADORES: IndicadorDef[] = [
     info: "Quanto do colchão subordinado é first-loss genuíno (júnior) vs mezanino. 100% = sem mezanino; valores baixos = colchão 'diluído' em camadas vendidas a terceiros." },
   { key: "passivo_ativo_pct", label: "Passivo / Ativo", grupo: "Estrutura", fmt: "pct2",
     info: "Obrigações ÷ ativo total. FIDC quase não tem passivo; valor alto = estrutura atípica." },
+  // Movimento do PL. DELIBERADAMENTE uma linha so: a decomposicao em
+  // captacao vs resultado foi avaliada e DESCARTADA (Ricardo, 2026-07-20) —
+  // a captacao reportada vem zerada em 57% do universo (tab_x_4 subreportado)
+  // e a derivada (ΔPL menos resultado) fica fragil quando as duas parcelas
+  // tem sinais opostos e magnitudes proximas. Aqui: dois valores REPORTADOS
+  // do tab_iv, nada calculado.
+  { key: "var_pl_pct", label: "Variação do PL (mês)", formula: "vs mês ant.", grupo: "Movimento do PL", fmt: "pct2", neutro: true,
+    info: "PL da competência ÷ PL da competência anterior − 1. Mostra se o fundo cresceu ou encolheu no mês. Ambos os valores são reportados no informe (tab_iv) — nada derivado. ATENÇÃO: FIDC fechado em amortização programada encolhe por projeto; leia junto com o Condomínio antes de concluir que é deterioração." },
   { key: "dc_ativo_pct", label: "% do Ativo em DC", grupo: "Perfil do ativo", fmt: "pct1",
     info: "Direitos creditórios (líquidos) ÷ ativo. Separa fundo-de-carteira de fundo-veículo/distressed." },
   { key: "alta_liquidez_pl_pct", label: "Alta Liquidez / PL", grupo: "Perfil do ativo", fmt: "pct2",

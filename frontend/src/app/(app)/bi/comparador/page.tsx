@@ -254,9 +254,17 @@ export default function ComparadorPage() {
                 <p className="text-[11px] text-gray-400 dark:text-gray-500">
                   Fonte: Informes Mensais FIDC · CVM dados abertos
                   (public:cvm_fidc) · competência{" "}
-                  {labelCompetencia(data.competencia)} · pN = percentil no
-                  universo, orientado (100 = melhor) · ● melhor da linha · ⚠
-                  red flag de leitura combinada
+                  {labelCompetencia(data.competencia)}
+                  {data.competencia_anterior && (
+                    <>
+                      {" "}
+                      · movimento do PL vs{" "}
+                      {labelCompetencia(data.competencia_anterior)}
+                    </>
+                  )}{" "}
+                  · pN = percentil no universo, orientado (100 = melhor) · ●
+                  melhor da linha · ⚠ red flag de leitura combinada · Variação
+                  do PL não tem percentil nem mediana
                 </p>
               </>
             )}

@@ -253,6 +253,22 @@ _COMPETENCIAS_QUERY = text("""
     LIMIT :limit
 """)
 
+# Competencia imediatamente ANTERIOR a informada (nao assume mes-a-mes: se a
+# serie tiver buraco, pega o informe anterior que existe de fato).
+_Q_COMP_ANTERIOR = text("""
+    SELECT MAX(competencia) AS comp FROM cvm_remote.tab_iv
+    WHERE competencia < :comp
+""")
+
+# PL da competencia anterior, SO dos fundos pedidos (<= 10) — barato, nao
+# monta universo. O universo de 2 competencias so seria necessario para dar
+# PERCENTIL a variacao, que por decisao (Ricardo, 2026-07-20) nao existe.
+_Q_PL_ANTERIOR = text("""
+    SELECT cnpj_fundo_classe AS cnpj, NULLIF(tab_iv_a_vl_pl, 0)::float AS pl
+    FROM cvm_remote.tab_iv
+    WHERE competencia = :comp AND cnpj_fundo_classe = ANY(:cnpjs)
+""")
+
 
 @dataclass
 class IndicadoresUniverso:
@@ -456,6 +472,72 @@ def _medianas_composicao(rows: list[dict]) -> dict[str, float | None]:
         else:
             medianas[chave] = (pcts[n // 2 - 1] + pcts[n // 2]) / 2
     return medianas
+
+
+@dataclass
+class VariacaoPL:
+    """Movimento do PL de um fundo entre a competencia anterior e a atual.
+
+    Deliberadamente SO o total, sem decompor em captacao vs resultado. A
+    decomposicao foi construida, medida e DESCARTADA (Ricardo, 2026-07-20):
+
+    - a captacao REPORTADA (tab_x_4) vem zerada em 57% do universo — 858
+      fundos tem PL mexendo >2% no mes enquanto reportam movimento zero;
+    - a captacao DERIVADA (ΔPL menos resultado) depende de um resultado que
+      nos mesmos calculamos (o informe CVM nao tem DRE — so rentabilidade em
+      % por serie), e fica fragil quando captacao e resultado tem sinais
+      opostos e magnitudes proximas.
+
+    O que sobra aqui e solido: dois valores reportados no tab_iv.
+    """
+
+    cnpj: str
+    pl_anterior: float | None
+    var_pl_pct: float | None
+
+
+async def variacao_pl(
+    db: AsyncSession,
+    competencia: date,
+    cnpjs: list[str],
+    universo: IndicadoresUniverso,
+) -> tuple[date | None, dict[str, VariacaoPL]]:
+    """Decompoe o movimento do PL do mes para os fundos pedidos.
+
+    Retorna `(competencia_anterior, {cnpj: VariacaoPL})`. Quando nao ha
+    competencia anterior na base (primeiro informe da serie), devolve
+    `(None, {})` — a tela mostra "—" nas linhas, sem inventar numero.
+    """
+    if not cnpjs:
+        return None, {}
+
+    anterior = (
+        await db.execute(_Q_COMP_ANTERIOR, {"comp": competencia})
+    ).scalar_one_or_none()
+    if anterior is None:
+        return None, {}
+
+    rows = (
+        await db.execute(_Q_PL_ANTERIOR, {"comp": anterior, "cnpjs": cnpjs})
+    ).mappings().all()
+    pl_ant_por_cnpj = {r["cnpj"]: r["pl"] for r in rows}
+
+    out: dict[str, VariacaoPL] = {}
+    for cnpj in cnpjs:
+        pl_ant = pl_ant_por_cnpj.get(cnpj)
+        pl_atual = (universo.fundos.get(cnpj) or {}).get("pl")
+
+        if not pl_ant or pl_ant <= 0 or pl_atual is None:
+            # Sem base de comparacao: nao ha como afirmar crescimento.
+            out[cnpj] = VariacaoPL(cnpj, pl_ant, None)
+            continue
+
+        out[cnpj] = VariacaoPL(
+            cnpj=cnpj,
+            pl_anterior=pl_ant,
+            var_pl_pct=100.0 * (pl_atual - pl_ant) / pl_ant,
+        )
+    return anterior, out
 
 
 async def carregar_universo(

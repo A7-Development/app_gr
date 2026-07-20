@@ -2829,10 +2829,16 @@ export type ComparadorIndicadoresFundo = {
   yield_efetivo_pct_rank: number | null
   divida_ativa_pct: number | null
   divida_ativa_pct_rank: number | null
+  // Movimento do PL (mes) — so o total, sem decompor em captacao vs
+  // resultado (decisao 2026-07-20). SEM `_rank`: sem percentil no universo.
+  pl_anterior: number | null
+  var_pl_pct: number | null
 }
 
 export type ComparadorIndicadoresResponse = {
   competencia: string // YYYY-MM-DD
+  /** Base do movimento do PL. null quando e a 1a competencia da serie. */
+  competencia_anterior: string | null
   total_fundos_universo: number
   fundos: ComparadorIndicadoresFundo[]
   nao_encontrados: string[]

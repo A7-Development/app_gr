@@ -227,6 +227,9 @@ export function MatrizIndicadores({
     const out = new Map<string, string>()
     if (fundos.length < 2) return out
     for (const def of INDICADORES) {
+      // `neutro`: maior nao e inequivocamente melhor (ex.: variacao do PL —
+      // encolher pode ser amortizacao programada). Sem marcador de melhor.
+      if (def.neutro) continue
       const candidatos = fundos
         .map((f) => ({ cnpj: f.cnpj, v: f[def.key] }))
         .filter((c): c is { cnpj: string; v: number } => typeof c.v === "number")
