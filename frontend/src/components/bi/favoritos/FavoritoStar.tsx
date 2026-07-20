@@ -14,7 +14,7 @@ import type { MouseEvent } from "react"
 import { Button } from "@/components/tremor/Button"
 import { cx } from "@/lib/utils"
 
-import { useFavoritos } from "./useFavoritos"
+import { useFavoritos } from "@/components/bi/favoritos/useFavoritos"
 
 type FavoritoStarProps = {
   cnpj: string

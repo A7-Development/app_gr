@@ -68,6 +68,17 @@ export interface DataTableProps<TData> {
    *  abaixo disso o container rola horizontalmente (canonico em tela estreita)
    *  em vez de colapsar as colunas sem `size`. */
   tableMinWidth?:      number
+  /**
+   * Congela a PRIMEIRA coluna a esquerda durante o scroll horizontal.
+   * Use em matriz larga (muitas colunas de entidade) onde perder o rotulo da
+   * linha ao rolar torna a tabela ilegivel — ex.: Comparador de FIDCs com ate
+   * 10 fundos lado a lado. Sem scroll-x a prop nao tem efeito visivel.
+   *
+   * Mecanica: a <tr> ganha um bg solido de base e a 1a celula usa `bg-inherit`,
+   * de modo que hover / selecao / `rowClassName` continuam pintando a coluna
+   * congelada junto com o resto da linha.
+   */
+  stickyFirstColumn?:  boolean
   virtualize?:         boolean
   showDensityToggle?:  boolean
   showColumnManager?:  boolean
@@ -354,6 +365,7 @@ export function DataTable<TData>({
   className,
   tableLayout       = "auto",
   tableMinWidth,
+  stickyFirstColumn = false,
   virtualize,
   showDensityToggle = true,
   showColumnManager = true,
@@ -507,11 +519,12 @@ export function DataTable<TData>({
             <thead className="sticky top-0 z-[1] bg-gray-50 dark:bg-gray-900">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
-                  {hg.headers.map((header) => {
+                  {hg.headers.map((header, hIdx) => {
                     // Header alignment via column meta — alinha o titulo da coluna
                     // ao alinhamento dos dados. Default: left. Use `meta: { align: "right" }`
                     // em colunas numericas (valores, deltas) para alinhar a direita.
                     const align = (header.column.columnDef.meta as { align?: "left" | "right" | "center" } | undefined)?.align ?? "left"
+                    const isSticky = stickyFirstColumn && hIdx === 0
                     return (
                       <th
                         key={header.id}
@@ -519,6 +532,9 @@ export function DataTable<TData>({
                         style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}
                         className={cx(
                           "group/th h-[30px] border-y border-gray-200 dark:border-gray-800 px-4",
+                          // z-[2] fica ACIMA do thead sticky (z-[1]) para o canto
+                          // superior-esquerdo nao ser coberto ao rolar nos 2 eixos.
+                          isSticky && "sticky left-0 z-[2] bg-gray-50 dark:bg-gray-900 border-r border-r-gray-200 dark:border-r-gray-800",
                           "text-[10px] font-semibold uppercase tracking-[0.05em]",
                           "text-gray-500 dark:text-gray-400 whitespace-nowrap select-none",
                           align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left",
@@ -567,6 +583,10 @@ export function DataTable<TData>({
                       rowH,
                       "border-b border-gray-100 dark:border-gray-900",
                       "transition-colors duration-75",
+                      // Base solida para a 1a celula herdar via `bg-inherit`
+                      // (sem isso o conteudo passa por baixo da coluna fixa).
+                      // Vem ANTES de hover/selecao/rowClassName, que sobrescrevem.
+                      stickyFirstColumn && "bg-white dark:bg-gray-950",
                       onRowClick && "cursor-pointer",
                       isSel
                         ? "bg-blue-50 dark:bg-blue-500/10 border-l-2 border-l-blue-500"
@@ -574,7 +594,8 @@ export function DataTable<TData>({
                       rowClassName?.(row.original),
                     )}
                   >
-                    {row.getVisibleCells().map((cell) => {
+                    {row.getVisibleCells().map((cell, cIdx) => {
+                      const isStickyCell = stickyFirstColumn && cIdx === 0
                       const isExpandCol = enableExpanding && expandColId !== null && cell.column.id === expandColId
                       const depth = row.depth
                       const canExpand = row.getCanExpand()
@@ -583,7 +604,7 @@ export function DataTable<TData>({
                       // numerico = right; o header ja seguia — td acompanha).
                       const cellAlign = (cell.column.columnDef.meta as { align?: "left" | "right" | "center" } | undefined)?.align ?? "left"
                       return (
-                        <td key={cell.id} className={cx("px-3 text-gray-900 dark:text-gray-50", cellAlign === "right" ? "text-right" : cellAlign === "center" && "text-center", tableLayout === "fixed" && "overflow-hidden")}>
+                        <td key={cell.id} className={cx("px-3 text-gray-900 dark:text-gray-50", cellAlign === "right" ? "text-right" : cellAlign === "center" && "text-center", tableLayout === "fixed" && "overflow-hidden", isStickyCell && "sticky left-0 z-[1] bg-inherit border-r border-r-gray-200 dark:border-r-gray-800")}>
                           {isExpandCol ? (
                             <span className="inline-flex items-center gap-1.5">
                               {/* Indent baseado em depth (16px por nivel) */}

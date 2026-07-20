@@ -1,6 +1,6 @@
 """Pydantic schemas — BI Benchmark: indicadores de benchmarking (cesta de 17).
 
-Resposta do Comparador (/bi/benchmark/indicadores): ate 3 fundos lado a lado
+Resposta do Comparador (/bi/benchmark/indicadores): ate 10 fundos lado a lado
 + medianas do universo na competencia. Cada indicador vem com o valor e o
 `*_rank` (percentil 0-100 no universo; direcao "maior=melhor" e metadado de
 front via INDICADOR_DIRECAO do service).
