@@ -28,6 +28,7 @@ import {
   RiLightbulbLine,
   RiLineChartLine,
   RiPieChart2Line,
+  RiPlugLine,
   RiPulseLine,
   RiRobot2Line,
   RiSettings3Line,
@@ -567,6 +568,13 @@ export const MODULES: ModuleDefinition[] = [
         href: "/admin/ia/tools",
         enabled: true,
         icon: RiToolsLine,
+        groupLabel: "Inteligencia Artificial",
+      },
+      {
+        name: "Servidores MCP",
+        href: "/admin/ia/mcp",
+        enabled: true,
+        icon: RiPlugLine,
         groupLabel: "Inteligencia Artificial",
       },
       {

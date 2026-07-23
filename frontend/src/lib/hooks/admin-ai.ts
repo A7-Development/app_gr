@@ -22,6 +22,8 @@ import {
   type AIExpertiseCreatePayload,
   type AIExpertiseDetail,
   type AIExpertiseUpdatePayload,
+  type AIMcpServerCreatePayload,
+  type AIMcpServerUpdatePayload,
   type AIPersonaCreatePayload,
   type AIPersonaDetail,
   type AIPersonaUpdatePayload,
@@ -474,6 +476,72 @@ export function useDeleteAgentFamily() {
       qc.invalidateQueries({
         queryKey: ["admin", "ai", "agent-definitions"],
       }),
+  })
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Servidores MCP (Fase 3 — copiloto-mcp, CLAUDE.md §19)
+// ───────────────────────────────────────────────────────────────────────────
+
+const MCP_SERVER_KEYS = {
+  list: ["admin", "ai", "mcp-servers"] as const,
+}
+
+export function useMcpServers() {
+  return useQuery({
+    queryKey: MCP_SERVER_KEYS.list,
+    queryFn: () => adminAI.mcp.list(),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useCreateMcpServer() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: AIMcpServerCreatePayload) =>
+      adminAI.mcp.create(payload),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "mcp-servers"] }),
+  })
+}
+
+export function useUpdateMcpServer() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: string
+      payload: AIMcpServerUpdatePayload
+    }) => adminAI.mcp.update(id, payload),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "mcp-servers"] }),
+  })
+}
+
+export function useActivateMcpServer() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name, version }: { name: string; version: number }) =>
+      adminAI.mcp.activate(name, version),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "mcp-servers"] }),
+  })
+}
+
+export function useArchiveMcpServer() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => adminAI.mcp.archive(id),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "ai", "mcp-servers"] }),
+  })
+}
+
+export function useTestMcpServer() {
+  return useMutation({
+    mutationFn: (id: string) => adminAI.mcp.test(id),
   })
 }
 

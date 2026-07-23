@@ -664,6 +664,27 @@ export const adminAI = {
         `/admin/ia/agents/usage/overview?window_days=${windowDays}`,
       ),
   },
+  // Fase 3 (copiloto-mcp) — CRUD versionado de servidores MCP (§19).
+  // Lista retorna TODAS as versoes; o front colapsa por familia (name)
+  // mostrando a ativa. Editar cria nova versao (nao ativa); ativar = 1 PUT.
+  mcp: {
+    list: () => apiClient.get<AIMcpServerDetail[]>("/admin/ia/mcp"),
+    get: (id: string) =>
+      apiClient.get<AIMcpServerDetail>(`/admin/ia/mcp/${id}`),
+    create: (payload: AIMcpServerCreatePayload) =>
+      apiClient.post<AIMcpServerDetail>("/admin/ia/mcp", payload),
+    update: (id: string, payload: AIMcpServerUpdatePayload) =>
+      apiClient.put<AIMcpServerDetail>(`/admin/ia/mcp/${id}`, payload),
+    activate: (name: string, version: number) =>
+      apiClient.put<AIMcpServerDetail>(
+        `/admin/ia/mcp/${encodeURIComponent(name)}/active`,
+        { version },
+      ),
+    archive: (id: string) =>
+      apiClient.post<AIMcpServerDetail>(`/admin/ia/mcp/${id}/archive`),
+    test: (id: string) =>
+      apiClient.post<AIMcpProbeResponse>(`/admin/ia/mcp/${id}/test`),
+  },
   // F2.c.2 — CRUD versionado de expertises (CLAUDE.md §19.12).
   expertises: {
     list: (opts: { includeArchived?: boolean; domain?: string } = {}) => {
@@ -799,6 +820,9 @@ export type AIAgentDefinitionDetail = {
   cross_module: boolean
   // null = usa default do CATALOG (spec.tools); [] = sem tools; [...] = override.
   allowed_tools: string[] | null
+  // Fase 3 (copiloto-mcp): servidores MCP concedidos ao agente.
+  // null = nenhum; tools=null dentro de um toolset = allowlist do servidor.
+  mcp_toolsets: AIAgentMcpToolset[] | null
   credit_hint: number | null
   tenant_id: string | null
   is_active: boolean
@@ -818,6 +842,7 @@ export type AIAgentDefinitionCreatePayload = {
   max_tokens?: number | null
   cross_module?: boolean
   allowed_tools?: string[] | null
+  mcp_toolsets?: AIAgentMcpToolset[] | null
   credit_hint?: number | null
 }
 
@@ -898,6 +923,68 @@ export type AIAgentStats = {
   window_tokens_total: number
   by_model: AIAgentStatsByModel[]
   recent_runs: AIAgentRunRecent[]
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Tipos do admin de servidores MCP (Fase 3 — copiloto-mcp)
+// ───────────────────────────────────────────────────────────────────────────
+
+// Toolset de MCP concedido a um agente (agent_definition.mcp_toolsets).
+// tools=null = herda a allowlist do proprio servidor (sem allowlist fina).
+export type AIAgentMcpToolset = {
+  mcp_server_name: string
+  tools: string[] | null
+}
+
+export type AIMcpServerDetail = {
+  id: string
+  tenant_id: string | null
+  name: string
+  version: number
+  url: string
+  transport: "http" | "stdio"
+  // null = cross-modulo (disponivel a qualquer agente com o MCP concedido).
+  module: string | null
+  // FK pro store existente `provedor_dados_credencial` (envelope Fernet).
+  credential_id: string | null
+  auth_header_map: Record<string, string> | null
+  // Allowlist dos nomes de tool expostos pelo servidor. null = todas.
+  allowed_tools: string[] | null
+  mode: "ephemeral" | "materialized"
+  cost_hint: "cheap" | "medium" | "expensive"
+  max_calls_per_turn: number
+  tool_result_max_chars: number
+  description: string | null
+  created_at: string
+  archived_at: string | null
+  is_active: boolean
+}
+
+export type AIMcpServerCreatePayload = {
+  name: string
+  url: string
+  transport: "http" | "stdio"
+  module?: string | null
+  credential_id?: string | null
+  auth_header_map?: Record<string, string> | null
+  allowed_tools?: string[] | null
+  mode?: "ephemeral" | "materialized"
+  cost_hint?: "cheap" | "medium" | "expensive"
+  max_calls_per_turn?: number
+  tool_result_max_chars?: number
+  description?: string | null
+}
+
+export type AIMcpServerUpdatePayload = Partial<
+  Omit<AIMcpServerCreatePayload, "name">
+>
+
+// Resultado do POST /{id}/test — probe de conexao (initialize + tools/list).
+export type AIMcpProbeResponse = {
+  ok: boolean
+  tool_count: number | null
+  allowed_count: number | null
+  error: string | null
 }
 
 // ───────────────────────────────────────────────────────────────────────────

@@ -103,6 +103,8 @@ class AgentDefinitionDetail(BaseModel):
     cross_module: bool
     # None = usa default do CATALOG (spec.tools); [] = sem tools; [...] = override.
     allowed_tools: list[str] | None = None
+    # Toolsets de MCP concedidos: [{"mcp_server_name": str, "tools": [...]|null}].
+    mcp_toolsets: list[dict] | None = None
     credit_hint: int | None = None
     tenant_id: UUID | None
     is_active: bool
@@ -139,6 +141,7 @@ class AgentDefinitionCreate(BaseModel):
     cross_module: bool = False
     # None = herda default do CATALOG; [] = sem tools; [...] = override explicito.
     allowed_tools: list[str] | None = None
+    mcp_toolsets: list[dict] | None = None
     credit_hint: int | None = None
 
 
@@ -160,6 +163,7 @@ class AgentDefinitionUpdate(BaseModel):
     cross_module: bool | None = None
     # Em update, None = herda da base (nao mexe); [] = zera tools; [...] = override.
     allowed_tools: list[str] | None = None
+    mcp_toolsets: list[dict] | None = None
     credit_hint: int | None = None
 
 

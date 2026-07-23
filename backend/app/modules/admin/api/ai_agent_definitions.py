@@ -197,6 +197,7 @@ async def _to_detail(
         max_tokens=row.max_tokens,
         cross_module=row.cross_module,
         allowed_tools=row.allowed_tools,
+        mcp_toolsets=row.mcp_toolsets,
         credit_hint=row.credit_hint,
         tenant_id=row.tenant_id,
         is_active=active_map.get((row.tenant_id, row.name)) == row.id,
@@ -369,6 +370,7 @@ async def create_agent(
         max_tokens=payload.max_tokens,
         cross_module=payload.cross_module,
         allowed_tools=payload.allowed_tools,
+        mcp_toolsets=payload.mcp_toolsets,
         credit_hint=payload.credit_hint,
         created_by_user_id=principal.user_id,
     )
@@ -437,6 +439,7 @@ async def update_agent(
         # None no payload herda a base; [] zera; [...] sobrescreve (mesma
         # semantica de expertise_ids).
         allowed_tools=_coalesce(payload.allowed_tools, base.allowed_tools),
+        mcp_toolsets=_coalesce(payload.mcp_toolsets, base.mcp_toolsets),
         credit_hint=_coalesce(payload.credit_hint, base.credit_hint),
         created_by_user_id=principal.user_id,
     )

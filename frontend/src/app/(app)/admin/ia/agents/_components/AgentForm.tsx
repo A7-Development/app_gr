@@ -15,6 +15,7 @@ import {
   RiAlertLine,
   RiCheckLine,
   RiLoader4Line,
+  RiPlugLine,
   RiToolsLine,
 } from "@remixicon/react"
 
@@ -33,12 +34,14 @@ import {
 import { Switch } from "@/components/tremor/Switch"
 import type {
   AIAgentDefinitionDetail,
+  AIAgentMcpToolset,
   AIAgentModelOption,
   AIExpertiseVersionInfo,
   AIPersonaVersionInfo,
   AIPromptVersionInfo,
   AIToolInfo,
 } from "@/lib/api-client"
+import { useMcpServers } from "@/lib/hooks/admin-ai"
 import {
   agentDefinitionCreateSchema,
   agentDefinitionUpdateSchema,
@@ -446,6 +449,112 @@ function ToolField({
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// Servidores MCP concedidos (Fase 3 — copiloto-mcp)
+// ───────────────────────────────────────────────────────────────────────────
+//
+// Semantica do valor (espelha agent_definition.mcp_toolsets no backend):
+//   null / []              -> nenhum servidor MCP concedido.
+//   [{mcp_server_name, tools: null}] -> servidor concedido; tools=null usa a
+//   allowlist do PROPRIO servidor (sem allowlist fina por agente nesta fase).
+//
+// Busca os servidores via useMcpServers() internamente — as paginas que
+// montam o form nao precisam de props novas.
+
+function McpToolsetField({
+  control,
+}: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  control: any
+}) {
+  const mcpQuery = useMcpServers()
+  // So familias ativas nao-arquivadas sao concessiveis.
+  const servers = React.useMemo(
+    () =>
+      (mcpQuery.data ?? []).filter(
+        (s) => s.is_active && s.archived_at === null,
+      ),
+    [mcpQuery.data],
+  )
+
+  return (
+    <div>
+      <Label className="flex items-center gap-1.5">
+        <RiPlugLine className="size-3.5 text-gray-500" aria-hidden />
+        Servidores MCP
+      </Label>
+      <Controller
+        name="mcp_toolsets"
+        control={control}
+        render={({ field }) => {
+          const value = (field.value ?? null) as AIAgentMcpToolset[] | null
+          const selected = new Set((value ?? []).map((t) => t.mcp_server_name))
+
+          function toggle(name: string) {
+            const current = value ?? []
+            const next = selected.has(name)
+              ? current.filter((t) => t.mcp_server_name !== name)
+              : [...current, { mcp_server_name: name, tools: null }]
+            field.onChange(next.length > 0 ? next : null)
+          }
+
+          if (mcpQuery.isLoading) {
+            return <FieldHint>Carregando servidores MCP...</FieldHint>
+          }
+          if (servers.length === 0) {
+            return (
+              <FieldHint>
+                Nenhum servidor MCP ativo. Cadastre em /admin/ia/mcp antes de
+                conceder a um agente.
+              </FieldHint>
+            )
+          }
+          return (
+            <div className="flex max-h-[240px] flex-col gap-1.5 overflow-y-auto rounded border border-gray-200 p-3 dark:border-gray-800">
+              {servers.map((s) => (
+                <label
+                  key={s.id}
+                  className={cx(
+                    "flex cursor-pointer items-start gap-2 rounded px-2 py-1",
+                    "hover:bg-gray-50 dark:hover:bg-gray-900",
+                    selected.has(s.name) && "bg-blue-50 dark:bg-blue-500/10",
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(s.name)}
+                    onChange={() => toggle(s.name)}
+                    className="mt-0.5 size-4 rounded border-gray-300 dark:border-gray-700"
+                  />
+                  <div className="flex flex-col">
+                    <span className="flex items-center gap-1.5 font-mono text-[13px] font-medium text-gray-900 dark:text-gray-100">
+                      {s.name}
+                      <span className="text-[10px] font-normal text-gray-400 dark:text-gray-500">
+                        v{s.version}
+                        {s.module ? ` · ${s.module}` : " · cross-modulo"}
+                      </span>
+                    </span>
+                    <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                      {s.allowed_tools
+                        ? `allowlist do servidor (${s.allowed_tools.length} tools)`
+                        : "todas as tools do servidor"}
+                    </span>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )
+        }}
+      />
+      <FieldHint>
+        Servidor marcado concede ao agente as tools do MCP em runtime,
+        respeitando a allowlist do proprio servidor. Cadastro/curadoria dos
+        servidores em /admin/ia/mcp.
+      </FieldHint>
+    </div>
+  )
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Form bodies (compartilhado entre Create/Edit)
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -481,6 +590,7 @@ const FIELD_TAB: Record<string, TabId> = {
   expertise_ids: "composicao",
   prompt_name: "composicao",
   allowed_tools: "tools",
+  mcp_toolsets: "tools",
   model: "modelo",
   fallback_model: "modelo",
   temperature: "modelo",
@@ -601,6 +711,8 @@ export function AgentCreateForm({
       cross_module: false,
       // null = override desligado (usa default do CATALOG).
       allowed_tools: null,
+      // null = nenhum servidor MCP concedido.
+      mcp_toolsets: null,
       credit_hint: null,
     },
   })
@@ -700,6 +812,8 @@ export function AgentCreateForm({
       {/* TOOLS */}
       <TabPanel id="tools" active={activeTab}>
         <ToolField control={control} tools={tools ?? []} agentModule={watchedModule} />
+        <Divider />
+        <McpToolsetField control={control} />
       </TabPanel>
 
       {/* MODELO */}
@@ -767,6 +881,7 @@ export function AgentEditForm({
       cross_module: agent.cross_module,
       // null preservado = override desligado (usa CATALOG); array = override ligado.
       allowed_tools: agent.allowed_tools,
+      mcp_toolsets: agent.mcp_toolsets ?? null,
       credit_hint: agent.credit_hint,
     },
   })
@@ -836,6 +951,8 @@ export function AgentEditForm({
       {/* TOOLS */}
       <TabPanel id="tools" active={activeTab}>
         <ToolField control={control} tools={tools ?? []} agentModule={agent.module} />
+        <Divider />
+        <McpToolsetField control={control} />
       </TabPanel>
 
       {/* MODELO */}

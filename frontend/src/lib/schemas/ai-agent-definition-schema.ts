@@ -44,6 +44,17 @@ export const agentDefinitionCreateSchema = z.object({
   cross_module: z.boolean().optional(),
   // null = herda default do CATALOG (spec.tools); [] = sem tools; [...] = override.
   allowed_tools: z.array(z.string()).nullable().optional(),
+  // Fase 3 (copiloto-mcp): servidores MCP concedidos. tools=null dentro de um
+  // toolset = allowlist do proprio servidor.
+  mcp_toolsets: z
+    .array(
+      z.object({
+        mcp_server_name: z.string(),
+        tools: z.array(z.string()).nullable(),
+      }),
+    )
+    .nullable()
+    .optional(),
   credit_hint: z.number().int().min(0).nullable().optional(),
 })
 
@@ -57,6 +68,15 @@ export const agentDefinitionUpdateSchema = z.object({
   max_tokens: z.number().int().min(1).max(200000).nullable().optional(),
   cross_module: z.boolean().optional(),
   allowed_tools: z.array(z.string()).nullable().optional(),
+  mcp_toolsets: z
+    .array(
+      z.object({
+        mcp_server_name: z.string(),
+        tools: z.array(z.string()).nullable(),
+      }),
+    )
+    .nullable()
+    .optional(),
   credit_hint: z.number().int().min(0).nullable().optional(),
 })
 
@@ -98,6 +118,8 @@ export function buildCreatePayload(
     cross_module: values.cross_module ?? false,
     // null = herda do CATALOG; [] (override ligado, nada escolhido) preservado.
     allowed_tools: values.allowed_tools ?? null,
+    // null = nenhum servidor MCP concedido.
+    mcp_toolsets: values.mcp_toolsets ?? null,
     credit_hint: values.credit_hint ?? null,
   }
 }
@@ -121,6 +143,8 @@ export function buildUpdatePayload(
   // null = herda da base; [] = zera; [...] = override. Enviado as-is.
   if (values.allowed_tools !== undefined)
     payload.allowed_tools = values.allowed_tools
+  if (values.mcp_toolsets !== undefined)
+    payload.mcp_toolsets = values.mcp_toolsets
   if (values.credit_hint !== undefined) payload.credit_hint = values.credit_hint
   return payload
 }
