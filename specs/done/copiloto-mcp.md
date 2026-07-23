@@ -2,7 +2,7 @@
 ## Strata AI — chat livre (codinome Copiloto) + Camada de Servidores MCP + Cadastro de Agente estendido
 
 > **Tipo:** Spec-driven development — documento de referência da rodada.
-> **Autor:** engenharia. **Status:** v3 — REVISADO (cliente MCP próprio + fases invertidas). Nada implementado.
+> **Autor:** engenharia. **Status:** v3 — **CONCLUÍDA (2026-07-23)**. Todas as fases (0–5) entregues com gates verdes; commits `30a68c2` (1a), `7221c09` (1b), `bbff59b` (2), `9e371ce` (3), `20a4c09` (4+5). Evals baseline 7/7. Pendências pós-rodada: smoke visual autenticado em prod após deploy; validação de credencial vazia em /admin/ia/providers (achado do incidente da chave Anthropic); feedback 👍/👎 por mensagem (exige tabela) ficou de fora.
 > **Escopo:** três primitivos — (A) Servidores MCP como dimensão nova; (B) Agente que consome tools nativas **e** MCP ao mesmo tempo; (C) tela de Copiloto (chat livre) como primeira tela pós-login.
 >
 > **Changelog v3 (2026-07-23, decisões Ricardo):**
