@@ -580,6 +580,13 @@ async def stream_copiloto_response(
             content_encrypted=encrypt_envelope({"messages": turn_blocks}),
         )
 
+        # Titulo automatico no 1o turno (rail legivel, Fase 4): trecho da
+        # pergunta. Renomear manualmente (PATCH) sobrescreve; titulacao por
+        # LLM pode substituir isto no futuro sem mudar contrato.
+        if conv.title is None:
+            snippet = " ".join(user_message.split())
+            conv.title = snippet[:57] + "…" if len(snippet) > 58 else snippet
+
         await rate_limit.record_cost(tenant_id, cost_brl=cost_brl)
         await db.commit()
 

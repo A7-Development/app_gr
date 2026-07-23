@@ -1,4 +1,6 @@
 import { Suspense } from "react"
+import Link from "next/link"
+import { RiSparkling2Line } from "@remixicon/react"
 
 import { AppSidebar, SidebarTrigger } from "@/design-system/components/Sidebar"
 import { AuthGuard } from "@/design-system/components/AuthGuard"
@@ -34,7 +36,16 @@ export default function AppShellLayout({
               <SidebarTrigger className="-ml-1" />
               <div className="mr-2 h-4 w-px bg-gray-200 dark:bg-gray-800" />
               <HeaderBreadcrumbs />
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-2">
+                {/* Acesso ubiquo ao Strata AI mesmo com a sidebar recolhida
+                    (spec copiloto-mcp §8.1). */}
+                <Link
+                  href="/copiloto"
+                  className="flex h-[26px] items-center gap-1.5 rounded-md border border-violet-200 px-2 text-[13px] font-medium text-violet-700 transition hover:bg-violet-50 dark:border-violet-700/40 dark:text-violet-300 dark:hover:bg-violet-500/10"
+                >
+                  <RiSparkling2Line className="size-3.5" />
+                  Strata AI
+                </Link>
                 <SyncHealthBadge />
               </div>
             </header>

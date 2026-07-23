@@ -10,7 +10,7 @@
  */
 
 import * as React from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import {
   apiClient,
@@ -184,7 +184,7 @@ export type UseCopilotoChatOptions = {
  * `tool_status` (status de consulta ao vivo) e `ping` (heartbeat, ignorado).
  */
 export function useCopilotoChat(options: UseCopilotoChatOptions): {
-  send: (text: string) => Promise<string>
+  send: (text: string, opts?: { signal?: AbortSignal }) => Promise<string>
 } {
   const conversationIdRef = React.useRef<string | null>(options.conversationId)
   const optsRef = React.useRef(options)
@@ -197,11 +197,13 @@ export function useCopilotoChat(options: UseCopilotoChatOptions): {
     optsRef.current = options
   }, [options])
 
-  const send = React.useCallback(async (text: string): Promise<string> => {
+  const send = React.useCallback(
+    async (text: string, opts?: { signal?: AbortSignal }): Promise<string> => {
     const { url, init } = buildCopilotoChatRequest({
       message: text,
       conversation_id: conversationIdRef.current,
     })
+    if (opts?.signal) init.signal = opts.signal
 
     const res = await fetch(url, init)
     if (!res.ok || !res.body) {
@@ -284,9 +286,36 @@ export function useCopilotoChat(options: UseCopilotoChatOptions): {
       throw new Error(state.finalError.message)
     }
     return state.accumulatedText
-  }, [])
+    },
+    [],
+  )
 
   return { send }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Mutations do rail de conversas (renomear / excluir — Copiloto Fase 4)
+// ───────────────────────────────────────────────────────────────────────────
+
+export function useRenameConversation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, title }: { id: string; title: string }) =>
+      apiClient.patch<AIConversationListItem>(`/ai/conversations/${id}`, { title }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["ai", "conversations"] })
+    },
+  })
+}
+
+export function useArchiveConversation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete<void>(`/ai/conversations/${id}`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["ai", "conversations"] })
+    },
+  })
 }
 
 // ───────────────────────────────────────────────────────────────────────────

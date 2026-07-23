@@ -7,6 +7,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -97,6 +98,39 @@ async def list_messages(
         )
         for r in rows
     ]
+
+
+class ConversationRename(BaseModel):
+    """Body de PATCH /conversations/{id} — renomear (rail do Copiloto, Fase 4)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=120)
+
+
+@router.patch("/conversations/{conversation_id}", response_model=ConversationListItem)
+async def rename_conversation(
+    conversation_id: UUID,
+    payload: ConversationRename,
+    principal: Annotated[RequestPrincipal, Depends(get_current_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[None, Depends(require_ai(AICapability.READ))],
+) -> ConversationListItem:
+    """Renomeia a conversa (ownership verificada — mesmo criterio do delete)."""
+    conv = await db.get(AIConversation, conversation_id)
+    if conv is None or conv.user_id != principal.user_id or conv.tenant_id != principal.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Conversa nao encontrada."
+        )
+    conv.title = payload.title.strip()
+    await db.commit()
+    return ConversationListItem(
+        id=conv.id,
+        title=conv.title,
+        page_context=conv.page_context,
+        last_msg_at=conv.last_msg_at,
+        turn_count=conv.turn_count,
+    )
 
 
 @router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)

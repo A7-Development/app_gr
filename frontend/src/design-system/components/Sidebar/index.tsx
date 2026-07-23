@@ -19,7 +19,7 @@
 
 import * as React from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { RiHome5Line, RiSearchLine } from "@remixicon/react"
+import { RiHome5Line, RiSearchLine, RiSparkling2Line } from "@remixicon/react"
 
 import { cx, focusRing } from "@/lib/utils"
 import { getActiveModule } from "@/lib/modules"
@@ -41,9 +41,11 @@ export interface AppSidebarProps {
   className?: string
 }
 
+// `/` redireciona para /copiloto (landing, spec copiloto-mcp §8.1); a home
+// de atalhos por modulo mora em /inicio.
 const HOME_SECTION = {
   name: "Inicio",
-  href: "/",
+  href: "/inicio",
   enabled: true,
   icon: RiHome5Line,
 }
@@ -133,9 +135,24 @@ export function AppSidebar({
         className,
       )}
     >
-      {/* Header: BrandCard + ModuleSwitcher */}
+      {/* Header: BrandCard + Strata AI (pin fixo, spec copiloto-mcp §8.1) + ModuleSwitcher */}
       <div className="shrink-0 border-b border-gray-200 px-3.5 pb-4 pt-3.5 dark:border-gray-800">
         <BrandCard className="mb-4" />
+        {/* Destino fixo — nao conta como nivel de navegacao (§11.6). */}
+        <button
+          type="button"
+          onClick={() => router.push("/copiloto")}
+          className={cx(
+            "mb-2 flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-[13px] font-medium transition",
+            pathname?.startsWith("/copiloto")
+              ? "border-violet-300 bg-violet-50 text-violet-800 dark:border-violet-700/50 dark:bg-violet-500/10 dark:text-violet-300"
+              : "border-gray-200 text-gray-700 hover:border-violet-300 hover:bg-violet-50/60 dark:border-gray-800 dark:text-gray-300 dark:hover:border-violet-700/40 dark:hover:bg-violet-500/5",
+            focusRing,
+          )}
+        >
+          <RiSparkling2Line className="size-4 text-violet-600 dark:text-violet-400" />
+          Strata AI
+        </button>
         <ModuleSwitcher />
       </div>
 

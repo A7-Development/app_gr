@@ -3,20 +3,27 @@
 /**
  * /copiloto — Strata AI, chat livre (spec specs/active/copiloto-mcp.md §8).
  *
- * Fase 1a (esqueleto): Estados 1+2 minimos.
- *   Estado 1 (novo chat): composer heroi centralizado + atalhos + recentes.
- *   Estado 2 (conversa): thread + composer sticky embaixo.
- * Rail completo de conversas, acesso ubiquo e titulos automaticos sao
- * Fase 4. Conversa ativa e deep-linkavel via ?c=<id> (nuqs).
+ * Fase 4 (tela completa): Estado 1 (heroi + atalhos + recentes) e Estado 2
+ * (rail de conversas + thread + composer sticky), acoes por mensagem
+ * (copiar/regenerar), parar geracao, Cmd/Ctrl+K = novo chat, titulos
+ * automaticos (backend). Conversa ativa deep-linkavel via ?c=<id> (nuqs).
  */
 
 import * as React from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { useQueryState } from "nuqs"
 import {
+  RiAddLine,
   RiArrowUpLine,
   RiChat3Line,
+  RiCheckLine,
+  RiDeleteBinLine,
+  RiFileCopyLine,
   RiLoader4Line,
+  RiPencilLine,
+  RiRestartLine,
   RiSparkling2Line,
+  RiStopFill,
 } from "@remixicon/react"
 
 import { Button } from "@/components/tremor/Button"
@@ -25,7 +32,9 @@ import {
   useAIConversationMessages,
   useAIConversations,
   useAIQuota,
+  useArchiveConversation,
   useCopilotoChat,
+  useRenameConversation,
 } from "@/lib/hooks/ai"
 import type { CopilotoToolStatus } from "@/lib/api-client"
 import { cx } from "@/lib/utils"
@@ -42,6 +51,7 @@ type Msg = {
   text: string
   loading?: boolean
   error?: boolean
+  interrupted?: boolean
 }
 
 const SUGGESTED_PROMPTS = [
@@ -74,10 +84,14 @@ function CopilotoPageInner() {
   const [isSending, setIsSending] = React.useState(false)
   const [toolStatuses, setToolStatuses] = React.useState<CopilotoToolStatus[]>([])
   const hydratedConvRef = React.useRef<string | null>(null)
+  const abortRef = React.useRef<AbortController | null>(null)
+  const qc = useQueryClient()
 
   const quotaQ = useAIQuota()
-  const recentsQ = useAIConversations({ surface: "copiloto", limit: 8 })
+  const recentsQ = useAIConversations({ surface: "copiloto", limit: 30 })
   const messagesQ = useAIConversationMessages(conversationId)
+  const renameMut = useRenameConversation()
+  const archiveMut = useArchiveConversation()
 
   const composerRef = React.useRef<HTMLTextAreaElement>(null)
   const scrollRef = React.useRef<HTMLDivElement>(null)
@@ -89,11 +103,7 @@ function CopilotoPageInner() {
     if (hydratedConvRef.current === conversationId) return
     hydratedConvRef.current = conversationId
     setMessages(
-      messagesQ.data.map((m) => ({
-        id: m.id,
-        role: m.role,
-        text: m.text,
-      })),
+      messagesQ.data.map((m) => ({ id: m.id, role: m.role, text: m.text })),
     )
   }, [conversationId, messagesQ.data])
 
@@ -123,6 +133,8 @@ function CopilotoPageInner() {
       setInput("")
       setIsSending(true)
       setToolStatuses([])
+      const controller = new AbortController()
+      abortRef.current = controller
       const aiMsgId = `ai-${Date.now()}`
       setMessages((prev) => [
         ...prev,
@@ -130,22 +142,25 @@ function CopilotoPageInner() {
         { id: aiMsgId, role: "ai", text: "", loading: true },
       ])
       try {
-        const answer = await send(text)
+        const answer = await send(text, { signal: controller.signal })
         setMessages((prev) =>
           prev.map((m) =>
             m.id === aiMsgId ? { ...m, text: answer, loading: false } : m,
           ),
         )
       } catch (err) {
+        const aborted = controller.signal.aborted
         setMessages((prev) =>
           prev.map((m) =>
             m.id === aiMsgId
               ? {
                   ...m,
                   loading: false,
-                  error: true,
-                  text:
-                    err instanceof Error
+                  error: !aborted,
+                  interrupted: aborted,
+                  text: aborted
+                    ? "Geração interrompida."
+                    : err instanceof Error
                       ? err.message
                       : "Não consegui responder agora. Tente novamente.",
                 }
@@ -153,15 +168,23 @@ function CopilotoPageInner() {
           ),
         )
       } finally {
+        abortRef.current = null
         setIsSending(false)
         setToolStatuses([])
+        // Rail/recentes atualizam (titulo automatico chega do backend).
+        void qc.invalidateQueries({ queryKey: ["ai", "conversations"] })
         composerRef.current?.focus()
       }
     },
-    [input, isSending, send],
+    [input, isSending, send, qc],
   )
 
+  const handleStop = React.useCallback(() => {
+    abortRef.current?.abort()
+  }, [])
+
   const startNewChat = React.useCallback(() => {
+    abortRef.current?.abort()
     hydratedConvRef.current = null
     setMessages([])
     setInput("")
@@ -172,11 +195,42 @@ function CopilotoPageInner() {
 
   const openConversation = React.useCallback(
     (id: string) => {
+      if (id === conversationId) return
+      abortRef.current?.abort()
       hydratedConvRef.current = null
       setMessages([])
       void setConversationId(id)
     },
-    [setConversationId],
+    [conversationId, setConversationId],
+  )
+
+  // Cmd/Ctrl+K = novo chat (spec §8.2).
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault()
+        startNewChat()
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [startNewChat])
+
+  const handleRegenerate = React.useCallback(() => {
+    // Reenvia a ultima mensagem do usuario (nova resposta vira novo turno).
+    const lastUser = [...messages].reverse().find((m) => m.role === "user")
+    if (lastUser) void handleSend(lastUser.text)
+  }, [messages, handleSend])
+
+  const handleArchive = React.useCallback(
+    (id: string) => {
+      archiveMut.mutate(id, {
+        onSuccess: () => {
+          if (id === conversationId) startNewChat()
+        },
+      })
+    },
+    [archiveMut, conversationId, startNewChat],
   )
 
   const isThread = conversationId !== null || messages.length > 0
@@ -194,7 +248,13 @@ function CopilotoPageInner() {
         <div className="flex items-center gap-2">
           <AIQuotaIndicator quota={quotaQ.data} loading={quotaQ.isLoading} />
           {isThread && (
-            <Button variant="secondary" className="h-[30px] text-[13px]" onClick={startNewChat}>
+            <Button
+              variant="secondary"
+              className="h-[30px] text-[13px]"
+              onClick={startNewChat}
+              title="Novo chat (Ctrl+K)"
+            >
+              <RiAddLine className="mr-1 size-3.5" />
               Novo chat
             </Button>
           )}
@@ -202,39 +262,59 @@ function CopilotoPageInner() {
       </div>
 
       {isThread ? (
-        <>
-          {/* Estado 2 — thread */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-3xl space-y-4 px-6 py-6">
-              {messagesQ.isLoading && messages.length === 0 ? (
-                <div className="flex items-center gap-2 text-sm text-gray-500">
-                  <RiLoader4Line className="size-4 animate-spin" />
-                  Carregando a conversa…
-                </div>
-              ) : (
-                messages.map((msg) => <MessageBubble key={msg.id} msg={msg} />)
-              )}
-              {toolStatuses.length > 0 && (
-                <div className="space-y-1">
-                  {toolStatuses.map((s) => (
-                    <ToolStatusLine key={s.id} status={s} />
-                  ))}
-                </div>
-              )}
+        <div className="flex min-h-0 flex-1">
+          {/* Rail de conversas (Estado 2) */}
+          <ConversationRail
+            conversations={recentsQ.data ?? []}
+            activeId={conversationId}
+            onOpen={openConversation}
+            onRename={(id, title) => renameMut.mutate({ id, title })}
+            onArchive={handleArchive}
+          />
+
+          {/* Thread + composer */}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div ref={scrollRef} className="flex-1 overflow-y-auto">
+              <div className="mx-auto w-full max-w-3xl space-y-4 px-6 py-6">
+                {messagesQ.isLoading && messages.length === 0 ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <RiLoader4Line className="size-4 animate-spin" />
+                    Carregando a conversa…
+                  </div>
+                ) : (
+                  messages.map((msg, i) => (
+                    <MessageBubble
+                      key={msg.id}
+                      msg={msg}
+                      isLast={i === messages.length - 1}
+                      onRegenerate={handleRegenerate}
+                      canRegenerate={!isSending}
+                    />
+                  ))
+                )}
+                {toolStatuses.length > 0 && (
+                  <div className="space-y-1">
+                    {toolStatuses.map((s) => (
+                      <ToolStatusLine key={s.id} status={s} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="shrink-0 border-t border-gray-200 px-6 py-3 dark:border-gray-800">
+              <div className="mx-auto w-full max-w-3xl">
+                <Composer
+                  ref={composerRef}
+                  value={input}
+                  onChange={setInput}
+                  onSend={() => void handleSend()}
+                  onStop={handleStop}
+                  disabled={isSending}
+                />
+              </div>
             </div>
           </div>
-          <div className="shrink-0 border-t border-gray-200 px-6 py-3 dark:border-gray-800">
-            <div className="mx-auto w-full max-w-3xl">
-              <Composer
-                ref={composerRef}
-                value={input}
-                onChange={setInput}
-                onSend={() => void handleSend()}
-                disabled={isSending}
-              />
-            </div>
-          </div>
-        </>
+        </div>
       ) : (
         /* Estado 1 — heroi */
         <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-6">
@@ -255,6 +335,7 @@ function CopilotoPageInner() {
               value={input}
               onChange={setInput}
               onSend={() => void handleSend()}
+              onStop={handleStop}
               disabled={isSending}
               hero
             />
@@ -309,10 +390,138 @@ function CopilotoPageInner() {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// Rail de conversas
+// ───────────────────────────────────────────────────────────────────────────
+
+type RailProps = {
+  conversations: { id: string; title: string | null }[]
+  activeId: string | null
+  onOpen: (id: string) => void
+  onRename: (id: string, title: string) => void
+  onArchive: (id: string) => void
+}
+
+function ConversationRail({
+  conversations,
+  activeId,
+  onOpen,
+  onRename,
+  onArchive,
+}: RailProps) {
+  const [editingId, setEditingId] = React.useState<string | null>(null)
+  const [draft, setDraft] = React.useState("")
+
+  return (
+    <aside className="hidden w-60 shrink-0 flex-col overflow-y-auto border-r border-gray-200 py-2 md:flex dark:border-gray-800">
+      <div className="px-3 pb-1 text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        Conversas
+      </div>
+      <ul className="space-y-0.5 px-2">
+        {conversations.map((c) => (
+          <li key={c.id} className="group relative">
+            {editingId === c.id ? (
+              <input
+                autoFocus
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={() => setEditingId(null)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && draft.trim()) {
+                    onRename(c.id, draft.trim())
+                    setEditingId(null)
+                  }
+                  if (e.key === "Escape") setEditingId(null)
+                }}
+                className="w-full rounded border border-violet-400 bg-white px-2 py-1.5 text-[13px] text-gray-900 outline-none dark:bg-gray-950 dark:text-gray-100"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => onOpen(c.id)}
+                className={cx(
+                  "flex w-full items-center rounded px-2 py-1.5 text-left text-[13px] transition",
+                  c.id === activeId
+                    ? "bg-violet-50 text-violet-800 dark:bg-violet-500/10 dark:text-violet-300"
+                    : "text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-900",
+                )}
+              >
+                <span className="truncate pr-10">
+                  {c.title ?? "Conversa sem título"}
+                </span>
+              </button>
+            )}
+            {editingId !== c.id && (
+              <div className="absolute top-1/2 right-1 hidden -translate-y-1/2 items-center gap-0.5 group-hover:flex">
+                <button
+                  type="button"
+                  aria-label="Renomear conversa"
+                  onClick={() => {
+                    setDraft(c.title ?? "")
+                    setEditingId(c.id)
+                  }}
+                  className="rounded p-1 text-gray-400 hover:text-violet-600 dark:hover:text-violet-400"
+                >
+                  <RiPencilLine className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Excluir conversa"
+                  onClick={() => onArchive(c.id)}
+                  className="rounded p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                >
+                  <RiDeleteBinLine className="size-3.5" />
+                </button>
+              </div>
+            )}
+          </li>
+        ))}
+        {conversations.length === 0 && (
+          <li className="px-2 py-2 text-[13px] text-gray-400">
+            Nenhuma conversa ainda.
+          </li>
+        )}
+      </ul>
+    </aside>
+  )
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Blocos internos
 // ───────────────────────────────────────────────────────────────────────────
 
-function MessageBubble({ msg }: { msg: Msg }) {
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = React.useState(false)
+  return (
+    <button
+      type="button"
+      aria-label="Copiar resposta"
+      onClick={() => {
+        void navigator.clipboard.writeText(text)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      }}
+      className="rounded p-1 text-gray-400 transition hover:text-violet-600 dark:hover:text-violet-400"
+    >
+      {copied ? (
+        <RiCheckLine className="size-3.5 text-emerald-600" />
+      ) : (
+        <RiFileCopyLine className="size-3.5" />
+      )}
+    </button>
+  )
+}
+
+function MessageBubble({
+  msg,
+  isLast,
+  onRegenerate,
+  canRegenerate,
+}: {
+  msg: Msg
+  isLast: boolean
+  onRegenerate: () => void
+  canRegenerate: boolean
+}) {
   if (msg.role === "user") {
     return (
       <div className="flex justify-end">
@@ -323,7 +532,7 @@ function MessageBubble({ msg }: { msg: Msg }) {
     )
   }
   return (
-    <div className="flex gap-2.5">
+    <div className="group flex gap-2.5">
       <RiSparkling2Line className="mt-1 size-4 shrink-0 text-violet-600 dark:text-violet-400" />
       <div className="min-w-0 flex-1">
         {msg.loading ? (
@@ -333,8 +542,25 @@ function MessageBubble({ msg }: { msg: Msg }) {
           </div>
         ) : msg.error ? (
           <p className="text-sm text-red-600 dark:text-red-400">{msg.text}</p>
+        ) : msg.interrupted ? (
+          <p className="text-sm text-gray-400 italic">{msg.text}</p>
         ) : (
-          <CopilotoMarkdown text={msg.text} />
+          <>
+            <CopilotoMarkdown text={msg.text} />
+            <div className="mt-1 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+              <CopyButton text={msg.text} />
+              {isLast && canRegenerate && (
+                <button
+                  type="button"
+                  aria-label="Regenerar resposta"
+                  onClick={onRegenerate}
+                  className="rounded p-1 text-gray-400 transition hover:text-violet-600 dark:hover:text-violet-400"
+                >
+                  <RiRestartLine className="size-3.5" />
+                </button>
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -370,12 +596,13 @@ type ComposerProps = {
   value: string
   onChange: (v: string) => void
   onSend: () => void
+  onStop: () => void
   disabled?: boolean
   hero?: boolean
 }
 
 const Composer = React.forwardRef<HTMLTextAreaElement, ComposerProps>(
-  function Composer({ value, onChange, onSend, disabled, hero }, ref) {
+  function Composer({ value, onChange, onSend, onStop, disabled, hero }, ref) {
     return (
       <div
         className={cx(
@@ -399,24 +626,31 @@ const Composer = React.forwardRef<HTMLTextAreaElement, ComposerProps>(
           className="max-h-40 flex-1 resize-none bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100"
           autoFocus
         />
-        <button
-          type="button"
-          onClick={onSend}
-          disabled={disabled || !value.trim()}
-          aria-label="Enviar"
-          className={cx(
-            "flex size-8 shrink-0 items-center justify-center rounded-md transition",
-            value.trim() && !disabled
-              ? "bg-violet-600 text-white hover:bg-violet-700"
-              : "bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600",
-          )}
-        >
-          {disabled ? (
-            <RiLoader4Line className="size-4 animate-spin" />
-          ) : (
+        {disabled ? (
+          <button
+            type="button"
+            onClick={onStop}
+            aria-label="Parar geração"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white transition hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900"
+          >
+            <RiStopFill className="size-4" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onSend}
+            disabled={!value.trim()}
+            aria-label="Enviar"
+            className={cx(
+              "flex size-8 shrink-0 items-center justify-center rounded-md transition",
+              value.trim()
+                ? "bg-violet-600 text-white hover:bg-violet-700"
+                : "bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600",
+            )}
+          >
             <RiArrowUpLine className="size-4" />
-          )}
-        </button>
+          </button>
+        )}
       </div>
     )
   },
