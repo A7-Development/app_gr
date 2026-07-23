@@ -68,6 +68,11 @@ class ResolvedAgent:
     # Resolvido pelo runtime em `_build_tools_for_agent`.
     allowed_tools: tuple[str, ...] | None = None
 
+    # Toolsets de MCP concedidos (spec copiloto-mcp §5.1). Cada item:
+    # {"mcp_server_name": "bigdatacorp", "tools": [...] | None} — tools None
+    # = usa a allowlist do proprio servidor. Tupla vazia = sem MCP.
+    mcp_toolsets: tuple[dict, ...] = ()
+
     @property
     def full_id(self) -> str:
         """Identifier do agente (paralelo a Prompt.full_id)."""

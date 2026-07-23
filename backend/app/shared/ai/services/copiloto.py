@@ -43,8 +43,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agentic._scope import ScopedContext
 from app.agentic.agents._compose import compose_system_text
 from app.agentic.agents.registry import AgentNotFoundError, AgentRegistry
+from app.agentic.mcp.public import (
+    MCP_TOOL_PREFIX,
+    McpCapabilities,
+    McpWrappedTool,
+    build_mcp_capabilities,
+)
 from app.agentic.tools._base import AgentTool
-from app.core.enums import AIProvider, AIUsageStatus, Module
+from app.core.enums import AIProvider, AIUsageStatus, Module, Permission
 from app.core.tenant_middleware import RequestPrincipal
 from app.modules.integracoes.adapters.llm.anthropic.adapter import AnthropicAdapter
 from app.modules.integracoes.adapters.llm.anthropic.config import (
@@ -60,6 +66,8 @@ from app.shared.ai.services import audit, conversation, metering, rate_limit, re
 from app.shared.ai.services.chat import _credits_for_tokens, _injection_check
 from app.shared.ai.services.metering import UsageRecord
 from app.shared.crypto import encrypt_envelope
+from app.shared.identity.subscription import TenantModuleSubscription
+from app.shared.identity.user_permission import UserModulePermission
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +114,37 @@ def _tool_status_frame(
         "status": status,
         "duration_ms": duration_ms,
     }
+
+
+async def _load_user_permissions(
+    db: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID
+) -> dict[Module, Permission]:
+    """Permissoes efetivas do usuario: user_module_permission ∩ assinatura
+    do tenant (spec §6.3 — cardapio holistico dirigido por permissao)."""
+    enabled = {
+        Module(row)
+        for row in (
+            await db.execute(
+                select(TenantModuleSubscription.module).where(
+                    TenantModuleSubscription.tenant_id == tenant_id,
+                    TenantModuleSubscription.enabled.is_(True),
+                )
+            )
+        ).scalars()
+    }
+    perms: dict[Module, Permission] = {}
+    rows = (
+        await db.execute(
+            select(
+                UserModulePermission.module, UserModulePermission.permission
+            ).where(UserModulePermission.user_id == user_id)
+        )
+    ).all()
+    for module, permission in rows:
+        m = Module(module)
+        if m in enabled and Permission(permission) != Permission.NONE:
+            perms[m] = Permission(permission)
+    return perms
 
 
 async def _create_with_heartbeat(
@@ -176,7 +215,10 @@ async def stream_copiloto_response(
     yield {"type": "conversation_id", "conversation_id": str(conv.id)}
 
     # ----- Redact user message ------------------------------------------------
-    redacted = redaction.redact(user_message)
+    # CPF/CNPJ preservados: sao a ENTRADA da consulta no chat livre —
+    # mascara-los quebraria as tools (spec §12.7). Email/conta continuam
+    # redactados.
+    redacted = redaction.redact(user_message, preserve_query_identifiers=True)
     user_text_for_llm = redacted.text
 
     # ----- Credential ---------------------------------------------------------
@@ -188,6 +230,7 @@ async def stream_copiloto_response(
 
     # The injection detector reuses the httpx adapter path (cheap call).
     adapter = AnthropicAdapter(api_key=cred.api_key)
+    mcp_caps: McpCapabilities | None = None
 
     try:
         # ----- Pre-flight: injection check -----------------------------------
@@ -226,12 +269,15 @@ async def stream_copiloto_response(
             return
 
         # ----- Resolve agent (DB-first: persona + expertise + prompt) --------
+        permissions = await _load_user_permissions(
+            db, tenant_id=tenant_id, user_id=user_id
+        )
         scope = ScopedContext(
             tenant_id=tenant_id,
             empresa_id=None,
             user_id=user_id,
             module=Module.CREDITO,
-            permissions={},
+            permissions=permissions,
             db=db,
         )
         try:
@@ -240,10 +286,25 @@ async def stream_copiloto_response(
             yield {"type": "error", "error": str(e), "status": "config_error"}
             return
 
-        # ----- Capabilities (Fase 1a: empty; 1b = MCP; F2 = native) ----------
-        tools: list[AgentTool] = []
+        # ----- Capabilities: MCP (1b) + nativas (F2) -------------------------
+        mcp_caps = await build_mcp_capabilities(
+            db, mcp_toolsets=resolved.mcp_toolsets, scope=scope
+        )
+        for _name, _err in mcp_caps.unavailable.items():
+            # Aviso honesto: o cardapio segue sem o servidor (spec §4.3/§6.6).
+            yield _tool_status_frame(
+                status_id=str(uuid.uuid4()),
+                source="hub",
+                label="O Strata Hub está indisponível agora — respondo com o que tenho.",
+                status="error",
+            )
+
+        native_tools: list[AgentTool] = []
+        tools: list[AgentTool | McpWrappedTool] = [*native_tools, *mcp_caps.tools]
         tool_definitions = [t.to_api_definition() for t in tools]
-        tool_dispatch: dict[str, AgentTool] = {t.name: t for t in tools}
+        tool_dispatch: dict[str, AgentTool | McpWrappedTool] = {
+            t.name: t for t in tools
+        }
 
         # ----- System prompt + message history --------------------------------
         rendered = resolved.prompt.render(
@@ -358,7 +419,9 @@ async def stream_copiloto_response(
                         continue
                     tool = tool_dispatch.get(block.name)
                     status_id = str(uuid.uuid4())
-                    source = "hub" if block.name.startswith("mcp__") else "lake"
+                    source = (
+                        "hub" if block.name.startswith(MCP_TOOL_PREFIX) else "lake"
+                    )
                     label = (
                         "Consultando o Strata Hub…"
                         if source == "hub"
@@ -371,7 +434,10 @@ async def stream_copiloto_response(
                     try:
                         if tool is None:
                             raise KeyError(f"tool '{block.name}' fora do cardapio")
-                        result_text = await tool.handler(scope, dict(block.input))
+                        if isinstance(tool, McpWrappedTool):
+                            result_text = await tool.execute(dict(block.input))
+                        else:
+                            result_text = await tool.handler(scope, dict(block.input))
                         tool_results.append(
                             {
                                 "type": "tool_result",
@@ -386,7 +452,7 @@ async def stream_copiloto_response(
                             status="done",
                             duration_ms=int((time.monotonic() - started) * 1000),
                         )
-                    except Exception as tool_exc:  # tool failure -> model decides
+                    except Exception as tool_exc:  # inclui McpToolCallError — modelo decide
                         logger.warning(
                             "Copiloto tool '%s' falhou: %s", block.name, tool_exc
                         )
@@ -518,4 +584,6 @@ async def stream_copiloto_response(
         await db.rollback()
         yield {"type": "error", "error": f"Falha na chamada de IA: {e}", "status": "error"}
     finally:
+        if mcp_caps is not None:
+            await mcp_caps.aclose()
         await adapter.aclose()

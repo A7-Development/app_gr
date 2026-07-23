@@ -33,6 +33,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -93,6 +94,14 @@ class AgentDefinition(Base):
     # Sem FK (lista de strings); validacao na camada de aplicacao + registry.
     allowed_tools: Mapped[list[str] | None] = mapped_column(
         ARRAY(String), nullable=True
+    )
+
+    # Toolsets de MCP concedidos ao agente (spec copiloto-mcp §5.1).
+    # Lista de {"mcp_server_name": str, "tools": [nomes] | null} — null =
+    # usa a allowlist do proprio `mcp_server`. NULL/[] = sem MCP.
+    # Editavel pela UI sem deploy (mesma semantica de `allowed_tools`).
+    mcp_toolsets: Mapped[list[dict] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
     )
 
     # Overrides opcionais — quando None, runtime usa o default do

@@ -34,6 +34,11 @@ dependencies = [
     # em `app/agentic/engine/runtime.py` e pelo adapter de chat em
     # `app/modules/integracoes/adapters/llm/anthropic/`.
     "anthropic>=0.71",
+    # SDK oficial MCP (modelcontextprotocol/python-sdk) — AUTORIZADO Ricardo
+    # 2026-07-23 (spec specs/active/copiloto-mcp.md §4.1). Cliente MCP proprio
+    # do backend (Streamable HTTP + headers custom do vendor) em
+    # `app/agentic/mcp/client.py`. Proibido reimplementar o protocolo na mao.
+    "mcp>=1.9",
     # Object storage (landing zone multi-tenant de arquivos — S3 sa-east-1,
     # bucket por tenant). Autorizado no plano "Landing Zone Multi-tenant"
     # (2026-07-06). Import lazy em app/shared/storage/s3.py: instalacoes com

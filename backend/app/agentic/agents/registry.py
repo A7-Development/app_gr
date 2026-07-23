@@ -205,6 +205,7 @@ class AgentRegistry:
                 if definition.allowed_tools is not None
                 else None
             ),
+            mcp_toolsets=tuple(definition.mcp_toolsets or ()),
         )
 
 

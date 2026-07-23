@@ -5,6 +5,12 @@ can auto-detect them during migration generation.
 """
 
 # Core base
+# Camada MCP — servidores externos como capability de agente (spec copiloto-mcp §4).
+from app.agentic.mcp.models import (  # noqa: F401
+    McpServer,
+    McpServerActive,
+)
+
 # Workflow engine (shared kernel — modulo credito o consome, futuros modulos
 # como Risco e Laboratorio tambem virao a usar).
 from app.agentic.workflows.models import (  # noqa: F401

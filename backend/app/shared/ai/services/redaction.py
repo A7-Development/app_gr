@@ -83,40 +83,47 @@ def _make_replacer(pii_map: dict[str, str], prefix: str) -> Final:
     return replace
 
 
-def redact(text: str) -> RedactionResult:
+def redact(text: str, *, preserve_query_identifiers: bool = False) -> RedactionResult:
     """Replace CPF, CNPJ, conta-agencia and emails with placeholders.
 
     Validation: CPF and CNPJ matches are kept only if check digits are valid
     (avoids false positives on random number runs). Conta-agencia and emails
     are pattern-only.
 
+    `preserve_query_identifiers=True` keeps CPF/CNPJ intact — used by the
+    Copiloto (Strata AI), where the identifier IS the query input: masking
+    it would break the tool call (spec copiloto-mcp §12.7; redaction stays
+    reserved for PII the model does NOT need — emails, contas). The AIPanel
+    chat path keeps the full redaction (default).
+
     Returns redacted text plus a map for audit recovery.
     """
     pii_map: dict[str, str] = {}
 
-    # CPF
-    cpf_replacer = _make_replacer(pii_map, "CPF")
+    if not preserve_query_identifiers:
+        # CPF
+        cpf_replacer = _make_replacer(pii_map, "CPF")
 
-    def cpf_sub(match: re.Match[str]) -> str:
-        full = match.group(0)
-        digits = "".join(c for c in full if c.isdigit())
-        if _cpf_check_digit_valid(digits):
-            return cpf_replacer(full)
-        return full
+        def cpf_sub(match: re.Match[str]) -> str:
+            full = match.group(0)
+            digits = "".join(c for c in full if c.isdigit())
+            if _cpf_check_digit_valid(digits):
+                return cpf_replacer(full)
+            return full
 
-    text = _CPF_RE.sub(cpf_sub, text)
+        text = _CPF_RE.sub(cpf_sub, text)
 
-    # CNPJ
-    cnpj_replacer = _make_replacer(pii_map, "CNPJ")
+        # CNPJ
+        cnpj_replacer = _make_replacer(pii_map, "CNPJ")
 
-    def cnpj_sub(match: re.Match[str]) -> str:
-        full = match.group(0)
-        digits = "".join(c for c in full if c.isdigit())
-        if _cnpj_check_digit_valid(digits):
-            return cnpj_replacer(full)
-        return full
+        def cnpj_sub(match: re.Match[str]) -> str:
+            full = match.group(0)
+            digits = "".join(c for c in full if c.isdigit())
+            if _cnpj_check_digit_valid(digits):
+                return cnpj_replacer(full)
+            return full
 
-    text = _CNPJ_RE.sub(cnpj_sub, text)
+        text = _CNPJ_RE.sub(cnpj_sub, text)
 
     # Conta-agencia (no check digit; pattern-only)
     conta_replacer = _make_replacer(pii_map, "CONTA")
