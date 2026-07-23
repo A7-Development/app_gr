@@ -545,6 +545,17 @@ export function useTestMcpServer() {
   })
 }
 
+// Tools descobertas no servidor (tools/list cacheado no backend — sem custo).
+// 502 quando o servidor remoto esta fora — a UI mostra estado honesto (§7.3).
+export function useMcpServerTools(serverId: string | null) {
+  return useQuery({
+    queryKey: ["admin", "ai", "mcp-servers", serverId ?? "", "tools"],
+    queryFn: () => adminAI.mcp.listTools(serverId!),
+    enabled: !!serverId,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Tools (F2.c.4 — read-only, CLAUDE.md §19.0)
 // ───────────────────────────────────────────────────────────────────────────

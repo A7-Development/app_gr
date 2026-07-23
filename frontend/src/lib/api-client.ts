@@ -684,6 +684,10 @@ export const adminAI = {
       apiClient.post<AIMcpServerDetail>(`/admin/ia/mcp/${id}/archive`),
     test: (id: string) =>
       apiClient.post<AIMcpProbeResponse>(`/admin/ia/mcp/${id}/test`),
+    // Tools descobertas via tools/list (cacheado, sem custo).
+    // 502 se o servidor remoto estiver fora.
+    listTools: (serverId: string) =>
+      apiClient.get<AIMcpServerTool[]>(`/admin/ia/mcp/${serverId}/tools`),
   },
   // F2.c.2 — CRUD versionado de expertises (CLAUDE.md §19.12).
   expertises: {
@@ -985,6 +989,14 @@ export type AIMcpProbeResponse = {
   tool_count: number | null
   allowed_count: number | null
   error: string | null
+}
+
+// Tool descoberta no servidor MCP (GET /{id}/tools — tools/list cacheado).
+// allowed = passa na allowlist do servidor.
+export type AIMcpServerTool = {
+  name: string
+  description: string
+  allowed: boolean
 }
 
 // ───────────────────────────────────────────────────────────────────────────

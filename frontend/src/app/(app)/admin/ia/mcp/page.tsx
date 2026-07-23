@@ -27,6 +27,7 @@ import {
   RiCheckLine,
   RiEdit2Line,
   RiHistoryLine,
+  RiLoader4Line,
   RiMoreLine,
   RiPlugLine,
   RiWifiLine,
@@ -65,6 +66,7 @@ import {
   useArchiveMcpServer,
   useCreateMcpServer,
   useMcpServers,
+  useMcpServerTools,
   useTestMcpServer,
   useUpdateMcpServer,
 } from "@/lib/hooks/admin-ai"
@@ -657,6 +659,67 @@ function DetailSection({
   )
 }
 
+// Tools descobertas no servidor (tools/list cacheado no backend, sem custo).
+// Loading e erro explicitos (§7.3) — 502 = servidor remoto fora do ar.
+function ServerToolsSection({ serverId }: { serverId: string }) {
+  const toolsQuery = useMcpServerTools(serverId)
+  const tools = toolsQuery.data ?? []
+  const allowedCount = tools.filter((t) => t.allowed).length
+
+  return (
+    <DetailSection
+      label={
+        toolsQuery.data
+          ? `Tools do servidor — ${tools.length} tools · ${allowedCount} na allowlist`
+          : "Tools do servidor"
+      }
+    >
+      {toolsQuery.isLoading ? (
+        <div className="flex items-center gap-2 py-2 text-[12px] text-gray-500 dark:text-gray-400">
+          <RiLoader4Line className="size-4 animate-spin" aria-hidden />
+          Consultando tools do servidor...
+        </div>
+      ) : toolsQuery.isError ? (
+        <div className="py-2 text-[12px] text-gray-500 dark:text-gray-400">
+          Servidor indisponivel agora — nao foi possivel listar as tools.
+        </div>
+      ) : tools.length === 0 ? (
+        <div className={tableTokens.cellSecondary}>
+          O servidor nao expoe nenhuma tool.
+        </div>
+      ) : (
+        <div className="flex max-h-[320px] flex-col gap-1 overflow-y-auto rounded-md border border-gray-200 p-2 dark:border-gray-800">
+          {tools.map((t) => (
+            <div
+              key={t.name}
+              className="flex min-w-0 items-center gap-2 rounded px-2 py-1"
+            >
+              <span className="shrink-0 font-mono text-xs text-gray-900 dark:text-gray-100">
+                {t.name}
+              </span>
+              <span
+                className={
+                  t.allowed
+                    ? tableTokens.badgeSuccess
+                    : tableTokens.badgeNeutral
+                }
+              >
+                {t.allowed ? "na allowlist" : "fora"}
+              </span>
+              <span
+                className="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400"
+                title={t.description}
+              >
+                {t.description}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </DetailSection>
+  )
+}
+
 type DetailViewProps = {
   server: AIMcpServerDetail
   familyVersions: AIMcpServerDetail[]
@@ -761,6 +824,8 @@ function McpServerDetailView({
           </div>
         )}
       </DetailSection>
+
+      <ServerToolsSection serverId={server.id} />
 
       {server.auth_header_map && (
         <DetailSection label="Mapeamento de headers de auth">

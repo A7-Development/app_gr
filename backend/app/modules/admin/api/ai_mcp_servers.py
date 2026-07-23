@@ -271,6 +271,40 @@ async def archive_version(
     return _to_detail(row, active)
 
 
+@router.get("/{server_id}/tools", dependencies=_GUARD)
+async def list_server_tools(
+    server_id: UUID, db: Annotated[AsyncSession, Depends(get_db)]
+) -> list[dict]:
+    """Tools descobertas no servidor (tools/list cacheado, sem custo de
+    dataset), com flag `allowed` da allowlist da versao. E o catalogo vivo
+    que responde 'quais tools esse MCP oferece?'."""
+    from app.agentic.mcp.client import list_tools_cached
+    from app.agentic.mcp.resolver import resolve_connection
+
+    row = await _get_or_404(db, server_id)
+    try:
+        conn = await resolve_connection(db, row)
+        tools = await list_tools_cached(conn)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Servidor MCP indisponivel: {exc}",
+        ) from exc
+    allow = set(row.allowed_tools) if row.allowed_tools else None
+    return [
+        {
+            "name": t.name,
+            "description": (
+                t.description[:280] + "…"
+                if len(t.description) > 280
+                else t.description
+            ),
+            "allowed": allow is None or t.name in allow,
+        }
+        for t in sorted(tools, key=lambda t: t.name)
+    ]
+
+
 @router.post("/{server_id}/test", dependencies=_GUARD, response_model=McpProbeResponse)
 async def test_connection(
     server_id: UUID, db: Annotated[AsyncSession, Depends(get_db)]
