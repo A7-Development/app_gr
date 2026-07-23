@@ -57,7 +57,9 @@ class AIUsageEvent(Base):
         nullable=False,
     )
     model: Mapped[str] = mapped_column(String(64), nullable=False)
-    prompt_template_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 255: comporta a string composta de agente resolvido (CLAUDE.md §19.12),
+    # nao so `nome@versao` de prompt simples.
+    prompt_template_version: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     tokens_input: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"

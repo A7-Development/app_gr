@@ -48,11 +48,13 @@ async def get_or_create_conversation(
     user_id: UUID,
     conversation_id: UUID | None,
     page_context: str | None,
+    surface: str = "aipanel",
 ) -> AIConversation:
     """Return existing conversation or create a new one.
 
     Verifies tenant + user ownership when `conversation_id` is given (raises
-    PermissionError on cross-tenant access).
+    PermissionError on cross-tenant access). `surface` marks which chat UI
+    owns the conversation ("aipanel" | "copiloto") and is only set on create.
     """
     if conversation_id is not None:
         conv = await db.get(AIConversation, conversation_id)
@@ -69,6 +71,7 @@ async def get_or_create_conversation(
         tenant_id=tenant_id,
         user_id=user_id,
         page_context=page_context,
+        surface=surface,
     )
     db.add(conv)
     await db.flush()  # populate id
@@ -148,10 +151,13 @@ async def append_message(
     text_redacted: str,
     text_encrypted: bytes | None = None,
     usage_event_id: UUID | None = None,
+    content_encrypted: dict | None = None,
 ) -> AIMessage:
     """Append a turn and bump the conversation's counters.
 
-    Caller commits. Returns the persisted message.
+    `content_encrypted` is the envelope-encrypted structured content blocks
+    of the turn (tool_use/tool_result/text) — pass the output of
+    `app.shared.crypto.encrypt_envelope`. Caller commits.
     """
     conversation.turn_count = (conversation.turn_count or 0) + 1
     msg = AIMessage(
@@ -161,6 +167,7 @@ async def append_message(
         text_redacted=text_redacted,
         text_encrypted=text_encrypted,
         usage_event_id=usage_event_id,
+        content_encrypted=content_encrypted,
     )
     db.add(msg)
     await db.flush()

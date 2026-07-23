@@ -15,9 +15,12 @@ import { useQuery } from "@tanstack/react-query"
 import {
   apiClient,
   buildAIChatRequest,
+  buildCopilotoChatRequest,
   type AIConversationListItem,
+  type AIConversationMessage,
   type AIInsightsResponse,
   type AIQuota,
+  type CopilotoToolStatus,
 } from "@/lib/api-client"
 import type { AIContext, SendMessageFn } from "@/design-system/components/AIPanel"
 
@@ -159,6 +162,134 @@ export function useAIChat(options: UseAIChatOptions): {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// useCopilotoChat — streaming SSE do Strata AI (pagina /copiloto)
+// ───────────────────────────────────────────────────────────────────────────
+
+export type UseCopilotoChatOptions = {
+  /** ID da conversa atual; null = nova conversa */
+  conversationId: string | null
+  onConversationCreated?: (id: string) => void
+  onDone?: (info: { usageEventId: string; turnIndex: number }) => void
+  onError?: (info: { message: string; status: string }) => void
+  /** R1: um unico delta com a resposta completa; R2 passa a granular. */
+  onDelta?: (chunk: string) => void
+  /** Status ao vivo de consulta (frames `tool_status`, vocabulario white-label). */
+  onToolStatus?: (status: CopilotoToolStatus) => void
+}
+
+/**
+ * Mesmo protocolo SSE do useAIChat (fetch + ReadableStream, nunca
+ * EventSource), apontando para POST /copiloto/chat. Diferencas: sem
+ * AIContext (o Copiloto e superficie propria) e frames extras
+ * `tool_status` (status de consulta ao vivo) e `ping` (heartbeat, ignorado).
+ */
+export function useCopilotoChat(options: UseCopilotoChatOptions): {
+  send: (text: string) => Promise<string>
+} {
+  const conversationIdRef = React.useRef<string | null>(options.conversationId)
+  const optsRef = React.useRef(options)
+
+  React.useEffect(() => {
+    conversationIdRef.current = options.conversationId
+  }, [options.conversationId])
+
+  React.useEffect(() => {
+    optsRef.current = options
+  }, [options])
+
+  const send = React.useCallback(async (text: string): Promise<string> => {
+    const { url, init } = buildCopilotoChatRequest({
+      message: text,
+      conversation_id: conversationIdRef.current,
+    })
+
+    const res = await fetch(url, init)
+    if (!res.ok || !res.body) {
+      let detail = res.statusText
+      try {
+        const errJson = (await res.json()) as { detail?: string }
+        if (errJson.detail) detail = errJson.detail
+      } catch {
+        // ignore
+      }
+      throw new Error(detail || `Falha HTTP ${res.status}`)
+    }
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder("utf-8")
+    type StreamError = { message: string; status: string }
+    const state: {
+      buffer: string
+      accumulatedText: string
+      finalError: StreamError | null
+    } = { buffer: "", accumulatedText: "", finalError: null }
+
+    const handleEvent = (event: string, data: string) => {
+      let payload: Record<string, unknown> = {}
+      try {
+        payload = JSON.parse(data) as Record<string, unknown>
+      } catch {
+        return
+      }
+      if (event === "conversation_id") {
+        const id = payload.conversation_id as string | undefined
+        if (id) {
+          conversationIdRef.current = id
+          optsRef.current.onConversationCreated?.(id)
+        }
+      } else if (event === "delta") {
+        const delta = (payload.text as string | undefined) ?? ""
+        if (delta) {
+          state.accumulatedText += delta
+          optsRef.current.onDelta?.(delta)
+        }
+      } else if (event === "tool_status") {
+        optsRef.current.onToolStatus?.(payload as unknown as CopilotoToolStatus)
+      } else if (event === "done") {
+        optsRef.current.onDone?.({
+          usageEventId: (payload.usage_event_id as string) ?? "",
+          turnIndex: (payload.turn_index as number) ?? 0,
+        })
+      } else if (event === "error") {
+        state.finalError = {
+          message: (payload.error as string) ?? "Erro desconhecido",
+          status: (payload.status as string) ?? "error",
+        }
+      }
+      // `ping` (heartbeat) e eventos desconhecidos: ignorados de proposito.
+    }
+
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      state.buffer += decoder.decode(value, { stream: true })
+
+      let sep: number
+      while ((sep = state.buffer.indexOf("\n\n")) !== -1) {
+        const frame = state.buffer.slice(0, sep)
+        state.buffer = state.buffer.slice(sep + 2)
+        const lines = frame.split("\n")
+        let event = "message"
+        const dataLines: string[] = []
+        for (const line of lines) {
+          if (line.startsWith("event:")) event = line.slice(6).trim()
+          else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim())
+        }
+        if (dataLines.length > 0) handleEvent(event, dataLines.join("\n"))
+      }
+    }
+
+    if (state.finalError) {
+      optsRef.current.onError?.(state.finalError)
+      throw new Error(state.finalError.message)
+    }
+    return state.accumulatedText
+  }, [])
+
+  return { send }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // useAIInsights — auto bullets
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -205,15 +336,36 @@ export function useAIQuota(opts: { enabled?: boolean } = {}) {
 // useAIConversations — historico do user
 // ───────────────────────────────────────────────────────────────────────────
 
-export function useAIConversations(opts: { limit?: number; enabled?: boolean } = {}) {
-  const { limit = 20, enabled = true } = opts
+export function useAIConversations(
+  opts: { limit?: number; enabled?: boolean; surface?: string } = {},
+) {
+  const { limit = 20, enabled = true, surface } = opts
   return useQuery({
-    queryKey: ["ai", "conversations", limit] as const,
-    queryFn: () =>
-      apiClient.get<AIConversationListItem[]>(
-        `/ai/conversations?limit=${limit}`,
-      ),
+    queryKey: ["ai", "conversations", limit, surface ?? null] as const,
+    queryFn: () => {
+      const qs = new URLSearchParams({ limit: String(limit) })
+      if (surface) qs.set("surface", surface)
+      return apiClient.get<AIConversationListItem[]>(
+        `/ai/conversations?${qs.toString()}`,
+      )
+    },
     staleTime: 60 * 1000,
     enabled,
+  })
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// useAIConversationMessages — turns de uma conversa (hidratacao do thread)
+// ───────────────────────────────────────────────────────────────────────────
+
+export function useAIConversationMessages(conversationId: string | null) {
+  return useQuery({
+    queryKey: ["ai", "conversation-messages", conversationId] as const,
+    queryFn: () =>
+      apiClient.get<AIConversationMessage[]>(
+        `/ai/conversations/${conversationId}/messages`,
+      ),
+    staleTime: 30 * 1000,
+    enabled: !!conversationId,
   })
 }

@@ -28,8 +28,13 @@ async def list_conversations(
     _: Annotated[None, Depends(require_ai(AICapability.READ))],
     limit: int = 20,
     include_archived: bool = False,
+    surface: str | None = None,
 ) -> list[ConversationListItem]:
-    """Return the user's chat conversations, most-recent first."""
+    """Return the user's chat conversations, most-recent first.
+
+    `surface` filters by owning chat UI ("aipanel" | "copiloto"); omitted =
+    all surfaces (backward compatible).
+    """
     stmt = (
         select(AIConversation)
         .where(
@@ -41,6 +46,8 @@ async def list_conversations(
     )
     if not include_archived:
         stmt = stmt.where(AIConversation.archived_at.is_(None))
+    if surface is not None:
+        stmt = stmt.where(AIConversation.surface == surface)
 
     rows = (await db.execute(stmt)).scalars().all()
     return [

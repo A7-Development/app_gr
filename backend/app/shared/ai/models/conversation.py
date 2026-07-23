@@ -43,6 +43,13 @@ class AIConversation(Base):
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     page_context: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # Which chat surface owns this conversation: "aipanel" (BI drawer) or
+    # "copiloto" (Strata AI full page). Rails filter by this so the two
+    # histories never mix (spec copiloto-mcp §6.5).
+    surface: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="aipanel", server_default="aipanel"
+    )
+
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

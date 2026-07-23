@@ -119,6 +119,23 @@ TOOL_REF_CALC = "calculate_metric"
 
 
 CATALOG: dict[str, SpecialistAgentSpec] = {
+    "strata_ai": SpecialistAgentSpec(
+        name="strata_ai",
+        description=(
+            "Strata AI (Copiloto) — chat livre da landing pos-login. Conversa "
+            "holistica que cruza dados internos (Strata Lake, via tools "
+            "nativas) e fontes externas (Strata Hub, via MCP). Free-text: "
+            "sem output_schema (o composer NAO injeta <output_format> — "
+            "`str` nao e BaseModel). Fase 1a: sem tools; MCP entra na 1b."
+        ),
+        prompt_name="chat.copiloto",
+        tools=(),
+        output_schema=str,
+        preferred_model="claude-sonnet-4-6",
+        fallback_model="claude-haiku-4-5-20251001",
+        thinking_budget_tokens=0,
+        timeout_seconds=120,
+    ),
     "social_contract_analyst": SpecialistAgentSpec(
         name="social_contract_analyst",
         description=(

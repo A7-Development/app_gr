@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import audit, auth, invitations, system
 from app.api.v1.ai import router as ai_router
+from app.api.v1.copiloto import router as copiloto_router
 from app.modules.admin.api import router as admin_router
 from app.modules.bi.api.router import router as bi_router
 from app.modules.cadastros.api.router import router as cadastros_router
@@ -46,6 +47,9 @@ api_router.include_router(invitations.router)
 
 # AI capability (transversal — own subscription/permission, see CLAUDE.md sec 19).
 api_router.include_router(ai_router)
+
+# Copiloto / Strata AI — chat livre (specs/active/copiloto-mcp.md).
+api_router.include_router(copiloto_router)
 
 # Admin module (system maintainer only — gestao global de IA, credenciais, etc).
 api_router.include_router(admin_router)

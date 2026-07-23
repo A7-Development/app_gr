@@ -1072,6 +1072,44 @@ export function buildAIChatRequest(
   }
 }
 
+/** Frame `tool_status` do stream do Copiloto (vocabulario white-label:
+ * "lake" = dado interno / "hub" = fonte externa — vendor nunca aparece). */
+export type CopilotoToolStatus = {
+  id: string
+  source: "lake" | "hub"
+  label: string
+  status: "running" | "done" | "error"
+  duration_ms: number | null
+}
+
+/**
+ * Request SSE do chat do Copiloto (Strata AI). Mesma anatomy do
+ * buildAIChatRequest; endpoint proprio /copiloto/chat (spec copiloto-mcp §7)
+ * e sem contexto de pagina — o Copiloto e superficie propria.
+ */
+export function buildCopilotoChatRequest(
+  body: {
+    message: string
+    conversation_id?: string | null
+  },
+): { url: string; init: RequestInit } {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+  }
+  const token = getToken()
+  if (token) headers.Authorization = `Bearer ${token}`
+  return {
+    url: `${API_URL}/copiloto/chat`,
+    init: {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      cache: "no-store",
+    },
+  }
+}
+
 /**
  * Request SSE do agente de variacao da Cota Sub (run-stream). Mesma anatomy
  * do buildAIChatRequest: POST + Bearer token + Accept text/event-stream.

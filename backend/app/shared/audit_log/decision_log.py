@@ -68,7 +68,9 @@ class DecisionLog(Base):
 
     inputs_ref: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     rule_or_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    rule_or_model_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 255: comporta a string composta canonica de agente resolvido
+    # (adapter+agente@v+persona@v+expertises@v+prompt@v — CLAUDE.md §19.12).
+    rule_or_model_version: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Granularidade fina pra entries de SYNC. Quando preenchida, identifica o
     # endpoint dentro do adapter (ex.: "market.outros_fundos" para entry de

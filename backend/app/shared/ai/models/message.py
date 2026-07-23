@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, ForeignKey, Integer, LargeBinary, Text
 from sqlalchemy import Enum as SAEnum
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -50,6 +51,15 @@ class AIMessage(Base):
     text_redacted: Mapped[str] = mapped_column(Text, nullable=False)
     # Phase 2: cipher original text via envelope. MVP leaves nullable.
     text_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+
+    # Structured Anthropic content blocks of this turn (tool_use/tool_result/
+    # text), envelope-encrypted (`app.shared.crypto`) because tool results may
+    # carry vendor/PII data. Needed so follow-up turns can re-feed tool results
+    # to the model (spec copiloto-mcp §6.5). NULL for plain-text-only turns.
+    # none_as_null: Python None deve virar NULL SQL, nao JSON 'null'.
+    content_encrypted: Mapped[dict | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
 
     occurred_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

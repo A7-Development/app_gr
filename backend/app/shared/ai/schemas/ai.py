@@ -33,6 +33,19 @@ class ChatRequest(BaseModel):
     conversation_id: UUID | None = None
 
 
+class CopilotoChatRequest(BaseModel):
+    """Body of POST /api/v1/copiloto/chat (Strata AI free chat).
+
+    No page context — the Copiloto is its own surface, not a lens over a
+    dashboard (spec copiloto-mcp §8).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    message: str = Field(min_length=1, max_length=4000)
+    conversation_id: UUID | None = None
+
+
 class InsightItem(BaseModel):
     """A single bullet."""
 
