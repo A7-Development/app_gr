@@ -50,6 +50,7 @@ from app.agentic.mcp.public import (
     build_mcp_capabilities,
 )
 from app.agentic.tools._base import AgentTool
+from app.agentic.tools.registry import ToolRegistry
 from app.core.enums import AIProvider, AIUsageStatus, Module, Permission
 from app.core.tenant_middleware import RequestPrincipal
 from app.modules.integracoes.adapters.llm.anthropic.adapter import AnthropicAdapter
@@ -299,7 +300,18 @@ async def stream_copiloto_response(
                 status="error",
             )
 
-        native_tools: list[AgentTool] = []
+        # Nativas: cardapio HOLISTICO por permissao (§6.3) ∩ allowed do
+        # agente (DB override > default do CATALOG).
+        allowed = (
+            list(resolved.allowed_tools)
+            if resolved.allowed_tools is not None
+            else list(resolved.spec.tools)
+        )
+        native_tools: list[AgentTool] = (
+            ToolRegistry.get_available_multimodule(scope, allowed=allowed)
+            if allowed
+            else []
+        )
         tools: list[AgentTool | McpWrappedTool] = [*native_tools, *mcp_caps.tools]
         tool_definitions = [t.to_api_definition() for t in tools]
         tool_dispatch: dict[str, AgentTool | McpWrappedTool] = {

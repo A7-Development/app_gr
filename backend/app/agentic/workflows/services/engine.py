@@ -459,7 +459,7 @@ async def _execute_run(
                         db, run, graph, _node_by_id(graph, nid), session=session
                     )
                 )
-            except Exception as exc:  # noqa: BLE001 — espelha gather(return_exceptions=True)
+            except Exception as exc:
                 results.append(exc)
 
         for nid, result in zip(to_execute, results, strict=True):

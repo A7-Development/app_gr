@@ -126,10 +126,11 @@ CATALOG: dict[str, SpecialistAgentSpec] = {
             "holistica que cruza dados internos (Strata Lake, via tools "
             "nativas) e fontes externas (Strata Hub, via MCP). Free-text: "
             "sem output_schema (o composer NAO injeta <output_format> — "
-            "`str` nao e BaseModel). Fase 1a: sem tools; MCP entra na 1b."
+            "`str` nao e BaseModel). Tools nativas de leitura do silver "
+            "(Fase 2); o toolset MCP vem de `agent_definition.mcp_toolsets`."
         ),
         prompt_name="chat.copiloto",
-        tools=(),
+        tools=("buscar_entidade", "get_carteira_fundo", "get_ficha_cedente"),
         output_schema=str,
         preferred_model="claude-sonnet-4-6",
         fallback_model="claude-haiku-4-5-20251001",

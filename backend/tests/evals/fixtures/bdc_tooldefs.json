@@ -1,0 +1,204 @@
+[
+  {
+    "name": "people_basic_data_tool",
+    "description": "Returns the core registration dossier for a Brazilian person\nper Receita Federal — names, tax-ID status, demographics,\nmarital status, obit detection, and uniqueness scoring.\nCurrent snapshot only; for change history see\npeople_historical_basic_data_tool.\n\nUse when:\n- \"basic registration data for this CPF\"\n- \"who is this person\"\n- \"name / birth date / gender / marital status for this CPF\"\n- \"is this person deceased\"\n\nDistinct from:\n- people_basic_data_with_configurable_recency_tool — Caller specifies freshness threshold.\n\nDataset: basic_data · Domain: people",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "doc": {
+          "type": "string",
+          "description": "Número do CPF"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome completo da pessoa para comparação"
+        },
+        "mothername": {
+          "type": "string",
+          "description": "Nome completo da mãe"
+        },
+        "fathername": {
+          "type": "string",
+          "description": "Nome completo do pai"
+        },
+        "birthdate": {
+          "type": "string",
+          "description": "Data de nascimento do indivíduo."
+        },
+        "dateformat": {
+          "type": "string",
+          "description": "Formato dos campos do tipo data."
+        }
+      }
+    }
+  },
+  {
+    "name": "people_kyc_tool",
+    "description": "Compliance/KYC dossier for a Brazilian person: full history\nof Politically Exposed Person (PEP) designations, sanctions\nand restrictions across dozens of regulatory sources,\nelectoral donation history, and current-state flags for\neach. Returns ONE KycRecord keyed to the queried subject.\nShared schema with companies_kyc_tool — compliance consumers\ncan treat the record shape identically across subject types.\n\nUse when:\n- \"is this person a PEP\"\n- \"has this entity been sanctioned\"\n- \"what's on this CPF for compliance purposes\"\n- \"run a KYC check on this person\"\n- \"does this person donate to political campaigns\"\n\nDistinct from:\n- companies_kyc_tool — Same schema but subject is a CNPJ. For compliance workflows requiring both-subject coverage, pair these two tools.\n- companies_owners_kyc_tool — Dictionary keyed by owner CPF for ALL owners of a company. Use when the question is about the whole owner group rather than a single named person.\n- companies_employees_kyc_tool — Dictionary keyed by employee CPF for all employees.\n- companies_economic_group_kyc_tool — Dictionary keyed by member CNPJ across a whole economic group.\n- people_first_level_relatives_kyc_tool — Dictionary-scoped KYC across the queried person's first-level relatives — different subject scope (relatives vs self).\n- people_political_involvement_tool — Focused on political activity (candidacy, office) rather than PEP/sanction compliance determination.\n- people_electoral_donors_tool — Focused electoral-donations tool. Use for donation detail with full per-donation records; use this tool for PEP/sanction compliance where donations are just one dimension.\n\nDataset: kyc · Domain: people",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "doc": {
+          "type": "string",
+          "description": "Número do CPF"
+        },
+        "minmatch": {
+          "type": "string",
+          "description": "Percentual mínimo de similaridade de nome para considerar como correspondência (0-100)"
+        },
+        "considerexpandedpep": {
+          "type": "string",
+          "description": "Inclui políticos suplentes e juízes estaduais como PEP"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome completo da pessoa para comparação"
+        },
+        "birthdate": {
+          "type": "string",
+          "description": "Data de nascimento do indivíduo."
+        },
+        "dateformat": {
+          "type": "string",
+          "description": "Formato dos campos do tipo data."
+        }
+      }
+    }
+  },
+  {
+    "name": "companies_processes_tool",
+    "description": "Returns the full list of judicial and administrative\nlawsuits for a Brazilian company — per-process detail\nincluding number, type, main subject, court, state,\nstatus, parties, updates, petitions, and decisions — plus\nentity-level aggregates and rolling-window counters for\nrecent lawsuit activity.\n\nUse when:\n- \"what lawsuits is this company involved in?\"\n- \"list the judicial processes for this CNPJ\"\n- \"show me recent lawsuits for this company\"\n- \"what are the details of this company's court cases?\"\n\nDistinct from:\n- companies_lawsuits_distribution_data_tool — Sibling tool that aggregates the same underlying lawsuits into statistical distributions (by type, court, state, status, etc.) rather than returning per-process detail. Use that one for 'what kinds of lawsuits' or 'breakdown of' questions; use this one for 'list the actual lawsuits'.\n- companies_owners_lawsuits_tool — Related tool that returns lawsuits of the company's OWNERS (cross-person aggregation), not lawsuits of the company itself.\n\nDataset: processes · Domain: companies",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "doc": {
+          "type": "string",
+          "description": "Número do CNPJ"
+        },
+        "returnupdates": {
+          "type": "string",
+          "description": "Inclui lista de atualizações dos processos (impacta tamanho do resultado)"
+        },
+        "applyFiltersToStats": {
+          "type": "string",
+          "description": "Aplica os filtros informados ao cálculo das estatísticas e contagens"
+        },
+        "returncvmprocesses": {
+          "type": "string",
+          "description": "Inclui processos da CVM na lista de resultados"
+        },
+        "updateslimit": {
+          "type": "string",
+          "description": "Número máximo de atualizações de processos a retornar"
+        }
+      }
+    }
+  },
+  {
+    "name": "companies_kyc_tool",
+    "description": "Compliance/KYC dossier for a single Brazilian person or\ncompany: full history of Politically Exposed Person (PEP)\ndesignations, sanctions and restrictions across dozens of\nregulatory sources, electoral donation history, and\ncurrent-state flags for each. Returns ONE KycRecord keyed\nto the queried subject.\n\nUse when:\n- \"is this person a PEP?\"\n- \"has this entity been sanctioned?\"\n- \"what's on this CPF/CNPJ for compliance purposes?\"\n- \"run a KYC check on X\"\n- \"does this person donate to political campaigns?\"\n\nDistinct from:\n- companies_owners_kyc_tool — KYC on each of the company's owners (sócios).\n- companies_employees_kyc_tool — KYC on each of the company's employees.\n- companies_economic_group_kyc_tool — KYC on each company in the full economic group.\n\nDataset: kyc · Domain: companies",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "doc": {
+          "type": "string",
+          "description": "Número do CNPJ"
+        },
+        "minmatch": {
+          "type": "string",
+          "description": "Percentual mínimo de similaridade de nome para considerar como correspondência (0-100)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome ou razão social da empresa para comparação"
+        }
+      }
+    }
+  },
+  {
+    "name": "companies_economic_group_first_level_tool",
+    "description": "Returns the first-level economic group for a Brazilian\ncompany: companies directly connected to the queried CNPJ\nvia shared ownership or common controlling entity. Smallest\ngroup; default choice when depth is not otherwise specified.\n\nUse when:\n- \"what other companies are in this group?\"\n- \"what's the total employee count across this company's group?\"\n- \"which companies share owners with this CNPJ?\"\n\nDistinct from:\n- companies_economic_group_first_level_extended_tool — First-level + per-member extended rollups.\n- companies_economic_group_second_level_tool — Second-level: add indirectly connected companies.\n- companies_economic_group_second_level_extended_tool — Second-level + per-member extended rollups.\n- companies_economic_group_third_level_tool — Third-level: two degrees of indirection.\n- companies_economic_group_third_level_extended_tool — Third-level + per-member extended rollups.\n- companies_economic_group_full_tool — Full transitive closure (all depths).\n- companies_economic_group_full_extended_tool — Full closure + per-member extended rollups.\n\nDataset: economic_group_first_level · Domain: companies",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "doc": {
+          "type": "string",
+          "description": "Número do CNPJ"
+        }
+      }
+    }
+  },
+  {
+    "name": "companies_dynamic_qsa_data_tool",
+    "description": "Returns a deeply nested dynamic QSA (corporate-structure)\nsnapshot for the queried Brazilian company with\nfreshness-control parameters. Surfaces the BasicData\nFederal-Revenue snapshot alongside a Relationships\nsub-object detailing the entities that directly\nconstitute the company's corporate structure — walking\nrelationship edges outward from the queried subject.\n\nUse when:\n- \"give me the dynamic QSA for this company with freshness control\"\n- \"walk this company's corporate structure with fresh-data control\"\n- \"real-time QSA lookup for this CNPJ\"\n\nDistinct from:\n- companies_relationships_tool — Standard relationship-walking tool without freshness-control parameters. Prefer this one for ordinary corporate-structure questions.\n- companies_company_groups_tool — Company-groups tool for family / economic-group aggregation. Prefer for grouped-structure questions.\n- companies_basic_data_tool — Registration snapshot without relationship walk.\n\nDataset: dynamic_qsa_data · Domain: companies",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "doc": {
+          "type": "string",
+          "description": "Número do CNPJ"
+        },
+        "recency": {
+          "type": "string",
+          "description": "Dias máximos desde a última atualização dos dados de QSA"
+        }
+      }
+    }
+  },
+  {
+    "name": "companies_registration_data_tool",
+    "description": "Returns a consolidated registration-form-style snapshot of\nthe queried Brazilian company: BasicData + Emails +\nAddresses + Phones combined into a single record. Each\nsub-object carries PRIMARY and SECONDARY entries — the\nminimum viable contact surface for a company registration\nform, not the full history. Use when you need a quick\none-call overview of identity + primary contacts; route\nto the specialist *_extended tools when full lists or\nper-record detail are needed.\n\nUse when:\n- \"give me the registration-form view of this CNPJ\"\n- \"primary contact info for this company in one call\"\n- \"quick snapshot of identity + main email / phone / address\"\n- \"one-stop contact summary for this company\"\n\nDistinct from:\n- companies_basic_data_tool — Returns only the full BasicData registration dossier (richer than this tool's BasicData sub-object), not the consolidated contact snapshot.\n- companies_addresses_extended_tool — Returns the full addresses list with per-record detail and passage counters, not just primary/secondary.\n- companies_emails_extended_tool — Returns the full emails list, not just primary/secondary.\n- companies_phones_extended_tool — Returns the full phones list, not just primary/secondary.\n- companies_domains_extended_tool — Domain/website metadata is NOT part of this tool's consolidated view — route to the domains tool separately.\n\nDataset: registration_data · Domain: companies",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "doc": {
+          "type": "string",
+          "description": "Número do CNPJ"
+        }
+      }
+    }
+  },
+  {
+    "name": "companies_basic_data_tool",
+    "description": "Returns the core registration dossier for a Brazilian\ncompany as of the current BDC ingestion: official name,\ntrade name, tax ID status, founding/closing dates, age,\ntax regime, legal nature, economic activities (CNAE), and\nhistorical-data rollup flags. Current snapshot only — for\nchange history see companies_history_basic_data_tool.\n\nUse when:\n- \"what are the basic registration details for this CNPJ?\"\n- \"tell me about this company\"\n- \"give me the registration dossier\"\n- \"what's this company's official name / founding date / tax regime?\"\n\nDistinct from:\n- companies_history_basic_data_tool — Sibling tool returning the full change log (per-attribute history lists) rather than the current snapshot. Use that one for 'when did X change' questions; use this one for 'what is X today' questions.\n\nDataset: basic_data · Domain: companies",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "doc": {
+          "type": "string",
+          "description": "Número do CNPJ"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome ou razão social da empresa para comparação"
+        }
+      }
+    }
+  },
+  {
+    "name": "companies_collections_tool",
+    "description": "Returns the queried Brazilian company's presence in\nprivate-sector collection processes — whether the company\nis currently in collection, lifetime and consecutive-\nmonth counters, source count, and date bounds. Focused\ncollection-process signal; distinct from public-sector\ngovernment debt (government_debtors).\n\nUse when:\n- \"is this company in collection?\"\n- \"debt collection status for this CNPJ\"\n- \"how long has this company been in collection?\"\n- \"history of private-sector collections\"\n\nDistinct from:\n- companies_government_debtors_tool — Covers public-sector debt registries; this tool covers private-sector collection processes. Different sources.\n- companies_unified_modeling_data_x1_5_tool — Surfaces IsCurrentlyOnCollection and the collection counters alongside many other signals; use this tool for the focused collection dossier.\n\nDataset: collections · Domain: companies",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "doc": {
+          "type": "string",
+          "description": "Número do CNPJ"
+        }
+      }
+    }
+  },
+  {
+    "name": "companies_government_debtors_tool",
+    "description": "Returns government-debtor records for the queried\nBrazilian company — appearances in public debt registries\n(federal, state, municipal, or agency-specific) with\ntotal debt value, debt count, per-origin breakdowns, and\nper-debt detail.\n\nUse when:\n- \"does this company owe the government?\"\n- \"tax debt / public debt for this CNPJ\"\n- \"is this CNPJ in any public debt registry?\"\n- \"how much does this company owe, and to whom?\"\n\nDistinct from:\n- companies_collections_tool — Sibling concept but different source — Collections covers private-sector collection processes; GovernmentDebtors covers public-sector debt registries.\n- companies_kyc_tool — KYC sanctions may include some debt-related records, but this tool is focused specifically on public debt registries with monetary detail.\n\nDataset: government_debtors · Domain: companies",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "doc": {
+          "type": "string",
+          "description": "Número do CNPJ"
+        }
+      }
+    }
+  }
+]

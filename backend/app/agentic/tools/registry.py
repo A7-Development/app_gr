@@ -109,6 +109,28 @@ class _ToolRegistry:
 
         return sorted(result, key=lambda t: t.name)
 
+    def get_available_multimodule(
+        self,
+        scope: ScopedContext,
+        allowed: list[str] | None = None,
+    ) -> list[AgentTool]:
+        """Cardapio HOLISTICO (Copiloto — spec copiloto-mcp §6.3).
+
+        Ignora o modulo unico do scope: entram tools de TODOS os modulos
+        em que o usuario tem permissao (`scope.permissions` ja consolida
+        permissao do user ∩ assinatura do tenant). Capability de modulo
+        sem permissao NAO entra — vazamento de modulo e eval com
+        tolerancia zero (§14.2).
+        """
+        result: list[AgentTool] = []
+        for tool in self._tools.values():
+            if not scope.has_permission(tool.module, tool.min_permission):
+                continue
+            if allowed is not None and not _matches_any(tool, allowed):
+                continue
+            result.append(tool)
+        return sorted(result, key=lambda t: t.name)
+
     def clear_for_testing(self) -> None:
         """SO usar em testes. Limpa o registry pra setup isolado."""
         with self._lock:
