@@ -129,8 +129,17 @@ tools += [{"type": "mcp_toolset", "mcp_server_name": server.name,
 ```
 Execução das tools de MCP é **server-side** (a Anthropic chama o `/bigia/mcp`); as nativas continuam no nosso `_run_tool_loop`. Ambas aparecem como tool pro modelo.
 
-### 4.4 ⚠ Risco técnico gating — autenticação
-O BDC MCP autentica por **dois headers** (`AccessToken`+`TokenId`); o conector Anthropic passa **um `authorization_token`** (vira `Authorization: Bearer`). **Precede a Fase 1 um spike** (Fase 0) para decidir entre: (a) conector aceita headers custom; (b) `/bigia/mcp` aceita Bearer; (c) **proxy fininho nosso** (`app/agentic/mcp/proxy`) que recebe do conector e reinjeta os 2 headers pro BDC. Se cair no (c), o `url` registrado aponta pro nosso proxy.
+### 4.4 Autenticação — **[RESOLVIDO na Fase 0 (2026-07-23): PROXY]**
+Sondas executadas (initialize / tools/list — sem custo de dataset):
+
+| Sonda | Resultado |
+|---|---|
+| `initialize` com os 2 headers (`AccessToken`+`TokenId`) | **HTTP 200** — handshake MCP completo: `Apps.BigIA.MCPServer 1.0.0.0`, protocolo `2025-03-26`, Streamable HTTP + `Mcp-Session-Id`; `notifications/initialized` 202; `tools/list` 200 com **166 tools** |
+| `initialize` com `Authorization: Bearer <AccessToken>` | **HTTP 401** — o endpoint **não lê** `Authorization` |
+| Sem auth (controle) | HTTP 401 |
+| Conector Anthropic (doc oficial, beta `mcp-client-2025-11-20`) | `mcp_servers` = `type/url/name/authorization_token` — **só Bearer; não existe header custom** |
+
+**Veredito: conexão direta conector→BDC é impossível → proxy fininho** (`app/agentic/mcp/proxy`, entra na Fase 2): recebe `Authorization: Bearer <token emitido por nós>` do conector, valida, injeta os 2 headers do BDC e repassa o stream (SSE) transparentemente. **Bônus arquitetural:** o proxy vira o ponto natural de enforcement dos **caps de custo (§6.4)**, **logging por chamada** e **mock em dev (§14.3c)**. Requisito: publicamente alcançável pela infra da Anthropic (expor na VM26 atrás do Caddy, HTTPS).
 
 ---
 
@@ -345,7 +354,7 @@ Elementos canônicos a especificar:
 
 | Fase | Entrega | Aceite (gate) |
 |---|---|---|
-| **0. Spike auth MCP** *(paralela)* | probe do conector contra `/bigia/mcp` (Bearer? headers custom? proxy?) | decisão registrada na spec; **gate da Fase 2** |
+| **0. Spike auth MCP** — ✅ **CONCLUÍDA (2026-07-23)** | sondas executadas: 2 headers OK (166 tools), Bearer 401, conector só Bearer | **decisão: PROXY** (§4.4) — gate da Fase 2 liberado |
 | **1. Walking skeleton** | rota `/copiloto` (Estados 1+2 mínimos) + `POST /copiloto/chat` (SSE com `tool_status`) + agente seed (§5.4) + **2–3 tools nativas de leitura** + persistência da conversa (`content_json`) | E2E real: pergunta interna → status ao vivo → resposta; conversa retomável; 403/isolamento verdes |
 | **2. Camada MCP** | catálogo `mcp_server` + credencial cifrada + registry/resolver + conector no runtime + BDC cadastrado c/ allowlist | pergunta com CNPJ cruza **fontes de mercado + Strata Lake** no mesmo turno; status white-label |
 | **3. Admin & cadastro** | CRUD `/admin/ia/mcp` (+ testar conexão) + seção MCP no form de agente + caps de custo externo | mantenedor gerencia MCP e concessões sem deploy |
@@ -365,13 +374,13 @@ Elementos canônicos a especificar:
 ---
 
 ## 12. Riscos e questões em aberto
-1. **Auth do conector MCP (2 headers)** — Fase 0 decide (proxy?).
+1. ~~**Auth do conector MCP (2 headers)**~~ — **[RESOLVIDO — Fase 0]** BDC rejeita Bearer; conector não envia headers custom → **proxy fininho** (§4.4), item de entrega da Fase 2.
 2. ~~**Landing = Copiloto**~~ — **[DECIDIDO]** primeira tela pós-login é o Copiloto; `/` redireciona pra `/copiloto`; a home de módulos vira `/inicio` (ver §8.1). Fechado.
 3. ~~**Escopo cross-module**~~ — **[DECIDIDO]** resolução multi-módulo por permissão ∩ assinatura do tenant (§6.3).
 4. ~~**`ephemeral` sem proveniência**~~ — **[DECIDIDO]** materializar está fora de escopo nesta rodada; gatilho futuro de `materialized` = **promoção a registro** (anexar a dossiê, virar parecer, embasar aprovação).
 5. ~~**Streaming do tool loop**~~ — **[DECIDIDO]** R1 = status ao vivo + resposta ao final (com streaming **interno** p/ detectar tools, §6.2); R2 = tokens ao vivo.
 6. ~~**Nome do produto**~~ — **[DECIDIDO]** o produto é **Strata AI** (o que o usuário vê); "Copiloto"/`/copiloto` fica como rótulo e rota interna (§8.5).
-7. **PII no caminho MCP (LGPD §19.9)** — o dado do BDC (CPF/CNPJ/sócios) vai ao LLM pelo conector server-side. **A mitigação NÃO é `redaction`/mascaramento:** num chat de crédito o identificador (CNPJ/CPF) é a **própria entrada** da consulta — mascará-lo quebraria a função. O controle correto é: **(a) ZDR obrigatório** — o provedor não retém o dado (§19.3); **(b) não-persistência** do dado do vendor como registro (`ephemeral`); **(c) cifra** do que for guardado no histórico (`text_encrypted`, §19.6). `redaction` fica reservada a PII que o modelo **não** precisa (e-mail/telefone soltos), nunca aos identificadores da consulta. Fechar o desenho de compliance antes de sair do experimento.
+7. **PII no caminho MCP (LGPD §19.9)** — o dado do BDC (CPF/CNPJ/sócios) vai ao LLM pelo conector server-side. **A mitigação NÃO é `redaction`/mascaramento:** num chat de crédito o identificador (CNPJ/CPF) é a **própria entrada** da consulta — mascará-lo quebraria a função. O controle correto é: **(a) ZDR obrigatório** — o provedor não retém o dado (§19.3); **(b) não-persistência** do dado do vendor como registro (`ephemeral`); **(c) cifra** do que for guardado no histórico (`text_encrypted`, §19.6). `redaction` fica reservada a PII que o modelo **não** precisa (e-mail/telefone soltos), nunca aos identificadores da consulta. Fechar o desenho de compliance antes de sair do experimento. **⚠ Achado da Fase 0 (doc oficial do conector):** o conector MCP **não é coberto por ZDR** — dados trocados com servidores MCP (definições e resultados de tool) são retidos pela Anthropic sob a política padrão. A mitigação (a) **não vale no caminho MCP**; o experimento exige **aceite explícito do Ricardo** nesse ponto (dado BDC de terceiros retido pelo provedor de LLM). As **tools nativas não têm essa limitação** — trafegam pela Messages API normal, coberta pelo acordo ZDR. **[ACEITO — Ricardo, 2026-07-23]** risco aceito **para o experimento** (caminho MCP `ephemeral`, volume baixo); reavaliação obrigatória antes de o caminho MCP sair de experimento ou embasar decisão/lastro.
 8. **Memória: tamanho do thread** — resultados de MCP (dossiê é grande) incham o `ai_message`/contexto. Mitigar com sumarização (`ai_conversation_summary`) e/ou guardar forma compacta do `tool_result`.
 9. **Dependência de beta (conector MCP)** — o conector é recurso beta do provedor; pode mudar. Plano B registrado: proxy próprio (Fase 0) e, no limite, cliente MCP próprio em `agentic/mcp/connection.py` (§4.1) — o desenho já acomoda a troca sem refazer catálogo/agente.
 10. **Prompt injection via dados externos** — payloads de fontes de mercado são conteúdo não-confiável (§9); prompt hardening + cenário de eval dedicado (§14.2).
