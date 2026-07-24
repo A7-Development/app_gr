@@ -136,6 +136,16 @@ Escrita no executor (`McpWrappedTool.execute` / dispatch do copiloto) — mesmo 
 
 - 75% / 90% da quota mensal → notificação ao(s) admin(s) do tenant (canal QA-5: e-mail? in-app? começar in-app/banner é o mais barato).
 
+### 5.4 Gestão de PERMISSÃO de IA por usuário — gap real, anotado 2026-07-24
+
+> **Incidente que motivou a nota:** Ricardo pediu à Mara (mara@a7credit.com.br) para testar o Strata AI e ela recebeu 403 ("Permissão insuficiente em IA... usuário tem 'none'"). Causa: `user_ai_permission` não tinha linha para ela — o guard (`ai_guard.py`) trata ausência como `NONE`. A correção foi INSERT manual via SQL (`READ`). Isso não pode ser o fluxo de onboarding de usuário na IA.
+
+- **Hoje:** backend PRONTO (`PUT /api/v1/admin/ai/subscriptions/{tenant_id}` em `app/modules/admin/api/ai_subscriptions.py` faz upsert da subscription do tenant + permissões de IA por usuário), mas gated por `require_system_maintainer` e **nenhuma tela consome** — `/admin/usuarios` (convites) e `/admin/tenants` não tocam permissão de IA.
+- **O que falta (detalhar na conversa; entra naturalmente junto da F3/`user_ai_limit`):**
+  - UI para conceder/alterar `user_ai_permission` (NONE/READ/WRITE/ADMIN) — lugar natural: a mesma superfície do §5.2 (gestão de usuários do tenant), já que permissão e limite do usuário são duas faces do mesmo cadastro.
+  - Decidir o ATOR: hoje o endpoint é maintainer-only; a tese do §5 é que o **admin do tenant** gerencia seu próprio time (via `AICapability.ADMIN`) — exigiria endpoint tenant-scoped novo ou relaxar o guard com escopo.
+  - Default de onboarding (QA-8): usuário novo do tenant com IA habilitada nasce com `READ` ou `NONE`? Hoje nasce sem linha (= NONE, silencioso).
+
 ---
 
 ## 6. Nível 3 — Usuário
@@ -178,3 +188,4 @@ Migrations = passos manuais do Ricardo (dev==prod, §16). F1 é pequena e destra
 | QA-5 | Canal de alerta 75/90%: in-app, e-mail, ambos? | In-app/banner primeiro (barato); e-mail na sequência |
 | QA-6 | Cap diário de consultas externas por TENANT (além do BRL)? | Talvez redundante com `hard_cap_brl` somando vendor — decidir com dados da F2 |
 | QA-7 | AIPanel (BI) entra no mesmo regime desde F1? | Sim para medição (é o mesmo metering); chip de custo no painel fica pra depois |
+| QA-8 | Permissão de IA por usuário (§5.4): quem gerencia (maintainer vs admin do tenant) e qual o default de onboarding? | UI junto do §5.2; default proposto: `NONE` explícito com concessão em 1 clique — nunca linha ausente silenciosa |
